@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude\\hooks\\csharp-workflow.ps1\""
+          },
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude\\hooks\\frontend-workflow.ps1\""
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/validate-plan-hook.sh",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude\\hooks\\format-frontend.ps1\""
+          }
+        ]
+      }
+    ]
+  }
+}

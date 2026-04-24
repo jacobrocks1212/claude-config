@@ -1,0 +1,10 @@
+# Secrets
+*.env
+.credentials.json
+
+# Backups from repair command
+*.bak
+
+# OS
+Thumbs.db
+.DS_Store
