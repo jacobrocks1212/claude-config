@@ -1,0 +1,103 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__ado__repo_reply_to_comment"
+    ],
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "~/Desktop",
+      "~/Downloads"
+    ]
+  },
+  "model": "claude-opus-4-6",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/pr-review-cache-guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:/Users/JacobMadsen/.claude/scripts/fix-line-endings.ps1\" -FilePath \"$TOOL_INPUT_file_path\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit:.*Cognito.Web.Client.*\\.(ts|vue)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:/Users/JacobMadsen/.claude/scripts/run-eslint.ps1\" -FilePath \"$TOOL_INPUT_file_path\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "ccstatusline",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": false,
+    "playwright@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "typescript-lsp@claude-plugins-official": true,
+    "context7@claude-plugins-official": false,
+    "code-review@claude-plugins-official": false,
+    "code-simplifier@claude-plugins-official": false,
+    "serena@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false,
+    "superpowers@claude-plugins-official": false,
+    "vercel@claude-plugins-official": false,
+    "slack@claude-plugins-official": false,
+    "csharp-lsp@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "cognito-pr-review@local-tools": true,
+    "interview-prep-plugin@local-tools": true,
+    "context7-plugin@context7-marketplace": true,
+    "warp@claude-code-warp": true,
+    "notion@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "local-tools": {
+      "source": {
+        "source": "directory",
+        "path": "C:/Users/JacobMadsen/.claude/plugins/local-tools"
+      }
+    },
+    "context7-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "upstash/context7"
+      }
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "showClearContextOnPlanAccept": true,
+  "autoUpdatesChannel": "latest",
+  "autoMemoryEnabled": false,
+  "skipDangerousModePermissionPrompt": true,
+  "useAutoModeDuringPlan": false,
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true
+}

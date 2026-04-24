@@ -1,0 +1,3350 @@
+{
+  "meta": {
+    "sourceFile": "C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\Cognito.Services\\Views\\Shared\\build.js",
+    "generatedAt": "2026-03-23T08:09:29.541Z",
+    "sourceModified": "2026-03-23T08:07:44.137Z",
+    "lineCount": 22473
+  },
+  "imports": [
+    {
+      "line": 2,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/utilities/workflow-diagram-utils",
+      "symbols": [
+        "buildWorkflowObject",
+        "initializeAllowedStatusNamesForAllActions",
+        "openWorkflowActionAllowedWhenBuilder",
+        "setupWorkflowDiagramPropertyListeners",
+        "setupAllowedWhenChangeListener",
+        "setupStatusAndRoleRenameListeners",
+        "setupClearFieldsTokenListener",
+        "updateWorkflowDiagram"
+      ]
+    },
+    {
+      "line": 13,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/utilities/workflow-diagram.types.ts",
+      "symbols": [
+        "ScrollBehavior"
+      ]
+    },
+    {
+      "line": 14,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/components/lib.ts",
+      "symbols": [
+        "_asyncComponentImports"
+      ]
+    },
+    {
+      "line": 15,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/utilities/change-selection-type",
+      "symbols": [
+        "applySelectionType",
+        "shouldShowConfirmation",
+        "trimDefaultChoicesForSingleSelect"
+      ]
+    },
+    {
+      "line": 21,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/utilities/linked-lookup",
+      "symbols": [
+        "initializeLinkedLookups"
+      ]
+    },
+    {
+      "line": 22,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/utilities/identify-submitter",
+      "symbols": [
+        "initializeIdentifySubmitter"
+      ]
+    },
+    {
+      "line": 23,
+      "source": "../../../Cognito.Web.Client/apps/spa/src/utilities/notify-bottom-right",
+      "symbols": [
+        "showPersonFieldToast",
+        "showSuccessToast"
+      ]
+    }
+  ],
+  "readyBlocks": [
+    {
+      "line": 111,
+      "name": "Build Init",
+      "dependencies": [
+        "build",
+        "Views.Shared.build.htm",
+        "admin-component-library",
+        "expression-builder"
+      ]
+    },
+    {
+      "line": 152,
+      "name": "Build Authenticated",
+      "dependencies": [
+        "build"
+      ]
+    },
+    {
+      "line": 196,
+      "name": "build",
+      "dependencies": [
+        "Cognito.Forms",
+        "ExoWeb.dom",
+        "cognito-select-input",
+        "admin-component-library"
+      ]
+    },
+    {
+      "line": 22258,
+      "name": "previewDialog",
+      "dependencies": [
+        "admin-component-library",
+        "admin-form-api"
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "line": 265,
+      "name": "Global Variables",
+      "endLine": 348
+    },
+    {
+      "line": 350,
+      "name": "Controller",
+      "endLine": 374
+    },
+    {
+      "line": 376,
+      "name": "Localization",
+      "endLine": 416
+    },
+    {
+      "line": 418,
+      "name": "Security Alert",
+      "endLine": 446
+    },
+    {
+      "line": 448,
+      "name": "Feature Availability",
+      "endLine": 493
+    },
+    {
+      "line": 495,
+      "name": "Element Types",
+      "endLine": 1228
+    },
+    {
+      "line": 5360,
+      "name": "File Upload",
+      "endLine": 5423
+    },
+    {
+      "line": 5425,
+      "name": "YesNo",
+      "endLine": 21807
+    },
+    {
+      "line": 5602,
+      "name": "RatingScale",
+      "endLine": 6981
+    },
+    {
+      "line": 6983,
+      "name": "Element Wrapper",
+      "endLine": 8123
+    },
+    {
+      "line": 8125,
+      "name": "Initialize Builder",
+      "endLine": 8375
+    },
+    {
+      "line": 8377,
+      "name": "Serialization",
+      "endLine": 8540
+    },
+    {
+      "line": 8542,
+      "name": "Rendering",
+      "endLine": 10039
+    },
+    {
+      "line": 10041,
+      "name": "Condensed Builder Settings",
+      "endLine": 10091
+    },
+    {
+      "line": 10093,
+      "name": "Table Column Drag to Resize",
+      "endLine": 10166
+    },
+    {
+      "line": 10168,
+      "name": "Drag & Drop",
+      "endLine": 10390
+    },
+    {
+      "line": 10392,
+      "name": "Builder UI Functions",
+      "endLine": 12311
+    },
+    {
+      "line": 12313,
+      "name": "Utility Functions",
+      "endLine": 14590
+    },
+    {
+      "line": 14592,
+      "name": "JQuery Event Handlers",
+      "endLine": 16088
+    }
+  ],
+  "properties": [
+    {
+      "line": 1299,
+      "name": "emailNotification",
+      "type": "Cognito.Forms.EntryEmailNotification",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1303,
+      "name": "tokensLastUpdate",
+      "type": "Number",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1306,
+      "name": "tokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1310,
+      "name": "propertyMappings",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1312,
+      "name": "friendlyTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1320,
+      "name": "confirmationTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1332,
+      "name": "protectedTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "friendlyTokens",
+        "EncryptEntries",
+        "emailNotification.Type"
+      ]
+    },
+    {
+      "line": 1350,
+      "name": "notAvailableMessageTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1373,
+      "name": "emailFieldTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1409,
+      "name": "formLevelTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1424,
+      "name": "namePaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1434,
+      "name": "yesNoPaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1444,
+      "name": "filePaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1454,
+      "name": "fileFieldsCloudStorageMapping",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1464,
+      "name": "addressPaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1474,
+      "name": "phonePaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1484,
+      "name": "emailPaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1504,
+      "name": "emailTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1505,
+      "name": "singleValueEmailTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1562,
+      "name": "personFieldPaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1575,
+      "name": "personFieldTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1617,
+      "name": "nonLookupEmailTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "tokens",
+        "formLevelTokens",
+        "emailFieldTokens"
+      ]
+    },
+    {
+      "line": 1638,
+      "name": "nameTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "tokens",
+        "formLevelTokens",
+        "namePaths"
+      ]
+    },
+    {
+      "line": 1660,
+      "name": "addressTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "tokens",
+        "formLevelTokens",
+        "addressPaths"
+      ]
+    },
+    {
+      "line": 1677,
+      "name": "phoneTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "tokens",
+        "formLevelTokens",
+        "phonePaths"
+      ]
+    },
+    {
+      "line": 1694,
+      "name": "yesNoTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "tokens",
+        "formLevelTokens",
+        "yesNoPaths"
+      ]
+    },
+    {
+      "line": 1709,
+      "name": "fileTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": [
+        "tokens",
+        "formLevelTokens",
+        "filePaths"
+      ]
+    },
+    {
+      "line": 1724,
+      "name": "peopleFormEnabled",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1750,
+      "name": "showLookupEncryptionWarning",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1756,
+      "name": "peopleFormSettings",
+      "type": "Object",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "PeopleFormSettings{Name}",
+        "PeopleFormSettings{Email}",
+        "PeopleFormSettings{Avatar}",
+        "PeopleFormSettings{IsActive}",
+        "PeopleFormSettings{Enabled}",
+        "PeopleFormSettings{IsGuestList}",
+        "PeopleFormSettings{GuestProfileEditing}",
+        "PeopleFormSettings{GuestRegistration}"
+      ]
+    },
+    {
+      "line": 1772,
+      "name": "emailWorkflowLinkGuestUpsellShown",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1775,
+      "name": "guestPortalEnabled",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1781,
+      "name": "allowsGuestRegistration",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "PeopleFormSettings{Enabled}",
+        "PeopleFormSettings{IsGuestList}",
+        "PeopleFormSettings{GuestRegistration}"
+      ]
+    },
+    {
+      "line": 1792,
+      "name": "showSecureLookupSettings",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "guestPortalEnabled",
+        "SecureLookupsForGuests"
+      ]
+    },
+    {
+      "line": 1799,
+      "name": "hideSecureLookupSettings",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "showSecureLookupSettings"
+      ]
+    },
+    {
+      "line": 1806,
+      "name": "publicRoleId",
+      "type": "Number",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1813,
+      "name": "publicRoleName",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "Roles"
+      ]
+    },
+    {
+      "line": 1820,
+      "name": "publicRoleHasGuestEmail",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1840,
+      "name": "emailDisplayNamePaths",
+      "type": "String",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 1858,
+      "name": "requiredAuthenticationName",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "RequireAuthentication"
+      ]
+    },
+    {
+      "line": 1939,
+      "name": "IsUrlNameManuallyChanged",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1949,
+      "name": "SettingsIsActiveTab",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1950,
+      "name": "HasChanges",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1955,
+      "name": "templateShareUrl",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1963,
+      "name": "folderId",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1966,
+      "name": "internationalForm",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 1980,
+      "name": "format",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2000,
+      "name": "endpointNotification",
+      "type": "Cognito.EndpointNotification",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2009,
+      "name": "submitUrl",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2055,
+      "name": "updateUrl",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2101,
+      "name": "deleteUrl",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2146,
+      "name": "limitAvailability",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 2158,
+      "name": "availabilityStartDate",
+      "type": "Date",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2182,
+      "name": "availabilityStartTime",
+      "type": "Date",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2203,
+      "name": "availabilityEndDate",
+      "type": "Date",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2227,
+      "name": "availabilityEndTime",
+      "type": "Date",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2249,
+      "name": "allowSharedEditLinks",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 2295,
+      "name": "allowSharedEditLinksPreview",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "AllowSharedEditLinks"
+      ]
+    },
+    {
+      "line": 2309,
+      "name": "allowSharedViewLinks",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 2354,
+      "name": "allowSharedViewLinksPreview",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "AllowSharedViewLinks"
+      ]
+    },
+    {
+      "line": 2368,
+      "name": "allowWorkflowLinks",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 2414,
+      "name": "allowWorkflowLinksPreview",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "AllowWorkflowLinks"
+      ]
+    },
+    {
+      "line": 2427,
+      "name": "allowPublicLinksError",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2458,
+      "name": "paymentAccountViewModel",
+      "type": "Cognito.Payment.PaymentAccountViewModel",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "PaymentAccount, PaymentAccount.accountViewModel"
+      ]
+    },
+    {
+      "line": 2480,
+      "name": "isPaymentRequired",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "RequirePayment"
+      ]
+    },
+    {
+      "line": 2525,
+      "name": "requirePaymentPreview",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "RequirePayment"
+      ]
+    },
+    {
+      "line": 2539,
+      "name": "showRequirePayment",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2548,
+      "name": "saveCustomerCardLabel",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2567,
+      "name": "showSaveCustomerCard",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2576,
+      "name": "saveCustomerCard",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "SaveCustomerCard"
+      ]
+    },
+    {
+      "line": 2628,
+      "name": "saveCustomerCardPreview",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "SaveCustomerCard"
+      ]
+    },
+    {
+      "line": 2642,
+      "name": "saveCustomerCardEnabled",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "SaveCustomerCard"
+      ]
+    },
+    {
+      "line": 2682,
+      "name": "requireBillingEmailField",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "PaymentAccount",
+        "saveCustomerCardEnabled"
+      ]
+    },
+    {
+      "line": 2689,
+      "name": "mapBillingFields",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2696,
+      "name": "showBillingPhoneMapping",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2744,
+      "name": "showProcessingFees",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2759,
+      "name": "hasFees",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2784,
+      "name": "PaymentSetupStatus",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 2866,
+      "name": "isMultiPage",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2869,
+      "name": "progressBarType",
+      "type": "Cognito.ProgressBarType",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2880,
+      "name": "showProgressBar",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "isMultiPage",
+        "progressBarType"
+      ]
+    },
+    {
+      "line": 2888,
+      "name": "showPageTitles",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2891,
+      "name": "displayPageNumbersInFooter",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 2901,
+      "name": "progressBarCss",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "progressBarType",
+        "showPageTitles"
+      ]
+    },
+    {
+      "line": 2972,
+      "name": "showSaveAndResumeEmail",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "EnableSaveAndResume"
+      ]
+    },
+    {
+      "line": 2980,
+      "name": "showSaveAndResumeOptions",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "EnableSaveAndResume",
+        "RequireAuthentication"
+      ]
+    },
+    {
+      "line": 2991,
+      "name": "showWorkflowLinkOptions",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "EnableEntrySharing"
+      ]
+    },
+    {
+      "line": 3029,
+      "name": "allowLookup",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 3045,
+      "name": "secureLookupsForGuests",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 3080,
+      "name": "linkExpires",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 3096,
+      "name": "expirationDays",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 3106,
+      "name": "saveAndResumeRequiredAuthentication",
+      "type": "String",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "RequireAuthentication",
+        "RequireSaveAndResumeLinkAuthentication"
+      ]
+    },
+    {
+      "line": 3115,
+      "name": "confirmationMessage",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3128,
+      "name": "redirectUrl",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3188,
+      "name": "includeEntryDetails",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3202,
+      "name": "includeDocumentLinks",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3220,
+      "name": "documentSource",
+      "type": "Cognito.Forms.Form",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3227,
+      "name": "includedDocuments",
+      "type": "Cognito.Forms.FormDocumentTemplate",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3292,
+      "name": "showConfirmationMessage",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3308,
+      "name": "autoCreateEntriesOptions",
+      "type": "Array",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3309,
+      "name": "targetFormOptions",
+      "type": "Array",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3310,
+      "name": "prefillConfigValidationResults",
+      "type": "Array",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3311,
+      "name": "multiEntrySourceFormFieldIds",
+      "type": "Array",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3314,
+      "name": "useCustomNames",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3333,
+      "name": "emailRoleAssignments",
+      "type": "String",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3354,
+      "name": "refreshRoleAssignmentsKey",
+      "type": "Number",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 3355,
+      "name": "resetOriginalRoleAssignmentsKey",
+      "type": "Number",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 18013,
+      "name": "roles",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 18045,
+      "name": "roleOptions",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 18058,
+      "name": "readOnlyPreview",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 18077,
+      "name": "isReadOnly",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 18139,
+      "name": "readOnlyRoles",
+      "type": "String",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 18596,
+      "name": "entryStatuses",
+      "type": "Array",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 19543,
+      "name": "trackingPixel",
+      "type": "Cognito.TrackingPixel",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 19546,
+      "name": "trackingPixelCode",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 19587,
+      "name": "trackingPixelCodeStatus",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 19610,
+      "name": "trackingPixelCodeHtml",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 19665,
+      "name": "personFieldEntrySets",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 19929,
+      "name": "emailNotificationTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 19959,
+      "name": "fileStoragePathTokens",
+      "type": "Object",
+      "isList": true,
+      "isCalculated": true,
+      "onChangeOf": []
+    },
+    {
+      "line": 20015,
+      "name": "notificationSubject",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 20041,
+      "name": "notificationSubjectHtml",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 20050,
+      "name": "notificationBodyHtml",
+      "type": "String",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 20059,
+      "name": "emailNotificationCount",
+      "type": "Number",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 20074,
+      "name": "emailConfirmationCount",
+      "type": "Number",
+      "isList": false,
+      "isCalculated": false,
+      "onChangeOf": []
+    },
+    {
+      "line": 20088,
+      "name": "showRoleAssignment",
+      "type": "Boolean",
+      "isList": false,
+      "isCalculated": true,
+      "onChangeOf": [
+        "emailNotification.RoleAssignment",
+        "EnableEntrySharing"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "line": 1507,
+      "onChangeOf": [],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 1833,
+      "onChangeOf": [
+        "Roles",
+        "PeopleFormSettings{Email}"
+      ],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 2674,
+      "onChangeOf": [
+        "AllowWorkflowLinks",
+        "AllowSharedEditLinks",
+        "AllowSharedViewLinks",
+        "RequirePayment",
+        "SaveCustomerCard",
+        "ReadOnly"
+      ],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 2777,
+      "onChangeOf": [
+        "PaymentAccount",
+        "PaymentEnabled",
+        "SaveCustomerCard",
+        "RequirePayment",
+        "ProcessingFeeItemDesc",
+        "ShowSubTotal",
+        "ShowLineItems",
+        "TransactionFees",
+        "TransactionFees.Description",
+        "TransactionFees.FixedAmount",
+        "TransactionFees.PercentageAmount",
+        "IncludeProcessingFees"
+      ],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 2912,
+      "onChangeOf": [
+        "showProgressBar",
+        "progressBarType",
+        "pageTitles"
+      ],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 3325,
+      "onChangeOf": [
+        "CustomizeFieldNames",
+        "CustomizeJsonNames"
+      ],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 18150,
+      "onChangeOf": [
+        "Roles{Name}"
+      ],
+      "isHasChangesRule": false,
+      "description": "Role rename handler"
+    },
+    {
+      "line": 18159,
+      "onChangeOf": [
+        "EnableSaveAndResume",
+        "AllowTemplateSharing",
+        "EnableDeveloperMode",
+        "EnableAnalyticsTracking",
+        "EnablePostToEndpoint",
+        "Actions.Confirmation{RedirectUrl,Message}",
+        "AllowPublicLinks",
+        "RequireAuthentication",
+        "RequireWorkflowLinkAuthentication",
+        "RequireSaveAndResumeLinkAuthentication",
+        "WorkflowNotAvailableMessage",
+        "AvailabilityStart",
+        "AvailabilityEnd",
+        "NotAvailableMessage",
+        "SaveAndResumeNotAvailableMessage",
+        "DaysToLinkExpiration",
+        "PeopleFormSettings",
+        "SubmitterPersonSettings",
+        "RequirePayment"
+      ],
+      "isHasChangesRule": true,
+      "description": "Mark form dirty on change"
+    },
+    {
+      "line": 18169,
+      "onChangeOf": [
+        "HasChanges"
+      ],
+      "isHasChangesRule": true,
+      "description": "Update save button state"
+    },
+    {
+      "line": 18176,
+      "onChangeOf": [
+        "Roles{AssignedUsers}, Roles{AssignedFields}",
+        "PeopleFormSettings{Enabled}",
+        "PeopleFormSettings{Name}",
+        "PeopleFormSettings{Email}",
+        "PeopleFormSettings{Avatar}",
+        "PeopleFormSettings{IsActive}",
+        "PeopleFormSettings{InviteUsers}"
+      ],
+      "isHasChangesRule": true,
+      "description": "Mark form dirty on change"
+    },
+    {
+      "line": 18617,
+      "onChangeOf": [
+        "actions",
+        "roles",
+        "entryStatuses"
+      ],
+      "isHasChangesRule": false
+    },
+    {
+      "line": 18627,
+      "onChangeOf": [
+        "EntryStatuses{Name}"
+      ],
+      "isHasChangesRule": false,
+      "description": "Role rename handler"
+    },
+    {
+      "line": 18635,
+      "onChangeOf": [],
+      "isHasChangesRule": false,
+      "description": "Role rename handler"
+    },
+    {
+      "line": 20104,
+      "onChangeOf": [
+        "PaymentEnabled"
+      ],
+      "isHasChangesRule": false
+    }
+  ],
+  "eventHandlers": [
+    {
+      "line": 1941,
+      "name": "handleIsUrlNameManuallyChanged"
+    },
+    {
+      "line": 18860,
+      "name": "PeopleEmailMappingChanged"
+    },
+    {
+      "line": 18876,
+      "name": "PeopleNameMappingChanged"
+    },
+    {
+      "line": 18891,
+      "name": "PeopleAddressMappingChanged"
+    },
+    {
+      "line": 18897,
+      "name": "PeoplePhoneMappingChanged"
+    },
+    {
+      "line": 18903,
+      "name": "PeopleAvatarMappingChanged"
+    },
+    {
+      "line": 18919,
+      "name": "PeopleIsActiveMappingChanged"
+    },
+    {
+      "line": 18926,
+      "name": "PeopleInviteUsersChanged"
+    },
+    {
+      "line": 18933,
+      "name": "IsGuestListChanged"
+    },
+    {
+      "line": 18949,
+      "name": "OrganizationGuestAccessChanged"
+    },
+    {
+      "line": 18953,
+      "name": "GuestRegistrationChanged"
+    },
+    {
+      "line": 18986,
+      "name": "GuestProfileEditingChanged"
+    },
+    {
+      "line": 18993,
+      "name": "SecureLookupsChanged"
+    },
+    {
+      "line": 18997,
+      "name": "SecureLookupSourceChanged"
+    },
+    {
+      "line": 19010,
+      "name": "PersonFieldDefaultToChanged"
+    },
+    {
+      "line": 19151,
+      "name": "AllowPublicLinksChanged"
+    },
+    {
+      "line": 19155,
+      "name": "RequireAuthenticationChanged"
+    },
+    {
+      "line": 19168,
+      "name": "RequireWorkflowLinkAuthenticationChanged"
+    },
+    {
+      "line": 19172,
+      "name": "WorkflowNotAvailableMessageChanged"
+    },
+    {
+      "line": 19181,
+      "name": "AvailabilityStartChanged"
+    },
+    {
+      "line": 19185,
+      "name": "AvailabilityEndChanged"
+    },
+    {
+      "line": 19189,
+      "name": "NotAvailableMessageChanged"
+    },
+    {
+      "line": 19193,
+      "name": "SaveAndResumeNotAvailableMessageChanged"
+    },
+    {
+      "line": 19197,
+      "name": "SaveAndResumeExpirationDaysChanged"
+    },
+    {
+      "line": 19201,
+      "name": "SaveAndResumeLinkAuthenticationChanged"
+    },
+    {
+      "line": 19219,
+      "name": "EntryStatusChanged"
+    }
+  ],
+  "functions": [
+    {
+      "line": 40,
+      "name": "initialize",
+      "scope": "local",
+      "indent": 1
+    },
+    {
+      "line": 421,
+      "name": "createSecurityAlert",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 451,
+      "name": "createFeatureWarning",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 459,
+      "name": "openFeatureUpsellDialog",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 474,
+      "name": "featureWarningCancelled",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 1147,
+      "name": "initElementTypes",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 1822,
+      "name": "updatePublicRoleHasGuestEmail",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 1931,
+      "name": "handleFormUrlChange",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 3430,
+      "name": "calculateSummaryPresetOption",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 3445,
+      "name": "fillSummaryExpression",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 4344,
+      "name": "getLabelFriendlyTokens",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 4357,
+      "name": "handleFieldLabelInput",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 4362,
+      "name": "getSubPropertyDefaultTokens",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 4417,
+      "name": "setFieldLabel",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 4424,
+      "name": "setHideLabel",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 5142,
+      "name": "setGoogleMapsIntegrationId",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6149,
+      "name": "clearLookupFieldsCache",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6871,
+      "name": "setChoiceFieldImage",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6877,
+      "name": "removeChoiceFieldImage",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6888,
+      "name": "setChoiceImageSize",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6893,
+      "name": "setCardLabelPosition",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6903,
+      "name": "handleChoiceAction",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6919,
+      "name": "setFieldSelectionType",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 6946,
+      "name": "setFieldStyle",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 8131,
+      "name": "initBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 8380,
+      "name": "serializeElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 8512,
+      "name": "serializeProgressBar",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 8526,
+      "name": "updateViewDefinition",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 8545,
+      "name": "renderLayoutElements",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 8816,
+      "name": "refreshBuilderCanvas",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 8819,
+      "name": "renderSection",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 8934,
+      "name": "getChoiceImageSizeClass",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 8939,
+      "name": "getChoiceImageMarkup",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 8987,
+      "name": "renderTableField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9102,
+      "name": "renderColumnResizer",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9106,
+      "name": "renderQuickInsert",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9111,
+      "name": "renderTable",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9158,
+      "name": "renderTableElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9203,
+      "name": "renderElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9257,
+      "name": "renderElementBody",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9326,
+      "name": "renderPlaceholders",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9347,
+      "name": "renderField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9698,
+      "name": "generateConfirmationMarkup",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9713,
+      "name": "renderPageBreak",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9735,
+      "name": "initProgressBarProperties",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9745,
+      "name": "renderHTMLContent",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9755,
+      "name": "isEmptyHtml",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9760,
+      "name": "renderHelpText",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9765,
+      "name": "renderLabel",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9771,
+      "name": "getPermalinkRetryUrl",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9812,
+      "name": "getHideLabelClass",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9828,
+      "name": "renderSubPropertyDefault",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9888,
+      "name": "renderName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9945,
+      "name": "renderAddress",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 9994,
+      "name": "renderRatingScale",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10035,
+      "name": "suppress",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10042,
+      "name": "createDropdown",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10081,
+      "name": "hideDropdowns",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10088,
+      "name": "getDropdownOption",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10104,
+      "name": "resizeDragStart",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10142,
+      "name": "tableResizeDrag",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10145,
+      "name": "tableResizeDragEnd",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10171,
+      "name": "dragStart",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10222,
+      "name": "getElementFromQuickInsert",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10231,
+      "name": "dragEnter",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10286,
+      "name": "dragLeave",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10306,
+      "name": "dragOver",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10326,
+      "name": "dragDrop",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10379,
+      "name": "dragEnd",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 10393,
+      "name": "updateCurrentFieldTokens",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10412,
+      "name": "selectElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10527,
+      "name": "showToolbar",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10702,
+      "name": "hideToolbar",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10711,
+      "name": "cutElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10728,
+      "name": "copyElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10745,
+      "name": "cancelCutCopy",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10832,
+      "name": "sumColspans",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10838,
+      "name": "getFreeColumns",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10848,
+      "name": "itemsAfter",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10855,
+      "name": "isMinimum",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10857,
+      "name": "isRowFull",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10867,
+      "name": "canElementFitOnRow",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10871,
+      "name": "propagateSectionResize",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 10884,
+      "name": "reflowSectionCols",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11036,
+      "name": "deleteElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11192,
+      "name": "removeElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11226,
+      "name": "removeRowIfBlank",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11252,
+      "name": "removeFieldPartFromClearFields",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11262,
+      "name": "removeFieldFromClearFields",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11275,
+      "name": "canPaste",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11355,
+      "name": "canPlaceFieldInTable",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11364,
+      "name": "updateSubTypes",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11387,
+      "name": "pasteElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11677,
+      "name": "insertAbove",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11687,
+      "name": "insertBelow",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11697,
+      "name": "insertBefore",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11710,
+      "name": "insertAfter",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11723,
+      "name": "insertGridColumn",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11784,
+      "name": "insertRow",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11833,
+      "name": "handleConditionsChanged",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11842,
+      "name": "createElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 11913,
+      "name": "insertElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12102,
+      "name": "resizeGridColumn",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12117,
+      "name": "assignColumns",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12127,
+      "name": "isJustified",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12156,
+      "name": "justifyRow",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12189,
+      "name": "makeSmaller",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12202,
+      "name": "makeBigger",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12217,
+      "name": "convertSectionOrTable",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12302,
+      "name": "expandFormSettingsToggle",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12316,
+      "name": "htmlEscape",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12327,
+      "name": "htmlUnescape",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12337,
+      "name": "capitalize",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12344,
+      "name": "debounce",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12373,
+      "name": "setActiveTab",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12388,
+      "name": "repositionSettings",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12554,
+      "name": "makeChoicesSortable",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12575,
+      "name": "updateAddressFormat",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12594,
+      "name": "updateNameFormat",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12613,
+      "name": "showFieldNameEditors",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 12619,
+      "name": "getInternalName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12656,
+      "name": "getJsonName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12693,
+      "name": "updateTypeMetaInternalName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12705,
+      "name": "ensureQuantityFieldsAllocated",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12729,
+      "name": "createField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12813,
+      "name": "cloneField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 12836,
+      "name": "copyField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13019,
+      "name": "setFocus",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13028,
+      "name": "setFocusOnNext",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13050,
+      "name": "createRatingScaleQuestion",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13071,
+      "name": "renderRating",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13080,
+      "name": "renderOption",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13090,
+      "name": "getNextElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13151,
+      "name": "getElementForField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13157,
+      "name": "updateColumnLayoutOptions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13198,
+      "name": "setSelectionRange",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13212,
+      "name": "renderAddFieldSelections",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13292,
+      "name": "generateTokens",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13298,
+      "name": "isFieldProtected",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13302,
+      "name": "visitFields",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13348,
+      "name": "hasInvoicedFields",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13353,
+      "name": "hasQuantityLimitedFields",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13361,
+      "name": "hasSignature",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13366,
+      "name": "hasPassword",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13371,
+      "name": "hasLookup",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13376,
+      "name": "hasPersonField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13381,
+      "name": "setShowCustomName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13391,
+      "name": "hasTable",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13395,
+      "name": "addDropdownOption",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13410,
+      "name": "upgradeForm",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13423,
+      "name": "getParentPath",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13430,
+      "name": "removeFirstPathStep",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13437,
+      "name": "convertFieldInfosToTokens",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13576,
+      "name": "insertLinkTokens",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13592,
+      "name": "updateToken",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13609,
+      "name": "handleTokenUpdate",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13633,
+      "name": "handleEmailFieldTokenUpdate",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13666,
+      "name": "handlePersonFieldTokenUpdate",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13680,
+      "name": "refreshFieldInfos",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13705,
+      "name": "clearVueComponentTokenLists",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13715,
+      "name": "convertTokensToPropertyMappings",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13737,
+      "name": "handlePropertyMappingsUpdate",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13749,
+      "name": "processFieldInfos",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13868,
+      "name": "updateExpressionPreview",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 13892,
+      "name": "rebindHtmlEditors",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14086,
+      "name": "applyConditions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14100,
+      "name": "localizeBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 14154,
+      "name": "validateFormExpression",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14168,
+      "name": "applyFormConditions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14227,
+      "name": "clearFormConditions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14259,
+      "name": "clearEmailConditions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14265,
+      "name": "updateFormat",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14298,
+      "name": "viewUsers",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14330,
+      "name": "getElementPath",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14342,
+      "name": "findFields",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14369,
+      "name": "findField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14383,
+      "name": "getElementSelector",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14398,
+      "name": "updateCustomerEmail",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14420,
+      "name": "validateFormDefiniton",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 14430,
+      "name": "fixForm",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14520,
+      "name": "findElementsByNamePath",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14544,
+      "name": "removeField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14861,
+      "name": "clickMakeSmaller",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 14871,
+      "name": "clickMakeBigger",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 15936,
+      "name": "updatePageNumbers",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16055,
+      "name": "refreshElement",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16136,
+      "name": "renderPayment",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16225,
+      "name": "showHidePaymentBlock",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16274,
+      "name": "editPaymentAccount",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16374,
+      "name": "selectPaymentSettings",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16393,
+      "name": "ensureIncludeProcessingFees",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16405,
+      "name": "ensureProcessorIcon",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16420,
+      "name": "buildWorkflowObjectWrapper",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16425,
+      "name": "showHideWorkflowPanel",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16436,
+      "name": "selectWorkflowSettings",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16454,
+      "name": "renderWorkflow",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 16982,
+      "name": "setActionAllowedForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 16992,
+      "name": "blurActionAllowedForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17001,
+      "name": "openManageTemplates",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17053,
+      "name": "openEncryptEntriesDialog",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17090,
+      "name": "onSelectDocument",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17113,
+      "name": "selectAction",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17120,
+      "name": "openWorkflowPanel",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17124,
+      "name": "scrollInWorkflowPanel",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17173,
+      "name": "internalSelectAction",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17202,
+      "name": "deselectCurrentAction",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17220,
+      "name": "updateActionStatusSetting",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17224,
+      "name": "updateActionRedirectUrl",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17228,
+      "name": "validatePrefillConfigs",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17297,
+      "name": "getTargetFormOptions",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17320,
+      "name": "getAutoCreateEntriesOptions",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17358,
+      "name": "savePrefillConfiguration",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17399,
+      "name": "deletePrefillConfiguration",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17407,
+      "name": "updateClearFields",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17432,
+      "name": "deleteAction",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17440,
+      "name": "createNewAction",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17451,
+      "name": "addAction",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17472,
+      "name": "reorderActions",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 17480,
+      "name": "duplicateAction",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17516,
+      "name": "moveActionInDirection",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17545,
+      "name": "moveAction",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17606,
+      "name": "generateWorkflowCanvasElementMarkup",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17673,
+      "name": "generateWorkflowConfirmationPreviewMarkup",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17697,
+      "name": "actionNameUniquifier",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17719,
+      "name": "getActiveActions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17725,
+      "name": "showWorkflowActionToolbar",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 17792,
+      "name": "hideWorkflowActionToolbar",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18185,
+      "name": "updateDefaultRoles",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18247,
+      "name": "getInternalRoleName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18284,
+      "name": "addRole",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18304,
+      "name": "updateRole",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18368,
+      "name": "deleteRole",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18379,
+      "name": "reorderRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18387,
+      "name": "openLimitedWorkflowLinksUpsell",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18391,
+      "name": "openWorkflowUpsell",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18395,
+      "name": "createForRolesList",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18399,
+      "name": "parseForRolesExpr",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18410,
+      "name": "isValidForRolesExpression",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18423,
+      "name": "getForRolesExpression",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18448,
+      "name": "setReadOnlyForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18455,
+      "name": "blurReadOnly",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18464,
+      "name": "blurFormReadOnly",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18474,
+      "name": "setVisibleForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18481,
+      "name": "blurVisible",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18490,
+      "name": "setRequiredForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18496,
+      "name": "blurRequired",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18505,
+      "name": "setSignatureInput",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18509,
+      "name": "openRoleSettings",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18530,
+      "name": "shouldCondense",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18536,
+      "name": "lockFormReadOnly",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18674,
+      "name": "OpenEntryStatusExpressionBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18684,
+      "name": "OpenAllowPublicLinksExpressionBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18694,
+      "name": "OpenDefaultValueExpressionBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18707,
+      "name": "OpenDefaultWhenExpressionBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18720,
+      "name": "PersonFieldSetDefaultToCurrentUser",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18737,
+      "name": "PersonFieldSetDefaultToSpecificPerson",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18770,
+      "name": "RefreshPersonFieldSourceFormEntrySet",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18800,
+      "name": "OpenPersonFieldDefaultToExpressionBuilder",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18844,
+      "name": "DefaultPublicRoleForGuests",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 18853,
+      "name": "getPeopleFormSettings",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 18976,
+      "name": "IsQuantityLimitReadOnly",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19034,
+      "name": "personFieldAuthDialogConditionsMet",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19042,
+      "name": "lookupIsSecuredForGuests",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19048,
+      "name": "personFieldIsSecuredForGuests",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19056,
+      "name": "formHasSecurePersonField",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19065,
+      "name": "formHasSecureLookup",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19075,
+      "name": "securedLookupAuthDialogConditionsMet",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19083,
+      "name": "showSecureSettingsChoiceDialogConditionsMet",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19112,
+      "name": "lookupHasCurrentUserPredicate",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19141,
+      "name": "formHasCurrentUserPredicate",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19176,
+      "name": "GetExpressionPreview",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19209,
+      "name": "EntryStatusListReordered",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19228,
+      "name": "EntryStatusDeleted",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19238,
+      "name": "EntryStatusAdded",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19244,
+      "name": "openStatusDialog",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19259,
+      "name": "handleOpenStatusRequest",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19271,
+      "name": "collapseSettingsSections",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 19304,
+      "name": "getDefaultTrackingPixelName",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19532,
+      "name": "escapeHtml",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19752,
+      "name": "addTrackingPixel",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19774,
+      "name": "deleteTrackingPixel",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19782,
+      "name": "editTrackingPixel",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 19802,
+      "name": "initializeGoogleAnalyticsSettings",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 20303,
+      "name": "updateSenderEmailOptions",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 20361,
+      "name": "updateNotificationFromAddressBadge",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21025,
+      "name": "setSendForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21034,
+      "name": "blurSendForRoles",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21297,
+      "name": "getDefaultEmailSubject",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21310,
+      "name": "clearNotificationWarningConditions",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21547,
+      "name": "addEmailNotification",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21579,
+      "name": "handleActionAddEmail",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21582,
+      "name": "addEmail",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21613,
+      "name": "deleteEmailNotification",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21624,
+      "name": "handleActionEmailDelete",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21629,
+      "name": "deleteEmail",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21637,
+      "name": "handleActionEditEmail",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21643,
+      "name": "editEmailNotification",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21692,
+      "name": "updateEmailRoleAssignment",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21727,
+      "name": "updateWorkflowButtonText",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21733,
+      "name": "getWorkflowButtonText",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21741,
+      "name": "getSendWhenPreviews",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21775,
+      "name": "showHideEmailNotifications",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21811,
+      "name": "getIsMultiPageForm",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21815,
+      "name": "getIsPaymentForm",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 21842,
+      "name": "prepareForSave",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21913,
+      "name": "promptForFolderIfNeeded",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 21972,
+      "name": "showAuthenticationDialogIfNeeded",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 22009,
+      "name": "showSecuritySettingsChoiceDialogIfNeeded",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 22037,
+      "name": "showGuestListUpsellIfNeeded",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 22060,
+      "name": "saveForm",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 22253,
+      "name": "saveCurrentForm",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 22286,
+      "name": "saveFormEvent",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 22355,
+      "name": "enableSaveForm",
+      "scope": "local",
+      "indent": 2
+    },
+    {
+      "line": 22369,
+      "name": "setStorageIntegration",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 22392,
+      "name": "stopSyncingForm",
+      "scope": "Cognito.Forms"
+    },
+    {
+      "line": 22400,
+      "name": "toggleCloudStorageField",
+      "scope": "Cognito.Forms"
+    }
+  ]
+}

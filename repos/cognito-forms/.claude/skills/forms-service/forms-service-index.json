@@ -1,0 +1,6441 @@
+{
+  "meta": {
+    "sourceFile": "C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\Cognito.Core\\Services\\Forms\\FormsService.cs",
+    "generatedAt": "2026-04-22T17:04:30.504Z",
+    "sourceModified": "2026-04-22T16:16:39.008Z",
+    "lineCount": 9843
+  },
+  "regions": [
+    {
+      "line": 475,
+      "name": "Email Domains",
+      "endLine": 798
+    },
+    {
+      "line": 6448,
+      "name": "Import",
+      "endLine": 6789
+    },
+    {
+      "line": 6791,
+      "name": "Entry Views",
+      "endLine": 8294
+    },
+    {
+      "line": 8354,
+      "name": "XmlCleanser",
+      "endLine": 8406
+    }
+  ],
+  "methods": [
+    {
+      "line": 342,
+      "name": "GetEmbedCode",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "embedMode",
+          "type": "EmbedMode",
+          "hasDefault": true,
+          "defaultValue": "EmbedMode.IFrame"
+        }
+      ]
+    },
+    {
+      "line": 383,
+      "name": "InitializeConfiguration",
+      "returnType": "void",
+      "visibility": "protected",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": true,
+      "parameters": [
+        {
+          "name": "configuration",
+          "type": "FormsConfiguration",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 412,
+      "name": "RemoveModule",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": true,
+      "parameters": []
+    },
+    {
+      "line": 431,
+      "name": "GetAllFormsProfiles",
+      "returnType": "IEnumerable<FormsProfile>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 436,
+      "name": "GetProfileByWebUserId",
+      "returnType": "FormsProfile",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 465,
+      "name": "StoreProfile",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "profile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 470,
+      "name": "DeleteProfile",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "profile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 558,
+      "name": "GetEmailDomains",
+      "returnType": "IEnumerable<EmailDomain>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 570,
+      "name": "AddEmailDomain",
+      "returnType": "EmailDomain",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "domainName",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 579,
+      "name": "GetEmailDomain",
+      "returnType": "EmailDomain",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "domainName",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 634,
+      "name": "VerifyEmailDomain",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailDomain",
+          "type": "EmailDomain",
+          "hasDefault": false
+        },
+        {
+          "name": "force",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 711,
+      "name": "RemoveEmailDomain",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "domainName",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 800,
+      "name": "CreateBlankForm",
+      "returnType": "Form",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 836,
+      "name": "GetForm",
+      "returnType": "Form",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 841,
+      "name": "GetFormAsync",
+      "returnType": "Task<Form>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 851,
+      "name": "LogRestore",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "typesWithFailures",
+          "type": "List<string>",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 856,
+      "name": "GetFormByUrlNameOrInternalName",
+      "returnType": "Form",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 866,
+      "name": "GetFormRefByUrlNameOrInternalName",
+      "returnType": "FormRef",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 877,
+      "name": "GetFormByInternalName",
+      "returnType": "Form",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "internalName",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 886,
+      "name": "GetFormStatus",
+      "returnType": "EntityStatus",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 905,
+      "name": "ValidateFormPayment",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 953,
+      "name": "UpdateEntryData",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 974,
+      "name": "GetFormCache",
+      "returnType": "FormCache",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 997,
+      "name": "StoreFormCache",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "cache",
+          "type": "FormCache",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1002,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1012,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1020,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1028,
+      "name": "AssertUnlocked",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1033,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "user",
+          "type": "WebUserRef",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1043,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "user",
+          "type": "WebUserRef",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1051,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "user",
+          "type": "WebUserRef",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1086,
+      "name": "AssertInternal",
+      "returnType": "bool",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "memberProfile",
+          "type": "MemberProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "formsProfile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1136,
+      "name": "AssertUnlocked",
+      "returnType": "bool",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "memberProfile",
+          "type": "MemberProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1169,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "memberProfile",
+          "type": "MemberProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "formsProfile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1183,
+      "name": "Assert",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "memberProfile",
+          "type": "MemberProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "formsProfile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "throwException",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "honorLocked",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1195,
+      "name": "StoreForm",
+      "returnType": "StoreFormResult",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "update",
+          "type": "Func<Form, Form>",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "copyMode",
+          "type": "FormCopyMode",
+          "hasDefault": true,
+          "defaultValue": "0"
+        },
+        {
+          "name": "invalidateIndex",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 1485,
+      "name": "CleanupTemporaryLookupView",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "lookupViewId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1495,
+      "name": "DeleteLookupView",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "viewRef",
+          "type": "LookupViewRef",
+          "hasDefault": false
+        },
+        {
+          "name": "updateFeatures",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 1532,
+      "name": "UpdateSecureLookupForGuestsAsync",
+      "returnType": "Task",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "newSecureLookupSetting",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1552,
+      "name": "InitializeForm",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1580,
+      "name": "ValidateForm",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 1684,
+      "name": "SaveForm",
+      "returnType": "FormSaveStatus",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "folderId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "copyMode",
+          "type": "FormCopyMode",
+          "hasDefault": true,
+          "defaultValue": "0"
+        },
+        {
+          "name": "templateId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "additionalInfo",
+          "type": "CopyFormSourceInfo",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "logAuditLog",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "oldPaymentAccount",
+          "type": "IdNamePair",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 1972,
+      "name": "EncryptForm",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "userId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 1989,
+      "name": "UpdateFormFeatures",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "folder",
+          "type": "Folder",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 2008,
+      "name": "LogFormFeatureUpdate",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "updatedFeatures",
+          "type": "FormFeatures",
+          "hasDefault": false
+        },
+        {
+          "name": "oldFeatures",
+          "type": "FormFeatures",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 2051,
+      "name": "GetStatusChanges",
+      "returnType": "IReadOnlyCollection<StatusChange>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "oldStatuses",
+          "type": "ICollection<FormEntryStatus>",
+          "hasDefault": false
+        },
+        {
+          "name": "newStatuses",
+          "type": "ICollection<FormEntryStatus>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2080,
+      "name": "AssertCanManageFormRolePermissions",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2086,
+      "name": "RemoveFormRole",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "profile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "forms",
+          "type": "params FormRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2111,
+      "name": "SetFormRole",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "profile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "role",
+          "type": "Role",
+          "hasDefault": false
+        },
+        {
+          "name": "forms",
+          "type": "params FormRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2143,
+      "name": "AssertCanManageFolderRolePermissions",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2149,
+      "name": "RemoveFolderRole",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "profile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "folders",
+          "type": "params FolderRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2172,
+      "name": "SetFolderRole",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "profile",
+          "type": "FormsProfile",
+          "hasDefault": false
+        },
+        {
+          "name": "role",
+          "type": "Role",
+          "hasDefault": false
+        },
+        {
+          "name": "folders",
+          "type": "params FolderRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2210,
+      "name": "DeleteFormStatistics",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2215,
+      "name": "DeletePlanMonthlyStatistics",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "statisticsId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2220,
+      "name": "DeleteForm",
+      "returnType": "Task",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2336,
+      "name": "RemoveFromRecentForms",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2355,
+      "name": "GetForms",
+      "returnType": "IEnumerable<FormRef>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "restricted",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 2369,
+      "name": "GetForms",
+      "returnType": "IEnumerable<FormRef>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "task",
+          "type": "SecurityTask",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2379,
+      "name": "GetSharedForms",
+      "returnType": "IEnumerable<FormRef>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "org",
+          "type": "Organization",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 2394,
+      "name": "SyncEntriesWithFormDefinition",
+      "returnType": "void",
+      "visibility": "internal",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2425,
+      "name": "SetHipaaCompliant",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "status",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 2430,
+      "name": "SetHipaaCompliant",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "status",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "baaPdf",
+          "type": "FileData",
+          "hasDefault": false
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 2493,
+      "name": "SetGdprCompliant",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "status",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "dpaPdf",
+          "type": "FileData",
+          "hasDefault": false
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 2541,
+      "name": "RemoveBadFileAttachments",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "newEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2558,
+      "name": "FindBadAttachments",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "instance",
+          "type": "ModelInstance",
+          "hasDefault": false
+        },
+        {
+          "name": "oldAttachments",
+          "type": "IEnumerable<FileDataRef>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2607,
+      "name": "FormExists",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 2612,
+      "name": "StoreEntry",
+      "returnType": "SubmissionResult",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "updateIndexes",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "disallowQuantityLimitExceeded",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "preventVersionMismatch",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "updateQuantities",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "oldOrder",
+          "type": "Order",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "errorDetails",
+          "type": "NameValueCollection",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "performanceProfiler",
+          "type": "PerformanceProfiler",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "allowIncomplete",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "recreateOnDelete",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 2926,
+      "name": "SaveEntry",
+      "returnType": "SubmissionResult",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "clientOrderAmount",
+          "type": "decimal?",
+          "hasDefault": false
+        },
+        {
+          "name": "origin",
+          "type": "Origin",
+          "hasDefault": false
+        },
+        {
+          "name": "finalOrder",
+          "type": "out Order",
+          "hasDefault": false
+        },
+        {
+          "name": "behavior",
+          "type": "SubmissionBehavior",
+          "hasDefault": true,
+          "defaultValue": "SubmissionBehavior.SuppressPayment"
+        },
+        {
+          "name": "lastPageViewed",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "\"\""
+        },
+        {
+          "name": "patch",
+          "type": "JsonPatchDocument",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "fromImport",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "integrationId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 3054,
+      "name": "LoadQuantities",
+      "returnType": "IEnumerable<Quantity>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "ids",
+          "type": "IEnumerable<string>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3059,
+      "name": "GetQuantities",
+      "returnType": "IQueryable<Quantity>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3064,
+      "name": "DeleteQuantities",
+      "returnType": "IEnumerable<Quantity>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3076,
+      "name": "RecalculateQuantities",
+      "returnType": "IEnumerable<Quantity>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3098,
+      "name": "SubmitEntry",
+      "returnType": "SubmissionResult",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "ref FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "clientOrderAmount",
+          "type": "decimal?",
+          "hasDefault": false
+        },
+        {
+          "name": "origin",
+          "type": "Origin",
+          "hasDefault": false
+        },
+        {
+          "name": "finalOrder",
+          "type": "out Order",
+          "hasDefault": false
+        },
+        {
+          "name": "behavior",
+          "type": "SubmissionBehavior",
+          "hasDefault": true,
+          "defaultValue": "0"
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "\"\""
+        },
+        {
+          "name": "patch",
+          "type": "JsonPatchDocument",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "fromImport",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "integrationId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "lookupSyncContext",
+          "type": "LinkedLookupSyncContext",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 3553,
+      "name": "FetchAndRecordUser",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "auditRecord",
+          "type": "ref FormEntryAuditRecord",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3583,
+      "name": "GenerateOrderWithoutFees",
+      "returnType": "Order",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "clientOrderAmount",
+          "type": "decimal?",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3595,
+      "name": "AssociateOrderWithEntry",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": false
+        },
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "paymentProcessor",
+          "type": "PaymentProcessor",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3907,
+      "name": "ShouldIncludeProcessingFees",
+      "returnType": "bool",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 3912,
+      "name": "SendEntryNotifications",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "oldFormEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "finalOrder",
+          "type": "Order",
+          "hasDefault": false
+        },
+        {
+          "name": "entryAction",
+          "type": "EntryAction?",
+          "hasDefault": false
+        },
+        {
+          "name": "behavior",
+          "type": "SubmissionBehavior",
+          "hasDefault": true,
+          "defaultValue": "0"
+        },
+        {
+          "name": "action",
+          "type": "WorkflowAction",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "auditRecord",
+          "type": "FormEntryAuditRecord",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4106,
+      "name": "SendEmailNotifications",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "action",
+          "type": "WorkflowAction",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "oldFormEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": false
+        },
+        {
+          "name": "behavior",
+          "type": "SubmissionBehavior",
+          "hasDefault": false
+        },
+        {
+          "name": "sendImmediately",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "auditRecord",
+          "type": "FormEntryAuditRecord",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4214,
+      "name": "SendEmailNotification",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "notification",
+          "type": "EntryEmailNotification",
+          "hasDefault": false
+        },
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "sharedLinkMessage",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4264,
+      "name": "CreateSignatureFieldToken",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "organization",
+          "type": "Organization",
+          "hasDefault": false
+        },
+        {
+          "name": "entryId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "fieldPath",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "expiration",
+          "type": "TimeSpan",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4271,
+      "name": "TryDecryptSignatureToken",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "code",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "out Form",
+          "hasDefault": false
+        },
+        {
+          "name": "entry",
+          "type": "out FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "fieldPath",
+          "type": "out string",
+          "hasDefault": false
+        },
+        {
+          "name": "expirationDate",
+          "type": "out DateTime?",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4313,
+      "name": "GetAttachmentRefs",
+      "returnType": "IEnumerable<FileDataRef>",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4326,
+      "name": "GetAttachments",
+      "returnType": "IEnumerable<FileData>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "includeProtectedFileFields",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "includeHiddenFiles",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 4350,
+      "name": "FindAttachments",
+      "returnType": "IEnumerable<FileDataRef>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "parentType",
+          "type": "ModelType",
+          "hasDefault": false
+        },
+        {
+          "name": "instance",
+          "type": "ModelInstance",
+          "hasDefault": false
+        },
+        {
+          "name": "excludeProtectedFileFields",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "excludeHiddenFields",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "elements",
+          "type": "View.Element[]",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4412,
+      "name": "IsPaymentRequired",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4470,
+      "name": "BuildOrder",
+      "returnType": "Order",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "formUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4568,
+      "name": "GenerateOrderDescription",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "paymentProcessor",
+          "type": "PaymentProcessor",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4586,
+      "name": "GetEntryNumber",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4591,
+      "name": "GenerateOrderId",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4599,
+      "name": "GenerateOrderId",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "entryNumber",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4604,
+      "name": "GenerateTestOrderId",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4609,
+      "name": "RefundOrder",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "manualRefund",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4642,
+      "name": "MakePayment",
+      "returnType": "SubmissionResult",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "clientOrderAmount",
+          "type": "decimal?",
+          "hasDefault": false
+        },
+        {
+          "name": "paymentToken",
+          "type": "PaymentToken",
+          "hasDefault": false
+        },
+        {
+          "name": "customerCard",
+          "type": "CustomerCard",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "out Order",
+          "hasDefault": false
+        },
+        {
+          "name": "payment",
+          "type": "out Payment.Model.Payment",
+          "hasDefault": false
+        },
+        {
+          "name": "offSession",
+          "type": "bool?",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4746,
+      "name": "GetApplicationFee",
+      "returnType": "TransactionFee",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4752,
+      "name": "ReconcilePayment",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "customerCard",
+          "type": "out CustomerCard",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4801,
+      "name": "GetRequiredRoleLinks",
+      "returnType": "IEnumerable<WorkflowRole>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "template",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4811,
+      "name": "EnsureEntryLinks",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "roles",
+          "type": "IEnumerable<WorkflowRole>",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 4850,
+      "name": "ConfigureSaveResumeEmailNotification",
+      "returnType": "EntryEmailNotification",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "saveResumeEmails",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "notification",
+          "type": "EntryEmailNotification",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4876,
+      "name": "GetNotificationEntryInstance",
+      "returnType": "FormEntry",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "notification",
+          "type": "EntryEmailNotification",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 4903,
+      "name": "ConfigureEmailNotification",
+      "returnType": "EntryEmailNotification",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "originalNotification",
+          "type": "EntryEmailNotification",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 5105,
+      "name": "GetEntry",
+      "returnType": "FormEntry",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "bypassCache",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 5111,
+      "name": "GetOrderJson",
+      "returnType": "IEnumerable<EntityJson>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entries",
+          "type": "IEnumerable<EntryKey>",
+          "hasDefault": false
+        },
+        {
+          "name": "entrySets",
+          "type": "params EntrySet[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5146,
+      "name": "IsEntryRead",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5152,
+      "name": "GetEntryJsonAsync",
+      "returnType": "IAsyncEnumerable<EntityJson>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entries",
+          "type": "IEnumerable<IEntryKey>",
+          "hasDefault": false
+        },
+        {
+          "name": "entrySets",
+          "type": "params EntrySet[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5282,
+      "name": "GetObjectData",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": true,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "info",
+          "type": "SerializationInfo",
+          "hasDefault": false
+        },
+        {
+          "name": "context",
+          "type": "StreamingContext",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5393,
+      "name": "CreateLinkedLookupSyncContextForCurrentUser",
+      "returnType": "LinkedLookupSyncContext",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 5402,
+      "name": "DeleteEntries",
+      "returnType": "IAsyncEnumerable<EntryKey>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entries",
+          "type": "ICollection<EntryKey>",
+          "hasDefault": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5449,
+      "name": "DeleteEntry",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5481,
+      "name": "BulkSyncEntryDeletionsAsync",
+      "returnType": "Task",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryIds",
+          "type": "HashSet<string>",
+          "hasDefault": false
+        },
+        {
+          "name": "indexUpdater",
+          "type": "BulkIndexUpdater",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5517,
+      "name": "CreateThemeCss",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "theme",
+          "type": "ThemeSettings",
+          "hasDefault": false
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "\"\""
+        },
+        {
+          "name": "includeTags",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "organizationId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 5648,
+      "name": "EnsureTheme",
+      "returnType": "ThemeSettings",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "theme",
+          "type": "ThemeSettings",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5681,
+      "name": "GetFormFeatures",
+      "returnType": "FormFeatures",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5707,
+      "name": "GetAllFormFeatures",
+      "returnType": "IEnumerable<FormFeatures>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 5712,
+      "name": "GetOrganizationFeatures",
+      "returnType": "OrganizationFeatures",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "orgRef",
+          "type": "OrganizationRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5717,
+      "name": "StoreOrganizationFeatures",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "feats",
+          "type": "OrganizationFeatures",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5722,
+      "name": "StoreFormStatistics",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formStatistics",
+          "type": "FormStatistics",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5727,
+      "name": "GetFormStatistics",
+      "returnType": "FormStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5746,
+      "name": "GetAllFormStatistics",
+      "returnType": "IEnumerable<FormStatistics>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "includeOrphans",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 5751,
+      "name": "UpdateFormStatistics",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "action",
+          "type": "Func<FormStatistics, FormStatistics>",
+          "hasDefault": false
+        },
+        {
+          "name": "create",
+          "type": "Func<FormStatistics>",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 5789,
+      "name": "UpdateFormStatistics",
+      "returnType": "DateTime?",
+      "visibility": "internal",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "action",
+          "type": "EntryAction",
+          "hasDefault": true,
+          "defaultValue": "EntryAction.Add"
+        },
+        {
+          "name": "oldEntryStatus",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "storageDelta",
+          "type": "long",
+          "hasDefault": true,
+          "defaultValue": "0L"
+        },
+        {
+          "name": "unreadDelta",
+          "type": "int",
+          "hasDefault": true,
+          "defaultValue": "0"
+        }
+      ]
+    },
+    {
+      "line": 5847,
+      "name": "ReconcileFormStatistics",
+      "returnType": "FormStatisticsDifference",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "store",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 5873,
+      "name": "CreateFormStatistics",
+      "returnType": "FormStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5929,
+      "name": "GetFormStatistics",
+      "returnType": "IEnumerable<FormStatistics>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 5938,
+      "name": "GetFormMonthlyStatistics",
+      "returnType": "FormMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5943,
+      "name": "IsEntryLocked",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5955,
+      "name": "GetPlanMonthlyStatistics",
+      "returnType": "PlanMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 5981,
+      "name": "CompilePlanStatisticsForFormStatistics",
+      "returnType": "PlanStatisticsDelta",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6016,
+      "name": "InitializePlanMonthlyStatistics",
+      "returnType": "PlanMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6038,
+      "name": "GetDocumentTemplateMonthlyStatistics",
+      "returnType": "IEnumerable<DocumentTemplateMonthlyStatistics>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6053,
+      "name": "UpdateDocumentTemplateMonthlyStatistics",
+      "returnType": "DocumentTemplateMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        },
+        {
+          "name": "update",
+          "type": "Func<DocumentTemplateMonthlyStatistics, DocumentTemplateMonthlyStatistics>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6080,
+      "name": "UpdatePlanMonthlyStatistics",
+      "returnType": "PlanMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "delta",
+          "type": "PlanStatisticsDelta",
+          "hasDefault": false
+        },
+        {
+          "name": "triggeringFormId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6085,
+      "name": "GetStorageLimitExceededBehavior",
+      "returnType": "LimitExceededBehavior",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 6095,
+      "name": "GetStorageOverage",
+      "returnType": "long",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "planLimit",
+          "type": "long",
+          "hasDefault": false
+        },
+        {
+          "name": "stats",
+          "type": "PlanMonthlyStatistics",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6102,
+      "name": "SetReferralCredit",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "credit",
+          "type": "decimal",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6109,
+      "name": "GetEntryLimitExceededBehavior",
+      "returnType": "LimitExceededBehavior",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 6122,
+      "name": "ChangePlan",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "plan",
+          "type": "Plan",
+          "hasDefault": false
+        },
+        {
+          "name": "isTrial",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "wasTrial",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6219,
+      "name": "ChangeBillingInformation",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "billingInformation",
+          "type": "BillingInformation",
+          "hasDefault": false
+        },
+        {
+          "name": "oldBillingInformation",
+          "type": "BillingInformation",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6233,
+      "name": "UpdateFormMonthlyStatistics",
+      "returnType": "FormMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        },
+        {
+          "name": "update",
+          "type": "Func<FormMonthlyStatistics, FormMonthlyStatistics>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6238,
+      "name": "CreateFormMonthlyStatistics",
+      "returnType": "FormMonthlyStatistics",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "month",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6251,
+      "name": "UpdateEntryStatus",
+      "returnType": "SubmissionResult",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "triggerEntryNotifications",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        },
+        {
+          "name": "updateIndexes",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 6317,
+      "name": "UpdateEntryStatus",
+      "returnType": "IAsyncEnumerable<UpdateStatusResult>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entries",
+          "type": "ICollection<EntryKey>",
+          "hasDefault": false
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "entrySet",
+          "type": "EntrySet",
+          "hasDefault": false
+        },
+        {
+          "name": "triggerEntryNotifications",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 6362,
+      "name": "UpdateThemeSettings",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "themeSettings",
+          "type": "ThemeSettings",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6406,
+      "name": "GetFormTemplateCategories",
+      "returnType": "IEnumerable<string>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 6411,
+      "name": "GetFormTemplates",
+      "returnType": "IEnumerable<FormTemplate>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "category",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6422,
+      "name": "GetFormTemplate",
+      "returnType": "FormTemplate",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6427,
+      "name": "GetPlanLimits",
+      "returnType": "PlanLimitStats",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 6481,
+      "name": "QueueImport",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "config",
+          "type": "FormEntryImportConfiguration",
+          "hasDefault": false
+        },
+        {
+          "name": "import",
+          "type": "ImportHistory",
+          "hasDefault": false
+        },
+        {
+          "name": "options",
+          "type": "FormEntryImportOptions",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "formsUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "user",
+          "type": "WebUser",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6516,
+      "name": "EnqueueImportCompletedMessage",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "importHistory",
+          "type": "ImportHistory",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6540,
+      "name": "CreateAndQueueImport",
+      "returnType": "ImportHistory",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "config",
+          "type": "FormEntryImportConfiguration",
+          "hasDefault": false
+        },
+        {
+          "name": "file",
+          "type": "FileDataRef",
+          "hasDefault": false
+        },
+        {
+          "name": "options",
+          "type": "FormEntryImportOptions",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6569,
+      "name": "ImportEntryAsync",
+      "returnType": "Task<SubmissionResult>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "indexUpdater",
+          "type": "BulkIndexUpdater",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "memberProfileId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "integrationId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6682,
+      "name": "SearchImportHistory",
+      "returnType": "Task<IEnumerable<ImportHistory>>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "active",
+          "type": "bool?",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6694,
+      "name": "GenerateImportTemplate",
+      "returnType": "Task",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "outputStream",
+          "type": "Stream",
+          "hasDefault": false
+        },
+        {
+          "name": "fileType",
+          "type": "ExportFileType",
+          "hasDefault": false
+        },
+        {
+          "name": "useExternalIdentifier",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "externalIdentifier",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6745,
+      "name": "PreviewEntryImportChanges",
+      "returnType": "Task<EntryImportChanges>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "file",
+          "type": "FileData",
+          "hasDefault": false
+        },
+        {
+          "name": "importMode",
+          "type": "ImportExistingMode",
+          "hasDefault": false
+        },
+        {
+          "name": "useExternalIdentifier",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "externalIdentifier",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6778,
+      "name": "UpdateFormExternalIdentifier",
+      "returnType": "Form",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "externalIdentifier",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6793,
+      "name": "GetEntrySet",
+      "returnType": "EntrySet",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "token",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6810,
+      "name": "GetViewEntryToken",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "view",
+          "type": "EntryViewRef",
+          "hasDefault": false
+        },
+        {
+          "name": "permission",
+          "type": "EntryPermission",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6815,
+      "name": "GetAllEntriesToken",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6820,
+      "name": "GetLookupToken",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "containingForm",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "lookup",
+          "type": "FieldLookup",
+          "hasDefault": false
+        },
+        {
+          "name": "session",
+          "type": "Session",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 6834,
+      "name": "GetEntryViewFilterTranslation",
+      "returnType": "ExoWeb.JavaScriptExpressionTranslator.LambdaTranslation",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "filter",
+          "type": "EntryViewFilter",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6890,
+      "name": "GetEntryViewInternalName",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6902,
+      "name": "CreateEntryView",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "user",
+          "type": "WebUser",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "entryView",
+          "type": "EntryView",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6909,
+      "name": "CreateEntryView",
+      "returnType": "EntryView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "\"New View\""
+        },
+        {
+          "name": "selectedRole",
+          "type": "int?",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "sharedWithMe",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "isTaskView",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "preventEntryCreation",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 6920,
+      "name": "GetEntryViewSubType",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryView",
+          "type": "EntryView",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6932,
+      "name": "GetLookupView",
+      "returnType": "LookupView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "lookup",
+          "type": "FieldLookup",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6937,
+      "name": "GetLookupView",
+      "returnType": "LookupView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "lookup",
+          "type": "FieldLookup",
+          "hasDefault": false
+        },
+        {
+          "name": "containingForm",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6951,
+      "name": "GetLookupView",
+      "returnType": "LookupView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 6995,
+      "name": "GetLookupViews",
+      "returnType": "IEnumerable<LookupView>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "sourceForm",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7022,
+      "name": "ReorderEntryView",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "viewId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "afterViewId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "assertPermissions",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 7102,
+      "name": "GetEntryViews",
+      "returnType": "IEnumerable<EntryView>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "validate",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 7134,
+      "name": "GetEntryView",
+      "returnType": "EntryView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "view",
+          "type": "int",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7144,
+      "name": "GetEntryView",
+      "returnType": "EntryView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7161,
+      "name": "GetAllEntriesView",
+      "returnType": "EntryView",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "includeAllFields",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 7174,
+      "name": "SaveEntryView",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "view",
+          "type": "EntryView",
+          "hasDefault": false
+        },
+        {
+          "name": "addToAuditLog",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 7325,
+      "name": "DeleteEntryView",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "view",
+          "type": "EntryView",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7356,
+      "name": "RenameEntryView",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7393,
+      "name": "ValidateEntryView",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "view",
+          "type": "EntryView",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7464,
+      "name": "GetFieldInfos",
+      "returnType": "IEnumerable<Cognito.Model.FieldInfo>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "typeMeta",
+          "type": "TypeMeta",
+          "hasDefault": false
+        },
+        {
+          "name": "view",
+          "type": "View",
+          "hasDefault": false
+        },
+        {
+          "name": "includeSections",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "includeLists",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "includeLookups",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "useJsonNames",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 7474,
+      "name": "GetEntryIds",
+      "returnType": "Task<IEnumerable<FormEntryIndex>>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7485,
+      "name": "IsDuplicateTitle",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formTitle",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "folderId",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 7511,
+      "name": "CreateFolder",
+      "returnType": "Folder",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7537,
+      "name": "GetFolders",
+      "returnType": "IEnumerable<Folder>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "filterAccess",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        },
+        {
+          "name": "includeRoot",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 7562,
+      "name": "GetFolderMetadata",
+      "returnType": "IEnumerable<FolderMeta>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formFeatures",
+          "type": "IEnumerable<FormFeatures>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7783,
+      "name": "GetNonUserSpecificFormMeta",
+      "returnType": "FormMeta",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "overEntryLimit",
+          "type": "bool",
+          "hasDefault": false
+        },
+        {
+          "name": "statistics",
+          "type": "FormStatistics",
+          "hasDefault": false
+        },
+        {
+          "name": "features",
+          "type": "FormFeatures",
+          "hasDefault": false
+        },
+        {
+          "name": "canManageForms",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7845,
+      "name": "EnsureValidFormStatistics",
+      "returnType": "Task<FormStatistics>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7937,
+      "name": "GetFolder",
+      "returnType": "Folder",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 7942,
+      "name": "UpdateFolderArchiveStatus",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "archive",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 7982,
+      "name": "DeleteFolder",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8009,
+      "name": "RenameFolder",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "folder",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8043,
+      "name": "MoveForms",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "destination",
+          "type": "FolderRef",
+          "hasDefault": false
+        },
+        {
+          "name": "forms",
+          "type": "params FormRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8086,
+      "name": "ArchiveForms",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "forms",
+          "type": "params FormRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8157,
+      "name": "UnarchiveForms",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "forms",
+          "type": "params FormRef[]",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8199,
+      "name": "IsArchived",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8206,
+      "name": "IsArchived",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "features",
+          "type": "FormFeatures",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8211,
+      "name": "IsFormArchived",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "features",
+          "type": "FormFeatures",
+          "hasDefault": false
+        },
+        {
+          "name": "configuration",
+          "type": "FormsConfiguration",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8216,
+      "name": "CanCreateForm",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 8221,
+      "name": "CanShareAsTemplate",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "features",
+          "type": "FormFeatures",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 8227,
+      "name": "CanShareTemplateEntries",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8237,
+      "name": "FavoriteForm",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "favorite",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 8247,
+      "name": "FavoriteForm",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "favorite",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "true"
+        }
+      ]
+    },
+    {
+      "line": 8265,
+      "name": "UpdateRecentForms",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8309,
+      "name": "OnInvoke",
+      "returnType": "void",
+      "visibility": "protected",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": true,
+      "parameters": [
+        {
+          "name": "root",
+          "type": "ModelInstance",
+          "hasDefault": false
+        },
+        {
+          "name": "modelEvent",
+          "type": "ModelEvent",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8316,
+      "name": "GetBillingInfo",
+      "returnType": "CustomerInformation",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "instance",
+          "type": "ModelInstance",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8332,
+      "name": "GetBillingInfo",
+      "returnType": "object",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "instance",
+          "type": "ModelInstance",
+          "hasDefault": false
+        },
+        {
+          "name": "p",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8358,
+      "name": "Clean",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "xmlString",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8375,
+      "name": "CleanNodes",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "nodes",
+          "type": "XmlNodeList",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8408,
+      "name": "GenerateEntryDocumentCode",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "template",
+          "type": "FormDocumentTemplate",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": false
+        },
+        {
+          "name": "expiration",
+          "type": "TimeSpan",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8413,
+      "name": "GenerateEntryDocumentCode",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "organization",
+          "type": "Organization",
+          "hasDefault": false
+        },
+        {
+          "name": "template",
+          "type": "FormDocumentTemplate",
+          "hasDefault": false
+        },
+        {
+          "name": "entryId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "orderId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "expiration",
+          "type": "TimeSpan",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8430,
+      "name": "CreateEntryDocumentLink",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "template",
+          "type": "FormDocumentTemplate",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "Order",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8435,
+      "name": "DecryptAndValidateEntryDocumentCode",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "code",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "form",
+          "type": "out Form",
+          "hasDefault": false
+        },
+        {
+          "name": "entry",
+          "type": "out FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "template",
+          "type": "out FormDocumentTemplate",
+          "hasDefault": false
+        },
+        {
+          "name": "order",
+          "type": "out Order",
+          "hasDefault": false
+        },
+        {
+          "name": "expirationDate",
+          "type": "out DateTime?",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8569,
+      "name": "GenerateAccessToken",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8585,
+      "name": "ValidateAccessToken",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "accessToken",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8662,
+      "name": "StoreFormReferrer",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "referrer",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8732,
+      "name": "CanShareLink",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8753,
+      "name": "CanShareSaveAndResumeLink",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8764,
+      "name": "CreateSharedLink",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "type",
+          "type": "SharedLinkType",
+          "hasDefault": false
+        },
+        {
+          "name": "daysToLinkExpiration",
+          "type": "int",
+          "hasDefault": false
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 8773,
+      "name": "CreateSharedLink",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "type",
+          "type": "SharedLinkType",
+          "hasDefault": false
+        },
+        {
+          "name": "expirationDate",
+          "type": "DateTime?",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "roleId",
+          "type": "int?",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 8781,
+      "name": "CreateWorkflowLink",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "roleId",
+          "type": "int",
+          "hasDefault": false
+        },
+        {
+          "name": "daysToLinkExpiration",
+          "type": "int",
+          "hasDefault": false
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "userEmail",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 8793,
+      "name": "CreateTaskLink",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "viewId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "recipient",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8798,
+      "name": "CreateSaveAndResumeLink",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formEntry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "daysToLinkExpiration",
+          "type": "int",
+          "hasDefault": false
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "userEmail",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "entryToken",
+          "type": "EntryToken",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 8847,
+      "name": "ReplaceEntryEmailLinksWithSlugs",
+      "returnType": "string",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "emailBody",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "assignedRoleId",
+          "type": "int?",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8859,
+      "name": "PopulateEntryEmailLinkSlugs",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        },
+        {
+          "name": "notificationType",
+          "type": "EmailNotificationType",
+          "hasDefault": false
+        },
+        {
+          "name": "roleId",
+          "type": "int?",
+          "hasDefault": false
+        },
+        {
+          "name": "emailBody",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "daysToLinkExpiration",
+          "type": "int?",
+          "hasDefault": false
+        },
+        {
+          "name": "recipient",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "embedUrl",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 8876,
+      "name": "PopulateTaskLinkSlugs",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "viewId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "recipient",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "emailBody",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8882,
+      "name": "TryStreamRenderedForm",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "stream",
+          "type": "Stream",
+          "hasDefault": false
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8889,
+      "name": "StoreRenderedForm",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "form",
+          "type": "Form",
+          "hasDefault": false
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 8916,
+      "name": "SearchEntries",
+      "returnType": "IEnumerable<FormEntry>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "keywords",
+          "type": "IEnumerable<string>",
+          "hasDefault": false
+        },
+        {
+          "name": "filter",
+          "type": "ModelExpression",
+          "hasDefault": false
+        },
+        {
+          "name": "top",
+          "type": "int",
+          "hasDefault": true,
+          "defaultValue": "500"
+        },
+        {
+          "name": "skip",
+          "type": "int",
+          "hasDefault": true,
+          "defaultValue": "0"
+        }
+      ]
+    },
+    {
+      "line": 8967,
+      "name": "SearchInstance",
+      "returnType": "bool",
+      "visibility": "internal",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "instance",
+          "type": "ModelInstance",
+          "hasDefault": false
+        },
+        {
+          "name": "keywords",
+          "type": "IEnumerable<string>",
+          "hasDefault": false
+        },
+        {
+          "name": "filter",
+          "type": "ModelExpression",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9052,
+      "name": "TryCopyFile",
+      "returnType": "bool",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "sourceOrganization",
+          "type": "Organization",
+          "hasDefault": false
+        },
+        {
+          "name": "fileId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "newFileData",
+          "type": "out FileData",
+          "hasDefault": false
+        },
+        {
+          "name": "encryptIfNotEncrypted",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 9080,
+      "name": "StorageUpdated",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "storage",
+          "type": "long",
+          "hasDefault": false
+        },
+        {
+          "name": "plan",
+          "type": "Plan",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "storageWasRecalculated",
+          "type": "bool",
+          "hasDefault": true,
+          "defaultValue": "false"
+        }
+      ]
+    },
+    {
+      "line": 9165,
+      "name": "SendOwnersEmail",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailContent",
+          "type": "EmailContent",
+          "hasDefault": false
+        },
+        {
+          "name": "tokens",
+          "type": "IDictionary<string, string>",
+          "hasDefault": false
+        },
+        {
+          "name": "emailSubject",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "\"\""
+        }
+      ]
+    },
+    {
+      "line": 9171,
+      "name": "StoreAndQueueEmail",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "email",
+          "type": "EntryEmail",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9235,
+      "name": "GetEmail",
+      "returnType": "EntryEmail",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9243,
+      "name": "GetEntryEmails",
+      "returnType": "IEnumerable<EntryEmail>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9249,
+      "name": "GetEmails",
+      "returnType": "IEnumerable<EntryEmail>",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9260,
+      "name": "ReconcileEmailStatuses",
+      "returnType": "IEnumerable<EntryEmail>",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9278,
+      "name": "ReconcileEmailStatus",
+      "returnType": "EntryEmail",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9296,
+      "name": "UpdateEmailReceipts",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "sendReceipt",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "recipientReceipts",
+          "type": "Dictionary<string, string>",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "recipientDeliveryStatuses",
+          "type": "Dictionary<string, EmailDeliveryStatus>",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 9362,
+      "name": "UpdateEmailStatus",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "recipientAddress",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "newCode",
+          "type": "EmailStatusCode",
+          "hasDefault": false
+        },
+        {
+          "name": "rawStatus",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "timestamp",
+          "type": "DateTime",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9416,
+      "name": "EnsurePendingEmailMarker",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9426,
+      "name": "RemovePendingEmailMarker",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9431,
+      "name": "DeleteEntryEmail",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9444,
+      "name": "UpdateEmailStatus",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "emailId",
+          "type": "string",
+          "hasDefault": false
+        },
+        {
+          "name": "newCode",
+          "type": "EmailStatusCode",
+          "hasDefault": false
+        },
+        {
+          "name": "rawStatus",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 9487,
+      "name": "UpdateEntryPageSettings",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "formRef",
+          "type": "FormRef",
+          "hasDefault": false
+        },
+        {
+          "name": "update",
+          "type": "Action<EntryPageSettings>",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9504,
+      "name": "GetRedirectUrl",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entry",
+          "type": "FormEntry",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9526,
+      "name": "UpdateOrganizationFormFeatures",
+      "returnType": "Task",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": []
+    },
+    {
+      "line": 9590,
+      "name": "UpdateEntryReadState",
+      "returnType": "void",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entries",
+          "type": "string[]",
+          "hasDefault": false
+        },
+        {
+          "name": "read",
+          "type": "bool",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9625,
+      "name": "LogEvent",
+      "returnType": "void",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "message",
+          "type": "CognitoEvent",
+          "hasDefault": false
+        },
+        {
+          "name": "delay",
+          "type": "TimeSpan?",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 9630,
+      "name": "QueueMessage",
+      "returnType": "bool",
+      "visibility": "private",
+      "isAsync": false,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "message",
+          "type": "QueueMessage",
+          "hasDefault": false
+        },
+        {
+          "name": "delay",
+          "type": "TimeSpan?",
+          "hasDefault": true,
+          "defaultValue": "null"
+        }
+      ]
+    },
+    {
+      "line": 9635,
+      "name": "GenerateLineItemsAsync",
+      "returnType": "IAsyncEnumerable<Plans.Model.LineItem>",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "plan",
+          "type": "Plan",
+          "hasDefault": false
+        },
+        {
+          "name": "currentLineItems",
+          "type": "ICollection<Plans.Model.LineItem>",
+          "hasDefault": false
+        },
+        {
+          "name": "monthlyStats",
+          "type": "PlanMonthlyStatistics",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9735,
+      "name": "OnInvoiceCreatedAsync",
+      "returnType": "Task",
+      "visibility": "public",
+      "isAsync": true,
+      "isStatic": false,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "subscription",
+          "type": "Subscription",
+          "hasDefault": false
+        },
+        {
+          "name": "e",
+          "type": "SubscriptionInvoiceCreatedEvent",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9774,
+      "name": "Parse",
+      "returnType": "int",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "entryStatus",
+          "type": "string",
+          "hasDefault": false
+        }
+      ]
+    },
+    {
+      "line": 9796,
+      "name": "ToString",
+      "returnType": "string",
+      "visibility": "public",
+      "isAsync": false,
+      "isStatic": true,
+      "isVirtual": false,
+      "isOverride": false,
+      "parameters": [
+        {
+          "name": "status",
+          "type": "int",
+          "hasDefault": false
+        }
+      ]
+    }
+  ],
+  "nestedTypes": [
+    {
+      "line": 5263,
+      "name": "FormStorageSummary",
+      "kind": "class",
+      "visibility": "public"
+    },
+    {
+      "line": 8299,
+      "name": "OrderLookupRule",
+      "kind": "class",
+      "visibility": "private"
+    },
+    {
+      "line": 9751,
+      "name": "EntryAction",
+      "kind": "enum",
+      "visibility": "public"
+    },
+    {
+      "line": 9758,
+      "name": "StorageSuffixes",
+      "kind": "enum",
+      "visibility": "public"
+    },
+    {
+      "line": 9765,
+      "name": "EntryStatus",
+      "kind": "class",
+      "visibility": "public"
+    },
+    {
+      "line": 9805,
+      "name": "JsonStatus",
+      "kind": "enum",
+      "visibility": "public"
+    },
+    {
+      "line": 9814,
+      "name": "EntityJson",
+      "kind": "class",
+      "visibility": "public"
+    },
+    {
+      "line": 9825,
+      "name": "CopyCancelledException",
+      "kind": "class",
+      "visibility": "public"
+    },
+    {
+      "line": 9830,
+      "name": "SimpleFormMeta",
+      "kind": "class",
+      "visibility": "public"
+    },
+    {
+      "line": 9837,
+      "name": "StoreFormResult",
+      "kind": "class",
+      "visibility": "public"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "coreService",
+      "type": "ICoreService"
+    },
+    {
+      "name": "context",
+      "type": "IStorageContext"
+    },
+    {
+      "name": "config",
+      "type": "ModuleConfigurationRef"
+    },
+    {
+      "name": "paymentService",
+      "type": "IPaymentService"
+    },
+    {
+      "name": "profileService",
+      "type": "IProfileService"
+    },
+    {
+      "name": "memberService",
+      "type": "IMemberProfileService"
+    },
+    {
+      "name": "plansService",
+      "type": "IPlansService"
+    }
+  ],
+  "methodsByVerb": {
+    "create": [
+      "CreateBlankForm",
+      "CreateSignatureFieldToken",
+      "CreateLinkedLookupSyncContextForCurrentUser",
+      "CreateThemeCss",
+      "CreateFormStatistics",
+      "CreateFormMonthlyStatistics",
+      "CreateAndQueueImport",
+      "CreateEntryView",
+      "CreateEntryView",
+      "CreateFolder",
+      "CreateEntryDocumentLink",
+      "CreateSharedLink",
+      "CreateSharedLink",
+      "CreateWorkflowLink",
+      "CreateTaskLink",
+      "CreateSaveAndResumeLink"
+    ],
+    "get": [
+      "GetEmbedCode",
+      "GetAllFormsProfiles",
+      "GetProfileByWebUserId",
+      "GetEmailDomains",
+      "GetEmailDomain",
+      "GetForm",
+      "GetFormAsync",
+      "GetFormByUrlNameOrInternalName",
+      "GetFormRefByUrlNameOrInternalName",
+      "GetFormByInternalName",
+      "GetFormStatus",
+      "GetFormCache",
+      "GetStatusChanges",
+      "GetForms",
+      "GetForms",
+      "GetSharedForms",
+      "GetQuantities",
+      "GetAttachmentRefs",
+      "GetAttachments",
+      "GetEntryNumber",
+      "GetApplicationFee",
+      "GetRequiredRoleLinks",
+      "GetNotificationEntryInstance",
+      "GetEntry",
+      "GetOrderJson",
+      "GetEntryJsonAsync",
+      "GetObjectData",
+      "GetFormFeatures",
+      "GetAllFormFeatures",
+      "GetOrganizationFeatures",
+      "GetFormStatistics",
+      "GetAllFormStatistics",
+      "GetFormStatistics",
+      "GetFormMonthlyStatistics",
+      "GetPlanMonthlyStatistics",
+      "GetDocumentTemplateMonthlyStatistics",
+      "GetStorageLimitExceededBehavior",
+      "GetStorageOverage",
+      "GetEntryLimitExceededBehavior",
+      "GetFormTemplateCategories",
+      "GetFormTemplates",
+      "GetFormTemplate",
+      "GetPlanLimits",
+      "GetEntrySet",
+      "GetViewEntryToken",
+      "GetAllEntriesToken",
+      "GetLookupToken",
+      "GetEntryViewFilterTranslation",
+      "GetEntryViewInternalName",
+      "GetEntryViewSubType",
+      "GetLookupView",
+      "GetLookupView",
+      "GetLookupView",
+      "GetLookupViews",
+      "GetEntryViews",
+      "GetEntryView",
+      "GetEntryView",
+      "GetAllEntriesView",
+      "GetFieldInfos",
+      "GetEntryIds",
+      "GetFolders",
+      "GetFolderMetadata",
+      "GetNonUserSpecificFormMeta",
+      "GetFolder",
+      "GetBillingInfo",
+      "GetBillingInfo",
+      "GetEmail",
+      "GetEntryEmails",
+      "GetEmails",
+      "GetRedirectUrl"
+    ],
+    "update": [
+      "UpdateEntryData",
+      "UpdateSecureLookupForGuestsAsync",
+      "UpdateFormFeatures",
+      "UpdateFormStatistics",
+      "UpdateFormStatistics",
+      "UpdateDocumentTemplateMonthlyStatistics",
+      "UpdatePlanMonthlyStatistics",
+      "UpdateFormMonthlyStatistics",
+      "UpdateEntryStatus",
+      "UpdateEntryStatus",
+      "UpdateThemeSettings",
+      "UpdateFormExternalIdentifier",
+      "UpdateFolderArchiveStatus",
+      "UpdateRecentForms",
+      "UpdateEmailReceipts",
+      "UpdateEmailStatus",
+      "UpdateEmailStatus",
+      "UpdateEntryPageSettings",
+      "UpdateOrganizationFormFeatures",
+      "UpdateEntryReadState"
+    ],
+    "delete": [
+      "DeleteProfile",
+      "DeleteLookupView",
+      "DeleteFormStatistics",
+      "DeletePlanMonthlyStatistics",
+      "DeleteForm",
+      "DeleteQuantities",
+      "DeleteEntries",
+      "DeleteEntry",
+      "DeleteEntryView",
+      "DeleteFolder",
+      "DeleteEntryEmail"
+    ],
+    "store": [
+      "StoreProfile",
+      "StoreFormCache",
+      "StoreForm",
+      "StoreEntry",
+      "StoreOrganizationFeatures",
+      "StoreFormStatistics",
+      "StoreFormReferrer",
+      "StoreRenderedForm",
+      "StoreAndQueueEmail"
+    ],
+    "save": [
+      "SaveForm",
+      "SaveEntry",
+      "SaveEntryView"
+    ],
+    "assert": [
+      "Assert",
+      "Assert",
+      "Assert",
+      "AssertUnlocked",
+      "Assert",
+      "Assert",
+      "Assert",
+      "AssertInternal",
+      "AssertUnlocked",
+      "Assert",
+      "Assert",
+      "AssertCanManageFormRolePermissions",
+      "AssertCanManageFolderRolePermissions"
+    ],
+    "validate": [
+      "ValidateFormPayment",
+      "ValidateForm",
+      "ValidateEntryView",
+      "ValidateAccessToken"
+    ],
+    "can": [
+      "CanCreateForm",
+      "CanShareAsTemplate",
+      "CanShareTemplateEntries",
+      "CanShareLink",
+      "CanShareSaveAndResumeLink"
+    ],
+    "remove": [
+      "RemoveModule",
+      "RemoveEmailDomain",
+      "RemoveFormRole",
+      "RemoveFolderRole",
+      "RemoveFromRecentForms",
+      "RemoveBadFileAttachments",
+      "RemovePendingEmailMarker"
+    ],
+    "add": [
+      "AddEmailDomain"
+    ],
+    "set": [
+      "SetFormRole",
+      "SetFolderRole",
+      "SetHipaaCompliant",
+      "SetHipaaCompliant",
+      "SetGdprCompliant",
+      "SetReferralCredit"
+    ],
+    "other": [
+      "InitializeConfiguration",
+      "VerifyEmailDomain",
+      "LogRestore",
+      "CleanupTemporaryLookupView",
+      "InitializeForm",
+      "EncryptForm",
+      "LogFormFeatureUpdate",
+      "SyncEntriesWithFormDefinition",
+      "FindBadAttachments",
+      "FormExists",
+      "LoadQuantities",
+      "RecalculateQuantities",
+      "SubmitEntry",
+      "FetchAndRecordUser",
+      "GenerateOrderWithoutFees",
+      "AssociateOrderWithEntry",
+      "ShouldIncludeProcessingFees",
+      "SendEntryNotifications",
+      "SendEmailNotifications",
+      "SendEmailNotification",
+      "TryDecryptSignatureToken",
+      "FindAttachments",
+      "IsPaymentRequired",
+      "BuildOrder",
+      "GenerateOrderDescription",
+      "GenerateOrderId",
+      "GenerateOrderId",
+      "GenerateTestOrderId",
+      "RefundOrder",
+      "MakePayment",
+      "ReconcilePayment",
+      "EnsureEntryLinks",
+      "ConfigureSaveResumeEmailNotification",
+      "ConfigureEmailNotification",
+      "IsEntryRead",
+      "BulkSyncEntryDeletionsAsync",
+      "EnsureTheme",
+      "ReconcileFormStatistics",
+      "IsEntryLocked",
+      "CompilePlanStatisticsForFormStatistics",
+      "InitializePlanMonthlyStatistics",
+      "ChangePlan",
+      "ChangeBillingInformation",
+      "QueueImport",
+      "EnqueueImportCompletedMessage",
+      "ImportEntryAsync",
+      "SearchImportHistory",
+      "GenerateImportTemplate",
+      "PreviewEntryImportChanges",
+      "ReorderEntryView",
+      "RenameEntryView",
+      "IsDuplicateTitle",
+      "EnsureValidFormStatistics",
+      "RenameFolder",
+      "MoveForms",
+      "ArchiveForms",
+      "UnarchiveForms",
+      "IsArchived",
+      "IsArchived",
+      "IsFormArchived",
+      "FavoriteForm",
+      "FavoriteForm",
+      "OnInvoke",
+      "Clean",
+      "CleanNodes",
+      "GenerateEntryDocumentCode",
+      "GenerateEntryDocumentCode",
+      "DecryptAndValidateEntryDocumentCode",
+      "GenerateAccessToken",
+      "ReplaceEntryEmailLinksWithSlugs",
+      "PopulateEntryEmailLinkSlugs",
+      "PopulateTaskLinkSlugs",
+      "TryStreamRenderedForm",
+      "SearchEntries",
+      "SearchInstance",
+      "TryCopyFile",
+      "StorageUpdated",
+      "SendOwnersEmail",
+      "ReconcileEmailStatuses",
+      "ReconcileEmailStatus",
+      "EnsurePendingEmailMarker",
+      "LogEvent",
+      "QueueMessage",
+      "GenerateLineItemsAsync",
+      "OnInvoiceCreatedAsync",
+      "Parse",
+      "ToString"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://code.claude.com/schemas/settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{FORMAT_COMMAND}"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -Command \"$file = '{FILE_PATH}'; $protected = @('package.json', 'package-lock.json', '*.csproj', '*.sln', 'CLAUDE.md'); foreach ($p in $protected) { if ($file -like $p) { Write-Host 'WARNING: Modifying protected file: ' $file -ForegroundColor Yellow; exit 0 } }\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Edit(specs/*)",
+      "Edit(src/*)",
+      "Edit(tests/*)",
+      "Write(specs/*)",
+      "Write(src/*)",
+      "Write(tests/*)",
+      "Read(**/*)",
+      "Glob(**/*)",
+      "Grep(**/*)"
+    ],
+    "deny": []
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_serena_serena__*",
+      "Bash(claude mcp:*)",
+      "Bash(cp:*)",
+      "Bash(powershell.exe -Command \"Test-Path ''C:\\\\Games\\\\Rocksmith 2014 Edition - Remastered''\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\install_rs_asio.ps1\")",
+      "Bash(powershell.exe -Command \"Get-Content ''C:\\\\Games\\\\Rocksmith 2014 Edition - Remastered\\\\RS_ASIO.ini''\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem ''C:\\\\Games\\\\Rocksmith 2014 Edition - Remastered'' -Filter ''*.dll'' | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize\")",
+      "Bash(powershell.exe -Command \"Remove-Item ''C:\\\\Users\\\\JacobMadsen\\\\install_rs_asio.ps1'' -Force\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\setup_cdlc.ps1\")",
+      "Bash(powershell.exe -Command \"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $url = ''https://github.com/kokolihapihvi/Rocksmith2014_CDLC_Enabler/raw/main/D3DX9_42.dll''; $dest = ''C:\\\\Games\\\\Rocksmith 2014 Edition - Remastered\\\\D3DX9_42.dll''; $wc = New-Object System.Net.WebClient; $wc.DownloadFile\\($url, $dest\\); Write-Host ''CDLC Enabler \\(D3DX9_42.dll\\) has been installed.''\")",
+      "Bash(curl:*)",
+      "Bash(powershell.exe -Command \"Get-Item ''C:\\\\Games\\\\Rocksmith 2014 Edition - Remastered\\\\D3DX9_42.dll'' | Select-Object Name, Length, LastWriteTime\")",
+      "Bash($cdlc = $files)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\count_dlc.ps1\")",
+      "Bash(powershell.exe -Command \"Remove-Item ''C:\\\\Users\\\\JacobMadsen\\\\setup_cdlc.ps1'', ''C:\\\\Users\\\\JacobMadsen\\\\download_enabler.ps1'', ''C:\\\\Users\\\\JacobMadsen\\\\count_dlc.ps1'' -Force -ErrorAction SilentlyContinue\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\analyze_cdlc.ps1\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\analyze_cdlc2.ps1\")",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(uv:*)",
+      "Bash(uv run:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
