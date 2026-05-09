@@ -33,8 +33,7 @@ workspace/
 │       ├── auth/
 │       └── dashboard/
 ├── tools/             # Custom executors/generators
-├── nx.json            # Nx configuration
-└── workspace.json     # Project configuration
+└── nx.json            # Nx configuration
 ```
 
 ### 2. Library Types
@@ -54,24 +53,8 @@ workspace/
 ```json
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "npmScope": "myorg",
   "affected": {
     "defaultBase": "main"
-  },
-  "tasksRunnerOptions": {
-    "default": {
-      "runner": "nx/tasks-runners/default",
-      "options": {
-        "cacheableOperations": [
-          "build",
-          "lint",
-          "test",
-          "e2e",
-          "build-storybook"
-        ],
-        "parallel": 3
-      }
-    }
   },
   "targetDefaults": {
     "build": {
@@ -374,34 +357,123 @@ jobs:
 
 ### Template 6: Remote Caching Setup
 
-```typescript
-// nx.json with Nx Cloud
+```json
+// nx.json with Nx Cloud (modern pattern)
 {
-  "tasksRunnerOptions": {
-    "default": {
-      "runner": "nx-cloud",
-      "options": {
-        "cacheableOperations": ["build", "lint", "test", "e2e"],
-        "accessToken": "your-nx-cloud-token",
-        "parallel": 3,
-        "cacheDirectory": ".nx/cache"
-      }
-    }
-  },
-  "nxCloudAccessToken": "your-nx-cloud-token"
+  "nxCloudAccessToken": "your-nx-cloud-token",
+  "cacheDirectory": ".nx/cache",
+  "parallel": 3,
+  "targetDefaults": {
+    "build": { "cache": true },
+    "lint": { "cache": true },
+    "test": { "cache": true },
+    "e2e": { "cache": true }
+  }
 }
+```
 
-// Self-hosted cache with S3
+```bash
+# Connect to Nx Cloud
+npx nx connect
+
+# Tasks automatically cached remotely after connecting
+nx run-many --target=build
+```
+
+## Essential Commands
+
+### Running Tasks
+```bash
+# Run single target for single project
+nx run my-app:build
+nx run my-app:test
+nx run my-app:serve
+
+# Shorthand
+nx build my-app
+nx test my-app
+nx serve my-app
+
+# Run target for all projects
+nx run-many --target=build
+nx run-many --target=test
+
+# Run with parallelism control
+nx run-many --target=build --parallel=4
+
+# Run for specific projects
+nx run-many --target=build --projects=app1,app2
+```
+
+### Affected Commands (CI Optimization)
+```bash
+# Only build/test projects affected by changes
+nx affected --target=build
+nx affected --target=test --base=main --head=HEAD
+
+# List affected projects
+nx show projects --affected
+```
+
+### Dependency Graph
+```bash
+nx graph                        # Open interactive graph
+nx graph --focus=my-app         # Show dependencies for a project
+nx graph --file=graph.json      # Export as JSON
+```
+
+### Cache Commands
+```bash
+# Clear local cache
+nx reset
+
+# View project details
+nx show project my-app --web
+```
+
+## Task Pipeline (dependsOn)
+
+```json
 {
-  "tasksRunnerOptions": {
-    "default": {
-      "runner": "@nx-aws-cache/nx-aws-cache",
-      "options": {
-        "cacheableOperations": ["build", "lint", "test"],
-        "awsRegion": "us-east-1",
-        "awsBucket": "my-nx-cache-bucket",
-        "awsProfile": "default"
-      }
+  "targetDefaults": {
+    "build": {
+      "dependsOn": ["^build"]   // Build all dependencies first
+    },
+    "test": {
+      "dependsOn": ["build"]    // Build this project first
+    },
+    "deploy": {
+      "dependsOn": ["build", "test"]
+    }
+  }
+}
+```
+
+- `^build` — Run build on all upstream dependencies first
+- `build` — Run build on this project first (no `^`)
+- `["^build", "^test"]` — Run multiple targets on dependencies
+
+## Workspace Libraries
+
+### Generating Libraries
+```bash
+# Generate a new JS/TS library
+nx g @nx/js:library utils --directory=packages/utils
+
+# Generate Vue library
+nx g @nx/vue:library ui --directory=packages/ui
+
+# Generate with tags
+nx g @nx/react:lib feature-auth --directory=libs/web --tags=type:feature,scope:web
+```
+
+### Path Mappings (tsconfig.base.json)
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@myorg/utils": ["packages/utils/src/index.ts"],
+      "@myorg/ui": ["packages/ui/src/index.ts"]
     }
   }
 }
@@ -410,9 +482,6 @@ jobs:
 ## Common Commands
 
 ```bash
-# Generate new library
-nx g @nx/react:lib feature-auth --directory=libs/web --tags=type:feature,scope:web
-
 # Run affected tests
 nx affected -t test --base=main
 
@@ -444,6 +513,21 @@ nx migrate --run-migrations
 - **Don't skip affected** - Test only what changed
 - **Don't ignore boundaries** - Tech debt accumulates
 - **Don't over-granularize** - Balance lib count
+
+## Troubleshooting
+
+```bash
+# Debug task execution
+nx build my-app --verbose
+
+# Show what would run (dry run)
+nx affected --target=build --dry-run
+
+# Reset everything
+nx reset
+rm -rf node_modules
+pnpm install
+```
 
 ## Resources
 

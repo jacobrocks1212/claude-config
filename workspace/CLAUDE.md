@@ -53,6 +53,25 @@ Two GitHub profiles are in use. The global `.gitconfig` defaults to the **person
 
 Work repos are configured via `~/.gitconfig-cognitoforms` + `includeIf` directives in `~/.gitconfig`. When creating a new Cognito Forms-related repo, add an `includeIf` entry to `~/.gitconfig`.
 
+## Claude Code Aliases
+
+Two bash aliases in `~/.bashrc` select the appropriate config profile:
+
+| Alias | Config dir | Use for |
+|-------|-----------|---------|
+| `claude-work` | `~/.claude` (default) | Cognito Forms and other work repos |
+| `claude-personal` | `~/.claude-personal` | Personal projects |
+
+## Work Repo Git Workflow
+
+In work repos (`git config user.email == jacob@cognitoforms.com`):
+
+- **Commits:** allowed locally (Claude can checkpoint freely)
+- **Push:** blocked by a PreToolUse hook on the `Bash` tool
+- **Squash-push:** Jacob explicitly invokes `/push "commit message"` which squashes all branch commits into one clean commit and pushes with a bypass token
+
+The hook lives at `~/.claude/hooks/block-work-repo-git-push.sh`. Personal repos are unaffected.
+
 ## Navigation Pattern
 
 When asked to work on a specific project, `cd` into that repo directory first and check for:

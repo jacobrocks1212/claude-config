@@ -56,6 +56,12 @@ PRIMARY — Correctness (weight this heavily):
 - Does it match the intent of the plan's work unit definitions?
 - Are there logic errors, broken contracts, or unhandled edge cases that would cause incorrect behavior?
 
+TDD DISCIPLINE (for TDD work units):
+- Were tests written against spec requirements, not shaped around the implementation?
+- Do tests cover the deliverables' acceptance criteria?
+- Are test assertions specific enough to catch regressions (not overly broad or tautological)?
+- Did the implementation agent satisfy the test contract without modifying test files?
+
 SECONDARY — Code quality:
 - Performance: any obvious inefficiencies or scalability concerns?
 - Patterns: consistent with the codebase conventions visible in the modified files?
@@ -84,6 +90,30 @@ SECONDARY — Code quality:
 ```
 
 After producing the report, **append a "Review Notes" section to `PHASES.md`** documenting all findings for the reviewed batch. Include the assessment verdict and date. Then return the full report to the orchestrating agent.
+
+---
+
+#### Step 2.5: Propagation Check (MANDATORY after review — before verdict)
+
+Before issuing the verdict, check whether this batch introduced any of the following:
+
+1. **Import indirection** — a new module that wraps/proxies an existing import (e.g., a Tauri invoke wrapper, a fetch wrapper, a logger facade)
+2. **Struct/interface field additions** — a new field on a type that is constructed in multiple files (especially test files)
+3. **Vitest/Jest alias changes** — new resolve aliases in test config
+4. **Public API surface changes** — renamed exports, moved modules, changed function signatures on widely-imported utilities
+
+If ANY of these are present, the review must additionally verify:
+- All consumers of the original import/type are migrated to the new path
+- Test mocks target the correct module boundary (not the underlying wrapped module)
+- All struct constructors in test code accommodate new fields (via `..Default::default()` or equivalent)
+
+**If the propagation check reveals unmigrated consumers or broken mock targets, the verdict MUST be `NEEDS-REWORK`** — even if the implementation logic itself is correct. Propagation failures create delayed blast-zone failures that surface only when the full test suite runs later.
+
+---
+
+#### Step 2.7: Mount-Site Verification (MANDATORY for new files)
+
+!`cat ~/.claude/skills/_components/mount-site-verification.md`
 
 ---
 

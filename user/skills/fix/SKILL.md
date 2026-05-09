@@ -2,6 +2,7 @@
 description: Draft a TDD fix plan for a manually-reported bug using parallel Sonnet subagents
 argument-hint: [bug description] [optional path/to/PHASES.md]
 name: fix
+plan-mode: required
 ---
 
 # Fix
@@ -75,9 +76,9 @@ Record the chosen category (and a one-sentence justification) — it drives Step
 
 ---
 
-## Step 4: Enter Plan Mode
+## Step 4: Plan Mode Gate (MANDATORY — DO NOT SKIP)
 
-If not already in plan mode, enter it now.
+!`cat ~/.claude/skills/_components/plan-mode-gate.md`
 
 ---
 
@@ -89,8 +90,11 @@ TDD enforcement is injected automatically via `subagent-launch.md` — every sub
 
 - Identify files that must change to fix the root cause
 - Identify the regression test file(s) that will pin the bug
-- If the fix naturally splits across independent files, partition into **work units** and **batches** — no two subagents in the same batch may touch the same file
-- For a small single-file fix, a single work unit in a single batch is fine
+- Apply the partitioning protocol to divide work across subagents:
+
+!`cat ~/.claude/skills/_components/subagent-partitioning.md`
+
+For a small single-file fix with a single concern, a single work unit in a single batch is the natural result of this protocol.
 
 ### 5b. Write the Plan
 
@@ -109,25 +113,43 @@ The plan MUST contain all of the following sections as explicit, non-skippable s
 **SPEC.md:** [path, or "N/A"]
 **Goal:** [one sentence — the observable behavior after the fix]
 
+## EXECUTION MODEL — READ THIS FIRST
+
+This plan uses an **orchestrator + Sonnet subagent** architecture:
+
+| Role | What it does | Allowed tools |
+|------|-------------|---------------|
+| **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
+| **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
+
+**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+
+**Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
+
+Every "Launch Subagents" step below MUST be executed by composing Agent calls using this pattern.
+
 ## MANDATORY RULES — DO NOT SKIP ANY STEP
 
-1. All subagent edits happen in the current worktree — NEVER create worktrees for subagents
-2. Every subagent follows TDD — write a failing regression test that pins the bug BEFORE the fix
-3. The regression test must fail for the documented root cause, not for an unrelated reason
-4. PHASES.md (if applicable) is updated AFTER EACH subagent completes (not deferred)
-5. Every subagent's output is reviewed for correctness and root-cause alignment before continuing
-6. Mistakes are fixed immediately before launching the next batch
-7. After all agents finish, integration verification confirms the bug is gone and nothing else broke
-8. Relevant CLAUDE.md files are updated if the fix establishes a new rule or gotcha
+1. **ALL implementation and test-writing work MUST be delegated to Sonnet subagents via the Agent tool** — the orchestrating session MUST NOT call `Edit` or `Write` on source or test files. The ONLY exception: trivial PASS-WITH-FIXES items (a few lines). If you are composing an `Edit` or `Write` call targeting a source/test file, STOP — compose an `Agent` tool call instead.
+2. All subagent edits happen in the current worktree — NEVER create worktrees for subagents
+3. Every TDD work unit goes through the test-first pipeline — dedicated test agent writes failing tests, dedicated implementation agent makes them pass
+4. The regression test must fail for the documented root cause, not for an unrelated reason
+5. PHASES.md (if applicable) is updated AFTER EACH batch completes (not deferred)
+6. Every subagent's output is reviewed for correctness and root-cause alignment before continuing
+7. Mistakes are fixed immediately before launching the next batch
+8. After all agents finish, integration verification confirms the bug is gone and nothing else broke
+9. Relevant CLAUDE.md files are updated if the fix establishes a new rule or gotcha
 ```
 
 #### Work Unit Definitions
 
 For each work unit, document:
 - **Scope:** What part of the fix it covers
-- **Files to create/modify:** Exact paths
-- **Test files:** Exact paths for the regression test
-- **TDD sequence:** The failing regression test (what it asserts, why it fails today), then the implementation that makes it pass
+- **TDD:** yes/no (yes for any work unit with testable behavior or a reproducible root cause)
+- **Files to create/modify:** Exact paths (implementation files)
+- **Test files:** Exact paths for the regression test (TDD work units only)
+- **Test expectations:** What the regression test asserts and why it fails today (TDD work units only)
+- **Implementation goal:** What the fix must achieve to make tests pass and resolve the root cause
 - **Root-cause link:** How this work unit addresses the root cause from Step 2
 - **Batch:** Which parallel batch
 
@@ -141,10 +163,14 @@ Include a batch overview table if there are multiple units:
 | 1     | A         | Solo      | N/A             |
 ```
 
-#### Task Initialization
+#### Step 0: Task Initialization (PREREQUISITE GATE)
+
+This MUST be the first executable step in the plan — before any batch. Label it "Step 0" so it is unambiguously first:
 
 ```
-## Initialize Task Tracking
+## Step 0: Initialize Task Tracking (MANDATORY PREREQUISITE — EXECUTE BEFORE ANYTHING ELSE)
+
+**This is the first thing you do when executing this plan. Do NOT skip ahead to Batch 1.**
 
 !`cat ~/.claude/skills/_components/task-tracking.md`
 ```
@@ -156,9 +182,17 @@ For each batch, include verbatim:
 ```
 ## Batch N
 
-### Step N.1: Launch Subagents
+### Step N.0: Re-read Source Documents (MANDATORY — DO NOT SKIP)
+
+!`cat ~/.claude/skills/_components/source-reread.md`
+
+### Step N.1: Launch Subagents (COMPOSE Agent TOOL CALLS — ZERO INLINE IMPLEMENTATION)
+
+**PRE-FLIGHT CHECK:** You are about to dispatch work to Sonnet subagents. Confirm: (1) you will use the `Agent` tool with `model: "sonnet"` for ALL code changes in this step, (2) you will NOT call `Edit` or `Write` on any source or test file. If either is false, re-read the EXECUTION MODEL section above before proceeding.
 
 !`cat ~/.claude/skills/_components/subagent-launch.md`
+
+**POST-DISPATCH GATE:** After all subagents in this step complete, verify you composed `Agent` tool calls and did NOT edit source/test files directly. If you violated this constraint, revert your inline edits and re-dispatch via Agent before proceeding to the review step.
 
 ### Step N.2: Review Batch Output (MANDATORY GATE — DO NOT SKIP OR SHORTCUT)
 
@@ -174,6 +208,10 @@ For each batch, include verbatim:
 
 !`cat ~/.claude/skills/_components/quality-gates.md`
 
+### Step N.4.5: MCP Integration Test (BLOCKING — execute Applicability Rule if fix touches runtime behavior)
+
+!`cat ~/.claude/skills/_components/mcp/mcp-integration-test.md`
+
 ### Step N.5: Proceed to Next Batch
 
 **Checklist before proceeding (all must be true):**
@@ -181,6 +219,7 @@ For each batch, include verbatim:
 - [ ] Regression test passes
 - [ ] PHASES.md updated (if applicable)
 - [ ] All quality gates pass
+- [ ] Step N.4.5 MCP integration test executed, OR explicitly skipped with documented reason
 
 If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 ```
@@ -190,18 +229,7 @@ If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 ```
 ## Integration Verification (MANDATORY — DO NOT SKIP)
 
-### Verify the Bug is Actually Fixed
-- Re-run the regression test(s) — must pass
-- Walk through the user's original reproduction steps mentally (or via tests) — confirm the symptom is gone
-- Confirm no symptom-only patches: the fix must address the root cause from Step 2
-
-### Verify Nothing Else Broke
-- Read all modified files across subagents
-- Verify imports resolve, no duplicate code, no conflicting exports
-- Run broader quality gates relevant to the touched areas
-
-### Fix Integration Issues
-- If issues found: fix them and update PHASES.md (if applicable) with notes about what was fixed
+!`cat .claude/skill-config/integration-verification.md 2>/dev/null || cat ~/.claude/skills/_components/integration-verification.md`
 ```
 
 #### CLAUDE.md Update Step
@@ -209,110 +237,20 @@ If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 ```
 ## Update CLAUDE.md Files (MANDATORY — DO NOT SKIP)
 
-Review whether any CLAUDE.md files need updates as a result of this fix:
-- A new critical rule / gotcha revealed by the root cause
-- A new architectural constraint discovered
-- A correction to outdated guidance that contributed to the bug
-
-Rules:
-- Keep lean and effective — only stable, structural information
-- Do NOT add volatile info (test counts, line numbers, version strings)
-- If no updates needed, explicitly state "No CLAUDE.md updates required" and move on
+!`cat ~/.claude/skills/_components/claude-md-review.md`
 ```
 
 ---
 
-## Step 6: Prevent Recurrence — Update Upstream Skills (MANDATORY IF APPLICABLE)
+### Step 6. Append to Work Log (MANDATORY — DO NOT SKIP)
 
-Based on the failure category from Step 2c, identify which **existing skills** (if any) could be strengthened so this class of bug never reaches `/fix` again. This is NOT about the bug fix itself — it's about improving the process that let the bug through.
-
-### 6a. Map Category → Candidate Skills
-
-!`cat .claude/skill-config/skill-catalog.md 2>/dev/null || echo "No project-specific skill catalog configured. Use the available skills list from the system prompt to identify relevant skills for the failure category."`
-
-Only propose updates where a concrete, durable rule can be added. Do **not** add volatile info or speculative guidance. If no skill genuinely benefits, explicitly state "No skill updates warranted" and skip Step 6b.
-
-### 6b. Include Skill-Update Work Units in the Plan
-
-For each skill that should be updated, add a dedicated **post-fix work unit** to the plan (runs AFTER the integration verification step, in its own batch):
-
-- **Scope:** Update skill `<name>` to prevent category `<category>` recurrence
-- **File to modify:** Exact path to the skill file (typically `~/.claude/skills/<name>/SKILL.md` or `~/.claude/commands/<name>.md`)
-- **Rule to add:** The exact rule/guidance to append, phrased imperatively, grounded in the root cause from Step 2
-- **Subagent:** Launch a Sonnet subagent to perform the edit. Prompt must include: the bug summary, root cause, category, the skill file path, and the precise rule text. Instructions: read the full skill first, insert the rule in the most appropriate section (do not append blindly), keep the skill lean, preserve existing structure.
-- **Verification:** After the subagent completes, read the skill and confirm the rule is present, well-placed, and doesn't duplicate existing content.
-
-Skill-update work units are independent of the bug-fix batches and MUST NOT block the bug fix itself. They run after Integration Verification but before final CLAUDE.md review.
-
-Add this block verbatim to the plan when skill updates are warranted:
+Include this block verbatim in the plan — after Integration Verification and CLAUDE.md review — so it records the final state:
 
 ```
-## Prevent Recurrence — Skill Updates (MANDATORY IF APPLICABLE — DO NOT SKIP)
+## Append to Work Log (MANDATORY — DO NOT SKIP)
 
-**Failure category:** [from Step 2c]
-**Justification:** [one sentence]
-
-### Skills to update
-| Skill | Path | Rule to add |
-|-------|------|-------------|
-| ...   | ...  | ...         |
-
-### Step: Launch Skill-Update Subagents
-Launch Sonnet subagent(s) in parallel (no worktree) — one per skill file. Each subagent:
-1. Reads the full skill file
-2. Inserts the new rule in the most appropriate section (not blindly appended)
-3. Keeps the skill lean — no volatile info, no duplication
-4. Returns a diff summary
-
-### Step: Verify Skill Updates
-For each updated skill: read the file, confirm the rule is present, well-placed, and coherent. Fix any issues immediately.
+!`cat ~/.claude/skills/_components/work-log.md`
 ```
-
-If no updates are warranted, include a one-line note in the plan: `**Prevent Recurrence:** No skill updates warranted — <reason>.`
-
-### 6c. Append to Persistent Fix Log (MANDATORY — DO NOT SKIP)
-
-Append one JSON record per fix to the user-level log so categories can be tracked over time:
-
-**Log file:** `~/.claude/fix-log.jsonl` (one JSON object per line, UTF-8)
-
-Append the entry as the FINAL step of the plan — after Integration Verification, after Skill Updates, after CLAUDE.md review — so it records the final state. Include this block verbatim in the plan:
-
-```
-## Append to Fix Log (MANDATORY — DO NOT SKIP)
-
-Append a single JSON line to `~/.claude/fix-log.jsonl` with this schema:
-
-{
-  "timestamp": "<ISO-8601 UTC>",
-  "project": "<repo name or cwd basename>",
-  "branch": "<current git branch, or null>",
-  "commit": "<HEAD short sha, or null>",
-  "title": "<short bug title>",
-  "bug_summary": "<one-line user report>",
-  "root_cause": "<one or two sentences>",
-  "category": "<one of: requirements-change | inadequate-test-coverage | inadequate-research | incorrect-spec | integration-gap | environment-platform | regression | ui-ux-polish | tooling-config | other>",
-  "category_justification": "<one sentence>",
-  "phases_md": "<path or null>",
-  "phase_number": "<N or null>",
-  "files_modified": ["path1", "path2"],
-  "regression_tests": ["path/to/test"],
-  "skills_updated": [
-    { "skill": "<name>", "path": "<path>", "rule_added": "<summary>" }
-  ],
-  "skills_update_note": "<reason if none updated, else null>"
-}
-
-Use the Bash tool to append (create the file if missing). Do NOT rewrite existing lines. Example:
-
-```
-mkdir -p ~/.claude && printf '%s\n' '<single-line JSON>' >> ~/.claude/fix-log.jsonl
-```
-
-Verify the append succeeded by reading the last line of the file.
-```
-
-This log is the authoritative record for tracking failure-mode trends across projects over time. Do not store this data in project-local files.
 
 ---
 

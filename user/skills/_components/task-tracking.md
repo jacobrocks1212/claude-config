@@ -1,17 +1,30 @@
-### Task Tracking (MANDATORY — DO NOT SKIP)
+### Task Tracking (MANDATORY FIRST ACTION — DO NOT SKIP, DO NOT DEFER)
 
-#### 1. Load Task Tools
+**STOP.** This is the first executable step of this plan. Do NOT start any batch, write any code, or dispatch any subagent until every sub-step below is complete. If you skip this section, all subsequent task-status updates will fail silently and progress tracking will be lost.
 
-Use ToolSearch to load the task tools if not already available:
+#### 1. Load Task Tools (BLOCKING GATE)
+
+Call ToolSearch NOW to load the task tools. This is a hard prerequisite — nothing else proceeds until these four tools are available in your tool list:
 
 ```
 ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
 ```
 
-#### 2. Create Tasks for All Work Units (after partitioning)
+After ToolSearch returns, verify you received schemas for all four tools: `TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList`. If any are missing, call ToolSearch again. If still missing after a second attempt, STOP and report the error to the user — do not proceed without task tools.
 
-For each work unit, call TaskCreate:
-- **Title:** `[Batch N] Work Unit X: [scope summary]`
+#### 2. Create Tasks for All Work Units (IMMEDIATELY — before any batch)
+
+For each TDD work unit, call TaskCreate twice:
+- **Title:** `[Batch N] WU-X Tests: [scope summary]`
+- **Description:** Test files to create, deliverables covered, batch assignment
+- **Status:** `not_started`
+
+- **Title:** `[Batch N] WU-X Impl: [scope summary]`
+- **Description:** Files to create/modify, deliverables covered, batch assignment
+- **Status:** `not_started`
+
+For each non-TDD work unit, call TaskCreate once:
+- **Title:** `[Batch N] WU-X: [scope summary]`
 - **Description:** Files to modify, deliverables covered, batch assignment
 - **Status:** `not_started`
 
@@ -25,9 +38,17 @@ For each quality-gate step, call TaskCreate:
 
 #### 3. Update Tasks as Work Progresses
 
-- **Before launching a subagent:** TaskUpdate → `in_progress`
-- **After subagent succeeds:** TaskUpdate → `completed`
-- **After subagent fails:** TaskUpdate → `failed`
+**Phase A — Test agents (TDD WUs only):**
+- **Before launching test agent:** TaskUpdate `WU-X Tests` → `in_progress`
+- **After test agent succeeds:** TaskUpdate `WU-X Tests` → `completed`
+- **After test agent fails:** TaskUpdate `WU-X Tests` → `failed`
+
+**Phase B — Implementation agents (all WUs):**
+- **Before launching impl agent:** TaskUpdate `WU-X Impl` (or `WU-X` for non-TDD) → `in_progress`
+- **After impl agent succeeds:** TaskUpdate → `completed`
+- **After impl agent fails:** TaskUpdate → `failed`
+
+**Review and QG:**
 - **Before starting review:** TaskUpdate `[Batch N] Review` → `in_progress`
 - **After review passes:** TaskUpdate `[Batch N] Review` → `completed`
 - **Before running quality gates:** TaskUpdate `[Batch N] Quality Gates` → `in_progress`
@@ -35,9 +56,9 @@ For each quality-gate step, call TaskCreate:
 
 #### 4. Retry Protocol
 
-If a work unit fails and is re-dispatched:
+If a test or implementation agent fails and is re-dispatched:
 1. TaskUpdate original task → `failed`
-2. TaskCreate a new task titled `[Batch N] Work Unit X (retry): [scope summary]` → `not_started`
+2. TaskCreate a new task titled `[Batch N] WU-X [Tests/Impl] (retry): [scope summary]` → `not_started`
 3. Proceed from step 3 above for the new task
 
 #### 5. Completion Verification

@@ -2,6 +2,7 @@
 description: Decompose 1+ feature specs into PHASES.md files using parallel Sonnet subagents, with holistic cross-feature review
 argument-hint: <path/to/SPEC1.md> [path/to/SPEC2.md] [...]
 name: spec-phases-batch
+plan-mode: required
 ---
 
 # Spec Phases Batch
@@ -54,9 +55,9 @@ From PARTITIONING.md + the specs themselves, identify:
 
 ---
 
-## Step 2: Enter Plan Mode
+## Step 2: Plan Mode Gate (MANDATORY — DO NOT SKIP)
 
-If not already in plan mode, enter it now.
+!`cat ~/.claude/skills/_components/plan-mode-gate.md`
 
 ---
 
@@ -135,9 +136,11 @@ The plan must follow this structure exactly:
   **Scope:** {Clear description of what's built}
 
   **Deliverables:**
-  - [ ] {Concrete output 1}
-  - [ ] {Concrete output 2}
+  - [ ] {Concrete code output 1}
+  - [ ] {Concrete code output 2}
   - [ ] Tests: {What tests verify this phase}
+
+  !`cat .claude/skill-config/phases-runtime-verification.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-verification.md`
 
   **Prerequisites:** None (first phase) OR {specific prior phase work, including cross-feature}
 
@@ -257,6 +260,12 @@ Print a completion report:
    - If none: "No speculative breakdowns — all specs are root-level or 1 hop from root"
 
    **Next step:** `/implement-phase-batch [paths to PHASES.md files]`
+
+---
+
+## Append to Work Log (MANDATORY — DO NOT SKIP)
+
+!`cat ~/.claude/skills/_components/work-log.md`
 ```
 
 ---

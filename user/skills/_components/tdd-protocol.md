@@ -1,22 +1,23 @@
-## TDD Protocol (MANDATORY — DO NOT SKIP)
+## TDD Decision Gate
 
-Every subagent follows TDD — a failing test MUST be written BEFORE implementation code.
+Determines whether a work unit goes through the test-first pipeline (separate test agent → implementation agent) or skips directly to implementation.
 
-### Sequence
+### TDD Applies When
 
-1. **Write the failing test** — assert the behavior the implementation must satisfy (or, for a fix, pin the bug's root cause)
-2. **Verify it fails (red)** — run the test and confirm it fails for the expected reason
-3. **Implement the code** — write the minimum code to make the test pass
-4. **Verify it passes (green)** — run the test and confirm it now passes
+- Feature work with **testable behavior** (functions, APIs, business logic, data transformations)
+- Bug fixes with a **reproducible root cause** that can be pinned by a regression test
+- Any deliverable whose acceptance criteria can be expressed as automated assertions
 
-### For Bug Fixes
+### TDD Does NOT Apply When
 
-- The regression test must fail **for the documented root cause**, not for an unrelated reason
-- Confirm the test would have failed before the fix was applied
-- A symptom-only patch is not acceptable — the test must pin the root cause
+- Pure configuration changes (CI, linting rules, build config)
+- Documentation-only changes
+- Scaffolding with no testable logic (empty files, directory structure, boilerplate)
+- Static asset changes (images, styles with no behavioral impact)
 
-### For Feature Implementation
+### Pipeline Routing
 
-- Write the failing test against the SPEC.md requirements before writing any implementation
-- TDD instructions to subagents: "write failing test, verify red, implement, verify green"
-- Unit tests at layer boundaries are necessary but **not sufficient** — integration tests are required for user-facing APIs with observable output
+- **TDD work unit:** Test agent writes failing tests (red) → Implementation agent makes them pass (green)
+- **Non-TDD work unit:** Implementation agent executes directly (no test agent phase)
+
+The orchestrating agent assigns each work unit a **TDD flag** during partitioning. This flag determines whether the work unit enters Phase A (test agents) or skips directly to Phase B (implementation agents).

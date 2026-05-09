@@ -1,6 +1,6 @@
 ---
 description: Brainstorm, research, and draft a feature spec
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, Agent, WebSearch
+allowed-tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "AskUserQuestion", "Agent", "WebSearch"]
 name: spec
 ---
 
@@ -118,6 +118,16 @@ Before starting, understand the project:
 ## Implementation Phases
 {Phased breakdown with clear deliverables per phase}
 
+## Validation Criteria
+
+For each major observable behavior defined in this spec, define how to verify it works end-to-end:
+
+| Behavior | Trigger | Expected Evidence | Where to Check |
+|----------|---------|-------------------|----------------|
+| {e.g., "data persisted after save"} | {e.g., "submit the form"} | {e.g., "record exists in database"} | {e.g., "database query, API response"} |
+
+These criteria are used during `/implement-phase-batch` to validate spec alignment. Each row becomes a test assertion.
+
 ## Open Questions
 {Anything still unresolved}
 
@@ -125,7 +135,20 @@ Before starting, understand the project:
 {Link to RESEARCH.md and key findings that shaped decisions}
 ```
 
-7. Confirm with the user that the spec is complete.
+7. **Cross-Boundary Validation (before marking Final):**
+   Before finalizing any spec that references runtime data access, surface counts, or cross-boundary propagation:
+   - **Formulas referencing runtime data** (e.g., "total = sum(lineItems.price)"): Verify the data is accessible at the proposed instrumentation point — read the source code or dispatch a subagent to confirm the variables are in scope
+   - **Surface counts** (e.g., "~50 API endpoints"): Run a subagent to grep/count the actual surfaces in the codebase; report the real number
+   - **Cross-boundary propagation** (e.g., "auth token flows through middleware"): Verify the boundary contract supports it — check the protocol schema, third-party docs, or IPC layer
+   - Mark any unverified quantities with `(estimated — verify during Phase N)` in the spec; never commit to a specific number without evidence
+
+8. Confirm with the user that the spec is complete.
+
+---
+
+## Step 4: Append to Work Log
+
+!`cat ~/.claude/skills/_components/work-log.md`
 
 ---
 
