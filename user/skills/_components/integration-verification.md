@@ -24,6 +24,17 @@ For every new user-facing API added whose output is externally observable (rende
 
 Do not mark the phase complete until this check passes.
 
+### Verify Data Flow for Wiring Phases (MANDATORY — DO NOT SKIP)
+
+If this phase connects modules that were previously isolated (e.g., wiring an EventBus to a log sink, connecting a capture layer to a writer, routing events between subsystems), verify the data actually flows end-to-end:
+
+1. **Identify the pipeline:** What is the entry point (event emitter, API call, user action) and what is the observable output (file write, network response, UI update)?
+2. **Trace the path:** Read every module in the chain and confirm imports, function calls, and data transforms are correctly wired — not just that each module compiles in isolation.
+3. **Require a smoke test:** At minimum, one test must exercise the full path: trigger at the entry point → assert at the observable output. Unit tests on individual modules are necessary but NOT sufficient — integration bugs live at the seams.
+4. **If no wiring occurred** in this phase, explicitly state "No data flow verification required — this phase does not connect previously isolated modules" and move on.
+
+**Why this exists:** Isolated module tests pass while end-to-end integration remains broken — wiring bugs live at the seams between layers. This step prevents "all tests pass but the feature doesn't work" scenarios.
+
 ### Fix Integration Issues
 
 If issues found: fix them and update PHASES.md (if applicable) with notes about what was fixed.

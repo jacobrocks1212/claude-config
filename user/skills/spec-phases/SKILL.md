@@ -14,7 +14,7 @@ Analyzes a feature spec and decomposes it into well-bounded implementation phase
 
 ## Arguments
 
-- `spec-path` (required): Path to spec file (e.g., `docs/features/beat-highlighting/SPEC.md`)
+- `spec-path` (required): Path to spec file (e.g., `docs/features/my-feature/SPEC.md`)
 
 ## Workflow
 
@@ -83,8 +83,8 @@ Wait for user approval before writing.
 
 Create a **separate** `PHASES.md` file in the **same directory** as the spec file. Do NOT add phases inline to the spec.
 
-- Spec: `docs/features/beat-highlighting/SPEC.md`
-- Phases: `docs/features/beat-highlighting/PHASES.md`
+- Spec: `docs/features/my-feature/SPEC.md`
+- Phases: `docs/features/my-feature/PHASES.md`
 
 The phases file links back to the spec for context.
 
@@ -110,15 +110,16 @@ Launch a Sonnet subagent with:
 **Scope:** {Clear description of what's built}
 
 **Deliverables:**
-- [ ] {Concrete output 1}
-- [ ] {Concrete output 2}
+- [ ] {Concrete code output 1}
+- [ ] {Concrete code output 2}
 - [ ] Tests: {What tests verify this phase}
+
+!`cat .claude/skill-config/phases-runtime-verification.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-verification.md`
 
 **Prerequisites:** None (first phase) OR {specific prior phase work}
 
 **Files likely modified:**
 - `path/to/file.ts` - {what changes}
-- `path/to/other.rs` - {what changes}
 
 **Testing Strategy:**
 {How this phase is verified in isolation}
@@ -135,7 +136,10 @@ Launch a Sonnet subagent with:
 **Scope:** {Clear description}
 
 **Deliverables:**
-- [ ] {Concrete output 1}
+- [ ] {Concrete code output 1}
+
+**Runtime Verification** *(checked by integration test or manual testing):*
+- [ ] {Observable runtime behavior if applicable — omit section if none}
 
 **Prerequisites:**
 - Phase 1: {Specific dependency - what must exist}
@@ -169,6 +173,10 @@ Launch a Sonnet subagent with:
 2. Add any new "Open Questions" discovered during analysis to the spec
 3. Update "Decisions Log" in the spec with phase boundary rationale
 
+### Step 8: Append to Work Log
+
+!`cat ~/.claude/skills/_components/work-log.md`
+
 ## Phase Size Guidelines
 
 **Too Small:**
@@ -193,39 +201,7 @@ Launch a Sonnet subagent with:
 3. **Integration explosion** - Every phase touches every file
 4. **Testing impossible** - Can't test without full system
 
-## Example Output
-
-From beat-highlighting spec (`docs/features/beat-highlighting/PHASES.md`):
-
-```markdown
-# Implementation Phases — Beat Highlighting
-
-> Phases for [`SPEC.md`](./SPEC.md)
-
-### Phase 1: Sidecar Source Location Extraction
-
-**Scope:** Extend sidecar to include source location metadata in hap serialization.
-
-**Deliverables:**
-- [ ] Extended `SerializedHap` with `location?: { start: number; end: number }`
-- [ ] Updated transpiler configuration to emit mini locations
-- [ ] Unit tests for location extraction (various patterns)
-
-**Prerequisites:** None
-
-**Files likely modified:**
-- `strudel-sidecar/src/StrudelRuntime.ts` - Add transpiler options
-- `strudel-sidecar/src/CyclistBridge.ts` - Extract location during serialization
-- `src/core/abstractions/types.ts` - Extend SerializedHap type
-
-**Testing Strategy:**
-Test sidecar in isolation via JSON-IPC protocol. Verify various pattern types emit correct offsets.
-
-**Integration Notes for Next Phase:**
-- Transpiler must be passed as 2nd arg to `evaluate()`, options as 3rd
-- `context.locations` is an array; use `[0]` for innermost location
-- Pure patterns (`pure(x)`) have no location - this is expected
-```
+!`cat .claude/skill-config/phases-example-output.md 2>/dev/null || cat ~/.claude/skills/_components/phases-example-output.md`
 
 ## When to Use This Skill
 

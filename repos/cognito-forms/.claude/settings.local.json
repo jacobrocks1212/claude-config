@@ -43,6 +43,8 @@
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Professional\\\\Common7\\\\IDE\\\\CommonExtensions\\\\Microsoft\\\\TestWindow\\\\vstest.console.exe\":*)",
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\source\\\\repos\\\\Cognito Forms\\\\.claude\\\\scripts\\\\build-filtered.ps1\":*)",
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\source\\\\repos\\\\Cognito Forms\\\\.claude\\\\scripts\\\\test-filtered.ps1\":*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\source\\\\repos\\\\Cognito Forms\\\\.claude\\\\scripts\\\\client-build-filtered.ps1\":*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\JacobMadsen\\\\source\\\\repos\\\\Cognito Forms\\\\.claude\\\\scripts\\\\client-test-filtered.ps1\":*)",
       "Bash(claude:*)",
       "Bash(netsh:*)",
       "Bash(openssl:*)",
@@ -147,7 +149,9 @@
       "Bash(cp -r \"C:/Users/JacobMadsen/.claude/skills/forms-service\" \"C:/Users/JacobMadsen/source/repos/Cognito Forms/.claude/skills/\")",
       "Bash(rm -rf \"C:/Users/JacobMadsen/.claude/skills/forms-service\")",
       "Bash(rm \"C:/Users/JacobMadsen/.claude/commands/review-pr.md\")",
-      "Read(//c/Users/JacobMadsen/.claude/skills/**)"
+      "Read(//c/Users/JacobMadsen/.claude/skills/**)",
+      "Bash(mkdir -p ~/.claude)",
+      "Bash(printf '%s\\\\n' '{\"timestamp\":\"2026-04-28T20:00:00Z\",\"skill\":\"add-phase\",\"project\":\"Cognito Forms\",\"branch\":\"p/entry-changes-section-handling\",\"commit\":\"6b6bafdf8f5\",\"title\":\"Add Phase 11: Shared replay helper + diagnostic logging\",\"summary\":\"Added Phase 11 to PHASES.md based on findings from three parallel code review agents \\(reuse, quality, efficiency\\). Two actionable items: extract shared replay preamble from ReplayEntryStateBefore/GetEntryChangeAt, and add Trace logging to empty catch in ApplyPatch.\",\"files_modified\":[\".claude.local/knowledge/features/audit-log-patch-sections/PHASES.md\"],\"phases_md\":\".claude.local/knowledge/features/audit-log-patch-sections/PHASES.md\",\"spec_md\":\".claude.local/knowledge/features/audit-log-patch-sections/SPEC.md\",\"superseded_phases\":[]}')"
     ],
     "deny": [],
     "ask": []

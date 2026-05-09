@@ -3,6 +3,8 @@ name: writing-plans
 description: Use when you have a spec or requirements for a multi-step task, before touching code
 ---
 
+> **Note:** This is the legacy planning pipeline. For new work, prefer: `/spec` → `/spec-phases` → `/implement-phase`
+
 # Writing Plans
 
 ## Overview
@@ -32,8 +34,6 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 ```markdown
 # [Feature Name] Implementation Plan
-
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** [One sentence describing what this builds]
 
@@ -95,6 +95,10 @@ git commit -m "feat: add specific feature"
 - DRY, YAGNI, TDD, frequent commits
 - When writing orchestration plans that use subagent patterns, quality gates, PHASES.md updates, integration verification, or CLAUDE.md review — inject from `~/.claude/skills/_components/` via `!`cat``. Never copy shared protocol text inline. When modifying a shared protocol, edit the component file, not individual skills.
 
+## Append to Work Log
+
+!`cat ~/.claude/skills/_components/work-log.md`
+
 ## Execution Handoff
 
 After saving the plan, offer execution choice:
@@ -108,10 +112,8 @@ After saving the plan, offer execution choice:
 **Which approach?"**
 
 **If Subagent-Driven chosen:**
-- **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development
 - Stay in this session
 - Fresh subagent per task + code review
 
 **If Parallel Session chosen:**
 - Guide them to open new session in worktree
-- **REQUIRED SUB-SKILL:** New session uses superpowers:executing-plans

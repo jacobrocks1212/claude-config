@@ -2,6 +2,7 @@
 description: Plan and implement ALL phases across 1+ PHASES.md files using parallel Sonnet subagents, committing after each phase
 argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...]
 name: implement-phase-batch
+plan-mode: required
 ---
 
 # Implement Phase Batch
@@ -52,13 +53,19 @@ Build a directed acyclic graph of all pending phases. The execution order respec
 
 ---
 
-## Step 2: Enter Plan Mode
+## Step 2: Dirty Tree Check (MANDATORY — BEFORE PLAN MODE)
 
-If not already in plan mode, enter it now.
+!`cat .claude/skill-config/dirty-tree-check.md 2>/dev/null || cat ~/.claude/skills/_components/dirty-tree-check.md`
 
 ---
 
-## Step 3: Draft the Comprehensive Plan
+## Step 3: Plan Mode Gate (MANDATORY — DO NOT SKIP)
+
+!`cat ~/.claude/skills/_components/plan-mode-gate.md`
+
+---
+
+## Step 4: Draft the Comprehensive Plan
 
 Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. After the user approves this plan, it will be executed verbatim, potentially after a context-window clear. Nothing outside the plan can be relied upon.
 
@@ -85,18 +92,34 @@ The plan must follow this structure exactly:
 
 ---
 
+## EXECUTION MODEL — READ THIS FIRST
+
+This plan uses an **orchestrator + Sonnet subagent** architecture:
+
+| Role | What it does | Allowed tools |
+|------|-------------|---------------|
+| **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
+| **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
+
+**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+
+**Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
+
+Every "Launch Subagents" step below MUST be executed by composing Agent calls using this pattern.
+
 ## MANDATORY RULES — DO NOT SKIP ANY STEP
 
-1. All subagent edits happen in the current worktree — NEVER create worktrees for subagents
-2. Every subagent follows TDD — failing test BEFORE implementation code
-3. PHASES.md is updated AFTER EACH batch completes (not deferred)
-4. Every subagent's output is reviewed for correctness and spec alignment before continuing
-5. Mistakes are fixed immediately before launching the next batch
-6. After all batches in a phase finish, integration verification confirms all changes work together
-7. Relevant CLAUDE.md files are created/updated after each phase if changes warrant it
-8. Each completed phase is committed and pushed before the next phase begins
-9. Cross-feature phases may run in parallel when dependencies are satisfied and no file conflicts exist
-10. This plan is self-contained — follow it exactly as written without relying on external context
+1. **ALL implementation and test-writing work MUST be delegated to Sonnet subagents via the Agent tool** — the orchestrating session MUST NOT call `Edit` or `Write` on source or test files. The ONLY exception: trivial PASS-WITH-FIXES items (a few lines). If you are composing an `Edit` or `Write` call targeting a source/test file, STOP — compose an `Agent` tool call instead.
+2. All subagent edits happen in the current worktree — NEVER create worktrees for subagents
+3. Every TDD work unit goes through the test-first pipeline — dedicated test agent writes failing tests, dedicated implementation agent makes them pass
+4. PHASES.md is updated AFTER EACH batch completes (not deferred)
+5. Every subagent's output is reviewed for correctness, spec alignment, and TDD discipline before continuing
+6. Mistakes are fixed immediately before launching the next batch
+7. After all batches in a phase finish, integration verification confirms all changes work together
+8. Relevant CLAUDE.md files are created/updated after each phase if changes warrant it
+9. Each completed phase is committed and pushed before the next phase begins
+10. Cross-feature phases may run in parallel when dependencies are satisfied and no file conflicts exist
+11. This plan is self-contained — follow it exactly as written without relying on external context
 
 ---
 
@@ -122,11 +145,17 @@ The plan must follow this structure exactly:
 
 **Work Units:**
 
+**Partitioning protocol — apply before defining work units:**
+
+!`cat ~/.claude/skills/_components/subagent-partitioning.md`
+
 [For each work unit:]
 - **Scope:** Which deliverables it covers (copy the checkbox items from PHASES.md)
-- **Files to create/modify:** Exact paths
-- **Test files:** Exact paths
-- **TDD sequence:** What tests to write, what they assert, what implementation satisfies them
+- **TDD:** yes/no (yes if deliverable has testable behavior; no for config, docs, scaffolding without logic)
+- **Files to create/modify:** Exact paths (implementation files)
+- **Test files:** Exact paths (TDD work units only)
+- **Test expectations:** What tests to write and what they assert (TDD work units only)
+- **Implementation goal:** What the implementation must achieve to satisfy tests and spec
 - **Spec requirements:** Quote or reference the specific SPEC.md sections
 - **Batch:** Which parallel batch within this phase (1, 2, etc.)
 
@@ -157,7 +186,9 @@ Repeat until all phases in the Execution Schedule are complete or a blocking iss
 6. **Report:** Print "✅ [feature] Phase N: [title] — committed as [hash]"
 7. **Loop:** Re-evaluate which phases are now ready (completing one phase may unblock others). Return to step 1.
 
-### Initialize Task Tracking (MANDATORY — DO NOT SKIP)
+### Step 0: Initialize Task Tracking (MANDATORY PREREQUISITE — EXECUTE BEFORE ANYTHING ELSE)
+
+**This is the first thing you do when executing this plan. Do NOT skip ahead to any phase or batch.**
 
 !`cat ~/.claude/skills/_components/task-tracking.md`
 
@@ -169,9 +200,13 @@ For each batch within a phase:
 
 !`cat ~/.claude/skills/_components/source-reread.md`
 
-#### Step B.1: Launch Subagents
+#### Step B.1: Launch Subagents (COMPOSE Agent TOOL CALLS — ZERO INLINE IMPLEMENTATION)
+
+**PRE-FLIGHT CHECK:** You are about to dispatch work to Sonnet subagents. Confirm: (1) you will use the `Agent` tool with `model: "sonnet"` for ALL code changes in this step, (2) you will NOT call `Edit` or `Write` on any source or test file. If either is false, re-read the EXECUTION MODEL section above before proceeding.
 
 !`cat ~/.claude/skills/_components/subagent-launch.md`
+
+**POST-DISPATCH GATE:** After all subagents in this step complete, verify you composed `Agent` tool calls and did NOT edit source/test files directly. If you violated this constraint, revert your inline edits and re-dispatch via Agent before proceeding to the review step.
 
 #### Step B.2: Review Batch Output (MANDATORY GATE — DO NOT SKIP OR SHORTCUT)
 
@@ -187,6 +222,10 @@ For each batch within a phase:
 
 !`cat ~/.claude/skills/_components/quality-gates.md`
 
+#### Step B.4.5: MCP Integration Test (BLOCKING — execute Applicability Rule)
+
+!`cat ~/.claude/skills/_components/mcp/mcp-integration-test.md`
+
 #### Step B.5: Commit and Push Batch (use "Phase batch" message format)
 
 !`cat .claude/skill-config/commit-policy.md 2>/dev/null || cat ~/.claude/skills/_components/commit-and-push.md`
@@ -197,17 +236,23 @@ For each batch within a phase:
 - [ ] Review report produced with PASS/PASS-WITH-FIXES/NEEDS-REWORK verdict
 - [ ] PHASES.md updated with completed deliverables and implementation notes
 - [ ] All quality gates pass
+- [ ] Step B.4.5 MCP integration test executed, OR explicitly skipped with documented reason (check PHASES.md for `MCP Integration Test Assertions` block — if present, test is MANDATORY)
 - [ ] Step B.5 completed (commit per project policy, or skip if policy says so)
 
 If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 
+### Propagation Awareness Note
+
+When drafting work units, identify any that introduce import indirection (wrappers, proxies, facades) or add fields to widely-constructed structs/interfaces. For these work units, the plan MUST include:
+- A "propagation step" ensuring all consumers are migrated in the same batch
+- A vitest/jest alias addition if the new module wraps a mocked dependency
+- A note in the QG step to run the full suite (not just the affected language)
+
+This prevents delayed blast-zone failures — where a correct wrapper works in isolation but breaks 50+ tests that mock the underlying module.
+
 ### Post-Phase Steps (after all batches in a phase)
 
-#### Integration Verification (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/integration-verification.md`
-
-#### Create/Update CLAUDE.md Files (MANDATORY — DO NOT SKIP)
+!`cat .claude/skill-config/integration-verification.md 2>/dev/null || cat ~/.claude/skills/_components/integration-verification.md`
 
 !`cat ~/.claude/skills/_components/claude-md-review.md`
 
@@ -270,11 +315,17 @@ When all phases in the Execution Schedule are complete:
 
    **Implementation Notes summary:**
    [key cross-feature integration notes and pitfalls, collapsed into a brief reference for the next wave]
+
+---
+
+## Append to Work Log (MANDATORY — DO NOT SKIP)
+
+!`cat ~/.claude/skills/_components/work-log.md`
 ```
 
 ---
 
-## Step 4: Present Plan for Approval
+## Step 5: Present Plan for Approval
 
 Present the completed plan and wait for user approval before exiting plan mode. This is the **only** approval gate.
 

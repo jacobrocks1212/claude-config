@@ -44,7 +44,8 @@ dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.sln" -verb
 dotnet test "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" --filter "ClassName~MyTestClass" --verbosity minimal
 ```
 - **Prefer `/mstest` skill** — runs filtered test output showing only passed/failed tests, errors, and summary
-- Default project: `Cognito.UnitTests`. For integration tests: `Cognito.Forms.UnitTests`
+- Default project: `Cognito.UnitTests` — **all** service/unit tests live here (including `EntryIndexServiceTests`, `PersonSubmissionIndexingTests`, `ShouldInvalidateIndexTests`, etc.)
+- `Cognito.Forms.UnitTests` is the **Selenium/browser integration** test project — only use `-TestDll "Cognito.Forms.UnitTests"` for browser-based tests
 - Filter syntax: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
 - Tests run with `--no-build` — build first with `/msbuild` if needed
 

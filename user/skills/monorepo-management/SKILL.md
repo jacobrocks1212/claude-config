@@ -76,7 +76,7 @@ cd my-monorepo
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
-  "pipeline": {
+  "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
@@ -122,7 +122,7 @@ cd my-monorepo
     "prettier": "^3.0.0",
     "typescript": "^5.0.0"
   },
-  "packageManager": "pnpm@8.0.0"
+  "packageManager": "pnpm@9.0.0"
 }
 ```
 
@@ -467,7 +467,7 @@ import type { User, CreateUserInput } from '@repo/types';
 ```json
 // turbo.json
 {
-  "pipeline": {
+  "tasks": {
     "build": {
       // Build depends on dependencies being built first
       "dependsOn": ["^build"],

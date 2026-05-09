@@ -1,0 +1,3 @@
+# Capability namespaces for component filtering
+# One namespace per line — matches _components/{namespace}/ subdirectories
+# Cognito Forms uses only core components (no MCP, no Tauri)
