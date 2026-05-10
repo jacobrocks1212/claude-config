@@ -30,12 +30,25 @@ Before starting, understand the project:
 
 **Goal:** Nail down the core feature concept, scope, and key design decisions through interactive dialogue.
 
+### Step 1a: Understand Before Architecting
+
+Before asking about architecture, technology, or infrastructure, ensure you understand what's actually being built and why. The depth of this step depends on the feature:
+
+- **Automating existing workflows:** Ask the user (or end user, if the developer is a proxy) to describe the current process step by step. Understand where time is lost and what requires human judgment vs. what's mechanical. If the developer is building for someone else, ask for the end user's own description — summaries often miss the real pain points.
+- **New capabilities (no existing workflow):** Clarify the desired outcome and key interactions. What does success look like from the user's perspective?
+- **Technical/infrastructure features:** Clarify the constraints and integration points. Workflow interviews don't apply here.
+
+Do NOT make architecture or technology decisions until the problem space is understood.
+
+### Step 1b: Brainstorm Architecture & Scope
+
 1. Synthesize your understanding of the feature request and related context.
-2. Use `AskUserQuestion` to iteratively refine the spec. Ask about:
+2. Use `AskUserQuestion` to iteratively refine the spec. **Ask about the problem and desired outcomes before infrastructure details:**
+   - **Desired outcomes** — What should the experience look like?
    - **Scope boundaries** — What's in v1 vs future? What's explicitly out of scope?
-   - **User experience** — How does the user interact with this? Key workflows?
    - **Technical constraints** — Platform differences? Performance concerns? Integration with existing systems?
    - **Design decisions** — Where there are multiple valid approaches, present options with tradeoffs.
+   - **Infrastructure details** — Runtime, repo structure, package manager, etc.
    - **Edge cases** — What happens in unusual scenarios?
 3. **Iteratively update the SPEC file** as decisions are locked in. Don't wait until the end — write to `{spec-dir}/{feature-slug}/SPEC.md` after each brainstorming round with confirmed decisions. Mark undecided items as "TBD" or "Open Question".
 4. Continue brainstorming rounds until the user signals they're satisfied with the baseline.
@@ -47,6 +60,7 @@ Before starting, understand the project:
 - Reference existing project patterns and conventions.
 - Flag any conflicts with current architecture early.
 - **For UI proposals:** Use `AskUserQuestion` with `markdown` previews to show ASCII wireframe mockups where helpful.
+- **Late requirement impact check:** When a new requirement or decision contradicts or significantly changes a previously written spec section, explicitly enumerate which existing sections are affected before rewriting. State: "This changes sections: [list]. Updating all affected sections now." This prevents partial updates where some sections reflect a stale architecture.
 
 ---
 
@@ -134,6 +148,8 @@ These criteria are used during `/implement-phase-batch` to validate spec alignme
 ## Research References
 {Link to RESEARCH.md and key findings that shaped decisions}
 ```
+
+!`cat .claude/skill-config/spec-testing-guidance.md 2>/dev/null || cat ~/.claude/skills/_components/spec-testing-guidance.md`
 
 7. **Cross-Boundary Validation (before marking Final):**
    Before finalizing any spec that references runtime data access, surface counts, or cross-boundary propagation:

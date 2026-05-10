@@ -156,6 +156,8 @@ Launch a Sonnet subagent with:
 ---
 ```
 
+!`cat .claude/skill-config/phases-testing-strategy.md 2>/dev/null || cat ~/.claude/skills/_components/phases-testing-strategy.md`
+
 ### Step 6: Review Subagent Output (MANDATORY GATE — DO NOT SKIP OR SHORTCUT)
 
 **This is a blocking gate.** You CANNOT proceed until the review protocol below is fully executed and produces a structured review report with a verdict.
