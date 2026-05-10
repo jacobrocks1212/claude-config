@@ -1,28 +1,31 @@
 ---
-description: Plan and implement ALL phases across 1+ PHASES.md files using parallel Sonnet subagents, committing after each phase (v2 — reference-based components)
+description: Generate an implementation plan for ALL phases across 1+ PHASES.md files — optimized for mobile/async workflow (reference-based components)
 argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...]
-name: implement-phase-batch-v2
-plan-mode: required
+name: write-plan
+plan-mode: never
 ---
 
-# Implement Phase Batch v2
+# Write Plan
 
 Plan (once) and then continuously implement all phases from one or more PHASES.md files using TDD and parallel Sonnet subagents until all phases are complete or a blocking issue forces early exit.
 
-**Flow:** Load context -> enter plan mode -> draft ONE self-contained plan covering all phases -> user approves -> exit plan mode -> execute the plan autonomously.
+**Mobile variant:** Identical to `/implement-phase-batch` except the plan is written to a file (colocated with the feature's PHASES.md) instead of entering plan mode. This enables remote mobile workflow where plans are generated and then executed in separate sessions.
 
-**Critical: the plan must be fully self-contained.** The plan may be executed after the context window is cleared. Every execution instruction, loop control, blocking-issue protocol, and completion step MUST be baked into the generated plan itself — not left in this skill file. After approval, the plan is the sole source of truth.
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode` under any circumstances. Do NOT present the plan for interactive approval. The deliverable of this skill is a written PLAN.md file, not a plan-mode interaction. If you feel the urge to enter plan mode, re-read this paragraph.
 
-**v2 difference from /implement-phase-batch:** Execution-time components (review protocol, launch protocol, quality gates, etc.) are referenced by file path in the generated plan instead of inlined. The executing session reads them on demand from disk, reducing plan size and improving post-compaction recovery.
+**Flow:** Load context -> draft ONE self-contained plan covering all phases -> write plan to file -> report path to user.
 
-**Key differences from `/implement-phase-v2`:**
+**Critical: the plan must be fully self-contained.** The plan may be executed after the context window is cleared. Every execution instruction, loop control, blocking-issue protocol, and completion step MUST be baked into the generated plan itself — not left in this skill file. After the plan is written, it is the sole source of truth.
+
+Execution-time components (review protocol, launch protocol, quality gates, etc.) are referenced by file path in the generated plan instead of inlined. The executing session reads them on demand from disk, reducing plan size and improving post-compaction recovery.
+
+**Key differences from `/implement-phase`:**
 - Takes 1+ PHASES.md paths (not just one); covers ALL phases across all of them in a single plan
-- Plan mode entered exactly once (at the start); after user approval, execution is fully autonomous
 - Commits and pushes after each completed phase (docs updated + QGs green)
 - Cross-feature parallelism: phases from different features run concurrently when dependencies are satisfied and no file conflicts exist
 - Early exit on blocking issues with a clear status report
 
-All other constraints from `/implement-phase-v2` carry over: TDD, Sonnet subagents, mandatory review, mandatory PHASES.md updates, mandatory QG pass, mandatory integration verification, mandatory CLAUDE.md review.
+All other constraints from `/implement-phase` carry over: TDD, Sonnet subagents, mandatory review, mandatory PHASES.md updates, mandatory QG pass, mandatory integration verification, mandatory CLAUDE.md review.
 
 ---
 
@@ -55,21 +58,15 @@ Build a directed acyclic graph of all pending phases. The execution order respec
 
 ---
 
-## Step 2: Dirty Tree Check (MANDATORY — BEFORE PLAN MODE)
+## Step 2: Dirty Tree Check (MANDATORY — BEFORE DRAFTING PLAN)
 
 !`cat .claude/skill-config/dirty-tree-check.md 2>/dev/null || cat ~/.claude/skills/_components/dirty-tree-check.md`
 
 ---
 
-## Step 3: Plan Mode Gate (MANDATORY — DO NOT SKIP)
+## Step 3: Draft the Comprehensive Plan
 
-!`cat ~/.claude/skills/_components/plan-mode-gate.md`
-
----
-
-## Step 4: Draft the Comprehensive Plan
-
-Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. After the user approves this plan, it will be executed verbatim, potentially after a context-window clear. Nothing outside the plan can be relied upon.
+Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. When the executing session reads this plan file, it will execute it verbatim, potentially in a fresh context window. Nothing outside the plan can be relied upon.
 
 **v2 RULE:** Execution-time components are NOT inlined in the plan. Each step lists the component file paths the executor must `Read` from disk before proceeding. Only the unique per-plan content (execution model, work units, batch structure, loop control) is written inline.
 
@@ -377,8 +374,6 @@ Include a batch overview table per phase:
 
 ---
 
-## Step 5: Present Plan for Approval
+## Step 4: Write Plan to File (MANDATORY)
 
-Present the completed plan and wait for user approval before exiting plan mode. This is the **only** approval gate.
-
-**Remind the user:** "This plan is self-contained. After approval, I will execute it autonomously — committing after each phase, looping until all phases are complete or a blocking issue halts progress. No further approval will be requested."
+!`cat ~/.claude/skills/_components/plan-file-output.md`
