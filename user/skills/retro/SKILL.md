@@ -1,23 +1,65 @@
 ---
 name: retro
 description: Retrospective analysis of completed work — identifies issues, incorrect assumptions, and workflow improvements
-argument-hint: [feature-name | SPEC path | PHASES path] [--p]
-plan-mode: flag
+argument-hint: [feature-name | SPEC path | PHASES path] [--auto]
+plan-mode: never
 ---
 
 # Retro
 
-Reviews completed work (specified by user, or inferred from conversation history) and produces a structured retrospective. Identifies issues encountered, incorrect assumptions, inefficient implementation order, missed parallelism, and proposes concrete workflow improvements.
+Reviews completed work (specified by user, or inferred from conversation history) and produces a structured retrospective. Identifies issues encountered, incorrect assumptions, inefficient implementation order, missed parallelism, and proposes concrete workflow improvements. The improvement plan is written to a file for execution via `/execute-plan`.
+
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. The deliverable is a written plan file, not a plan-mode interaction.
+
+### `--auto` Flag
+
+If `$ARGUMENTS` contains `--auto`, this is an autonomous invocation (typically from `/lazy`):
+- Strip `--auto` from arguments before processing
+- **Skip ALL clarifying questions** (Step 5) — use your best judgment for improvement priorities
+- **Skip AskUserQuestion in Step 2** — infer scope from arguments or conversation context; if truly ambiguous, STOP with PushNotification
+- Focus on systematic issues and defects; skip subjective/preference questions
+- **MANDATORY spec divergence reporting:** The plan file output MUST include a top-level `## Spec Divergences` section (before defects/improvements) that classifies all divergences found by Subagent B:
+
+```markdown
+## Spec Divergences
+
+**Overall alignment:** {percentage}%
+
+### Significant (require corrective implementation)
+| Spec Requirement | What Was Built | Gap |
+|-----------------|----------------|-----|
+| ... | ... | ... |
+
+### Minor (document only)
+| Item | Nature of Divergence |
+|------|---------------------|
+| ... | ... |
+```
+
+If the "Significant" table has any rows, the retro MUST flag this clearly in its final output message: `"SIGNIFICANT SPEC DIVERGENCES FOUND — corrective phases needed before feature completion."` This signal is consumed by `/lazy` to trigger `/add-phase`.
 
 ---
 
-## Step 1: Plan Mode Gate (MANDATORY — DO NOT SKIP)
+## Step 0: Task Tracking (MANDATORY — DO NOT SKIP)
 
-!`cat ~/.claude/skills/_components/plan-mode-gate.md`
+Load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Identify work scope", description: "Resolve PHASES.md, SPEC.md, git log, and other source documents" })`
+2. `TaskCreate({ subject: "Gather evidence via subagents", description: "Launch parallel subagents A-F for implementation notes, spec diff, commit history, quality gaps, runtime evidence, session history" })`
+3. `TaskCreate({ subject: "Synthesize findings", description: "Aggregate subagent results into structured retrospective" })`
+4. `TaskCreate({ subject: "Propose improvements", description: "Defects to fix, skill changes, CLAUDE.md updates, process changes" })`
+5. `TaskCreate({ subject: "Write improvement plan file", description: "Convert proposals into executable plan file" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
 
 ---
 
-## Step 2: Identify the Work Scope
+## Step 1: Identify the Work Scope
 
 Determine what completed work to review:
 
@@ -95,12 +137,32 @@ Launch parallel research subagents to collect evidence across multiple dimension
 
 **Only launch if** implementation used `/implement-phase-batch` or arguments mention compactions/context loss.
 
-**Prompt:** Search `~/.claude-personal/projects/` for `.jsonl` chat logs related to this feature. Extract:
+**Prompt:** Search the Claude Code session history for this feature. The session history lives at:
+
+```
+~/.claude-personal/projects/{project-dir}/
+├── {session-id}.jsonl              # Main conversation log
+├── {session-id}/
+│   ├── subagents/
+│   │   ├── agent-{id}.jsonl        # Subagent conversation log
+│   │   └── agent-{id}.meta.json    # {"agentType": "...", "description": "..."}
+│   └── tool-results/               # Large tool outputs
+```
+
+**How to search:**
+1. Identify the project directory by matching the cwd-encoded path (e.g., `C--Users-JacobMadsen-source-repos-algobooth`)
+2. List session files by modification time (newest first) — recent sessions are most relevant
+3. Search main `.jsonl` files for the feature name/keywords to identify relevant sessions
+4. For relevant sessions, also search `{session-id}/subagents/agent-*.jsonl` — subagent history contains the actual implementation work and is where most issues surface
+5. Read `.meta.json` files to understand what each subagent was doing (the `description` field summarizes the work unit)
+
+Extract from matched sessions:
 - Total session count and compaction count
 - Pattern of user interventions (did user have to redirect the orchestrator?)
 - Review verdicts (PASS/NEEDS-REWORK counts)
 - Whether the orchestrator lost track of the plan after compaction
 - Evidence of "drift" — where the orchestrator proceeded on stale/incomplete information
+- Subagent failures or retries visible in agent logs
 
 ---
 
@@ -179,7 +241,9 @@ Summarize how context compaction affected the implementation:
 
 ## Step 5: Clarify Expectations
 
-Use **AskUserQuestion** to align on what improvements to propose:
+**If `--auto` flag was set:** Skip this step entirely. Prioritize all findings by impact (blocked > rework > friction > minor). Propose changes to skills, CLAUDE.md, and tools as appropriate based on findings.
+
+**Otherwise:** Use **AskUserQuestion** to align on what improvements to propose:
 
 > Based on my analysis, I found [N] issues across [categories]. The highest-impact improvements I could propose are:
 >
@@ -213,6 +277,29 @@ Skills are organized using a decomposition system (see `/crud-skill` for the ful
 - **Skills** live at `~/.claude/skills/<name>/SKILL.md` (user-level) or `.claude/skills/<name>/SKILL.md` (repo-scoped)
 - **Shared components** live at `~/.claude/skills/_components/<name>.md` — injected into skills via the `!` + backtick-quoted `cat` directive (see any SKILL.md with a component injection for the exact syntax)
 - A single component edit propagates to ALL skills that inject it — always check the blast radius
+
+**Comprehension requirement (MANDATORY):** Before proposing any change to a skill or component, you MUST:
+1. **Read the target skill/component in full** — not just the section you want to change
+2. **Understand its purpose** — what class of work does it orchestrate? What are its invariants?
+3. **Check for existing coverage** — does the skill already address this concern (perhaps differently than you'd propose)?
+4. **Assess fit** — would your proposed change distort the skill's primary purpose or add orthogonal concerns?
+
+If a proposed change doesn't fit the target skill's purpose, either find a more appropriate skill, propose it as a CLAUDE.md rule instead, or drop it (if it's an implementation defect, not a systematic issue).
+
+**Generalization rule (MANDATORY):** Every proposed skill or CLAUDE.md change must target a **class of problem**, not a specific instance. Before proposing any change, apply this test:
+
+| Question | If NO → | If YES → |
+|----------|---------|----------|
+| Would this rule prevent at least 3 different specific mistakes? | Drop it — over-fitted to one incident | Proceed |
+| Could a reader understand this rule without knowing what retro produced it? | Rewrite to remove incident-specific language | Proceed |
+| Does this rule duplicate logic the target skill/CLAUDE.md already handles? | Drop it — the existing rule wasn't followed, not missing | Proceed |
+| Is this rule so broad it would trigger false positives in normal work? | Narrow the scope or add a qualifying condition | Proceed |
+
+Anti-pattern examples:
+- BAD: "Always check constructors when adding a field to a struct" → only prevents one specific mistake
+- GOOD: "After modifying a type's public surface, verify all construction sites compile" → class-level, catches additions, removals, renames, type changes
+- BAD: "Run clippy after changing Rust code" → already covered by quality gates
+- GOOD: "Quality gates must include cross-crate type propagation checks" → identifies a gap in existing process
 
 For each proposed change, identify the correct target:
 - **Component change:** If the improvement affects shared behavior (e.g., subagent briefing, quality gates, MCP testing) → edit the component file. List all skills that inject it.
@@ -269,19 +356,23 @@ For changes that aren't captured in files:
 
 ---
 
-## Step 6b: Implement Approved Changes (MANDATORY after user approves)
+## Step 6b: Write Improvement Plan File
 
-After the user confirms which improvements to implement, execute them immediately using parallel Sonnet subagents:
+Convert all proposed improvements from Step 6 into a self-contained execution plan. The plan should include:
+- All defect fixes as work units (with file paths and suggested changes)
+- All skill/component changes as work units
+- All CLAUDE.md updates as work units
+- All new tool/component creation as work units
 
-!`cat .claude/skill-config/parallel-implementation.md 2>/dev/null || cat ~/.claude/skills/_components/parallel-implementation.md`
-
-**Retro-specific implementation notes:**
+**Retro-specific plan content:**
 - Skill/component file edits (`.md` in `~/.claude/skills/` or `~/.claude/skills/_components/`) may be done directly by the orchestrator — these are documentation, not source code
 - Rust/TypeScript source changes (e.g., new MCP tools, ESLint rules) MUST go to subagents
-- When editing a component, check blast radius: `grep -r "component-name.md" ~/.claude/skills/ --include="*.md" -l` to find all skills that inject it
-- After all changes land, run `python ~/.claude/scripts/project-skills.py` to verify component injection resolution — check the summary output for errors
-- If the retro proposed PHASES.md additions (corrective phases), write those directly
+- When editing a component, include blast radius check: `grep -r "component-name.md" ~/.claude/skills/ --include="*.md" -l`
+- Include `python ~/.claude/scripts/project-skills.py` verification step after all skill/component changes
+- If the retro proposed PHASES.md additions (corrective phases), include those as work units
 - If `~/.claude/skills/` and `~/.claude-personal/skills/` are symlinked (same files), no mirroring needed. If separate, copy changed files to both directories.
+
+!`cat ~/.claude/skills/_components/plan-file-output.md`
 
 ---
 

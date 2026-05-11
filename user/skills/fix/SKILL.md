@@ -2,14 +2,34 @@
 description: Draft a TDD fix plan for a manually-reported bug using parallel Sonnet subagents
 argument-hint: [bug description] [optional path/to/PHASES.md]
 name: fix
-plan-mode: required
+plan-mode: never
 ---
 
 # Fix
 
-Draft a detailed fix plan (in plan mode) for a bug or issue discovered during manual testing — typically (but not always) after `/implement-phase`. The plan uses systematic debugging, TDD, and parallel Sonnet subagents, with all hard requirements encoded as explicit non-skippable steps in the plan itself.
+Draft a detailed TDD fix plan for a bug or issue discovered during manual testing — typically (but not always) after `/implement-phase`. The plan is written to a file for execution via `/execute-plan` in a separate session. The plan uses systematic debugging, TDD, and parallel Sonnet subagents, with all hard requirements encoded as explicit non-skippable steps in the plan itself.
+
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. The deliverable is a written plan file, not a plan-mode interaction.
 
 This skill may be invoked standalone (no associated PHASES.md). Handle both cases.
+
+---
+
+## Step 0: Task Tracking (MANDATORY — DO NOT SKIP)
+
+Load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Understand the feedback", description: "Parse bug report, restate problem, resolve PHASES.md context" })`
+2. `TaskCreate({ subject: "Systematic debugging", description: "Investigate root cause via subagents" })`
+3. `TaskCreate({ subject: "Draft fix plan", description: "Generate TDD fix plan with work units and batches" })`
+4. `TaskCreate({ subject: "Write plan file", description: "Write plan to feature/bug plans/ directory" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
 
 ---
 
@@ -76,13 +96,7 @@ Record the chosen category (and a one-sentence justification) — it drives Step
 
 ---
 
-## Step 4: Plan Mode Gate (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/plan-mode-gate.md`
-
----
-
-## Step 5: Draft the Fix Plan (TDD)
+## Step 4: Draft the Fix Plan (TDD)
 
 TDD enforcement is injected automatically via `subagent-launch.md` — every subagent inherits the TDD protocol.
 
@@ -254,6 +268,6 @@ Include this block verbatim in the plan — after Integration Verification and C
 
 ---
 
-## Step 7: Present Plan for Approval
+## Step 7: Write Plan File
 
-Present the completed plan and wait for user approval before exiting plan mode.
+!`cat ~/.claude/skills/_components/plan-file-output.md`

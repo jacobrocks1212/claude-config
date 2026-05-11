@@ -2,16 +2,18 @@
 description: Decompose 1+ feature specs into PHASES.md files using parallel Sonnet subagents, with holistic cross-feature review
 argument-hint: <path/to/SPEC1.md> [path/to/SPEC2.md] [...]
 name: spec-phases-batch
-plan-mode: required
+plan-mode: never
 ---
 
 # Spec Phases Batch
 
-Plan (once) and then decompose one or more feature specs into TDD-able implementation phases via parallel Sonnet subagents, with a holistic cross-feature review pass at the end. Produces a `PHASES.md` sibling file for each input spec.
+Decompose one or more feature specs into TDD-able implementation phases via parallel Sonnet subagents, with a holistic cross-feature review pass at the end. Produces a `PHASES.md` sibling file for each input spec. The plan is written to a file for execution via `/execute-plan` in a separate session.
 
-**Flow:** Load context → enter plan mode → draft ONE self-contained plan covering all specs → user approves → exit plan mode → execute autonomously (parallel subagents per spec → orchestrator holistic review → fix cross-feature issues → commit+push).
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. The deliverable is a written plan file, not a plan-mode interaction.
 
-**Critical: the plan must be fully self-contained.** The plan may be executed after the context window is cleared. Every execution instruction, subagent prompt template, review protocol, and completion step MUST be baked into the generated plan itself. After approval, the plan is the sole source of truth.
+**Flow:** Load context → draft ONE self-contained plan covering all specs → write plan to file → report path to user.
+
+**Critical: the plan must be fully self-contained.** The plan may be executed after the context window is cleared. Every execution instruction, subagent prompt template, review protocol, and completion step MUST be baked into the generated plan itself. After the plan is written, it is the sole source of truth.
 
 All phase-decomposition constraints from `/spec-phases` carry over: phase size guidelines, red-flag detection, PHASES.md format, cross-linking back to spec, integration notes for subsequent phases.
 
@@ -55,13 +57,7 @@ From PARTITIONING.md + the specs themselves, identify:
 
 ---
 
-## Step 2: Plan Mode Gate (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/plan-mode-gate.md`
-
----
-
-## Step 3: Draft the Comprehensive Plan
+## Step 2: Draft the Comprehensive Plan
 
 Write a single, **fully self-contained** plan covering the phase decomposition of ALL input specs. The plan must include every instruction needed for autonomous execution — including subagent prompts, review protocol, cross-feature holistic review, and commit steps.
 
@@ -270,8 +266,6 @@ Print a completion report:
 
 ---
 
-## Step 4: Present Plan for Approval
+## Step 4: Write Plan File
 
-Present the completed plan and wait for user approval before exiting plan mode. This is the **only** approval gate.
-
-**Remind the user:** "This plan is self-contained. After approval, I will execute it autonomously — launching parallel subagents, reviewing each result, performing a holistic cross-feature review, fixing issues, and committing. No further approval will be requested."
+!`cat ~/.claude/skills/_components/plan-file-output.md`

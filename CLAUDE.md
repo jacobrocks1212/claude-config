@@ -1,33 +1,161 @@
 # claude-config
 
-Canonical source for all authored Claude Code configuration. Files live here; symlinks at their expected locations (`~/.claude/`, `~/.claude-personal/`, per-repo `.claude/`) point back. Edits anywhere write through symlinks — `git status` in this repo shows changes immediately.
+Canonical source for all Claude Code configuration. Files live here; symlinks at their expected locations (`~/.claude/`, `~/.claude-personal/`, per-repo `.claude/`) point back. Edits anywhere write through symlinks — `git status` in this repo shows changes immediately.
 
-## Structure
+## Directory Layout
 
-- `user/` — User-level config symlinked from `~/.claude/` (skills, hooks, scripts, templates, settings)
-- `personal/` — Desktop app config symlinked from `~/.claude-personal/`
-- `workspace/` — Workspace root config symlinked from `~/source/repos/`
-- `repos/` — Per-repo `.claude/` config (17 repos, each with its authored content)
-
-## Setup
-
-```powershell
-# First time — moves live files into repo, creates symlinks
-.\setup.ps1 bootstrap
-
-# Verify all symlinks are intact
-.\setup.ps1 check
-
-# Fix broken symlinks (after clone or file moves)
-.\setup.ps1 repair
+```
+claude-config/
+├── manifest.psd1          # Defines ALL symlink mappings (source of truth)
+├── setup.ps1              # Creates/verifies/repairs symlinks
+├── user/                  # → ~/.claude/
+│   ├── CLAUDE.md          # User-level constitution (persona, coding style, platform rules)
+│   ├── settings.json      # Model, permissions, hooks, status line config
+│   ├── keybindings.json   # Keyboard shortcuts
+│   ├── skills/            # 60+ user-level skills
+│   │   └── _components/   # Shared building blocks injected into skills
+│   ├── hooks/             # PreToolUse/PostToolUse shell hooks
+│   ├── scripts/           # Python/PowerShell utilities
+│   └── templates/         # Boilerplate generators
+├── personal/              # → ~/.claude-personal/
+│   └── CLAUDE.md          # Desktop app constitution
+├── workspace/             # → ~/source/repos/CLAUDE.md
+│   └── CLAUDE.md          # Cross-repo workspace documentation
+├── repos/                 # → per-repo .claude/ directories
+│   ├── algobooth/         # .claude/ contents for algobooth
+│   ├── cognito-forms/     # .claude/ contents for Cognito Forms (most complex)
+│   ├── strudel/           # .claude/ contents for strudel
+│   └── ...                # 14 more repos
+└── archived/              # Deprecated skills (audit trail)
 ```
 
-Use `-Target User|Personal|Workspace|Repos` to scope operations.
+## Symlink System
 
-## Manifest
+### How It Works
 
-`manifest.psd1` defines every symlink mapping. To track a new repo, add an entry and run `.\setup.ps1 bootstrap -Target Repos`.
+1. **Authoring:** All config is written in this repo
+2. **Symlinks:** `setup.ps1` creates directory/file symlinks from live locations to this repo
+3. **Write-through:** Editing `~/.claude/skills/lazy/SKILL.md` writes to `claude-config/user/skills/lazy/SKILL.md`
+4. **Git tracking:** `git status` in this repo shows all changes across all linked locations
 
-## What's NOT tracked
+### Manifest (`manifest.psd1`)
 
-Secrets (`*.env`, `.credentials.json`), ephemeral Claude Code state (`cache/`, `sessions/`, `pr-cache/`, `telemetry/`, etc.), and files already committed to their source repos.
+Defines four symlink scopes:
+
+| Scope | Live Location | Repo Location |
+|-------|--------------|---------------|
+| `User` | `~/.claude/{skills,hooks,scripts,templates,CLAUDE.md,settings.json,...}` | `user/` |
+| `Personal` | `~/.claude-personal/CLAUDE.md` | `personal/` |
+| `Workspace` | `~/source/repos/CLAUDE.md` | `workspace/` |
+| `Repos` | `<repo>/.claude/{skill-config,skills,settings,...}` | `repos/<name>/.claude/` |
+
+Per-repo entries support: `RootFiles` (at repo root), `DotClaudeFiles` (individual files in `.claude/`), `DotClaudeDirs` (directories in `.claude/`), and `Alias` (share config with another repo).
+
+### Setup Commands
+
+```powershell
+.\setup.ps1 bootstrap               # First time — moves live files in, creates symlinks
+.\setup.ps1 check                    # Verify all symlinks intact
+.\setup.ps1 repair                   # Fix broken symlinks
+.\setup.ps1 bootstrap -Target Repos  # Scope to repos only
+```
+
+### Adding a New Repo
+
+1. Create `repos/<name>/.claude/` with desired files
+2. Add entry to `manifest.psd1` under `Repos`
+3. Run `.\setup.ps1 bootstrap -Target Repos`
+
+## Skills System
+
+### Skill Structure
+
+Each skill lives at `user/skills/<name>/SKILL.md` with YAML frontmatter:
+
+```yaml
+---
+name: skill-name
+description: One-line purpose
+argument-hint: <what to pass>
+plan-mode: never | required | flag
+model: opus | sonnet | haiku    # optional override
+allowed-tools: [...]            # optional tool restrictions
+---
+```
+
+### Component Injection
+
+Skills share logic via `_components/`. The injection syntax:
+
+```
+!`cat ~/.claude/skills/_components/<name>.md`
+```
+
+At runtime, Claude Code expands this inline. The `project-skills.py` script pre-expands all injections for validation.
+
+**Key components:**
+- `task-tracking.md` — TaskCreate/TaskUpdate for compaction recovery
+- `plan-file-output.md` — Writes plan files to `plans/` subdirs
+- `quality-gates.md` — Project-specific build/test gates
+- `subagent-launch.md` / `subagent-review.md` — Orchestrator+subagent execution model
+- `tdd-protocol.md` / `tdd-test-agent.md` / `implementation-agent.md` — TDD pipeline
+- `work-log.md` — Interview prep work logging
+
+### Per-Repo Skill Config
+
+Repos can customize skill behavior via `.claude/skill-config/`:
+
+| File | Purpose |
+|------|---------|
+| `capabilities.txt` | Declares which namespaced components apply (e.g., `mcp`) |
+| `quality-gates.md` | Repo-specific build/test commands |
+| `commit-policy.md` | Commit message format, push rules |
+| `skill-catalog.md` | Lists repo-scoped skills |
+
+The `project-skills.py` script auto-discovers repos with `skill-config/` and produces per-repo projections.
+
+### Repo-Scoped Skills
+
+Some skills live in `repos/<name>/.claude/skills/` instead of `user/skills/`. These are only available when working in that repo. Examples:
+- `repos/algobooth/.claude/skills/mcp-test/` — AlgoBooth-specific MCP testing
+- `repos/cognito-forms/.claude/skills/csharp-cognito/` — Cognito Forms C# patterns
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `project-skills.py` | Expands `!cat` component refs → `~/.claude/skills-projected/` |
+| `lint-skills.py` | Validates skills: broken injections, embedded patterns, capabilities |
+| `validate-plan.py` | Validates PHASES.md plan structure |
+| `gemini-research.py` | Google Gemini deep research tool |
+| `analyze_har.py` | HTTP Archive file analysis |
+| `fix-line-endings.ps1` | CRLF/LF normalization (PostToolUse hook) |
+| `run-eslint.ps1` | Auto-lint TypeScript/Vue on save (PostToolUse hook) |
+
+### Lint Commands
+
+```bash
+python ~/.claude/scripts/lint-skills.py                           # Basic: broken/embedded patterns
+python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities  # Full: cross-repo check
+python ~/.claude/scripts/project-skills.py                        # Expand all skills → projected/
+```
+
+## Hooks
+
+Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/hooks/`.
+
+| Hook | Trigger | Purpose |
+|------|---------|---------|
+| `block-work-repo-git-push.sh` | PreToolUse (Bash) | Blocks `git push` in work repos |
+| `block-terminal-kill.sh` | PreToolUse (Bash) | Blocks process/terminal termination (mobile workflow) |
+| `block-work-repo-git-writes.sh` | PreToolUse (Bash) | Blocks destructive git in work repos |
+| `pr-review-cache-guard.sh` | PreToolUse (Bash) | PR review caching guard |
+| `fix-line-endings.ps1` | PostToolUse (Edit/Write) | Normalizes line endings |
+| `run-eslint.ps1` | PostToolUse (Edit/Write) | Auto-lints Cognito Forms TS/Vue |
+
+## What's NOT Tracked
+
+- Secrets: `*.env`, `.credentials.json`, `settings.local.json` contents
+- Ephemeral state: `cache/`, `sessions/`, `pr-cache/`, `telemetry/`
+- Projected output: `skills-projected/` (generated by `project-skills.py`)
+- Backups: `*.bak`

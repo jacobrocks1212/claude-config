@@ -16,6 +16,22 @@ Analyzes a feature spec and decomposes it into well-bounded implementation phase
 
 - `spec-path` (required): Path to spec file (e.g., `docs/features/my-feature/SPEC.md`)
 
+## Task Tracking (MANDATORY — DO NOT SKIP)
+
+Load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Read context", description: "Read spec, architecture docs, related code" })`
+2. `TaskCreate({ subject: "Analyze phase boundaries", description: "Identify natural boundaries, dependency chains, testability" })`
+3. `TaskCreate({ subject: "Draft PHASES.md", description: "Write phase decomposition with deliverables, prerequisites, testing strategy" })`
+4. `TaskCreate({ subject: "Review and refine", description: "Cross-check against spec, validate phase ordering, red-flag detection" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
+
 ## Workflow
 
 ### Step 1: Read Context

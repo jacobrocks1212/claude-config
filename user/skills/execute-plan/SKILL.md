@@ -76,6 +76,8 @@ Mode: fully autonomous (no approval gates)
 - Skip quality gates, reviews, or PHASES.md updates
 - Proceed past a blocking gate without satisfying its checklist
 
+**PHASES.md is your persistent memory.** After context compaction, PHASES.md is the only record of what was completed. If you skip the update, the next recovery cycle will re-execute already-completed work or lose integration notes. Treat PHASES.md updates with the same gravity as committing code.
+
 ### Execution Model Enforcement
 
 If the plan specifies an EXECUTION MODEL with orchestrator/subagent roles:
@@ -101,9 +103,10 @@ For each step/batch defined in the plan:
 2. **Update task status** — Mark the relevant task(s) as `in_progress`
 3. **Execute** — Follow the plan's instructions for this step exactly
 4. **Verify** — Complete any verification/review gates the plan specifies
-5. **Update task status** — Mark completed task(s) as `completed`
-6. **Satisfy checklist** — If the step ends with a checklist, verify every item before proceeding
-7. **Proceed** — Move to the next step/batch
+5. **Update PHASES.md (BLOCKING GATE)** — Read `~/.claude/skills/_components/phases-update.md` and follow it. Check off completed deliverables, write Implementation Notes, then re-read PHASES.md to verify the write landed. Do NOT proceed until verified.
+6. **Update task status** — Mark completed task(s) as `completed`
+7. **Satisfy checklist** — Must include: "PHASES.md updated and verified for this batch"
+8. **Proceed** — Move to the next step/batch
 
 ### Blocking Issues
 
@@ -146,8 +149,9 @@ If at any point you lose context due to compaction:
 2. Call `TaskList` immediately
 3. Re-read the plan file (the path should be in your conversation or `$ARGUMENTS`)
 4. Find the first non-completed task — that's your current position
-5. Re-read the Component Reference Card from the plan
-6. Load the components for your current step
-7. Resume execution from where you left off
+5. **Verify PHASES.md for the last completed task.** Re-read PHASES.md and confirm the most recently completed task has its deliverables checked off (`- [x]`) and Implementation Notes written. If not, update PHASES.md now — the update was lost during compaction.
+6. Re-read the Component Reference Card from the plan
+7. Load the components for your current step
+8. Resume execution from where you left off
 
 **Never re-execute a completed task.** Trust the task status. If a task is marked `completed`, its work is done and committed.
