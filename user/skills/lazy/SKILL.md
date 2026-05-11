@@ -220,9 +220,12 @@ Check if `{spec_path}/mcp-tests/` directory exists and contains symlinks.
 
 **No mcp-tests/ directory or empty:**
 
-Evaluate whether this feature has MCP-testable surface:
+**First, re-read `{spec_path}/SPEC.md`** — the spec often defines MCP test requirements, testable surfaces, validation criteria, or explicitly notes that MCP testing is not applicable. Use the spec as the primary input for this decision.
+
+Evaluate whether this feature has MCP-testable surface (informed by the spec):
 - Features with IPC/sidecar API, MCP tools, or UI state changes → testable
-- Pure Rust DSP, no API surface, no observable state via MCP → not testable
+- Spec explicitly defines validation criteria or testable behaviors → testable
+- Pure Rust DSP, no API surface, no observable state via MCP, and spec confirms no external surface → not testable
 
 **If NOT testable:** Write `{spec_path}/SKIP_MCP_TEST.md`:
 ```markdown
