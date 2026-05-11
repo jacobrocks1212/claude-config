@@ -490,6 +490,28 @@ Only triggered when `$ARGUMENTS` contains `"skip"`.
 
 ---
 
+## Work Log (MANDATORY — DO NOT SKIP)
+
+Every /lazy invocation that performs meaningful work MUST call `interview_work_log_append` before producing the "After" status bookend. This is non-negotiable — it is the authoritative record of all autonomous progress.
+
+Load the tool: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
+
+Call with:
+- `skill`: `"lazy"`
+- `project`: `"algobooth"`
+- `title`: `"/lazy → {action taken}"` (e.g., "/lazy → /execute-plan phase 3")
+- `summary`: 2-4 sentences. What state was detected, what skill was dispatched, what it accomplished, any issues.
+- `files_modified`: files modified during this invocation (from sub-skill output)
+- `technologies`: relevant tech stack
+- `patterns`: patterns applied
+- `technical_context`: architectural context of what was implemented
+
+**Skip work-log only when:** /lazy did nothing meaningful (e.g., reported a blocker without invoking a skill, or all features were already complete).
+
+**The sub-skill invoked by /lazy is ALSO expected to log its own work** — both logs are required. /lazy logs the dispatch-level view; the sub-skill logs the implementation-level detail.
+
+---
+
 ## Sentinel Files Reference
 
 | File | Created by | Purpose | Lifecycle |

@@ -180,7 +180,7 @@ These criteria are used during `/implement-phase-batch` to validate spec alignme
 
 ---
 
-## Step 4: Append to Work Log
+## Step 4: Append to Work Log (MANDATORY — DO NOT SKIP)
 
 !`cat ~/.claude/skills/_components/work-log.md`
 
