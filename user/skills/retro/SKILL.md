@@ -164,6 +164,63 @@ Extract from matched sessions:
 - Evidence of "drift" — where the orchestrator proceeded on stale/incomplete information
 - Subagent failures or retries visible in agent logs
 
+### Subagent G: Skill Compliance Verifier (ALWAYS launch)
+
+**Prompt:** Verify that all skills invoked during this feature's implementation followed their mandatory requirements. Check each of the following:
+
+**1. Work Log entries exist:**
+- Read `~/.interview-prep/work-log.jsonl`
+- Search for entries where `project` matches this repo AND (`title` or `summary`) references this feature name or feature ID
+- Expected: at least one entry per major skill invocation (/spec, /spec-phases, /execute-plan, /mcp-test, etc.)
+- Report: which skills logged vs. which are missing
+
+**2. PHASES.md Implementation Notes:**
+- For each completed phase, verify an `## Implementation Notes` block exists with:
+  - Date
+  - Work completed summary
+  - Files modified
+  - Integration notes for subsequent phases
+  - Pitfalls/guidance
+- Report: which phases have complete notes vs. which are missing/incomplete
+
+**3. Quality gates passed:**
+- Check git log for evidence of QG runs (commit messages mentioning "qg", "quality gate", or presence of QG-related files)
+- Check PHASES.md implementation notes for QG pass/fail mentions
+- Report: evidence of QG compliance per phase
+
+**4. Task tracking was used:**
+- Search session history (if available) for `TaskCreate`/`TaskUpdate` tool calls
+- If session history unavailable, check PHASES.md notes for task-related references
+- Report: evidence of task tracking usage
+
+**5. TDD discipline:**
+- For each phase that produced source code, verify corresponding test files exist
+- Check if tests were created BEFORE or alongside implementation (look at commit order)
+- Report: test file coverage per phase, any phases with implementation but no tests
+
+**6. Subagent review was performed:**
+- Check PHASES.md implementation notes for review verdicts (PASS/PASS-WITH-FIXES/NEEDS-REWORK)
+- If session history available, search for review report patterns
+- Report: review evidence per batch
+
+**Output format:**
+
+```markdown
+## Skill Compliance Report
+
+| Requirement | Status | Evidence | Gap |
+|-------------|--------|----------|-----|
+| Work log entries | ✓/✗ | {count} entries found | {missing skills} |
+| Implementation Notes | ✓/✗ | {N}/{total} phases complete | {missing phases} |
+| Quality gates | ✓/✗ | {evidence} | {gaps} |
+| Task tracking | ✓/✗ | {evidence} | {gaps} |
+| TDD discipline | ✓/✗ | {test coverage} | {untested phases} |
+| Subagent review | ✓/✗ | {verdicts found} | {unreviewed batches} |
+
+**Overall compliance:** {percentage}%
+**Critical gaps:** {list any that indicate systematic non-compliance}
+```
+
 ---
 
 ## Step 4: Synthesize Findings
@@ -202,7 +259,7 @@ List assumptions made during spec/planning that proved wrong during implementati
 
 ### 4e. Classify: Implementation Defect vs Systematic Issue
 
-For **every** finding from 4a–4d, classify it into exactly one bucket:
+For **every** finding from 4a–4d and 4i, classify it into exactly one bucket:
 
 | Bucket | Definition | Example | Action |
 |--------|-----------|---------|--------|
@@ -236,6 +293,17 @@ Summarize how context compaction affected the implementation:
 - User intervention frequency (did the user have to manually correct the orchestrator?)
 - Plan adherence (did the orchestrator follow its own plan, or improvise post-compaction?)
 - Recommendation: was the plan too large? Should it have been split? Was the SessionStart compact hook in place?
+
+### 4i. Skill Compliance Assessment (from Subagent G)
+
+Incorporate Subagent G's compliance report. For any requirement below 100%:
+- Classify as implementation defect (one-off miss) or systematic issue (skill enforcement too weak)
+- If work-log entries are missing: flag as **critical** — this breaks the autonomous audit trail
+- If Implementation Notes are incomplete: flag as **high** — downstream phases and retros depend on them
+- If QG evidence is missing: flag as **medium** — may indicate skipped gates
+- If TDD evidence is weak: assess whether the feature's nature warranted TDD (pure config/scaffolding may not)
+
+Overall compliance < 80% is a **systematic issue** — propose skill enforcement improvements in Step 6.
 
 ---
 
