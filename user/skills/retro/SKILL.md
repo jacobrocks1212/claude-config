@@ -166,7 +166,19 @@ Extract from matched sessions:
 
 ### Subagent G: Skill Compliance Verifier (ALWAYS launch)
 
-**Prompt:** Verify that all skills invoked during this feature's implementation followed their mandatory requirements. Check each of the following:
+**Pre-flight (orchestrator does this BEFORE launching Subagent G):**
+
+1. Determine which skills were invoked during this feature's lifecycle. Check:
+   - PHASES.md implementation notes for skill references (`/spec`, `/spec-phases`, `/implement-phase`, `/execute-plan`, `/write-plan`, `/mcp-test`, `/fix`, `/retro`, `/add-phase`)
+   - Git log commit messages for skill references
+   - Plan files in `{spec_path}/plans/` — each plan's header names the generating skill
+2. Read every identified skill's SKILL.md **in full** — these are the source of truth for what each skill's mandatory requirements are:
+   - `~/.claude/skills/{name}/SKILL.md` for user-level skills
+   - `.claude/skills/{name}/SKILL.md` for repo-scoped skills (e.g., `/mcp-test`)
+3. Also read `~/.claude/skills/_components/work-log.md` — the shared work-log component all skills must follow
+4. Pass the full text of each relevant skill's SKILL.md to Subagent G in its prompt so it can verify compliance against the actual requirements, not a stale summary
+
+**Prompt:** Verify that all skills invoked during this feature's implementation followed their mandatory requirements. The full text of each skill is provided below for reference — use these as the authoritative checklist. Check each of the following:
 
 **1. Work Log entries exist:**
 - Read `~/.interview-prep/work-log.jsonl`
