@@ -13,6 +13,24 @@ $ARGUMENTS
 
 ---
 
+## Task Tracking (MANDATORY — DO NOT SKIP)
+
+Before any work, load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Phase 0: Project context discovery", description: "Read CLAUDE.md, find spec directory, read related specs" })`
+2. `TaskCreate({ subject: "Phase 1: Brainstorm baseline spec", description: "Interactive brainstorming, iterative spec drafting" })`
+3. `TaskCreate({ subject: "Phase 2: Research prompt", description: "Draft and save Gemini deep research prompt" })`
+4. `TaskCreate({ subject: "Phase 3: Finalize spec", description: "Integrate research, finalize SPEC.md, cross-boundary validation" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
+
+---
+
 ## Phase 0: Project Context Discovery
 
 Before starting, understand the project:
@@ -95,7 +113,7 @@ Do NOT make architecture or technology decisions until the problem space is unde
 
 1. Read the research results file the user provides.
 2. Copy it to `{spec-dir}/{feature-slug}/RESEARCH.md`.
-3. Write a research summary analyzing:
+3. Write a research summary to `{spec-dir}/{feature-slug}/RESEARCH_SUMMARY.md` (MANDATORY — this file gates downstream workflow) analyzing:
    - Key findings relevant to our baseline spec
    - Ideas we should adopt from prior art
    - Pitfalls or concerns we need to address

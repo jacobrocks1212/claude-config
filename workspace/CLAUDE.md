@@ -62,6 +62,10 @@ Two bash aliases in `~/.bashrc` select the appropriate config profile:
 | `claude-work` | `~/.claude` (default) | Cognito Forms and other work repos |
 | `claude-personal` | `~/.claude-personal` | Personal projects |
 
+### Skill File Relationship
+
+Skills and components are **hardlinked** between `~/.claude/skills/` and `~/.claude-personal/skills/`. Editing a file in either location modifies both — there is no need to apply changes to both directories separately. When updating skills or components, edit once in either location and verify the other reflects the change.
+
 ## Work Repo Git Workflow
 
 In work repos (`git config user.email == jacob@cognitoforms.com`):

@@ -2,14 +2,35 @@
 description: Draft a TDD implementation plan for a PHASES.md phase using parallel Sonnet subagents (reference-based components)
 argument-hint: <path/to/PHASES.md> [phase number]
 name: implement-phase
-plan-mode: required
+plan-mode: never
 ---
 
 # Implement Phase
 
-Draft a detailed implementation plan (in plan mode) for a single phase from a PHASES.md file. The plan uses TDD and parallel Sonnet subagents, with all hard requirements encoded as explicit non-skippable steps in the plan itself.
+Draft a detailed implementation plan for a single phase from a PHASES.md file. The plan is written to a file for execution via `/execute-plan` in a separate session. The plan uses TDD and parallel Sonnet subagents, with all hard requirements encoded as explicit non-skippable steps in the plan itself.
 
-**v2 difference from /implement-phase:** Execution-time components (review protocol, launch protocol, quality gates, etc.) are referenced by file path in the generated plan instead of inlined. The executing session reads them on demand from disk, reducing plan size and improving post-compaction recovery.
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. The deliverable is a written plan file, not a plan-mode interaction.
+
+Execution-time components (review protocol, launch protocol, quality gates, etc.) are referenced by file path in the generated plan instead of inlined. The executing session reads them on demand from disk, reducing plan size and improving post-compaction recovery.
+
+---
+
+## Step 0: Task Tracking (MANDATORY — DO NOT SKIP)
+
+Load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Load context", description: "Resolve PHASES.md, read SPEC.md, determine target phase, read CLAUDE.md" })`
+2. `TaskCreate({ subject: "Dirty tree check", description: "Verify clean working tree before planning" })`
+3. `TaskCreate({ subject: "Analyze and partition", description: "Analyze phase, partition into TDD work units, structure batches" })`
+4. `TaskCreate({ subject: "Draft implementation plan", description: "Write full plan with execution model, work units, QG steps" })`
+5. `TaskCreate({ subject: "Write plan file", description: "Write plan to feature plans/ directory" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
 
 ---
 
@@ -48,13 +69,7 @@ Draft a detailed implementation plan (in plan mode) for a single phase from a PH
 
 ---
 
-## Step 3: Plan Mode Gate (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/plan-mode-gate.md`
-
----
-
-## Step 4: Analyze and Partition
+## Step 3: Analyze and Partition
 
 ### 4a. Analyze the Phase
 
@@ -78,7 +93,7 @@ Then, for each deliverable in the target phase:
 
 ## Step 5: Draft the Plan
 
-Write the plan in plan mode. The plan MUST contain all of the following sections as explicit, non-skippable steps. Use imperative language ("Do X", not "Consider X").
+Write the plan. The plan MUST contain all of the following sections as explicit, non-skippable steps. Use imperative language ("Do X", not "Consider X").
 
 **v2 RULE:** Execution-time components are NOT inlined in the plan. Each step lists the component file paths the executor must `Read` from disk before proceeding. Only the unique per-plan content (execution model, work units, batch structure) is written inline.
 
@@ -275,6 +290,6 @@ When drafting work units, identify any that introduce import indirection (wrappe
 
 ---
 
-## Step 6: Present Plan for Approval
+## Step 6: Write Plan File
 
-Present the completed plan and wait for user approval before exiting plan mode.
+!`cat ~/.claude/skills/_components/plan-file-output.md`

@@ -10,6 +10,27 @@ Start the AlgoBooth dev server if not already running, wait for full MCP readine
 
 ---
 
+## Step 0.5: Task Tracking (MANDATORY — DO NOT SKIP)
+
+Load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Parse arguments + tier batch check", description: "Extract test description, check for tier:N batch mode" })`
+2. `TaskCreate({ subject: "Server lifecycle", description: "Kill, start, and verify dev server + tool registration" })`
+3. `TaskCreate({ subject: "Resolve/create test scenario", description: "Find existing scenario or create new one with behavioral exploration" })`
+4. `TaskCreate({ subject: "Validate scenario file", description: "Verify all required sections present" })`
+5. `TaskCreate({ subject: "Wait for app readiness", description: "Health poll, sidecar gate, audio pipeline smoke test" })`
+6. `TaskCreate({ subject: "Dispatch test subagent", description: "Launch Sonnet subagent to execute scenario" })`
+7. `TaskCreate({ subject: "Evaluate results", description: "Score assertions, generate report" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
+
+---
+
 ## Step 1: Parse Arguments
 
 Extract the user's test description from `$ARGUMENTS`. If empty, use **AskUserQuestion**: "What should the MCP test subagent do?"

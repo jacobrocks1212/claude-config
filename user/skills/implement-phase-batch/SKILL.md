@@ -2,27 +2,47 @@
 description: Plan and implement ALL phases across 1+ PHASES.md files using parallel Sonnet subagents, committing after each phase (reference-based components)
 argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...]
 name: implement-phase-batch
-plan-mode: required
+plan-mode: never
 ---
 
 # Implement Phase Batch
 
-Plan (once) and then continuously implement all phases from one or more PHASES.md files using TDD and parallel Sonnet subagents until all phases are complete or a blocking issue forces early exit.
+Draft a single self-contained plan covering all phases from one or more PHASES.md files. The plan is written to a file for execution via `/execute-plan` in a separate session. Uses TDD and parallel Sonnet subagents.
 
-**Flow:** Load context -> enter plan mode -> draft ONE self-contained plan covering all phases -> user approves -> exit plan mode -> execute the plan autonomously.
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. The deliverable is a written plan file, not a plan-mode interaction.
 
-**Critical: the plan must be fully self-contained.** The plan may be executed after the context window is cleared. Every execution instruction, loop control, blocking-issue protocol, and completion step MUST be baked into the generated plan itself — not left in this skill file. After approval, the plan is the sole source of truth.
+**Flow:** Load context -> draft ONE self-contained plan covering all phases -> write plan to file -> report path to user.
+
+**Critical: the plan must be fully self-contained.** The plan may be executed after the context window is cleared. Every execution instruction, loop control, blocking-issue protocol, and completion step MUST be baked into the generated plan itself — not left in this skill file. After the plan is written, it is the sole source of truth.
 
 Execution-time components (review protocol, launch protocol, quality gates, etc.) are referenced by file path in the generated plan instead of inlined. The executing session reads them on demand from disk, reducing plan size and improving post-compaction recovery.
 
 **Key differences from `/implement-phase`:**
 - Takes 1+ PHASES.md paths (not just one); covers ALL phases across all of them in a single plan
-- Plan mode entered exactly once (at the start); after user approval, execution is fully autonomous
+- Plan is written to a file (not presented in plan mode) for execution in a separate session
 - Commits and pushes after each completed phase (docs updated + QGs green)
 - Cross-feature parallelism: phases from different features run concurrently when dependencies are satisfied and no file conflicts exist
 - Early exit on blocking issues with a clear status report
 
 All other constraints from `/implement-phase` carry over: TDD, Sonnet subagents, mandatory review, mandatory PHASES.md updates, mandatory QG pass, mandatory integration verification, mandatory CLAUDE.md review.
+
+---
+
+## Step 0: Task Tracking (MANDATORY — DO NOT SKIP)
+
+Load task tools and create tasks for compaction recovery:
+
+```
+ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
+```
+
+Create tasks immediately:
+1. `TaskCreate({ subject: "Load all context", description: "Resolve PHASES.md paths, read SPEC.md, read CLAUDE.md, check partitioning" })`
+2. `TaskCreate({ subject: "Dirty tree check", description: "Verify clean working tree before planning" })`
+3. `TaskCreate({ subject: "Draft comprehensive plan", description: "Write full plan covering all phases with execution model, work units, batches" })`
+4. `TaskCreate({ subject: "Write plan file", description: "Write plan to feature plans/ directory" })`
+
+Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
 
 ---
 
@@ -55,21 +75,15 @@ Build a directed acyclic graph of all pending phases. The execution order respec
 
 ---
 
-## Step 2: Dirty Tree Check (MANDATORY — BEFORE PLAN MODE)
+## Step 2: Dirty Tree Check (MANDATORY — BEFORE DRAFTING PLAN)
 
 !`cat .claude/skill-config/dirty-tree-check.md 2>/dev/null || cat ~/.claude/skills/_components/dirty-tree-check.md`
 
 ---
 
-## Step 3: Plan Mode Gate (MANDATORY — DO NOT SKIP)
+## Step 3: Draft the Comprehensive Plan
 
-!`cat ~/.claude/skills/_components/plan-mode-gate.md`
-
----
-
-## Step 4: Draft the Comprehensive Plan
-
-Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. After the user approves this plan, it will be executed verbatim, potentially after a context-window clear. Nothing outside the plan can be relied upon.
+Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. When the executing session reads this plan file, it will execute it verbatim, potentially in a fresh context window. Nothing outside the plan can be relied upon.
 
 **v2 RULE:** Execution-time components are NOT inlined in the plan. Each step lists the component file paths the executor must `Read` from disk before proceeding. Only the unique per-plan content (execution model, work units, batch structure, loop control) is written inline.
 
@@ -377,8 +391,6 @@ Include a batch overview table per phase:
 
 ---
 
-## Step 5: Present Plan for Approval
+## Step 5: Write Plan File
 
-Present the completed plan and wait for user approval before exiting plan mode. This is the **only** approval gate.
-
-**Remind the user:** "This plan is self-contained. After approval, I will execute it autonomously — committing after each phase, looping until all phases are complete or a blocking issue halts progress. No further approval will be requested."
+!`cat ~/.claude/skills/_components/plan-file-output.md`
