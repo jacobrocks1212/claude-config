@@ -220,12 +220,18 @@ Check if `{spec_path}/mcp-tests/` directory exists and contains symlinks.
 
 **No mcp-tests/ directory or empty:**
 
-**First, re-read `{spec_path}/SPEC.md`** — the spec often defines MCP test requirements, testable surfaces, validation criteria, or explicitly notes that MCP testing is not applicable. Use the spec as the primary input for this decision.
+**Before deciding, read these files (MANDATORY):**
+1. `{spec_path}/SPEC.md` — the spec often defines MCP test requirements, testable surfaces, or validation criteria
+2. `docs/features/mcp-testing/SPEC.md` — the canonical MCP testing reference with the testability matrix and available tools
+3. Project `CLAUDE.md` Gotchas section — contains known pitfalls about testability (e.g., audio IS testable via `load_test_tone`)
 
-Evaluate whether this feature has MCP-testable surface (informed by the spec):
+**Do NOT rely on assumptions or prior SKIP_MCP_TEST.md files from other features.** Each feature must be evaluated independently against the actual MCP tool surface.
+
+Evaluate whether this feature has MCP-testable surface (informed by the above):
 - Features with IPC/sidecar API, MCP tools, or UI state changes → testable
+- Features producing audio through Strudel patterns → testable (via `load_test_tone` + RMS metering)
 - Spec explicitly defines validation criteria or testable behaviors → testable
-- Pure Rust DSP, no API surface, no observable state via MCP, and spec confirms no external surface → not testable
+- Pure Rust DSP with no API surface, no observable state via MCP, and spec confirms no external surface → not testable
 
 **If NOT testable:** Write `{spec_path}/SKIP_MCP_TEST.md`:
 ```markdown
