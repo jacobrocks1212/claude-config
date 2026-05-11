@@ -244,7 +244,7 @@ When transitioning to `/fix`, pass the investigation spec path so `/fix` can rea
 
 ---
 
-## Step 7: Append to Work Log
+## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
 
 !`cat ~/.claude/skills/_components/work-log.md`
 

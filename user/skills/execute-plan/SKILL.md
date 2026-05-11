@@ -132,6 +132,27 @@ When all work units are complete (all tasks marked `completed`):
 
 1. Follow the plan's **Completion** section if it has one (final QG run, completion report, etc.)
 2. Follow the plan's **Work Log** section if it has one
+
+### Step 4a: Append to Work Log (MANDATORY — DO NOT SKIP)
+
+Regardless of whether the plan includes a Work Log section, you MUST call `interview_work_log_append` at the end of every execution. This is a hard requirement — not optional, not conditional on the plan's contents.
+
+Load the tool if not already loaded: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
+
+Call `interview_work_log_append` with:
+- `skill`: `"execute-plan"`
+- `project`: repo name or cwd basename
+- `title`: short description of the plan executed
+- `summary`: 2-4 sentences covering what was implemented, key patterns, and tradeoffs
+- `files_modified`: all files modified during execution
+- `branch`: current git branch
+- `commit`: HEAD short sha
+- `phases_md`: path to PHASES.md if the plan references one
+- `spec_md`: path to SPEC.md if applicable
+- `technologies`: languages/frameworks used
+- `patterns`: design patterns applied
+- `technical_context`: 3-5 sentences on engineering depth
+
 3. Print a final summary:
 
 ```

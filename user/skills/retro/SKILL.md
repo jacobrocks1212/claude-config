@@ -376,7 +376,7 @@ Convert all proposed improvements from Step 6 into a self-contained execution pl
 
 ---
 
-## Step 7: Work Log
+## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
 
 !`cat ~/.claude/skills/_components/work-log.md`
 
