@@ -26,7 +26,6 @@
       "Bash(cmd /c \"dir /O-S %TEMP%\\\\*.tmp 2>NUL\")",
       "Bash(ls:*)",
       "Bash(ffmpeg:*)",
-      "Bash(\"C:\\\\Users\\\\JacobMadsen\\\\source\\\\repos\\\\meeting-documenter\\\\.venv\\\\Scripts\\\\python.exe\" -m whisperx \"C:\\\\Users\\\\JacobMadsen\\\\Documents\\\\MeetingTranscripts\\\\meeting_2026-01-05_recovered.wav\" --model medium --language en --device cpu --compute_type int8 --output_dir \"C:\\\\Users\\\\JacobMadsen\\\\Documents\\\\MeetingTranscripts\" --output_format json --diarize --hf_token hf_REDACTED)",
       "Bash(cat:*)",
       "Bash(tasklist:*)",
       "Bash(timeout /t 10 /nobreak)",
