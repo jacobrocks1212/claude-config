@@ -13,6 +13,8 @@ When the state machine would normally dispatch a step that requires the desktop 
 
 Cloud cannot mark a feature complete on its own — Step 10 still requires `VALIDATED.md`, which only the workstation `/lazy` can produce. So /lazy-cloud's terminal state for a feature is "all phases implemented, retro done, MCP testing deferred to workstation".
 
+Once a feature reaches that terminal cloud state, subsequent /lazy-cloud invocations skip it at Step 2 and advance to the next eligible feature in the queue. /lazy-cloud only stops with "nothing to do" when every remaining feature is either workstation-complete or cloud-saturated (i.e., the entire roadmap tail is waiting on workstation MCP testing).
+
 **HARD REQUIREMENT — ONE SKILL PER INVOCATION:** Execute at most one sub-skill (via Skill tool). After it completes, report what happened and STOP. Do not chain multiple skills. Writing a sentinel file (e.g. `DEFERRED_NON_CLOUD.md`) and then falling through to invoke the next eligible skill in the same invocation does NOT count as two skills — only Skill-tool dispatches count.
 
 **HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. This skill dispatches directly.
@@ -92,19 +94,35 @@ STOP.
 
 ---
 
-## Step 2: Find Current Feature
+## Step 2: Find Current Feature (Cloud-Aware Skip)
 
 Read `docs/features/ROADMAP.md`.
 
-For each item in the queue array (in order):
-1. Check if the feature's row in ROADMAP.md contains `~~` (strikethrough) AND `COMPLETE`
-2. The first feature that is NOT marked complete is the **current feature**
+For each item in the queue array (in order), compute `spec_path` (= `docs/features/{spec_dir}` from queue.json) and apply both skip checks:
 
-If ALL features are complete:
+1. **Workstation-complete:** the feature's row in ROADMAP.md contains `~~` (strikethrough) AND `COMPLETE` → skip
+2. **Cloud-saturated:** ALL THREE conditions hold → skip
+   - `{spec_path}/RETRO_DONE.md` exists
+   - `{spec_path}/DEFERRED_NON_CLOUD.md` exists
+   - `{spec_path}/VALIDATED.md` does NOT exist
+   - (Cloud has done every step it can for this feature; finalization requires workstation MCP test.)
+
+The first feature in queue order that fails BOTH skip checks is the **current feature**.
+
+**If every remaining feature is workstation-complete** (no features ever became cloud-saturated):
 ```
 PushNotification({ message: "ALL FEATURES COMPLETE — AlgoBooth roadmap finished." })
 ```
 Report this and STOP.
+
+**If every remaining feature is either complete or cloud-saturated** (cloud has nothing left to advance, but workstation /lazy still has MCP testing to finish):
+1. Build a list of cloud-saturated feature names and their `DEFERRED_NON_CLOUD.md` paths
+2. Notify:
+   ```
+   PushNotification({ message: "Cloud queue exhausted — {N} feature(s) awaiting workstation /lazy for MCP test." })
+   ```
+3. Report the list in the status bookend (Next `/lazy` (workstation) will: "Run MCP tests for each deferred feature, in queue order")
+4. STOP
 
 Save for later:
 - `feature_name` = current feature's `name` from queue.json
@@ -112,7 +130,7 @@ Save for later:
 - `spec_path` = `docs/features/{spec_dir}` (prepend project root)
 - `tier` = current feature's `tier`
 
-Announce: `"Current feature: {feature_name} (Tier {tier})"`
+Announce: `"Current feature: {feature_name} (Tier {tier})"` — if any features were skipped as cloud-saturated, also note the count: `"({K} feature(s) skipped — cloud-saturated, awaiting workstation MCP test)"`.
 
 ---
 
@@ -423,18 +441,18 @@ STOP
 
 ## Step 10: Mark Feature Complete (Cloud-Halt Aware)
 
-### 10a. Cloud halt — RETRO_DONE.md exists but no VALIDATED.md
+### 10a. Defensive cloud halt — RETRO_DONE.md exists but no VALIDATED.md
 
-If `RETRO_DONE.md` exists AND `VALIDATED.md` does NOT exist, cloud has done everything it can for this feature. The feature is implemented + retro'd, but the MCP validation gate was deferred and only a workstation `/lazy` can finalize it.
+This branch should normally be unreachable: Step 2's cloud-saturated skip already advances past features with `RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md`. It exists as a defensive guard for unusual states (e.g., `RETRO_DONE.md` written but `DEFERRED_NON_CLOUD.md` deleted prematurely).
 
-Do **NOT** mark the feature complete on ROADMAP.md. Do **NOT** delete `RETRO_DONE.md` or `DEFERRED_NON_CLOUD.md`. Do **NOT** commit a completion change.
+If `RETRO_DONE.md` exists AND `VALIDATED.md` does NOT exist, cloud has done everything it can for this feature. Do **NOT** mark the feature complete on ROADMAP.md. Do **NOT** delete `RETRO_DONE.md` or `DEFERRED_NON_CLOUD.md`. Do **NOT** commit a completion change.
 
 Instead:
 ```
 PushNotification({ message: "{feature_name}: cloud work complete (phases + retro). Awaiting workstation /lazy for deferred MCP test." })
 ```
 
-Report the halt in the status bookend (Next `/lazy-cloud` will: "Nothing further — awaiting workstation /lazy") and STOP.
+Report the halt in the status bookend (Next `/lazy-cloud` will: "Skip this feature at Step 2 on next invocation and advance to the next") and STOP. The next /lazy-cloud invocation's Step 2 will skip this feature and process the next eligible one.
 
 ### 10b. Normal completion — both VALIDATED.md AND RETRO_DONE.md exist
 
@@ -525,10 +543,18 @@ Identical to `/lazy`, plus the cloud-deferral sentinel:
 
 ## State Machine Summary
 
-Same as `/lazy` except (a) the MCP gate is cloud-aware and (b) Step 9 (retro) accepts `DEFERRED_NON_CLOUD.md` as an alternative entry condition to `VALIDATED.md`, so retro runs in cloud right after deferral:
+Differences from `/lazy`:
+- Step 2 skips cloud-saturated features (`RETRO_DONE.md` + `DEFERRED_NON_CLOUD.md` + no `VALIDATED.md`) and advances to the next eligible feature in the queue
+- Step 8 writes `DEFERRED_NON_CLOUD.md` and falls through to Step 9 instead of stopping
+- Step 9 accepts `DEFERRED_NON_CLOUD.md` as an alternative entry gate to `VALIDATED.md`
+- Step 10 splits into a defensive cloud-halt (10a) and normal completion (10b)
 
 ```
-queue.json → find current feature → check state → invoke ONE skill (with optional pre-deferral) → STOP
+queue.json → for each feature in order:
+                skip if workstation-complete (~~COMPLETE on ROADMAP)
+                skip if cloud-saturated (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md)
+             → first non-skipped feature is current → check state → invoke ONE skill → STOP
+             → if every feature skipped: notify (all complete OR cloud queue exhausted) → STOP
 
 BLOCKED.md exists?                    → present blocker + recommend action → STOP
 DEFERRED_NON_CLOUD.md exists?         → note in status (read-only), CONTINUE through state machine
@@ -543,6 +569,6 @@ All checked + no VALIDATED.md + (testable OR ambiguous)?                 → wri
 (VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 1 retro plan (clean)?           → /execute-plan (retro plan) → RETRO_DONE.md (annotates MCP status)
 (VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 1 retro plan (had divergences)? → /retro --auto (round 2); skip VALIDATED.md delete if absent
 (VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 2+ retro plans?                 → /execute-plan (latest retro plan) → RETRO_DONE.md
-RETRO_DONE.md + no VALIDATED.md?      → CLOUD HALT — feature awaits workstation /lazy for MCP test → STOP
+RETRO_DONE.md + no VALIDATED.md?      → DEFENSIVE HALT (Step 2 normally skips first) → STOP
 RETRO_DONE.md + VALIDATED.md?         → mark complete on ROADMAP + remove DEFERRED_NON_CLOUD.md + notify
 ```
