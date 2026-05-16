@@ -9,9 +9,11 @@ plan-mode: never
 
 Drop-in cloud variant of `/lazy` for the AlgoBooth roadmap. Same stateless state machine, same sentinel files, same one-skill-per-invocation rule — but aware that this session runs in an ephemeral cloud Linux container with no Tauri desktop, no audio device, and no `tauri:dev` server.
 
-When the state machine would normally dispatch a step that requires the desktop environment (today: MCP testing via the Tauri sidecar), this skill writes a `DEFERRED_NON_CLOUD.md` sentinel describing the deferred step and STOPS. It deliberately avoids writing any sentinel (`VALIDATED.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) that would let the natural state machine move past the deferred step — so when `/lazy` is run later from a workstation, it sees the same state lazy-cloud saw and resumes the deferred work cleanly.
+When the state machine would normally dispatch a step that requires the desktop environment (today: MCP testing via the Tauri sidecar), this skill writes a `DEFERRED_NON_CLOUD.md` sentinel describing the deferred step and **continues to the next cloud-safe step** (today: the retrospective). It deliberately avoids writing any sentinel (`VALIDATED.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) that would let the natural state machine move past the deferred step — so when `/lazy` is run later from a workstation, it sees the same state lazy-cloud saw and resumes the deferred work cleanly.
 
-**HARD REQUIREMENT — ONE SKILL PER INVOCATION:** Execute at most one sub-skill (via Skill tool). After it completes, report what happened and STOP. Do not chain multiple skills.
+Cloud cannot mark a feature complete on its own — Step 10 still requires `VALIDATED.md`, which only the workstation `/lazy` can produce. So /lazy-cloud's terminal state for a feature is "all phases implemented, retro done, MCP testing deferred to workstation".
+
+**HARD REQUIREMENT — ONE SKILL PER INVOCATION:** Execute at most one sub-skill (via Skill tool). After it completes, report what happened and STOP. Do not chain multiple skills. Writing a sentinel file (e.g. `DEFERRED_NON_CLOUD.md`) and then falling through to invoke the next eligible skill in the same invocation does NOT count as two skills — only Skill-tool dispatches count.
 
 **HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. This skill dispatches directly.
 
@@ -31,11 +33,11 @@ When the state machine would normally dispatch a step that requires the desktop 
 2. **After acting** (after the dispatched skill returns or after a STOP decision):
    ```
    ## /lazy-cloud — Done
-   **Completed:** {what was accomplished this invocation, or "Nothing — deferred to non-cloud /lazy"}
+   **Completed:** {what was accomplished this invocation — include both the deferral (if any) AND the follow-on skill that ran after the fall-through}
    **Deferred:** {description of any step deferred + path to DEFERRED_NON_CLOUD.md, or "None"}
    **Issues:** {any problems encountered, or "None"}
-   **Next `/lazy` (workstation) will:** {what a non-cloud /lazy invocation should pick up}
-   **Next `/lazy-cloud` will:** {what the next cloud invocation will do, or "Nothing further until deferred step is resolved"}
+   **Next `/lazy` (workstation) will:** {what a non-cloud /lazy invocation should pick up — usually the deferred Step 8 MCP testing}
+   **Next `/lazy-cloud` will:** {what the next cloud invocation will do, or "Nothing further — awaiting workstation /lazy for deferred MCP test"}
    ```
 
 ---
@@ -49,12 +51,13 @@ The cloud session runs in an ephemeral Linux container with:
 - **No Windows-only tooling** — anything requiring Windows paths, PowerShell, or Windows-specific dependencies.
 - **No long-lived shared state** — the container is reclaimed after the session ends.
 
-**Steps that this skill DEFERS to non-cloud /lazy:**
+**Steps that this skill DEFERS to non-cloud /lazy (writes `DEFERRED_NON_CLOUD.md` and CONTINUES):**
 
-| State machine step | Why deferred in cloud | Sentinel written |
+| State machine step | Why deferred in cloud | Cloud behavior |
 |---|---|---|
-| Step 8b — MCP test execution (testable features only) | Requires running Tauri app + MCP HTTP server | `DEFERRED_NON_CLOUD.md` |
-| Step 8a — assessing testability of a feature | Requires reading SPEC files only → **NOT deferred**, evaluation still runs, but the SKIP_MCP_TEST.md write only happens for unambiguous non-testable cases (see Step 8 below) | — |
+| Step 8b — MCP test execution (testable features only) | Requires running Tauri app + MCP HTTP server | Write `DEFERRED_NON_CLOUD.md`, fall through to Step 9 (retro) — do NOT stop |
+| Step 8a — assessing testability | Filesystem read only → **NOT deferred**; evaluation still runs, but `SKIP_MCP_TEST.md` is only written for unambiguous non-testable cases | Same as /lazy when unambiguous; defer otherwise |
+| Step 10 — Mark feature complete | Requires `VALIDATED.md` which cloud cannot produce | Stop with notice that workstation /lazy is needed to finalize |
 
 **Steps that this skill STILL RUNS in cloud (same as /lazy):**
 
@@ -63,8 +66,7 @@ The cloud session runs in an ephemeral Linux container with:
 - Step 5 — `/spec` for research validation
 - Step 6 — `/spec-phases` for missing PHASES.md
 - Step 7 — `/write-plan` and `/execute-plan` for phase implementation (implementation work that doesn't require Tauri runtime is fine; if execute-plan hits a cloud-incompatible deliverable it must surface it via BLOCKED.md as usual)
-- Step 9 — `/retro` and retro plan execution (analysis + edits only)
-- Step 10 — Mark feature complete on ROADMAP + commit
+- Step 9 — `/retro` and retro plan execution (analysis + edits only). Cloud runs this even though MCP validation has been deferred — retro is a static spec-alignment check and doesn't depend on runtime validation results.
 
 ---
 
@@ -137,21 +139,16 @@ If it exists:
 
 ---
 
-## Step 3.5: Check for Non-Cloud Deferral
+## Step 3.5: Note Pre-Existing Non-Cloud Deferral (Read-Only)
 
-Check if `{spec_path}/DEFERRED_NON_CLOUD.md` exists.
+Check if `{spec_path}/DEFERRED_NON_CLOUD.md` exists. If it does, a prior cloud invocation already deferred a step that requires the workstation environment.
 
-If it exists, the prior cloud invocation already deferred a step that requires the workstation environment. Do **not** retry that step in cloud, and do **not** delete the sentinel.
+This check is **read-only and non-blocking** — do NOT stop and do NOT delete the sentinel. The natural state machine below already accounts for the deferred step:
+- Step 8 will see the existing `DEFERRED_NON_CLOUD.md` and skip the re-write
+- Step 9 will treat it as a valid alternative gate to enter the retrospective
+- Step 10 will refuse to mark the feature complete (no `VALIDATED.md`) and explain that the workstation must run MCP testing
 
-1. Read `DEFERRED_NON_CLOUD.md` to understand what was deferred.
-2. Decide whether any cloud-safe work can still progress:
-   - **Deferral is at Step 8 (MCP testing)** — all earlier steps are complete and Step 8 cannot run in cloud. There is no cloud-safe work to do for this feature. Report and STOP:
-     ```
-     PushNotification({ message: "{feature_name} is deferred to workstation /lazy (MCP testing). Cloud has nothing to advance." })
-     ```
-   - **Deferral is at some other step** — only progress past it if the deferred work has been resolved upstream (rare). When in doubt, treat as cloud-stuck and STOP.
-3. Surface the deferred step + suggested next action (run `/lazy` on workstation) in the status bookend.
-4. STOP.
+Just read the file to inform the status bookend ("Deferred:" line) and continue to Step 4.
 
 ---
 
@@ -275,11 +272,11 @@ Classify the feature:
 - **Clearly NOT testable** — pure Rust DSP with no MCP surface, no observable IPC state, and the spec explicitly confirms no external surface → write `SKIP_MCP_TEST.md` as usual (this is a permanent decision, not a cloud-specific deferral). Same exact content as documented in `/lazy` Step 8a. Then STOP.
 - **Ambiguous** — treat as **DEFER**. Do not gamble on writing a permanent skip marker without a running app to confirm.
 
-### 8b. Defer MCP Test Execution to Workstation
+### 8b. Defer MCP Test Execution and Fall Through to Retro
 
 Cloud cannot run MCP tests. Do **not** create the `mcp-tests/` symlinks, do **not** invoke `/mcp-test`, do **not** write `MCP_TEST_RESULTS.md` or `VALIDATED.md`.
 
-Write `{spec_path}/DEFERRED_NON_CLOUD.md`:
+If `{spec_path}/DEFERRED_NON_CLOUD.md` does NOT already exist, write it now:
 ```markdown
 # Deferred to Non-Cloud /lazy
 
@@ -306,13 +303,19 @@ Run `/lazy` (NOT `/lazy-cloud`) from a workstation with the Tauri dev server ava
 4. On 100% pass → write VALIDATED.md and progress to retro
 
 The presence of this DEFERRED_NON_CLOUD.md does NOT change /lazy's behavior — it exists purely as an audit trail. /lazy and /lazy-cloud should leave it in place until Step 10 (feature completion) cleans it up.
+
+## Cloud follow-on
+After writing this sentinel, /lazy-cloud fell through to Step 9 (retro). The retro may have already run by the time the workstation /lazy picks this up. If `RETRO_DONE.md` exists alongside this sentinel, retro is complete and the workstation /lazy only needs to handle Step 8.
 ```
 
-Then:
+If the file already exists from a prior cloud invocation, leave it untouched.
+
+Then notify and **continue to Step 9** in the same invocation:
 ```
-PushNotification({ message: "{feature_name}: MCP testing deferred to workstation /lazy. See DEFERRED_NON_CLOUD.md." })
+PushNotification({ message: "{feature_name}: MCP testing deferred to workstation /lazy. Proceeding to retro." })
 ```
-STOP.
+
+**Do NOT stop here.** Fall through to Step 9 and run the retrospective as if `VALIDATED.md` existed. This is the one place where /lazy-cloud diverges from the strict /lazy gate ordering: retro is a static spec-alignment analysis that doesn't depend on MCP runtime evidence, so it's safe to run before the deferred validation.
 
 ---
 
@@ -320,7 +323,7 @@ STOP.
 
 Same as `/lazy` Step 9 — analysis + edits only, safe in cloud.
 
-`VALIDATED.md` exists — the feature is implemented and validated. Now run a retrospective that validates spec alignment before marking complete.
+**Entry gate (cloud-aware):** Either `VALIDATED.md` OR `DEFERRED_NON_CLOUD.md` must exist. The former means MCP testing passed (normal /lazy path); the latter means MCP testing was deferred to the workstation and we're running retro early. Both are valid entry conditions for /lazy-cloud — pick whichever describes reality.
 
 **CRITICAL:** The retro's sole responsibility is analysis — it surfaces divergences and writes a plan file. /lazy-cloud is responsible for acting on those findings:
 - **Minor divergences** (naming changes, implementation details that don't affect behavior): handled by the retro plan during execution
@@ -359,8 +362,10 @@ Skill({ skill: "retro", args: "{spec_path}/PHASES.md --auto" })
      - [ ] {divergence 1 — what needs to be fixed/added}
      - [ ] {divergence 2 — what needs to be fixed/added}
      ```
-  3. Delete `VALIDATED.md` (forces re-validation after corrective phases are implemented). **Cloud note:** if deleting `VALIDATED.md` would re-enter Step 8 territory, the next /lazy-cloud invocation will defer at Step 8 again — that's correct behavior.
-  4. STOP (next invocations: Step 7 → implement → Step 8 → re-validate → Step 9 → second retro)
+  3. Force re-validation after corrective phases are implemented:
+     - If `VALIDATED.md` exists (we somehow have a workstation-produced validation) → delete it
+     - If only `DEFERRED_NON_CLOUD.md` exists (cloud-deferred validation, expected case) → leave it in place; the corrective phases below already force re-implementation, and the deferral marker continues to signal that MCP testing is pending workstation execution
+  4. STOP (next invocations: Step 7 → implement → Step 8 → re-defer/re-validate → Step 9 → second retro)
 - **If clean (no significant divergences):** STOP (next invocation executes the retro plan)
 
 ---
@@ -382,6 +387,7 @@ Read the existing retro plan. Check if it reported significant divergences (has 
     **Date:** {today}
     **Rounds:** 1 (clean — no significant divergences)
     **Retro plan:** {retro-plan-filename}
+    **MCP validation status:** {"complete (VALIDATED.md)" if VALIDATED.md exists else "deferred to workstation /lazy (see DEFERRED_NON_CLOUD.md)"}
     ```
   - STOP
 
@@ -409,14 +415,30 @@ After /execute-plan returns, write `{spec_path}/RETRO_DONE.md`:
 **Date:** {today}
 **Rounds:** {retro_count}
 **Retro plans:** {comma-separated retro plan filenames}
+**MCP validation status:** {"complete (VALIDATED.md)" if VALIDATED.md exists else "deferred to workstation /lazy (see DEFERRED_NON_CLOUD.md)"}
 ```
 STOP
 
 ---
 
-## Step 10: Mark Feature Complete
+## Step 10: Mark Feature Complete (Cloud-Halt Aware)
 
-`VALIDATED.md` AND `RETRO_DONE.md` exist — the feature is fully implemented, validated, and reviewed.
+### 10a. Cloud halt — RETRO_DONE.md exists but no VALIDATED.md
+
+If `RETRO_DONE.md` exists AND `VALIDATED.md` does NOT exist, cloud has done everything it can for this feature. The feature is implemented + retro'd, but the MCP validation gate was deferred and only a workstation `/lazy` can finalize it.
+
+Do **NOT** mark the feature complete on ROADMAP.md. Do **NOT** delete `RETRO_DONE.md` or `DEFERRED_NON_CLOUD.md`. Do **NOT** commit a completion change.
+
+Instead:
+```
+PushNotification({ message: "{feature_name}: cloud work complete (phases + retro). Awaiting workstation /lazy for deferred MCP test." })
+```
+
+Report the halt in the status bookend (Next `/lazy-cloud` will: "Nothing further — awaiting workstation /lazy") and STOP.
+
+### 10b. Normal completion — both VALIDATED.md AND RETRO_DONE.md exist
+
+This branch runs only when cloud somehow has both sentinels (e.g., a workstation /lazy wrote VALIDATED.md and a subsequent /lazy-cloud invocation reaches Step 10). Proceed exactly as `/lazy` does:
 
 1. **Update ROADMAP.md:**
    - Find the feature's row by matching `feature_name` in the ROADMAP table
@@ -503,23 +525,24 @@ Identical to `/lazy`, plus the cloud-deferral sentinel:
 
 ## State Machine Summary
 
-Same as `/lazy` except the MCP gate behavior is cloud-aware:
+Same as `/lazy` except (a) the MCP gate is cloud-aware and (b) Step 9 (retro) accepts `DEFERRED_NON_CLOUD.md` as an alternative entry condition to `VALIDATED.md`, so retro runs in cloud right after deferral:
 
 ```
-queue.json → find current feature → check state → invoke ONE skill (or DEFER) → STOP
+queue.json → find current feature → check state → invoke ONE skill (with optional pre-deferral) → STOP
 
 BLOCKED.md exists?                    → present blocker + recommend action → STOP
-DEFERRED_NON_CLOUD.md exists?         → report deferred step + recommend workstation /lazy → STOP
+DEFERRED_NON_CLOUD.md exists?         → note in status (read-only), CONTINUE through state machine
 SPEC.md missing?                      → /spec (or notify if no research)
 SPEC.md exists + no RESEARCH_SUMMARY? → /spec (generate research prompt or integrate results)
 PHASES.md missing?                    → /spec-phases
 Unchecked deliverables + no plan?     → /write-plan (writes to plans/ subdir)
 Unchecked deliverables + plan exists? → /execute-plan
-All checked + no VALIDATED.md + not testable? → SKIP_MCP_TEST.md (only if unambiguous)
-All checked + no VALIDATED.md + testable?     → DEFERRED_NON_CLOUD.md (cloud cannot run MCP) → STOP
-VALIDATED.md + 0 retro plans?         → /retro --auto
-VALIDATED.md + 1 retro plan (clean)?  → /execute-plan (retro plan) → RETRO_DONE.md
-VALIDATED.md + 1 retro plan (had divergences)? → /retro --auto (round 2)
-VALIDATED.md + 2+ retro plans?        → /execute-plan (latest retro plan) → RETRO_DONE.md
-RETRO_DONE.md exists?                 → mark complete on ROADMAP + remove DEFERRED_NON_CLOUD.md + notify
+All checked + no VALIDATED.md + no DEFERRED_NON_CLOUD.md + not testable? → SKIP_MCP_TEST.md (only if unambiguous)
+All checked + no VALIDATED.md + (testable OR ambiguous)?                 → write DEFERRED_NON_CLOUD.md (if missing), fall through to retro
+(VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 0 retro plans?                  → /retro --auto
+(VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 1 retro plan (clean)?           → /execute-plan (retro plan) → RETRO_DONE.md (annotates MCP status)
+(VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 1 retro plan (had divergences)? → /retro --auto (round 2); skip VALIDATED.md delete if absent
+(VALIDATED.md OR DEFERRED_NON_CLOUD.md) + 2+ retro plans?                 → /execute-plan (latest retro plan) → RETRO_DONE.md
+RETRO_DONE.md + no VALIDATED.md?      → CLOUD HALT — feature awaits workstation /lazy for MCP test → STOP
+RETRO_DONE.md + VALIDATED.md?         → mark complete on ROADMAP + remove DEFERRED_NON_CLOUD.md + notify
 ```
