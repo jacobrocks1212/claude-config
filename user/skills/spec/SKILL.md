@@ -60,6 +60,14 @@ Do NOT make architecture or technology decisions until the problem space is unde
 
 ### Step 1b: Brainstorm Architecture & Scope
 
+**Atomic Decomposition Gate (one-shot — run once, before iterative brainstorming begins):**
+
+Before locking in any design decisions, apply first-principles decomposition to the load-bearing terms in the user's feature request and your synthesized understanding from Step 1a. Run this *once* at the start of Step 1b — do NOT repeat per brainstorming round. Surface the decomposition to the user as part of your synthesis so any ambiguity in goals like "simple", "scalable", "robust", "fast", "secure", or domain-specific jargon is resolved before scope and architecture get committed to writing.
+
+!`cat ~/.claude/skills/_components/atomic-thinking.md`
+
+After the decomposition, proceed with iterative brainstorming below.
+
 1. Synthesize your understanding of the feature request and related context.
 2. Use `AskUserQuestion` to iteratively refine the spec. **Ask about the problem and desired outcomes before infrastructure details:**
    - **Desired outcomes** — What should the experience look like?
