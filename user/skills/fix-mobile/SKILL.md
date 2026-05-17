@@ -94,6 +94,8 @@ TDD enforcement is injected automatically via `subagent-launch.md` — every sub
 
 For a small single-file fix with a single concern, a single work unit in a single batch is the natural result of this protocol.
 
+!`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
+
 ### 4b. Write the Plan
 
 The plan MUST contain all of the following sections as explicit, non-skippable steps. Use imperative language.

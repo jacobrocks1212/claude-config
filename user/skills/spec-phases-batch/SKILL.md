@@ -57,6 +57,10 @@ From PARTITIONING.md + the specs themselves, identify:
 
 ---
 
+!`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
+
+---
+
 ## Step 2: Draft the Comprehensive Plan
 
 Write a single, **fully self-contained** plan covering the phase decomposition of ALL input specs. The plan must include every instruction needed for autonomous execution — including subagent prompts, review protocol, cross-feature holistic review, and commit steps.
