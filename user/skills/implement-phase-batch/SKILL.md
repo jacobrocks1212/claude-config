@@ -81,6 +81,10 @@ Build a directed acyclic graph of all pending phases. The execution order respec
 
 ---
 
+!`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
+
+---
+
 ## Step 3: Draft the Comprehensive Plan
 
 Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. When the executing session reads this plan file, it will execute it verbatim, potentially in a fresh context window. Nothing outside the plan can be relied upon.

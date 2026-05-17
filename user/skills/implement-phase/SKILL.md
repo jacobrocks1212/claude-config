@@ -91,6 +91,10 @@ Then, for each deliverable in the target phase:
 
 ---
 
+!`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
+
+---
+
 ## Step 5: Draft the Plan
 
 Write the plan. The plan MUST contain all of the following sections as explicit, non-skippable steps. Use imperative language ("Do X", not "Consider X").

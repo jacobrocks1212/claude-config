@@ -63,6 +63,8 @@ Consider these factors when identifying phase boundaries:
 - Which phases have highest uncertainty?
 - What should be prototyped early?
 
+!`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
+
 ### Step 3: Propose Phase Structure
 
 Present proposed phases to user with `AskUserQuestion`:
