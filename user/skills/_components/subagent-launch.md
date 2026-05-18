@@ -2,6 +2,14 @@
 
 **HARD CONSTRAINT — READ BEFORE PROCEEDING:** ALL source and test code changes in this step MUST be made by Sonnet subagents via the `Agent` tool. You are the orchestrator. You compose prompts and dispatch agents — you do NOT call `Edit` or `Write` on any source, test, config, or implementation file. If you catch yourself about to write code inline, STOP, compose an `Agent({ model: "sonnet", prompt: "..." })` call instead, and dispatch it. There are ZERO exceptions to this rule for non-trivial work.
 
+### Commit/Push Ownership — Orchestrator Only (MANDATORY)
+
+Subagents do NOT commit or push. The commit/push protocol is owned by the orchestrator and runs at **Step B.5** of the plan (after batch review). Every subagent prompt you dispatch MUST include the following clause, verbatim or paraphrased without softening:
+
+> **You do not run `git commit` or `git push`.** If you find yourself about to run either, stop — the orchestrator handles commits after reviewing your work. Your job ends when you have produced the `GROUND-TRUTH OUTPUT` block defined in your briefing. Staging (`git add`) is also reserved for the orchestrator; do not stage files.
+
+This addresses an observed failure mode where subagents pushed off-protocol commits mid-batch (e.g., voice-decomposition-followups Phase 4 Batch 2 / "P5-B1" mislabel), bypassing review and corrupting the commit history. If a subagent's `GROUND-TRUTH OUTPUT` block shows commits the orchestrator didn't authorize (`git log` entries with timestamps inside the subagent's run window, or a clean `git status --short` when there should be uncommitted work), the verdict is automatically `NEEDS-REWORK` and the orchestrator must investigate whether the rogue commit needs to be reverted before continuing.
+
 ### TDD Decision Gate
 
 !`cat ~/.claude/skills/_components/tdd-protocol.md`
