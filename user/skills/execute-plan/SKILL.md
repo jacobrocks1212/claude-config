@@ -153,7 +153,63 @@ Call `interview_work_log_append` with:
 - `patterns`: design patterns applied
 - `technical_context`: 3-5 sentences on engineering depth
 
-3. Print a final summary:
+### Step 4b: Summarize Enabled Behavior (MANDATORY — DO NOT SKIP)
+
+After the work log is appended, conclude with a summary of **actual product behavior that is now enabled by the work just completed** — what can be done now that couldn't be done before. This is the deliverable's value statement, expressed in terms of capability rather than code changes.
+
+**Scope:** Only behavior enabled by THIS plan execution. Do not include behavior that already existed, and do not include behavior still pending in later phases.
+
+**Required structure** — print exactly the following block, filled in:
+
+```
+## Behavior enabled by this execution
+
+### User-facing
+- {capability the user can now exercise, stated as a verb phrase, e.g. "Export a saved chart as PNG from the toolbar"}
+- ...
+
+### Non-user-facing
+- {capability now available to developers, operators, downstream code, or internal subsystems, e.g. "Backend now emits structured audit events for every chart export"}
+- ...
+```
+
+Rules for the summary:
+- **Capability, not changelog.** Write what the system can DO, not what files changed. ❌ "Added `exportChart()` function to chart.ts." ✅ "Users can export charts as PNG."
+- **Concrete, not aspirational.** Only list behavior actually wired up and reachable end-to-end. If a piece was scaffolded but not connected, do not list it.
+- **Both sections required.** If a section legitimately has nothing, write `- (none)` rather than omitting the heading.
+- **Diff against "before this execution."** The contrast is against the state immediately before this plan ran, not against some earlier baseline.
+
+### Step 4c: Feature-Level Summary (CONDITIONAL — ONLY IF SPEC COMPLETED)
+
+If this execution completed a spec — meaning **every deliverable in PHASES.md is now checked off (`- [x]`)** — print an additional feature-level summary covering the entire feature, not just this execution's slice.
+
+To determine spec completion:
+1. Read PHASES.md (the path was used in the work log call)
+2. Verify there are no unchecked deliverable boxes (`- [ ]`) remaining anywhere in the file
+3. If any deliverable remains unchecked, SKIP this step — the spec is not yet complete
+4. If all deliverables are checked, print the feature-level block below
+
+**Required structure** — print exactly the following block, filled in:
+
+```
+## Feature complete: {feature name from SPEC.md or PHASES.md}
+
+### User-facing behavior delivered by this feature
+- {end-to-end capability the feature provides to users}
+- ...
+
+### Non-user-facing behavior delivered by this feature
+- {end-to-end capability the feature provides to developers/operators/downstream systems}
+- ...
+```
+
+Rules for the feature-level summary:
+- **Span the whole feature.** This is the cumulative capability set delivered across all phases, not just the final phase.
+- Same capability-not-changelog rules as Step 4b.
+- Both sections required; use `- (none)` if empty.
+- If a SPEC.md exists, use the feature name from its title; otherwise use the PHASES.md title.
+
+### Step 4d: Print Final Summary
 
 ```
 Plan execution complete: {plan-file-path}
