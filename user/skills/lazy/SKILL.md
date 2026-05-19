@@ -128,6 +128,30 @@ If missing:
 
 ---
 
+## Step 4.5: Stub Spec Detection
+
+SPEC.md exists, but it may be a stub auto-generated from a research summary (e.g. `docs/features/ADVANCED_FEATURE_RESEARCH.md`). A stub has the metadata header but no Executive Summary / User Experience / Technical Design / Validation Criteria sections — the spec body is still the original research blurb. Running Step 5 against a stub would generate a Phase 2 research prompt grounded in thin content instead of a refined Phase 1 baseline.
+
+Detect a stub by checking `{spec_path}/SPEC.md` for EITHER marker:
+- The metadata line `**Status:** Draft (research stub)`
+- A literal trailer line near the end: `> Stub generated from advanced feature research. Run /spec to expand into a full specification.`
+
+```bash
+grep -E "^\*\*Status:\*\* Draft \(research stub\)|^> Stub generated from advanced feature research" {spec_path}/SPEC.md
+```
+
+**If a stub marker is found:** invoke /spec WITHOUT the "skip to Phase 2" argument so /spec runs from Phase 1 (brainstorm baseline spec). Pass the existing stub path as starting context — /spec is expected to overwrite the stub once the baseline is locked in:
+
+```
+Skill({ skill: "spec", args: "{feature_name} — existing stub at {spec_path}/SPEC.md is auto-generated from research summary; treat as starting context for Phase 1 brainstorming and overwrite when baseline is locked in" })
+```
+
+STOP after skill returns.
+
+**If no stub marker is found:** Proceed to Step 5.
+
+---
+
 ## Step 5: Research Validation Gate
 
 SPEC.md exists. Before proceeding to phases, verify the spec has been validated by research.
@@ -542,6 +566,7 @@ queue.json → find current feature → check state → invoke ONE skill → STO
 
 BLOCKED.md exists?                    → present blocker + recommend action → STOP
 SPEC.md missing?                      → /spec (or notify if no research)
+SPEC.md exists + stub marker present? → /spec (Phase 1 from scratch, stub becomes starting context)
 SPEC.md exists + no RESEARCH_SUMMARY? → /spec (generate research prompt or integrate results)
 PHASES.md missing?                    → /spec-phases
 Unchecked deliverables + no plan?     → /write-plan (writes to plans/ subdir)
