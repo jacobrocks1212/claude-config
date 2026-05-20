@@ -58,26 +58,124 @@ Before asking about architecture, technology, or infrastructure, ensure you unde
 
 Do NOT make architecture or technology decisions until the problem space is understood.
 
-### Step 1b: Identify Dependencies (BLOCKING — before architecture brainstorm)
+### Step 1b: Resolve Dependencies and Dependees (BLOCKING — before architecture brainstorm)
 
-Before brainstorming architecture, identify which other features this one depends on. The dependency block is a **hard checkpoint** — Phase 3 will refuse to finalize SPEC.md without it.
+Before brainstorming architecture, perform an **explicit mechanical search** across all existing specs to identify (a) upstream features this one depends on, and (b) existing downstream features that depend on this one (relevant when this is a re-spec or expansion of a stub). The dependency block is a **hard checkpoint** — Phase 3 will refuse to finalize SPEC.md without it.
 
 !`cat ~/.claude/skills/_components/dep-block-schema.md`
 
-Procedure:
+Do NOT skip the mechanical search and rely on intuition or Phase 0 context alone — that's exactly how dep blocks drift into "(none)" when there are real deps. Run every step below.
 
-1. **Scan related specs.** From Phase 0 you already noted features that might relate. For each, decide: does this new feature have a real dependency on it? If yes, what kind (`hard`, `soft`, `composes`)? If no, drop it.
-2. **Cross-check queue/ROADMAP.** If `docs/features/queue.json` or `docs/features/ROADMAP.md` exists, scan for features whose names suggest they expose contracts this feature will consume (API surfaces, schemas, IPC channels, registries, base components). Add any real ones to the candidate list.
-3. **Ask the user** via `AskUserQuestion` only if the candidate set is non-obvious. Present the candidates with kinds and one-sentence reasons; let the user confirm or correct. Do NOT ask if there are zero candidates — just note `(none)` and proceed.
-4. **Record the block immediately** in the in-progress SPEC.md draft using the schema's Form A or Form B verbatim. Treat it as a first-class section, not a TBD placeholder. It will iterate alongside the rest of the spec during brainstorming, but the *shape* must be correct from this point forward.
+#### 1b.1. Enumerate the candidate set (mechanical)
 
-If you find yourself wanting to defer this ("we'll figure out deps later"), STOP. Deferral is how the look-back mechanism breaks. Lock in a best-guess block now; revise later as brainstorming surfaces new dependencies.
+1. **List all existing SPEC.md files.** Use the spec directory resolved in Phase 0:
+   ```bash
+   # Algobooth-style layout
+   ls {spec-dir}/*/SPEC.md 2>/dev/null
+   # Generic fallback
+   find {spec-dir} -name SPEC.md -not -path "*/{this-feature-slug}/*"
+   ```
+   Skip the feature being authored (if a directory already exists for it).
+
+2. **Read queue/ROADMAP if present.** If `docs/features/queue.json` exists, read it to map feature-id → directory and tier. If `docs/features/ROADMAP.md` exists, read it to learn which features are Complete vs. pending — `hard` deps on Complete upstreams will trigger reality-check via `/realign-spec` in `/lazy` Step 4.6.
+
+3. **Read any project-level dependency catalog** if it exists (e.g., `docs/features/dependency-audit.md`, `docs/features/PARTITIONING.md`). These pre-classify coupling between features and are gold for candidate selection.
+
+#### 1b.2. Search for upstream dependencies (what THIS feature consumes)
+
+For each candidate SPEC found in 1b.1, identify whether the new feature depends on it. Use both keyword search and section reading:
+
+1. **Extract load-bearing terms** from the user's feature request and Phase 0 synthesis: API names, data types, subsystem names, capability terms. List them.
+
+2. **Grep across all candidate SPECs** for those terms:
+   ```bash
+   # For each load-bearing term:
+   grep -l -i "<term>" {spec-dir}/*/SPEC.md
+   ```
+   Record matches.
+
+3. **Grep across candidate SPECs for things they EXPOSE** that this feature might consume. Common exposure patterns:
+   ```bash
+   grep -l -E "^## (Public API|Exposes|Surface|Exports|Provides|IPC|MCP Tools)" {spec-dir}/*/SPEC.md
+   grep -l -E "(provides|exposes|exports|publishes|emits|owns)" {spec-dir}/*/SPEC.md
+   ```
+
+4. **For each matching SPEC**, open it and read the Executive Summary, Technical Design, and any "Public API"/"Exposes" sections. For each, decide:
+   - Does the new feature's design require something this upstream provides? If yes → candidate dep.
+   - Classify kind:
+     - **hard** — new feature's design hinges on the upstream's concrete contract (API shape, schema, IPC channel). Phase planning will need to read this upstream's PHASES.md.
+     - **soft** — new feature needs the upstream to exist but not its impl specifics.
+     - **composes** — new feature builds atop the upstream as a peer/extension.
+   - Capture a one-sentence reason (used for the dep block's reason field).
+
+#### 1b.3. Search for downstream dependees (what depends on THIS feature)
+
+If this is a re-spec, stub expansion, or expansion of an existing concept, downstream features may already declare a dep on this feature. Surface them so the user knows what will need updating if this SPEC changes contract shape.
+
+1. **Determine the feature-id** for this feature (kebab-case of the name).
+
+2. **Grep all existing SPECs' Depends-on blocks** for this id:
+   ```bash
+   # Find SPECs that reference this feature-id in their dep block:
+   grep -l -E "^- {feature-id} — (hard|soft|composes)" {spec-dir}/*/SPEC.md
+   ```
+   Also try common variants of the feature-id if the new name might already be referenced under a different slug.
+
+3. **Grep advanced-feature catalogs and research summaries** for the feature-id or its keywords:
+   ```bash
+   grep -l -i -E "<feature-id>|<load-bearing-terms>" docs/features/*RESEARCH*.md docs/features/*AUDIT*.md docs/features/*PARTITIONING*.md 2>/dev/null
+   ```
+
+4. For each downstream dependee found, record: `feature-id`, the kind they declared, and the file path. These are not added to the new SPEC's Depends-on block — they're recorded as a side note for the user.
+
+#### 1b.4. Present findings in chat (BEFORE AskUserQuestion)
+
+Surface a single chat-visible block before any picker. The picker UI truncates option descriptions, so the user must see the full evidence inline. Use this structure:
+
+```
+## Dependency Search Results
+
+### Upstream candidates (would go into this feature's Depends on: block)
+
+| Feature-id | Kind | Reason | Evidence (file:section) | Confirm? |
+|------------|------|--------|--------------------------|----------|
+| <id> | hard | <one sentence> | <path>:<section heading> | recommend yes |
+| <id> | soft | <one sentence> | <path>:<section heading> | recommend yes/no |
+...
+
+(If zero candidates after the search, write: "No upstream dependencies found. Dep block will be `**Depends on:** (none)`.")
+
+### Existing downstream dependees (other SPECs already depending on this feature-id)
+
+| Downstream feature-id | Kind they declared | File |
+|-----------------------|--------------------|------|
+| <id> | hard | <path>/SPEC.md |
+...
+
+(If zero, write: "No existing dependees — this is a leaf or greenfield feature.")
+
+**Implication if contract shifts during this /spec:** the dependees listed above will need to be reality-checked by `/realign-spec` (which `/lazy` runs automatically). No action needed now — just noting it.
+```
+
+#### 1b.5. Confirm via AskUserQuestion (only if non-obvious)
+
+If the upstream candidate set has any rows the user might want to add/remove/reclassify, use `AskUserQuestion` to confirm:
+- One question per ambiguous candidate, with options like "Keep as hard", "Reclassify as soft", "Drop — not a real dep".
+- If every candidate is unambiguous (clear hard deps with strong evidence), skip the picker and proceed.
+
+Do NOT ask about dependees — they're informational, not authored here.
+
+#### 1b.6. Record the dep block immediately
+
+Write the confirmed dep block into the in-progress SPEC.md draft using the schema's Form A or Form B verbatim. Treat it as a first-class section, not a TBD placeholder. It will iterate alongside the rest of the spec during brainstorming, but the *shape* must be correct from this point forward.
+
+If you find yourself wanting to defer this ("we'll figure out deps later"), STOP. Deferral is how the look-back mechanism breaks. Lock in the best-evidence block now; revise as brainstorming surfaces new dependencies.
 
 ### Step 1c: Brainstorm Architecture & Scope
 
 **Atomic Decomposition Gate (one-shot — run once, before iterative brainstorming begins):**
 
-Before locking in any design decisions, apply first-principles decomposition to the load-bearing terms in the user's feature request and your synthesized understanding from Step 1a. Run this *once* at the start of Step 1b — do NOT repeat per brainstorming round. Surface the decomposition to the user as part of your synthesis so any ambiguity in goals like "simple", "scalable", "robust", "fast", "secure", or domain-specific jargon is resolved before scope and architecture get committed to writing.
+Before locking in any design decisions, apply first-principles decomposition to the load-bearing terms in the user's feature request and your synthesized understanding from Step 1a. Run this *once* at the start of Step 1c — do NOT repeat per brainstorming round. Surface the decomposition to the user as part of your synthesis so any ambiguity in goals like "simple", "scalable", "robust", "fast", "secure", or domain-specific jargon is resolved before scope and architecture get committed to writing.
 
 !`cat ~/.claude/skills/_components/atomic-thinking.md`
 
