@@ -63,6 +63,15 @@ Consider these factors when identifying phase boundaries:
 - Which phases have highest uncertainty?
 - What should be prototyped early?
 
+**Collect candidate touchpoints (REQUIRED before the audit gate below):**
+
+Before the touchpoint audit fires, enumerate the **existing source files** the proposed phases will modify. Pull from:
+- The SPEC's "Technical Design" / "Files likely modified" sections, if present
+- Each candidate phase boundary you just synthesized — for each, list the files you'd expect that phase to edit
+- Any files you read or grepped during boundary analysis that the plan will touch
+
+Hold this list in working memory (or jot it in your reasoning) — the gate below consumes it. The audit is about the source files the PLAN will modify, NOT about the PHASES.md document you're about to write. Skipping the audit because "this is documentation work" is incorrect; PHASES.md is the planning artifact, but the audit subject is the source files PHASES.md schedules for modification.
+
 !`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
 
 ### Step 3: Propose Phase Structure

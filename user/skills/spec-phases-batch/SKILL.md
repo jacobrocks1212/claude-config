@@ -57,6 +57,19 @@ From PARTITIONING.md + the specs themselves, identify:
 
 ---
 
+### 1d. Collect Candidate Touchpoints Across All Input Specs (REQUIRED before the audit gate below)
+
+Before the touchpoint audit fires, enumerate the **existing source files** that the proposed phase decompositions across **all input specs** will modify. For each spec in the batch, pull from:
+- The SPEC's "Technical Design" / "Files likely modified" sections
+- Shared-file ownership entries you just identified in Step 1c (these are high-signal — multiple features touching the same file is a bloat risk amplifier)
+- Any files you read while assessing cross-feature constraints that the plans will touch
+
+Merge into one deduplicated list of repo-root-relative paths. Hold it in working memory — the gate consumes it.
+
+The audit subject is the **source files the planned implementations will modify**, NOT the parent plan markdown or the per-spec PHASES.md documents. Skipping the audit because "this is documentation work" is incorrect — the documentation schedules source modifications, which is exactly what the audit checks.
+
+---
+
 !`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
 
 ---
