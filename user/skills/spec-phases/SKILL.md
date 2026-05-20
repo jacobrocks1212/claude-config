@@ -42,6 +42,24 @@ Update each task to `in_progress` when starting it, `completed` when done. After
    - Existing related code
    - Any referenced dependencies
 
+### Step 1.5: Read Upstream PHASES.md (per hard dep)
+
+The spec carries a `**Depends on:**` block. Use it to load phase-level decisions from upstream features so the new phase plan integrates against what was actually built, not what the upstream's SPEC originally claimed.
+
+!`cat ~/.claude/skills/_components/dep-block-schema.md`
+
+Procedure:
+
+1. Parse the SPEC's `**Depends on:**` block. Filter to `kind == hard`.
+2. For each hard dep, resolve the upstream directory using the resolution protocol.
+3. Apply the completion check. For each upstream where the check passes, read:
+   - `<upstream-dir>/PHASES.md` in full, paying particular attention to Implementation Notes blocks — they document what actually shipped vs. what was originally planned.
+   - Skip non-Complete upstreams; there's nothing settled to integrate against.
+4. From each upstream PHASES.md, extract any decisions, contracts, file paths, or invariants that the current spec's phases will need to consume. Hold these in working memory for Step 2 (phase boundary analysis) and Step 5 (PHASES.md drafting).
+5. If a hard dep's upstream is Complete but has no PHASES.md (older feature, never decomposed), note this — surface it as a quality issue in the final PHASES.md's `## Cross-feature Integration Notes` section.
+
+If the block is missing, malformed, or all deps are soft/composes/incomplete, skip this step with a one-line note. Do NOT abort.
+
 ### Step 2: Analyze Phase Boundaries
 
 Consider these factors when identifying phase boundaries:
@@ -131,6 +149,15 @@ Launch a Sonnet subagent with:
 # Implementation Phases — {Feature Name}
 
 > Phases for [`SPEC.md`](./SPEC.md)
+
+## Cross-feature Integration Notes
+
+Phase-level dependencies on completed upstream features, extracted from each upstream's PHASES.md during /spec-phases Step 1.5. Phase plans below MUST honor these; deviations require /realign-spec before implementation.
+
+- **<upstream-feature-id> (kind=hard, Complete):** <one or two lines: the upstream phase(s) this feature consumes, the actual API/contract/path/invariant locked in by the upstream's PHASES.md, and which downstream phase(s) below depend on it>
+- ...
+
+(Omit this section entirely if there are no hard deps on Complete upstreams. If a hard upstream is Complete but lacks PHASES.md, list it here with `(no PHASES.md — verify against SPEC.md and Implementation Notes)` and surface as a quality issue.)
 
 ### Phase 1: {Title}
 

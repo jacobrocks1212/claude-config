@@ -47,6 +47,24 @@ Also read:
 - `CLAUDE.md` (project root) — for quality gates, critical rules, directory layout
 - `docs/features/PARTITIONING.md` — for wave plan, dependency graph, phased-spec guidance, cross-feature ordering constraints
 
+### 1b.1. Load Upstream Plan References (per hard dep on Complete upstream)
+
+For each input PHASES.md, read the sibling SPEC.md's `**Depends on:**` block to find prior plans that the new plan should reference.
+
+!`cat ~/.claude/skills/_components/dep-block-schema.md`
+
+Procedure:
+
+1. Parse the SPEC's `**Depends on:**` block. Filter to `kind == hard`.
+2. For each hard dep, resolve the upstream directory and apply the completion check.
+3. For each completed hard upstream:
+   - Glob `<upstream-dir>/plans/*.md`. Skip `retro-*.md` unless the filename suggests it captured an architectural fix this plan must inherit.
+   - Read selectively — only plans whose title or first heading touches a domain that this plan's work units will modify (contracts, paths, schemas, mount points). Do NOT read every plan in every upstream; that explodes context.
+   - Record the absolute paths of plans you read; they go into the generated plan's `## References` section so the executing session can re-load them after compaction.
+4. If a hard upstream is Complete but has no `plans/` directory (older feature), note it; record only its PHASES.md path in References.
+
+If the block is missing, malformed, or all hard deps are incomplete, skip this step. Do NOT abort.
+
 ### 1c. Build the Cross-Feature Phase Queue
 
 Scan all loaded PHASES.md files. For each phase with unchecked deliverables (`- [ ]`):
@@ -137,6 +155,20 @@ The plan MUST contain all of the following sections. Everything below is plan te
 > | Post-phase | Integration Verification | `~/.claude/skills/_components/integration-verification.md` |
 > | Post-phase | CLAUDE.md Review | `~/.claude/skills/_components/claude-md-review.md` |
 > | Final | Work Log | `~/.claude/skills/_components/work-log.md` |
+
+**References section (write this, listing each upstream artifact you read in Step 1b.1):**
+
+> ## References — Upstream Artifacts
+>
+> Upstream plans and PHASES.md files this plan was authored against. The executing session SHOULD `Read` these before starting any work unit whose Implementation goal references the corresponding upstream contract. Listed in dependency order.
+>
+> | Upstream feature | Kind | Path | Why this plan references it |
+> |------------------|------|------|------------------------------|
+> | <upstream-id-1> | hard | <abs-path-to-upstream-PHASES.md> | <one-line: what contract/decision this plan inherits> |
+> | <upstream-id-1> | hard | <abs-path-to-upstream-plan.md> | <one-line: what implementation pattern this plan inherits> |
+> | <upstream-id-2> | hard | <abs-path> | <one-line> |
+>
+> (If no hard deps on Complete upstreams, write `(none — this plan has no completed hard upstream dependencies)`.)
 
 **Mandatory rules section (write this verbatim):**
 

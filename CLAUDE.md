@@ -118,7 +118,18 @@ The `project-skills.py` script auto-discovers repos with `skill-config/` and pro
 
 Some skills live in `repos/<name>/.claude/skills/` instead of `user/skills/`. These are only available when working in that repo. Examples:
 - `repos/algobooth/.claude/skills/mcp-test/` — AlgoBooth-specific MCP testing
+- `repos/algobooth/.claude/skills/lazy-cloud/` — cloud-environment variant of `/lazy`
 - `repos/cognito-forms/.claude/skills/csharp-cognito/` — Cognito Forms C# patterns
+
+### Coupled Skill Pairs
+
+Some skills are **paired** — they share a state machine and must stay in sync. Editing one without the other silently breaks the pair's invariants.
+
+| Pair | Files | Coupling rule |
+|------|-------|---------------|
+| `/lazy` ↔ `/lazy-cloud` | `user/skills/lazy/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` | `/lazy-cloud` is a cloud-environment variant of `/lazy` with the same state machine and step numbering. Any change to `/lazy`'s state machine (new step, renumbered step, sentinel-file semantics, dispatch logic) MUST be mirrored to `/lazy-cloud`. The only intended divergences are documented in `/lazy-cloud`'s "Differences from `/lazy`" block (Steps 2, 8, 9, 10). When editing either, diff the other immediately afterward and confirm the diff matches what was intended. |
+
+When adding to a coupled pair, also update each file's State Machine Summary at the bottom so the dispatch table reflects the new state.
 
 ## Scripts
 
