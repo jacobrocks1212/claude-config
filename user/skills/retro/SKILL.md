@@ -11,12 +11,13 @@ Reviews completed work (specified by user, or inferred from conversation history
 
 **HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. The deliverable is a written plan file, not a plan-mode interaction.
 
-### `--auto` Flag
+### `--auto` / `--batch` Flag
 
-If `$ARGUMENTS` contains `--auto`, this is an autonomous invocation (typically from `/lazy`):
-- Strip `--auto` from arguments before processing
+If `$ARGUMENTS` contains `--auto` OR `--batch`, this is an autonomous invocation (typically from `/lazy` or `/lazy-batch`). The two flags are aliases — they trigger identical behavior. Strip whichever is present from arguments before processing.
+
 - **Skip ALL clarifying questions** (Step 5) — use your best judgment for improvement priorities
-- **Skip AskUserQuestion in Step 2** — infer scope from arguments or conversation context; if truly ambiguous, STOP with PushNotification
+- **Skip AskUserQuestion in Step 1** — infer scope from arguments or conversation context; if truly ambiguous in `--batch` mode (no recoverable signal), halt with NEEDS_INPUT.md (see below). `--auto` mode (legacy) falls back to PushNotification + STOP.
+- **Runtime evidence path:** when runtime evidence is needed but unavailable, do NOT use AskUserQuestion. In `--batch`/`--auto` mode, proceed with code-level analysis only and add a top-level note in the retro plan: "Runtime evidence unavailable in this session — alignment assessed at the code level. Re-run interactively with runtime data for higher confidence."
 - Focus on systematic issues and defects; skip subjective/preference questions
 - **MANDATORY spec divergence reporting:** The plan file output MUST include a top-level `## Spec Divergences` section (before defects/improvements) that classifies all divergences found by Subagent B:
 
@@ -37,6 +38,29 @@ If `$ARGUMENTS` contains `--auto`, this is an autonomous invocation (typically f
 ```
 
 If the "Significant" table has any rows, the retro MUST flag this clearly in its final output message: `"SIGNIFICANT SPEC DIVERGENCES FOUND — corrective phases needed before feature completion."` This signal is consumed by `/lazy` to trigger `/add-phase`.
+
+### Halt protocol — `NEEDS_INPUT.md` (under `--batch` only)
+
+In `--batch` mode, if Step 1 cannot resolve the work scope (no path/feature in arguments, no usable signal in conversation context), write `{cwd}/NEEDS_INPUT.md` per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+
+```markdown
+---
+kind: needs-input
+feature_id: <best-guess from arguments, or "unknown">
+written_by: retro
+decisions:
+  - "Cannot determine retro scope — no PHASES.md / SPEC.md / feature name supplied"
+date: <today>
+next_skill: retro
+---
+
+# /retro --batch — Needs Input
+
+Retro scope unresolved; refusing to guess. Re-run with explicit
+`<feature-name | SPEC path | PHASES path>` argument.
+```
+
+STOP without dispatching subagents.
 
 ---
 
@@ -65,7 +89,7 @@ Determine what completed work to review:
 
 1. **Explicit argument:** If `$ARGUMENTS` specifies a feature name, SPEC path, or PHASES path, use that
 2. **Conversation context:** If no argument, infer from the current conversation history (recent commits, files modified, active feature)
-3. **Ambiguous:** Use **AskUserQuestion** — "Which completed work should I review? (feature name, SPEC.md path, or PHASES.md path)"
+3. **Ambiguous:** in interactive mode use **AskUserQuestion** — "Which completed work should I review? (feature name, SPEC.md path, or PHASES.md path)". Under `--auto`/`--batch`: halt per the NEEDS_INPUT.md protocol above.
 
 ### Resolve Source Documents
 
@@ -91,7 +115,9 @@ Before launching subagents, determine if you have enough information to assess s
 | Runtime evidence | Test output, API responses, app logs | If spec defines observable behavior |
 | Chat history | `~/.claude-personal/projects/` | If implementation used `/implement-phase-batch` or had compactions |
 
-If runtime evidence is needed but unavailable, use **AskUserQuestion**: "This retro requires runtime evidence to validate spec alignment. Should I (a) start the dev app and test, (b) proceed with code-level analysis only, or (c) use existing session logs at [path]?"
+If runtime evidence is needed but unavailable, **interactive mode** uses **AskUserQuestion**: "This retro requires runtime evidence to validate spec alignment. Should I (a) start the dev app and test, (b) proceed with code-level analysis only, or (c) use existing session logs at [path]?"
+
+Under `--auto`/`--batch`: proceed with code-level analysis only and note "Runtime evidence unavailable in this session" at the top of the retro plan.
 
 ---
 

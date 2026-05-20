@@ -13,6 +13,65 @@ $ARGUMENTS
 
 ---
 
+## Batch Mode (`--batch` flag)
+
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch`). Batch mode is scoped to **Phase 3 finalization only** — the prior phases require interactive brainstorming and human judgment that a batch orchestrator cannot supply.
+
+**Hard refusal — Phase 1 or Phase 2 under `--batch`:**
+
+If `--batch` is set AND the feature is still in Phase 1 (no SPEC.md draft yet) or Phase 2 (no RESEARCH.md yet), refuse with this exact error and STOP:
+
+> `/spec --batch` only supports Phase 3 finalization; ensure SPEC.md + RESEARCH.md exist before invoking in batch mode. Run `/spec` interactively first.
+
+Detect Phase context: examine `{spec-dir}/{feature-slug}/`:
+- No SPEC.md → Phase 1 territory → refuse
+- SPEC.md exists, no RESEARCH.md → Phase 2 territory (research prompt generation) → refuse
+- SPEC.md + RESEARCH.md both present → Phase 3 finalization → proceed in batch mode
+
+**Phase 3 under `--batch`:**
+
+- **Skip the chat-visible "Open Decisions" block.** No human will read it — `/lazy-batch` runs without a chat audience.
+- For each decision: read your own `**My recommendation:**` line.
+  - If the recommendation resolves to a single concrete option ("Option X, because Y") → accept it silently and record the choice in your synthesis.
+  - If the recommendation reads "no strong preference, depends on {Z}", OR multiple options are tied with equal weight, OR there is no recommendation at all → **halt** (see below). Do NOT pick arbitrarily.
+- **Skip every `AskUserQuestion`** in Phase 3 — the recommendation-resolution above stands in for the picker.
+- The Phase 3 finalization checkpoint (Step 8 in Phase 3 — Depends-on dep-block validation) still runs. If the dep block fails validation, that's a hard error, not an ambiguity; surface it and STOP (do not write SPEC.md).
+- The cross-boundary validation (Step 9) still runs. Unverified quantities should be marked `(estimated — verify during Phase N)` as in interactive mode.
+
+**Halt protocol — `NEEDS_INPUT.md`:**
+
+When at least one decision is genuinely ambiguous, do NOT write a half-finished SPEC.md. Instead:
+
+1. Compute `{spec-dir}/{feature-slug}/NEEDS_INPUT.md`.
+2. Write the sentinel per the canonical schema in `~/.claude/skills/_components/sentinel-frontmatter.md`:
+
+   ```markdown
+   ---
+   kind: needs-input
+   feature_id: {feature-slug}
+   written_by: spec
+   decisions:
+     - <one-line description of decision 1>
+     - <one-line description of decision 2>
+   date: {today}
+   next_skill: spec
+   ---
+
+   # /spec --batch — Needs Input
+
+   The following decisions were genuinely ambiguous in Phase 3 finalization.
+   Re-run `/spec` (without `--batch`) to resolve interactively.
+
+   ## Decisions
+   {Full chat-visible "Open Decisions" block you would have surfaced interactively — questions, options, pros/cons, recommendation if any.}
+   ```
+
+3. STOP. Do not call `AskUserQuestion`. Do not write SPEC.md. The orchestrator (`/lazy-batch`) sees the sentinel on the next state-machine cycle and halts the autonomous tail.
+
+Strip `--batch` from `$ARGUMENTS` before processing the rest of this skill so phase-detection logic and other paths work unchanged.
+
+---
+
 ## Task Tracking (MANDATORY — DO NOT SKIP)
 
 Before any work, load task tools and create tasks for compaction recovery:

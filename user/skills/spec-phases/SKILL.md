@@ -15,6 +15,47 @@ Analyzes a feature spec and decomposes it into well-bounded implementation phase
 ## Arguments
 
 - `spec-path` (required): Path to spec file (e.g., `docs/features/my-feature/SPEC.md`)
+- `--batch` (optional): autonomous mode. Skip the Step 3 user picker; act on red-flag detection by writing NEEDS_INPUT.md.
+
+## Batch Mode (`--batch` flag)
+
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch` via `/plan-feature`).
+
+- Strip `--batch` from `$ARGUMENTS` before resolving the spec path.
+- **Skip the Step 3 `AskUserQuestion` picker.** The user is not present; the picker would block forever.
+- Still run the Step 3 red-flag detection logic at the bottom of this file (circular dependencies, unclear scope, integration explosion, testing impossible). If ANY red flag triggers, **halt** with NEEDS_INPUT.md (see below) — do NOT proceed to Step 4 with phases the human would have wanted to adjust.
+- The Step 6 subagent review gate still runs — review is read-only structured analysis, no human prompts.
+
+### Halt protocol — `NEEDS_INPUT.md`
+
+When red-flag detection triggers under `--batch`:
+
+1. Compute `{spec-dir}/NEEDS_INPUT.md` (sibling of the SPEC.md passed as `$ARGUMENTS`).
+2. Write the sentinel per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+
+   ```markdown
+   ---
+   kind: needs-input
+   feature_id: {feature-slug derived from spec-dir}
+   written_by: spec-phases
+   decisions:
+     - <one-line description of red flag 1>
+     - <one-line description of red flag 2>
+   date: {today}
+   next_skill: spec-phases
+   ---
+
+   # /spec-phases --batch — Needs Input
+
+   The following red flags were detected during phase boundary analysis. Re-run
+   `/spec-phases` interactively (or revise SPEC.md to address the underlying
+   issue, then re-run).
+
+   ## Red flags
+   {For each: name, affected phases, what was unclear, what the human needs to clarify.}
+   ```
+
+3. STOP. Do NOT write PHASES.md. Do NOT invoke the Step 5 subagent.
 
 ## Task Tracking (MANDATORY — DO NOT SKIP)
 
@@ -94,7 +135,9 @@ Hold this list in working memory (or jot it in your reasoning) — the gate belo
 
 ### Step 3: Propose Phase Structure
 
-Present proposed phases to user with `AskUserQuestion`:
+**Under `--batch`:** skip the picker below. Run the red-flag detection block at the end of this file. If clean, proceed to Step 4. If any red flag triggers, halt with NEEDS_INPUT.md per the Batch Mode section above.
+
+**Interactive mode:** present proposed phases to user with `AskUserQuestion`:
 
 ```
 Proposed phase breakdown for {spec name}:
