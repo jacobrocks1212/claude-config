@@ -86,12 +86,22 @@ Announce: `"Current feature: {feature_name} (Tier {tier})"`
 
 ---
 
+## Sentinel File Format
+
+All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema:
+
+!`cat ~/.claude/skills/_components/sentinel-frontmatter.md`
+
+When this skill writes a sentinel below, emit the YAML frontmatter first (with the required keys for that `kind`), then a blank line, then the existing human-readable markdown body shown in the template. When this skill reads a sentinel, parse the frontmatter per the protocol above; the markdown body is for humans only.
+
+---
+
 ## Step 3: Check for Blockers
 
 Check if `{spec_path}/BLOCKED.md` exists.
 
 If it exists:
-1. Read `BLOCKED.md` fully
+1. Read `BLOCKED.md` fully — parse the YAML frontmatter for `kind`, `feature_id`, `phase`, `blocked_at`, `retry_count`, and (if present) `blocker_kind` and `recovery_suggestion`. The markdown body provides additional human-readable context.
 2. Analyze the blocker context (phase, details, what was tried, recovery suggestion)
 3. **Do NOT retry or delete BLOCKED.md.** Present the blocker to Jacob with a recommendation:
    ```
@@ -199,8 +209,18 @@ Read the realign plan file. Find the `**Recommended:**` line under `## Recommend
 
 **`respec`:** The downstream design no longer holds. Do NOT silently rewrite it.
 
-1. Write `{spec_path}/BLOCKED.md`:
+1. Write `{spec_path}/BLOCKED.md` (YAML frontmatter first per the Sentinel File Format section, then body):
    ```markdown
+   ---
+   kind: blocked
+   feature_id: {feature_id}
+   phase: Upstream Realignment
+   blocked_at: {ISO timestamp}
+   retry_count: 0
+   blocker_kind: upstream-realign
+   recovery_suggestion: Review plans/realign-{date}.md and run /spec or revise SPEC sections.
+   ---
+
    # BLOCKED
 
    **Feature:** {feature_name} ({feature_id})
@@ -332,6 +352,15 @@ Evaluate whether this feature has MCP-testable surface (informed by the above):
 
 **If NOT testable:** Write `{spec_path}/SKIP_MCP_TEST.md`:
 ```markdown
+---
+kind: skip-mcp-test
+feature_id: {feature_id}
+reason: {why — e.g., "Pure audio-engine DSP with no IPC or MCP tool surface"}
+alternative_validation: {e.g., "cargo test -p algobooth-audio-engine {module}"}
+date: {today}
+skipped_by: lazy
+---
+
 # MCP Test Skip
 
 **Feature:** {feature_name} ({feature_id})
@@ -376,6 +405,16 @@ After /mcp-test returns, evaluate results:
 **100% passing:**
 Write `{spec_path}/MCP_TEST_RESULTS.md`:
 ```markdown
+---
+kind: mcp-test-results
+feature_id: {feature_id}
+date: {today}
+scenarios: [{scenario-name-1}, {scenario-name-2}, ...]
+result: all-passing
+pass_count: {N}
+total_count: {N}
+---
+
 # MCP Test Results
 
 **Feature:** {feature_name} ({feature_id})
@@ -385,6 +424,14 @@ Write `{spec_path}/MCP_TEST_RESULTS.md`:
 ```
 Write `{spec_path}/VALIDATED.md`:
 ```markdown
+---
+kind: validated
+feature_id: {feature_id}
+date: {today}
+mcp_scenarios: [{scenario-name-1}, {scenario-name-2}, ...]
+result: all-passing
+---
+
 # Validated
 
 **Feature:** {feature_name} ({feature_id})
@@ -398,6 +445,16 @@ STOP.
 
 1. Document failures in `{spec_path}/MCP_TEST_RESULTS.md`:
    ```markdown
+   ---
+   kind: mcp-test-results
+   feature_id: {feature_id}
+   date: {today}
+   scenarios: [{scenario-name-1}, ...]
+   result: partial
+   pass_count: {pass_count}
+   total_count: {total_count}
+   ---
+
    # MCP Test Results
 
    **Feature:** {feature_name} ({feature_id})
@@ -432,6 +489,16 @@ STOP.
    **Still failing after fix attempt:**
    - Write `{spec_path}/BLOCKED.md`:
      ```markdown
+     ---
+     kind: blocked
+     feature_id: {feature_id}
+     phase: MCP Validation
+     blocked_at: {ISO timestamp}
+     retry_count: 0
+     blocker_kind: mcp-validation
+     recovery_suggestion: Review failing scenarios in {spec_path}/mcp-tests/ and MCP_TEST_RESULTS.md.
+     ---
+
      # BLOCKED
 
      **Feature:** {feature_name} ({feature_id})
@@ -511,6 +578,15 @@ Read the existing retro plan. Check if it reported significant divergences (has 
     ```
   - After /execute-plan returns, write `{spec_path}/RETRO_DONE.md`:
     ```markdown
+    ---
+    kind: retro-done
+    feature_id: {feature_id}
+    date: {today}
+    rounds: 1
+    retro_plans: [{retro-plan-filename}]
+    mcp_validation_status: complete
+    ---
+
     # Retro Complete
 
     **Feature:** {feature_name} ({feature_id})
@@ -538,6 +614,15 @@ Skill({ skill: "execute-plan", args: "{latest-retro-plan-path}" })
 ```
 After /execute-plan returns, write `{spec_path}/RETRO_DONE.md`:
 ```markdown
+---
+kind: retro-done
+feature_id: {feature_id}
+date: {today}
+rounds: {retro_count}
+retro_plans: [{retro-plan-filename-1}, {retro-plan-filename-2}, ...]
+mcp_validation_status: complete
+---
+
 # Retro Complete
 
 **Feature:** {feature_name} ({feature_id})

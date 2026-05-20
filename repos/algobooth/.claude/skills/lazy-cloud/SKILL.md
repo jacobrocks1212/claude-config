@@ -74,6 +74,16 @@ The cloud session runs in an ephemeral Linux container with:
 
 ---
 
+## Sentinel File Format
+
+All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema:
+
+!`cat ~/.claude/skills/_components/sentinel-frontmatter.md`
+
+When this skill writes a sentinel below, emit the YAML frontmatter first (with the required keys for that `kind`), then a blank line, then the existing human-readable markdown body shown in the template. When this skill reads a sentinel, parse the frontmatter per the protocol above; the markdown body is for humans only.
+
+---
+
 ## Step 0: Load Tools and Parse Arguments
 
 1. Load PushNotification: `ToolSearch({ query: "select:PushNotification" })`
@@ -141,7 +151,7 @@ Announce: `"Current feature: {feature_name} (Tier {tier})"` — if any features 
 Check if `{spec_path}/BLOCKED.md` exists.
 
 If it exists:
-1. Read `BLOCKED.md` fully
+1. Read `BLOCKED.md` fully — parse the YAML frontmatter for `kind`, `feature_id`, `phase`, `blocked_at`, `retry_count`, and (if present) `blocker_kind` and `recovery_suggestion`. The markdown body provides additional human-readable context.
 2. Analyze the blocker context (phase, details, what was tried, recovery suggestion)
 3. **Do NOT retry or delete BLOCKED.md.** Present the blocker to Jacob with a recommendation:
    ```
@@ -264,8 +274,18 @@ Read the realign plan file. Find the `**Recommended:**` line under `## Recommend
 
 **`respec`:** The downstream design no longer holds. Do NOT silently rewrite it.
 
-1. Write `{spec_path}/BLOCKED.md`:
+1. Write `{spec_path}/BLOCKED.md` (YAML frontmatter first per the Sentinel File Format section, then body):
    ```markdown
+   ---
+   kind: blocked
+   feature_id: {feature_id}
+   phase: Upstream Realignment
+   blocked_at: {ISO timestamp}
+   retry_count: 0
+   blocker_kind: upstream-realign
+   recovery_suggestion: Review plans/realign-{date}.md and run /spec or revise SPEC sections.
+   ---
+
    # BLOCKED
 
    **Feature:** {feature_name} ({feature_id})
@@ -397,6 +417,17 @@ Cloud cannot run MCP tests. Do **not** create the `mcp-tests/` symlinks, do **no
 
 If `{spec_path}/DEFERRED_NON_CLOUD.md` does NOT already exist, write it now:
 ```markdown
+---
+kind: deferred-non-cloud
+feature_id: {feature_id}
+deferred_step: 8
+reason: Cloud Linux environment cannot run tauri:dev or reach the MCP HTTP server.
+deferred_by: lazy-cloud
+date: {today}
+cloud_session_id: {claude-session-id-or-n/a}
+testability_assessment: {clearly-testable | ambiguous}
+---
+
 # Deferred to Non-Cloud /lazy
 
 **Feature:** {feature_name} ({feature_id})
@@ -500,6 +531,15 @@ Read the existing retro plan. Check if it reported significant divergences (has 
     ```
   - After /execute-plan returns, write `{spec_path}/RETRO_DONE.md`:
     ```markdown
+    ---
+    kind: retro-done
+    feature_id: {feature_id}
+    date: {today}
+    rounds: 1
+    retro_plans: [{retro-plan-filename}]
+    mcp_validation_status: {complete | deferred-to-workstation}
+    ---
+
     # Retro Complete
 
     **Feature:** {feature_name} ({feature_id})
@@ -528,6 +568,15 @@ Skill({ skill: "execute-plan", args: "{latest-retro-plan-path}" })
 ```
 After /execute-plan returns, write `{spec_path}/RETRO_DONE.md`:
 ```markdown
+---
+kind: retro-done
+feature_id: {feature_id}
+date: {today}
+rounds: {retro_count}
+retro_plans: [{retro-plan-filename-1}, {retro-plan-filename-2}, ...]
+mcp_validation_status: {complete | deferred-to-workstation}
+---
+
 # Retro Complete
 
 **Feature:** {feature_name} ({feature_id})
