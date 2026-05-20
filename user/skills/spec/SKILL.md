@@ -83,6 +83,7 @@ After the decomposition, proceed with iterative brainstorming below.
 **Rules for brainstorming:**
 - Ask 2-4 focused questions per round (not more).
 - Present concrete options where possible — don't ask open-ended "what do you think?" questions.
+- **Surface full option context in chat BEFORE calling `AskUserQuestion`.** The picker UI truncates option descriptions (~80 chars on mobile), so the user cannot make an informed decision from labels alone. For every multi-option question you are about to ask, first write a chat-visible block containing: (a) the question and why it matters now, (b) each option as a bullet with a 1-2 sentence description, explicit pros, explicit cons, and any relevant project/research context, (c) which option you'd recommend and why (or "no strong preference — depends on X"). Only after that block goes out, call `AskUserQuestion` with the same options as concise picker labels. The picker is for capturing the choice, not for explaining it.
 - Reference existing project patterns and conventions.
 - Flag any conflicts with current architecture early.
 - **For UI proposals:** Use `AskUserQuestion` with `markdown` previews to show ASCII wireframe mockups where helpful.
@@ -126,13 +127,35 @@ After the decomposition, proceed with iterative brainstorming below.
    - Ideas we should adopt from prior art
    - Pitfalls or concerns we need to address
    - Any baseline spec decisions that should be revisited based on research
-4. Present the summary to the user, then use `AskUserQuestion` to refine:
-   - **Spec adjustments** — What changes based on research?
-   - **Prioritization** — What's v1 vs later phases?
-   - **Technical approach** — Has research clarified the right technical direction?
-   - **Open questions** — Anything still unresolved?
-5. Continue refining until the user is satisfied.
-6. Write the final `{spec-dir}/{feature-slug}/SPEC.md` with this structure:
+4. **Surface the full decision landscape in chat BEFORE any `AskUserQuestion` call.** After research, the user typically faces several interlocking decisions, and the picker UI truncates option descriptions — so the user cannot answer informed from picker labels alone. Write a chat-visible "Open Decisions" block first, structured as:
+
+   ```
+   ## Open Decisions (post-research)
+
+   The research surfaced N decisions that need to be locked in before finalizing the SPEC. Full context for each below — picker questions follow.
+
+   ### Decision 1: {short name}
+   **Question:** {what we're deciding}
+   **Why it matters now:** {what downstream choices depend on this}
+   **Research signal:** {1-2 sentence summary of what RESEARCH.md says about this}
+
+   - **Option A — {label}:** {1-2 sentence description}
+     - Pros: {bulleted or comma-separated}
+     - Cons: {bulleted or comma-separated}
+     - Fit with our stack/constraints: {note}
+   - **Option B — {label}:** ...
+   - **Option C — {label}:** ...
+
+   **My recommendation:** {Option X, because Y} — or — "no strong preference, depends on {Z}"
+
+   ### Decision 2: ...
+   ```
+
+   Cover at minimum: spec adjustments based on research, v1-vs-later prioritization, technical approach clarifications, and any remaining open questions. Use the actual research findings — don't restate generic categories.
+
+5. **Then** use `AskUserQuestion` to capture the choices. Each picker question should match one decision from the chat block above, with concise labels (the full tradeoff context already lives in chat). Ask 2-4 questions per round.
+6. Continue refining until the user is satisfied. On each new round of decisions, repeat the "surface context in chat first, then ask" pattern.
+7. Write the final `{spec-dir}/{feature-slug}/SPEC.md` with this structure:
 
 ```markdown
 # {Feature Name} — Feature Specification
@@ -177,14 +200,14 @@ These criteria are used during `/implement-phase-batch` to validate spec alignme
 
 !`cat .claude/skill-config/spec-testing-guidance.md 2>/dev/null || cat ~/.claude/skills/_components/spec-testing-guidance.md`
 
-7. **Cross-Boundary Validation (before marking Final):**
+8. **Cross-Boundary Validation (before marking Final):**
    Before finalizing any spec that references runtime data access, surface counts, or cross-boundary propagation:
    - **Formulas referencing runtime data** (e.g., "total = sum(lineItems.price)"): Verify the data is accessible at the proposed instrumentation point — read the source code or dispatch a subagent to confirm the variables are in scope
    - **Surface counts** (e.g., "~50 API endpoints"): Run a subagent to grep/count the actual surfaces in the codebase; report the real number
    - **Cross-boundary propagation** (e.g., "auth token flows through middleware"): Verify the boundary contract supports it — check the protocol schema, third-party docs, or IPC layer
    - Mark any unverified quantities with `(estimated — verify during Phase N)` in the spec; never commit to a specific number without evidence
 
-8. Confirm with the user that the spec is complete.
+9. Confirm with the user that the spec is complete.
 
 ---
 
