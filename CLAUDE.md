@@ -127,9 +127,10 @@ Some skills are **paired** — they share a state machine and must stay in sync.
 
 | Pair | Files | Coupling rule |
 |------|-------|---------------|
-| `/lazy` ↔ `/lazy-cloud` | `user/skills/lazy/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` | `/lazy-cloud` is a cloud-environment variant of `/lazy` with the same state machine and step numbering. Any change to `/lazy`'s state machine (new step, renumbered step, sentinel-file semantics, dispatch logic) MUST be mirrored to `/lazy-cloud`. The only intended divergences are documented in `/lazy-cloud`'s "Differences from `/lazy`" block (Steps 2, 8, 9, 10). When editing either, diff the other immediately afterward and confirm the diff matches what was intended. |
+| `/lazy` ↔ `/lazy-cloud` | `user/skills/lazy/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` | Both are thin LLM wrappers around `user/scripts/lazy-state.py`; the state machine itself is the script. The skills' only intended divergence is whether they pass `--cloud` to the script. Any change to wrapper prose (status bookends, special-action handling, dispatch glue) MUST be mirrored. Any state-machine change goes into `lazy-state.py`, not the wrapper prose. When editing either, diff the other immediately afterward and confirm the diff matches what was intended. |
+| `/lazy-batch` ↔ `/lazy-batch-cloud` | `user/skills/lazy-batch/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` | Both are autonomous orchestrators looping on `lazy-state.py`. Their only intended divergences (state script `--cloud` flag, `cloud-queue-exhausted` normal vs. defensive, `__write_deferred_non_cloud__` pseudo-skill, cycle subagent prompt's cloud-limitations block, `NEEDS_RESEARCH.md written_by` field) are tabulated in `/lazy-batch-cloud`'s "Differences from /lazy-batch" block. Any change to orchestration shape (cycle loop, hard constraints, terminal handling, max-cycles semantics) MUST be mirrored. |
 
-When adding to a coupled pair, also update each file's State Machine Summary at the bottom so the dispatch table reflects the new state.
+When adding to a coupled pair, also update each file's State Machine Summary / orchestration shape at the bottom so the dispatch table reflects the new state.
 
 ## Scripts
 
