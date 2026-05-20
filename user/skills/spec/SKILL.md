@@ -58,7 +58,22 @@ Before asking about architecture, technology, or infrastructure, ensure you unde
 
 Do NOT make architecture or technology decisions until the problem space is understood.
 
-### Step 1b: Brainstorm Architecture & Scope
+### Step 1b: Identify Dependencies (BLOCKING — before architecture brainstorm)
+
+Before brainstorming architecture, identify which other features this one depends on. The dependency block is a **hard checkpoint** — Phase 3 will refuse to finalize SPEC.md without it.
+
+!`cat ~/.claude/skills/_components/dep-block-schema.md`
+
+Procedure:
+
+1. **Scan related specs.** From Phase 0 you already noted features that might relate. For each, decide: does this new feature have a real dependency on it? If yes, what kind (`hard`, `soft`, `composes`)? If no, drop it.
+2. **Cross-check queue/ROADMAP.** If `docs/features/queue.json` or `docs/features/ROADMAP.md` exists, scan for features whose names suggest they expose contracts this feature will consume (API surfaces, schemas, IPC channels, registries, base components). Add any real ones to the candidate list.
+3. **Ask the user** via `AskUserQuestion` only if the candidate set is non-obvious. Present the candidates with kinds and one-sentence reasons; let the user confirm or correct. Do NOT ask if there are zero candidates — just note `(none)` and proceed.
+4. **Record the block immediately** in the in-progress SPEC.md draft using the schema's Form A or Form B verbatim. Treat it as a first-class section, not a TBD placeholder. It will iterate alongside the rest of the spec during brainstorming, but the *shape* must be correct from this point forward.
+
+If you find yourself wanting to defer this ("we'll figure out deps later"), STOP. Deferral is how the look-back mechanism breaks. Lock in a best-guess block now; revise later as brainstorming surfaces new dependencies.
+
+### Step 1c: Brainstorm Architecture & Scope
 
 **Atomic Decomposition Gate (one-shot — run once, before iterative brainstorming begins):**
 
@@ -165,7 +180,13 @@ After the decomposition, proceed with iterative brainstorming below.
 **Status:** Draft
 **Priority:** {P0-P3}
 **Last updated:** {today's date}
-**Depends on:** {other features or "None"}
+
+**Depends on:**
+
+- {feature-id} — {hard|soft|composes} — {one-sentence reason}
+- {feature-id} — {hard|soft|composes} — {one-sentence reason}
+
+(or, if there are no deps, replace the bulleted block with exactly: `**Depends on:** (none)`)
 
 ---
 
@@ -200,14 +221,28 @@ These criteria are used during `/implement-phase-batch` to validate spec alignme
 
 !`cat .claude/skill-config/spec-testing-guidance.md 2>/dev/null || cat ~/.claude/skills/_components/spec-testing-guidance.md`
 
-8. **Cross-Boundary Validation (before marking Final):**
+8. **Depends-on Finalization Checkpoint (BLOCKING — before marking Final):**
+
+   Re-verify the `**Depends on:**` block against the final SPEC content. Things change during Phase 3 — research often introduces a new upstream, descopes one, or shifts a `soft` dep to `hard`.
+
+   Apply the schema rules from `~/.claude/skills/_components/dep-block-schema.md` (you read this in Phase 1b). Confirm:
+
+   - The block exists exactly once and is positioned after the frontmatter and before the first design heading.
+   - Every line uses ` — ` (space, em-dash U+2014, space) as the separator. Hyphen-minus is invalid.
+   - Every `<feature-id>` resolves to a real feature directory using the resolution protocol.
+   - Every `<kind>` is one of `hard`, `soft`, `composes`.
+   - If no deps, the block reads exactly `**Depends on:** (none)`.
+
+   If any check fails, fix the block before writing the final SPEC.md. Do NOT write the SPEC.md with a malformed or missing dep block — downstream skills (`/spec-phases`, `/write-plan`, `/lazy` Step 4.6, `/realign-spec`) depend on this being parseable, and project-side doc-lint will reject the commit.
+
+9. **Cross-Boundary Validation (before marking Final):**
    Before finalizing any spec that references runtime data access, surface counts, or cross-boundary propagation:
    - **Formulas referencing runtime data** (e.g., "total = sum(lineItems.price)"): Verify the data is accessible at the proposed instrumentation point — read the source code or dispatch a subagent to confirm the variables are in scope
    - **Surface counts** (e.g., "~50 API endpoints"): Run a subagent to grep/count the actual surfaces in the codebase; report the real number
    - **Cross-boundary propagation** (e.g., "auth token flows through middleware"): Verify the boundary contract supports it — check the protocol schema, third-party docs, or IPC layer
    - Mark any unverified quantities with `(estimated — verify during Phase N)` in the spec; never commit to a specific number without evidence
 
-9. Confirm with the user that the spec is complete.
+10. Confirm with the user that the spec is complete.
 
 ---
 

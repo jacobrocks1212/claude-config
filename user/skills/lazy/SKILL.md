@@ -148,7 +148,80 @@ Skill({ skill: "spec", args: "{feature_name} — existing stub at {spec_path}/SP
 
 STOP after skill returns.
 
-**If no stub marker is found:** Proceed to Step 5.
+**If no stub marker is found:** Proceed to Step 4.6.
+
+---
+
+## Step 4.6: Upstream Reality Check
+
+SPEC.md exists and is not a stub. Before progressing this feature any further, reality-check it against the actual state of its completed hard-dependency upstreams. Upstream PHASES.md often diverges from what the downstream SPEC assumed at authoring time — Implementation Notes, renames, descoped capabilities, and contract shifts only surface here.
+
+!`cat ~/.claude/skills/_components/dep-block-schema.md`
+
+### 4.6a. Determine whether to run the check
+
+1. Parse `{spec_path}/SPEC.md`'s `**Depends on:**` block per the schema above. Filter to `kind == hard`.
+2. For each hard dep, resolve the upstream directory and apply the completion check (ROADMAP.md strikethrough+COMPLETE or upstream SPEC `Status: Complete`).
+3. Let `hard_complete_upstreams` = the list of hard deps whose upstream is Complete.
+
+**If `hard_complete_upstreams` is empty:** No upstream reality to check against. Proceed to Step 5.
+
+**Skip-if-fresh gate (idempotency):** glob `{spec_path}/plans/realign-*.md`. If at least one realign plan exists AND its mtime is newer than every Complete hard upstream's `PHASES.md` mtime, the most recent realign already covered the current upstream state. Skip to Step 5.
+
+Otherwise, proceed to 4.6b.
+
+### 4.6b. Invoke /realign-spec
+
+```
+Skill({ skill: "realign-spec", args: "{spec_path}/SPEC.md" })
+```
+
+After /realign-spec returns, locate the plan file it wrote (newest `{spec_path}/plans/realign-*.md`).
+
+### 4.6c. Act on the recommendation
+
+Read the realign plan file. Find the `**Recommended:**` line under `## Recommended next step`.
+
+**`inline-edit`:** The plan's Minor table lists local SPEC/PHASES patches.
+
+1. Apply each row's `Suggested patch` to the named location in `{spec_path}/SPEC.md` or `{spec_path}/PHASES.md` using `Edit`. Minor patches only — never touch upstream files.
+2. Commit via the standard commit policy (see Step 10 for pattern). Commit message: `docs({feature_id}): realign with upstream — minor corrections per plans/realign-<date>.md`.
+3. STOP. The next /lazy invocation re-enters from Step 1; the freshness gate in 4.6a will see the new realign plan is newer than upstream PHASES and skip directly past 4.6.
+
+**`add-phase`:** A corrective phase is needed.
+
+1. Read the Moderate table from the realign plan to extract the proposed phase title and scope.
+2. Invoke:
+   ```
+   Skill({ skill: "add-phase", args: "{spec_path}/PHASES.md Corrective — Realign with upstream <upstream-id>: <one-line scope from realign plan>" })
+   ```
+3. STOP after /add-phase returns. (Any Minor patches in the realign plan are deferred to the next /lazy cycle, which will see them as remaining drift and apply them inline.)
+
+**`respec`:** The downstream design no longer holds. Do NOT silently rewrite it.
+
+1. Write `{spec_path}/BLOCKED.md`:
+   ```markdown
+   # BLOCKED
+
+   **Feature:** {feature_name} ({feature_id})
+   **Phase:** Upstream Realignment
+   **Blocked at:** {ISO timestamp}
+   **Retry count:** 0
+
+   ## Details
+   Severe drift detected against completed upstream(s): {comma-separated upstream-ids with severe findings}.
+   Foundational design assumptions no longer hold; phase rework is not sufficient.
+
+   ## What was tried
+   /realign-spec produced plans/realign-{date}.md classifying drift as severe.
+
+   ## Recovery Suggestion
+   Review plans/realign-{date}.md, then either:
+   - Run /spec on this feature to redesign against the actual upstream contract, or
+   - Manually revise SPEC.md sections called out in the Severe table and re-run /lazy.
+   ```
+2. PushNotification: `"BLOCKED: {feature_name} — severe upstream drift; see plans/realign-{date}.md"`
+3. STOP. (Next /lazy invocation hits Step 3's blocker handling.)
 
 ---
 
@@ -567,6 +640,7 @@ queue.json → find current feature → check state → invoke ONE skill → STO
 BLOCKED.md exists?                    → present blocker + recommend action → STOP
 SPEC.md missing?                      → /spec (or notify if no research)
 SPEC.md exists + stub marker present? → /spec (Phase 1 from scratch, stub becomes starting context)
+Hard deps on Complete upstreams, no fresh realign plan? → /realign-spec → act on recommendation (inline-edit | /add-phase | BLOCKED)
 SPEC.md exists + no RESEARCH_SUMMARY? → /spec (generate research prompt or integrate results)
 PHASES.md missing?                    → /spec-phases
 Unchecked deliverables + no plan?     → /write-plan (writes to plans/ subdir)
