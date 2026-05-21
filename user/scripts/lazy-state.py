@@ -489,6 +489,34 @@ def find_implementation_plans(spec_dir: Path) -> list[Path]:
     return plans
 
 
+def _has_any_complete_plan(spec_dir: Path) -> bool:
+    """Return True iff at least one non-retro/non-realign implementation plan
+    has frontmatter `status: Complete`.
+
+    Used by the Step 7 cloud bypass to distinguish 'all implementation plans
+    are Complete' from 'no plans authored yet' — only the former should fall
+    through to Step 8 in cloud mode when PHASES.md still has unchecked rows
+    (e.g. workstation-only Runtime Verification subsections).
+    """
+    plans_dir = spec_dir / "plans"
+    if plans_dir.exists():
+        for p in sorted(plans_dir.iterdir()):
+            if not p.is_file() or p.suffix != ".md":
+                continue
+            name = p.name
+            if name.startswith("retro-") or name.startswith("realign-"):
+                continue
+            meta = _parse_plan_frontmatter(p) or {}
+            if meta and meta.get("status") == "Complete":
+                return True
+    legacy = spec_dir / "PLAN.md"
+    if legacy.exists():
+        meta = _parse_plan_frontmatter(legacy) or {}
+        if meta and meta.get("status") == "Complete":
+            return True
+    return False
+
+
 def find_retro_plans(spec_dir: Path) -> list[Path]:
     """Find retro plans, filtering out plans whose frontmatter marks them
     Complete. Plans without frontmatter are treated as legacy `status: Ready`
@@ -819,22 +847,31 @@ def compute_state(
     # Step 7: Phase completion
     if unchecked > 0:
         plans = find_implementation_plans(spec_path)
-        if not plans:
+        if cloud and not plans and _has_any_complete_plan(spec_path):
+            # All implementation plans are Complete; remaining PHASES.md
+            # unchecked rows are workstation-only (e.g. per-phase Runtime
+            # Verification subsections ticked at MCP test time). Cloud can't
+            # tick them, so fall through to Step 8 — cloud will defer (or
+            # honor an existing DEFERRED_NON_CLOUD.md), Step 9 retro runs,
+            # and Step 2 cloud-saturated skip eventually fires.
+            pass
+        elif not plans:
             return _state(
                 **common,
                 current_step="Step 7a: write plan",
                 sub_skill="write-plan",
                 sub_skill_args=f"{spec_path_str}/PHASES.md",
             )
-        # Use the lowest-ordered plan (sorted-name preference); if part-N exists,
-        # this returns part-1 first which is what we want.
-        plan = plans[0]
-        return _state(
-            **common,
-            current_step="Step 7a: execute plan",
-            sub_skill="execute-plan",
-            sub_skill_args=str(plan),
-        )
+        else:
+            # Use the lowest-ordered plan (sorted-name preference); if part-N
+            # exists, this returns part-1 first which is what we want.
+            plan = plans[0]
+            return _state(
+                **common,
+                current_step="Step 7a: execute plan",
+                sub_skill="execute-plan",
+                sub_skill_args=str(plan),
+            )
 
     # Phases complete — Step 8 (MCP gate) and Step 9 (retro)
 
@@ -1057,6 +1094,92 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # Feature E: empty spec dir → will be picked up next
         e = features / "feat-e"
         e.mkdir()
+    elif name == "cloud-workstation-only-remainder":
+        # All implementation plans Complete, PHASES.md still has unchecked
+        # workstation-only rows (Runtime Verification), no DEFERRED_NON_CLOUD.md
+        # yet. Cloud Step 7 must bypass to Step 8 (write deferred sentinel)
+        # rather than looping on write-plan.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-cw", "name": "Feature CW", "spec_dir": "feat-cw", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        cw = features / "feat-cw"
+        cw.mkdir()
+        (cw / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (cw / "RESEARCH.md").write_text("# R\n")
+        (cw / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (cw / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] Done\n\n"
+            "### Runtime Verification\n- [ ] MCP test only\n"
+        )
+        plans = cw / "plans"
+        plans.mkdir()
+        (plans / "all-phases-cw.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-cw\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+    elif name == "cloud-workstation-only-with-deferred":
+        # Same shape as cloud-workstation-only-remainder, but DEFERRED_NON_CLOUD.md
+        # already on disk. Cloud Step 7 bypass → Step 8 (deferred exists, no
+        # action) → Step 9 retro entry.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-cwd", "name": "Feature CWD", "spec_dir": "feat-cwd", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        cwd = features / "feat-cwd"
+        cwd.mkdir()
+        (cwd / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (cwd / "RESEARCH.md").write_text("# R\n")
+        (cwd / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (cwd / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] Done\n\n"
+            "### Runtime Verification\n- [ ] MCP test only\n"
+        )
+        plans = cwd / "plans"
+        plans.mkdir()
+        (plans / "all-phases-cwd.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-cwd\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+        _write_yaml_sentinel(
+            cwd / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            feature_id="feat-cwd", deferred_step=8, reason="workstation MCP test",
+            deferred_by="lazy-cloud", date="2026-05-19",
+        )
+    elif name == "workstation-all-plans-complete-phases-unchecked":
+        # Workstation regression: bypass must NOT trigger when cloud=False.
+        # All plans Complete, PHASES.md still has unchecked rows. Workstation
+        # should keep emitting write-plan (preserves current behavior — the
+        # MCP-test step ticks Runtime Verification rows on workstation).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-wapcpu", "name": "Feature WAPCPU",
+                 "spec_dir": "feat-wapcpu", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        w = features / "feat-wapcpu"
+        w.mkdir()
+        (w / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (w / "RESEARCH.md").write_text("# R\n")
+        (w / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (w / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] Done\n\n"
+            "### Runtime Verification\n- [ ] MCP test only\n"
+        )
+        plans = w / "plans"
+        plans.mkdir()
+        (plans / "all-phases-w.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-wapcpu\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
     elif name == "all-complete":
         (features / "queue.json").write_text(json.dumps({
             "queue": [
@@ -1217,6 +1340,24 @@ def run_smoke_tests() -> int:
             ("blocker", False, False, {"terminal_reason": "blocked", "feature_id": "feat-b"}),
             ("mid-implementation", False, False, {"sub_skill": "execute-plan", "feature_id": "feat-c"}),
             ("cloud-saturated", True, False, {"feature_id": "feat-e"}),   # advances past saturated feat-d
+            # Step 7 cloud bypass: all plans Complete + PHASES.md has
+            # workstation-only unchecked rows → cloud defers (Step 8) instead
+            # of looping on write-plan.
+            ("cloud-workstation-only-remainder", True, False, {
+                "sub_skill": "__write_deferred_non_cloud__",
+                "feature_id": "feat-cw",
+            }),
+            # Same bypass, but DEFERRED_NON_CLOUD.md already on disk →
+            # Step 8 falls through to Step 9 retro.
+            ("cloud-workstation-only-with-deferred", True, False, {
+                "sub_skill": "retro",
+                "feature_id": "feat-cwd",
+            }),
+            # Workstation regression: bypass must NOT fire when cloud=False.
+            ("workstation-all-plans-complete-phases-unchecked", False, False, {
+                "sub_skill": "write-plan",
+                "feature_id": "feat-wapcpu",
+            }),
             ("all-complete", False, False, {"terminal_reason": "all-features-complete"}),
             ("needs-research", False, False, {"terminal_reason": "needs-research"}),
             ("needs-realign", False, False, {
