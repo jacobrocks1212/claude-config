@@ -1,7 +1,7 @@
 ---
 name: lazy-batch-cloud
-description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), queue-blocked-on-research (passive — resume by re-invoking after uploading research), cloud-queue-exhausted, or max-cycles cap.
-argument-hint: <max-cycles, e.g. 10>
+description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), cloud-queue-exhausted, or max-cycles cap.
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -37,7 +37,11 @@ Identical to `/lazy-batch`:
 
 ## Step 0: Parse Arguments
 
-Same as `/lazy-batch`. `$ARGUMENTS` is a positive integer max-cycles, default `10`.
+Same shape as `/lazy-batch` Step 0. `$ARGUMENTS` is tokenized:
+- positive integer → `max_cycles` (default `10`)
+- `--allow-research-skip` (optional) → `allow_research_skip = true` (default `false`)
+
+See `~/.claude/skills/lazy-batch/SKILL.md` Step 0 for the full flag semantics and rationale. The cloud variant inherits the same default-strict / opt-in-batched dichotomy — research-pending features halt the loop immediately by default; pass `--allow-research-skip` only when the remaining queue is known to be independent.
 
 Print the start bookend:
 
@@ -45,6 +49,7 @@ Print the start bookend:
 ## /lazy-batch-cloud — Starting
 **Environment:** Cloud Linux (no Tauri/MCP)
 **Max cycles:** {max_cycles}
+**Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
 **Repo root:** {cwd}
 ```
 
@@ -61,8 +66,9 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 0.5 for the full algorithm. Clou
 ## Step 1: Cycle Loop
 
 Initialize per-session state — identical shape to `/lazy-batch` Step 0:
-- `research_pending = set()` — feature_ids that hit `needs-research` this session.
-- `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle.
+- `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
+- `research_pending = set()` — feature_ids that hit `needs-research` this session. Only used when `allow_research_skip == true`; empty under the default strict-halt path.
+- `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. Stays `false` under the default path.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
 
 ### 1a. Run lazy-state.py --cloud
@@ -71,7 +77,7 @@ Initialize per-session state — identical shape to `/lazy-batch` Step 0:
 python3 ~/.claude/scripts/lazy-state.py --cloud [--skip-needs-research]
 ```
 
-Pass `--skip-needs-research` whenever `skip_needs_research == true`. Parse JSON output as in `/lazy-batch`.
+Pass `--skip-needs-research` **only when `allow_research_skip == true` AND `skip_needs_research == true`**. Under the default strict-halt path the flag is never added, so the script returns `terminal_reason: needs-research` for the first research-pending feature in queue order — see `~/.claude/skills/lazy-batch/SKILL.md` Step 1a for the double-gate rationale. Parse JSON output as in `/lazy-batch`.
 
 ### 1b. Handle terminal states
 
@@ -79,8 +85,8 @@ Same handling as `/lazy-batch` for `blocked`, `needs-input`, `needs-spec-input`,
 
 - **`needs-input`**: see Step 1g (decision-halt mode — identical to `/lazy-batch` Step 1g).
 - **`cloud-queue-exhausted`**: PushNotification `"Cloud queue exhausted after {cycle} cycle(s) — N feature(s) awaiting workstation /lazy for MCP test."` Print final batch report, STOP.
-- **`needs-research`**: see Step 4 (research sentinel drop — same as `/lazy-batch`, but the sentinel's `written_by` is `lazy-batch-cloud`). Step 4 does NOT halt — it drops the sentinel, flips `skip_needs_research = true`, returns to Step 1a.
-- **`queue-blocked-on-research`**: see Step 1f (research-wait mode — identical to `/lazy-batch` Step 1f).
+- **`needs-research`**: see Step 4 (research halt — same dual-path shape as `/lazy-batch`, but the sentinel's `written_by` is `lazy-batch-cloud`). Default (strict halt) writes the sentinel, prints the inline-prompt halt announcement, PushNotifies, prints the final batch report, and STOPs. Opt-in (`--allow-research-skip`) drops the sentinel, flips `skip_needs_research = true`, returns to Step 1a.
+- **`queue-blocked-on-research`**: see Step 1f (research-wait mode — identical to `/lazy-batch` Step 1f). **Only reachable when `allow_research_skip == true`.**
 
 ### 1c. Check the max-cycles cap
 
@@ -202,9 +208,15 @@ Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, update `pre
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
-**Identical to `/lazy-batch` Step 1f** — passive halt, NOT an active wait. The orchestrator announces the halt with all three upload paths (staged `.txt`, direct `RESEARCH.md`, one-off file path via `/ingest-research <path>`), PushNotifications, prints the final batch report, and STOPs. Research arrives on the user's timeline; the orchestrator does NOT poll the filesystem (HARD CONSTRAINT 7).
+**Reachable only when `allow_research_skip == true`.** Identical shape to `/lazy-batch` Step 1f — passive halt with inline RESEARCH_PROMPT.md content for every pending feature (fenced ```text block for mobile long-press-copy into Gemini), char-count over/under indicator against the 24,000-char Gemini web-UI cap, all three upload paths, PushNotification, final batch report, STOP.
 
-See `~/.claude/skills/lazy-batch/SKILL.md` Step 1f for the full algorithm, the announcement copy, and the resume contract table. Cloud-specific nuance: the user's resume is `/lazy-batch-cloud` (or `/lazy-batch` from workstation) — both share Step 0.5's pre-loop ingest check and the natural state-script flow. The user can mix environments: drop `RESEARCH.md` directly from workstation, then resume from cloud; or run `/ingest-research <phone-synced-path>` from workstation, then resume from either side.
+See `~/.claude/skills/lazy-batch/SKILL.md` Step 1f for the full algorithm and the announcement template — replace "/lazy-batch" with "/lazy-batch-cloud" in the chat text. Cloud-specific upload nuance:
+
+- **Upload path ① (staged .txt)** is the recommended cloud flow: save each Gemini output as `docs/gemini-sprint/results/<feature-id>.txt` and commit/push from the GitHub UI (or any workstation). The next `/lazy-batch-cloud` run's Step 0.5 auto-ingests via `/ingest-research`.
+- **Upload path ② (direct RESEARCH.md drop)** is workable from cloud but requires committing the file via the GitHub UI; it skips ingestion and routes directly to `/spec` Phase 3 on the next run.
+- **Upload path ③ (`/ingest-research <path>`)** is workstation-only — it operates on file paths the cloud container can't see. If you're working from the phone via the cloud branch, use path ① or ②.
+
+The user can mix environments: drop `RESEARCH.md` directly from workstation, then resume from cloud; or run `/ingest-research <phone-synced-path>` from workstation, then resume from either side.
 
 ### 1g. Decision-halt mode (`terminal_reason == "needs-input"`)
 
@@ -229,8 +241,8 @@ Same as `/lazy-batch`. Header is `## /lazy-batch-cloud — Done`. Cloud-specific
 **Next step:**
   - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
   - If terminal_reason is "needs-input": apply the `## Resolution` in {spec_path}/NEEDS_INPUT.md to SPEC.md / PHASES.md, delete the sentinel (or neutralize its frontmatter to keep the audit trail), then re-run `/lazy-batch-cloud {max_cycles}`
-  - If terminal_reason is "queue-blocked-on-research": upload the research via any of the three paths shown in Step 1f's announcement (staged .txt in docs/gemini-sprint/results/, direct RESEARCH.md drop into the feature dir, or /ingest-research <path> for a one-off file path). Then re-run `/lazy-batch-cloud {max_cycles}`.
-  - If terminal_reason is "needs-research": should not appear here — Step 4 drops the sentinel and continues the loop. Defensive fallback: upload research per the queue-blocked-on-research guidance above.
+  - If terminal_reason is "needs-research" (DEFAULT path, strict halt): run Gemini Deep Research against the prompt printed inline in Step 4's halt announcement, then upload the result via path ① (staged .txt → GitHub UI push) or path ② (direct RESEARCH.md drop → GitHub UI push). Path ③ (`/ingest-research <path>`) is workstation-only. Then re-run `/lazy-batch-cloud {max_cycles}`.
+  - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): upload research for one or more pending features via path ① or ② (path ③ is workstation-only). Then re-run `/lazy-batch-cloud {max_cycles} [--allow-research-skip]`.
   - If terminal_reason is "cloud-queue-exhausted": run /lazy on workstation to run MCP tests
   - If max-cycles: re-run `/lazy-batch-cloud {max_cycles}` from a fresh session
 ```
@@ -243,23 +255,29 @@ Same as `/lazy-batch`. Per-cycle one-line status, compact for long batches.
 
 ---
 
-## Step 4: Research Sentinel Drop (terminal_reason == "needs-research")
+## Step 4: Research Halt (terminal_reason == "needs-research")
 
-**Identical to `/lazy-batch` Step 4** — does NOT halt; drops a sentinel, flips `skip_needs_research = true`, adds the feature to `research_pending`, returns to Step 1a. The only divergence is the sentinel's `written_by`:
+**Identical dual-path shape to `/lazy-batch` Step 4.** Two paths gated by `allow_research_skip`: default (strict halt on first `needs-research`, inline-prompt announcement, STOP) and opt-in (`--allow-research-skip`, drop sentinel, advance loop, halt later on `queue-blocked-on-research`). See `~/.claude/skills/lazy-batch/SKILL.md` Step 4 for the full algorithm.
 
-```yaml
----
-kind: needs-research
-feature_id: {feature_id}
-research_prompt_path: <relative path>
-written_by: lazy-batch-cloud
-date: <today>
----
-```
+**Cloud divergences:**
 
-Cloud cannot run Gemini itself — but the user (or a coupled workstation session) provides research via any of the three upload paths documented in `/lazy-batch` Step 4's sentinel body: staged `.txt` in `docs/gemini-sprint/results/`, direct `RESEARCH.md` drop into the feature dir, or `/ingest-research <path>` for a one-off file path. Step 0.5's pre-loop check and the natural state-script flow auto-detect each path on the next `/lazy-batch-cloud` invocation — no active polling.
+- **`written_by` in the sentinel frontmatter is `lazy-batch-cloud`** (not `lazy-batch`). The rest of the YAML matches:
 
-See `~/.claude/skills/lazy-batch/SKILL.md` Step 4 for the full algorithm and multi-feature accumulation behavior.
+  ```yaml
+  ---
+  kind: needs-research
+  feature_id: {feature_id}
+  research_prompt_path: <relative path>
+  written_by: lazy-batch-cloud
+  date: <today>
+  ---
+  ```
+
+- **Default-path halt announcement uses `/lazy-batch-cloud` in the chat heading and re-invoke line.** Replace every `/lazy-batch` token in the announcement template with `/lazy-batch-cloud`. The fenced ```text prompt block, char-count over/under indicator (against the 24,000-char Gemini cap), and three upload paths are unchanged.
+
+- **Upload path ③ (`/ingest-research <path>`)** is workstation-only — cloud cannot reach file paths outside the repo. Surface this in the upload-paths list as `(workstation only)` after the path label so the operator picks ① or ② when resuming from the phone via the cloud branch.
+
+Cloud cannot run Gemini itself — but the user provides research via any of the upload paths the announcement lists. Step 0.5's pre-loop check and the natural state-script flow auto-detect each path on the next `/lazy-batch-cloud` invocation — no active polling.
 
 ---
 
@@ -274,7 +292,10 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 4 for the full algorithm and mul
 | Cycle subagent prompt (real skills only) | bare batch-mode instructions | adds cloud-environment limitations block |
 | Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
 | NEEDS_RESEARCH.md `written_by` | `lazy-batch` | `lazy-batch-cloud` |
-| Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`, announce upload paths, PushNotification, STOP. Resume on next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation. Resume on next `/lazy-batch-cloud` invocation (or `/lazy-batch` from workstation — uploads are filesystem-shared). |
+| `--allow-research-skip` argument | parsed in Step 0; gates Step 4 path + Step 1a `--skip-needs-research` flag. **Same semantics** in both. | same as workstation — strict halt on first `needs-research` by default; opt in to batched-research via the flag. |
+| Step 4 — default path (strict halt) | reads RESEARCH_PROMPT.md, prints fenced ```text inline halt announcement, PushNotifications, halts. **Same shape** in both. | same as workstation, but the announcement says `/lazy-batch-cloud` and upload path ③ is labeled `(workstation only)`. |
+| Step 4 — opt-in path (`--allow-research-skip`) | drops sentinel, flips `skip_needs_research = true`, returns to loop. **Same shape** in both. | same as workstation; sentinel `written_by: lazy-batch-cloud`. |
+| Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`. Reachable only under `--allow-research-skip`. Prints inline RESEARCH_PROMPT.md content for every pending feature, announces upload paths, PushNotification, STOP. Resume on next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation. Resume on next `/lazy-batch-cloud` invocation (or `/lazy-batch` from workstation — uploads are filesystem-shared). Upload path ③ labeled `(workstation only)`. |
 | Decision-halt mode (Step 1g) | `terminal_reason: needs-input` — **same shape** in both | `terminal_reason: needs-input` — **same shape** in both |
 | Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
 
