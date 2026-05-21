@@ -24,10 +24,7 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. (The legacy halt-on-needs-input behavior is gone; the user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.)
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the malformation as a quality issue and halt instead (see Step 1g.1).
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
-
----
-
-## Step 0: Parse Arguments
+8. **The `cycle` counter is session-global and monotonic across feature transitions.** It is initialized to 0 in Step 0 *once per `/lazy-batch` invocation* and incremented at the end of every cycle (Step 1c.5 step 4, Step 1e step 4, Step 1g step 7). It MUST NOT be reset when `lazy-state.py` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next via `__mark_complete__` (or because the prior feature hit a terminal state and a later queue entry became current). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch; the orchestrator runs ONE cycle log across every feature it touches. The per-cycle status line's `{feature_name}` segment changes across the boundary; the `N` does not.
 
 `$ARGUMENTS` is tokenized on whitespace. Recognized tokens:
 
@@ -42,7 +39,7 @@ Unknown tokens are an error:
 > `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip]`.
 
 Initialize counters and per-session state:
-- `cycle = 0`
+- `cycle = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py` returns a new `feature_id`).
 - `max_cycles = <parsed>`
 - `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
 - `cycle_log = []` — each entry: `{cycle, feature, action, subagent_summary}`
@@ -275,9 +272,9 @@ After the subagent returns:
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, subagent's one-paragraph summary}`.
 2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: /{sub_skill} on {feature_name} → {first-line-of-summary}"`.
 3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
-4. Increment `cycle`. Return to Step 1a.
+4. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the cycle counter continues counting from the value just produced here. Do NOT reset to 0 or 1 on the boundary; cycle N+1 is always the next cycle regardless of which feature it lands on.
 
-**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, current_step)` triple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline.
+**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, current_step)` triple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the cycle-counter increment: it is a uniform post-cycle action that happens once per cycle (real, pseudo, or decision-resume) and never resets.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 

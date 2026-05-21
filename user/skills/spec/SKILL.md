@@ -23,7 +23,7 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
 |-------|------|--------------------|------------------------------|
 | Phase 1 (brainstorming) | First `/spec` invocation | Pre-research | **No** — auto-accept recommendations; if truly blocked, write `BLOCKED.md` with `blocker_kind: pre-research-input-required`. |
 | Phase 2 (research prompt generation) | SPEC.md exists, no RESEARCH.md | Pre-research | **No** — placeholder open questions go INTO `RESEARCH_PROMPT.md` for Gemini to answer; never lift them via `NEEDS_INPUT.md`. |
-| Phase 3 (research integration) | SPEC.md + RESEARCH.md both present | **Post-research** | **Yes** — eligible to halt on genuine design choices clarified by the research. |
+| Phase 3 (research integration) | SPEC.md + RESEARCH.md both present | **Post-research** | **Yes — MANDATORY for product-behavior decisions, even when a strong recommendation exists.** See "Phase 3 under `--batch`" below for the always-halt rule and the product-behavior vs. mechanical-internal classification. |
 
 `--batch` only fires Phase 3 today; Phases 1 and 2 are explicitly refused below. The eligibility table is restated because the constraint is load-bearing for the broader batch-mode contract: the halt is allowed because the research is on disk.
 
@@ -40,13 +40,19 @@ Detect Phase context: examine `{spec-dir}/{feature-slug}/`:
 
 **Phase 3 under `--batch`:**
 
-- **Skip the chat-visible "Open Decisions" block.** No human will read it — `/lazy-batch` runs without a chat audience.
-- For each decision: read your own `**My recommendation:**` line.
-  - If the recommendation resolves to a single concrete option ("Option X, because Y") → accept it silently and record the choice in your synthesis.
-  - If the recommendation reads "no strong preference, depends on {Z}", OR multiple options are tied with equal weight, OR there is no recommendation at all → **halt** (see below). Do NOT pick arbitrarily.
-- **Skip every `AskUserQuestion`** in Phase 3 — the recommendation-resolution above stands in for the picker.
+- **Skip the chat-visible "Open Decisions" block.** No human will read it — `/lazy-batch` runs without a chat audience. The rich `## Decision Context` body inside `NEEDS_INPUT.md` (see Halt protocol below) is what reaches the user via the orchestrator's re-print + `AskUserQuestion` flow.
+- **Classify every Phase 3 decision as `product-behavior` or `mechanical-internal`** before considering whether to auto-accept. The classification dictates the halt requirement:
+  - **`product-behavior`** — the decision changes anything the user sees, does, or experiences: UX shape, scope (what's in v1 vs later), user-facing functionality, workflow, defaults, copy, naming visible to the user, error/empty states, data the user inputs or sees, surfaces the user interacts with. Decisions that affect *what the feature does for the user* are product-behavior regardless of how strong your recommendation is.
+  - **`mechanical-internal`** — the decision is invisible to the user: which internal helper to use, file placement, naming of internal symbols, internal library choice with no behavioral implications, code-organization tradeoffs, internal data structure choices that don't change the user-facing contract.
+- **HALT RULE (always-halt on product-behavior):**
+  - If **any** Phase 3 decision classifies as `product-behavior`, **halt with `NEEDS_INPUT.md`** that covers all such decisions (capped at 4 per the sentinel schema; if there are more than 4, surface the top 4 by impact and note the rest in the body for a follow-up cycle). Do this **regardless** of how strong your `**My recommendation:**` line is — the user retains final authority over product behavior, and the orchestrator's `AskUserQuestion` surfaces your recommendation alongside the alternatives so the user can confirm or override. Auto-accepting a strong product-behavior recommendation silently is **forbidden** under `--batch`.
+  - If **every** Phase 3 decision is `mechanical-internal` AND each has a single defensible recommendation, accept silently and proceed to finalize SPEC.md. This is the only path that skips the halt. If even one mechanical-internal decision is genuinely ambiguous (no clear recommendation), include it in the `NEEDS_INPUT.md` alongside the product-behavior items.
+  - If you reach Phase 3 and there are **no decisions at all** (research confirmed the baseline spec without surfacing any new choices), proceed silently. This is rare but legitimate — surface this case in your Phase 3 summary so the orchestrator's cycle log reflects "no decisions surfaced; auto-finalized".
+- **Skip every `AskUserQuestion`** in Phase 3 — the orchestrator-side `AskUserQuestion` (driven by the `NEEDS_INPUT.md` rich body) is the user-facing picker. The skill's job under `--batch` is to write the sentinel, not to prompt.
 - The Phase 3 finalization checkpoint (Step 8 in Phase 3 — Depends-on dep-block validation) still runs. If the dep block fails validation, that's a hard error, not an ambiguity; surface it and STOP (do not write SPEC.md).
 - The cross-boundary validation (Step 9) still runs. Unverified quantities should be marked `(estimated — verify during Phase N)` as in interactive mode.
+
+**Why always-halt on product-behavior:** the autonomous tail is allowed to make mechanical decisions on the user's behalf (helpers, naming, file placement) because those don't change what the product does. Product-behavior decisions DO change what the product does — and the user has explicitly reserved final authority over them. A strong recommendation is still surfaced (it becomes the **Recommendation** line under each `## Decision Context` H3, and a chip option in `AskUserQuestion`), but the user gets to confirm before SPEC.md is finalized in a shape that bakes the choice in.
 
 **Halt protocol — `NEEDS_INPUT.md`:**
 
