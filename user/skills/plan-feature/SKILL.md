@@ -14,6 +14,8 @@ Consolidates the two planning skills (`/spec-phases` and `/write-plan`) into one
 
 This skill does NOT invoke `/execute-plan`. Execution is a separate `/lazy` step driven by the state machine, not bundled into planning.
 
+**Post-research positioning:** `/plan-feature` requires `RESEARCH_SUMMARY.md` to exist before running. By the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`, both sub-skills it dispatches (`/spec-phases --batch` and `/write-plan` in batch context) are therefore eligible to write `NEEDS_INPUT.md` with the rich-body convention. `/plan-feature` itself never writes `NEEDS_INPUT.md` — it only surfaces sentinels written by its sub-skills.
+
 ---
 
 ## Step 0: Resolve Arguments and Preconditions

@@ -28,6 +28,20 @@ All other constraints from `/implement-phase` carry over: TDD, Sonnet subagents,
 
 ---
 
+## Batch Mode (`--batch` flag)
+
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch`). Strip `--batch` from `$ARGUMENTS` before resolving paths.
+
+**Post-research positioning:** `/implement-phase-batch --batch` runs at Step 7 in the per-feature state machine — long after research has integrated and `/spec-phases` decomposed the work. This skill is therefore eligible to write `NEEDS_INPUT.md` per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`. Operational decisions (which subagent partition, which file ordering) MUST be auto-accepted; only genuine design forks halt.
+
+### Halt protocol — `NEEDS_INPUT.md`
+
+When at least one decision during plan drafting is a genuine design fork (e.g., two equally-defensible decompositions with different blast radii), write `{feature-dir}/NEEDS_INPUT.md` per `~/.claude/skills/_components/sentinel-frontmatter.md`. The body MUST use the **rich-body convention** — `## Decision Context` H2 with one H3 per `decisions[i]`, each carrying `**Problem:**` / `**Options:**` / `**Recommendation:**`. **Echo the entire section to chat output** before returning (per Producer responsibilities). STOP without writing the plan file.
+
+Set `status: Draft` on any partial plan files left behind; list them under `partial_artifacts:` in the sentinel frontmatter.
+
+---
+
 ## Step 0: Task Tracking (MANDATORY — DO NOT SKIP)
 
 Load task tools and create tasks for compaction recovery:

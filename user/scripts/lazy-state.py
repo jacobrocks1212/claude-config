@@ -12,7 +12,7 @@ JSON object describing what to do next. Used by:
   - The /lazy-batch and /lazy-batch-cloud orchestrators (autonomous loop)
 
 Usage:
-    python3 lazy-state.py [--cloud] [--repo-root <path>]
+    python3 lazy-state.py [--cloud] [--skip-needs-research] [--repo-root <path>]
     python3 lazy-state.py --test    # run fixture smoke tests
 
 Output schema (stdout JSON):
@@ -24,6 +24,7 @@ Output schema (stdout JSON):
   "sub_skill":         "<name>"        | null,
   "sub_skill_args":    "<args>"        | null,
   "terminal_reason":   null | "all-features-complete" | "cloud-queue-exhausted"
+                            | "queue-blocked-on-research"
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing",
   "notify_message":    "<string>"      | null,
@@ -559,7 +560,11 @@ def retro_plan_has_significant_divergences(plan_path: Path) -> bool:
 # Main state machine
 # ---------------------------------------------------------------------------
 
-def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
+def compute_state(
+    repo_root: Path,
+    cloud: bool,
+    skip_needs_research: bool = False,
+) -> dict[str, Any]:
     # Reset diagnostics for this invocation so callers get a fresh list per
     # compute_state() call (matters in run_smoke_tests() which loops).
     _DIAGNOSTICS.clear()
@@ -577,6 +582,7 @@ def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
     # Step 2: find current feature
     current = None
     cloud_saturated_skipped: list[str] = []
+    research_pending_skipped: list[str] = []
     for entry in queue:
         name = entry.get("name")
         feature_id = entry.get("id")
@@ -594,6 +600,24 @@ def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
             if retro_done and deferred and not validated:
                 cloud_saturated_skipped.append(name)
                 continue
+        if skip_needs_research:
+            # Cheap filesystem peek — don't run the full per-feature state machine.
+            # Skip features that would terminate the loop with needs-research.
+            needs_research_file = spec_path / "NEEDS_RESEARCH.md"
+            research_prompt = spec_path / "RESEARCH_PROMPT.md"
+            research = spec_path / "RESEARCH.md"
+            research_summary = spec_path / "RESEARCH_SUMMARY.md"
+            research_pending = (
+                needs_research_file.exists()
+                or (
+                    research_prompt.exists()
+                    and not research.exists()
+                    and not research_summary.exists()
+                )
+            )
+            if research_pending:
+                research_pending_skipped.append(name)
+                continue
         current = {
             "name": name,
             "id": feature_id,
@@ -609,6 +633,16 @@ def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
                 notify_message=(
                     f"Cloud queue exhausted — {len(cloud_saturated_skipped)} feature(s) "
                     "awaiting workstation /lazy for MCP test."
+                ),
+            )
+        if skip_needs_research and research_pending_skipped:
+            for fname in research_pending_skipped:
+                _diag(f"research-pending skipped: {fname}")
+            return _state(
+                terminal_reason="queue-blocked-on-research",
+                notify_message=(
+                    f"Queue blocked — {len(research_pending_skipped)} feature(s) "
+                    "awaiting Gemini research uploads."
                 ),
             )
         return _state(
@@ -948,6 +982,10 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
     """Build one of the named fixtures under tmpdir/<name>/ and return its repo root."""
     root = tmpdir / name
     features = root / "docs" / "features"
+    if (features / "queue.json").exists():
+        # Idempotent: fixture already materialized in this temp dir (some smoke
+        # cases run the same fixture under different flag combinations).
+        return root
     features.mkdir(parents=True, exist_ok=True)
 
     if name == "fresh-queue":
@@ -1109,6 +1147,39 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         plans.mkdir()
         # Legacy plan — no frontmatter
         (plans / "all-phases-legacy.md").write_text("# Legacy plan\n\nNo frontmatter here.\n")
+    elif name == "research-pending-skip":
+        # Queue: feat-a (research prompt only — would terminate on needs-research),
+        # feat-b (ready to plan — SPEC/RESEARCH/RESEARCH_SUMMARY all present, no PHASES).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-a", "name": "Feature A", "spec_dir": "feat-a", "tier": 1},
+                {"id": "feat-b", "name": "Feature B", "spec_dir": "feat-b", "tier": 2},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        a = features / "feat-a"
+        a.mkdir()
+        (a / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (a / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+        b = features / "feat-b"
+        b.mkdir()
+        (b / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (b / "RESEARCH.md").write_text("# R\n")
+        (b / "RESEARCH_SUMMARY.md").write_text("# S\n")
+    elif name == "research-pending-only":
+        # Single-feature queue with only research-pending feat-a; under
+        # --skip-needs-research the script should terminate with
+        # queue-blocked-on-research.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-a", "name": "Feature A", "spec_dir": "feat-a", "tier": 1},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        a = features / "feat-a"
+        a.mkdir()
+        (a / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (a / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
     elif name == "needs-realign":
         # feat-h has a hard dep on feat-up (complete upstream); no realign plan yet.
         (features / "queue.json").write_text(json.dumps({
@@ -1141,33 +1212,49 @@ def run_smoke_tests() -> int:
     with tempfile.TemporaryDirectory(prefix="lazy-state-fixtures-") as td:
         td_path = Path(td)
         cases = [
-            # (fixture_name, cloud, expectations dict)
-            ("fresh-queue", False, {"terminal_reason": "needs-spec-input"}),
-            ("blocker", False, {"terminal_reason": "blocked", "feature_id": "feat-b"}),
-            ("mid-implementation", False, {"sub_skill": "execute-plan", "feature_id": "feat-c"}),
-            ("cloud-saturated", True, {"feature_id": "feat-e"}),   # advances past saturated feat-d
-            ("all-complete", False, {"terminal_reason": "all-features-complete"}),
-            ("needs-research", False, {"terminal_reason": "needs-research"}),
-            ("needs-realign", False, {
+            # (fixture_name, cloud, skip_needs_research, expectations dict)
+            ("fresh-queue", False, False, {"terminal_reason": "needs-spec-input"}),
+            ("blocker", False, False, {"terminal_reason": "blocked", "feature_id": "feat-b"}),
+            ("mid-implementation", False, False, {"sub_skill": "execute-plan", "feature_id": "feat-c"}),
+            ("cloud-saturated", True, False, {"feature_id": "feat-e"}),   # advances past saturated feat-d
+            ("all-complete", False, False, {"terminal_reason": "all-features-complete"}),
+            ("needs-research", False, False, {"terminal_reason": "needs-research"}),
+            ("needs-realign", False, False, {
                 "sub_skill": "realign-spec",
                 "feature_id": "feat-h",
             }),
-            ("spec-status-complete", False, {
+            ("spec-status-complete", False, False, {
                 "terminal_reason": "all-features-complete",
             }),
-            ("plan-frontmatter-filter", False, {
+            ("plan-frontmatter-filter", False, False, {
                 "sub_skill": "execute-plan",
                 "feature_id": "feat-j",
             }),
-            ("legacy-plan-diagnostics", False, {
+            ("legacy-plan-diagnostics", False, False, {
                 "sub_skill": "execute-plan",
                 "feature_id": "feat-k",
             }),
+            # --skip-needs-research: feat-a has a research prompt only (would
+            # terminate on needs-research); skipping it should advance to feat-b's
+            # Step 6 (generate phases).
+            ("research-pending-skip", False, False, {
+                "terminal_reason": "needs-research",
+                "feature_id": "feat-a",
+            }),
+            ("research-pending-skip", False, True, {
+                "sub_skill": "spec-phases",
+                "feature_id": "feat-b",
+            }),
+            # --skip-needs-research with only research-pending features in queue
+            # should terminate with queue-blocked-on-research.
+            ("research-pending-only", False, True, {
+                "terminal_reason": "queue-blocked-on-research",
+            }),
         ]
-        for name, cloud, expected in cases:
+        for name, cloud, skip_nr, expected in cases:
             root = _build_fixture(td_path, name)
             try:
-                got = compute_state(root, cloud=cloud)
+                got = compute_state(root, cloud=cloud, skip_needs_research=skip_nr)
             except SystemExit as exc:
                 failures.append(f"[{name}] SystemExit: {exc.code}")
                 continue
@@ -1196,7 +1283,17 @@ def run_smoke_tests() -> int:
                         f"[{name}] expected diagnostics warning about legacy "
                         f"plan; got diagnostics={diag!r}"
                     )
-            print(f"  [{name}] cloud={cloud}: {got['current_step'] or got['terminal_reason']}")
+            if name == "research-pending-only" and skip_nr:
+                diag = got.get("diagnostics") or []
+                if not any("research-pending skipped" in d for d in diag):
+                    failures.append(
+                        f"[{name}] expected research-pending diagnostics; "
+                        f"got diagnostics={diag!r}"
+                    )
+            print(
+                f"  [{name}] cloud={cloud} skip_nr={skip_nr}: "
+                f"{got['current_step'] or got['terminal_reason']}"
+            )
 
     if failures:
         print("\nFAILURES:")
@@ -1215,6 +1312,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--cloud", action="store_true",
                         help="Use /lazy-cloud state machine variants")
+    parser.add_argument("--skip-needs-research", action="store_true",
+                        help=("Skip queue entries that would terminate on "
+                              "needs-research; emit terminal_reason "
+                              "'queue-blocked-on-research' when the queue is "
+                              "exhausted with only research-pending features remaining."))
     parser.add_argument("--repo-root", default=os.getcwd(),
                         help="Project root (default: $PWD)")
     parser.add_argument("--test", action="store_true",
@@ -1224,7 +1326,11 @@ def main() -> int:
     if args.test:
         return run_smoke_tests()
 
-    state = compute_state(Path(args.repo_root), cloud=args.cloud)
+    state = compute_state(
+        Path(args.repo_root),
+        cloud=args.cloud,
+        skip_needs_research=args.skip_needs_research,
+    )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 
