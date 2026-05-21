@@ -23,10 +23,10 @@ This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended div
 
 Identical to `/lazy-batch`:
 
-1. The orchestrator MUST NOT call `Edit` or `Write` on source code or test files. Only the `NEEDS_RESEARCH.md` sentinel may be written directly by the orchestrator.
-2. The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool. Every sub-skill goes through a spawned `Agent` subagent.
-3. The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or sentinel files. State inference is exclusively via `lazy-state.py --cloud`.
-4. One cycle = one subagent dispatch.
+1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action. All other `Write`/`Edit` operations require subagent dispatch.
+2. The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool. Every sub-skill goes through a spawned `Agent` subagent. Pseudo-skills (`__*__`) are not real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
+3. The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files. State inference is exclusively via `lazy-state.py --cloud`. Sentinel files MAY be read by the orchestrator to confirm a write or drive a pseudo-skill action.
+4. One cycle = one subagent dispatch FOR REAL WORK SKILLS. Pseudo-skill cycles (sentinel writes) are inline orchestrator actions that count as one cycle each.
 5. No interactive prompts. Halts via NEEDS_INPUT.md / NEEDS_RESEARCH.md only.
 
 **Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. The cycle subagent's prompt (Step 1d below) makes this explicit.
@@ -75,9 +75,25 @@ PushNotification({ message: "lazy-batch-cloud hit max-cycles ({max_cycles}). Res
 
 Print final batch report, STOP.
 
-### 1d. Compose and dispatch the cycle subagent
+### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
-The cloud cycle subagent prompt adds an explicit reminder of cloud limitations. The prompt template:
+If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** — a small sentinel-file write + commit, NOT a real skill that performs implementation work. Perform the action inline (orchestrator session) instead of dispatching a subagent. Same rationale as `/lazy-batch` Step 1c.5: sentinel files are documentation, and dispatching an Opus subagent for a 10-line YAML write + commit wastes a full subagent's worth of context. On the cloud path this is especially costly because `__write_deferred_non_cloud__` fires once per feature in the normal flow.
+
+Follow `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` Step 3's protocol for each pseudo-skill exactly (the wrapper and orchestrator do the same thing here):
+
+- **`__write_deferred_non_cloud__`** — if `<spec_path>/DEFERRED_NON_CLOUD.md` already exists, skip (idempotent). Otherwise write it with kind: deferred-non-cloud, deferred_step: 8, reason: "Cloud Linux environment cannot run tauri:dev or reach the MCP HTTP server.", deferred_by: lazy-cloud, today's date, and the body explaining workstation resume. Commit per project policy.
+- **`__write_validated_from_skip__`** — read `<spec_path>/SKIP_MCP_TEST.md` frontmatter, write `<spec_path>/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body note about the prior skip). Commit.
+- **`__mark_complete__`** — only reachable from cloud if both `VALIDATED.md` and `RETRO_DONE.md` already exist (cloud cannot produce VALIDATED.md from MCP results — workstation did). Update `docs/features/ROADMAP.md` (strikethrough + COMPLETE token), delete `VALIDATED.md`/`RETRO_DONE.md`/`DEFERRED_NON_CLOUD.md` sentinels, set `<spec_path>/SPEC.md`'s `**Status:**` to `Complete`, then commit per project policy.
+
+After the inline action:
+
+1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
+2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
+3. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
+
+### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
+
+If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), the cloud cycle subagent prompt adds an explicit reminder of cloud limitations. The prompt template:
 
 ```
 You are advancing one cycle of the autonomous feature pipeline in a CLOUD
@@ -111,32 +127,6 @@ After the skill returns:
 
 You may NOT spawn further subagents. You MAY use Edit/Write on source code if
 the dispatched skill requires it; follow the skill's internal subagent rules.
-```
-
-Pseudo-skill handling — `__write_deferred_non_cloud__`, `__write_validated_from_skip__`, `__mark_complete__`:
-
-```
-You are advancing one cycle of the autonomous feature pipeline in a CLOUD
-Linux session.
-
-Feature: {feature_name} ({feature_id})
-Working directory: {cwd}
-State script said: {current_step}
-
-Action for this cycle:
-  Perform the {sub_skill} special action exactly as documented in
-  repos/algobooth/.claude/skills/lazy-cloud/SKILL.md (Step 3). Do not dispatch
-  a Skill tool call — the action is a small file edit + commit performed by
-  you directly:
-
-    - __write_deferred_non_cloud__: write DEFERRED_NON_CLOUD.md
-    - __write_validated_from_skip__: write VALIDATED.md from prior SKIP_MCP_TEST.md
-    - __mark_complete__: update ROADMAP, delete sentinels, set SPEC Status, commit
-      (only reachable if VALIDATED.md and RETRO_DONE.md both already exist —
-      cloud cannot produce VALIDATED.md from MCP results)
-
-After the action, commit and push per project policy, then report a one-
-paragraph summary.
 ```
 
 Dispatch:
@@ -201,11 +191,12 @@ Cloud cannot run Gemini either — the user runs Gemini on their workstation and
 |--------|---------------|---------------------|
 | State script invocation | `python3 ~/.claude/scripts/lazy-state.py` | `python3 ~/.claude/scripts/lazy-state.py --cloud` |
 | `cloud-queue-exhausted` terminal | defensive (unreachable in practice) | normal halt when remaining features await workstation MCP testing |
-| `__write_deferred_non_cloud__` pseudo-skill | not emitted by state script | normal Step 8 action |
-| Cycle subagent prompt | bare batch-mode instructions | adds cloud-environment limitations block |
+| `__write_deferred_non_cloud__` pseudo-skill | not emitted by state script | normal Step 8 action — handled INLINE in Step 1c.5, no subagent dispatch |
+| `__write_validated_from_results__` pseudo-skill | normal Step 8 action — inline | not emitted (cloud cannot produce MCP results) |
+| Cycle subagent prompt (real skills only) | bare batch-mode instructions | adds cloud-environment limitations block |
 | NEEDS_RESEARCH.md `written_by` | `lazy-batch` | `lazy-batch-cloud` |
 
-All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators.
+All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs.
 
 ---
 

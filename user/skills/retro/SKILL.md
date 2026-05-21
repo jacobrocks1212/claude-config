@@ -478,6 +478,17 @@ Convert all proposed improvements from Step 6 into a self-contained execution pl
 - If the retro proposed PHASES.md additions (corrective phases), include those as work units
 - If `~/.claude/skills/` and `~/.claude-personal/skills/` are symlinked (same files), no mirroring needed. If separate, copy changed files to both directories.
 
+**Frontmatter for retro plans (override defaults from plan-file-output.md):**
+
+When writing the retro plan file, the YAML frontmatter MUST use:
+- `kind: retro-plan` (NOT `implementation-plan`)
+- `feature_id:` — the feature directory name being retrospected
+- `status: Ready` (or `Draft` if `--batch` halted mid-generation)
+- `created:` — today's date
+- `phases:` — list every PHASES.md phase covered by this retro. For a first-ever retro on a feature, this is typically every phase that has landed (e.g. `[1, 2, 3, 4, 5]`, or just `["all"]` if the feature uses non-numeric phase IDs). For a follow-up retro (retro-2, retro-3), list only the phases that have landed since the previous retro.
+
+The retro plan file is colocated with the feature's other plans (`<feature-dir>/plans/retro-N-<slug>.md`) so the state script's `find_retro_plans()` discovers it the same way as implementation plans.
+
 !`cat ~/.claude/skills/_components/plan-file-output.md`
 
 ---

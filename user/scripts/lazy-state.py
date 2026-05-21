@@ -26,7 +26,11 @@ Output schema (stdout JSON):
   "terminal_reason":   null | "all-features-complete" | "cloud-queue-exhausted"
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing",
-  "notify_message":    "<string>"      | null
+  "notify_message":    "<string>"      | null,
+  "diagnostics":       []                                  # always present; non-empty
+                                                           # surfaces backlog warnings
+                                                           # (e.g. plan files missing
+                                                           # frontmatter)
 }
 
 Exit codes:
@@ -67,7 +71,14 @@ def _state(
     sub_skill_args: str | None = None,
     terminal_reason: str | None = None,
     notify_message: str | None = None,
+    diagnostics: list[str] | None = None,
 ) -> dict[str, Any]:
+    # Always include any diagnostics accumulated during this compute_state()
+    # invocation (e.g. legacy plan files missing frontmatter). Callers may
+    # also pass explicit diagnostics; both lists merge.
+    merged_diag = list(_DIAGNOSTICS)
+    if diagnostics:
+        merged_diag.extend(diagnostics)
     return {
         "feature_id": feature_id,
         "feature_name": feature_name,
@@ -77,7 +88,18 @@ def _state(
         "sub_skill_args": sub_skill_args,
         "terminal_reason": terminal_reason,
         "notify_message": notify_message,
+        "diagnostics": merged_diag,
     }
+
+
+# Diagnostics collected across helper calls. compute_state() resets this at
+# the start of each invocation and merges into the returned state dict before
+# returning.
+_DIAGNOSTICS: list[str] = []
+
+
+def _diag(msg: str) -> None:
+    _DIAGNOSTICS.append(msg)
 
 
 def _die(msg: str, path: Path | None = None) -> None:
@@ -160,8 +182,39 @@ def load_queue(repo_root: Path) -> list[dict[str, Any]]:
     return items
 
 
-def is_workstation_complete(roadmap_text: str, feature_name: str) -> bool:
-    """Match /lazy Step 2: ROADMAP row has both '~~' and 'COMPLETE'."""
+def is_workstation_complete(
+    roadmap_text: str,
+    feature_name: str,
+    spec_path: Path | None = None,
+) -> bool:
+    """Decide whether a feature is fully done.
+
+    Primary signal: the feature's SPEC.md `**Status:**` line. Authoritative
+    because AlgoBooth's docs-consistency lint enforces SPEC.status ↔
+    PHASES.status agreement.
+
+    Fallback signal: a ROADMAP.md row with both `~~` strikethrough and the
+    `COMPLETE` token mentioning the feature name. Retained for safety while
+    the SPEC.md status backfill is rolling out and for repos that don't
+    follow the SPEC.md status convention.
+    """
+    # Primary: SPEC.md status
+    if spec_path is not None:
+        spec_md = spec_path / "SPEC.md"
+        if spec_md.exists():
+            try:
+                for line in spec_md.read_text(encoding="utf-8").splitlines():
+                    m = re.match(r"^\*\*Status:\*\*\s*(.+?)\s*$", line)
+                    if m:
+                        value = m.group(1).strip()
+                        if value in ("Complete", "Superseded"):
+                            return True
+                        # First Status: line wins; later occurrences are usually
+                        # inside Implementation Notes blocks describing prior state.
+                        break
+            except OSError:
+                pass
+    # Fallback: ROADMAP grep
     if not roadmap_text:
         return False
     needle = re.escape(feature_name)
@@ -323,8 +376,77 @@ def count_deliverables(phases_text: str) -> tuple[int, int]:
 # Plan file discovery
 # ---------------------------------------------------------------------------
 
+def _parse_plan_frontmatter(path: Path) -> dict[str, Any] | None:
+    """Parse a plan file's YAML frontmatter per _components/plan-frontmatter.md.
+
+    Returns:
+      - dict with parsed YAML if frontmatter is present and valid.
+      - {} (empty dict) if the file has no frontmatter block (legacy plan).
+      - None only if the file cannot be read (caller treats as missing).
+
+    Plan files share the parsing protocol of sentinel files but live in a
+    disjoint kind namespace (implementation-plan / retro-plan / fix-plan /
+    realign-plan). On malformed YAML, _die() halts via the same path as
+    sentinels — parse errors should not be swallowed.
+    """
+    if not path.exists():
+        return None
+    return parse_sentinel(path)
+
+
+def _plan_status(path: Path) -> str:
+    """Return the plan's `status:` field. Defaults to 'Ready' for legacy plans
+    (no frontmatter); caller records a diagnostics warning in that case.
+    """
+    meta = _parse_plan_frontmatter(path) or {}
+    if not meta:
+        return "Ready"
+    raw = meta.get("status")
+    if isinstance(raw, str) and raw:
+        return raw
+    return "Ready"
+
+
+def _plan_lowest_phase(path: Path) -> tuple[int, str]:
+    """Return a sort key (lowest_phase_number, plan_name).
+
+    Falls back to (sys.maxsize, name) when the plan lacks a `phases:` field —
+    that means feature-wide / unspecified plans sort after phase-tagged ones,
+    matching the user's requested ordering (lowest declared phase wins).
+    """
+    meta = _parse_plan_frontmatter(path) or {}
+    phases = meta.get("phases") if meta else None
+    lowest = sys.maxsize
+    if isinstance(phases, list):
+        for entry in phases:
+            try:
+                n = int(entry)
+            except (TypeError, ValueError):
+                # Non-numeric phase identifiers (e.g. "all", "P3a") — extract
+                # any leading digit run, else skip. Mirrors the lenient handling
+                # in latest_retro_plan().
+                if isinstance(entry, str):
+                    m = re.match(r"^(\d+)", entry)
+                    if m:
+                        n = int(m.group(1))
+                    else:
+                        continue
+                else:
+                    continue
+            if n < lowest:
+                lowest = n
+    return (lowest, path.name)
+
+
 def find_implementation_plans(spec_dir: Path) -> list[Path]:
-    """Find non-retro implementation plans. Mirrors /lazy Step 7a."""
+    """Find non-retro implementation plans, filtering out plans whose
+    frontmatter marks them Complete, and sorting by the lowest `phases:`
+    entry (alphabetical fallback for plans without phases:).
+
+    Mirrors /lazy Step 7a. See _components/plan-frontmatter.md for the schema.
+    Plans with no frontmatter are treated as legacy `status: Ready` and
+    surface a diagnostics warning so AlgoBooth's lint can flag the backlog.
+    """
     plans: list[Path] = []
     plans_dir = spec_dir / "plans"
     if plans_dir.exists():
@@ -334,19 +456,59 @@ def find_implementation_plans(spec_dir: Path) -> list[Path]:
             name = p.name
             if name.startswith("retro-") or name.startswith("realign-"):
                 continue
+            meta = _parse_plan_frontmatter(p) or {}
+            if meta:
+                status = meta.get("status", "Ready")
+                if status == "Complete":
+                    continue
+            else:
+                _diag(
+                    f"legacy plan (no frontmatter): {p} — backfill "
+                    "kind/feature_id/status/created per _components/plan-frontmatter.md"
+                )
             plans.append(p)
     # Legacy fallback
     legacy = spec_dir / "PLAN.md"
     if legacy.exists() and legacy not in plans:
-        plans.append(legacy)
+        meta = _parse_plan_frontmatter(legacy) or {}
+        if meta:
+            if meta.get("status") != "Complete":
+                plans.append(legacy)
+        else:
+            _diag(
+                f"legacy plan (no frontmatter): {legacy} — backfill per "
+                "_components/plan-frontmatter.md"
+            )
+            plans.append(legacy)
+    # Sort by lowest declared phase, then plan name. Plans without phases:
+    # fall to (sys.maxsize, name) so they sort after phase-tagged plans —
+    # preserves a sensible order for single-plan features while letting
+    # multi-plan features pick the earliest phase first.
+    plans.sort(key=_plan_lowest_phase)
     return plans
 
 
 def find_retro_plans(spec_dir: Path) -> list[Path]:
+    """Find retro plans, filtering out plans whose frontmatter marks them
+    Complete. Plans without frontmatter are treated as legacy `status: Ready`
+    and surface a diagnostics warning.
+    """
     plans_dir = spec_dir / "plans"
     if not plans_dir.exists():
         return []
-    return sorted(plans_dir.glob("retro-*.md"))
+    out: list[Path] = []
+    for p in sorted(plans_dir.glob("retro-*.md")):
+        meta = _parse_plan_frontmatter(p) or {}
+        if meta:
+            if meta.get("status") == "Complete":
+                continue
+        else:
+            _diag(
+                f"legacy retro plan (no frontmatter): {p} — backfill per "
+                "_components/plan-frontmatter.md"
+            )
+        out.append(p)
+    return out
 
 
 def latest_retro_plan(spec_dir: Path) -> Path | None:
@@ -398,6 +560,9 @@ def retro_plan_has_significant_divergences(plan_path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
+    # Reset diagnostics for this invocation so callers get a fresh list per
+    # compute_state() call (matters in run_smoke_tests() which loops).
+    _DIAGNOSTICS.clear()
     repo_root = repo_root.resolve()
     queue = load_queue(repo_root)
     if not queue:
@@ -419,7 +584,7 @@ def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
         if not name or not feature_id or not spec_subdir:
             continue
         spec_path = (repo_root / "docs" / "features" / spec_subdir).resolve()
-        if is_workstation_complete(roadmap_text, name):
+        if is_workstation_complete(roadmap_text, name, spec_path):
             continue
         if cloud:
             # Cloud-saturated skip
@@ -875,6 +1040,75 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         g.mkdir()
         (g / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
         (g / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+    elif name == "spec-status-complete":
+        # SPEC.md Status: Complete should mark the feature done even when
+        # the ROADMAP grep wouldn't (no strikethrough/COMPLETE token).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-i", "name": "Feature I", "spec_dir": "feat-i", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n\n- Feature I — still listed without COMPLETE token\n")
+        idir = features / "feat-i"
+        idir.mkdir()
+        (idir / "SPEC.md").write_text("# Spec\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
+    elif name == "plan-frontmatter-filter":
+        # Three plans in plans/. One Complete (filtered), one with phases: [3],
+        # one with phases: [4]. Expectation: lowest phase among non-Complete
+        # plans is selected.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-j", "name": "Feature J", "spec_dir": "feat-j", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        jdir = features / "feat-j"
+        jdir.mkdir()
+        (jdir / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (jdir / "RESEARCH.md").write_text("# R\n")
+        (jdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (jdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 3\n- [ ] Thing A\n\n### Phase 4\n- [ ] Thing B\n"
+        )
+        plans = jdir / "plans"
+        plans.mkdir()
+        # Complete plan (should be filtered)
+        (plans / "all-phases-old.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-j\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1, 2]\n---\n\n"
+            "# Plan (already complete)\n"
+        )
+        # Phase 4 plan (Ready, but later phase number)
+        (plans / "all-phases-later.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-j\n"
+            "status: Ready\ncreated: 2026-05-10\nphases: [4]\n---\n\n"
+            "# Plan (phase 4)\n"
+        )
+        # Phase 3 plan (Ready, lowest phase number — expected pick)
+        (plans / "phase-3-corrective.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-j\n"
+            "status: Ready\ncreated: 2026-05-15\nphases: [3]\n---\n\n"
+            "# Plan (phase 3)\n"
+        )
+    elif name == "legacy-plan-diagnostics":
+        # Plan file with no frontmatter — should be included but raise a
+        # diagnostics warning.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-k", "name": "Feature K", "spec_dir": "feat-k", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        kdir = features / "feat-k"
+        kdir.mkdir()
+        (kdir / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (kdir / "RESEARCH.md").write_text("# R\n")
+        (kdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (kdir / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [ ] T\n")
+        plans = kdir / "plans"
+        plans.mkdir()
+        # Legacy plan — no frontmatter
+        (plans / "all-phases-legacy.md").write_text("# Legacy plan\n\nNo frontmatter here.\n")
     elif name == "needs-realign":
         # feat-h has a hard dep on feat-up (complete upstream); no realign plan yet.
         (features / "queue.json").write_text(json.dumps({
@@ -918,6 +1152,17 @@ def run_smoke_tests() -> int:
                 "sub_skill": "realign-spec",
                 "feature_id": "feat-h",
             }),
+            ("spec-status-complete", False, {
+                "terminal_reason": "all-features-complete",
+            }),
+            ("plan-frontmatter-filter", False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-j",
+            }),
+            ("legacy-plan-diagnostics", False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-k",
+            }),
         ]
         for name, cloud, expected in cases:
             root = _build_fixture(td_path, name)
@@ -930,6 +1175,26 @@ def run_smoke_tests() -> int:
                 if got.get(k) != v:
                     failures.append(
                         f"[{name}] expected {k}={v!r}, got {k}={got.get(k)!r}"
+                    )
+            # Extra assertions: plan-frontmatter selection prefers lowest phase
+            if name == "plan-frontmatter-filter":
+                args = got.get("sub_skill_args") or ""
+                if "phase-3-corrective.md" not in args:
+                    failures.append(
+                        f"[{name}] expected phase-3 plan to be selected, got "
+                        f"sub_skill_args={args!r}"
+                    )
+                if "all-phases-old.md" in args:
+                    failures.append(
+                        f"[{name}] Complete plan should be filtered out, "
+                        f"sub_skill_args={args!r}"
+                    )
+            if name == "legacy-plan-diagnostics":
+                diag = got.get("diagnostics") or []
+                if not any("all-phases-legacy.md" in d for d in diag):
+                    failures.append(
+                        f"[{name}] expected diagnostics warning about legacy "
+                        f"plan; got diagnostics={diag!r}"
                     )
             print(f"  [{name}] cloud={cloud}: {got['current_step'] or got['terminal_reason']}")
 
