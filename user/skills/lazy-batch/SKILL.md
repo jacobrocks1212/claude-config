@@ -39,6 +39,7 @@ Initialize counters and per-session state:
 - `cycle_log = []` — each entry: `{cycle, feature, action, subagent_summary}`
 - `research_pending = set()` — feature_ids whose `RESEARCH.md` is missing and an `NEEDS_RESEARCH.md` sentinel was dropped this session. Drives `--skip-needs-research` and the Step 1f wait trigger.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle so subsequent `lazy-state.py` calls skip past research-pending features instead of re-halting.
+- `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
 
 Print the start bookend:
 
@@ -168,13 +169,18 @@ After the inline action:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
 2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
-3. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
+3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` (same uniform post-cycle update as Step 1e — keeps loop-guard accurate across mixed pseudo-skill / real-skill cycles).
+4. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
 
 This saves one Opus dispatch per pseudo-skill action. On a typical feature lifecycle (workstation: 1 × `__write_validated_*` + 1 × `__mark_complete__` = 2 dispatches reclaimed; cloud: 1 × `__write_deferred_non_cloud__` minimum) the savings compound across a multi-feature queue pass.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else:
+If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else.
+
+**Loop-guard check (BEFORE composing the prompt):** Compute the current cycle's signature as the tuple `(feature_id, sub_skill, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, current_step)`, the state script has returned the same triple two cycles in a row — almost always a sign that a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing or that a plan/sentinel write the previous cycle was supposed to perform did not actually land. The orchestrator MUST append the **LOOP DETECTED** block below to the subagent prompt so the subagent diagnoses the missing sentinel rather than producing yet another plan / running the same skill against unchanged state.
+
+Base prompt template:
 
 ```
 You are advancing one cycle of the autonomous feature pipeline.
@@ -205,6 +211,40 @@ the dispatched skill requires it (e.g. /execute-plan does); follow the skill's
 internal subagent-vs-orchestrator rules.
 ```
 
+**LOOP DETECTED block (append only when the loop-guard fires):**
+
+```
+⚠️  LOOP DETECTED: The state script returned this exact
+(feature_id={feature_id}, sub_skill={sub_skill}, current_step={current_step})
+tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
+(RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
+missing — the skill that was supposed to write it on the prior cycle did not.
+
+Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
+  1. Read the canonical schemas in
+     ~/.claude/skills/_components/sentinel-frontmatter.md.
+  2. Inspect {spec_path}/ for existing sentinels and plan files.
+  3. Determine which sentinel SHOULD exist given the feature's current state
+     (e.g. all phases complete + validated + retro plan present with no
+     significant divergences → RETRO_DONE.md should already exist; if it
+     doesn't, the previous retro round failed to write it).
+  4. If you can write the missing sentinel directly (its preconditions are
+     unambiguously met), DO SO instead of re-running {sub_skill}. Then commit
+     the sentinel and report the loop-break in your summary.
+  5. If the preconditions are NOT unambiguously met, run {sub_skill} as
+     instructed but explicitly emit the appropriate terminal sentinel as part
+     of its completion (e.g. /retro Step 6c writes RETRO_DONE.md when no
+     significant divergences). Report which sentinel you emitted.
+  6. If no sentinel applies (genuine ambiguity), write BLOCKED.md with
+     blocker_kind: loop-detected and a clear description so the next cycle
+     surfaces it as a terminal halt.
+
+The orchestrator will halt on the next cycle's max-cycles cap if this loop
+persists — your job here is to break it.
+```
+
+Append the LOOP DETECTED block after the base prompt's final paragraph (after "follow the skill's internal subagent-vs-orchestrator rules.") when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle.
+
 Dispatch:
 
 ```
@@ -222,7 +262,10 @@ After the subagent returns:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, subagent's one-paragraph summary}`.
 2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: /{sub_skill} on {feature_name} → {first-line-of-summary}"`.
-3. Increment `cycle`. Return to Step 1a.
+3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
+4. Increment `cycle`. Return to Step 1a.
+
+**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, current_step)` triple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 

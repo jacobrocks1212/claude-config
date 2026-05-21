@@ -947,6 +947,15 @@ def compute_state(
             ),
         )
 
+    # RETRO_DONE.md is the terminal sentinel for the retro phase and MUST be
+    # checked BEFORE any retro-plan-status scanning below. Otherwise a feature
+    # whose corrective work shipped under a separately-named plan (e.g.
+    # phase-N-corrective-wiring.md with status: Complete) leaves the original
+    # retro plan permanently `status: Ready`, and find_retro_plans() returns
+    # it forever — re-entering Step 9 retro on every cycle until max-cycles.
+    # See the retro skill's Step 6c: it writes RETRO_DONE.md whenever a round
+    # concludes with no significant divergences, which is what terminates the
+    # phase cleanly.
     if retro_done_file.exists():
         # Step 10: mark complete (workstation only; cloud halts here)
         if cloud and not validated_file.exists():
@@ -969,39 +978,20 @@ def compute_state(
             sub_skill_args=spec_path_str,
         )
 
-    # No RETRO_DONE.md — dispatch retro flow
-    retro_plans = find_retro_plans(spec_path)
-    if not retro_plans:
-        return _state(
-            **common,
-            current_step="Step 9: first retro",
-            sub_skill="retro",
-            sub_skill_args=f"{spec_path_str}/PHASES.md --auto",
-        )
-
-    if len(retro_plans) == 1:
-        first = retro_plans[0]
-        if retro_plan_has_significant_divergences(first):
-            return _state(
-                **common,
-                current_step="Step 9: second retro (verify fixes)",
-                sub_skill="retro",
-                sub_skill_args=f"{spec_path_str}/PHASES.md --auto",
-            )
-        return _state(
-            **common,
-            current_step="Step 9: execute retro plan",
-            sub_skill="execute-plan",
-            sub_skill_args=str(first),
-        )
-
-    # 2+ retro plans → execute latest
-    latest = latest_retro_plan(spec_path)
+    # No RETRO_DONE.md — dispatch the composed /retro-feature skill, which
+    # loops /retro + /execute-plan internally until RETRO_DONE.md (written by
+    # /retro's Step 6c), BLOCKED.md, NEEDS_INPUT.md, or its own max-rounds cap.
+    # Collapses the entire Step 9 phase into one orchestrator dispatch instead
+    # of N per-round cycles. /retro-feature is idempotent — re-dispatching
+    # after a partial run picks up from on-disk state (existing retro plans,
+    # their Complete/Ready status). The helpers find_retro_plans() /
+    # retro_plan_has_significant_divergences() / latest_retro_plan() are
+    # retained for external tooling and the retro skill's documented contract.
     return _state(
         **common,
-        current_step="Step 9: execute latest retro plan",
-        sub_skill="execute-plan",
-        sub_skill_args=str(latest) if latest else "",
+        current_step="Step 9: retro phase",
+        sub_skill="retro-feature",
+        sub_skill_args=f"{spec_path_str} --batch",
     )
 
 
@@ -1348,9 +1338,10 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-cw",
             }),
             # Same bypass, but DEFERRED_NON_CLOUD.md already on disk →
-            # Step 8 falls through to Step 9 retro.
+            # Step 8 falls through to Step 9 retro. Step 9 now dispatches the
+            # composed /retro-feature skill (single phase-wide dispatch).
             ("cloud-workstation-only-with-deferred", True, False, {
-                "sub_skill": "retro",
+                "sub_skill": "retro-feature",
                 "feature_id": "feat-cwd",
             }),
             # Workstation regression: bypass must NOT fire when cloud=False.

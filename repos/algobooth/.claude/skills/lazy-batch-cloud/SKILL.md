@@ -63,6 +63,7 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 0.5 for the full algorithm. Clou
 Initialize per-session state — identical shape to `/lazy-batch` Step 0:
 - `research_pending = set()` — feature_ids that hit `needs-research` this session.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle.
+- `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
 
 ### 1a. Run lazy-state.py --cloud
 
@@ -105,11 +106,16 @@ After the inline action:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
 2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
-3. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
+3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` (same uniform post-cycle update as Step 1e — keeps the loop-guard accurate across mixed pseudo-skill / real-skill cycles).
+4. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), the cloud cycle subagent prompt adds an explicit reminder of cloud limitations. The prompt template:
+If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), the cloud cycle subagent prompt adds an explicit reminder of cloud limitations.
+
+**Loop-guard check (identical shape to `/lazy-batch` Step 1d):** BEFORE composing the prompt, compute the current cycle's signature as the tuple `(feature_id, sub_skill, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, current_step)`, append the **LOOP DETECTED** block below to the subagent prompt — the state script has returned the same triple two cycles in a row, almost always indicating a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing.
+
+Base prompt template:
 
 ```
 You are advancing one cycle of the autonomous feature pipeline in a CLOUD
@@ -145,6 +151,40 @@ You may NOT spawn further subagents. You MAY use Edit/Write on source code if
 the dispatched skill requires it; follow the skill's internal subagent rules.
 ```
 
+**LOOP DETECTED block (append only when the loop-guard fires):**
+
+```
+⚠️  LOOP DETECTED: The state script returned this exact
+(feature_id={feature_id}, sub_skill={sub_skill}, current_step={current_step})
+tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
+(RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
+missing — the skill that was supposed to write it on the prior cycle did not.
+
+Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
+  1. Read the canonical schemas in
+     ~/.claude/skills/_components/sentinel-frontmatter.md.
+  2. Inspect {spec_path}/ for existing sentinels and plan files.
+  3. Determine which sentinel SHOULD exist given the feature's current state
+     (e.g. all phases complete + deferred-non-cloud + retro plan present
+     with no significant divergences → RETRO_DONE.md should already exist;
+     if it doesn't, the previous retro round failed to write it).
+  4. If you can write the missing sentinel directly (its preconditions are
+     unambiguously met), DO SO instead of re-running {sub_skill}. Then commit
+     the sentinel and report the loop-break in your summary.
+  5. If the preconditions are NOT unambiguously met, run {sub_skill} as
+     instructed but explicitly emit the appropriate terminal sentinel as part
+     of its completion (e.g. /retro Step 6c writes RETRO_DONE.md when no
+     significant divergences). Report which sentinel you emitted.
+  6. If no sentinel applies (genuine ambiguity), write BLOCKED.md with
+     blocker_kind: loop-detected and a clear description so the next cycle
+     surfaces it as a terminal halt.
+
+The orchestrator will halt on the next cycle's max-cycles cap if this loop
+persists — your job here is to break it.
+```
+
+Append the LOOP DETECTED block after the base prompt's final paragraph when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle.
+
 Dispatch:
 
 ```
@@ -158,7 +198,7 @@ Agent({
 
 ### 1e. Record cycle outcome and loop
 
-Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, increment cycle, loop.
+Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, update `prev_cycle_signature = (feature_id, sub_skill, current_step)`, increment cycle, loop. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
@@ -232,6 +272,7 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 4 for the full algorithm and mul
 | `__write_deferred_non_cloud__` pseudo-skill | not emitted by state script | normal Step 8 action — handled INLINE in Step 1c.5, no subagent dispatch |
 | `__write_validated_from_results__` pseudo-skill | normal Step 8 action — inline | not emitted (cloud cannot produce MCP results) |
 | Cycle subagent prompt (real skills only) | bare batch-mode instructions | adds cloud-environment limitations block |
+| Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
 | NEEDS_RESEARCH.md `written_by` | `lazy-batch` | `lazy-batch-cloud` |
 | Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`, announce upload paths, PushNotification, STOP. Resume on next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation. Resume on next `/lazy-batch-cloud` invocation (or `/lazy-batch` from workstation — uploads are filesystem-shared). |
 | Decision-halt mode (Step 1g) | `terminal_reason: needs-input` — **same shape** in both | `terminal_reason: needs-input` — **same shape** in both |
