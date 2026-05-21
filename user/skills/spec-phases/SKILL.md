@@ -26,12 +26,16 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
 - Still run the Step 3 red-flag detection logic at the bottom of this file (circular dependencies, unclear scope, integration explosion, testing impossible). If ANY red flag triggers, **halt** with NEEDS_INPUT.md (see below) — do NOT proceed to Step 4 with phases the human would have wanted to adjust.
 - The Step 6 subagent review gate still runs — review is read-only structured analysis, no human prompts.
 
+**Post-research positioning:** `/spec-phases --batch` runs *after* Phase 3 of `/spec` has finalized SPEC.md, so by definition `RESEARCH.md`/`RESEARCH_SUMMARY.md` are already on disk. This skill is therefore eligible to write `NEEDS_INPUT.md` per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`. Red-flag detection is genuine design judgment — the kind of decision the halting rule permits.
+
 ### Halt protocol — `NEEDS_INPUT.md`
 
 When red-flag detection triggers under `--batch`:
 
 1. Compute `{spec-dir}/NEEDS_INPUT.md` (sibling of the SPEC.md passed as `$ARGUMENTS`).
-2. Write the sentinel per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+2. Write the sentinel per `~/.claude/skills/_components/sentinel-frontmatter.md`. The body MUST use the **rich-body convention** (`## Decision Context` H2 with one H3 per `decisions[i]`, each carrying `**Problem:**` / `**Options:**` / `**Recommendation:**`) defined in that component. The orchestrator re-prints this body verbatim before calling `AskUserQuestion`.
+
+   Skeleton (see the component for the full template):
 
    ```markdown
    ---
@@ -47,15 +51,25 @@ When red-flag detection triggers under `--batch`:
 
    # /spec-phases --batch — Needs Input
 
-   The following red flags were detected during phase boundary analysis. Re-run
-   `/spec-phases` interactively (or revise SPEC.md to address the underlying
-   issue, then re-run).
+   ## Decision Context
 
-   ## Red flags
-   {For each: name, affected phases, what was unclear, what the human needs to clarify.}
+   ### 1. <red-flag title — must equal decisions[0] verbatim>
+
+   **Problem:** <Which phase boundary is at risk and why. Cite the SPEC section
+   and the affected phases.>
+
+   **Options:**
+   - **<resolution A>** — <description with tradeoffs.>
+   - **<resolution B>** — <description with tradeoffs.>
+
+   **Recommendation:** <option> — <one-sentence justification.>
+
+   ### 2. <next title matching decisions[1]>
+   ...
    ```
 
-3. STOP. Do NOT write PHASES.md. Do NOT invoke the Step 5 subagent.
+3. **Echo the entire `## Decision Context` section to chat output** before returning (per Producer responsibilities in `sentinel-frontmatter.md`).
+4. STOP. Do NOT write PHASES.md. Do NOT invoke the Step 5 subagent.
 
 ## Task Tracking (MANDATORY — DO NOT SKIP)
 

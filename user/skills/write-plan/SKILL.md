@@ -29,6 +29,38 @@ All other constraints from `/implement-phase` carry over: TDD, Sonnet subagents,
 
 ---
 
+## Batch Mode (`--batch` flag)
+
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch` via `/plan-feature`). Strip `--batch` from `$ARGUMENTS` before resolving PHASES.md paths.
+
+- **Skip the Step 1a `AskUserQuestion`** that prompts for PHASES.md paths — refuse cleanly with an error if no paths are supplied, since guessing the wrong feature would explode work.
+- For genuine ambiguity during plan drafting (e.g., a phase's deliverables admit two materially different decompositions — partition along feature boundaries vs. across them), write `NEEDS_INPUT.md` and halt rather than picking arbitrarily.
+
+**Post-research positioning:** `/write-plan --batch` runs *after* `/spec-phases` has succeeded, which only happens after `/spec` Phase 3 finalized SPEC.md — research is on disk by definition. This skill is therefore eligible to write `NEEDS_INPUT.md` per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`. Operational/mechanical choices (file paths, naming, partition cutoffs) MUST be auto-accepted; only genuine design forks halt.
+
+### Halt protocol — `NEEDS_INPUT.md`
+
+Compute `{feature-dir}/NEEDS_INPUT.md` (parent of the first PHASES.md passed as `$ARGUMENTS`). Write per `~/.claude/skills/_components/sentinel-frontmatter.md` using the **rich-body convention** — one H3 `## Decision Context` subsection per decision, each carrying `**Problem:**` / `**Options:**` / `**Recommendation:**`. The orchestrator re-prints this body to chat before calling `AskUserQuestion`.
+
+```yaml
+---
+kind: needs-input
+feature_id: <feature-dir name>
+written_by: write-plan
+decisions:
+  - <one-line decision title>
+date: <today>
+next_skill: write-plan
+partial_artifacts: [<paths to any half-finished plan files>, ...]
+---
+```
+
+**Echo the entire `## Decision Context` section to chat output** before returning. STOP without writing the plan file (or, if a partial plan file is unavoidable, list it under `partial_artifacts:` so the human can discard it).
+
+Plan-file frontmatter under a halt: set `status: Draft` (not `Ready`) on any partial plan files so downstream consumers don't pick them up. The standard path uses `status: Ready` — see Step 4 below.
+
+---
+
 ## Step 1: Load All Context
 
 ### 1a. Resolve PHASES.md Paths

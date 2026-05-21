@@ -41,7 +41,11 @@ If the "Significant" table has any rows, the retro MUST flag this clearly in its
 
 ### Halt protocol — `NEEDS_INPUT.md` (under `--batch` only)
 
-In `--batch` mode, if Step 1 cannot resolve the work scope (no path/feature in arguments, no usable signal in conversation context), write `{cwd}/NEEDS_INPUT.md` per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+**Post-research positioning:** `/retro --batch` runs at the very end of the per-feature pipeline (Step 9 in the state machine) — long after research has landed. This skill is therefore eligible to write `NEEDS_INPUT.md` per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`. Real ambiguity at retro time (e.g., which of two architectural fixes to encode as a corrective phase) is a genuine design choice the halting rule permits.
+
+The two halt cases for `/retro --batch` are: (a) unresolvable scope at Step 1 (no PHASES.md / SPEC.md / feature name in arguments or context), and (b) a Significant divergence whose corrective phase shape genuinely could go multiple ways. Both must follow the rich-body convention so the orchestrator can re-print the tradeoffs to chat before calling `AskUserQuestion`.
+
+In `--batch` mode, if Step 1 cannot resolve the work scope (no path/feature in arguments, no usable signal in conversation context), write `{cwd}/NEEDS_INPUT.md` per `~/.claude/skills/_components/sentinel-frontmatter.md` using the rich-body skeleton below:
 
 ```markdown
 ---
@@ -56,9 +60,24 @@ next_skill: retro
 
 # /retro --batch — Needs Input
 
-Retro scope unresolved; refusing to guess. Re-run with explicit
-`<feature-name | SPEC path | PHASES path>` argument.
+## Decision Context
+
+### 1. Cannot determine retro scope — no PHASES.md / SPEC.md / feature name supplied
+
+**Problem:** `/retro --batch` requires an explicit scope but received none.
+Recent conversation context did not surface a unique candidate. Picking
+arbitrarily would risk reviewing the wrong feature.
+
+**Options:**
+- **Re-run with explicit scope** — pass `<feature-name | SPEC path | PHASES path>` to `/retro` and try again. Safest; preserves audit trail.
+- **Skip retro for this cycle** — proceed past Step 9 and mark complete; loses the workflow-improvement signal but unblocks the queue.
+
+**Recommendation:** Re-run with explicit scope — the workflow-improvement signal is the reason retro exists.
 ```
+
+For Significant divergence ambiguity (after Subagent B's report), follow the same rich-body shape with one H3 per decision and a `**Recommendation:**` line on each.
+
+**Echo the entire `## Decision Context` section to chat output** before returning (per Producer responsibilities in `sentinel-frontmatter.md`).
 
 STOP without dispatching subagents.
 

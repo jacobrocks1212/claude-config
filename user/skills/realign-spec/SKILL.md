@@ -16,6 +16,13 @@ Compares a feature's current SPEC.md + PHASES.md against the **actual** decision
 - Without `--apply`: only `<feature-dir>/plans/realign-<date>.md` is written.
 - With `--apply`: the realign plan is written first, then exactly one follow-on action runs (apply Minor patches, invoke /add-phase, or write BLOCKED.md) per the Recommended verdict. Nothing else is touched.
 
+**Halting discipline (`NEEDS_INPUT.md` vs. `BLOCKED.md`):**
+
+`/realign-spec` runs at state-machine Step 4.6 — *before* research integration. Per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`, this skill is NOT eligible to write `NEEDS_INPUT.md`. The two escalation paths it owns are:
+
+- **Severe drift** → write `BLOCKED.md` with `blocker_kind: upstream-realign` (Step 5c below). The downstream design no longer holds; this is a "pre-research-input-required"-shaped fundamental change, not a "pick option A or B" decision.
+- **Moderate drift** → dispatch `/add-phase --batch` (Step 5b). `/add-phase` itself MAY write `NEEDS_INPUT.md` if the corrective phase shape genuinely admits multiple defensible designs; that halt is `add-phase`'s, not `realign-spec`'s, and `add-phase` is post-research-eligible because the corrective phase scope is derived from completed upstream PHASES.md content (which is the analogue of "research is on disk").
+
 ---
 
 ## Step 0: Parse Arguments and Resolve Paths

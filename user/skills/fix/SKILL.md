@@ -15,6 +15,21 @@ This skill may be invoked standalone (no associated PHASES.md). Handle both case
 
 ---
 
+## Batch Mode (`--batch` flag)
+
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch`). Strip `--batch` from `$ARGUMENTS` before processing.
+
+- **Skip Step 1's clarifying `AskUserQuestion`.** If the bug report is so ambiguous that systematic debugging cannot identify a single hypothesis, halt with `NEEDS_INPUT.md` (see below) rather than guessing.
+- **Skip Step 2's `AskUserQuestion` for logs/repro steps.** Proceed with code-level analysis only; add a top-level note in the fix plan: "Runtime evidence unavailable in this session — fix proposed at the code level. Re-run interactively with runtime data for higher confidence."
+
+**Post-research positioning:** `/fix --batch` operates on already-implemented work where research, spec, and phases are all on disk. This skill is therefore eligible to write `NEEDS_INPUT.md` per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`. A genuinely ambiguous root cause that admits multiple defensible fixes (different blast radii, different invariants) is a real design choice the halting rule permits.
+
+### Halt protocol — `NEEDS_INPUT.md`
+
+When at least one decision is genuinely ambiguous (multiple defensible fixes, or unresolvable bug scope), write `{feature-dir}/NEEDS_INPUT.md` (or `{cwd}/NEEDS_INPUT.md` when standalone — no PHASES.md context) per `~/.claude/skills/_components/sentinel-frontmatter.md`. The body MUST use the **rich-body convention** — `## Decision Context` H2 with one H3 per `decisions[i]`, each carrying `**Problem:**` / `**Options:**` / `**Recommendation:**`. **Echo the entire section to chat output** before returning. STOP without writing the fix plan.
+
+---
+
 ## Step 0: Task Tracking (MANDATORY — DO NOT SKIP)
 
 Load task tools and create tasks for compaction recovery:

@@ -17,6 +17,16 @@ $ARGUMENTS
 
 If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch`). Batch mode is scoped to **Phase 3 finalization only** — the prior phases require interactive brainstorming and human judgment that a batch orchestrator cannot supply.
 
+**Per-phase eligibility for `NEEDS_INPUT.md` halts** (per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`):
+
+| Phase | When | Pre/post research | May write `NEEDS_INPUT.md`? |
+|-------|------|--------------------|------------------------------|
+| Phase 1 (brainstorming) | First `/spec` invocation | Pre-research | **No** — auto-accept recommendations; if truly blocked, write `BLOCKED.md` with `blocker_kind: pre-research-input-required`. |
+| Phase 2 (research prompt generation) | SPEC.md exists, no RESEARCH.md | Pre-research | **No** — placeholder open questions go INTO `RESEARCH_PROMPT.md` for Gemini to answer; never lift them via `NEEDS_INPUT.md`. |
+| Phase 3 (research integration) | SPEC.md + RESEARCH.md both present | **Post-research** | **Yes** — eligible to halt on genuine design choices clarified by the research. |
+
+`--batch` only fires Phase 3 today; Phases 1 and 2 are explicitly refused below. The eligibility table is restated because the constraint is load-bearing for the broader batch-mode contract: the halt is allowed because the research is on disk.
+
 **Hard refusal — Phase 1 or Phase 2 under `--batch`:**
 
 If `--batch` is set AND the feature is still in Phase 1 (no SPEC.md draft yet) or Phase 2 (no RESEARCH.md yet), refuse with this exact error and STOP:
@@ -43,7 +53,9 @@ Detect Phase context: examine `{spec-dir}/{feature-slug}/`:
 When at least one decision is genuinely ambiguous, do NOT write a half-finished SPEC.md. Instead:
 
 1. Compute `{spec-dir}/{feature-slug}/NEEDS_INPUT.md`.
-2. Write the sentinel per the canonical schema in `~/.claude/skills/_components/sentinel-frontmatter.md`:
+2. Write the sentinel per the canonical schema in `~/.claude/skills/_components/sentinel-frontmatter.md`. The frontmatter shape is the standard `kind: needs-input` schema; the markdown body MUST use the **rich-body convention** (`## Decision Context` H2 with one H3 per `decisions[i]`) defined in that component. Frame each option with concrete tradeoffs (cost / complexity / risk / reversibility) and include a `**Recommendation:**` line. The orchestrator re-prints this body verbatim to chat before calling `AskUserQuestion`, whose option descriptions are truncated.
+
+   Skeleton (see the component for the full template):
 
    ```markdown
    ---
@@ -59,14 +71,25 @@ When at least one decision is genuinely ambiguous, do NOT write a half-finished 
 
    # /spec --batch — Needs Input
 
-   The following decisions were genuinely ambiguous in Phase 3 finalization.
-   Re-run `/spec` (without `--batch`) to resolve interactively.
+   ## Decision Context
 
-   ## Decisions
-   {Full chat-visible "Open Decisions" block you would have surfaced interactively — questions, options, pros/cons, recommendation if any.}
+   ### 1. <one-line decision title — must equal decisions[0] verbatim>
+
+   **Problem:** <2-4 sentence framing; cite the research finding or spec
+   section that surfaced the choice.>
+
+   **Options:**
+   - **<option A>** — <description with tradeoffs.>
+   - **<option B>** — <description with tradeoffs.>
+
+   **Recommendation:** <option A or B> — <one-sentence justification.>
+
+   ### 2. <next title matching decisions[1]>
+   ...
    ```
 
-3. STOP. Do not call `AskUserQuestion`. Do not write SPEC.md. The orchestrator (`/lazy-batch`) sees the sentinel on the next state-machine cycle and halts the autonomous tail.
+3. **Echo the entire `## Decision Context` section to chat output** before returning — see the "Producer responsibilities" subsection in `sentinel-frontmatter.md`. This gives the user visibility during the batch loop without scrolling back through orchestrator state.
+4. STOP. Do not call `AskUserQuestion`. Do not write SPEC.md. The orchestrator (`/lazy-batch`) sees the sentinel on the next state-machine cycle, re-prints the rich body, and surfaces the picker.
 
 Strip `--batch` from `$ARGUMENTS` before processing the rest of this skill so phase-detection logic and other paths work unchanged.
 

@@ -169,6 +169,67 @@ Optional:
 
 Body keeps the full decision context, options considered, and any chat-visible tradeoff notes the writer would have surfaced interactively.
 
+##### Rich body convention (HARD REQUIREMENT)
+
+Every `NEEDS_INPUT.md` MUST carry — under the closing `---` of the frontmatter — a `## Decision Context` section with one H3 subsection per item in `decisions:`. Each subsection follows this template:
+
+```markdown
+## Decision Context
+
+### 1. <one-line decision title, matching decisions[0]>
+
+**Problem:** <2-4 sentence framing of why this decision is needed and what's at stake. Cite the spec section, research finding, or constraint that surfaced it.>
+
+**Options:**
+- **<option A>** — <one-paragraph description of the option, including concrete tradeoffs (cost / complexity / risk / reversibility).>
+- **<option B>** — <same shape.>
+- **<option C>** — <same shape; optional, max 4 options.>
+
+**Recommendation:** <option name> — <one-sentence justification.>
+
+### 2. <next decision title, matching decisions[1]>
+
+...
+```
+
+This body is the **source of truth** for what the orchestrator displays to the user. The orchestrator (`/lazy-batch` / `/lazy-batch-cloud`) re-prints the entire `## Decision Context` section verbatim to chat BEFORE calling `AskUserQuestion`, whose option descriptions are truncated by the UI. Without the rich body, the user sees only the truncated picker — uninformed choice. With it, the chat carries the full tradeoff context the writer would have surfaced interactively.
+
+A `NEEDS_INPUT.md` that lacks the `## Decision Context` section is **malformed**. The orchestrator MUST refuse to call `AskUserQuestion` against a malformed file (see "Consumer rules" below).
+
+##### Post-research halting rule (HARD REQUIREMENT)
+
+Batch-mode skills (those invoked with `--batch` by `/lazy-batch` or `/lazy-batch-cloud`) MAY write `NEEDS_INPUT.md` ONLY when:
+
+1. The current state machine step is **Step 5 (research integration) or later** (Steps 6, 7, 8, 9). That is: `RESEARCH.md` (or `RESEARCH_SUMMARY.md`) is on disk for the feature, AND the decision arises during finalization / phase decomposition / planning / implementation / retro.
+2. The decision is a **genuine design choice** that requires human judgment — NOT an operational/mechanical choice that has a single defensible answer the skill could have auto-accepted.
+
+**Pre-research steps MUST auto-accept the recommended option and proceed.** Specifically:
+
+- Step 4.5 (stub-spec detection) — no halt; treat the stub as Phase 1 starting context.
+- Step 4.6 (upstream realign) — no halt; the realign plan's recommendation is authoritative.
+- Step 5 (research prompt generation, `/spec` Phase 2) — no halt; placeholder open questions go INTO `RESEARCH_PROMPT.md` to be answered by Gemini, not lifted to the human via `NEEDS_INPUT.md`.
+
+Halting before research means asking the human to decide without the information needed to decide — which the user has explicitly flagged as the wrong shape of escalation. If a pre-research skill genuinely cannot proceed without input (e.g., the feature description is so ambiguous that even a placeholder research prompt cannot be drafted), it writes **`BLOCKED.md`** with `blocker_kind: pre-research-input-required`, NOT `NEEDS_INPUT.md`.
+
+**The distinction:**
+
+| File | Semantics | Auto-resume? |
+|------|-----------|--------------|
+| `NEEDS_INPUT.md` | "Human, choose between these well-defined options the research has clarified." | Yes — after the human appends `## Resolution`, the orchestrator re-runs and the writer skill consumes it. |
+| `BLOCKED.md` | "This can't proceed at all in the current state." | No — requires a fundamental change (spec rewrite, queue reorder, missing input). |
+
+If you're tempted to write `NEEDS_INPUT.md` from a pre-research step, you're either (a) writing `BLOCKED.md` instead, or (b) deferring the question into the research prompt.
+
+##### Producer responsibilities (HARD REQUIREMENT)
+
+A skill that writes `NEEDS_INPUT.md` MUST:
+
+1. **Echo the full `## Decision Context` section to the skill's own chat output BEFORE returning.** The orchestrator re-prints this anyway when it halts, but echoing in the subagent's output also gives the user visibility during the batch loop without scrolling back through orchestrator state.
+2. **Use the exact 1:1 mapping between `decisions[i]` titles and the H3 subsection titles in the body.** The orchestrator pairs them by index for the `AskUserQuestion` call — drift breaks the pairing.
+3. **Cap to ≤ 4 decisions per file.** More than 4 means the cycle has too many uncoupled questions; split into sequential `NEEDS_INPUT.md` halts across cycles instead (resolve cycle 1's decisions, re-run, surface cycle 2's). Four also matches `AskUserQuestion`'s max questions per call.
+4. **Cap to ≤ 4 options per decision.** Matches `AskUserQuestion`'s `options` cap (2-4 entries).
+5. **Never write `NEEDS_INPUT.md` from a pre-research step** — see the post-research halting rule above. If a pre-research step truly cannot proceed, write `BLOCKED.md` instead.
+
 ### Lifecycle summary
 
 | File | Written when | Cleared when |
@@ -194,3 +255,4 @@ Body keeps the full decision context, options considered, and any chat-visible t
 - Prefer `python3 ~/.claude/scripts/lazy-state.py` to ad-hoc parsing — it implements this schema once and emits structured state JSON.
 - If you must parse from skill prose, follow the parsing protocol above and dispatch on `kind`. Never rely on the markdown body.
 - Treat a sentinel with a present file but missing or malformed frontmatter as a parse error, not a missing sentinel. Surface the path so the human can fix it.
+- **`NEEDS_INPUT.md` exception — body IS load-bearing.** Unlike the other sentinel kinds, the `## Decision Context` body section of `NEEDS_INPUT.md` is the source of truth the orchestrator re-prints to chat. A `NEEDS_INPUT.md` whose body is missing the `## Decision Context` H2 (with H3 subsections matching `decisions:` 1:1) is **malformed**. The orchestrator MUST surface the malformation as a quality issue, name the writing skill, and refuse to call `AskUserQuestion` against the file. The fix is to update the writing skill so it emits the rich body — patching the malformed file by hand defeats the purpose of the schema.
