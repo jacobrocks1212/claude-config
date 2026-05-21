@@ -291,9 +291,33 @@ After the decomposition, proceed with iterative brainstorming below.
 **Goal:** Draft a comprehensive research prompt for Gemini Deep Research to validate ideas, explore prior art, and surface pitfalls.
 
 1. Create the feature directory: `{spec-dir}/{feature-slug}/`
-2. Write the research prompt to `{spec-dir}/{feature-slug}/RESEARCH_PROMPT.md`.
+2. **Check for a project identity file.** Before composing the prompt, probe for `docs/product/PRODUCT_IDENTITY.md` relative to the project root (the working directory `/spec` was invoked from, NOT the claude-config repo). If it exists, read its contents — they will be prepended to the prompt as a `## Project context` section so Gemini knows what kind of project it's researching for. If the file does NOT exist, skip the prepend silently — no warning, no error. Not every project has an identity file, and the prompt is still valid without it.
+3. **Compose the prompt body** per the structure below. Aim to keep the final file (identity prepend + your prompt body) **under `GEMINI_PROMPT_CHAR_CAP = 24,000` characters**.
 
-**Research prompt structure:**
+   <!-- Cap source: Gemini Apps' web UI textarea has a practical per-message limit of ~30,000 characters per Google support docs and community reports
+        (https://support.google.com/gemini/answer/16275805, https://support.google.com/gemini/thread/312836444). The Gemini model context window is in the
+        millions of tokens, but Deep Research's prompt-input *field* uses the same bounded textarea. 24,000 leaves ~6,000 chars of headroom for paste-buffer
+        quirks, mobile browser variability, and prompts that get edited up at copy time. Revisit when Google publishes an authoritative number. -->
+
+   Budget realistically: identity prepends are typically 1,000–3,000 chars (a one-page product summary), leaving 21K+ for the prompt body. If you can't keep it under cap, write the file anyway and surface a warning in the Phase 2 summary (see step 6) — the operator can decide whether to truncate manually. Never silently truncate.
+
+4. **Write the file** to `{spec-dir}/{feature-slug}/RESEARCH_PROMPT.md` with the identity prepend (if any) followed by the prompt body:
+
+   ```markdown
+   ## Project context
+
+   <verbatim contents of docs/product/PRODUCT_IDENTITY.md — only if the file exists>
+
+   ---
+
+   # <Research Question heading>
+
+   <prompt body — sections below>
+   ```
+
+   If no identity file exists, skip the `## Project context` block AND the `---` separator entirely; start directly with the Research Question heading.
+
+**Research prompt structure (the body after the optional identity prepend):**
 - **Research Question** — Clear, specific main question
 - **Context** — Relevant project context (tech stack, current architecture, what exists today)
 - **Baseline Spec Summary** — Condensed version of Phase 1 decisions
@@ -306,8 +330,15 @@ After the decomposition, proceed with iterative brainstorming below.
 - **Specific Questions** — 5-10 targeted questions that would benefit from deep research
 - **Output Format Request** — Ask for structured findings with sections, examples, and actionable recommendations
 
-3. Tell the user: "Research prompt saved. Run deep research, then give me the file path to the results."
-4. **STOP and wait for the user to return with the research file path.**
+5. **Length check.** After writing, read the file back and measure its character count. Compare against `GEMINI_PROMPT_CHAR_CAP = 24,000`.
+
+6. **Phase 2 summary to chat.** Report:
+   - The file path written.
+   - Whether the identity prepend was applied (and the source path, if so) or skipped (with the conventional path that was probed).
+   - The actual character count and whether it's under / over the 24,000 cap. If over, state explicitly that the operator may need to trim before pasting into Gemini Deep Research, and suggest which sections (Context / Research Areas / Specific Questions) are most condensable.
+
+7. Tell the user: "Research prompt saved. Run deep research, then give me the file path to the results."
+8. **STOP and wait for the user to return with the research file path.**
 
 ---
 
