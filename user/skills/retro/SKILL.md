@@ -512,6 +512,73 @@ The retro plan file is colocated with the feature's other plans (`<feature-dir>/
 
 ---
 
+## Step 6c: Write `RETRO_DONE.md` sentinel (when no significant divergences)
+
+**HARD REQUIREMENT — applies in ALL modes (interactive, `--auto`, `--batch`).** If the **Significant** divergence table written in Step 6b's plan has NO data rows — i.e. this retro round's conclusion is "ready for the next step, no corrective work needed" — the skill MUST write a terminal `RETRO_DONE.md` sentinel before returning. Without it, the next `/lazy` / `/lazy-batch` cycle re-enters Step 9 retro and runs again on the same evidence, because `lazy-state.py`'s `find_retro_plans()` may still see this round's plan (or an earlier round's plan) as `status: Ready` and re-dispatch retro.
+
+The retro skill is the natural emitter of this sentinel because it owns the "no significant divergences" decision (via Subagent B's classification) and has the round-count / plan-list context from Step 6b's frontmatter computation. The orchestrator (`/lazy-batch` / `/lazy-batch-cloud`) only sees a dispatch summary, not the divergence classification — so it cannot reliably emit the sentinel.
+
+### When to write
+
+Write `RETRO_DONE.md` **iff** all of the following hold:
+1. Step 6b just wrote a retro plan whose `## Spec Divergences` → `### Significant` table has **zero** data rows (separator rows and the header row don't count).
+2. The retro entry-condition has already been satisfied — `{spec_path}/VALIDATED.md` exists OR `{spec_path}/DEFERRED_NON_CLOUD.md` exists (cloud path). The state machine's Step 9 entry gate guarantees one of these holds by the time retro runs.
+
+Skip this step (do NOT write the sentinel) iff the retro identified at least one Significant divergence. In that case, the corrective work still needs to ship under a `/add-phase` or follow-on retro plan; `RETRO_DONE.md` is written by a later retro round that verifies the fix and finds no remaining divergences.
+
+### Algorithm
+
+1. **Enumerate retro plans** in `{spec_path}/plans/` matching `retro-*.md` (including the one just written in Step 6b):
+   - `rounds` = total count of retro plans on disk (one-indexed — the round just written is the current round number).
+   - `retro_plans` = list of basenames (just `retro-N-slug.md`, not absolute paths), sorted by leading `retro-N-` number.
+
+2. **Determine `mcp_validation_status`:**
+   - If `{spec_path}/VALIDATED.md` exists → `complete`
+   - Else if `{spec_path}/DEFERRED_NON_CLOUD.md` exists → `deferred-to-workstation`
+   - Else (should not occur — Step 9 entry gate requires one or the other) → `complete` defensively, and surface a warning in the skill's final output.
+
+3. **Write `{spec_path}/RETRO_DONE.md`** per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+
+   ```yaml
+   ---
+   kind: retro-done
+   feature_id: <feature_id resolved in Step 1>
+   date: <today YYYY-MM-DD>
+   rounds: <N>
+   retro_plans: [<retro-1-...md>, <retro-2-...md>, ...]
+   mcp_validation_status: complete   # or deferred-to-workstation
+   ---
+
+   # Retro Done
+
+   Round <N> of `/retro` concluded with no significant spec divergences —
+   the feature is ready to advance past Step 9. This sentinel terminates the
+   retro phase so subsequent `/lazy` and `/lazy-batch` cycles skip Step 9
+   entirely (per `lazy-state.py`'s `RETRO_DONE.md`-first check).
+
+   ## Round summary
+
+   | Round | Plan | Outcome |
+   |-------|------|---------|
+   | 1 | retro-1-...md | <one-line> |
+   | ... | ... | ... |
+   | N | <plan just written> | no significant divergences |
+   ```
+
+4. **Commit the sentinel alongside the retro plan from Step 6b** — single logical action, single commit. Commit message convention: `chore({feature_id}): retro round {N} done — no significant divergences`. Follow the project's `.claude/skill-config/commit-policy.md` if present.
+
+### `--auto` / `--batch` mode
+
+This step is REQUIRED in `--auto` and `--batch` mode (autonomous invocations from `/lazy`, `/lazy-batch`, `/lazy-batch-cloud`). Without the sentinel, the autonomous orchestrator will loop on Step 9 — the failure mode this requirement exists to prevent. The `--auto` / `--batch` paths MUST NOT skip Step 6c on the grounds of "the human will write it manually" — the entire point of autonomous mode is that no human is in the loop.
+
+In interactive mode, this step is also required for the same downstream-state-machine reason. The skill should not branch behavior on flag.
+
+### What if a future retro round detects regressions?
+
+If a later session re-runs `/retro` on the same feature and finds new Significant divergences (e.g. a subsequent change introduced spec drift), the operator should delete `RETRO_DONE.md` before re-running retro, OR the retro skill will refuse to overwrite (treating the existing sentinel as a "this round closed cleanly" attestation that must be explicitly revoked). The cleanest invariant: `RETRO_DONE.md` is written by retro and deleted only by `/lazy`'s `__mark_complete__` step (per the sentinel lifecycle table in `sentinel-frontmatter.md`).
+
+---
+
 ## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
 
 !`cat ~/.claude/skills/_components/work-log.md`
