@@ -1,7 +1,7 @@
 ---
 name: lazy-batch
-description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), queue-blocked-on-research (passive — resume by re-invoking after uploading research), or max-cycles cap.
-argument-hint: <max-cycles, e.g. 10>
+description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap.
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -29,16 +29,25 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 ## Step 0: Parse Arguments
 
-`$ARGUMENTS` must contain a positive integer max-cycles (e.g. `5`, `10`). If empty, default to `10`. If non-numeric or `< 1`, refuse with:
+`$ARGUMENTS` is tokenized on whitespace. Recognized tokens:
 
-> `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N>`. Default: 10.
+- **Positive integer** → `max_cycles`. If absent, default to `10`. If a non-numeric / `< 1` integer is supplied, refuse with:
+
+  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip]`. Default: 10.
+
+- **`--allow-research-skip`** (optional flag) → sets `allow_research_skip = true`. Default `false`. When set, the orchestrator restores the legacy "batch the research backlog" behavior: `lazy-state.py` is called with `--skip-needs-research`, Step 4 drops a `NEEDS_RESEARCH.md` sentinel for each research-pending feature without halting, and the loop halts on `queue-blocked-on-research` once every remaining feature is research-pending. This flag is for sessions where you have manually verified the remaining queue is independent — i.e., starting work on a downstream feature is safe even though an upstream feature is awaiting research. **Use case is rare.** The DEFAULT (flag absent) is to halt strictly on the FIRST `needs-research` so an ordered queue with dependencies cannot leak work onto unsafe downstream features.
+
+Unknown tokens are an error:
+
+> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip]`.
 
 Initialize counters and per-session state:
 - `cycle = 0`
 - `max_cycles = <parsed>`
+- `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
 - `cycle_log = []` — each entry: `{cycle, feature, action, subagent_summary}`
-- `research_pending = set()` — feature_ids whose `RESEARCH.md` is missing and an `NEEDS_RESEARCH.md` sentinel was dropped this session. Drives `--skip-needs-research` and the Step 1f wait trigger.
-- `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle so subsequent `lazy-state.py` calls skip past research-pending features instead of re-halting.
+- `research_pending = set()` — feature_ids whose `RESEARCH.md` is missing and a `NEEDS_RESEARCH.md` sentinel was dropped this session. Only used when `allow_research_skip == true`. In the default (strict-halt) path this set never accumulates because Step 4 halts on the first feature; it stays empty.
+- `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. In the default path this stays `false` for the entire session because Step 4 halts before the loop continues.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
 
 Print the start bookend:
@@ -46,6 +55,7 @@ Print the start bookend:
 ```
 ## /lazy-batch — Starting
 **Max cycles:** {max_cycles}
+**Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
 **Repo root:** {cwd}
 ```
 
@@ -127,7 +137,7 @@ Repeat:
 python3 ~/.claude/scripts/lazy-state.py [--skip-needs-research]
 ```
 
-Pass `--skip-needs-research` whenever `skip_needs_research == true`. (The flag is added by Step 4 the first time a `needs-research` halt fires; once on, it stays on for the rest of the session so subsequent state queries advance past research-pending features instead of re-halting on the same one.)
+Pass `--skip-needs-research` **only when `allow_research_skip == true` AND `skip_needs_research == true`**. The double-gate matters: in the default (strict-halt) path, `skip_needs_research` never flips to `true` because Step 4 halts the loop on the first `needs-research`, so the script is always called without the flag and returns `terminal_reason: needs-research` for the first research-pending feature in queue order. Only the `--allow-research-skip` path arms the legacy batching behavior.
 
 If the script exits non-zero, surface the error, push a PushNotification, print the final batch report (see Step 2), and STOP.
 
@@ -139,8 +149,10 @@ If `terminal_reason` is set:
 
 - **`blocked`**: PushNotification with `notify_message`, print final batch report, STOP. Do NOT modify the sentinel; the human resolves it manually.
 - **`needs-input`**: see Step 1g (decision-halt mode). Do NOT print the final batch report yet — Step 1g must re-print the rich `## Decision Context`, run `AskUserQuestion`, and append `## Resolution` before halting.
-- **`needs-research`**: see Step 4 (research halt). After Step 4 writes `NEEDS_RESEARCH.md` and adds `feature_id` to `research_pending`, **DO NOT increment cycle**, flip `skip_needs_research = true`, and return to Step 1a — the next state-script call passes `--skip-needs-research` and either advances to a ready feature or returns `queue-blocked-on-research`.
-- **`queue-blocked-on-research`**: see Step 1f (research-wait mode). Only reachable while `skip_needs_research == true` and `research_pending` is non-empty.
+- **`needs-research`**: see Step 4 (research halt). Behavior depends on `allow_research_skip`:
+  - **Default (`allow_research_skip == false`)**: Step 4 writes `NEEDS_RESEARCH.md`, prints the inline-prompt halt announcement, PushNotifications, prints the final batch report, and STOPs. The orchestrator does NOT advance past the research-pending feature — this is critical for ordered queues where downstream features depend on upstream work.
+  - **Opt-in (`allow_research_skip == true`)**: legacy batching behavior — Step 4 writes `NEEDS_RESEARCH.md`, adds `feature_id` to `research_pending`, **DOES NOT increment cycle**, flips `skip_needs_research = true`, and returns to Step 1a so the next state-script call passes `--skip-needs-research` and either advances to a ready feature or returns `queue-blocked-on-research`.
+- **`queue-blocked-on-research`**: see Step 1f (research-wait mode). **Only reachable when `allow_research_skip == true`** — in the default path Step 4 halts before this terminal can fire.
 - **`needs-spec-input`** / **`queue-missing`**: PushNotification with `notify_message`, print final batch report, STOP. The orchestrator cannot start from nothing.
 - **`all-features-complete`**: PushNotification `"ALL FEATURES COMPLETE — roadmap finished after {cycle} /lazy-batch cycle(s)."`, print final batch report, STOP.
 - **`cloud-queue-exhausted`**: Unreachable for `/lazy-batch` (workstation variant); treat as `all-features-complete` defensively.
@@ -269,23 +281,51 @@ After the subagent returns:
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
-Triggered when `lazy-state.py --skip-needs-research` reports `queue-blocked-on-research` AND `research_pending` is non-empty (the orchestrator has already dropped at least one `NEEDS_RESEARCH.md` this session). The user's Gemini deep-research step is the blocker.
+**Reachable only when `allow_research_skip == true`.** Triggered when `lazy-state.py --skip-needs-research` reports `queue-blocked-on-research` AND `research_pending` is non-empty (the orchestrator has already dropped at least one `NEEDS_RESEARCH.md` this session). The user's Gemini deep-research step is the blocker. In the default (strict-halt) path this state is unreachable because Step 4 halts on the first `needs-research` before the loop ever reaches `queue-blocked-on-research`.
 
 **This is a passive halt, NOT an active wait.** The orchestrator MUST NOT use `Monitor`, `sleep`, polling loops, or any other mechanism to block on filesystem events (HARD CONSTRAINT 7). Research arrives on the user's timeline — they may be away from their device for hours or days. The orchestrator announces the halt, surfaces every supported upload path, fires a PushNotification, and stops. The user's next `/lazy-batch` invocation is the implicit resume signal; Step 0.5 (pre-loop ingest check) and `lazy-state.py`'s normal flow auto-detect uploads on re-entry — no special detection is needed at resume time.
 
 **Algorithm:**
 
-1. **Announce the halt with upload instructions.** Print:
+1. **Read every pending feature's RESEARCH_PROMPT.md.** For each `feature_id` in `research_pending`, locate the prompt file (the path is recorded in the just-written `NEEDS_RESEARCH.md` sentinel's `research_prompt_path` field, resolved relative to that feature's `spec_path`). Read its content; measure its character count.
+
+2. **Announce the halt with inline prompts.** The mobile-friendliness goal: every prompt the user needs to paste into Gemini is in chat, in a fenced code block, ready for long-press-copy. No GitHub UI navigation required. Print:
 
    ```
    ⏸  /lazy-batch paused — {N} feature(s) awaiting Gemini research.
 
    Pending: {comma-separated feature_ids from research_pending}
 
-   When you have the research, choose any of these upload paths:
+   ───────────────────────────────────────────────────────────────────────────
+   ```
+
+   Then, for EACH pending feature in order, print:
+
+   ```
+   ### {feature_id} — {feature_name}
+
+   Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
+
+   **Research prompt** (copy this entire block into Gemini Deep Research):
+
+   ```text
+   {full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present}
+   ```
+
+   [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
+
+   ───────────────────────────────────────────────────────────────────────────
+   ```
+
+   The `[length: ...]` line is a soft indicator. When over cap, append the addendum `(may need manual trimming before paste)` so the operator notices on mobile without scrolling back. Do NOT refuse to print — over-cap prompts are still printed in full; the warning is informational.
+
+   After all per-feature blocks, print the unified upload instructions:
+
+   ```
+   When you have research result(s), choose any of these upload paths:
 
      ① Staged (recommended for the gemini-sprint workflow):
-        Save the Gemini output as docs/gemini-sprint/results/<feature-id>.txt
+        Save each Gemini output as docs/gemini-sprint/results/<feature-id>.txt
         (one file per feature). On your next /lazy-batch run, Step 0.5 will
         auto-dispatch /ingest-research to correlate, distill, and integrate.
 
@@ -302,20 +342,18 @@ Triggered when `lazy-state.py --skip-needs-research` reports `queue-blocked-on-r
         writes RESEARCH.md + RESEARCH_SUMMARY.md. Then re-run /lazy-batch
         to resume the pipeline.
 
-   Re-invoke with /lazy-batch {max_cycles} when ready.
+   Re-invoke with /lazy-batch {max_cycles} [--allow-research-skip] when ready.
    ```
 
-   The instructions are intentionally verbose — this is the user's main contact point with the pipeline's pause state, and they may be reading it from a phone notification long after the cycle ran. Include every path so they can pick whichever matches their current device / workflow.
-
-2. **PushNotification:**
+3. **PushNotification:**
 
    ```
    PushNotification({ message: "lazy-batch paused — {N} feature(s) awaiting Gemini research. Upload research and re-invoke /lazy-batch." })
    ```
 
-3. **Append to `cycle_log`:** `{cycle+1, "—", "⏸ research-wait (halt)", "{N} feature(s) pending: {feature_ids}"}`. DO NOT increment `cycle` — the halt is not a real cycle.
+4. **Append to `cycle_log`:** `{cycle+1, "—", "⏸ research-wait (halt)", "{N} feature(s) pending: {feature_ids}"}`. DO NOT increment `cycle` — the halt is not a real cycle.
 
-4. **Print the final batch report (Step 2)** with `terminal_reason = "queue-blocked-on-research"` and STOP. The orchestrator's turn ends; the user's next invocation re-enters via Step 0 → Step 0.5 → Step 1.
+5. **Print the final batch report (Step 2)** with `terminal_reason = "queue-blocked-on-research"` and STOP. The orchestrator's turn ends; the user's next invocation re-enters via Step 0 → Step 0.5 → Step 1.
 
 **Resume contract.** When the user re-invokes `/lazy-batch`, the natural flow handles every supported upload path:
 
@@ -445,8 +483,8 @@ When the loop exits (terminal state or max-cycles), print:
 **Next step:**
   - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
   - If terminal_reason is "needs-input": apply the `## Resolution` in {spec_path}/NEEDS_INPUT.md to SPEC.md / PHASES.md, delete the sentinel (or neutralize its frontmatter to keep the audit trail), then re-run `/lazy-batch {max_cycles}`
-  - If terminal_reason is "queue-blocked-on-research": upload the research via any of the three paths shown in Step 1f's announcement (staged .txt in docs/gemini-sprint/results/, direct RESEARCH.md drop into the feature dir, or /ingest-research <path> for a one-off file path). Then re-run `/lazy-batch {max_cycles}`.
-  - If terminal_reason is "needs-research": should not appear here — Step 4 drops the sentinel and continues the loop. Defensive fallback: upload research per the queue-blocked-on-research guidance above.
+  - If terminal_reason is "needs-research" (DEFAULT path, strict halt): run Gemini Deep Research against the prompt printed inline in Step 4's halt announcement, then upload the result via any of the three paths shown there (staged .txt in docs/gemini-sprint/results/, direct RESEARCH.md drop into the feature dir, or /ingest-research <path> for a one-off file). Then re-run `/lazy-batch {max_cycles}`.
+  - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): upload the research for one or more pending features via any of the three paths shown in Step 1f's announcement. Then re-run `/lazy-batch {max_cycles} [--allow-research-skip]`.
   - If max-cycles: re-run `/lazy-batch {max_cycles}` from a fresh session
 ```
 
@@ -467,13 +505,17 @@ For each cycle, also produce a brief bookend pair (in addition to the one-line s
 
 ---
 
-## Step 4: Research Sentinel Drop (terminal_reason == "needs-research")
+## Step 4: Research Halt (terminal_reason == "needs-research")
 
-The state script returns `needs-research` when `RESEARCH.md` is missing but `RESEARCH_PROMPT.md` exists. **Unlike the prior version of this skill, Step 4 does NOT halt** — it drops a sentinel, records the feature, flips `skip_needs_research = true`, and returns to Step 1a so the loop advances past this feature. The actual wait happens in Step 1f when `queue-blocked-on-research` fires.
+The state script returns `needs-research` when `RESEARCH.md` is missing but `RESEARCH_PROMPT.md` exists. This step has **two paths**, gated by the `allow_research_skip` flag parsed in Step 0.
 
-**Algorithm:**
+The default path (strict halt) is the safer choice for ordered queues with cross-feature dependencies: the FIRST research-pending feature in queue order halts the loop, so downstream features that may depend on the in-flight one never start work prematurely. The opt-in path (`--allow-research-skip`) restores the legacy "batch all pending research, halt once" behavior — only safe when the operator has verified the remaining queue is independent.
 
-1. Check whether `{spec_path}/NEEDS_RESEARCH.md` already exists (a prior cycle may have already dropped it — this can happen when the orchestrator session restarts).
+### Step 4 — shared sentinel write (both paths)
+
+Both paths write the same `NEEDS_RESEARCH.md` sentinel:
+
+1. Check whether `{spec_path}/NEEDS_RESEARCH.md` already exists (a prior cycle / session may have dropped it). If it exists, skip the write — sentinel writes are idempotent.
 2. If it does NOT exist, write it per `~/.claude/skills/_components/sentinel-frontmatter.md`:
 
    ```markdown
@@ -487,8 +529,8 @@ The state script returns `needs-research` when `RESEARCH.md` is missing but `RES
 
    # /lazy-batch — Needs Research
 
-   Run Gemini deep research against the prompt below, then provide the result
-   via any of these upload paths:
+   Run Gemini deep research against the prompt at `{research_prompt_path}`,
+   then provide the result via any of these upload paths:
 
    ① Staged .txt (gemini-sprint workflow): save the output as
      `docs/gemini-sprint/results/{feature_id}.txt`. /lazy-batch's Step 0.5
@@ -509,13 +551,65 @@ The state script returns `needs-research` when `RESEARCH.md` is missing but `RES
    **Prompt file:** `{research_prompt_path}`
    ```
 
-3. Add `feature_id` to `research_pending`. Set `skip_needs_research = true`.
-4. Append to `cycle_log`: `{cycle+1, feature_name, "needs-research (sentinel drop)", "NEEDS_RESEARCH.md written; flagging for Step 1f research-wait"}`. **DO NOT increment `cycle`** — this is a no-op state transition, not a real cycle. Sentinel writes here don't count against `max_cycles` either; cost discipline is preserved because the actual work of generating the prompt and running Gemini happens elsewhere.
-5. Return to Step 1a. The next `lazy-state.py --skip-needs-research` call will either advance to the next feature in the queue (if any are ready) or return `queue-blocked-on-research` — at which point Step 1f's research-wait fires.
+After the sentinel write, branch on `allow_research_skip`.
 
-**Special pre-step:** if the state script returns `sub_skill: "spec"` with args that include "skip to Phase 2", the orchestrator dispatches it normally (this generates the RESEARCH_PROMPT.md). On the next cycle, the state script returns `needs-research` and this Step 4 fires. That's the intended two-cycle handoff for a feature with no research at all.
+### Step 4 — DEFAULT path (`allow_research_skip == false`): immediate halt
 
-**Multi-feature accumulation:** Steps 1a → 4 → 1a (skip) → 4 (next feature) ... can fire repeatedly during the first pass through the queue, each time appending another feature_id to `research_pending` and dropping another `NEEDS_RESEARCH.md`. The pass terminates when the state script returns `queue-blocked-on-research` (every remaining feature is research-pending) OR when a ready feature is found (the loop dispatches it normally). Either way, the orchestrator never halts on `needs-research` itself — it batches the research backlog and waits once in Step 1f.
+This is the new default. The orchestrator halts on the FIRST `needs-research` it encounters — no `--skip-needs-research`, no accumulation, no advancing past the feature.
+
+1. **Read the prompt content.** Open `{spec_path}/RESEARCH_PROMPT.md` and measure its character count. (If the file is somehow missing — the state script should never emit `needs-research` without it — print a defensive warning and fall through to the announcement with `<RESEARCH_PROMPT.md not found at expected path>` as the body.)
+
+2. **Print the halt announcement to chat.** Same shape as Step 1f's per-feature block but for a single feature:
+
+   ```
+   ⏸  /lazy-batch paused — {feature_name} needs Gemini research.
+
+   Feature: {feature_id}
+   Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
+
+   **Research prompt** (copy this entire block into Gemini Deep Research):
+
+   ```text
+   {full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present}
+   ```
+
+   [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
+
+   When you have the result, choose one upload path:
+     ① Save as docs/gemini-sprint/results/{feature_id}.txt. The next
+        /lazy-batch run auto-ingests via Step 0.5.
+     ② Drop directly as {spec_path}/RESEARCH.md (skips ingestion;
+        lazy-state.py routes to /spec Phase 3 on next run).
+     ③ /ingest-research <path> for a one-off file outside the repo
+        (e.g. ~/Downloads/<file>.txt, phone-synced folder). Then re-run
+        /lazy-batch.
+
+   Re-invoke with /lazy-batch {max_cycles} when ready.
+   ```
+
+   `{within | over}` is chosen by comparing the measured char count to 24,000 (Gemini's practical web-UI character cap; see `~/.claude/skills/spec/SKILL.md` Phase 2 for source notes). When over, append `(may need manual trimming before paste)` to that line — informational only, do NOT refuse to print.
+
+3. **PushNotification:**
+
+   ```
+   PushNotification({ message: "lazy-batch paused — {feature_name} awaiting Gemini research. Upload research and re-invoke /lazy-batch." })
+   ```
+
+4. **Append to `cycle_log`:** `{cycle+1, feature_name, "⏸ needs-research (strict halt)", "NEEDS_RESEARCH.md written; prompt printed inline ({NNNN} chars)"}`. DO NOT increment `cycle` — the halt is not a real cycle.
+
+5. **Print the final batch report (Step 2)** with `terminal_reason = "needs-research"` and STOP. Do NOT call the state script again. Do NOT touch `skip_needs_research` — it stays `false`. Do NOT add the feature to `research_pending` — it stays empty. The user's next `/lazy-batch` invocation re-enters via Step 0 → Step 0.5 → Step 1 and either ingests the uploaded research or hits this same halt again.
+
+### Step 4 — OPT-IN path (`allow_research_skip == true`): legacy batch
+
+This restores the pre-default-flip behavior. The orchestrator drops a sentinel, records the feature, flips `skip_needs_research = true`, and returns to Step 1a so the loop advances past this feature. The actual wait happens in Step 1f when `queue-blocked-on-research` fires.
+
+1. Add `feature_id` to `research_pending`. Set `skip_needs_research = true`.
+2. Append to `cycle_log`: `{cycle+1, feature_name, "needs-research (sentinel drop, --allow-research-skip)", "NEEDS_RESEARCH.md written; flagging for Step 1f research-wait"}`. **DO NOT increment `cycle`** — this is a no-op state transition, not a real cycle. Sentinel writes here don't count against `max_cycles` either; cost discipline is preserved because the actual work of generating the prompt and running Gemini happens elsewhere.
+3. Return to Step 1a. The next `lazy-state.py --skip-needs-research` call will either advance to the next feature in the queue (if any are ready) or return `queue-blocked-on-research` — at which point Step 1f's research-wait fires.
+
+**Special pre-step (both paths):** if the state script returns `sub_skill: "spec"` with args that include "skip to Phase 2", the orchestrator dispatches it normally (this generates the RESEARCH_PROMPT.md). On the next cycle, the state script returns `needs-research` and this Step 4 fires. That's the intended two-cycle handoff for a feature with no research at all.
+
+**Multi-feature accumulation (opt-in path only):** under `--allow-research-skip`, Steps 1a → 4 → 1a (skip) → 4 (next feature) ... can fire repeatedly during the first pass through the queue, each time appending another `feature_id` to `research_pending` and dropping another `NEEDS_RESEARCH.md`. The pass terminates when the state script returns `queue-blocked-on-research` (every remaining feature is research-pending) OR when a ready feature is found (the loop dispatches it normally). Under the default path this cannot happen because Step 4 halts on the first `needs-research`.
 
 ---
 
@@ -523,4 +617,4 @@ The state script returns `needs-research` when `RESEARCH.md` is missing but `RES
 
 - This skill never invokes the work-log MCP tool. Each sub-skill invoked by the cycle subagents logs its own work.
 - The orchestrator is single-session by design — there is no persistence layer. State lives in the filesystem sentinels; restart is free.
-- Commit policy is delegated to the cycle subagent (which follows the project's `.claude/skill-config/commit-policy.md` or standard pattern). The orchestrator does not commit anything itself except the NEEDS_RESEARCH.md sentinel, which is committed by the next sub-skill cycle's subagent (since the loop has already exited by the time it's written).
+- Commit policy is delegated to the cycle subagent (which follows the project's `.claude/skill-config/commit-policy.md` or standard pattern). The orchestrator does not commit anything itself except the NEEDS_RESEARCH.md sentinel, which is committed by the next sub-skill cycle's subagent (since the loop has already exited by the time it's written) — under the default strict-halt path, the user's next `/lazy-batch` run is what commits it (the first subagent dispatched against the now-research-ready feature picks up the unstaged sentinel and stages it alongside its own work, or the sentinel becomes stale and is overwritten when ingestion happens).
