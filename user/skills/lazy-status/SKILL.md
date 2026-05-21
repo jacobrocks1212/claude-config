@@ -1,90 +1,120 @@
 ---
 name: lazy-status
-description: Read-only progress dashboard — shows current feature state, queue progress, and next /lazy action
+description: Read-only progress dashboard — runs lazy-state.py and formats its output. Shows current feature, queue progress, next /lazy action, blockers, and MCP test status.
+argument-hint: [optional: "--cloud" to use the /lazy-cloud state machine]
 model: haiku
+plan-mode: never
+allowed-tools: ["Bash", "Read"]
 ---
 
 # Lazy Status
 
-Read-only dashboard for mobile development workflow. Reports current feature progress without executing anything.
+Read-only dashboard for the autonomous feature pipeline. Runs `~/.claude/scripts/lazy-state.py`, parses its JSON output, and formats a compact status report. **This skill is pure presentation — all state inference lives in the script.**
+
+State-machine logic lives exclusively in `lazy-state.py`. If the dashboard is wrong, fix the script — do not duplicate the state machine here.
 
 ---
 
-## Step 1: Load Queue
+## Step 0: Parse Arguments
 
-Read `docs/features/queue.json` from the project root. Extract the `queue` array.
+If `$ARGUMENTS` contains `--cloud`, pass `--cloud` to the state script. Otherwise run without it.
 
-If the file doesn't exist, report: "queue.json not found — run /lazy setup first" and STOP.
-
----
-
-## Step 2: Determine Completed Features
-
-Read `docs/features/ROADMAP.md`. A feature is complete if its ROADMAP row contains `~~` (strikethrough) AND the word `COMPLETE`.
-
-Count how many queue items are complete by matching each `queue[].name` against ROADMAP strikethrough rows.
+The cloud variant changes nothing about this skill's behavior beyond which sub-skill the script picks for Step 8 (workstation: `mcp-test`; cloud: `__write_deferred_non_cloud__`) and how it handles cloud-saturated features at Step 2.
 
 ---
 
-## Step 3: Find Current Feature
+## Step 1: Run lazy-state.py
 
-Iterate the queue array in order. The first feature whose name does NOT match a completed ROADMAP row is the current feature.
+```bash
+python3 ~/.claude/scripts/lazy-state.py [--cloud]
+```
 
-If all features are complete, report: "ALL FEATURES COMPLETE — nothing left in queue" and STOP.
+Capture stdout (one JSON object). If the script exits non-zero, print its error verbatim and STOP — do not try to format malformed state.
 
----
-
-## Step 4: Detect Current State
-
-For the current feature, resolve `spec_path = docs/features/{spec_dir}` (spec_dir from queue.json).
-
-Check filesystem state in this order (first match wins):
-
-| Check | State | Next /lazy Action |
-|-------|-------|-------------------|
-| `{spec_path}/BLOCKED.md` exists | blocked | present blocker + await input |
-| `{spec_path}/SPEC.md` missing | needs spec | /spec |
-| SPEC.md exists but no `RESEARCH_SUMMARY.md` | needs research | /spec (research) |
-| `{spec_path}/PHASES.md` missing | needs phases | /spec-phases |
-| PHASES.md has `- [ ]` unchecked items AND no plan in `plans/` or root `PLAN.md` | needs plan | /write-plan |
-| PHASES.md has `- [ ]` unchecked items AND plan exists (in `plans/` or root `PLAN.md`) | implementing | /execute-plan |
-| All deliverables checked AND no `VALIDATED.md` | needs validation | /mcp-test |
-| `VALIDATED.md` exists AND no retro plan in `plans/retro-*` | needs retro | /retro --auto |
-| `VALIDATED.md` exists AND retro plan exists AND no `RETRO_DONE.md` | retro executing | /execute-plan (retro) |
-| `VALIDATED.md` exists AND `RETRO_DONE.md` exists | ready to mark complete | mark complete |
-
-To count phases and determine current phase number:
-- Count `### Phase` headings in PHASES.md → total phases
-- For each phase section, check if ALL its `- [x]` deliverables are checked → phase is complete
-- Current phase = first phase with any `- [ ]` unchecked deliverable
+Parse the JSON:
+- `feature_id`, `feature_name`, `spec_path` — current-feature context (null when there is no current feature)
+- `current_step` — the state script's human-readable position
+- `sub_skill`, `sub_skill_args` — what /lazy would dispatch next
+- `terminal_reason`, `notify_message` — set when the pipeline halts
 
 ---
 
-## Step 5: Gather Additional Context
+## Step 2: Gather Light Additional Context
 
-Run these in parallel:
-1. `git log --oneline -1` → last commit
-2. Check if `{spec_path}/mcp-tests/` directory exists and count symlinks in it
-3. If BLOCKED.md exists, read first 5 lines for blocker summary
+These are presentation-only enrichments — they do NOT influence state. Run in parallel:
+
+1. `git log --oneline -1` → last commit (hash + message).
+2. If `feature_name` is set: count `### Phase` headings in `{spec_path}/PHASES.md` (if it exists) and count how many phases have ALL deliverables checked (`- [x]`) → produces "Phase {current}/{total}".
+3. If `feature_name` is set: list `{spec_path}/mcp-tests/` entries if the directory exists.
+4. If `feature_name` is set AND `{spec_path}/BLOCKED.md` exists: parse its YAML frontmatter per `~/.claude/skills/_components/sentinel-frontmatter.md` and grab the `phase` and `recovery_suggestion` fields.
+5. From `docs/features/queue.json`: total queue length and how many features have a strikethrough+COMPLETE row in `docs/features/ROADMAP.md`.
+
+If any of these reads fail (file missing, parse error), continue with the field set to `"—"`. Do not error out — this skill is a dashboard.
 
 ---
 
-## Step 6: Format and Output
+## Step 3: Map sub_skill to a Human-Readable Next Action
 
-Output this exact format (fill in values):
+The state script emits both real sub-skill names and pseudo-skills (prefixed `__`). Translate:
+
+| `sub_skill` from script | "Next /lazy action" |
+|-------------------------|---------------------|
+| `null` + `terminal_reason` set | halt — see Terminal column below |
+| `spec` | /spec — generate/finalize spec or research prompt |
+| `spec-phases` | /spec-phases — decompose into phases |
+| `write-plan` | /write-plan — write the implementation plan |
+| `execute-plan` | /execute-plan — run the next plan |
+| `mcp-test` | /mcp-test — validate via MCP |
+| `retro` | /retro --auto — run retrospective |
+| `realign-spec` | /realign-spec --apply — reality-check upstream + act on verdict |
+| `__write_deferred_non_cloud__` | DEFER MCP test (cloud) → fall through to retro on next cycle |
+| `__write_validated_from_skip__` | promote SKIP_MCP_TEST.md → VALIDATED.md |
+| `__write_validated_from_results__` | promote MCP_TEST_RESULTS.md → VALIDATED.md |
+| `__mark_complete__` | mark feature complete on ROADMAP + cleanup sentinels |
+
+Terminal-reason mapping:
+
+| `terminal_reason` | Status line |
+|---|---|
+| `blocked` | "BLOCKED — see {spec_path}/BLOCKED.md" |
+| `needs-research` | "Awaiting Gemini research (RESEARCH_PROMPT.md exists, RESEARCH.md absent)" |
+| `needs-input` | "Awaiting human decision — see {spec_path}/NEEDS_INPUT.md" |
+| `needs-spec-input` | "No SPEC/research yet — run /spec interactively" |
+| `all-features-complete` | "ALL FEATURES COMPLETE — nothing left in queue" |
+| `cloud-queue-exhausted` | "Cloud queue exhausted — run /lazy on workstation for MCP testing" |
+| `queue-missing` | "queue.json not found" |
+
+---
+
+## Step 4: Format and Output
+
+Output this exact format (fill in values, replacing missing fields with `—`):
 
 ```
-## AlgoBooth Progress
+## Pipeline Status{ (cloud)}
 
-**Current:** {feature name} (Phase {current}/{total} — {state})
-**Tier:** {tier} — {tier name}
+**Current:** {feature_name | "—"} (Phase {current}/{total} — {state})
+**State step:** {current_step | "—"}
 **Queue:** {completed}/{total queue length} features complete ({remaining} remaining)
 **Last commit:** {short hash} "{commit message}"
-**Blockers:** {None | first line of BLOCKED.md details}
-**MCP Tests:** {count} scenarios linked | Not yet created | Skipped (see SKIP_MCP_TEST.md)
-**Next /lazy action:** {the action from the table above}
+**Blockers:** {None | "<BLOCKED phase>: <recovery_suggestion>"}
+**MCP Tests:** {count} scenarios linked | Not yet created | Skipped (see SKIP_MCP_TEST.md) | Deferred (cloud)
+**Next /lazy action:** {mapped action from Step 3}
 ```
 
-Tier names: 1=High-Compound-Value, 2=Synthesis & Expression, 3=Track Ecosystem, 4=DJ Performance, 5=Long Tail, non-audio=Non-Audio
+Notes:
 
-Do NOT execute any skills or modify any files. Report only.
+- If `feature_name` is null (terminal queue state), drop the **Current**, **Blockers**, and **MCP Tests** lines and surface just **State step**, **Queue**, **Last commit**, and **Next /lazy action** — the latter will be the terminal status line.
+- When `terminal_reason` is `blocked`, the **Blockers** line takes the BLOCKED.md `phase` + `recovery_suggestion` from Step 2.4.
+- The "Phase {current}/{total}" annotation is best-effort; if PHASES.md doesn't exist yet, write `"—/— ({state})"`.
+- The "Skipped (cloud)" / "Deferred (cloud)" labels for MCP Tests apply when `$ARGUMENTS` contains `--cloud` AND the spec dir has SKIP_MCP_TEST.md / DEFERRED_NON_CLOUD.md respectively.
+
+**Do NOT execute any skills or modify any files. Report only.**
+
+---
+
+## Notes
+
+- This skill replaces the old prose-based state inference with a single `lazy-state.py` invocation. Do not re-introduce sentinel-parsing logic here; that lives in the script.
+- For human-only "what's next?" checks, prefer this over `/lazy` itself — /lazy will dispatch a sub-skill, /lazy-status just reports.
+- The script is project-agnostic; this skill works in any repo with `docs/features/queue.json`.

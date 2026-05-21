@@ -1,31 +1,35 @@
 ---
 name: realign-spec
-description: Read-only reality check on completed upstream features. Diffs the current SPEC+PHASES against upstream PHASES.md (and optionally upstream plans) and writes a plans/realign-<date>.md with drift assessment and a recommended next step. Does NOT mutate SPEC, PHASES, or any upstream artifact.
-argument-hint: <path/to/SPEC.md>
+description: Read-only reality check on completed upstream features. Diffs the current SPEC+PHASES against upstream PHASES.md (and optionally upstream plans) and writes a plans/realign-<date>.md with drift assessment and a recommended next step. With --apply, also acts on the recommendation (inline-edit / add-phase / write BLOCKED.md).
+argument-hint: <path/to/SPEC.md> [--apply]
 plan-mode: never
-allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write"]
+allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Skill"]
 ---
 
 # Realign Spec — Upstream Reality Check
 
-Compares a feature's current SPEC.md + PHASES.md against the **actual** decisions captured in each completed upstream's PHASES.md (and, when needed, its `plans/*.md`). Surfaces drift, classifies severity, and recommends a single next step. The caller — usually `/lazy` Step 4.6, or a human running this directly — acts on the recommendation.
+Compares a feature's current SPEC.md + PHASES.md against the **actual** decisions captured in each completed upstream's PHASES.md (and, when needed, its `plans/*.md`). Surfaces drift, classifies severity, and recommends a single next step. Without `--apply`, writes the realign plan and stops — the caller acts on the recommendation. With `--apply`, additionally executes the recommendation in the same invocation.
 
-**HARD CONSTRAINT — READ-ONLY ON UPSTREAM:** This skill MUST NOT call `Edit` or `Write` against any file under any upstream's directory. The ONLY file this skill writes is `<feature-dir>/plans/realign-<date>.md` belonging to the downstream feature passed in.
+**HARD CONSTRAINT — READ-ONLY ON UPSTREAM:** This skill MUST NOT call `Edit` or `Write` against any file under any upstream's directory. The ONLY file this skill writes outside the downstream feature dir is — there is none. All writes happen under the downstream `<feature-dir>`.
 
-**HARD CONSTRAINT — NO MUTATION OF CURRENT SPEC OR PHASES:** This skill MUST NOT edit the current SPEC.md or PHASES.md either. Recommendations only — the caller acts.
+**HARD CONSTRAINT — DOWNSTREAM WRITES ARE NARROWLY SCOPED:**
+- Without `--apply`: only `<feature-dir>/plans/realign-<date>.md` is written.
+- With `--apply`: the realign plan is written first, then exactly one follow-on action runs (apply Minor patches, invoke /add-phase, or write BLOCKED.md) per the Recommended verdict. Nothing else is touched.
 
 ---
 
 ## Step 0: Parse Arguments and Resolve Paths
 
-`$ARGUMENTS` is the path to the downstream feature's `SPEC.md`.
+`$ARGUMENTS` is the path to the downstream feature's `SPEC.md`, optionally followed by `--apply`.
 
-1. Confirm the SPEC.md exists. If not, print a one-line error and STOP.
-2. Resolve:
+1. Detect the `--apply` flag: if it appears anywhere in `$ARGUMENTS`, set `apply_mode = true` and strip it from arguments before resolving the path. Otherwise `apply_mode = false`.
+2. Confirm the SPEC.md exists. If not, print a one-line error and STOP.
+3. Resolve:
    - `<feature-dir>` = parent directory of SPEC.md
+   - `<feature-id>` = basename of `<feature-dir>`
    - `<phases-md>` = `<feature-dir>/PHASES.md` (may not exist yet — that's OK; treat missing as "no phases authored")
    - `<plans-dir>` = `<feature-dir>/plans/`
-3. Announce: `"/realign-spec — checking <feature-id> against its completed upstream dependencies"`
+4. Announce: `"/realign-spec — checking <feature-id> against its completed upstream dependencies"` (note `apply_mode` if true).
 
 ---
 
@@ -166,7 +170,89 @@ Determine the recommendation by the highest-severity bucket that has findings:
 
 ---
 
-## Step 5: Report
+## Step 5: Act on the Recommendation (only if `--apply`)
+
+If `apply_mode == false`: skip this step entirely. Go to Step 6.
+
+If `apply_mode == true`: execute exactly one follow-on action below, matching the verdict written in Step 4. After acting, fall through to Step 6 (Report) so the caller sees both what was decided and what was done.
+
+### 5a. `inline-edit` — apply Minor patches
+
+For each row in the Minor table:
+1. Resolve the target file: rows in the table name a location like `SPEC.md § Technical Design` or `PHASES.md § Phase 2`. Map to `<feature-dir>/SPEC.md` or `<feature-dir>/PHASES.md` accordingly. Never touch upstream files.
+2. Apply the row's `Suggested patch` via the `Edit` tool. If the suggested patch is a section rewrite, use `Edit` with enough surrounding context to be unique. If the patch is a one-line replacement, the `old_string` may be just the affected line.
+3. If a row cannot be applied mechanically (target text not found, ambiguous match), skip it and note the row in the action report. Do NOT improvise — leave it for a human.
+
+After all rows are processed, commit via the project's commit policy:
+- First try `.claude/skill-config/commit-policy.md`; if absent, follow the standard pattern.
+- Commit message: `docs(<feature-id>): realign with upstream — minor corrections per plans/realign-<date>.md`
+
+Track for the action report: number of rows applied vs. skipped, the commit hash.
+
+### 5b. `add-phase` — invoke /add-phase with corrective scope
+
+Read the Moderate table from the realign plan to construct the corrective phase title and one-line scope. Then invoke:
+
+```
+Skill({ skill: "add-phase", args: "<phases-md> Corrective — Realign with upstream <upstream-id>: <one-line scope from realign plan> --batch" })
+```
+
+(`--batch` keeps the orchestrator-driven path free of interactive prompts; humans running `/realign-spec --apply` directly will get the same behavior, which is fine — the realign plan already authoritatively describes the desired phase.)
+
+If `<phases-md>` does not exist, that's a precondition error: `add-phase` requires an existing PHASES.md. In that case, skip the dispatch and instead record in the action report that the corrective phase needs to be added manually after `/spec-phases` produces PHASES.md.
+
+Track for the action report: whether /add-phase was dispatched, whether it wrote `<feature-dir>/NEEDS_INPUT.md` (orchestrator-relevant halt), the proposed phase title.
+
+Any Minor patches alongside the Moderate findings are deferred to the next realign cycle — the freshness gate in `/lazy` Step 4.6a will pick them up.
+
+### 5c. `respec` — write BLOCKED.md
+
+The downstream's design no longer holds. Do NOT silently rewrite it.
+
+Write `<feature-dir>/BLOCKED.md` per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+
+```markdown
+---
+kind: blocked
+feature_id: <feature-id>
+phase: Upstream Realignment
+blocked_at: <ISO 8601 now>
+retry_count: 0
+blocker_kind: upstream-realign
+recovery_suggestion: Review plans/realign-<date>.md and run /spec or revise SPEC sections.
+---
+
+# BLOCKED
+
+**Feature:** <feature-id>
+**Phase:** Upstream Realignment
+**Blocked at:** <ISO 8601 now>
+**Retry count:** 0
+
+## Details
+Severe drift detected against completed upstream(s): <comma-separated upstream-ids with severe findings>.
+Foundational design assumptions no longer hold; phase rework is not sufficient.
+
+## What was tried
+/realign-spec --apply produced plans/realign-<date>.md classifying drift as severe.
+
+## Recovery Suggestion
+Review plans/realign-<date>.md, then either:
+- Run /spec on this feature to redesign against the actual upstream contract, or
+- Manually revise SPEC.md sections called out in the Severe table and re-run /lazy.
+```
+
+Do NOT delete or modify the existing SPEC.md or PHASES.md. The blocker forces a human decision before any rewrite.
+
+Track for the action report: that BLOCKED.md was written, the severe upstream-ids that motivated it.
+
+### Safety net
+
+Step 5 is the only place this skill writes outside `<feature-dir>/plans/`. Even with `--apply`, the writes are narrowly scoped to one of three small actions above. If you find yourself wanting to do something else (e.g. edit upstream files, rewrite a PHASES.md section that's not on the Minor list, dispatch a different skill), STOP — that means the recommendation was wrong, and the right answer is to surface it to the caller without action.
+
+---
+
+## Step 6: Report
 
 Print to chat:
 
@@ -178,15 +264,30 @@ Print to chat:
 **Findings:** <N minor / M moderate / K severe>
 **Recommendation:** <one of inline-edit | add-phase | respec>
 **Plan file:** <absolute path to plans/realign-<date>.md>
+**Applied:** <"no — caller acts on recommendation" if apply_mode == false; otherwise a one-line summary of Step 5's action>
 ```
 
-STOP. Do not invoke any other skill. The caller (likely `/lazy` Step 4.6) reads the plan file and decides what to do next.
+If `apply_mode == true`, also append a structured action report below the bookend:
+
+```
+### Action taken
+- **Verdict:** <inline-edit | add-phase | respec>
+- **Outcome:** <one of:
+    "Applied N of M minor patches; commit <hash>",
+    "Dispatched /add-phase with scope '<phase title>' (subagent path: <subagent reported summary>)",
+    "Wrote <feature-dir>/BLOCKED.md (kind=blocked, blocker_kind=upstream-realign)"
+  >
+- **Skipped rows / unresolved items:** <list, or "none">
+- **Next /lazy invocation will:** <see freshness gate; usually skip past Step 4.6 because the realign plan is now newer than upstream PHASES>
+```
+
+STOP. With `--apply`, the follow-on has already been performed and no other skill needs to act. Without `--apply`, the caller (e.g. `/lazy` Step 4.6) reads the plan file and acts.
 
 ---
 
 ## Notes
 
-- This skill is reusable: humans can invoke it directly via `/realign-spec <path/to/SPEC.md>` between phases when they suspect drift, and it works the same way.
+- This skill is reusable: humans can invoke it directly via `/realign-spec <path/to/SPEC.md>` (read-only) or `/realign-spec <path/to/SPEC.md> --apply` (read + act) between phases when they suspect drift, and it works the same way.
 - If a hard upstream has no PHASES.md (older feature, never decomposed), check `<upstream-dir>/SPEC.md`'s `Status:` line and any Implementation Notes there. Treat the absence of PHASES.md as a quality issue worth surfacing in the report's Inputs section, but do not abort.
-- The skill does not invoke quality gates, run tests, or build the project. It is pure documentation analysis.
-- This skill does NOT call `interview_work_log_append` — it produces a planning artifact, not engineering work. The caller that acts on the recommendation logs the resulting work instead.
+- The skill does not invoke quality gates, run tests, or build the project. It is pure documentation analysis (plus, in `--apply` mode, narrow doc edits or sentinel writes).
+- This skill does NOT call `interview_work_log_append` — it produces a planning artifact, not engineering work. The caller that acts on the recommendation (or, in `--apply` mode, the dispatched `/add-phase` subagent) logs the resulting work instead.

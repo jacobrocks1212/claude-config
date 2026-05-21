@@ -10,6 +10,38 @@ Add a new phase to an existing PHASES.md file. Reads all prior phases — includ
 
 ---
 
+## Batch Mode (`--batch` flag)
+
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch` Step 4.6 acting on a `/realign-spec` recommendation).
+
+- Strip `--batch` from `$ARGUMENTS` before processing.
+- Steps 1–5 (resolve inputs, read context, analyze, draft, mark superseded) run unchanged.
+- **Step 6 (Present for Approval) is skipped.** The orchestrator passes the desired phase title and scope in the description argument; `--batch` mode trusts the orchestrator's framing and proceeds to Step 7.
+- **Halt protocol — `NEEDS_INPUT.md`:** if Step 1b cannot resolve the phase description (no description supplied AND no usable context AND the supplied description is genuinely ambiguous about scope), do NOT invent a phase. Instead write `{phases-md-dir}/NEEDS_INPUT.md` per `~/.claude/skills/_components/sentinel-frontmatter.md`:
+
+  ```markdown
+  ---
+  kind: needs-input
+  feature_id: {feature-slug derived from phases-md-dir}
+  written_by: add-phase
+  decisions:
+    - "Phase scope ambiguous — orchestrator did not provide enough context"
+  date: {today}
+  next_skill: add-phase
+  ---
+
+  # /add-phase --batch — Needs Input
+
+  Phase description missing or ambiguous; refusing to invent a phase.
+  Re-run `/add-phase` interactively with explicit title + scope.
+  ```
+
+  STOP without writing PHASES.md.
+
+- Step 7 (Write Changes) runs unchanged. The change is committed by the caller per the orchestrator's commit policy.
+
+---
+
 ## Step 1: Resolve Inputs
 
 ### 1a. PHASES.md Path
@@ -136,7 +168,9 @@ Never mark a completed phase (all `[x]`) as superseded. If the new phase _replac
 
 ## Step 6: Present for Approval
 
-Show the user:
+**Under `--batch`:** SKIP this step entirely. The orchestrator's description argument is treated as approval. Proceed to Step 7.
+
+**Interactive mode:** show the user:
 1. The drafted new phase
 2. Any supersession markings (with before/after)
 3. Key context extracted from Implementation Notes that shaped the draft

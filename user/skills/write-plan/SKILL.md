@@ -86,9 +86,42 @@ Build a directed acyclic graph of all pending phases. The execution order respec
 
 ---
 
+## Step 2.5: Partition the Plan by Work-Unit Cap (MANDATORY — BEFORE DRAFTING)
+
+**Hard cap:** a single generated plan file may contain at most **8 work units**. If the queue analysis from Step 1c would produce more than 8 WUs across all input PHASES.md, this skill MUST partition the output into N sequential plan files, each ≤ 8 WUs.
+
+### Partitioning rules (apply in priority order)
+
+1. **Respect phase boundaries.** A phase's WUs are all written into the same plan file — never split a phase across two plans.
+2. **Respect cross-feature dependency edges.** A plan's WUs MUST NOT reference an upstream phase that is scheduled in a later plan. If feature B's phase P3 depends on feature A's phase P2, both must land in the same plan or A's P2 must land in an earlier plan than B's P3.
+3. **Within those constraints, balance WU counts roughly evenly across plans.** Prefer (3, 3, 3) over (1, 1, 7) when both are legal.
+4. **Single-phase WU overflow is a red flag, not a split point.** If a single phase has more than 8 WUs on its own, do NOT split that phase — that's a /spec-phases quality issue. Surface it explicitly in the final report:
+   > **Red flag:** phase `<feature> P<N>` has <K> work units (> 8 cap). This indicates the phase is too large; re-run `/spec-phases` to decompose it before writing a plan. Generating a single oversized plan anyway as best-effort.
+   Then generate one plan for that phase containing all its WUs, exceeding the cap. Other phases still partition normally.
+
+### Output file naming
+
+- **N == 1 (single plan, ≤ 8 WUs):** keep the existing convention — `all-phases-<slug>.md` or `phase-<N>-<slug>.md`.
+- **N > 1 (partitioned):** append `-part-K` to the existing slug — `all-phases-<slug>-part-1.md`, `all-phases-<slug>-part-2.md`, etc. (or `phase-<N>-<slug>-part-1.md` for single-phase plans).
+
+### Plan-series preamble
+
+Every part file MUST start (after the existing "Mobile plan" preamble) with a `Plan series` block that lists every sibling part. This anchors recovery if the executing session resumes after compaction without the full directory listing.
+
+> **Plan series:** part K of N. Sibling parts:
+> - part 1: `<absolute path to part-1>`
+> - part 2: `<absolute path to part-2>` (this file)
+> - part 3: `<absolute path to part-3>`
+>
+> Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
+
+Each part is otherwise **fully self-contained** per the existing /write-plan contract (execution model, mandatory rules, component reference card, blocking-issue protocol, completion section, work log). Generate each part with the full template; do not abbreviate later parts.
+
+---
+
 ## Step 3: Draft the Comprehensive Plan
 
-Write a single, **fully self-contained** plan covering ALL phases across ALL input features. **The plan must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. When the executing session reads this plan file, it will execute it verbatim, potentially in a fresh context window. Nothing outside the plan can be relied upon.
+Write a **fully self-contained** plan for each partition determined in Step 2.5 covering the work units assigned to that partition. **Each plan part must include every instruction needed for autonomous execution** — including the execution loop, phase-selection logic, blocking-issue protocol, and completion steps. When the executing session reads any single plan file, it will execute it verbatim, potentially in a fresh context window. Nothing outside the plan can be relied upon, including sibling parts.
 
 **v2 RULE:** Execution-time components are NOT inlined in the plan. Each step lists the component file paths the executor must `Read` from disk before proceeding. Only the unique per-plan content (execution model, work units, batch structure, loop control) is written inline.
 
@@ -410,6 +443,40 @@ Include a batch overview table per phase:
 
 ---
 
-## Step 4: Write Plan to File (MANDATORY)
+## Step 4: Write Plan Files to Disk (MANDATORY)
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
+
+### Multi-part Output Reporting
+
+If Step 2.5 produced **multiple parts**, the standard plan-file-output protocol still applies for path resolution and writing — but the final report changes:
+
+1. Write every part file to its resolved path (use the `-part-K` suffix from Step 2.5's naming rule).
+2. Insert the `Plan series` preamble (from Step 2.5) into each part immediately after the "Mobile plan" preamble.
+3. Report the full set, not just the first part. Print:
+   ```
+   Plan written in N parts:
+     part 1: <absolute-path-1>  (<wu-count-1> work units)
+     part 2: <absolute-path-2>  (<wu-count-2> work units)
+     ...
+   Total work units: <sum>
+   Execute parts strictly in order:
+   ```
+
+4. Then output **one fenced code block per part** so each is individually copyable on mobile:
+
+   ~~~
+   ```
+   /execute-plan <absolute-path-1>
+   ```
+   ~~~
+
+   ~~~
+   ```
+   /execute-plan <absolute-path-2>
+   ```
+   ~~~
+
+5. If any phase exceeded the 8-WU cap on its own (Step 2.5 red flag), print the red-flag block above the code blocks so the user sees it before kicking off execution.
+
+If Step 2.5 produced a **single part** (N == 1), follow the standard plan-file-output protocol exactly as written — single path, single copyable command, no series preamble needed.
