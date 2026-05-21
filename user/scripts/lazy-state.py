@@ -545,7 +545,9 @@ def compute_state(repo_root: Path, cloud: bool) -> dict[str, Any]:
             **common,
             current_step="Step 4.6: upstream realign needed",
             sub_skill="realign-spec",
-            sub_skill_args=f"{spec_path_str}/SPEC.md",
+            # --apply pushes the act-on-recommendation logic into /realign-spec
+            # itself so the orchestrator subagent doesn't need follow-on logic.
+            sub_skill_args=f"{spec_path_str}/SPEC.md --apply",
         )
 
     # Step 5: Research validation gate
@@ -873,6 +875,26 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         g.mkdir()
         (g / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
         (g / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+    elif name == "needs-realign":
+        # feat-h has a hard dep on feat-up (complete upstream); no realign plan yet.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-h", "name": "Feature H", "spec_dir": "feat-h", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n- ~~Upstream U — done~~ **COMPLETE**\n"
+        )
+        up = features / "feat-up"
+        up.mkdir()
+        (up / "SPEC.md").write_text("# Upstream\n\n**Status:** Complete\n")
+        (up / "PHASES.md").write_text("# Phases\n\n- [x] Done\n")
+        h = features / "feat-h"
+        h.mkdir()
+        (h / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:**\n\n"
+            "- feat-up — hard — relies on the upstream contract\n"
+        )
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -892,6 +914,10 @@ def run_smoke_tests() -> int:
             ("cloud-saturated", True, {"feature_id": "feat-e"}),   # advances past saturated feat-d
             ("all-complete", False, {"terminal_reason": "all-features-complete"}),
             ("needs-research", False, {"terminal_reason": "needs-research"}),
+            ("needs-realign", False, {
+                "sub_skill": "realign-spec",
+                "feature_id": "feat-h",
+            }),
         ]
         for name, cloud, expected in cases:
             root = _build_fixture(td_path, name)
