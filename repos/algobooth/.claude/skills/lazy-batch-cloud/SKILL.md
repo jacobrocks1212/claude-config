@@ -1,10 +1,10 @@
 ---
 name: lazy-batch-cloud
-description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), cloud-queue-exhausted, or max-cycles cap. Auto-resumes after Gemini research uploads land via /ingest-research.
+description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), queue-blocked-on-research (passive — resume by re-invoking after uploading research), cloud-queue-exhausted, or max-cycles cap.
 argument-hint: <max-cycles, e.g. 10>
 plan-mode: never
 model: opus
-allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion", "Monitor"]
+allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 ---
 
 # Lazy Batch Cloud — Autonomous Pipeline Orchestrator (Cloud Mode)
@@ -26,9 +26,10 @@ Identical to `/lazy-batch`:
 1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action. `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-halt mode) after `AskUserQuestion` returns. All other `Write`/`Edit` operations require subagent dispatch.
 2. The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool. Every sub-skill goes through a spawned `Agent` subagent. Pseudo-skills (`__*__`) are not real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
 3. The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files. State inference is exclusively via `lazy-state.py --cloud`. Sentinel files MAY be read by the orchestrator to confirm a write or drive a pseudo-skill action.
-4. One cycle = one subagent dispatch FOR REAL WORK SKILLS. Pseudo-skill cycles (sentinel writes) are inline orchestrator actions that count as one cycle each. **Wait-mode time (Step 1f) is free** — it does not count against `max_cycles`; only dispatches do.
+4. One cycle = one subagent dispatch FOR REAL WORK SKILLS. Pseudo-skill cycles (sentinel writes) are inline orchestrator actions that count as one cycle each.
 5. **Interactive prompts are scoped to decision-halt mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`) and append a `## Resolution` section before halting.
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation as a quality issue and halt instead (see Step 1g.1).
+7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` fires, the orchestrator halts cleanly (Step 1f). The user's next `/lazy-batch-cloud` invocation is the resume signal.
 
 **Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. The cycle subagent's prompt (Step 1d below) makes this explicit.
 
@@ -46,6 +47,14 @@ Print the start bookend:
 **Max cycles:** {max_cycles}
 **Repo root:** {cwd}
 ```
+
+---
+
+## Step 0.5: Pre-loop staged-research ingest check
+
+**Identical to `/lazy-batch` Step 0.5** — before entering the main loop, probe for staged `.txt` files in `docs/gemini-sprint/results/` and dispatch `/ingest-research` as cycle 1 if any exist. This is the "resume after halt" entry point that lets the user upload research between sessions without any active waiting.
+
+See `~/.claude/skills/lazy-batch/SKILL.md` Step 0.5 for the full algorithm. Cloud-specific nuance: none — `/ingest-research`'s hard constraints already scope it to `docs/`-only writes (no Tauri / no MCP runtime required), so it runs identically in cloud and workstation.
 
 ---
 
@@ -153,12 +162,9 @@ Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, increment c
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
-**Identical to `/lazy-batch` Step 1f** — the wait mode is shared shape across both orchestrators. Cloud cannot run Gemini itself, but the `Monitor` until-loop watching `docs/gemini-sprint/results/` works the same way: the user (or a separate workstation session) drops `.txt` files into the staging dir, the watcher exits, `/ingest-research` runs as one cycle, and the loop resumes. Direct `RESEARCH.md` drops also trigger resume.
+**Identical to `/lazy-batch` Step 1f** — passive halt, NOT an active wait. The orchestrator announces the halt with all three upload paths (staged `.txt`, direct `RESEARCH.md`, one-off file path via `/ingest-research <path>`), PushNotifications, prints the final batch report, and STOPs. Research arrives on the user's timeline; the orchestrator does NOT poll the filesystem (HARD CONSTRAINT 7).
 
-See `~/.claude/skills/lazy-batch/SKILL.md` Step 1f for the full algorithm. Cloud-specific nuances:
-
-- The `/ingest-research` dispatch is the same cycle subagent shape but the cloud-environment limitations block is NOT added — `/ingest-research`'s hard constraints already scope it to `docs/`-only writes (no Tauri / no MCP runtime required), so the cycle subagent doesn't need the standard cloud preamble.
-- After `/ingest-research` returns, the next state-script call `python3 ~/.claude/scripts/lazy-state.py --cloud` (with `--skip-needs-research` if `research_pending` is still non-empty) will see the newly-ingested RESEARCH.md and dispatch Step 5 ("integrate research" → `/spec` Phase 3) for each ingested feature.
+See `~/.claude/skills/lazy-batch/SKILL.md` Step 1f for the full algorithm, the announcement copy, and the resume contract table. Cloud-specific nuance: the user's resume is `/lazy-batch-cloud` (or `/lazy-batch` from workstation) — both share Step 0.5's pre-loop ingest check and the natural state-script flow. The user can mix environments: drop `RESEARCH.md` directly from workstation, then resume from cloud; or run `/ingest-research <phone-synced-path>` from workstation, then resume from either side.
 
 ### 1g. Decision-halt mode (`terminal_reason == "needs-input"`)
 
@@ -183,8 +189,8 @@ Same as `/lazy-batch`. Header is `## /lazy-batch-cloud — Done`. Cloud-specific
 **Next step:**
   - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
   - If terminal_reason is "needs-input": apply the `## Resolution` in {spec_path}/NEEDS_INPUT.md to SPEC.md / PHASES.md, delete the sentinel (or neutralize its frontmatter to keep the audit trail), then re-run `/lazy-batch-cloud {max_cycles}`
-  - If terminal_reason is "queue-blocked-on-research": should not appear here — Step 1f's wait mode handles it inline. If somehow reported, run Gemini against the staged prompts in docs/gemini-sprint/prompts/ and drop results in docs/gemini-sprint/results/
-  - If terminal_reason is "needs-research": should not appear here — Step 4 + Step 1f handle research inline.
+  - If terminal_reason is "queue-blocked-on-research": upload the research via any of the three paths shown in Step 1f's announcement (staged .txt in docs/gemini-sprint/results/, direct RESEARCH.md drop into the feature dir, or /ingest-research <path> for a one-off file path). Then re-run `/lazy-batch-cloud {max_cycles}`.
+  - If terminal_reason is "needs-research": should not appear here — Step 4 drops the sentinel and continues the loop. Defensive fallback: upload research per the queue-blocked-on-research guidance above.
   - If terminal_reason is "cloud-queue-exhausted": run /lazy on workstation to run MCP tests
   - If max-cycles: re-run `/lazy-batch-cloud {max_cycles}` from a fresh session
 ```
@@ -211,7 +217,7 @@ date: <today>
 ---
 ```
 
-Cloud cannot run Gemini itself — but the user (or a coupled workstation session) drops `RESEARCH.md` next to the prompt OR stages `.txt` results in `docs/gemini-sprint/results/`. Step 1f's `Monitor` until-loop detects either path. The same body should reference the gemini-sprint flow per `/lazy-batch` Step 4.
+Cloud cannot run Gemini itself — but the user (or a coupled workstation session) provides research via any of the three upload paths documented in `/lazy-batch` Step 4's sentinel body: staged `.txt` in `docs/gemini-sprint/results/`, direct `RESEARCH.md` drop into the feature dir, or `/ingest-research <path>` for a one-off file path. Step 0.5's pre-loop check and the natural state-script flow auto-detect each path on the next `/lazy-batch-cloud` invocation — no active polling.
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 4 for the full algorithm and multi-feature accumulation behavior.
 
@@ -227,9 +233,9 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 4 for the full algorithm and mul
 | `__write_validated_from_results__` pseudo-skill | normal Step 8 action — inline | not emitted (cloud cannot produce MCP results) |
 | Cycle subagent prompt (real skills only) | bare batch-mode instructions | adds cloud-environment limitations block |
 | NEEDS_RESEARCH.md `written_by` | `lazy-batch` | `lazy-batch-cloud` |
-| Wait-mode trigger (Step 1f) | `terminal_reason: queue-blocked-on-research` — **same shape** in both | `terminal_reason: queue-blocked-on-research` — **same shape** in both |
+| Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`, announce upload paths, PushNotification, STOP. Resume on next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation. Resume on next `/lazy-batch-cloud` invocation (or `/lazy-batch` from workstation — uploads are filesystem-shared). |
 | Decision-halt mode (Step 1g) | `terminal_reason: needs-input` — **same shape** in both | `terminal_reason: needs-input` — **same shape** in both |
-| `/ingest-research` dispatch (Step 1f.7) | bare prompt (no cloud preamble) | bare prompt (no cloud preamble — skill is docs-only by hard constraint) |
+| Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
 
 All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f and Step 1g are also shared shape; both orchestrators reach them via the same state-script terminal reasons.
 

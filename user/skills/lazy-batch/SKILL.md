@@ -1,10 +1,10 @@
 ---
 name: lazy-batch
-description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), or max-cycles cap. Auto-resumes after Gemini research uploads land via /ingest-research.
+description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), queue-blocked-on-research (passive — resume by re-invoking after uploading research), or max-cycles cap.
 argument-hint: <max-cycles, e.g. 10>
 plan-mode: never
 model: opus
-allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion", "Monitor"]
+allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 ---
 
 # Lazy Batch — Autonomous Pipeline Orchestrator
@@ -20,9 +20,10 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 1. **The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files** (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action (which is a documentation-level update by definition, not a source-code edit). `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-halt mode) after `AskUserQuestion` returns. All other `Write`/`Edit` operations — source code, test files, plan files, PHASES.md — require subagent dispatch.
 2. **The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool.** Every sub-skill invocation goes through a spawned `Agent` subagent. This keeps the orchestrator's context lean across many cycles. Pseudo-skills (`__*__`) are NOT real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
 3. **The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files.** State inference is exclusively via `lazy-state.py`. Sentinel files MAY be read by the orchestrator to confirm a write or to drive a pseudo-skill action.
-4. **One cycle = one subagent dispatch FOR REAL WORK SKILLS.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles. Pseudo-skill cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator actions that count as one cycle each. **Wait-mode time (Step 1f) is free** — it does not count against `max_cycles`; only dispatches do.
+4. **One cycle = one subagent dispatch FOR REAL WORK SKILLS.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles. Pseudo-skill cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator actions that count as one cycle each.
 5. **Interactive prompts are scoped to decision-halt mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`) and append a `## Resolution` section before halting.
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the malformation as a quality issue and halt instead (see Step 1g.1).
+7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` fires, the orchestrator halts cleanly (Step 1f). The user's next `/lazy-batch` invocation is the resume signal; the implicit contract is that by the time they re-invoke, they've made the research available via one of the supported upload paths.
 
 ---
 
@@ -46,6 +47,72 @@ Print the start bookend:
 **Max cycles:** {max_cycles}
 **Repo root:** {cwd}
 ```
+
+---
+
+## Step 0.5: Pre-loop staged-research ingest check
+
+Before entering the main loop, check whether the user staged Gemini research uploads between sessions. This is the "resume after halt" entry point — a previous `/lazy-batch` invocation may have halted in Step 1f (research-wait), the user uploaded research in the meantime, and this invocation should pick it up automatically.
+
+**Algorithm:**
+
+1. Probe for staged `.txt` files:
+
+   ```bash
+   find docs/gemini-sprint/results -maxdepth 1 -name '*.txt' -type f 2>/dev/null | head -1
+   ```
+
+   If empty → no staged research, skip to Step 1.
+
+2. If staged `.txt` files exist, dispatch `/ingest-research` as cycle 1 (counts against `max_cycles`):
+
+   ```
+   Agent({
+     description: "lazy-batch pre-loop ingest-research dispatch",
+     subagent_type: "general-purpose",
+     model: "sonnet",
+     prompt: <the prompt below>
+   })
+   ```
+
+   **Subagent prompt:**
+
+   ```
+   You are advancing one cycle of the autonomous feature pipeline. The
+   orchestrator detected staged Gemini research at session start —
+   .txt file(s) are present in docs/gemini-sprint/results/.
+
+   Working directory: {cwd}
+
+   Action for this cycle:
+     Invoke the /ingest-research skill with no arguments. It will scan
+     docs/gemini-sprint/results/ for every .txt, correlate each to a feature
+     via the prompt symlinks under docs/gemini-sprint/prompts/, write
+     per-feature RESEARCH.md + RESEARCH_SUMMARY.md, drop the > Draft
+     (pre-Gemini) trailer in SPEC.md, clear queue.json "stub": true, move
+     consumed .txt files to _consumed/, and commit per feature.
+
+   Operating mode: batch (--batch is implicit for /ingest-research — see its
+   SKILL.md hard constraints).
+
+   After the skill returns:
+     1. Report the final summary block /ingest-research printed.
+     2. List any ambiguous correlations (NEEDS_INPUT.md sentinels written) —
+        the next orchestrator cycle will halt at decision-halt mode (Step 1g).
+     3. Report which feature_ids now have RESEARCH.md on disk.
+
+   You may NOT spawn further subagents. You MAY use Edit/Write under docs/
+   per /ingest-research's hard constraints.
+   ```
+
+3. After dispatch:
+   - Append to `cycle_log`: `{1, "—", "/ingest-research (pre-loop)", "<subagent summary>"}`.
+   - Increment `cycle` to 1.
+   - Enter the main loop (Step 1).
+
+Direct `RESEARCH.md` drops into canonical feature directories don't require ingestion — `lazy-state.py` sees them at Step 5 and routes to `/spec` Phase 3 naturally. Step 0.5 is specifically for the staged `.txt` upload path.
+
+If the user provided a one-off file path via `/ingest-research <path>` (run BEFORE `/lazy-batch`), that invocation handled the ingest in its own session — by the time `/lazy-batch` runs, `RESEARCH.md` already exists in the canonical location, and Step 0.5 is a no-op for that feature.
 
 ---
 
@@ -159,106 +226,65 @@ After the subagent returns:
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
-Triggered when `lazy-state.py --skip-needs-research` reports `queue-blocked-on-research` AND `research_pending` is non-empty (the orchestrator has already dropped at least one `NEEDS_RESEARCH.md` this session). The user's Gemini deep-research step is the blocker; the orchestrator waits for results to land instead of halting.
+Triggered when `lazy-state.py --skip-needs-research` reports `queue-blocked-on-research` AND `research_pending` is non-empty (the orchestrator has already dropped at least one `NEEDS_RESEARCH.md` this session). The user's Gemini deep-research step is the blocker.
+
+**This is a passive halt, NOT an active wait.** The orchestrator MUST NOT use `Monitor`, `sleep`, polling loops, or any other mechanism to block on filesystem events (HARD CONSTRAINT 7). Research arrives on the user's timeline — they may be away from their device for hours or days. The orchestrator announces the halt, surfaces every supported upload path, fires a PushNotification, and stops. The user's next `/lazy-batch` invocation is the implicit resume signal; Step 0.5 (pre-loop ingest check) and `lazy-state.py`'s normal flow auto-detect uploads on re-entry — no special detection is needed at resume time.
 
 **Algorithm:**
 
-1. **Announce the wait.** Print:
+1. **Announce the halt with upload instructions.** Print:
 
    ```
-   ⏸  Pass 1 complete; {N} feature(s) awaiting Gemini research.
-      Watching docs/gemini-sprint/results/ for uploads.
-      Pending: {comma-separated feature_ids from research_pending}
+   ⏸  /lazy-batch paused — {N} feature(s) awaiting Gemini research.
+
+   Pending: {comma-separated feature_ids from research_pending}
+
+   When you have the research, choose any of these upload paths:
+
+     ① Staged (recommended for the gemini-sprint workflow):
+        Save the Gemini output as docs/gemini-sprint/results/<feature-id>.txt
+        (one file per feature). On your next /lazy-batch run, Step 0.5 will
+        auto-dispatch /ingest-research to correlate, distill, and integrate.
+
+     ② Canonical drop (skip ingestion):
+        Write the research directly as
+        docs/features/.../<feature-id>/RESEARCH.md
+        On your next /lazy-batch run, lazy-state.py routes straight to Step 5
+        (integrate research → /spec Phase 3) — no ingestion step needed.
+
+     ③ One-off file path (e.g. ~/Downloads/<file>.txt, phone-synced folder,
+        anywhere outside the repo):
+        Run /ingest-research <absolute-or-relative-path-to-the-file> first.
+        That skill copies the file into the staging dir, correlates it, and
+        writes RESEARCH.md + RESEARCH_SUMMARY.md. Then re-run /lazy-batch
+        to resume the pipeline.
+
+   Re-invoke with /lazy-batch {max_cycles} when ready.
    ```
 
-   where `N == len(research_pending)`.
+   The instructions are intentionally verbose — this is the user's main contact point with the pipeline's pause state, and they may be reading it from a phone notification long after the cycle ran. Include every path so they can pick whichever matches their current device / workflow.
 
 2. **PushNotification:**
 
    ```
-   PushNotification({ message: "lazy-batch paused — {N} feature(s) awaiting Gemini research." })
+   PushNotification({ message: "lazy-batch paused — {N} feature(s) awaiting Gemini research. Upload research and re-invoke /lazy-batch." })
    ```
 
-3. **Append to `cycle_log`:** `{cycle+1, "—", "⏸ research-wait", "watching docs/gemini-sprint/results/ for {N} feature(s)"}`. Wait time is free — DO NOT increment `cycle` (per HARD CONSTRAINT 4).
+3. **Append to `cycle_log`:** `{cycle+1, "—", "⏸ research-wait (halt)", "{N} feature(s) pending: {feature_ids}"}`. DO NOT increment `cycle` — the halt is not a real cycle.
 
-4. **Establish a poll marker.** Touch a hidden file the watcher will use as a freshness baseline so direct `RESEARCH.md` drops (without going through `results/`) are also detected:
+4. **Print the final batch report (Step 2)** with `terminal_reason = "queue-blocked-on-research"` and STOP. The orchestrator's turn ends; the user's next invocation re-enters via Step 0 → Step 0.5 → Step 1.
 
-   ```bash
-   touch .last-poll
-   ```
+**Resume contract.** When the user re-invokes `/lazy-batch`, the natural flow handles every supported upload path:
 
-5. **Watch for uploads.** Use the `Monitor` tool with an `until`-loop that exits when EITHER a new `.txt` lands in the staging dir OR a `RESEARCH.md` is dropped directly into a feature dir under `docs/features/`:
+| Upload path | Detected by | Handled by |
+|-------------|-------------|------------|
+| ① Staged `.txt` in `docs/gemini-sprint/results/` | Step 0.5's `find` probe | Step 0.5 dispatches `/ingest-research` (1 cycle) |
+| ② Direct `RESEARCH.md` in feature dir | `lazy-state.py` Step 5 | normal main-loop dispatch of `/spec` Phase 3 |
+| ③ One-off path | User ran `/ingest-research <path>` separately before `/lazy-batch`; that invocation copied the file to the staging dir and processed it. By the time `/lazy-batch` starts, `RESEARCH.md` is already in the canonical location | normal main-loop dispatch (path ② applies) |
 
-   ```bash
-   until [ -n "$(find docs/gemini-sprint/results -maxdepth 1 -name '*.txt' -type f 2>/dev/null)" ] \
-      || [ -n "$(find docs/features -path '*/RESEARCH.md' -newer .last-poll 2>/dev/null)" ]; do
-     sleep 60
-   done
-   ```
+No special resume detection is needed in `/lazy-batch`'s main loop — every upload path lands in a state the existing logic already handles.
 
-   `Monitor` streams each loop exit as a notification (see CLAUDE.md's note on `Monitor` with `until`-loops). The orchestrator does NOT busy-poll or chain `sleep` commands.
-
-6. **On exit, dispatch / resume.** Examine which condition tripped:
-
-   - **`.txt` files in `docs/gemini-sprint/results/`:** dispatch `/ingest-research` as one cycle (it counts against `max_cycles`):
-
-     ```
-     Agent({
-       description: "lazy-batch ingest-research cycle (post-wait)",
-       subagent_type: "general-purpose",
-       model: "sonnet",
-       prompt: <Step 1f.7 prompt below>
-     })
-     ```
-
-     After `/ingest-research` returns, for every `feature_id` whose `RESEARCH.md` now exists on disk, remove it from `research_pending`. If `research_pending` is empty, set `skip_needs_research = false` (back to the default — the queue is no longer blocked on research; let the state script see those features again at Step 5 "integrate research"). If `research_pending` is non-empty (some `.txt` files were ambiguous and got their own `NEEDS_INPUT.md` sentinels, or some features still have no RESEARCH.md), keep `skip_needs_research = true` so the loop advances past the still-pending features.
-
-   - **Direct `RESEARCH.md` drops (no `.txt` in `results/`):** the human bypassed the gemini-sprint staging path and dropped `RESEARCH.md` files directly. No ingestion needed — set `skip_needs_research = false`, clear `research_pending` entries whose `RESEARCH.md` now exists, and resume the main loop. This does NOT count as a cycle.
-
-   - **Both:** ingest first (as above), then resume — the resume already happens because `/ingest-research` completing drops us back into the main loop.
-
-7. **/ingest-research subagent prompt:**
-
-   ```
-   You are advancing one cycle of the autonomous feature pipeline. The
-   orchestrator was waiting on Gemini research uploads; new .txt file(s) have
-   landed in docs/gemini-sprint/results/.
-
-   Working directory: {cwd}
-   Pending features: {comma-separated research_pending feature_ids}
-
-   Action for this cycle:
-     Invoke the /ingest-research skill (no arguments). The skill correlates each
-     .txt to a feature via the prompt symlinks in docs/gemini-sprint/prompts/,
-     writes per-feature RESEARCH.md + RESEARCH_SUMMARY.md, drops the > Draft
-     (pre-Gemini) trailer in SPEC.md, clears queue.json "stub": true, moves the
-     consumed .txt to docs/gemini-sprint/results/_consumed/, and commits per
-     feature.
-
-   Operating mode: batch (--batch is implicit for /ingest-research — see its
-   SKILL.md hard constraints).
-
-   After the skill returns:
-     1. Report the final summary block /ingest-research printed.
-     2. List any ambiguous correlations (NEEDS_INPUT.md sentinels written).
-        These become decision-halt candidates on the next orchestrator cycle.
-     3. Report which feature_ids now have RESEARCH.md on disk.
-
-   You may NOT spawn further subagents. You MAY use Edit/Write under docs/
-   scope per /ingest-research's hard constraints.
-   ```
-
-   Dispatch on the model declared by `/ingest-research`'s frontmatter (`sonnet`) — the orchestrator forwards that explicitly via the `model` field above so the cycle subagent runs at Sonnet, not Opus. The skill is mechanical (file moves + commits) and does not need Opus reasoning.
-
-8. **Cycle accounting after dispatch:**
-
-   - Increment `cycle` by 1 (the ingest dispatch is one real cycle).
-   - Append to `cycle_log`: `{cycle, "—", "/ingest-research", "<summary from subagent>"}`.
-   - Return to Step 1a — the next `lazy-state.py --skip-needs-research` call sees the newly-ingested RESEARCH.md files and dispatches Step 5 ("integrate research" → `/spec` Phase 3) for each.
-
-9. **`max_cycles` during post-wait advance:** normal handling. If the post-wait loop hits `max_cycles`, halt per Step 1c.
-
-10. **No timeout.** The wait is unbounded by design — the user explicitly asked for the orchestrator to eliminate waiting from their side, not to time out and force a restart. If the user wants to abort, they kill the session manually.
+**Cycle accounting at resume.** The new `/lazy-batch` invocation gets a fresh `max_cycles` budget. The previous session's cycle count is gone (no persistence layer — see Notes). This is by design: each `/lazy-batch <N>` run is a bounded budget the user authorizes.
 
 ### 1g. Decision-halt mode (`terminal_reason == "needs-input"`)
 
@@ -376,8 +402,8 @@ When the loop exits (terminal state or max-cycles), print:
 **Next step:**
   - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
   - If terminal_reason is "needs-input": apply the `## Resolution` in {spec_path}/NEEDS_INPUT.md to SPEC.md / PHASES.md, delete the sentinel (or neutralize its frontmatter to keep the audit trail), then re-run `/lazy-batch {max_cycles}`
-  - If terminal_reason is "queue-blocked-on-research": should not appear here — Step 1f's wait mode handles it inline. If somehow reported, run Gemini against the staged prompts in docs/gemini-sprint/prompts/ and drop results in docs/gemini-sprint/results/
-  - If terminal_reason is "needs-research": should not appear here — Step 4 + Step 1f handle research inline. Defensive fallback: run Gemini against {RESEARCH_PROMPT.md path}
+  - If terminal_reason is "queue-blocked-on-research": upload the research via any of the three paths shown in Step 1f's announcement (staged .txt in docs/gemini-sprint/results/, direct RESEARCH.md drop into the feature dir, or /ingest-research <path> for a one-off file path). Then re-run `/lazy-batch {max_cycles}`.
+  - If terminal_reason is "needs-research": should not appear here — Step 4 drops the sentinel and continues the loop. Defensive fallback: upload research per the queue-blocked-on-research guidance above.
   - If max-cycles: re-run `/lazy-batch {max_cycles}` from a fresh session
 ```
 
@@ -418,18 +444,24 @@ The state script returns `needs-research` when `RESEARCH.md` is missing but `RES
 
    # /lazy-batch — Needs Research
 
-   Run Gemini deep research against the prompt below, then drop the result as
-   RESEARCH.md alongside this file. `/lazy-batch` will then resume the
-   autonomous tail (Phase 3 finalization → spec-phases → write-plan → ...).
+   Run Gemini deep research against the prompt below, then provide the result
+   via any of these upload paths:
 
-   Or, for the AlgoBooth gemini-sprint workflow:
+   ① Staged .txt (gemini-sprint workflow): save the output as
+     `docs/gemini-sprint/results/{feature_id}.txt`. /lazy-batch's Step 0.5
+     pre-loop check will auto-dispatch /ingest-research on the next run.
 
-   - Stage `RESEARCH_PROMPT.md` as a symlink under `docs/gemini-sprint/prompts/`.
-   - Run Gemini against it, save the output as `<feature-id>.txt` in
-     `docs/gemini-sprint/results/`.
-   - `/lazy-batch` will detect the `.txt` during its Step 1f research-wait,
-     dispatch `/ingest-research` to populate RESEARCH.md + RESEARCH_SUMMARY.md,
-     and resume autonomously.
+   ② Direct RESEARCH.md drop: write the result directly to RESEARCH.md
+     alongside this file. lazy-state.py Step 5 will route to /spec Phase 3
+     on the next /lazy-batch run.
+
+   ③ One-off file path: if the file lives outside the repo (e.g.
+     ~/Downloads/<file>.txt), run /ingest-research <path> before re-invoking
+     /lazy-batch. That skill stages and ingests it into the canonical
+     location, then /lazy-batch picks it up via path ②.
+
+   /lazy-batch waits passively while research is in flight — re-invoke when
+   ready. The orchestrator does NOT poll the filesystem.
 
    **Prompt file:** `{research_prompt_path}`
    ```

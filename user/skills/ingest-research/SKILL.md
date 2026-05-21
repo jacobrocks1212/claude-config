@@ -1,7 +1,7 @@
 ---
 name: ingest-research
-description: Ingest Gemini deep-research results from docs/gemini-sprint/results/*.txt into per-feature RESEARCH.md + RESEARCH_SUMMARY.md, then update SPEC.md to drop the > Draft (pre-Gemini) trailer and clear queue.json "stub": true. Designed for dispatch by /lazy-batch in research-wait mode; also invocable standalone with /ingest-research.
-argument-hint: <none>
+description: Ingest Gemini deep-research results into per-feature RESEARCH.md + RESEARCH_SUMMARY.md, then update SPEC.md to drop the > Draft (pre-Gemini) trailer and clear queue.json "stub": true. Default mode scans docs/gemini-sprint/results/*.txt; optional path args ingest one-off files from anywhere (Downloads, phone-synced folders, etc.). Designed for dispatch by /lazy-batch's Step 0.5 pre-loop ingest check; also invocable standalone.
+argument-hint: [<path-to-research-file> ...]
 plan-mode: never
 model: sonnet
 allowed-tools: ["Bash", "Read", "Edit", "Write", "Grep"]
@@ -9,33 +9,76 @@ allowed-tools: ["Bash", "Read", "Edit", "Write", "Grep"]
 
 # Ingest Research — Gemini Deep-Research Bridge
 
-Bridges the manual gap in AlgoBooth's Gemini deep-research workflow: takes the `.txt` outputs the user dropped in `docs/gemini-sprint/results/`, correlates each to a feature in the queue, writes per-feature `RESEARCH.md` + `RESEARCH_SUMMARY.md`, and clears the stub markers that pre-Gemini drafts carry.
+Bridges the manual gap in AlgoBooth's Gemini deep-research workflow: takes Gemini result files (`.txt` or `.md`), correlates each to a feature in the queue, writes per-feature `RESEARCH.md` + `RESEARCH_SUMMARY.md`, and clears the stub markers that pre-Gemini drafts carry.
 
-The orchestrator (`/lazy-batch` / `/lazy-batch-cloud`) dispatches this skill when it detects new `.txt` files in `results/` during its research-wait state (Step 1f). The skill is also safe to invoke directly by humans: `/ingest-research`.
+**Two invocation modes:**
+
+1. **Default — scan staging dir (no args).** Processes every `.txt` file directly under `docs/gemini-sprint/results/`. This is the path `/lazy-batch`'s Step 0.5 pre-loop ingest check uses, and the path the user follows when they save Gemini outputs into the staging dir directly.
+
+2. **One-off file path(s) (with args).** Each positional argument is treated as a path to a Gemini result file (absolute or relative to `$CWD`, including `~/`-expansion). The skill copies each file into `docs/gemini-sprint/results/` first (preserving basenames, suffixing with a timestamp on collision), then runs the standard correlation + ingest flow on it. This is how the user ingests research from outside the repo — e.g., `~/Downloads/voice-synthesis.txt`, a phone-synced cloud folder, or anywhere else the file landed before they got back to the repo.
+
+Both modes share the same correlation, distillation, SPEC.md update, queue.json clear, and per-feature commit logic. The orchestrator pause/resume contract (announce upload paths, halt, resume on next user prompt) lives in `/lazy-batch` Step 1f; this skill is the mechanical converter.
 
 **Hard constraints (non-negotiable):**
 
-1. **Scope is `docs/` only.** This skill MUST NOT touch any other repo files — no source code, no tests, no config. The only files written are inside `docs/features/<.../>/<feature-id>/` (RESEARCH.md, RESEARCH_SUMMARY.md, SPEC.md edits) and `docs/features/queue.json` (clear `"stub": true`), plus the `_consumed/` directory under the staging path.
+1. **Scope is `docs/` only — plus reads from arg paths.** This skill MUST NOT WRITE any repo files outside `docs/` — no source code, no tests, no config. The only files written are inside `docs/features/<.../>/<feature-id>/` (RESEARCH.md, RESEARCH_SUMMARY.md, SPEC.md edits), `docs/features/queue.json` (clear `"stub": true`), and under the staging path (`docs/gemini-sprint/results/` and its `_consumed/` subdirectory). External input paths supplied as args are **read-only** — Step 0.5 copies their content into the staging dir, it does NOT move or delete the original (the user may have the file in a synced folder where deletion would propagate across devices).
 2. **Leaf skill — no sub-skill dispatch.** Do NOT call `/spec`, `/spec-phases`, or any other sub-skill. The state machine's Step 5 "integrate research" handles `/spec` Phase 3 on the next orchestrator cycle after this skill clears the research-pending state.
 3. **`--batch`-by-default.** This skill has no interactive mode worth running. Ambiguous correlations escalate via `NEEDS_INPUT.md` per the rich-body convention in `~/.claude/skills/_components/sentinel-frontmatter.md`; the orchestrator surfaces them on its next cycle.
+4. **NEVER actively wait.** Like the orchestrators it serves, this skill MUST NOT poll the filesystem, call `Monitor`, or use sleep loops to wait for files to appear. If args reference missing files, record them in `missing_inputs` and report at the end — do NOT retry.
 
 ---
 
-## Step 0: Locate the staging directory
+## Step 0: Resolve inputs
 
 Default staging path: `docs/gemini-sprint/results/` relative to the current working directory.
 
 1. Resolve `<staging-dir>` = `${CWD}/docs/gemini-sprint/results`.
-2. If `<staging-dir>` does not exist, exit cleanly with a one-line report:
 
-   > `/ingest-research`: no staging directory at `docs/gemini-sprint/results/` — nothing to ingest.
+2. **Parse `$ARGUMENTS`.** Split into whitespace-separated tokens. Each token is treated as a path to a research file (absolute, relative to `$CWD`, or `~/`-prefixed for home expansion). For each token:
 
-   Return exit code 0. This is a no-op, not an error.
-3. If `<staging-dir>` exists but contains zero `.txt` files (excluding the `_consumed/` subdirectory if present), exit cleanly with:
+   a. Expand `~/` and resolve to an absolute path.
+   b. Verify the path exists and is a regular file (not a directory, not a symlink to a non-existent target). If missing, record the path in a `missing_inputs` list and skip it — do NOT abort the whole skill; other inputs may still be processable.
+   c. Verify the file is plausibly text (`.txt`, `.md`, or readable as UTF-8). If binary, record in `invalid_inputs` and skip.
 
-   > `/ingest-research`: staging directory empty — nothing to ingest.
+   Build `<external_inputs>` = list of validated absolute paths from args.
 
-(Per-repo configurability is deferred — AlgoBooth is the only consumer today. If another repo adopts the pattern, parameterize this path via a per-repo `.claude/skill-config/gemini-sprint.md` later.)
+3. **Decide the operating mode:**
+
+   - **Args supplied AND `<external_inputs>` is non-empty:** "one-off mode" — Step 0.5 copies each external input into the staging dir, then Step 1 proceeds as normal. If `missing_inputs` or `invalid_inputs` are non-empty, surface them in the final summary but continue processing whatever IS valid.
+   - **Args supplied AND `<external_inputs>` is empty (all missing/invalid):** print the input-validation failures and STOP. No staging dir scan — the user asked for specific files, none of which were usable.
+   - **No args:** "default mode" — Step 0.5 is a no-op; Step 1 scans the staging dir directly.
+
+4. **Verify the staging dir is reachable.**
+
+   - If `<staging-dir>` does not exist AND no args were supplied: exit cleanly with a one-line report:
+
+     > `/ingest-research`: no staging directory at `docs/gemini-sprint/results/` — nothing to ingest.
+
+     Return exit code 0. This is a no-op, not an error.
+
+   - If `<staging-dir>` does not exist AND args were supplied: create it (`mkdir -p`). Step 0.5 needs it as the copy destination.
+
+   - If `<staging-dir>` exists AND no args were supplied AND it contains zero `.txt` files (excluding `_consumed/`): exit cleanly with:
+
+     > `/ingest-research`: staging directory empty — nothing to ingest.
+
+(Per-repo configurability is deferred — AlgoBooth is the only consumer today. If another repo adopts the pattern, parameterize the staging path via a per-repo `.claude/skill-config/gemini-sprint.md` later.)
+
+---
+
+## Step 0.5: Stage external inputs (one-off mode only)
+
+Skip this step in default mode (no args).
+
+For each path in `<external_inputs>`:
+
+1. Compute the destination basename. Prefer the original basename. If the original extension is `.md`, rename to `.txt` for staging (the staging dir convention is `.txt`; the format is identical, only the extension matters).
+2. Compute `<staged-path>` = `<staging-dir>/<basename>`.
+3. If `<staged-path>` already exists (collision with a previously staged or current-batch file), suffix the basename with `-<ISO8601-compact-timestamp>` (e.g., `voice-synthesis-20260521T103045Z.txt`) so the original staged file is not clobbered.
+4. **Copy** the external file to `<staged-path>` using `Bash` (`cp` — NOT move). Preserving the original on disk is intentional: the user may have the file in a synced folder where deletion would propagate to other devices.
+5. Record the mapping `(original_path → staged_path)` for the final summary.
+
+After all external inputs are copied, the staging dir contains every `.txt` to process — both the user's standalone uploads (if any pre-existed) AND the newly-staged external inputs. Step 1 onward treats them uniformly.
 
 ---
 
@@ -225,7 +268,10 @@ After all `.txt` files have been processed (ingested or escalated), print a summ
 ```
 ## /ingest-research — Done
 
+**Mode:** <"default (staging-dir scan)" | "one-off (N path args)">
 **Staging:** <staging-dir>
+**Staged external inputs:** <list of (original_path → staged_path), or "none" in default mode>
+**Input validation failures:** <list of (path, reason) for missing/invalid args, or "none">
 **Ingested:** N features
   - <feature-id-1>: RESEARCH.md (<bytes>), RESEARCH_SUMMARY.md (<bytes>), SPEC.md trailer dropped, queue.json stub cleared
   - <feature-id-2>: ...
@@ -236,8 +282,9 @@ After all `.txt` files have been processed (ingested or escalated), print a summ
 **Consumed:** <basename>.txt files moved to <staging-dir>/_consumed/
 
 Next step:
-  - If ambiguous correlations exist, the orchestrator's next cycle will halt at decision-halt mode (Step 1g) and prompt you to pick the right feature.
-  - Otherwise, the orchestrator resumes the main loop and lazy-state.py Step 5 ("integrate research") will dispatch /spec Phase 3 for the newly-ingested features.
+  - If invoked standalone: re-run /lazy-batch (or /lazy-batch-cloud) to resume the autonomous pipeline. The state machine will pick up Step 5 ("integrate research" → /spec Phase 3) for every feature that now has RESEARCH.md.
+  - If invoked via /lazy-batch Step 0.5 (pre-loop) or Step 1f (post-pause): control returns to the orchestrator, which continues the main loop.
+  - If ambiguous correlations exist, the next orchestrator cycle will hit decision-halt mode (Step 1g) and prompt you to pick the right feature.
 ```
 
 STOP.
