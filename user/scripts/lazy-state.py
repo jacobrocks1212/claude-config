@@ -947,6 +947,15 @@ def compute_state(
             ),
         )
 
+    # RETRO_DONE.md is the terminal sentinel for the retro phase and MUST be
+    # checked BEFORE any retro-plan-status scanning below. Otherwise a feature
+    # whose corrective work shipped under a separately-named plan (e.g.
+    # phase-N-corrective-wiring.md with status: Complete) leaves the original
+    # retro plan permanently `status: Ready`, and find_retro_plans() returns
+    # it forever — re-entering Step 9 retro on every cycle until max-cycles.
+    # See the retro skill's Step 6c: it writes RETRO_DONE.md whenever a round
+    # concludes with no significant divergences, which is what terminates the
+    # phase cleanly.
     if retro_done_file.exists():
         # Step 10: mark complete (workstation only; cloud halts here)
         if cloud and not validated_file.exists():
