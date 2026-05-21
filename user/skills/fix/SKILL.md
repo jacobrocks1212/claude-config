@@ -273,3 +273,9 @@ Include this block verbatim in the plan — after Integration Verification and C
 ## Step 7: Write Plan File
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
+
+**Frontmatter for `/fix`:**
+- `kind: fix-plan`
+- `feature_id:` — parent feature directory name (or bug-directory slug for standalone fixes targeting `docs/bugs/<slug>/plans/`)
+- `status: Ready`
+- `phases:` — phase number(s) the fix attributes to, if applicable. Omit (`[]`) for standalone fixes with no PHASES.md context.

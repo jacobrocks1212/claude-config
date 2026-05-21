@@ -398,3 +398,9 @@ Include a batch overview table per phase:
 ## Step 5: Write Plan File
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
+
+**Frontmatter for `/implement-phase-batch`:**
+- `kind: implementation-plan`
+- `feature_id:` — parent feature directory name (or composite if multi-feature; use the first feature's directory name and note the others in the plan body)
+- `status: Ready` (or `Draft` if `--batch` halted on `NEEDS_INPUT.md`)
+- `phases:` — every phase number this plan covers across all input PHASES.md files.

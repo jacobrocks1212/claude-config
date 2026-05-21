@@ -17,10 +17,10 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 ## HARD CONSTRAINTS (non-negotiable)
 
-1. **The orchestrator MUST NOT call `Edit` or `Write` on source code or test files.** All implementation work goes through subagents. The orchestrator may only `Write` sentinel files (specifically `NEEDS_RESEARCH.md` per Step 4) and read configuration via `Bash` / `Read`.
-2. **The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool.** Every sub-skill invocation goes through a spawned `Agent` subagent. This keeps the orchestrator's context lean across many cycles.
-3. **The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or sentinel files.** State inference is exclusively via `lazy-state.py`. The only sentinel the orchestrator reads is the one it just wrote (for confirmation).
-4. **One cycle = one subagent dispatch.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles.
+1. **The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files** (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action (which is a documentation-level update by definition, not a source-code edit). All other `Write`/`Edit` operations — source code, test files, plan files, PHASES.md — require subagent dispatch.
+2. **The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool.** Every sub-skill invocation goes through a spawned `Agent` subagent. This keeps the orchestrator's context lean across many cycles. Pseudo-skills (`__*__`) are NOT real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
+3. **The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files.** State inference is exclusively via `lazy-state.py`. Sentinel files MAY be read by the orchestrator to confirm a write or to drive a pseudo-skill action.
+4. **One cycle = one subagent dispatch FOR REAL WORK SKILLS.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles. Pseudo-skill cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator actions that count as one cycle each.
 5. **No interactive prompts.** Do not call `AskUserQuestion`. If the user needs to make a decision, the underlying sub-skill writes NEEDS_INPUT.md and the loop halts at the next state cycle.
 
 ---
@@ -80,9 +80,27 @@ PushNotification({ message: "lazy-batch hit max-cycles ({max_cycles}). Restart f
 
 Print final batch report, STOP. Do NOT try to renew the cap automatically — the cap exists to bound runaway costs.
 
-### 1d. Compose and dispatch the cycle subagent
+### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
-Build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else:
+If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** — a small sentinel-file write + commit, NOT a real skill that performs implementation work. Perform the action inline (orchestrator session) instead of dispatching a subagent. This is the spirit-preserving relaxation of HARD CONSTRAINT 1: sentinel files are documentation, and dispatching an Opus subagent to write a 10-line YAML block + run `git commit` wastes a full subagent's worth of context.
+
+Follow `~/.claude/skills/lazy/SKILL.md` Step 3's protocol for each pseudo-skill exactly (the wrapper and orchestrator do the same thing here):
+
+- **`__write_validated_from_skip__`** — read `<spec_path>/SKIP_MCP_TEST.md` frontmatter, write `<spec_path>/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body note about the prior skip), then commit per the project's commit policy.
+- **`__write_validated_from_results__`** — read `<spec_path>/MCP_TEST_RESULTS.md` frontmatter, extract `scenarios`, write `<spec_path>/VALIDATED.md` with those scenarios, then commit.
+- **`__mark_complete__`** — update `docs/features/ROADMAP.md` (strikethrough + COMPLETE token), delete `VALIDATED.md`/`RETRO_DONE.md`/`DEFERRED_NON_CLOUD.md` sentinels, set `<spec_path>/SPEC.md`'s `**Status:**` to `Complete`, then commit per project policy.
+
+After the inline action:
+
+1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
+2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
+3. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
+
+This saves one Opus dispatch per pseudo-skill action. On a typical feature lifecycle (workstation: 1 × `__write_validated_*` + 1 × `__mark_complete__` = 2 dispatches reclaimed; cloud: 1 × `__write_deferred_non_cloud__` minimum) the savings compound across a multi-feature queue pass.
+
+### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
+
+If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else:
 
 ```
 You are advancing one cycle of the autonomous feature pipeline.
@@ -111,30 +129,6 @@ After the skill returns:
 You may NOT spawn further subagents. You MAY use Edit/Write on source code if
 the dispatched skill requires it (e.g. /execute-plan does); follow the skill's
 internal subagent-vs-orchestrator rules.
-```
-
-Special handling — pseudo-skills (`__write_validated_from_skip__`, `__write_validated_from_results__`, `__mark_complete__`) from the state script:
-
-For these, the standard `/lazy` wrapper performs the special action inline. The orchestrator should dispatch the subagent with a slightly different prompt:
-
-```
-You are advancing one cycle of the autonomous feature pipeline.
-
-Feature: {feature_name} ({feature_id})
-Working directory: {cwd}
-State script said: {current_step}
-
-Action for this cycle:
-  Perform the {sub_skill} special action exactly as documented in
-  ~/.claude/skills/lazy/SKILL.md (Step 3). Do not dispatch a Skill tool call —
-  the action is a small file edit + commit performed by you directly:
-
-    - __write_validated_from_skip__: write VALIDATED.md from prior SKIP_MCP_TEST.md
-    - __write_validated_from_results__: write VALIDATED.md from MCP_TEST_RESULTS.md
-    - __mark_complete__: update ROADMAP, delete sentinels, set SPEC Status, commit
-
-After the action, commit and push per project policy, then report a one-
-paragraph summary.
 ```
 
 Dispatch:

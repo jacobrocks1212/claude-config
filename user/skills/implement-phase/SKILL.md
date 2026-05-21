@@ -297,3 +297,9 @@ When drafting work units, identify any that introduce import indirection (wrappe
 ## Step 6: Write Plan File
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
+
+**Frontmatter for `/implement-phase`:**
+- `kind: implementation-plan`
+- `feature_id:` — parent feature directory name
+- `status: Ready`
+- `phases:` — the single phase number this plan implements (e.g. `[3]`).

@@ -52,6 +52,18 @@ If `$ARGUMENTS` contains `--batch`, strip it before processing. The only behavio
 - If no path is provided in **`--batch` mode**, halt per the Batch Mode NEEDS_INPUT.md protocol above
 - Read the plan file **in full** — every section, every instruction
 
+### 1a.5: Plan Status Protocol (MANDATORY — check status BEFORE doing any work)
+
+The plan file's YAML frontmatter (per `~/.claude/skills/_components/plan-frontmatter.md`) is the authoritative record of whether this plan is still pending. Read it before everything else.
+
+1. **Parse the frontmatter.** If the file has no `---` block, treat it as a legacy plan with `status: Ready` and continue — but print a one-line warning so the user can backfill it.
+2. **If `status: Complete`:** log `"Plan already Complete — no work to do: {path}"` and STOP. Do NOT re-execute. Do NOT modify task tracking. Do NOT commit. Print the after-status one-liner the orchestrator expects, then return. The cycle subagent reports a one-liner; the orchestrator records the cycle as a no-op against this plan and moves on.
+3. **If `status: In-progress`:** this plan was previously partially executed and halted on `BLOCKED.md` or `NEEDS_INPUT.md`. Resume — re-read PHASES.md to find the first unchecked WU and pick up from there.
+4. **If `status: Ready` (or no frontmatter / legacy):** proceed as normal — fresh execution from the start.
+5. **If `status: Draft`:** producer halted mid-generation and the plan is partial. Do NOT execute. Surface the partial-plan path and STOP — the human must finish authoring or re-run the producer.
+
+The status field is flipped by THIS skill only — producers never write `Complete` or `In-progress`. See Steps 4e and 4f below for the transitions.
+
 ### 1b. Validate the Plan
 
 Confirm the plan contains ALL of the following sections (or equivalent):
@@ -113,7 +125,7 @@ If the plan specifies an EXECUTION MODEL with orchestrator/subagent roles:
 - **You are the orchestrator.** Your job is to read the plan, compose `Agent` tool calls, dispatch Sonnet subagents, review their output, run quality gates, and update tracking docs.
 - **You MUST NOT call `Edit` or `Write` on source or test files.** If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP. Compose an `Agent({ model: "sonnet", prompt: "..." })` tool call instead.
 - **Self-check before every action:** "Am I about to edit a source/test file directly?" If yes, compose an Agent call instead.
-- The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `PLAN.md`, `work-log.jsonl`, and task tracking.
+- The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `PLAN.md`, the plan file currently being executed (frontmatter status transitions only — body stays read-only), `work-log.jsonl`, and task tracking.
 
 ### Component Loading
 
@@ -141,9 +153,12 @@ For each step/batch defined in the plan:
 
 If you hit a blocking issue (as defined in the plan's Blocking Issue Protocol):
 1. Stop all in-progress work
-2. Commit and push any completed work
-3. Print the blocking-issue report as specified in the plan
-4. **Do NOT attempt to work around the blocker** — the plan says to stop, so stop
+2. **Flip the plan's frontmatter to `status: In-progress`** (per `~/.claude/skills/_components/plan-frontmatter.md`) — this is a one-line edit to the existing `status:` field. Stage the change so it lands in the same commit as any partially-completed work.
+3. Commit and push any completed work (including the frontmatter status flip)
+4. Print the blocking-issue report as specified in the plan
+5. **Do NOT attempt to work around the blocker** — the plan says to stop, so stop
+
+The same `status: In-progress` flip applies when the plan halts on `NEEDS_INPUT.md` mid-execution. The next `/execute-plan` invocation against this plan reads the In-progress status, scans PHASES.md for unchecked WUs, and resumes from there.
 
 ### Phase/Batch Loop
 
@@ -160,7 +175,10 @@ If the plan defines a Phase Selection Loop or multi-phase execution:
 When all work units are complete (all tasks marked `completed`):
 
 1. Follow the plan's **Completion** section if it has one (final QG run, completion report, etc.)
-2. Follow the plan's **Work Log** section if it has one
+2. **Flip the plan's frontmatter to `status: Complete`** (per `~/.claude/skills/_components/plan-frontmatter.md`) — one-line edit to the existing `status:` field. This is the authoritative signal that downstream tooling (`lazy-state.py`, AlgoBooth lint) uses to skip the plan on future cycles. Stage this change so it lands in the final commit produced by the plan's Completion or Commit step.
+3. Follow the plan's **Work Log** section if it has one
+
+The plan file STAYS in `plans/` after Complete — the frontmatter is the audit trail, not a deletion signal. Do NOT delete the plan file.
 
 ### Step 4a: Append to Work Log (MANDATORY — DO NOT SKIP)
 

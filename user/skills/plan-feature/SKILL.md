@@ -105,3 +105,4 @@ If `<feature-dir>/NEEDS_INPUT.md` was written by either sub-skill, surface that 
 - This skill is **NOT** the state script. The state script (`lazy-state.py`) decides whether to call `/plan-feature` at all. `/plan-feature` simply runs `/spec-phases` + `/write-plan` back-to-back when the feature is past the interactive gates.
 - This skill does NOT call `interview_work_log_append` — its sub-skills do, and a wrapping log entry would be noise. The orchestrator (`/lazy-batch`) logs the dispatch-level view.
 - This skill is safe to invoke directly by humans on a feature whose SPEC + RESEARCH_SUMMARY are ready and you want both planning steps to run in one shot.
+- Plan-file frontmatter (per `~/.claude/skills/_components/plan-frontmatter.md`) is written by the dispatched `/write-plan` invocation — `/plan-feature` does not write any plan files of its own. The downstream lint will see the same `kind: implementation-plan` frontmatter as a direct `/write-plan` run.

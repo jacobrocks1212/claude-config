@@ -447,6 +447,12 @@ Include a batch overview table per phase:
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
 
+**Frontmatter for `/write-plan`:**
+- `kind: implementation-plan`
+- `feature_id:` — parent feature directory name
+- `status: Ready` (or `Draft` if `--batch` halted on `NEEDS_INPUT.md`)
+- `phases:` — list every PHASES.md phase number(s) this plan implements. For a multi-feature plan, list every phase across every feature this part covers. For partitioned multi-part output (Step 2.5), each part's `phases:` lists only the phases assigned to that part.
+
 ### Multi-part Output Reporting
 
 If Step 2.5 produced **multiple parts**, the standard plan-file-output protocol still applies for path resolution and writing — but the final report changes:

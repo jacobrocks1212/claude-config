@@ -296,3 +296,9 @@ Call interview_work_log_append MCP tool with skill, project, title, summary, fil
 ## Step 5: Write Plan to File (MANDATORY)
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
+
+**Frontmatter for `/fix-mobile`:**
+- `kind: fix-plan`
+- `feature_id:` — parent feature directory name (or bug-directory slug for standalone fixes)
+- `status: Ready`
+- `phases:` — phase number(s) the fix attributes to, if applicable. Omit (`[]`) for standalone fixes.
