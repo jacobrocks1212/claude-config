@@ -1,6 +1,6 @@
 ---
 name: lazy-batch
-description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap.
+description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. Research uploaded mid-session via chat (file attachment, pasted text, or absolute path) triggers in-session resume: /ingest-research is dispatched immediately and the loop is re-invoked — no manual re-run required.
 argument-hint: <max-cycles, e.g. 10> [--allow-research-skip]
 plan-mode: never
 model: opus
@@ -17,13 +17,13 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 ## HARD CONSTRAINTS (non-negotiable)
 
-1. **The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files** (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action (which is a documentation-level update by definition, not a source-code edit). `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-halt mode) after `AskUserQuestion` returns. All other `Write`/`Edit` operations — source code, test files, plan files, PHASES.md — require subagent dispatch.
+1. **The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files** (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action (which is a documentation-level update by definition, not a source-code edit). `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. All other `Write`/`Edit` operations — source code, test files, plan files, PHASES.md — require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
 2. **The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool.** Every sub-skill invocation goes through a spawned `Agent` subagent. This keeps the orchestrator's context lean across many cycles. Pseudo-skills (`__*__`) are NOT real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
 3. **The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files.** State inference is exclusively via `lazy-state.py`. Sentinel files MAY be read by the orchestrator to confirm a write or to drive a pseudo-skill action.
 4. **One cycle = one subagent dispatch FOR REAL WORK SKILLS.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles. Pseudo-skill cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator actions that count as one cycle each.
-5. **Interactive prompts are scoped to decision-halt mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`) and append a `## Resolution` section before halting.
+5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. (The legacy halt-on-needs-input behavior is gone; the user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.)
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the malformation as a quality issue and halt instead (see Step 1g.1).
-7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` fires, the orchestrator halts cleanly (Step 1f). The user's next `/lazy-batch` invocation is the resume signal; the implicit contract is that by the time they re-invoke, they've made the research available via one of the supported upload paths.
+7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 
 ---
 
@@ -148,7 +148,7 @@ Parse the JSON output. Extract: `feature_id`, `feature_name`, `spec_path`, `curr
 If `terminal_reason` is set:
 
 - **`blocked`**: PushNotification with `notify_message`, print final batch report, STOP. Do NOT modify the sentinel; the human resolves it manually.
-- **`needs-input`**: see Step 1g (decision-halt mode). Do NOT print the final batch report yet — Step 1g must re-print the rich `## Decision Context`, run `AskUserQuestion`, and append `## Resolution` before halting.
+- **`needs-input`**: see Step 1g (decision-resume mode). **Not a terminal state for the orchestrator anymore.** Step 1g re-prints the rich `## Decision Context`, runs `AskUserQuestion`, appends `## Resolution`, dispatches the Sonnet apply-resolution subagent (which edits SPEC.md / PHASES.md and neutralizes the sentinel), and returns to Step 1a. The loop continues; do NOT print the final batch report.
 - **`needs-research`**: see Step 4 (research halt). Behavior depends on `allow_research_skip`:
   - **Default (`allow_research_skip == false`)**: Step 4 writes `NEEDS_RESEARCH.md`, prints the inline-prompt halt announcement, PushNotifications, prints the final batch report, and STOPs. The orchestrator does NOT advance past the research-pending feature — this is critical for ordered queues where downstream features depend on upstream work.
   - **Opt-in (`allow_research_skip == true`)**: legacy batching behavior — Step 4 writes `NEEDS_RESEARCH.md`, adds `feature_id` to `research_pending`, **DOES NOT increment cycle**, flips `skip_needs_research = true`, and returns to Step 1a so the next state-script call passes `--skip-needs-research` and either advances to a ready feature or returns `queue-blocked-on-research`.
@@ -322,27 +322,41 @@ After the subagent returns:
    After all per-feature blocks, print the unified upload instructions:
 
    ```
-   When you have research result(s), choose any of these upload paths:
+   When you have research result(s), the fastest path is to upload them in your
+   NEXT MESSAGE in this conversation — I will dispatch /ingest-research
+   IN-SESSION and re-invoke /lazy-batch automatically (see Step 5: In-Session
+   Resume Protocol). You do NOT need to re-run /lazy-batch manually.
 
-     ① Staged (recommended for the gemini-sprint workflow):
+   Supported upload shapes for your next message:
+     • File attachment (Claude Code path or chat-uploaded file)
+     • Pasted text — the research content in a fenced code block or quoted
+     • An absolute file path on the machine running this session (e.g.
+       ~/Downloads/<file>.txt or a phone-synced folder)
+
+   Or, if you prefer to stage the file and resume later, any of these paths
+   still work:
+
+     ① Staged (gemini-sprint workflow):
         Save each Gemini output as docs/gemini-sprint/results/<feature-id>.txt
-        (one file per feature). On your next /lazy-batch run, Step 0.5 will
-        auto-dispatch /ingest-research to correlate, distill, and integrate.
+        (one file per feature). NOTE: this path is gitignored in AlgoBooth —
+        fine for a workstation session that resumes locally, but a bare .txt
+        stage WILL NOT persist across a cloud-container reclaim. Path ② is
+        durable; the in-session resume above is durable AND immediate.
 
-     ② Canonical drop (skip ingestion):
+     ② Canonical drop (skip ingestion, durable):
         Write the research directly as
         docs/features/.../<feature-id>/RESEARCH.md
         On your next /lazy-batch run, lazy-state.py routes straight to Step 5
         (integrate research → /spec Phase 3) — no ingestion step needed.
 
-     ③ One-off file path (e.g. ~/Downloads/<file>.txt, phone-synced folder,
-        anywhere outside the repo):
+     ③ One-off file path (workstation only):
         Run /ingest-research <absolute-or-relative-path-to-the-file> first.
         That skill copies the file into the staging dir, correlates it, and
         writes RESEARCH.md + RESEARCH_SUMMARY.md. Then re-run /lazy-batch
         to resume the pipeline.
 
-   Re-invoke with /lazy-batch {max_cycles} [--allow-research-skip] when ready.
+   Re-invoke with /lazy-batch {max_cycles} [--allow-research-skip] when ready
+   (only required if you did NOT use the in-session resume path above).
    ```
 
 3. **PushNotification:**
@@ -367,9 +381,9 @@ No special resume detection is needed in `/lazy-batch`'s main loop — every upl
 
 **Cycle accounting at resume.** The new `/lazy-batch` invocation gets a fresh `max_cycles` budget. The previous session's cycle count is gone (no persistence layer — see Notes). This is by design: each `/lazy-batch <N>` run is a bounded budget the user authorizes.
 
-### 1g. Decision-halt mode (`terminal_reason == "needs-input"`)
+### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (post-research only — per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`) wrote `NEEDS_INPUT.md` with a genuine design choice. The orchestrator surfaces the choice to the user via `AskUserQuestion`, captures the answer, persists it to disk, and halts the loop.
+Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (post-research only — per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`) wrote `NEEDS_INPUT.md` with a genuine design choice. The orchestrator surfaces the choice to the user via `AskUserQuestion`, captures the answer, persists it to disk, **dispatches a Sonnet subagent to apply the choice to SPEC.md / PHASES.md and neutralize the sentinel**, and then **continues the loop** — there is no halt. The user retains decision-making autonomy (they answered the question); the apply step is mechanical propagation of the choice into the planning docs.
 
 **Algorithm:**
 
@@ -394,7 +408,7 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
 2. **Re-print the rich body to chat VERBATIM.** This is the load-bearing context the user needs BEFORE the truncated `AskUserQuestion` UI fires:
 
    ```
-   🛑 /lazy-batch — Decision required
+   ❓ /lazy-batch — Decision required (loop will resume after your answer)
 
    Feature: {feature_name} ({feature_id})
    Writer:  {written_by}
@@ -407,6 +421,11 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
    the section as-is, no summarization.}
 
    ─────────────────────────────────────────────────────────────────────────
+
+   After you answer the AskUserQuestion prompts below, I will dispatch a
+   Sonnet subagent to apply your choice(s) into SPEC.md / PHASES.md and
+   neutralize NEEDS_INPUT.md, then immediately resume the batch loop. No
+   manual re-run required.
    ```
 
 3. **Call `AskUserQuestion` per decision.** For each `decisions[i]` (1..N, capped at 4 per HARD CONSTRAINT — see `sentinel-frontmatter.md` Producer responsibilities), build one entry in the `questions` array:
@@ -440,25 +459,78 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
 
    Use the `Edit` tool to append this block to the existing `NEEDS_INPUT.md` — do NOT overwrite. Use the `Write` tool only as a fallback if `Edit` cannot find a unique insertion point at end-of-file (in practice, append by reading the file, concatenating the new section, and `Write`-ing the combined content back). HARD CONSTRAINT 1 allows this specific append.
 
-5. **Commit the resolved sentinel.** Stage `NEEDS_INPUT.md` and commit per the project's commit policy:
+5. **Commit the resolved sentinel.** Stage `NEEDS_INPUT.md` (with the new `## Resolution`) and commit per the project's commit policy:
 
    - First try `.claude/skill-config/commit-policy.md`; if absent, follow the standard pattern.
-   - Commit message: `docs({feature_id}): record decision-halt resolution`
+   - Commit message: `docs({feature_id}): record decision resolution`
 
    Do NOT push (consistent with other orchestrator-inline commits).
 
-6. **Append to `cycle_log`:** `{cycle+1, feature_name, "🛑 needs-input", "<N> decision(s) resolved; Resolution appended"}`. Increment `cycle` by 1.
-
-7. **Halt with the final batch report.** Print the standard Step 2 report. The "Next step" guidance for `needs-input` reads:
+6. **Dispatch the Sonnet apply-resolution subagent.** Build the prompt:
 
    ```
-   Apply the resolution(s) in {spec_path}/NEEDS_INPUT.md to the relevant
-   SPEC.md / PHASES.md sections, delete NEEDS_INPUT.md (or leave it as the
-   audit trail and delete the kind: needs-input frontmatter to neutralize
-   the state-script halt), then re-run /lazy-batch to continue.
+   You are applying a user-resolved design decision back into the feature docs.
+
+   Feature: {feature_name} ({feature_id})
+   Working directory: {cwd}
+   Sentinel file:    {spec_path}/NEEDS_INPUT.md
+
+   The user just answered the decision(s) in NEEDS_INPUT.md's `## Decision
+   Context` section. Their answers are in the appended `## Resolution` section
+   at the bottom of that file (date, per-decision Choice + optional Notes).
+   Your job is to propagate those choices into the feature's planning docs and
+   neutralize the sentinel so the orchestrator's next /lazy-state.py call does
+   not halt on it again.
+
+   Steps:
+     1. Read NEEDS_INPUT.md fully (frontmatter + Decision Context + Resolution).
+     2. For EACH decision, locate the section(s) of {spec_path}/SPEC.md and/or
+        {spec_path}/PHASES.md that the choice impacts. Apply the choice
+        surgically: update the design narrative, the implementation plan, API
+        shape, schema choice, dependency selection — whatever the decision
+        touches. Keep edits scoped; the choice is the user's, your job is
+        mechanical propagation. If a decision has no impact on either doc
+        (rare — e.g., the question was about future-phase scaffolding not
+        drafted yet), record that in your summary and move on.
+     3. Neutralize NEEDS_INPUT.md so lazy-state.py stops returning
+        terminal_reason=needs-input on the next cycle. Do EITHER:
+          (a) Rename the file to NEEDS_INPUT_RESOLVED.md (preserves audit
+              trail at a new path), OR
+          (b) Edit the frontmatter to change `kind: needs-input` to
+              `kind: needs-input-resolved` (preserves audit trail in place).
+        Prefer (b) — it keeps the file's git history continuous. Either way,
+        the Decision Context + Resolution body MUST be preserved verbatim.
+     4. Commit per .claude/skill-config/commit-policy.md (or standard pattern).
+        Commit message: `docs({feature_id}): apply decision resolution to
+        SPEC/PHASES`.
+     5. Report a one-paragraph summary (under 8 lines): which files were
+        edited, which sections changed, how each choice was applied, commit
+        hash. If any decision was a no-op against SPEC/PHASES, say so
+        explicitly so the orchestrator's cycle log is accurate.
+
+   You may NOT spawn further subagents. You MAY use Edit/Write on SPEC.md,
+   PHASES.md, and the sentinel — this dispatch exists to authorize exactly
+   those edits.
    ```
 
-8. **DO NOT auto-edit SPEC.md / PHASES.md based on the user's choice.** Applying a design decision can ripple across multiple sections in non-obvious ways — the user has explicitly retained that authority ("the goal is to eliminate my waiting, not my decision-making autonomy"). The `## Resolution` section is the audit trail; the human's manual edit is what commits the decision to the spec/phases docs.
+   Dispatch:
+
+   ```
+   Agent({
+     description: "lazy-batch decision-apply: {feature_name}",
+     subagent_type: "general-purpose",
+     model: "sonnet",
+     prompt: <the prompt above>
+   })
+   ```
+
+7. **Record and continue the loop.**
+   - Append to `cycle_log`: `{cycle+1, feature_name, "▶ needs-input (resolved + applied)", "<N> decision(s); <one-line subagent summary>"}`.
+   - Print one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: needs-input resolved → {first-line-of-subagent-summary}"`.
+   - Update `prev_cycle_signature = (feature_id, "__apply_needs_input__", current_step)`. The synthetic sub_skill token distinguishes this from any real-skill cycle so the Step 1d loop-guard treats it as its own kind of cycle.
+   - Increment `cycle`. Return to Step 1a. **DO NOT halt, DO NOT print the final batch report.** The next state-script call should see the neutralized sentinel and route to the natural next step for the feature (typically resuming the skill that wrote NEEDS_INPUT.md — `/write-plan` or `/execute-plan` — now that the design ambiguity is resolved).
+
+This eliminates the legacy "answer → halt → manual SPEC/PHASES edit → re-run /lazy-batch" friction. The user's autonomy is preserved in step 3 (the choice itself); steps 6–7 are bounded mechanical work delegated to Sonnet so the orchestrator's Opus context stays lean.
 
 ---
 
@@ -482,9 +554,9 @@ When the loop exits (terminal state or max-cycles), print:
 
 **Next step:**
   - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
-  - If terminal_reason is "needs-input": apply the `## Resolution` in {spec_path}/NEEDS_INPUT.md to SPEC.md / PHASES.md, delete the sentinel (or neutralize its frontmatter to keep the audit trail), then re-run `/lazy-batch {max_cycles}`
-  - If terminal_reason is "needs-research" (DEFAULT path, strict halt): run Gemini Deep Research against the prompt printed inline in Step 4's halt announcement, then upload the result via any of the three paths shown there (staged .txt in docs/gemini-sprint/results/, direct RESEARCH.md drop into the feature dir, or /ingest-research <path> for a one-off file). Then re-run `/lazy-batch {max_cycles}`.
-  - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): upload the research for one or more pending features via any of the three paths shown in Step 1f's announcement. Then re-run `/lazy-batch {max_cycles} [--allow-research-skip]`.
+  - If terminal_reason is "needs-research" (DEFAULT path, strict halt): the fastest resume path is to upload Gemini research in your NEXT MESSAGE in this conversation — the in-session resume protocol (Step 5) will dispatch /ingest-research and re-invoke /lazy-batch automatically. Otherwise, stage/drop the research per Step 4's halt announcement and re-run `/lazy-batch {max_cycles}` manually.
+  - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): same as needs-research — upload research in chat for fastest resume, or use one of the staged/drop paths and re-run `/lazy-batch {max_cycles} [--allow-research-skip]`.
+  - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch invocation.)
   - If max-cycles: re-run `/lazy-batch {max_cycles}` from a fresh session
 ```
 
@@ -575,16 +647,29 @@ This is the new default. The orchestrator halts on the FIRST `needs-research` it
 
    [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
 
-   When you have the result, choose one upload path:
-     ① Save as docs/gemini-sprint/results/{feature_id}.txt. The next
-        /lazy-batch run auto-ingests via Step 0.5.
-     ② Drop directly as {spec_path}/RESEARCH.md (skips ingestion;
-        lazy-state.py routes to /spec Phase 3 on next run).
-     ③ /ingest-research <path> for a one-off file outside the repo
-        (e.g. ~/Downloads/<file>.txt, phone-synced folder). Then re-run
-        /lazy-batch.
+   FASTEST RESUME — upload the research in your NEXT MESSAGE in this
+   conversation (file attachment, pasted text, or absolute path). I will
+   dispatch /ingest-research IN-SESSION (writing the tracked RESEARCH.md +
+   RESEARCH_SUMMARY.md into the feature directory) and re-invoke /lazy-batch
+   automatically. No manual re-run required. See Step 5: In-Session Resume
+   Protocol.
 
-   Re-invoke with /lazy-batch {max_cycles} when ready.
+   Alternative upload paths (use these if you prefer to stage and resume
+   later):
+     ① Save as docs/gemini-sprint/results/{feature_id}.txt. The next
+        /lazy-batch run auto-ingests via Step 0.5. NOTE: this path is
+        gitignored — a bare .txt stage is non-durable across cloud-container
+        reclaim. Use the in-session path above or path ② if cloud durability
+        matters.
+     ② Drop directly as {spec_path}/RESEARCH.md (skips ingestion;
+        lazy-state.py routes to /spec Phase 3 on next run). This file IS
+        tracked, so it survives cloud reclaim.
+     ③ /ingest-research <path> for a one-off file outside the repo
+        (workstation only — cloud cannot see file paths outside the
+        container's repo working tree). Then re-run /lazy-batch.
+
+   Re-invoke with /lazy-batch {max_cycles} when ready (only required if you
+   did NOT use the in-session resume path above).
    ```
 
    `{within | over}` is chosen by comparing the measured char count to 24,000 (Gemini's practical web-UI character cap; see `~/.claude/skills/spec/SKILL.md` Phase 2 for source notes). When over, append `(may need manual trimming before paste)` to that line — informational only, do NOT refuse to print.
@@ -610,6 +695,99 @@ This restores the pre-default-flip behavior. The orchestrator drops a sentinel, 
 **Special pre-step (both paths):** if the state script returns `sub_skill: "spec"` with args that include "skip to Phase 2", the orchestrator dispatches it normally (this generates the RESEARCH_PROMPT.md). On the next cycle, the state script returns `needs-research` and this Step 4 fires. That's the intended two-cycle handoff for a feature with no research at all.
 
 **Multi-feature accumulation (opt-in path only):** under `--allow-research-skip`, Steps 1a → 4 → 1a (skip) → 4 (next feature) ... can fire repeatedly during the first pass through the queue, each time appending another `feature_id` to `research_pending` and dropping another `NEEDS_RESEARCH.md`. The pass terminates when the state script returns `queue-blocked-on-research` (every remaining feature is research-pending) OR when a ready feature is found (the loop dispatches it normally). Under the default path this cannot happen because Step 4 halts on the first `needs-research`.
+
+---
+
+## Step 5: In-Session Resume Protocol (research uploaded via chat)
+
+**When this protocol fires.** `/lazy-batch` halted (Step 4 default-path or Step 1f) on a research-pending state and printed the "Done" report. The user's NEXT MESSAGE in the same conversation contains research content for one or more pending features. This protocol is the chat-driven counterpart to Step 0.5's filesystem-driven pre-loop ingest — the user's upload IS the resume signal, and `/lazy-batch` re-enters immediately without the user typing `/lazy-batch` again.
+
+**Why this exists.**
+
+- **Eliminates the "rerun the skill" step.** The screenshot-canonical pre-change flow was: halt → user uploads research → assistant says "I'll stage this for the next /lazy-batch run" → user manually types /lazy-batch. The new flow collapses that to: halt → user uploads research → assistant ingests + re-invokes inline.
+- **Resolves the cloud-gitignore friction.** `docs/gemini-sprint/results/` is gitignored in AlgoBooth (and other consumers following the gemini-sprint pattern). A bare `.txt` stage in a cloud container does not survive container reclaim — only the tracked `RESEARCH.md` + `RESEARCH_SUMMARY.md` produced by `/ingest-research` are durable. Dispatching `/ingest-research` IN-SESSION guarantees the durable files exist before the container goes away.
+- **HARD CONSTRAINT 7 still holds.** Responding to a single chat message is NOT polling. The orchestrator did not actively wait — it halted cleanly, the user took whatever time they needed (minutes, hours, days), and only when the user's next message arrives does this protocol activate. There is no `Monitor`/`sleep`/loop in the halt path.
+
+**Protocol — what to do on the user's next-message research upload.**
+
+This protocol is read by Claude on the turn AFTER the halt, with the halted `/lazy-batch` skill no longer loaded. The protocol lives here (and is surfaced verbatim in each halt announcement) so that Claude has clear instructions for the resume turn.
+
+1. **Identify the research content and target feature(s).** The user's message may carry research as:
+   - A file attachment (Claude Code-uploaded file path under `/root/.claude/uploads/...` or similar).
+   - Pasted text — typically inside a fenced code block, but free-form prose is also valid.
+   - An absolute file path (e.g. `~/Downloads/<file>.txt`, a phone-synced folder path).
+   - Multiple of the above mixed in one message (e.g., one file per feature).
+
+   Correlate each piece of content to a pending feature via the most recently halted invocation's pending list (the `Pending: <feature_ids>` line from Step 1f, or the single `feature_id` from Step 4). When the upload is unambiguously for one feature (only one was pending, or the user named the feature in the message), proceed directly. When multiple features were pending and the correlation is ambiguous, ask ONE `AskUserQuestion` clarifying "which feature does this research belong to?" before continuing — this is the only AskUserQuestion call permitted outside Step 1g, and only at the in-session resume boundary.
+
+2. **Materialize the research into the staging dir.**
+   - For file attachments / absolute paths: copy the file to `docs/gemini-sprint/results/<feature_id>.txt` (rename to match the feature_id for clean correlation by `/ingest-research`). Use `Bash` `cp` — do NOT move (the source file may be in a synced folder).
+   - For pasted text: `Write` the pasted content to `docs/gemini-sprint/results/<feature_id>.txt` verbatim. Preserve any `## Project context` header or other framing the user provided.
+   - For multi-feature uploads: repeat per feature.
+
+3. **Dispatch `/ingest-research` IN-SESSION.** This is exactly the call Step 0.5 makes at the start of a fresh `/lazy-batch` invocation — running it now produces the same tracked outputs (`RESEARCH.md` + `RESEARCH_SUMMARY.md` per feature, `> Draft (pre-Gemini)` trailer cleared in SPEC.md, `queue.json "stub": true` cleared, consumed `.txt` moved to `_consumed/`, per-feature commits) before any container reclaim. Dispatch as a Sonnet subagent (matching `/ingest-research`'s model):
+
+   ```
+   Agent({
+     description: "in-session resume: ingest uploaded research",
+     subagent_type: "general-purpose",
+     model: "sonnet",
+     prompt: <prompt below>
+   })
+   ```
+
+   Subagent prompt:
+
+   ```
+   The user has just uploaded Gemini deep-research result(s) mid-session,
+   resuming a /lazy-batch run that halted on needs-research (or
+   queue-blocked-on-research). The research file(s) have already been
+   materialized into docs/gemini-sprint/results/ as <feature-id>.txt.
+
+   Working directory: {cwd}
+   Staged files (relative to repo root):
+     - docs/gemini-sprint/results/{feature_id_1}.txt
+     - docs/gemini-sprint/results/{feature_id_2}.txt  (if multiple)
+     ...
+
+   Action: Invoke /ingest-research with no arguments. It will scan the
+   staging dir, correlate each .txt to a feature, write per-feature
+   RESEARCH.md + RESEARCH_SUMMARY.md, drop the > Draft (pre-Gemini) SPEC
+   trailer, clear queue.json "stub": true, move consumed .txt to
+   _consumed/, and commit per feature.
+
+   Cloud-durability note: docs/gemini-sprint/results/ is gitignored, so the
+   staged .txt itself does NOT persist across container reclaim — but the
+   RESEARCH.md + RESEARCH_SUMMARY.md files /ingest-research writes into
+   docs/features/<.../>/{feature_id}/ ARE tracked and DO persist. That is
+   the load-bearing durability guarantee of this resume path.
+
+   After /ingest-research returns:
+     1. Report its final summary block.
+     2. Confirm which feature_ids now have RESEARCH.md on disk.
+     3. Flag any ambiguous correlations (NEEDS_INPUT.md sentinels written) —
+        the next /lazy-batch cycle will reach Step 1g (decision-resume mode)
+        on them and AskUserQuestion the user.
+
+   You may NOT spawn further subagents.
+   ```
+
+4. **Re-invoke `/lazy-batch` automatically.** After the subagent reports success, immediately invoke `/lazy-batch <N>` where `<N>` is the original `max_cycles` from the halted invocation (or the remaining budget if the user prefers — default to the original cap; surface the choice in the resume status line so the user can interject before the next halt). The re-invocation re-enters via Step 0 → Step 0.5 (which is now a no-op because the .txt has been moved to `_consumed/` by `/ingest-research`) → Step 1, and the previously research-pending feature is now ready for `/spec` Phase 3.
+
+5. **Print a brief resume status line BEFORE the re-invocation, so the user sees the bridge:**
+
+   ```
+   ▶ In-session resume — ingested research for {comma-separated feature_ids}.
+   Re-invoking /lazy-batch {max_cycles}...
+   ```
+
+   Then call `/lazy-batch`. No further user action required.
+
+**What the in-session resume protocol does NOT do.**
+
+- It does NOT skip `/ingest-research` (path ② — direct RESEARCH.md drop). Even if the user pastes content that looks like a finished `RESEARCH.md`, the standardized ingestion produces the matching `RESEARCH_SUMMARY.md`, drops the SPEC trailer, and clears the stub flag — those are mechanical chores worth doing every time.
+- It does NOT auto-resume on a `needs-input` halt. `needs-input` is no longer a halt (Step 1g resumes inline); the in-session resume protocol is specifically for the research-pending halt classes (`needs-research` and `queue-blocked-on-research`).
+- It does NOT preserve cycle accounting across the halt. The new `/lazy-batch <N>` invocation gets a fresh budget — each `/lazy-batch <N>` is an independent bounded run, consistent with the cycle-accounting note in Step 1f.
 
 ---
 
