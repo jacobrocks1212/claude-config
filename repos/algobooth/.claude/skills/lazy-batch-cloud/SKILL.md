@@ -1,6 +1,6 @@
 ---
 name: lazy-batch-cloud
-description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, NEEDS_INPUT.md (post-research decision halt), needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), cloud-queue-exhausted, or max-cycles cap.
+description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), cloud-queue-exhausted, or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. Research uploaded mid-session via chat triggers in-session resume: /ingest-research is dispatched immediately (writing the tracked RESEARCH.md + RESEARCH_SUMMARY.md — critical because docs/gemini-sprint/results/ is gitignored and bare .txt stages do not survive cloud-container reclaim) and the loop is re-invoked — no manual re-run required.
 argument-hint: <max-cycles, e.g. 10> [--allow-research-skip]
 plan-mode: never
 model: opus
@@ -23,13 +23,13 @@ This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended div
 
 Identical to `/lazy-batch`:
 
-1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action. `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-halt mode) after `AskUserQuestion` returns. All other `Write`/`Edit` operations require subagent dispatch.
+1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action. `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. All other `Write`/`Edit` operations require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
 2. The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool. Every sub-skill goes through a spawned `Agent` subagent. Pseudo-skills (`__*__`) are not real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
 3. The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files. State inference is exclusively via `lazy-state.py --cloud`. Sentinel files MAY be read by the orchestrator to confirm a write or drive a pseudo-skill action.
 4. One cycle = one subagent dispatch FOR REAL WORK SKILLS. Pseudo-skill cycles (sentinel writes) are inline orchestrator actions that count as one cycle each.
-5. **Interactive prompts are scoped to decision-halt mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`) and append a `## Resolution` section before halting.
+5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. The user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation as a quality issue and halt instead (see Step 1g.1).
-7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` fires, the orchestrator halts cleanly (Step 1f). The user's next `/lazy-batch-cloud` invocation is the resume signal.
+7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch-cloud` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 
 **Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. The cycle subagent's prompt (Step 1d below) makes this explicit.
 
@@ -83,7 +83,7 @@ Pass `--skip-needs-research` **only when `allow_research_skip == true` AND `skip
 
 Same handling as `/lazy-batch` for `blocked`, `needs-input`, `needs-spec-input`, `queue-missing`, `all-features-complete`. Cloud-specific:
 
-- **`needs-input`**: see Step 1g (decision-halt mode — identical to `/lazy-batch` Step 1g).
+- **`needs-input`**: see Step 1g (decision-resume mode — identical to `/lazy-batch` Step 1g). **Not a terminal state for the orchestrator anymore** — Step 1g resolves the decision via `AskUserQuestion`, dispatches the Sonnet apply-resolution subagent, and returns to Step 1a. Do NOT print the final batch report.
 - **`cloud-queue-exhausted`**: PushNotification `"Cloud queue exhausted after {cycle} cycle(s) — N feature(s) awaiting workstation /lazy for MCP test."` Print final batch report, STOP.
 - **`needs-research`**: see Step 4 (research halt — same dual-path shape as `/lazy-batch`, but the sentinel's `written_by` is `lazy-batch-cloud`). Default (strict halt) writes the sentinel, prints the inline-prompt halt announcement, PushNotifies, prints the final batch report, and STOPs. Opt-in (`--allow-research-skip`) drops the sentinel, flips `skip_needs_research = true`, returns to Step 1a.
 - **`queue-blocked-on-research`**: see Step 1f (research-wait mode — identical to `/lazy-batch` Step 1f). **Only reachable when `allow_research_skip == true`.**
@@ -212,24 +212,26 @@ Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, update `pre
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 1f for the full algorithm and the announcement template — replace "/lazy-batch" with "/lazy-batch-cloud" in the chat text. Cloud-specific upload nuance:
 
-- **Upload path ① (staged .txt)** is the recommended cloud flow: save each Gemini output as `docs/gemini-sprint/results/<feature-id>.txt` and commit/push from the GitHub UI (or any workstation). The next `/lazy-batch-cloud` run's Step 0.5 auto-ingests via `/ingest-research`.
-- **Upload path ② (direct RESEARCH.md drop)** is workable from cloud but requires committing the file via the GitHub UI; it skips ingestion and routes directly to `/spec` Phase 3 on the next run.
-- **Upload path ③ (`/ingest-research <path>`)** is workstation-only — it operates on file paths the cloud container can't see. If you're working from the phone via the cloud branch, use path ① or ②.
+- **FASTEST RESUME (cloud-recommended): in-session upload via chat.** Upload the research in your NEXT MESSAGE — file attachment, pasted text, or any chat-uploaded file. The orchestrator (per Step 5) dispatches `/ingest-research` in-session, which writes the tracked `RESEARCH.md` + `RESEARCH_SUMMARY.md` into the feature directory BEFORE the cloud container is reclaimed. This is the only fully-durable cloud resume path that does not require leaving the conversation.
+- **Upload path ① (staged .txt, gitignored — non-durable in cloud):** save each Gemini output as `docs/gemini-sprint/results/<feature-id>.txt`. **The `docs/gemini-sprint/results/` path is gitignored**, so a bare `.txt` stage from a cloud session will NOT survive container reclaim — it only works if you also commit/push the staged file from a workstation (GitHub UI push), or if `/ingest-research` runs in-session to convert the staged .txt into the tracked RESEARCH.md + RESEARCH_SUMMARY.md before the container goes away. The in-session resume above does exactly that.
+- **Upload path ② (direct RESEARCH.md drop, durable):** write the research directly to `docs/features/.../<feature_id>/RESEARCH.md`. This file IS tracked, so it survives cloud reclaim. From cloud, you still need to commit the file inside the container (the cycle subagent on the next run will commit it as part of normal work, or you can commit it explicitly). The next `/lazy-batch-cloud` run routes straight to `/spec` Phase 3.
+- **Upload path ③ (`/ingest-research <path>`)** is workstation-only — it operates on absolute file paths the cloud container cannot see. If you're working from a phone via the cloud branch, use the in-session resume path or path ②.
 
-The user can mix environments: drop `RESEARCH.md` directly from workstation, then resume from cloud; or run `/ingest-research <phone-synced-path>` from workstation, then resume from either side.
+The user can mix environments: drop `RESEARCH.md` directly from workstation, then resume from cloud; or upload research via chat in the cloud session and let the in-session resume protocol handle it end-to-end.
 
-### 1g. Decision-halt mode (`terminal_reason == "needs-input"`)
+### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Identical to `/lazy-batch` Step 1g** — the decision-halt protocol is shared. See `~/.claude/skills/lazy-batch/SKILL.md` Step 1g for the full algorithm:
+**Identical to `/lazy-batch` Step 1g** — the decision-resume protocol is shared, and **does not halt**. See `~/.claude/skills/lazy-batch/SKILL.md` Step 1g for the full algorithm:
 
 1. Read and validate `NEEDS_INPUT.md` (schema check on `## Decision Context` H2 + H3 1:1).
 2. Re-print the rich body to chat VERBATIM.
 3. `AskUserQuestion` per decision (label, header, options).
 4. Append `## Resolution` to NEEDS_INPUT.md.
-5. Commit per project policy.
-6. Increment `cycle`. Halt with final batch report.
+5. Commit the resolved sentinel per project policy.
+6. Dispatch the **Sonnet apply-resolution subagent** to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel (rename to `NEEDS_INPUT_RESOLVED.md` OR change frontmatter `kind:` to `needs-input-resolved`).
+7. Append to `cycle_log`, update `prev_cycle_signature = (feature_id, "__apply_needs_input__", current_step)`, increment `cycle`. **Return to Step 1a — do NOT halt.**
 
-Cloud has no special handling here — decision halts are filesystem-level and run identically in cloud and workstation.
+Cloud has no special handling here — decision resolution is filesystem-level and runs identically in cloud and workstation. The Sonnet subagent's SPEC/PHASES edits are docs-only (no source code, no Tauri runtime, no MCP), so cloud limitations do not apply. **Replace `/lazy-batch` with `/lazy-batch-cloud` in the chat heading and any re-invoke references** when reproducing the announcement in a cloud session.
 
 ---
 
@@ -240,9 +242,9 @@ Same as `/lazy-batch`. Header is `## /lazy-batch-cloud — Done`. Cloud-specific
 ```
 **Next step:**
   - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
-  - If terminal_reason is "needs-input": apply the `## Resolution` in {spec_path}/NEEDS_INPUT.md to SPEC.md / PHASES.md, delete the sentinel (or neutralize its frontmatter to keep the audit trail), then re-run `/lazy-batch-cloud {max_cycles}`
-  - If terminal_reason is "needs-research" (DEFAULT path, strict halt): run Gemini Deep Research against the prompt printed inline in Step 4's halt announcement, then upload the result via path ① (staged .txt → GitHub UI push) or path ② (direct RESEARCH.md drop → GitHub UI push). Path ③ (`/ingest-research <path>`) is workstation-only. Then re-run `/lazy-batch-cloud {max_cycles}`.
-  - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): upload research for one or more pending features via path ① or ② (path ③ is workstation-only). Then re-run `/lazy-batch-cloud {max_cycles} [--allow-research-skip]`.
+  - If terminal_reason is "needs-research" (DEFAULT path, strict halt): the fastest (and only fully-durable cloud) resume path is to upload Gemini research in your NEXT MESSAGE in this conversation — the in-session resume protocol (Step 5) will dispatch /ingest-research and re-invoke /lazy-batch-cloud automatically, writing the tracked RESEARCH.md before container reclaim. Otherwise, drop RESEARCH.md directly (path ②) and re-run `/lazy-batch-cloud {max_cycles}` from a fresh session.
+  - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): same as needs-research — upload research in chat for fastest resume, or use path ② and re-run `/lazy-batch-cloud {max_cycles} [--allow-research-skip]`.
+  - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch-cloud invocation.)
   - If terminal_reason is "cloud-queue-exhausted": run /lazy on workstation to run MCP tests
   - If max-cycles: re-run `/lazy-batch-cloud {max_cycles}` from a fresh session
 ```
@@ -273,11 +275,35 @@ Same as `/lazy-batch`. Per-cycle one-line status, compact for long batches.
   ---
   ```
 
-- **Default-path halt announcement uses `/lazy-batch-cloud` in the chat heading and re-invoke line.** Replace every `/lazy-batch` token in the announcement template with `/lazy-batch-cloud`. The fenced ```text prompt block, char-count over/under indicator (against the 24,000-char Gemini cap), and three upload paths are unchanged.
+- **Default-path halt announcement uses `/lazy-batch-cloud` in the chat heading and re-invoke line.** Replace every `/lazy-batch` token in the announcement template with `/lazy-batch-cloud`. The fenced ```text prompt block and char-count over/under indicator (against the 24,000-char Gemini cap) are unchanged. The "FASTEST RESUME" block (in-session chat upload → /ingest-research → re-invoke) is identical, only the re-invoke command name differs.
 
-- **Upload path ③ (`/ingest-research <path>`)** is workstation-only — cloud cannot reach file paths outside the repo. Surface this in the upload-paths list as `(workstation only)` after the path label so the operator picks ① or ② when resuming from the phone via the cloud branch.
+- **The cloud announcement reorders the alternative upload paths to reflect cloud reality.** In cloud:
+  - **Path ① (staged .txt)** is gitignored and therefore NON-DURABLE across container reclaim unless ingested in-session. Surface this with the prefix `(gitignored — non-durable unless ingested in-session; in-session resume above does that automatically)`.
+  - **Path ② (direct RESEARCH.md drop)** is durable. Recommended fallback when not using the in-session resume.
+  - **Path ③ (`/ingest-research <path>`)** is workstation-only — cloud cannot reach file paths outside the container's repo working tree. Surface as `(workstation only)`.
 
-Cloud cannot run Gemini itself — but the user provides research via any of the upload paths the announcement lists. Step 0.5's pre-loop check and the natural state-script flow auto-detect each path on the next `/lazy-batch-cloud` invocation — no active polling.
+- **In-session resume is the primary cloud-recommended path.** The default-path announcement's "FASTEST RESUME" block (per Step 5) is the load-bearing cloud durability guarantee: `/ingest-research` runs in-session and writes the tracked `RESEARCH.md` + `RESEARCH_SUMMARY.md` BEFORE the cloud container is reclaimed. Without this protocol, a cloud user uploading a `.txt` to the gitignored staging dir would lose the file on reclaim.
+
+Cloud cannot run Gemini itself — but the user provides research via any of the upload paths the announcement lists. Step 5 (in-session resume), Step 0.5's pre-loop check, and the natural state-script flow handle each path appropriately.
+
+---
+
+## Step 5: In-Session Resume Protocol (research uploaded via chat)
+
+**Identical to `/lazy-batch` Step 5** — see `~/.claude/skills/lazy-batch/SKILL.md` Step 5 for the full algorithm. Summary:
+
+1. User uploads research in their NEXT MESSAGE after a Step 4 / Step 1f halt (file attachment, pasted text, or absolute path).
+2. Assistant correlates each upload to a pending feature (single AskUserQuestion permitted at this boundary if multi-feature ambiguity exists).
+3. Materialize content into `docs/gemini-sprint/results/<feature_id>.txt`.
+4. Dispatch `/ingest-research` as a Sonnet subagent. This writes the tracked `RESEARCH.md` + `RESEARCH_SUMMARY.md` into the feature directory, clears the `> Draft (pre-Gemini)` SPEC trailer, clears `queue.json "stub": true`, moves consumed `.txt` to `_consumed/`, and commits per feature.
+5. Re-invoke `/lazy-batch-cloud <N>` automatically (where `<N>` is the original `max_cycles`).
+6. Print a brief resume status line so the user sees the bridge.
+
+**Cloud-specific load-bearing rationale.** The `docs/gemini-sprint/results/` staging dir is gitignored. A bare `.txt` stage in cloud does NOT survive container reclaim. Step 5's in-session ingestion converts the non-durable staged `.txt` into the durable tracked `RESEARCH.md` + `RESEARCH_SUMMARY.md` BEFORE the container can be reclaimed — that is the cloud durability guarantee for the chat-upload path. Workstation users get the same convenience but without the durability stakes (their staged `.txt` survives between sessions on local disk).
+
+**Cycle accounting at resume.** Same as `/lazy-batch` — each `/lazy-batch-cloud <N>` invocation is an independent bounded run. The re-invocation starts with a fresh `max_cycles` budget.
+
+HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume is single-turn-event-driven (the user's next chat message), and nothing polls the filesystem between halt and resume.
 
 ---
 
@@ -295,8 +321,9 @@ Cloud cannot run Gemini itself — but the user provides research via any of the
 | `--allow-research-skip` argument | parsed in Step 0; gates Step 4 path + Step 1a `--skip-needs-research` flag. **Same semantics** in both. | same as workstation — strict halt on first `needs-research` by default; opt in to batched-research via the flag. |
 | Step 4 — default path (strict halt) | reads RESEARCH_PROMPT.md, prints fenced ```text inline halt announcement, PushNotifications, halts. **Same shape** in both. | same as workstation, but the announcement says `/lazy-batch-cloud` and upload path ③ is labeled `(workstation only)`. |
 | Step 4 — opt-in path (`--allow-research-skip`) | drops sentinel, flips `skip_needs_research = true`, returns to loop. **Same shape** in both. | same as workstation; sentinel `written_by: lazy-batch-cloud`. |
-| Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`. Reachable only under `--allow-research-skip`. Prints inline RESEARCH_PROMPT.md content for every pending feature, announces upload paths, PushNotification, STOP. Resume on next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation. Resume on next `/lazy-batch-cloud` invocation (or `/lazy-batch` from workstation — uploads are filesystem-shared). Upload path ③ labeled `(workstation only)`. |
-| Decision-halt mode (Step 1g) | `terminal_reason: needs-input` — **same shape** in both | `terminal_reason: needs-input` — **same shape** in both |
+| Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`. Reachable only under `--allow-research-skip`. Prints inline RESEARCH_PROMPT.md content for every pending feature, announces upload paths including in-session resume, PushNotification, STOP. Resume on next chat message (Step 5) OR next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation, with cloud-specific path reordering: in-session resume primary, ② durable fallback, ① gitignored/non-durable, ③ workstation-only. |
+| Decision-resume mode (Step 1g) | `terminal_reason: needs-input` — **NOT a halt** in either variant. AskUserQuestion → append Resolution → commit → dispatch Sonnet apply-resolution subagent (edits SPEC/PHASES, neutralizes sentinel) → return to Step 1a. **Same shape** in both. | same shape as workstation. SPEC/PHASES edits are docs-only, no cloud limitations apply. |
+| In-Session Resume Protocol (Step 5) | chat-driven resume path for research uploads. User uploads research in next message → assistant materializes into staging dir → dispatches `/ingest-research` Sonnet subagent in-session → re-invokes `/lazy-batch` automatically. **Same shape** in both. | same shape as workstation, with the cloud-durability framing: in-session ingestion is the only path that writes tracked files (RESEARCH.md + RESEARCH_SUMMARY.md) before cloud-container reclaim. Re-invocation uses `/lazy-batch-cloud`. |
 | Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
 
 All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f and Step 1g are also shared shape; both orchestrators reach them via the same state-script terminal reasons.
