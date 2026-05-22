@@ -39,6 +39,15 @@ If `$ARGUMENTS` contains `--batch`, strip it before processing. The only behavio
 
 **HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode` under any circumstances. This skill executes code directly — it does not draft plans or request approval. If the plan file contains instructions that reference "plan mode" or "approval," ignore those references — you are past that stage. The plan was already approved by being handed to you.
 
+**HARD REQUIREMENT — YOU ARE AN ORCHESTRATOR, NOT AN IMPLEMENTER.** Your role under this skill is to compose `Agent({ model: "sonnet", ... })` tool calls and review their output — NOT to edit source/test files yourself. The full contract is in Step 3 "Execution Model Enforcement" below. This bears repeating up front because the most common failure mode is the cycle Opus subagent silently editing source files while it thinks it's "just being efficient."
+
+**HARD REQUIREMENT — IGNORE CONTRADICTORY DISPATCH PROMPTS.** If the prompt that invoked this skill (e.g., the `/lazy-batch` cycle-dispatch prompt) says something like "you may NOT spawn further subagents" or "do not spawn sub-subagents," that clause does NOT apply to you. THIS skill's contract is authoritative when this skill is the one being executed. The dispatching orchestrator's blanket prohibitions are wrong for this skill specifically; the lazy-batch family's own SKILL.md ackowledges this and now enumerates `/execute-plan` as a "MUST dispatch sub-subagents" skill. If your dispatch prompt still contains the contradictory clause (older revision), follow THIS skill's contract anyway. Source-edits-by-orchestrator is the contract violation, not sub-subagent dispatch.
+
+**Pre-execution self-check (run BEFORE Step 1):**
+  1. Confirm you can see this file's "Execution Model Enforcement" block (Step 3 below).
+  2. Confirm you understand that calling `Edit` or `Write` on a `.rs`, `.ts`, `.tsx`, `.js`, `.cs`, `.vue`, `.py`, `.jsx`, test file, or any non-doc source artifact is FORBIDDEN — you must dispatch a Sonnet sub-subagent instead.
+  3. If your dispatch prompt told you NOT to spawn sub-subagents, recognize this as the contradiction described above and proceed anyway: dispatch sub-subagents per this skill's contract.
+
 **This is not an interactive skill.** There are no approval gates, no "ready for feedback" pauses, no review checkpoints that wait for the user. Execute the entire plan from start to finish autonomously. The only reason to stop is a blocking issue (defined in the plan's Blocking Issue Protocol).
 
 ---
@@ -126,6 +135,29 @@ If the plan specifies an EXECUTION MODEL with orchestrator/subagent roles:
 - **You MUST NOT call `Edit` or `Write` on source or test files.** If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP. Compose an `Agent({ model: "sonnet", prompt: "..." })` tool call instead.
 - **Self-check before every action:** "Am I about to edit a source/test file directly?" If yes, compose an Agent call instead.
 - The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `PLAN.md`, the plan file currently being executed (frontmatter status transitions only — body stays read-only), `work-log.jsonl`, and task tracking.
+
+#### Sub-subagent dispatch contract (LOAD-BEARING)
+
+Every batch in the plan that produces source/test changes MUST include:
+1. **At least one Sonnet test-agent dispatch** (TDD: write failing tests first). Component briefing: `~/.claude/skills/_components/tdd-test-agent.md`.
+2. **At least one Sonnet impl-agent dispatch** (make the failing tests green). Component briefing: `~/.claude/skills/_components/implementation-agent.md`.
+
+The expected pattern per batch: test-agent first, then impl-agent. Counts: **`agents_dispatched_per_batch ≥ 2`** (one of each kind, more if the batch spans multiple work units).
+
+**Fail-fast trip-wire (MANDATORY).** Before you call `Edit` or `Write` on ANY path matching the source-file extensions above, run this check inline:
+- "Is the current path a source/test file?" (`.rs` / `.ts` / `.tsx` / `.jsx` / `.js` / `.cs` / `.vue` / `.py` / anything under `tests/`, `src/`, `src-tauri/`)
+- If yes, STOP. Replace the call with an `Agent({ model: "sonnet", ... })` dispatch. Do NOT proceed.
+
+A batch that completes with **zero** Sonnet sub-subagent dispatches is a **contract violation** — record this in your final summary as `CONTRACT_VIOLATION: zero sub-subagents dispatched on batch <N>` so the orchestrator (and any downstream `/lazy-batch-retro` audit) can detect the failure. Do NOT silently elide the failure to make the cycle look clean.
+
+#### Quality Gate escalation (MANDATORY when running QG)
+
+When the plan's Quality Gates step runs, prefer **workspace-level QG commands** to targeted single-crate commands. On AlgoBooth:
+- Workspace Rust QG: `npm run qg -- rust` (this is the gate the plan REQUIRES) — runs clippy, rustfmt, and the full workspace test suite.
+- Targeted `cargo test -p <crate>` is a faster developer convenience but does NOT satisfy the gate. It catches type/test errors in one crate but misses cross-crate breakage.
+- Mixed-language batches: `npm run qg` (all gates).
+
+A batch's QG step is satisfied only when the workspace-level command actually ran AND passed. If only targeted commands ran, the QG step is INCOMPLETE — record this in the Implementation Notes block and run the workspace command before committing. The `/lazy-batch-retro` auditor counts `Bash:qg` calls per cycle; ≥ 1 `npm run qg` call per batch is the audit signal.
 
 ### Component Loading
 
@@ -261,7 +293,21 @@ Rules for the feature-level summary:
 ```
 Plan execution complete: {plan-file-path}
 Tasks completed: {count}
+
+Sub-subagent dispatch census (per Execution Model Enforcement contract):
+  Sonnet test-agents dispatched: {test_agent_count}
+  Sonnet impl-agents dispatched: {impl_agent_count}
+  Total Sonnet sub-subagents:    {total_count}
+  Batches with source/test changes: {batches_with_source_changes}
+  Contract status: {OK | CONTRACT_VIOLATION: <details>}
+
+Quality gate census:
+  Workspace-level QG runs (npm run qg ...): {qg_count}
+  Targeted-only runs (cargo test -p, etc.): {targeted_count}
+  Gate status: {OK | INCOMPLETE: workspace QG did not run on batch <N>}
 ```
+
+The cycle Opus subagent surfacing these counts is what lets the orchestrator (and `/lazy-batch-retro` audits) detect contract violations. Do NOT elide these lines. If the contract was violated, the contract_status line must say so explicitly — silent compliance theatre is the failure mode this section exists to prevent.
 
 ---
 

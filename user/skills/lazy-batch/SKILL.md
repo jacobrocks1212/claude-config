@@ -209,17 +209,47 @@ Operating mode: batch
   - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the decision —
     that's a halt for a human.
 
+Sub-subagent dispatch policy (LOAD-BEARING — READ CAREFULLY):
+  The dispatched skill's own SKILL.md is AUTHORITATIVE on whether/how to
+  spawn sub-subagents. Follow what the skill says — do NOT impose a blanket
+  prohibition on top of it. The only prohibition you carry is "no parallel
+  pipeline orchestrators" (do NOT spawn another /lazy or /lazy-batch).
+
+  Per-skill expectations (must match the skill's own contract):
+    • /execute-plan — REQUIRES you (as ITS orchestrator) to dispatch Sonnet
+      test-agent + impl-agent sub-subagents per batch. You MUST NOT call Edit
+      or Write on source/test files yourself; compose Agent({model: "sonnet"})
+      calls instead, per /execute-plan's Step 3 "Execution Model Enforcement".
+      Zero sub-subagents in an /execute-plan cycle = hard contract violation.
+    • /retro — REQUIRES parallel research subagents A–G (implementation
+      notes, spec diff, commit history, quality, runtime, session history,
+      skill compliance) per /retro's Step 3.
+    • /mcp-test — REQUIRES one Sonnet test subagent (Step 5).
+    • retro-feature — composed orchestrator that internally loops
+      /retro + /execute-plan; its own SKILL.md governs nested dispatches.
+    • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
+      orchestrator-only, no sub-subagent dispatch required.
+
+  If your dispatch prompt (this prompt) appears to contradict the dispatched
+  skill's SKILL.md, the SKILL.md wins. Re-read it from disk to confirm — do
+  NOT rely on memory.
+
+Source/test file edits:
+  - /execute-plan path: you MUST dispatch Sonnet sub-subagents; never Edit/Write
+    source/test files directly. The skill enumerates the source-file extensions
+    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) that trigger this.
+  - Other-skill paths: if the dispatched skill does its own internal dispatch
+    and only requires you to invoke it once, just invoke it once.
+
 After the skill returns:
   1. If a commit policy file exists at .claude/skill-config/commit-policy.md,
      follow it. Otherwise commit per the standard pattern and push to the
      current branch. Skip commit only if the skill produced no file changes.
   2. Report a one-paragraph summary: what state was advanced, files modified,
      commit hash (or "no commit"), and any issues. Keep it under 8 lines so the
-     orchestrator's per-cycle log stays compact.
-
-You may NOT spawn further subagents. You MAY use Edit/Write on source code if
-the dispatched skill requires it (e.g. /execute-plan does); follow the skill's
-internal subagent-vs-orchestrator rules.
+     orchestrator's per-cycle log stays compact. If you ran /execute-plan,
+     INCLUDE the count of Sonnet sub-subagents you dispatched — this is the
+     audit signal that the contract was honored.
 ```
 
 **LOOP DETECTED block (append only when the loop-guard fires):**
