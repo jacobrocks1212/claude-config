@@ -11,9 +11,9 @@ Thin LLM wrapper around `~/.claude/scripts/lazy-state.py --cloud`. The cloud var
 
 State-machine differences from `/lazy` (all encoded in `lazy-state.py --cloud`):
 - Step 2 skips cloud-saturated features (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md) and advances.
-- Step 8 dispatches `__write_deferred_non_cloud__` (the wrapper writes the sentinel) and falls through to retro on the next invocation.
-- Step 9 accepts DEFERRED_NON_CLOUD.md as an alternative entry gate to VALIDATED.md.
-- Step 10 halts (cloud cannot finalize) — terminal_reason `cloud-queue-exhausted`.
+- **Step 8 (retro) runs in cloud** — `/retro` is a docs/analysis pass (no Tauri, no MCP), so cloud sessions DO run it. This is the gap the new ordering closes: under the old order, cloud halted at MCP deferral and never reached retro.
+- Step 9 (MCP test) dispatches `__write_deferred_non_cloud__` (the wrapper writes the sentinel) and the loop ends — workstation `/lazy` picks up the deferral.
+- Step 10 halts (cloud cannot finalize without VALIDATED.md) — terminal_reason `cloud-queue-exhausted`.
 
 **HARD REQUIREMENT — ONE SKILL PER INVOCATION:** Execute at most one sub-skill (via Skill tool). After it completes, report what happened and STOP. Do not chain multiple skills. Writing a sentinel file (e.g. DEFERRED_NON_CLOUD.md) is part of the wrapper's special-action handling and does NOT count as a skill dispatch — but a special action and a skill dispatch in the same invocation IS still considered chaining and is disallowed.
 
@@ -62,7 +62,7 @@ The cloud session runs in an ephemeral Linux container with:
 - **No Windows-only tooling** — anything requiring Windows paths, PowerShell, or Windows-specific dependencies.
 - **No long-lived shared state** — the container is reclaimed after the session ends.
 
-When `lazy-state.py --cloud` would normally dispatch a step that requires the desktop environment (today: MCP testing), it returns `sub_skill: "__write_deferred_non_cloud__"` instead. The wrapper writes the DEFERRED_NON_CLOUD.md sentinel and stops; the next invocation's state script sees the sentinel and proceeds to retro.
+When `lazy-state.py --cloud` would normally dispatch a step that requires the desktop environment (today: MCP testing, Step 9), it returns `sub_skill: "__write_deferred_non_cloud__"` instead. The wrapper writes the DEFERRED_NON_CLOUD.md sentinel and stops. **Note:** `/retro` (Step 8) runs in cloud — it's a docs/analysis pass and does not require the Tauri runtime or MCP server. The cloud-saturated skip in Step 2 (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md) is the terminal state for a feature whose only remaining work is workstation MCP validation.
 
 ---
 
@@ -218,7 +218,9 @@ Identical to `/lazy`, plus the cloud-deferral sentinel:
 
 ## State Machine Summary
 
-The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to get the cloud-aware variants (Step 2 skip, Step 8 deferral, Step 10 halt). This skill is a thin LLM wrapper that runs the script, dispatches the named sub-skill or performs the named special action, and stops.
+The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to get the cloud-aware variants (Step 2 skip, **Step 8 retro runs in cloud**, Step 9 MCP deferral, Step 10 halt). This skill is a thin LLM wrapper that runs the script, dispatches the named sub-skill or performs the named special action, and stops.
+
+**Current step ordering after phases complete:** Step 8 retro → Step 9 MCP test (deferred in cloud) → Step 10 mark complete. `/retro` runs FIRST so the implementation-time retrospective gate fires regardless of whether MCP testing is available. The lazy state machine does not auto-loop retro — additional rounds are triggered only by `/retro` itself writing a follow-up plan.
 
 ```
 lazy-state.py --cloud → JSON {sub_skill, sub_skill_args, terminal_reason}

@@ -12,8 +12,11 @@ allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 Cloud variant of `/lazy-batch`. Identical orchestration shape: loop on the state script, spawn one Opus subagent per cycle, halt on the same terminal conditions — but the state script runs in `--cloud` mode, so:
 
 - Step 2 skips cloud-saturated features (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md).
-- Step 8 returns `__write_deferred_non_cloud__` instead of dispatching `/mcp-test`. The cycle subagent writes the deferral sentinel and the next cycle proceeds to retro.
+- **Step 8 (retro) runs in cloud** — `/retro` is a docs/analysis pass (no Tauri, no MCP). This is the gap the current ordering closes: under the old order (MCP before retro), cloud halted at the MCP deferral and never reached retro.
+- Step 9 returns `__write_deferred_non_cloud__` instead of dispatching `/mcp-test`. The orchestrator writes the deferral sentinel inline (Step 1c.5 pseudo-skill handling) — the next cycle either advances to a ready feature or halts on `cloud-queue-exhausted`.
 - Step 10 (mark complete) is unreachable from cloud unless a workstation has already produced VALIDATED.md. `cloud-queue-exhausted` is the normal terminal state when every remaining feature is awaiting workstation MCP testing.
+
+**Per-cycle dispatch order:** `/spec` → `/spec-phases` → `/write-plan` → `/execute-plan` → `/retro` (Step 8, cloud-runnable) → `/mcp-test` (Step 9, cloud defers) → mark-complete (Step 10, cloud halts).
 
 This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended divergences are documented in the "Differences from /lazy-batch" block below.
 
@@ -151,12 +154,43 @@ Operating mode: batch
     BLOCKED.md with blocker_kind: cloud-limitation per
     ~/.claude/skills/_components/sentinel-frontmatter.md and halt.
 
+Sub-subagent dispatch policy (LOAD-BEARING — READ CAREFULLY):
+  The dispatched skill's own SKILL.md is AUTHORITATIVE on whether/how to
+  spawn sub-subagents. Follow what the skill says — do NOT impose a blanket
+  prohibition on top of it. The only prohibition you carry is "no parallel
+  pipeline orchestrators" (do NOT spawn another /lazy-cloud or
+  /lazy-batch-cloud).
+
+  Per-skill expectations (must match the skill's own contract):
+    • /execute-plan — REQUIRES you (as ITS orchestrator) to dispatch Sonnet
+      test-agent + impl-agent sub-subagents per batch. You MUST NOT call Edit
+      or Write on source/test files yourself; compose Agent({model: "sonnet"})
+      calls instead, per /execute-plan's Step 3 "Execution Model Enforcement".
+      Zero sub-subagents in an /execute-plan cycle = hard contract violation.
+    • /retro — REQUIRES parallel research subagents A–G per /retro's Step 3.
+    • retro-feature — composed orchestrator; its own SKILL.md governs
+      nested dispatches.
+    • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
+      orchestrator-only, no sub-subagent dispatch required.
+    • /mcp-test — cloud cannot run this (Step 8 deferral); should not appear
+      in a cloud cycle's sub_skill.
+
+  If your dispatch prompt (this prompt) appears to contradict the dispatched
+  skill's SKILL.md, the SKILL.md wins. Re-read it from disk to confirm — do
+  NOT rely on memory.
+
+Source/test file edits:
+  - /execute-plan path: you MUST dispatch Sonnet sub-subagents; never Edit/Write
+    source/test files directly. The skill enumerates the source-file extensions
+    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) that trigger this.
+  - Other-skill paths: if the dispatched skill does its own internal dispatch
+    and only requires you to invoke it once, just invoke it once.
+
 After the skill returns:
   1. Commit per .claude/skill-config/commit-policy.md (or standard pattern).
-  2. Report a one-paragraph summary (under 8 lines).
-
-You may NOT spawn further subagents. You MAY use Edit/Write on source code if
-the dispatched skill requires it; follow the skill's internal subagent rules.
+  2. Report a one-paragraph summary (under 8 lines). If you ran /execute-plan,
+     INCLUDE the count of Sonnet sub-subagents you dispatched — this is the
+     audit signal that the contract was honored.
 ```
 
 **LOOP DETECTED block (append only when the loop-guard fires):**
