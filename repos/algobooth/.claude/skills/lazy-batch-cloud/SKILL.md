@@ -35,7 +35,7 @@ Identical to `/lazy-batch`:
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch-cloud` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 8. **The `cycle` counter is session-global and monotonic across feature transitions.** Identical to `/lazy-batch` HARD CONSTRAINT 8: `cycle` is initialized to 0 in Step 0 *once per `/lazy-batch-cloud` invocation* and incremented at the end of every cycle (Step 1c.5 step 4, Step 1e, Step 1g step 7). It MUST NOT be reset when `lazy-state.py --cloud` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next (via `__mark_complete__`, or because the prior feature hit `cloud-queue-exhausted`'s precondition and a later queue entry became current, or because the prior feature's `__write_deferred_non_cloud__` finished and the script rolled forward). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch-cloud` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch.
 
-**Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. The cycle subagent's prompt (Step 1d below) makes this explicit.
+**Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. **Additionally, the cloud cycle subagent does NOT have the `Agent` tool — recursive sub-subagent dispatch is not supported from inside a cloud subagent.** This forces a load-bearing override of any dispatched skill's sub-subagent contract: skills that nominally dispatch sub-subagents (e.g. `/execute-plan` → Sonnet test-agent + impl-agent fanout, `/retro` → research subagents A–G) are performed INLINE inside the cycle subagent itself using `Edit`/`Write`/`Read` directly. The cycle subagent's prompt (Step 1d below) makes both limitations explicit and enumerates the per-skill inline overrides. **This override applies only at the cycle-subagent level** — the orchestrator still dispatches exactly one `Agent` per cycle, identical to `/lazy-batch`. The override never expands the orchestrator's `Write`/`Edit` scope (HARD CONSTRAINT 1 still holds — the orchestrator edits only sentinels).
 
 ---
 
@@ -123,7 +123,7 @@ After the inline action:
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), the cloud cycle subagent prompt adds an explicit reminder of cloud limitations.
+If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), the cloud cycle subagent prompt adds explicit reminders of (1) cloud runtime limitations (no Tauri / MCP / audio / Windows-only tooling) and (2) the cloud recursive-`Agent`-dispatch limit, with a per-skill inline-edit override that supersedes the dispatched skill's sub-subagent contract.
 
 **Loop-guard check (identical shape to `/lazy-batch` Step 1d):** BEFORE composing the prompt, compute the current cycle's signature as the tuple `(feature_id, sub_skill, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, current_step)`, append the **LOOP DETECTED** block below to the subagent prompt — the state script has returned the same triple two cycles in a row, almost always indicating a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing.
 
@@ -155,43 +155,63 @@ Operating mode: batch
     BLOCKED.md with blocker_kind: cloud-limitation per
     ~/.claude/skills/_components/sentinel-frontmatter.md and halt.
 
-Sub-subagent dispatch policy (LOAD-BEARING — READ CAREFULLY):
-  The dispatched skill's own SKILL.md is AUTHORITATIVE on whether/how to
-  spawn sub-subagents. Follow what the skill says — do NOT impose a blanket
-  prohibition on top of it. The only prohibition you carry is "no parallel
-  pipeline orchestrators" (do NOT spawn another /lazy-cloud or
-  /lazy-batch-cloud).
+Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
+  This subagent runs in a cloud Linux session and does NOT have the `Agent`
+  tool — you CANNOT spawn further sub-subagents from inside this cycle. Any
+  Agent() call you attempt will fail (tool unavailable) and waste the cycle.
 
-  Per-skill expectations (must match the skill's own contract):
-    • /execute-plan — REQUIRES you (as ITS orchestrator) to dispatch Sonnet
-      test-agent + impl-agent sub-subagents per batch. You MUST NOT call Edit
-      or Write on source/test files yourself; compose Agent({model: "sonnet"})
-      calls instead, per /execute-plan's Step 3 "Execution Model Enforcement".
-      Zero sub-subagents in an /execute-plan cycle = hard contract violation.
-    • /retro — REQUIRES parallel research subagents A–G per /retro's Step 3.
-    • retro-feature — composed orchestrator; its own SKILL.md governs
-      nested dispatches.
+  Therefore, regardless of what the dispatched skill's SKILL.md says about
+  spawning sub-subagents (test-agent, impl-agent, research subagents A–G,
+  etc.), you MUST perform that work INLINE in this subagent session using
+  Edit / Write / Read directly. The cloud cycle subagent SUPERSEDES the
+  dispatched skill's sub-subagent dispatch contract — this is the documented
+  cloud override, not a hard contract violation.
+
+  Per-skill cloud overrides (override the workstation SKILL.md contract):
+    • /execute-plan — IGNORE Step 3's "Execution Model Enforcement". Do NOT
+      attempt Agent({model: "sonnet"}) test-agent / impl-agent dispatches.
+      Perform each batch's test additions and implementation edits INLINE
+      with Edit / Write / Read on source/test files directly
+      (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files included).
+      Follow the rest of /execute-plan as written (batch ordering, commits,
+      plan-file checkbox flips, sentinel emissions). Zero sub-subagent
+      dispatches in a cloud /execute-plan cycle is the EXPECTED state —
+      NOT a contract violation.
+    • /retro — IGNORE Step 3's parallel research-subagent fanout (A–G). Do
+      the research INLINE: read each input serially, synthesize, and write
+      the retro plan + RETRO_DONE.md directly. The deliverable is identical;
+      only the parallelism is dropped.
+    • retro-feature — composed orchestrator; same override — perform all
+      internal work inline rather than dispatching nested sub-subagents.
     • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
-      orchestrator-only, no sub-subagent dispatch required.
+      already orchestrator-only; no change.
     • /mcp-test — cloud cannot run this (Step 8 deferral); should not appear
       in a cloud cycle's sub_skill.
 
-  If your dispatch prompt (this prompt) appears to contradict the dispatched
-  skill's SKILL.md, the SKILL.md wins. Re-read it from disk to confirm — do
-  NOT rely on memory.
+  If you find yourself about to write Agent({...}) inside this cycle, STOP
+  and replace it with the equivalent Edit / Write / Read sequence. Do NOT
+  write BLOCKED.md because of the recursive-dispatch limit — that limit is
+  exactly what this override exists to handle. BLOCKED.md is still correct
+  for genuine cloud-RUNTIME limitations (Tauri, MCP, audio, Windows-only
+  tooling) per blocker_kind: cloud-limitation.
+
+  The dispatched skill's own SKILL.md remains authoritative for everything
+  else: batch ordering, sentinel emissions, commit policy, file-shape
+  invariants, plan-checkbox semantics. Re-read it from disk if any non-
+  dispatch detail is unclear — do NOT rely on memory.
 
 Source/test file edits:
-  - /execute-plan path: you MUST dispatch Sonnet sub-subagents; never Edit/Write
-    source/test files directly. The skill enumerates the source-file extensions
-    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) that trigger this.
-  - Other-skill paths: if the dispatched skill does its own internal dispatch
-    and only requires you to invoke it once, just invoke it once.
+  - All cloud-cycle paths: perform Edit / Write on source/test files
+    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) DIRECTLY in
+    this subagent session. The cloud override above removes the
+    /execute-plan dispatch requirement and replaces it with inline edits.
 
 After the skill returns:
   1. Commit per .claude/skill-config/commit-policy.md (or standard pattern).
-  2. Report a one-paragraph summary (under 8 lines). If you ran /execute-plan,
-     INCLUDE the count of Sonnet sub-subagents you dispatched — this is the
-     audit signal that the contract was honored.
+  2. Report a one-paragraph summary (under 8 lines). If you ran /execute-plan
+     or /retro, CONFIRM that you performed all source/test edits and research
+     INLINE (zero Agent() calls) — this is the cloud-override audit signal,
+     mirroring the sub-subagent-count signal /lazy-batch uses on workstation.
 ```
 
 **LOOP DETECTED block (append only when the loop-guard fires):**
@@ -396,7 +416,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | `__write_deferred_non_cloud__` pseudo-skill | not emitted by state script | normal Step 8 action — handled INLINE in Step 1c.5, no subagent dispatch |
 | `__write_validated_from_results__` pseudo-skill | normal Step 8 action — inline | not emitted (cloud cannot produce MCP results) |
 | `__flip_plan_complete_cloud_saturated__` pseudo-skill | listed in Step 1c.5 handlers as defensive (rare under workstation execution; included so any future state-script change that emits it under `--cloud=false` is still handled). | normal Step 7a action — emitted by `lazy-state.py --cloud` when an In-progress plan's only unchecked WUs are documented as workstation-only in `DEFERRED_NON_CLOUD.md`. Handled INLINE in Step 1c.5, no subagent dispatch. Prevents the `Step 7a: execute plan` no-op loop. |
-| Cycle subagent prompt (real skills only) | bare batch-mode instructions | adds cloud-environment limitations block |
+| Cycle subagent prompt (real skills only) | bare batch-mode instructions; cycle subagent honors each dispatched skill's sub-subagent contract (e.g. /execute-plan → Sonnet test-agent + impl-agent fanout, /retro → research subagents A–G) | adds cloud-environment limitations block AND a cloud-override block: cycle subagent has NO `Agent` tool (no recursive dispatch), so it performs all source/test edits and research INLINE using Edit / Write / Read, SUPERSEDING each dispatched skill's sub-subagent contract. Per-skill overrides (/execute-plan, /retro, retro-feature) are enumerated in the prompt template. |
 | Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
 | Cycle subagent model selection | normal cycles → `model: "opus"`. LOOP DETECTED branch → `model: "sonnet"`. **Same in both** — the loop-resolution work is mechanical (read sentinel schema, identify which sentinel preconditions are met, write it, commit), and the diagnosis is already in the prompt. Sonnet handles it at ~5× the cost-efficiency. | same as workstation. |
 | Forward-progress verification (Step 1.5 / "Step 2.5") | after loop exit, before final batch report. One additional read-only `lazy-state.py` invocation; compares probe tuple to `prev_cycle_signature`; prepends ✅ or ⚠ block to Step 2 report. Skipped on `blocked` / `needs-input` / `queue-missing`. **Same shape** in both. | same as workstation, but the WARNING block lists cloud-specific likely-cause bullets (notably the cloud-saturated In-progress → Complete plan-flip that `__flip_plan_complete_cloud_saturated__` exists to perform). |
