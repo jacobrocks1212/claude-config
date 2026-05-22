@@ -439,6 +439,94 @@ def _plan_lowest_phase(path: Path) -> tuple[int, str]:
     return (lowest, path.name)
 
 
+def _plan_phase_set(plan_path: Path) -> set[int]:
+    """Return the set of phase numbers declared in a plan's `phases:` field.
+
+    Empty set when the plan has no `phases:` field or all entries fail to parse.
+    Mirrors the leniency in _plan_lowest_phase(): non-numeric entries with a
+    leading digit run (e.g. "3a") contribute that integer; pure-string entries
+    (e.g. "all") are skipped.
+    """
+    meta = _parse_plan_frontmatter(plan_path) or {}
+    raw = meta.get("phases") if meta else None
+    out: set[int] = set()
+    if not isinstance(raw, list):
+        return out
+    for entry in raw:
+        try:
+            out.add(int(entry))
+            continue
+        except (TypeError, ValueError):
+            pass
+        if isinstance(entry, str):
+            m = re.match(r"^(\d+)", entry)
+            if m:
+                out.add(int(m.group(1)))
+    return out
+
+
+def _unchecked_wus_in_plan_scope(phases_text: str, phase_set: set[int]) -> list[str]:
+    """Return the unchecked-WU label strings in PHASES.md scoped to the plan's phases.
+
+    Walks PHASES.md tracking the current `### Phase N` heading; collects each
+    `- [ ] <label>` line whose enclosing phase number is in `phase_set`. A line
+    starting with `## ` resets phase tracking (new top-level section).
+    """
+    current_phase: int | None = None
+    out: list[str] = []
+    for line in phases_text.splitlines():
+        h = re.match(r"^###\s+Phase\s+(\d+)", line)
+        if h:
+            current_phase = int(h.group(1))
+            continue
+        if line.startswith("## "):
+            current_phase = None
+            continue
+        if current_phase is None or current_phase not in phase_set:
+            continue
+        m = re.match(r"^\s*-\s*\[\s*\]\s*(.+?)\s*$", line)
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def _plan_cloud_saturated(plan_path: Path, phases_text: str, spec_path: Path) -> bool:
+    """Return True iff every unchecked WU in PHASES.md scoped to this plan's
+    declared phases is documented (by substring match) in
+    `<spec_path>/DEFERRED_NON_CLOUD.md`.
+
+    Used by the Step 7a cloud-saturation gate to decide whether an
+    In-progress plan should be auto-flipped to Complete because all
+    cloud-runnable work is done and the only remainder is workstation-only
+    deliverables explicitly deferred to the workstation MCP path.
+
+    Conservative semantics:
+      - Plans with no `phases:` field → False (we can't scope what counts as
+        "in this plan", so we refuse to auto-flip).
+      - Zero unchecked WUs in scope → False (the plan is already cloud-done;
+        Step 8 retro would normally fire instead — let the existing flow run).
+      - Any unchecked WU whose label does NOT appear (substring) in
+        DEFERRED_NON_CLOUD.md → False.
+    """
+    deferred_file = spec_path / "DEFERRED_NON_CLOUD.md"
+    if not deferred_file.exists():
+        return False
+    phase_set = _plan_phase_set(plan_path)
+    if not phase_set:
+        return False
+    unchecked = _unchecked_wus_in_plan_scope(phases_text, phase_set)
+    if not unchecked:
+        return False
+    try:
+        deferred_text = deferred_file.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for wu in unchecked:
+        if wu not in deferred_text:
+            return False
+    return True
+
+
 def find_implementation_plans(spec_dir: Path) -> list[Path]:
     """Find non-retro implementation plans, filtering out plans whose
     frontmatter marks them Complete, and sorting by the lowest `phases:`
@@ -866,6 +954,22 @@ def compute_state(
             # Use the lowest-ordered plan (sorted-name preference); if part-N
             # exists, this returns part-1 first which is what we want.
             plan = plans[0]
+            # Cloud-saturation gate (cloud mode only). When a plan is
+            # In-progress because the only unchecked WUs in its phase scope
+            # are explicitly documented in DEFERRED_NON_CLOUD.md as
+            # workstation-only, flipping the plan to Complete in-place is the
+            # documented exit. The orchestrator handles this pseudo-skill
+            # inline (Step 1c.5) — no execute-plan dispatch needed. This
+            # prevents the loop where execute-plan repeatedly diagnoses "no
+            # cloud work" and reports a no-op without advancing.
+            if cloud and _plan_status(plan) == "In-progress" and \
+                    _plan_cloud_saturated(plan, phases_text, spec_path):
+                return _state(
+                    **common,
+                    current_step="Step 7a: flip plan Complete (cloud-saturated)",
+                    sub_skill="__flip_plan_complete_cloud_saturated__",
+                    sub_skill_args=str(plan),
+                )
             return _state(
                 **common,
                 current_step="Step 7a: execute plan",
@@ -1171,6 +1275,118 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
             "# Plan (complete)\n"
         )
+    elif name == "cloud-saturated-in-progress-plan":
+        # In-progress plan whose only unchecked WU is documented in
+        # DEFERRED_NON_CLOUD.md as workstation-only. Cloud Step 7a should emit
+        # __flip_plan_complete_cloud_saturated__ rather than execute-plan.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-cs", "name": "Feature CS",
+                 "spec_dir": "feat-cs", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        cs = features / "feat-cs"
+        cs.mkdir()
+        (cs / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (cs / "RESEARCH.md").write_text("# R\n")
+        (cs / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (cs / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 6\n"
+            "- [x] WU1 cloud-runnable deliverable A\n"
+            "- [x] WU2 cloud-runnable deliverable B\n"
+            "- [x] WU3 cloud-runnable deliverable C\n"
+            "- [x] WU4 cloud-runnable deliverable D\n"
+            "- [ ] WU5 promote SPEC to Complete via workstation MCP\n"
+        )
+        plans = cs / "plans"
+        plans.mkdir()
+        (plans / "part-6.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-cs\n"
+            "status: In-progress\ncreated: 2026-05-01\nphases: [6]\n---\n\n"
+            "# Plan part 6\n"
+        )
+        _write_yaml_sentinel(
+            cs / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            feature_id="feat-cs", deferred_step=8,
+            reason="workstation MCP gate",
+            deferred_by="lazy-cloud", date="2026-05-22",
+        )
+        # Append a body block enumerating the workstation-only WU so the
+        # substring saturation check matches.
+        with (cs / "DEFERRED_NON_CLOUD.md").open("a", encoding="utf-8") as fh:
+            fh.write("\nDeferred WUs:\n- WU5 promote SPEC to Complete via workstation MCP\n")
+    elif name == "cloud-in-progress-plan-not-saturated":
+        # In-progress plan with unchecked WUs NOT documented in
+        # DEFERRED_NON_CLOUD.md → must NOT auto-flip; must dispatch
+        # execute-plan as usual.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-csn", "name": "Feature CSN",
+                 "spec_dir": "feat-csn", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        csn = features / "feat-csn"
+        csn.mkdir()
+        (csn / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (csn / "RESEARCH.md").write_text("# R\n")
+        (csn / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (csn / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 6\n"
+            "- [x] WU1 done\n"
+            "- [ ] WU2 still actual cloud work\n"
+        )
+        plans = csn / "plans"
+        plans.mkdir()
+        (plans / "part-6.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-csn\n"
+            "status: In-progress\ncreated: 2026-05-01\nphases: [6]\n---\n\n"
+            "# Plan part 6\n"
+        )
+        _write_yaml_sentinel(
+            csn / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            feature_id="feat-csn", deferred_step=8,
+            reason="workstation MCP gate",
+            deferred_by="lazy-cloud", date="2026-05-22",
+        )
+        # NOTE: DEFERRED_NON_CLOUD.md body does NOT mention WU2 — gate
+        # must NOT fire.
+    elif name == "workstation-in-progress-plan-with-deferred":
+        # Same shape as cloud-saturated-in-progress-plan but workstation. The
+        # gate is cloud-only — workstation should keep dispatching execute-plan.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-wcs", "name": "Feature WCS",
+                 "spec_dir": "feat-wcs", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        w = features / "feat-wcs"
+        w.mkdir()
+        (w / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (w / "RESEARCH.md").write_text("# R\n")
+        (w / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (w / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 6\n"
+            "- [x] WU1 done\n"
+            "- [ ] WU5 workstation gate\n"
+        )
+        plans = w / "plans"
+        plans.mkdir()
+        (plans / "part-6.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-wcs\n"
+            "status: In-progress\ncreated: 2026-05-01\nphases: [6]\n---\n\n"
+            "# Plan part 6\n"
+        )
+        _write_yaml_sentinel(
+            w / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            feature_id="feat-wcs", deferred_step=8,
+            reason="workstation MCP gate",
+            deferred_by="lazy-cloud", date="2026-05-22",
+        )
+        with (w / "DEFERRED_NON_CLOUD.md").open("a", encoding="utf-8") as fh:
+            fh.write("\nDeferred WUs:\n- WU5 workstation gate\n")
     elif name == "all-complete":
         (features / "queue.json").write_text(json.dumps({
             "queue": [
@@ -1490,6 +1706,30 @@ def run_smoke_tests() -> int:
                 "sub_skill": "__write_deferred_non_cloud__",
                 "feature_id": "feat-pcrdc",
                 "current_step": "Step 9: cloud defers MCP test",
+            }),
+            # Cloud-saturation gate: In-progress plan whose only unchecked
+            # WU is documented in DEFERRED_NON_CLOUD.md → flip pseudo-skill.
+            ("cloud-saturated-in-progress-plan", True, False, {
+                "sub_skill": "__flip_plan_complete_cloud_saturated__",
+                "feature_id": "feat-cs",
+                "current_step": "Step 7a: flip plan Complete (cloud-saturated)",
+            }),
+            # Cloud: In-progress plan but DEFERRED_NON_CLOUD.md does NOT
+            # document the unchecked WU → gate must NOT fire; dispatch
+            # execute-plan as usual.
+            ("cloud-in-progress-plan-not-saturated", True, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-csn",
+                "current_step": "Step 7a: execute plan",
+            }),
+            # Workstation regression: same shape as the cloud-saturated
+            # fixture, but cloud=False. Gate is cloud-only — workstation
+            # must keep dispatching execute-plan so the workstation runtime
+            # can still complete the gated WU.
+            ("workstation-in-progress-plan-with-deferred", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-wcs",
+                "current_step": "Step 7a: execute plan",
             }),
         ]
         for name, cloud, skip_nr, expected in cases:

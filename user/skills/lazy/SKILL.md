@@ -124,6 +124,20 @@ If `sub_skill` begins with `__` (double-underscore), it is a **special action** 
 2. Write `{spec_path}/VALIDATED.md` with kind `validated`, the parsed scenarios, `result: all-passing`.
 3. Print the after-status bookend, call work-log, STOP.
 
+### `__flip_plan_complete_cloud_saturated__`
+
+`sub_skill_args` is the absolute path of a plan file with `status: In-progress`. Emitted only by `lazy-state.py --cloud` (so plain `/lazy` will essentially never see it; included here for symmetry with `/lazy-cloud` and as a defensive handler).
+
+Conditions when emitted: the plan's only unchecked WUs (scoped to its `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. The documented exit is to flip the plan's frontmatter `status:` from `In-progress` to `Complete` so future state-script calls treat this plan part as cloud-saturated and proceed to Step 8 retro / Step 9 deferral / Step 2 cloud-saturated skip.
+
+1. Read the plan file. Locate the `status:` line inside the YAML frontmatter fence (`---` ... `---`).
+2. Replace ONLY the value: `In-progress` → `Complete`. Leave every other frontmatter field and the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
+3. Derive the plan part number from `phases:` (e.g. `phases: [6]` → "part 6"); fall back to the filename's leading `part-N` / `phase-N` token if absent.
+4. Stage the plan file and invoke `Skill({ skill: "commit", args: "chore({feature_id}): mark plan part N Complete (cloud-saturated)" })`.
+5. Print the after-status bookend, call work-log, STOP.
+
+This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a single-field frontmatter flip plus commit.
+
 ### `__mark_complete__`
 
 `sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize per /lazy's original Step 10:

@@ -112,6 +112,7 @@ Follow `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` Step 3's protocol fo
 - **`__write_deferred_non_cloud__`** — if `<spec_path>/DEFERRED_NON_CLOUD.md` already exists, skip (idempotent). Otherwise write it with kind: deferred-non-cloud, deferred_step: 8, reason: "Cloud Linux environment cannot run tauri:dev or reach the MCP HTTP server.", deferred_by: lazy-cloud, today's date, and the body explaining workstation resume. Commit per project policy.
 - **`__write_validated_from_skip__`** — read `<spec_path>/SKIP_MCP_TEST.md` frontmatter, write `<spec_path>/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body note about the prior skip). Commit.
 - **`__mark_complete__`** — only reachable from cloud if both `VALIDATED.md` and `RETRO_DONE.md` already exist (cloud cannot produce VALIDATED.md from MCP results — workstation did). Update `docs/features/ROADMAP.md` (strikethrough + COMPLETE token), delete `VALIDATED.md`/`RETRO_DONE.md`/`DEFERRED_NON_CLOUD.md` sentinels, set `<spec_path>/SPEC.md`'s `**Status:**` to `Complete`, then commit per project policy.
+- **`__flip_plan_complete_cloud_saturated__`** — emitted by `lazy-state.py --cloud` at Step 7a when an `In-progress` plan's only unchecked WUs (scoped to the plan's `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. This is the cloud-only common path; it fires once per saturated plan part. `sub_skill_args` is the absolute plan-file path. Read the plan's YAML frontmatter, edit ONLY the `status:` line in place (`In-progress` → `Complete`) — leave every other field and the markdown body untouched. Derive the plan part number from the plan's `phases:` field (e.g. `phases: [6]` → part 6); fall back to the plan filename's leading `part-N` / `phase-N` token if `phases:` is missing. Stage the plan file and commit per project policy with message `chore(<feature_id>): mark plan part N Complete (cloud-saturated)`. Do NOT touch SPEC.md, ROADMAP.md, or any sentinel — this is a frontmatter-only flip. Editing style: match the conservative single-field rewrite already used by `__write_deferred_non_cloud__` (idempotent if the line is already `Complete`). This pseudo-skill is what prevents the `Step 7a: execute plan` no-op loop hit on `audio-thread-panic-catching` plan part 6: previously the orchestrator would dispatch `/execute-plan` against an In-progress plan whose only remainder was workstation-gated, the cycle would correctly diagnose "no cloud work" but make no commit, and the next cycle would receive the same state — burning Opus dispatches without advancing the queue.
 
 After the inline action:
 
@@ -233,10 +234,12 @@ Dispatch:
 Agent({
   description: "lazy-batch-cloud cycle {cycle+1}: {sub_skill} for {feature_name}",
   subagent_type: "general-purpose",
-  model: "opus",
+  model: <"sonnet" if LOOP DETECTED else "opus">,
   prompt: <the prompt above>
 })
 ```
+
+**Model selection (mirrored with `/lazy-batch`).** Normal cycles dispatch on Opus because real-skill cycles can involve novel implementation decisions. The loop-resolution cycle (LOOP DETECTED branch) is mechanical — the prompt already contains the diagnosis and the work is "read the canonical sentinel schema, identify which sentinel preconditions are met, write it, commit". Sonnet is sufficient at roughly 5× the cost-efficiency. Use `model: "sonnet"` when the LOOP DETECTED block was appended, `model: "opus"` otherwise.
 
 ### 1e. Record cycle outcome and loop
 
@@ -268,6 +271,47 @@ The user can mix environments: drop `RESEARCH.md` directly from workstation, the
 7. Append to `cycle_log`, update `prev_cycle_signature = (feature_id, "__apply_needs_input__", current_step)`, increment `cycle`. **Return to Step 1a — do NOT halt.**
 
 Cloud has no special handling here — decision resolution is filesystem-level and runs identically in cloud and workstation. The Sonnet subagent's SPEC/PHASES edits are docs-only (no source code, no Tauri runtime, no MCP), so cloud limitations do not apply. **Replace `/lazy-batch` with `/lazy-batch-cloud` in the chat heading and any re-invoke references** when reproducing the announcement in a cloud session.
+
+---
+
+## Step 1.5: Forward-Progress Verification (informally "Step 2.5"; runs after loop exit, before the Step 2 batch report)
+
+**Identical algorithm to `/lazy-batch` Step 1.5** — see `~/.claude/skills/lazy-batch/SKILL.md` Step 1.5 for the full protocol. Cloud variant uses `python3 ~/.claude/scripts/lazy-state.py --cloud [--skip-needs-research]` for the probe, identical to Step 1a.
+
+Skip the probe entirely when `terminal_reason in {"blocked", "needs-input", "queue-missing"}`. For every other exit — including `all-features-complete`, `cloud-queue-exhausted`, `needs-research`, `queue-blocked-on-research`, and max-cycles — run the probe, compare its `(feature_id, sub_skill, current_step)` tuple against `prev_cycle_signature`, and prepend ONE of these blocks to the Step 2 final batch report:
+
+- **Forward-progress confirmed** (probe differs from prev_cycle_signature OR probe terminal):
+
+  ```
+  ✅ Next /lazy-batch-cloud invocation will: <human-readable summary>
+  ```
+
+- **Forward-progress WARNING** (probe matches prev_cycle_signature; no terminal reason):
+
+  ```
+  ⚠ FORWARD-PROGRESS WARNING: the next /lazy-batch-cloud invocation will
+  return the same state as the cycle we just finished
+  (feature_id={feature_id}, sub_skill={sub_skill},
+  current_step={current_step}).
+
+  This run did not advance the queue. Likely causes (cloud-specific):
+    • A sentinel that should have been written wasn't (RETRO_DONE.md,
+      DEFERRED_NON_CLOUD.md, VALIDATED.md, SKIP_MCP_TEST.md).
+    • A plan-frontmatter status flip the last cycle was supposed to perform
+      did not land — most commonly, the cloud-saturated In-progress →
+      Complete flip that __flip_plan_complete_cloud_saturated__ exists to
+      perform. Inspect {spec_path}/plans/ frontmatter for any
+      `status: In-progress` plan whose unchecked WUs are all listed in
+      DEFERRED_NON_CLOUD.md.
+    • lazy-state.py --cloud is stuck on a condition no cloud-runnable skill
+      is resolving.
+
+  Inspect {spec_path}/ sentinels and plan frontmatter before re-invoking.
+  ```
+
+  Plus PushNotification `"lazy-batch-cloud forward-progress WARNING — queue did not advance; inspect {feature_name} sentinels."`.
+
+The probe is read-only — never mutates `cycle`, `cycle_log`, or sentinels. A non-zero probe exit prints `⚠ FORWARD-PROGRESS PROBE FAILED: lazy-state.py exited non-zero — re-invoke /lazy-batch-cloud to retry.` and the loop's already-produced final report still prints. The cloud-specific WARNING block adds the cloud-saturated-flip bullet because that is the failure mode most likely to silently strand a `/lazy-batch-cloud` run.
 
 ---
 
@@ -351,8 +395,11 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | `cloud-queue-exhausted` terminal | defensive (unreachable in practice) | normal halt when remaining features await workstation MCP testing |
 | `__write_deferred_non_cloud__` pseudo-skill | not emitted by state script | normal Step 8 action — handled INLINE in Step 1c.5, no subagent dispatch |
 | `__write_validated_from_results__` pseudo-skill | normal Step 8 action — inline | not emitted (cloud cannot produce MCP results) |
+| `__flip_plan_complete_cloud_saturated__` pseudo-skill | listed in Step 1c.5 handlers as defensive (rare under workstation execution; included so any future state-script change that emits it under `--cloud=false` is still handled). | normal Step 7a action — emitted by `lazy-state.py --cloud` when an In-progress plan's only unchecked WUs are documented as workstation-only in `DEFERRED_NON_CLOUD.md`. Handled INLINE in Step 1c.5, no subagent dispatch. Prevents the `Step 7a: execute plan` no-op loop. |
 | Cycle subagent prompt (real skills only) | bare batch-mode instructions | adds cloud-environment limitations block |
 | Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
+| Cycle subagent model selection | normal cycles → `model: "opus"`. LOOP DETECTED branch → `model: "sonnet"`. **Same in both** — the loop-resolution work is mechanical (read sentinel schema, identify which sentinel preconditions are met, write it, commit), and the diagnosis is already in the prompt. Sonnet handles it at ~5× the cost-efficiency. | same as workstation. |
+| Forward-progress verification (Step 1.5 / "Step 2.5") | after loop exit, before final batch report. One additional read-only `lazy-state.py` invocation; compares probe tuple to `prev_cycle_signature`; prepends ✅ or ⚠ block to Step 2 report. Skipped on `blocked` / `needs-input` / `queue-missing`. **Same shape** in both. | same as workstation, but the WARNING block lists cloud-specific likely-cause bullets (notably the cloud-saturated In-progress → Complete plan-flip that `__flip_plan_complete_cloud_saturated__` exists to perform). |
 | NEEDS_RESEARCH.md `written_by` | `lazy-batch` | `lazy-batch-cloud` |
 | `--allow-research-skip` argument | parsed in Step 0; gates Step 4 path + Step 1a `--skip-needs-research` flag. **Same semantics** in both. | same as workstation — strict halt on first `needs-research` by default; opt in to batched-research via the flag. |
 | Step 4 — default path (strict halt) | reads RESEARCH_PROMPT.md, prints fenced ```text inline halt announcement, PushNotifications, halts. **Same shape** in both. | same as workstation, but the announcement says `/lazy-batch-cloud` and upload path ③ is labeled `(workstation only)`. |
