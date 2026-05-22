@@ -132,6 +132,18 @@ If `sub_skill` begins with `__` (double-underscore), it is a special action the 
 2. Write `{spec_path}/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body: "MCP tests skipped per prior SKIP_MCP_TEST.md").
 3. Print the after-status bookend, call work-log, STOP.
 
+### `__flip_plan_complete_cloud_saturated__`
+
+`sub_skill_args` is the absolute path of a plan file with `status: In-progress`. Emitted at Step 7a when an In-progress plan's only unchecked WUs (scoped to its `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. The documented exit is to flip the plan's frontmatter `status:` from `In-progress` to `Complete` so future cloud cycles treat this plan part as cloud-saturated and proceed to Step 8 retro / Step 9 deferral / Step 2 cloud-saturated skip — instead of looping on `Step 7a: execute plan` no-ops.
+
+1. Read the plan file. Locate the `status:` line inside the YAML frontmatter fence (`---` ... `---`).
+2. Replace ONLY the value: `In-progress` → `Complete`. Leave every other frontmatter field and the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
+3. Derive the plan part number from `phases:` (e.g. `phases: [6]` → "part 6"); fall back to the filename's leading `part-N` / `phase-N` token if absent.
+4. Stage the plan file and invoke `Skill({ skill: "commit", args: "chore({feature_id}): mark plan part N Complete (cloud-saturated)" })`.
+5. Print the after-status bookend (Completed: "flipped {plan filename} status to Complete (cloud-saturated)"), call work-log, STOP.
+
+This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a single-field frontmatter flip plus commit. The cloud-saturated audit trail lives in `DEFERRED_NON_CLOUD.md`; the plan's `status: Complete` is just the state-machine signal that no further cloud `/execute-plan` cycles should fire on this plan part.
+
 ### `__mark_complete__`
 
 `sub_skill_args` is `{spec_path}`. Both VALIDATED.md AND RETRO_DONE.md exist (e.g., workstation produced VALIDATED.md while cloud has RETRO_DONE.md). Cloud CAN complete in this case:
@@ -225,11 +237,12 @@ The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to 
 ```
 lazy-state.py --cloud → JSON {sub_skill, sub_skill_args, terminal_reason}
 
-terminal_reason set?                       → notify + STOP
-sub_skill = "__write_deferred_non_cloud__" → write DEFERRED_NON_CLOUD.md + STOP
-sub_skill = "__write_validated_from_skip__"→ write VALIDATED.md (from SKIP_MCP_TEST) + STOP
-sub_skill = "__mark_complete__"            → ROADMAP edit + sentinel cleanup + commit + STOP
-sub_skill = real skill?                    → Skill({skill, args}) → work-log → STOP
+terminal_reason set?                                       → notify + STOP
+sub_skill = "__write_deferred_non_cloud__"                 → write DEFERRED_NON_CLOUD.md + STOP
+sub_skill = "__write_validated_from_skip__"                → write VALIDATED.md (from SKIP_MCP_TEST) + STOP
+sub_skill = "__flip_plan_complete_cloud_saturated__"       → flip plan frontmatter In-progress → Complete + commit + STOP
+sub_skill = "__mark_complete__"                            → ROADMAP edit + sentinel cleanup + commit + STOP
+sub_skill = real skill?                                    → Skill({skill, args}) → work-log → STOP
 ```
 
 This skill and the paired `/lazy` are coupled per CLAUDE.md — their only intended divergence is whether they pass `--cloud` to lazy-state.py. Any state-machine change goes into the script, not into prose duplicated between the two skills.

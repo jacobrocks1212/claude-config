@@ -73,6 +73,32 @@ The plan file's YAML frontmatter (per `~/.claude/skills/_components/plan-frontma
 
 The status field is flipped by THIS skill only — producers never write `Complete` or `In-progress`. See Steps 4e and 4f below for the transitions.
 
+### 1a.6: CLOUD-SATURATION DECISION (mandatory before reporting "no work this cycle")
+
+Before this skill can report a no-op cycle ("nothing to execute, plan already done from this side"), it MUST perform the following decision. Failing to perform it is the documented cause of the `/lazy-batch[-cloud]` loop where `lazy-state.py` returns `Step 7a: execute plan` cycle after cycle but no progress lands.
+
+Ask, in order:
+
+1. **Read PHASES.md** for this feature (path resolved from the plan's `feature_id` or the cwd). Identify every Work Unit deliverable line (`- [ ]` / `- [x]`).
+2. **Read `<spec_path>/DEFERRED_NON_CLOUD.md`** if it exists. (Its presence is the explicit signal that all cloud-runnable work is done and the only remaining items are workstation-only.)
+3. For EVERY deliverable that belongs to this plan part (use the plan's `phases:` frontmatter to scope which PHASES.md sections count), ask:
+    - (a) Is it checked off (`- [x]`)? **OR**
+    - (b) Is it explicitly tagged as workstation-only with a corresponding entry in `DEFERRED_NON_CLOUD.md`?
+
+If **YES to (a) or (b) for every deliverable in this plan part**, you MUST:
+
+- Flip the plan file's frontmatter `status: In-progress` → `status: Complete` (one-line edit; see the plan-frontmatter component for the exact field syntax).
+- Commit the flip with message `chore(<feature_id>): mark plan part N Complete (cloud-saturated)` (substitute the plan's part number from its filename / `phases:` field).
+- Report the flip as this cycle's outcome and STOP — do NOT run the rest of the plan.
+
+If **NO** (any deliverable in scope is unchecked AND not deferred), proceed to Step 1b — there is real work for this cycle.
+
+**This gate is non-negotiable.** "I think `In-progress` is semantically more accurate because workstation work remains" is NOT a valid reason to skip the flip. `Complete` here means **complete from the cloud-execution perspective**; the workstation gate is tracked by `DEFERRED_NON_CLOUD.md`, not by plan frontmatter. The skills that consume plan-frontmatter status (`lazy-state.py`, the AlgoBooth docs-consistency lint) interpret `Complete` exactly that way — they cross-reference `DEFERRED_NON_CLOUD.md` for the workstation tail. Leaving the plan `In-progress` past saturation strands `/lazy-batch-cloud` in a no-op loop.
+
+The same decision applies regardless of whether the invoking orchestrator passed `--cloud` to `lazy-state.py`. Workstation-mode `/execute-plan` invocations rarely reach this gate (the workstation runtime normally implements workstation-gated WUs directly via downstream skills like `/mcp-test`), but if all unchecked deliverables in scope are listed in `DEFERRED_NON_CLOUD.md`, the flip is correct in workstation too — the deliverables that close those rows are not executed by `/execute-plan`.
+
+> Note for orchestrators: the `/lazy-batch-cloud` state machine now performs the same flip inline via the `__flip_plan_complete_cloud_saturated__` pseudo-skill emitted by `lazy-state.py` before it would otherwise route to `Step 7a: execute plan`. That pseudo-skill exists so the orchestrator does not even spawn this skill in the saturated case. This gate is the belt-and-suspenders backstop for invocations that bypass the state script (manual `/execute-plan <path>` runs, or any future caller that does not consult `lazy-state.py`).
+
 ### 1b. Validate the Plan
 
 Confirm the plan contains ALL of the following sections (or equivalent):

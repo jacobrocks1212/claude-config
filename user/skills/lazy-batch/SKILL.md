@@ -175,6 +175,7 @@ Follow `~/.claude/skills/lazy/SKILL.md` Step 3's protocol for each pseudo-skill 
 - **`__write_validated_from_skip__`** — read `<spec_path>/SKIP_MCP_TEST.md` frontmatter, write `<spec_path>/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body note about the prior skip), then commit per the project's commit policy.
 - **`__write_validated_from_results__`** — read `<spec_path>/MCP_TEST_RESULTS.md` frontmatter, extract `scenarios`, write `<spec_path>/VALIDATED.md` with those scenarios, then commit.
 - **`__mark_complete__`** — update `docs/features/ROADMAP.md` (strikethrough + COMPLETE token), delete `VALIDATED.md`/`RETRO_DONE.md`/`DEFERRED_NON_CLOUD.md` sentinels, set `<spec_path>/SPEC.md`'s `**Status:**` to `Complete`, then commit per project policy.
+- **`__flip_plan_complete_cloud_saturated__`** — emitted only by `lazy-state.py --cloud` at Step 7a when an `In-progress` plan's only unchecked WUs (scoped to the plan's `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. `sub_skill_args` is the absolute plan-file path. Read the plan's YAML frontmatter, edit ONLY the `status:` line in place (`In-progress` → `Complete`) — leave every other field and the markdown body untouched. Derive the plan part number from the plan's `phases:` field (e.g. `phases: [6]` → part 6); fall back to the plan filename's leading `part-N` / `phase-N` token if `phases:` is missing. Stage the plan file and commit per project policy with message `chore(<feature_id>): mark plan part N Complete (cloud-saturated)`. Do NOT touch SPEC.md, ROADMAP.md, or any sentinel — this is a frontmatter-only flip. Editing style: match the conservative single-field rewrite already used by `__write_deferred_non_cloud__` (idempotent if the line is already `Complete`).
 
 After the inline action:
 
@@ -292,10 +293,12 @@ Dispatch:
 Agent({
   description: "lazy-batch cycle {cycle+1}: {sub_skill} for {feature_name}",
   subagent_type: "general-purpose",
-  model: "opus",
+  model: <"sonnet" if LOOP DETECTED else "opus">,
   prompt: <the prompt above>
 })
 ```
+
+**Model selection.** Normal cycles dispatch on Opus because real-skill cycles can involve novel implementation decisions. The loop-resolution cycle (LOOP DETECTED branch) is mechanical — the prompt already contains the diagnosis (which sentinels to inspect, what conditions warrant which write) and the work is "read the canonical sentinel schema, identify which sentinel preconditions are met, write it, commit". Sonnet is sufficient at roughly 5× the cost-efficiency. Use `model: "sonnet"` when the LOOP DETECTED block was appended, `model: "opus"` otherwise.
 
 ### 1e. Record cycle outcome and loop
 
@@ -560,6 +563,67 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
    - Increment `cycle`. Return to Step 1a. **DO NOT halt, DO NOT print the final batch report.** The next state-script call should see the neutralized sentinel and route to the natural next step for the feature (typically resuming the skill that wrote NEEDS_INPUT.md — `/write-plan` or `/execute-plan` — now that the design ambiguity is resolved).
 
 This eliminates the legacy "answer → halt → manual SPEC/PHASES edit → re-run /lazy-batch" friction. The user's autonomy is preserved in step 3 (the choice itself); steps 6–7 are bounded mechanical work delegated to Sonnet so the orchestrator's Opus context stays lean.
+
+---
+
+## Step 1.5: Forward-Progress Verification (informally "Step 2.5"; runs after loop exit, before the Step 2 batch report)
+
+After the cycle loop exits with any terminal reason **other than** `blocked`, `needs-input`, or `queue-missing`, run a final read-only state probe to confirm the loop actually advanced the queue. This is cheap insurance against the silent-no-op failure mode where a cycle subagent reports success but does not write the sentinel that would let the next invocation move on.
+
+Skip this step entirely when `terminal_reason in {"blocked", "needs-input", "queue-missing"}` — those halts describe states the orchestrator already cannot resolve, and the user will be looking at the sentinel / config directly. For every other exit (including `all-features-complete`, `needs-research`, `queue-blocked-on-research`, `cloud-queue-exhausted`, and max-cycles), execute the probe.
+
+**Algorithm:**
+
+1. Run the state script ONE more time, identically to Step 1a:
+
+   ```bash
+   python3 ~/.claude/scripts/lazy-state.py [--skip-needs-research]
+   ```
+
+   Pass `--skip-needs-research` under the same double-gate condition as Step 1a (`allow_research_skip == true AND skip_needs_research == true`). Parse the JSON.
+
+2. Compute the probe tuple `(feature_id, sub_skill, current_step)` from the new output (any field may be `null` for terminal exits — that is fine, the comparison still works).
+
+3. Compare against `prev_cycle_signature` (the signature of the last real-skill or pseudo-skill cycle run during THIS invocation). Three cases:
+
+   **(a) Forward-progress confirmed.** Probe tuple differs from `prev_cycle_signature`, OR the probe returned a terminal reason. Print one line at the top of the Step 2 final batch report:
+
+   ```
+   ✅ Next /lazy-batch invocation will: <human-readable summary>
+   ```
+
+   Construct `<human-readable summary>` from the probe output:
+     - Terminal reason set → `"halt on {terminal_reason} ({notify_message})"`.
+     - Pseudo-skill (`__*__`) → `"perform {sub_skill} on {feature_name} ({current_step})"`.
+     - Real skill → `"dispatch /{sub_skill} on {feature_name} ({current_step})"`.
+
+   **(b) Forward-progress WARNING.** Probe tuple equals `prev_cycle_signature` (same `feature_id`, same `sub_skill`, same `current_step`, no terminal reason). This means the next `/lazy-batch` invocation would re-issue the cycle this run just finished — the queue did not advance. Print this block at the top of the Step 2 final batch report:
+
+   ```
+   ⚠ FORWARD-PROGRESS WARNING: the next /lazy-batch invocation will return
+   the same state as the cycle we just finished
+   (feature_id={feature_id}, sub_skill={sub_skill},
+   current_step={current_step}).
+
+   This run did not advance the queue. Likely causes:
+     • A sentinel that should have been written wasn't (RETRO_DONE.md,
+       VALIDATED.md, DEFERRED_NON_CLOUD.md, SKIP_MCP_TEST.md).
+     • A plan-frontmatter status flip the last cycle was supposed to perform
+       did not land (e.g. cloud-saturated In-progress → Complete).
+     • lazy-state.py is stuck on a condition no skill is resolving.
+
+   Inspect {spec_path}/ sentinels and plan frontmatter before re-invoking.
+   ```
+
+   PushNotification with `"lazy-batch forward-progress WARNING — queue did not advance; inspect {feature_name} sentinels."` so the user sees the issue even if they only read the notification.
+
+   **(c) `prev_cycle_signature is None`.** No real cycles ran this invocation (e.g. Step 0.5 ingest was the only action, or the very first state-script call was already terminal). Skip the comparison and print only the case-(a) "Next invocation will" line based on the probe.
+
+4. The probe is **read-only**: do NOT mutate `cycle`, do NOT append to `cycle_log`, do NOT touch sentinels. Its sole output is the WARNING / NEXT line at the top of the Step 2 report.
+
+5. If the probe itself exits non-zero (the script crashed), print `⚠ FORWARD-PROGRESS PROBE FAILED: lazy-state.py exited non-zero — re-invoke /lazy-batch to retry.` at the top of the Step 2 report and continue. Do NOT halt — the loop already finished; the probe failure is information, not a fatal error.
+
+This step is the orchestrator's cheap end-of-run sanity check: it costs one extra `lazy-state.py` invocation (microseconds) and surfaces silent loop-perpetuation bugs at the moment they happen, instead of on the user's next `/lazy-batch` invocation.
 
 ---
 
