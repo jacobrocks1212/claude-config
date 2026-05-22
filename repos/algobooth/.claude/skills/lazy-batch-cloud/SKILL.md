@@ -12,8 +12,11 @@ allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 Cloud variant of `/lazy-batch`. Identical orchestration shape: loop on the state script, spawn one Opus subagent per cycle, halt on the same terminal conditions — but the state script runs in `--cloud` mode, so:
 
 - Step 2 skips cloud-saturated features (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md).
-- Step 8 returns `__write_deferred_non_cloud__` instead of dispatching `/mcp-test`. The cycle subagent writes the deferral sentinel and the next cycle proceeds to retro.
+- **Step 8 (retro) runs in cloud** — `/retro` is a docs/analysis pass (no Tauri, no MCP). This is the gap the current ordering closes: under the old order (MCP before retro), cloud halted at the MCP deferral and never reached retro.
+- Step 9 returns `__write_deferred_non_cloud__` instead of dispatching `/mcp-test`. The orchestrator writes the deferral sentinel inline (Step 1c.5 pseudo-skill handling) — the next cycle either advances to a ready feature or halts on `cloud-queue-exhausted`.
 - Step 10 (mark complete) is unreachable from cloud unless a workstation has already produced VALIDATED.md. `cloud-queue-exhausted` is the normal terminal state when every remaining feature is awaiting workstation MCP testing.
+
+**Per-cycle dispatch order:** `/spec` → `/spec-phases` → `/write-plan` → `/execute-plan` → `/retro` (Step 8, cloud-runnable) → `/mcp-test` (Step 9, cloud defers) → mark-complete (Step 10, cloud halts).
 
 This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended divergences are documented in the "Differences from /lazy-batch" block below.
 

@@ -520,9 +520,11 @@ The retro skill is the natural emitter of this sentinel because it owns the "no 
 
 ### When to write
 
-Write `RETRO_DONE.md` **iff** all of the following hold:
+Write `RETRO_DONE.md` **iff** the following holds:
+
 1. Step 6b just wrote a retro plan whose `## Spec Divergences` → `### Significant` table has **zero** data rows (separator rows and the header row don't count).
-2. The retro entry-condition has already been satisfied — `{spec_path}/VALIDATED.md` exists OR `{spec_path}/DEFERRED_NON_CLOUD.md` exists (cloud path). The state machine's Step 9 entry gate guarantees one of these holds by the time retro runs.
+
+**No MCP precondition.** Under the current state-machine ordering, `/retro` runs at **Step 8** — BEFORE `/mcp-test` (Step 9). The entry gate is simply "all PHASES.md phases Complete AND no open BLOCKED/NEEDS_INPUT"; neither `VALIDATED.md` nor `DEFERRED_NON_CLOUD.md` are required to exist when retro runs. The earlier rule that gated `RETRO_DONE.md` on one of those sentinels existing was a holdover from the old MCP-before-retro order; it has been removed.
 
 Skip this step (do NOT write the sentinel) iff the retro identified at least one Significant divergence. In that case, the corrective work still needs to ship under a `/add-phase` or follow-on retro plan; `RETRO_DONE.md` is written by a later retro round that verifies the fix and finds no remaining divergences.
 
@@ -535,7 +537,7 @@ Skip this step (do NOT write the sentinel) iff the retro identified at least one
 2. **Determine `mcp_validation_status`:**
    - If `{spec_path}/VALIDATED.md` exists → `complete`
    - Else if `{spec_path}/DEFERRED_NON_CLOUD.md` exists → `deferred-to-workstation`
-   - Else (should not occur — Step 9 entry gate requires one or the other) → `complete` defensively, and surface a warning in the skill's final output.
+   - Else → `pending` (the normal case under the current ordering — MCP test runs AFTER retro at Step 9, so neither VALIDATED.md nor DEFERRED_NON_CLOUD.md is on disk yet when retro concludes). The downstream state machine reads `mcp_validation_status` only for human-facing audit; it does not gate any state-machine transitions on this field.
 
 3. **Write `{spec_path}/RETRO_DONE.md`** per `~/.claude/skills/_components/sentinel-frontmatter.md`:
 
@@ -552,9 +554,10 @@ Skip this step (do NOT write the sentinel) iff the retro identified at least one
    # Retro Done
 
    Round <N> of `/retro` concluded with no significant spec divergences —
-   the feature is ready to advance past Step 9. This sentinel terminates the
-   retro phase so subsequent `/lazy` and `/lazy-batch` cycles skip Step 9
-   entirely (per `lazy-state.py`'s `RETRO_DONE.md`-first check).
+   the feature is ready to advance past Step 8 (retro). This sentinel
+   terminates the retro phase so subsequent `/lazy` and `/lazy-batch`
+   cycles skip Step 8 and route to Step 9 (MCP test) — workstation runs
+   the test, cloud writes DEFERRED_NON_CLOUD.md.
 
    ## Round summary
 
@@ -569,7 +572,7 @@ Skip this step (do NOT write the sentinel) iff the retro identified at least one
 
 ### `--auto` / `--batch` mode
 
-This step is REQUIRED in `--auto` and `--batch` mode (autonomous invocations from `/lazy`, `/lazy-batch`, `/lazy-batch-cloud`). Without the sentinel, the autonomous orchestrator will loop on Step 9 — the failure mode this requirement exists to prevent. The `--auto` / `--batch` paths MUST NOT skip Step 6c on the grounds of "the human will write it manually" — the entire point of autonomous mode is that no human is in the loop.
+This step is REQUIRED in `--auto` and `--batch` mode (autonomous invocations from `/lazy`, `/lazy-batch`, `/lazy-batch-cloud`). Without the sentinel, the autonomous orchestrator will loop on Step 8 — the failure mode this requirement exists to prevent. The `--auto` / `--batch` paths MUST NOT skip Step 6c on the grounds of "the human will write it manually" — the entire point of autonomous mode is that no human is in the loop.
 
 In interactive mode, this step is also required for the same downstream-state-machine reason. The skill should not branch behavior on flag.
 

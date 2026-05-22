@@ -873,7 +873,13 @@ def compute_state(
                 sub_skill_args=str(plan),
             )
 
-    # Phases complete — Step 8 (MCP gate) and Step 9 (retro)
+    # Phases complete — new order: Step 8 (retro) → Step 9 (MCP gate) → Step 10 (mark complete).
+    #
+    # /retro now runs BEFORE /mcp-test. Rationale: cloud halts at MCP deferral,
+    # so under the old (mcp → retro) order, cloud runs never reached retro and
+    # workstation runs lacked an implementation-time retrospective gate. /retro
+    # is a docs/analysis pass (no Tauri, no MCP), so it runs identically in
+    # cloud and workstation.
 
     validated_file = spec_path / "VALIDATED.md"
     skip_mcp_file = spec_path / "SKIP_MCP_TEST.md"
@@ -881,34 +887,51 @@ def compute_state(
     retro_done_file = spec_path / "RETRO_DONE.md"
     mcp_results_file = spec_path / "MCP_TEST_RESULTS.md"
 
-    # Cloud Step 8: defer if not validated and not skipped
+    # Step 8: Retro phase (runs FIRST after implementation completes).
+    # Entry condition: phases complete + no RETRO_DONE.md. No MCP precondition.
+    #
+    # The retro skill (Step 6c) writes RETRO_DONE.md when a round concludes
+    # with no significant divergences. /retro-feature is the composed skill
+    # that loops /retro + /execute-plan internally until RETRO_DONE.md,
+    # BLOCKED.md, NEEDS_INPUT.md, or its own max-rounds cap. It is idempotent
+    # — re-dispatch after a partial run picks up from on-disk state.
+    if not retro_done_file.exists():
+        return _state(
+            **common,
+            current_step="Step 8: retro phase",
+            sub_skill="retro-feature",
+            sub_skill_args=f"{spec_path_str} --batch",
+        )
+
+    # Step 9: MCP gate (retro complete; now validate runtime).
+    # Cloud defers via DEFERRED_NON_CLOUD.md; workstation runs the tests.
     if cloud:
         if not validated_file.exists() and not skip_mcp_file.exists() and not deferred_file.exists():
-            # Cloud halts at Step 8 — defer to workstation. Orchestrator writes
-            # the DEFERRED_NON_CLOUD.md sentinel and we fall through to retro on
-            # the next state-script call (deferred_file then exists).
+            # Cloud halts at Step 9 — defer to workstation. Orchestrator writes
+            # the DEFERRED_NON_CLOUD.md sentinel; next cycle either completes
+            # (if workstation has since produced VALIDATED.md) or hits the
+            # Step 2 cloud-saturated skip.
             return _state(
                 **common,
-                current_step="Step 8: cloud defers MCP test",
+                current_step="Step 9: cloud defers MCP test",
                 sub_skill="__write_deferred_non_cloud__",
                 sub_skill_args=spec_path_str,
             )
-        # If SKIP_MCP_TEST exists in cloud, write VALIDATED (per /lazy-cloud Step 8)
+        # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
             return _state(
                 **common,
-                current_step="Step 8: skip-mcp-test → validated",
+                current_step="Step 9: skip-mcp-test → validated",
                 sub_skill="__write_validated_from_skip__",
                 sub_skill_args=spec_path_str,
             )
-
-    # Workstation Step 8 (or cloud post-defer): MCP gate
-    if not cloud:
+    else:
+        # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
                 return _state(
                     **common,
-                    current_step="Step 8: skip-mcp-test → validated",
+                    current_step="Step 9: skip-mcp-test → validated",
                     sub_skill="__write_validated_from_skip__",
                     sub_skill_args=spec_path_str,
                 )
@@ -918,80 +941,58 @@ def compute_state(
                 if meta.get("result") == "all-passing":
                     return _state(
                         **common,
-                        current_step="Step 8b: write validated",
+                        current_step="Step 9b: write validated",
                         sub_skill="__write_validated_from_results__",
                         sub_skill_args=spec_path_str,
                     )
             # Run MCP tests
             return _state(
                 **common,
-                current_step="Step 8: run MCP tests",
+                current_step="Step 9: run MCP tests",
                 sub_skill="mcp-test",
                 sub_skill_args=f"validate {feature_name} — see {spec_path_str}/SPEC.md",
             )
 
-    # Step 9: Retro
-    # Entry: validated_file OR (cloud AND deferred_file)
+    # Step 10: Mark complete.
+    # Entry: RETRO_DONE.md (guaranteed by the Step 8 short-circuit above) AND
+    # (VALIDATED.md OR (cloud AND DEFERRED_NON_CLOUD.md)).
     entry_ok = validated_file.exists() or (cloud and deferred_file.exists())
     if not entry_ok:
-        # No entry into retro — should be unreachable for cloud (Step 8 above
-        # writes deferred or skip→validated) and for workstation. Be defensive.
+        # No entry — should be unreachable: Step 9 either wrote validated /
+        # deferred or dispatched mcp-test. Defensive.
         return _state(
             **common,
-            current_step="Step 8/9: unexpected state",
+            current_step="Step 10: unexpected state",
             sub_skill=None,
             terminal_reason="needs-input",
             notify_message=(
-                f"{feature_name}: unexpected state at Step 8/9 — no VALIDATED.md, "
-                "SKIP_MCP_TEST.md, or DEFERRED_NON_CLOUD.md. Manual review needed."
+                f"{feature_name}: unexpected state at Step 10 — RETRO_DONE.md "
+                "present but no VALIDATED.md, SKIP_MCP_TEST.md, or "
+                "DEFERRED_NON_CLOUD.md. Manual review needed."
             ),
         )
 
-    # RETRO_DONE.md is the terminal sentinel for the retro phase and MUST be
-    # checked BEFORE any retro-plan-status scanning below. Otherwise a feature
-    # whose corrective work shipped under a separately-named plan (e.g.
-    # phase-N-corrective-wiring.md with status: Complete) leaves the original
-    # retro plan permanently `status: Ready`, and find_retro_plans() returns
-    # it forever — re-entering Step 9 retro on every cycle until max-cycles.
-    # See the retro skill's Step 6c: it writes RETRO_DONE.md whenever a round
-    # concludes with no significant divergences, which is what terminates the
-    # phase cleanly.
-    if retro_done_file.exists():
-        # Step 10: mark complete (workstation only; cloud halts here)
-        if cloud and not validated_file.exists():
-            # Defensive cloud halt — Step 2 normally skips first, but if state arrives
-            # here, surface it.
-            return _state(
-                **common,
-                current_step="Step 10a: cloud halt",
-                terminal_reason="cloud-queue-exhausted",
-                notify_message=(
-                    f"{feature_name}: cloud work complete (phases + retro). "
-                    "Awaiting workstation /lazy for deferred MCP test."
-                ),
-            )
-        # Mark complete via /commit (orchestrator does the ROADMAP edit + sentinel cleanup)
+    # Cloud cannot finalize without VALIDATED.md — Step 2's cloud-saturated
+    # skip normally catches this earlier (RETRO_DONE.md + DEFERRED_NON_CLOUD.md
+    # + no VALIDATED.md), but defensively halt here too.
+    if cloud and not validated_file.exists():
         return _state(
             **common,
-            current_step="Step 10: mark complete",
-            sub_skill="__mark_complete__",
-            sub_skill_args=spec_path_str,
+            current_step="Step 10a: cloud halt",
+            terminal_reason="cloud-queue-exhausted",
+            notify_message=(
+                f"{feature_name}: cloud work complete (phases + retro). "
+                "Awaiting workstation /lazy for deferred MCP test."
+            ),
         )
 
-    # No RETRO_DONE.md — dispatch the composed /retro-feature skill, which
-    # loops /retro + /execute-plan internally until RETRO_DONE.md (written by
-    # /retro's Step 6c), BLOCKED.md, NEEDS_INPUT.md, or its own max-rounds cap.
-    # Collapses the entire Step 9 phase into one orchestrator dispatch instead
-    # of N per-round cycles. /retro-feature is idempotent — re-dispatching
-    # after a partial run picks up from on-disk state (existing retro plans,
-    # their Complete/Ready status). The helpers find_retro_plans() /
-    # retro_plan_has_significant_divergences() / latest_retro_plan() are
-    # retained for external tooling and the retro skill's documented contract.
+    # Mark complete via the orchestrator's __mark_complete__ pseudo-skill
+    # (ROADMAP edit + sentinel cleanup + commit).
     return _state(
         **common,
-        current_step="Step 9: retro phase",
-        sub_skill="retro-feature",
-        sub_skill_args=f"{spec_path_str} --batch",
+        current_step="Step 10: mark complete",
+        sub_skill="__mark_complete__",
+        sub_skill_args=spec_path_str,
     )
 
 
@@ -1293,6 +1294,85 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         a.mkdir()
         (a / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
         (a / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+    elif name == "phases-complete-no-retro-done":
+        # All phases complete (no unchecked rows), no sentinels at all.
+        # Under the new state machine, Step 8 (retro) fires FIRST — expects
+        # sub_skill: retro-feature, NOT mcp-test.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-pcnr", "name": "Feature PCNR",
+                 "spec_dir": "feat-pcnr", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-pcnr"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "phases-complete-retro-done":
+        # All phases complete + RETRO_DONE.md present, no VALIDATED.md yet.
+        # Under the new state machine, Step 9 (mcp test) fires — expects
+        # sub_skill: mcp-test, NOT retro-feature.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-pcrd", "name": "Feature PCRD",
+                 "spec_dir": "feat-pcrd", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-pcrd"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            p / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-pcrd", date="2026-05-22",
+            rounds=1, retro_plans=["retro-1-feat-pcrd.md"],
+            mcp_validation_status="complete",
+        )
+    elif name == "phases-complete-retro-done-cloud":
+        # Cloud variant: phases complete + RETRO_DONE.md, no VALIDATED.md,
+        # no DEFERRED_NON_CLOUD.md. Under cloud Step 9 → defer MCP test.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-pcrdc", "name": "Feature PCRDC",
+                 "spec_dir": "feat-pcrdc", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-pcrdc"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            p / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-pcrdc", date="2026-05-22",
+            rounds=1, retro_plans=["retro-1-feat-pcrdc.md"],
+            mcp_validation_status="deferred-to-workstation",
+        )
+    elif name == "phases-complete-no-retro-done-cloud":
+        # Cloud variant: phases complete, no sentinels. Should dispatch
+        # retro-feature in cloud just like workstation — /retro is a
+        # docs/analysis pass with no Tauri/MCP requirements.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-pcnrc", "name": "Feature PCNRC",
+                 "spec_dir": "feat-pcnrc", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-pcnrc"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
     elif name == "needs-realign":
         # feat-h has a hard dep on feat-up (complete upstream); no realign plan yet.
         (features / "queue.json").write_text(json.dumps({
@@ -1331,15 +1411,16 @@ def run_smoke_tests() -> int:
             ("mid-implementation", False, False, {"sub_skill": "execute-plan", "feature_id": "feat-c"}),
             ("cloud-saturated", True, False, {"feature_id": "feat-e"}),   # advances past saturated feat-d
             # Step 7 cloud bypass: all plans Complete + PHASES.md has
-            # workstation-only unchecked rows → cloud defers (Step 8) instead
-            # of looping on write-plan.
+            # workstation-only unchecked rows → bypass triggers, falls
+            # through to phases-complete logic. Under the new ordering
+            # (retro before MCP), Step 8 retro dispatches first, since
+            # /retro is cloud-runnable.
             ("cloud-workstation-only-remainder", True, False, {
-                "sub_skill": "__write_deferred_non_cloud__",
+                "sub_skill": "retro-feature",
                 "feature_id": "feat-cw",
             }),
-            # Same bypass, but DEFERRED_NON_CLOUD.md already on disk →
-            # Step 8 falls through to Step 9 retro. Step 9 now dispatches the
-            # composed /retro-feature skill (single phase-wide dispatch).
+            # Same bypass with DEFERRED_NON_CLOUD.md already on disk — also
+            # has no RETRO_DONE.md, so Step 8 retro still dispatches first.
             ("cloud-workstation-only-with-deferred", True, False, {
                 "sub_skill": "retro-feature",
                 "feature_id": "feat-cwd",
@@ -1381,6 +1462,34 @@ def run_smoke_tests() -> int:
             # should terminate with queue-blocked-on-research.
             ("research-pending-only", False, True, {
                 "terminal_reason": "queue-blocked-on-research",
+            }),
+            # Retro-before-mcp gate (new state-machine order). Workstation:
+            # phases complete, no RETRO_DONE.md → Step 8 dispatches retro,
+            # NOT mcp-test.
+            ("phases-complete-no-retro-done", False, False, {
+                "sub_skill": "retro-feature",
+                "feature_id": "feat-pcnr",
+                "current_step": "Step 8: retro phase",
+            }),
+            # Same feature after RETRO_DONE.md lands → Step 9 mcp test.
+            ("phases-complete-retro-done", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-pcrd",
+                "current_step": "Step 9: run MCP tests",
+            }),
+            # Cloud variant: phases complete, no RETRO_DONE.md → retro
+            # runs in cloud too (docs/analysis pass; no Tauri/MCP needed).
+            ("phases-complete-no-retro-done-cloud", True, False, {
+                "sub_skill": "retro-feature",
+                "feature_id": "feat-pcnrc",
+                "current_step": "Step 8: retro phase",
+            }),
+            # Cloud variant: retro complete, no validated yet → Step 9
+            # writes DEFERRED_NON_CLOUD.md.
+            ("phases-complete-retro-done-cloud", True, False, {
+                "sub_skill": "__write_deferred_non_cloud__",
+                "feature_id": "feat-pcrdc",
+                "current_step": "Step 9: cloud defers MCP test",
             }),
         ]
         for name, cloud, skip_nr, expected in cases:
