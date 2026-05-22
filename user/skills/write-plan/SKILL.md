@@ -122,14 +122,33 @@ Build a directed acyclic graph of all pending phases. The execution order respec
 
 **Hard cap:** a single generated plan file may contain at most **8 work units**. If the queue analysis from Step 1c would produce more than 8 WUs across all input PHASES.md, this skill MUST partition the output into N sequential plan files, each ≤ 8 WUs.
 
+**Minimize N. Pack multiple phases into one part whenever it's legal.** A part covering two or three phases is the EXPECTED shape when individual phases are small (≤ 4 WUs each) — `phases: [3, 4]` is normal output, not an exception. One-phase-per-part is correct ONLY when that one phase already saturates the cap (or near-saturates: ≥ 5 WUs with no legal neighbor to pack). Producing N parts equal to the phase count when packing was legal is a contract violation — `/lazy-batch{,-cloud}` budgets one Opus cycle per `/execute-plan` dispatch, so over-fragmentation directly burns the cycle budget (8 fragmented parts where 4 packed parts would have fit is a 4-cycle waste).
+
 ### Partitioning rules (apply in priority order)
 
-1. **Respect phase boundaries.** A phase's WUs are all written into the same plan file — never split a phase across two plans.
+1. **Phases are atomic; parts are NOT.** A phase's WUs all go in the same plan file — never split a phase across two parts. But a single part SHOULD pack multiple consecutive phases together as long as the total stays ≤ 8 WUs and the dependency edges (rule 2) allow it. The unit of partitioning is the PART, not the phase.
 2. **Respect cross-feature dependency edges.** A plan's WUs MUST NOT reference an upstream phase that is scheduled in a later plan. If feature B's phase P3 depends on feature A's phase P2, both must land in the same plan or A's P2 must land in an earlier plan than B's P3.
-3. **Within those constraints, balance WU counts roughly evenly across plans.** Prefer (3, 3, 3) over (1, 1, 7) when both are legal.
+3. **First-fit pack to minimize N, then balance.** Walk the cross-feature phase queue in execution order. Accumulate phases into the current part as long as `current_wus + next_phase_wus ≤ 8` AND rule 2 still holds. When the next phase would overflow the cap (or break a dep edge), close the current part and start a new one with that phase. After this first pass, if any adjacent parts can be balanced (e.g. one part is (8) and the next is (1) — but rebalancing would still respect rule 1 and rule 2), do so. Prefer (7, 6, 7, 6) over (8, 8, 8, 2) when both are legal; prefer either over (3, 3, 3, 3, 3, 3, 3, 3) when packing was available.
 4. **Single-phase WU overflow is a red flag, not a split point.** If a single phase has more than 8 WUs on its own, do NOT split that phase — that's a /spec-phases quality issue. Surface it explicitly in the final report:
    > **Red flag:** phase `<feature> P<N>` has <K> work units (> 8 cap). This indicates the phase is too large; re-run `/spec-phases` to decompose it before writing a plan. Generating a single oversized plan anyway as best-effort.
    Then generate one plan for that phase containing all its WUs, exceeding the cap. Other phases still partition normally.
+
+### Worked example (one part per phase is WRONG when packing was legal)
+
+Queue: 8 phases, WUs `[4, 3, 3, 3, 3, 4, 3, 3]` (total 26), no cross-feature deps.
+
+| Wrong (8 parts — one phase each) | Right (4 parts — packed) |
+|----------------------------------|--------------------------|
+| part-1: P1 (4)                   | part-1: P1 + P2 (4 + 3 = 7) |
+| part-2: P2 (3)                   | part-2: P3 + P4 (3 + 3 = 6) |
+| part-3: P3 (3)                   | part-3: P5 + P6 (3 + 4 = 7) |
+| part-4: P4 (3)                   | part-4: P7 + P8 (3 + 3 = 6) |
+| part-5: P5 (3)                   |                          |
+| part-6: P6 (4)                   |                          |
+| part-7: P7 (3)                   |                          |
+| part-8: P8 (3)                   |                          |
+
+The 8-part output is a contract violation even though each part respects the cap. The right output is 4 parts with `phases: [1, 2]`, `phases: [3, 4]`, `phases: [5, 6]`, `phases: [7, 8]`. Anti-pattern to avoid: reading rule 1 as "phases are the units of partitioning" — they aren't, PARTS are. Anti-pattern to avoid: reading the `phases: [N]` frontmatter as a singleton invariant — it's a LIST and multi-element values are normal.
 
 ### Output file naming
 
@@ -483,7 +502,7 @@ Include a batch overview table per phase:
 - `kind: implementation-plan`
 - `feature_id:` — parent feature directory name
 - `status: Ready` (or `Draft` if `--batch` halted on `NEEDS_INPUT.md`)
-- `phases:` — list every PHASES.md phase number(s) this plan implements. For a multi-feature plan, list every phase across every feature this part covers. For partitioned multi-part output (Step 2.5), each part's `phases:` lists only the phases assigned to that part.
+- `phases:` — YAML list of every PHASES.md phase number this plan implements. **Multi-element lists are normal and expected** when Step 2.5 packed multiple phases into one part — e.g. `phases: [1, 2]`, `phases: [3, 4]`, `phases: [5, 6, 7]`. A singleton `phases: [N]` is correct ONLY when that one phase saturates the 8-WU cap on its own (or it's the last part and no other phase remained to pack). For a multi-feature plan, list every phase across every feature this part covers. For partitioned multi-part output (Step 2.5), each part's `phases:` lists every phase assigned to that part — not just the lowest.
 
 ### Multi-part Output Reporting
 
