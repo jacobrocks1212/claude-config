@@ -304,7 +304,7 @@ For each cycle whose `description` or prompt resolves to a downstream skill, gra
 - **R-SPH-2** PHASES.md touchpoint audit table present.
 
 #### `/write-plan` cycles
-- **R-WP-1** Partition cap honored: ≤ 6 plan parts per write-plan invocation (count `plans/part-*.md` or similar).
+- **R-WP-1** Partition cap honored — check write-plan's TRUE invariant, NOT a fixed part-count ceiling. Per `~/.claude/skills/write-plan/SKILL.md` Step 2.5, the hard cap is **≤ 8 work units per plan part**, and the skill splits into as many parts as the phase queue requires (a legitimately 7-phase feature can yield 7 parts when each phase is its own part — that is NOT a violation). Grade `pass` when (a) every `plans/*part-*.md` (or single `plans/*.md`) carries ≤ 8 work units AND (b) the parts' `phases:` frontmatter, taken together, cover every pending phase in execution order with no phase split across two parts. Grade `fail` ONLY when a part exceeds 8 WUs or a phase is split/dropped. Do NOT cap on part count alone — over-fragmentation (one-phase-per-part when packing was legal) is a `partial` efficiency note, not a hard `fail`, since write-plan Step 2.5 treats it as a contract smell rather than a cap breach. Cross-check the exact WU cap against the producer skill (`write-plan` Step 2.5) so this rule never drifts from it.
 - **R-WP-2** Each plan part has valid YAML frontmatter (`status`, `kind`, `phases`) per `_components/plan-frontmatter.md`.
 - **R-WP-3** Reference-based component card present in each plan.
 
@@ -320,6 +320,24 @@ For each cycle whose `description` or prompt resolves to a downstream skill, gra
 | **R-EP-6** Quality Gates (Step B.4) | Per-batch QG commands present in transcript. Map against the skill's quality-gates.md component for the expected command set. Differentiate: `qg`, `targeted-cargo/vitest`, `skipped`. |
 | **R-EP-7** Commit policy (Step B.5) | One commit per batch with the project's required message format (`feat(<feat>): <phase> <batch> — ...`). |
 | **R-EP-8** Post-phase integration verification + CLAUDE.md review | Integration verification step ran at end of phase; CLAUDE.md updates landed when the phase introduced reusable patterns. |
+
+**CLOUD BRANCH — `/execute-plan` under the `/lazy-batch-cloud` cloud-override.** The rows above describe the WORKSTATION contract, where `/execute-plan` MUST dispatch Sonnet test-agent + impl-agent sub-subagents and the orchestrator subagent must NOT touch source files itself. `/lazy-batch-cloud` documents a load-bearing override: the cloud cycle subagent has **no `Agent` tool**, so it performs ALL source/test edits INLINE with zero sub-subagents (see `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` HARD CONSTRAINTS "Cloud-specific" paragraph + the Step 1d cycle-prompt "Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING)" block). When this override is in effect, the workstation R-EP-1/2/3/4 grades INVERT or become n/a — grading them as `fail` would force-cap every cloud feature for correctly following its own contract.
+
+**Detecting cloud-mode for a given cycle.** A cycle is graded under the cloud branch iff EITHER:
+  - the parent jsonl's `/lazy-batch[-cloud]` invocation (from 2a `user_typed` / `command_names`) was `/lazy-batch-cloud`, OR
+  - the dispatched cycle prompt text (`agent_dispatch.prompt` from 2a) contains the cloud-override block — match on the marker phrases `"does NOT have the `Agent` tool"`, `"CLOUD OVERRIDE — LOAD-BEARING"`, or `"perform ... INLINE"` / `"Zero sub-subagent dispatches in a cloud /execute-plan cycle is the EXPECTED state"`.
+Prefer the per-cycle prompt text when present (it is authoritative for that specific dispatch); fall back to the parent invocation otherwise. Record the detected mode in the cycle ledger so the compliance matrix citation can state which branch was applied.
+
+When the cloud branch is in effect, grade the load-bearing rows as:
+
+| Rule | Cloud-branch verdict |
+|------|----------------------|
+| **R-EP-1** (no subagent Edit/Write on source) | **INVERTS.** Inline source/test edits by the dispatched cycle subagent are EXPECTED, not forbidden → grade `pass` when the cycle subagent edited source inline (this is the cloud contract). The workstation reading ("any inline source edit is a violation") does NOT apply. If the transcript is unavailable, `unverifiable` (NOT pass) per the usual rule. |
+| **R-EP-2** (Sonnet sub-subagent dispatch) | `n/a (cloud-override)` — zero sub-subagents is the EXPECTED state in cloud, NOT a `fail`. |
+| **R-EP-3** (per-batch TDD agent ordering) | `n/a (cloud-override)` — no test-agent→impl-agent dispatch exists to order; TDD agent-separation is traded away in cloud (the cycle subagent should still write tests-before-impl inline, but that is not structurally verifiable from sub-subagent dispatch evidence). |
+| **R-EP-4** (subagent review step B.2) | `n/a (cloud-override)` — there is no sub-subagent output to review between batches. |
+
+R-EP-5 through R-EP-8 (PHASES.md update, quality gates, commit policy, integration verification) are UNCHANGED in cloud — they are still required and graded exactly as on workstation. Gates + the workstation `/retro` + the deferred MCP-validation pass are the compensating controls that the cloud override leans on; verify R-EP-6 (quality gates) especially, since it is the load-bearing check that survives the override.
 
 #### `/retro` cycles
 - **R-RE-1** `RETRO_DONE.md` written when no significant divergences (per retro's Step 6c).
@@ -343,6 +361,7 @@ For each cycle whose `description` or prompt resolves to a downstream skill, gra
 | **R-C-1** Step 2 cloud-saturation skip | Features with `RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md` were skipped, not re-dispatched. Cross-reference the state-script output (parent jsonl Bash result) against the cycle dispatch list. |
 | **R-C-2** Step 8 MCP deferral | Every MCP-test step in cloud wrote a `DEFERRED_NON_CLOUD.md` with proper frontmatter (`kind: deferred-non-cloud`, `deferred_step: 8` or `9` depending on revision, `deferred_by: lazy-cloud`). |
 | **R-C-3** In-session research ingest | If research was uploaded mid-run, `/ingest-research` was dispatched and the loop resumed (not halted with terminal `needs-research`). |
+| **R-C-4** No premature Complete (low severity) | A cloud cycle MUST NOT promote a feature's SPEC.md / PHASES.md top `**Status:**` to `Complete` while `DEFERRED_NON_CLOUD.md` exists and `VALIDATED.md` does not — that asserts completion before the workstation MCP-validation pass has run. From the 2d artifact snapshot: if `SPEC.md` `**Status:** Complete` AND `DEFERRED_NON_CLOUD.md` present AND `VALIDATED.md` absent → grade `fail` (severity **low**). The honest terminal cloud state is `In-progress` (or an explicit cloud-saturated marker) pending the workstation pass that writes `VALIDATED.md` and only then flips to `Complete`. Cite the offending status line + the sentinel presence/absence. |
 
 ---
 
@@ -370,9 +389,9 @@ Average each feature's cycles' compliance (weighted equally). Also compute per-s
 | D | ≥ 50% |
 | F | < 50% |
 
-**Force-cap rule:** if any cycle's `R-EP-1` OR `R-EP-2` graded `fail`, force-cap the feature's headline grade at **C** regardless of arithmetic. These are load-bearing hard constraints; their violation breaks the skill contract.
+**Force-cap rule:** if any cycle's `R-EP-1` OR `R-EP-2` graded a **genuine workstation `fail`**, force-cap the feature's headline grade at **C** regardless of arithmetic. These are load-bearing workstation hard constraints; their violation breaks the skill contract. **The cap fires ONLY on a true workstation `fail`** — it MUST NOT fire on the Step 4b cloud-branch verdicts: a cloud `R-EP-1` `pass` (inverted — inline edits expected) and a cloud `R-EP-2`/`R-EP-3`/`R-EP-4` `n/a (cloud-override)` are correct contract-following, not violations. `n/a` and `pass` never cap; only a workstation `fail` does. (As always, `unverifiable` from a reclaimed transcript also never caps — it downgrades confidence, not grade.)
 
-**Canary check (2026-05-22 audit context):** if the audit reproduces session `0a6dafab` against branch `claude/lazy-batch-cloud-3rJaT`, expected output is **F on R-EP-1 and R-EP-2** for both `hard-state-reload` and `audio-thread-panic-catching` (Edit/Write used directly by /execute-plan subagent, zero Sonnet sub-subagents across 9 surviving transcripts). If your audit gives a different verdict on that session, the skill is mis-implemented — re-check transcript-availability handling and the Edit/Write attribution.
+**Canary check (2026-05-22 audit context) — scoped to PRE-cloud-override sessions only.** This canary predates the documented `/lazy-batch-cloud` cloud-override. It applies ONLY to a cloud session whose cycle prompts do **NOT** contain the cloud-override block (detect per Step 4b "Detecting cloud-mode" — no `"CLOUD OVERRIDE — LOAD-BEARING"` / `"does NOT have the `Agent` tool"` markers in `agent_dispatch.prompt`). For such a pre-override session — e.g. reproducing session `0a6dafab` against branch `claude/lazy-batch-cloud-3rJaT` — expected output is **F on R-EP-1 and R-EP-2** for both `hard-state-reload` and `audio-thread-panic-catching` (Edit/Write used directly by /execute-plan subagent, zero Sonnet sub-subagents across 9 surviving transcripts), and the force-cap fires. **For any POST-cloud-override cloud run (cycle prompt CONTAINS the override block), this expectation is INVERTED:** the Step 4b cloud branch applies, so the expected verdict is `R-EP-1` **pass** (inline edits expected) and `R-EP-2`/`R-EP-3`/`R-EP-4` **`n/a (cloud-override)`**, and the force-cap does NOT fire. Do not assert F against a post-override cloud session — that would force-cap it for correctly following its own contract. If your audit gives a verdict that disagrees with whichever branch the session falls into, the skill is mis-implemented — re-check cloud-mode detection, transcript-availability handling, and the Edit/Write attribution.
 
 ---
 
