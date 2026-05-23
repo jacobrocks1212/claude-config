@@ -33,7 +33,7 @@ Identical to `/lazy-batch`:
 5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. The user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation as a quality issue and halt instead (see Step 1g.1).
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch-cloud` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
-8. **The `cycle` counter is session-global and monotonic across feature transitions.** Identical to `/lazy-batch` HARD CONSTRAINT 8: `cycle` is initialized to 0 in Step 0 *once per `/lazy-batch-cloud` invocation* and incremented at the end of every cycle (Step 1c.5 step 4, Step 1e, Step 1g step 7). It MUST NOT be reset when `lazy-state.py --cloud` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next (via `__mark_complete__`, or because the prior feature hit `cloud-queue-exhausted`'s precondition and a later queue entry became current, or because the prior feature's `__write_deferred_non_cloud__` finished and the script rolled forward). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch-cloud` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch.
+8. **The `cycle` counter is session-global and monotonic across feature transitions.** Identical to `/lazy-batch` HARD CONSTRAINT 8: `cycle` is initialized to 0 in Step 0 *once per `/lazy-batch-cloud` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e, Step 1g step 7). It MUST NOT be reset when `lazy-state.py --cloud` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next (via `__mark_complete__`, or because the prior feature hit `cloud-queue-exhausted`'s precondition and a later queue entry became current, or because the prior feature's `__write_deferred_non_cloud__` finished and the script rolled forward). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch-cloud` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch.
 
 **Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. **Additionally, the cloud cycle subagent does NOT have the `Agent` tool — recursive sub-subagent dispatch is not supported from inside a cloud subagent.** This forces a load-bearing override of any dispatched skill's sub-subagent contract: skills that nominally dispatch sub-subagents (e.g. `/execute-plan` → Sonnet test-agent + impl-agent fanout, `/retro` → research subagents A–G) are performed INLINE inside the cycle subagent itself using `Edit`/`Write`/`Read` directly. The cycle subagent's prompt (Step 1d below) makes both limitations explicit and enumerates the per-skill inline overrides. **This override applies only at the cycle-subagent level** — the orchestrator still dispatches exactly one `Agent` per cycle, identical to `/lazy-batch`. The override never expands the orchestrator's `Write`/`Edit` scope (HARD CONSTRAINT 1 still holds — the orchestrator edits only sentinels).
 
@@ -56,6 +56,58 @@ Print the start bookend:
 **Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
 **Repo root:** {cwd}
 ```
+
+---
+
+## Step 0.4: Resume-time remote sync (HARD REQUIREMENT — cloud reclaim recovery)
+
+**Runs once, immediately after Step 0 (arg parsing) and BEFORE Step 0.5 / the Step 1a first state probe.** This is a single-turn git reconciliation, NOT polling — it does not violate HARD CONSTRAINT 7 (no active waiting). It does NOT touch the orchestrator's `Write`/`Edit` sentinel-only scope (HARD CONSTRAINT 1) — these are `Bash` git operations, not file edits.
+
+**Rationale (cloud-acute):** a `/lazy-batch-cloud` session that resumes in a *fresh* container can check out a STALE local snapshot of the work branch — well behind the true remote tip — because the prior container (and its local commits beyond the last push) was reclaimed. The pushed history is safe on `origin`, but if the orchestrator runs `lazy-state.py --cloud` against the stale local tree it will infer state from out-of-date local files (plans, sentinels, SPEC) and either re-do or corrupt already-pushed work. The orchestrator MUST reconcile local to the remote tip BEFORE any local-state inference.
+
+**Algorithm:**
+
+1. Determine the work branch:
+
+   ```bash
+   branch=$(git rev-parse --abbrev-ref HEAD)
+   ```
+
+2. Fetch the remote tip (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error — this bounded retry is a single git op, not an active wait):
+
+   ```bash
+   git fetch origin "$branch"
+   ```
+
+   If the branch does not exist on `origin` yet (brand-new work branch never pushed — `fetch` reports no such ref), there is nothing to reconcile: skip the rest of Step 0.4 and continue to Step 0.5.
+
+3. Fast-forward local to the remote tip:
+
+   ```bash
+   git merge --ff-only "origin/$branch"
+   ```
+
+4. **If the fast-forward FAILS because local has DIVERGED from `origin`** (non-fast-forwardable — local commits exist that `origin` does not have, which should never happen on a solo work branch), **do NOT clobber.** Do NOT `git reset --hard`, do NOT force anything. Surface the divergence to chat and halt for human resolution:
+
+   ```
+   🛑 /lazy-batch-cloud — work branch diverged from origin
+
+   Local `{branch}` has commits that origin/{branch} does not, and origin has
+   commits local does not (non-fast-forwardable). This should not happen on a
+   solo work branch and may indicate concurrent edits from another container
+   or a force-push. Refusing to auto-reconcile to avoid losing work.
+
+   Resolve manually (inspect `git log --oneline --graph {branch} origin/{branch}`),
+   then re-invoke /lazy-batch-cloud.
+   ```
+
+   PushNotification with the same one-line summary, then STOP. Do NOT run `lazy-state.py`.
+
+5. On a clean fast-forward (or when local was already up to date / the branch was unpushed), print a one-line confirmation and continue to Step 0.5:
+
+   ```
+   🔄 Synced local {branch} to origin tip ({short-sha}) before resuming.
+   ```
 
 ---
 
@@ -117,9 +169,10 @@ Follow `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` Step 3's protocol fo
 After the inline action:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
-2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
-3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` (same uniform post-cycle update as Step 1e — keeps the loop-guard accurate across mixed pseudo-skill / real-skill cycles).
-4. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
+2. **Push backstop (HARD REQUIREMENT — cloud reclaim safety).** The inline pseudo-skill committed a sentinel / plan-frontmatter change locally; push it now so it survives container reclaim — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This is the backstop for inline cycles that the orchestrator owns directly — a `git push` of an already-committed change, NOT a Write/Edit, so HARD CONSTRAINT 1 still holds. If the push reports "up to date," that is fine (a prior cycle's push already carried it).
+3. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
+4. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` (same uniform post-cycle update as Step 1e — keeps the loop-guard accurate across mixed pseudo-skill / real-skill cycles).
+5. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
@@ -206,12 +259,42 @@ Source/test file edits:
     this subagent session. The cloud override above removes the
     /execute-plan dispatch requirement and replaces it with inline edits.
 
+Commit + PUSH policy (CLOUD DURABILITY — HARD REQUIREMENT):
+  This is a cloud container with NO persistent state — it is reclaimed on
+  inactivity, and a long-running cycle (20-45 min) looks idle to the
+  reclaimer. ANY local commit you make that has not been pushed is
+  PERMANENTLY LOST if the container is reclaimed mid-cycle. Therefore:
+
+  - After EACH batch / work-unit commit, IMMEDIATELY push it — do NOT defer
+    pushing to the end of the plan part or the end of the cycle:
+
+      git push origin <work-branch>
+
+    where <work-branch> is the current branch (git rev-parse --abbrev-ref
+    HEAD). Retry up to 4× with exponential backoff (2s/4s/8s/16s) on a
+    NETWORK error only. This shrinks the reclaim-loss window from "the entire
+    cycle runtime" to "a single batch".
+  - This applies per /execute-plan batch (push after every per-batch commit),
+    and to any other skill that commits incrementally. If the skill makes a
+    single commit, push that one commit immediately after it lands.
+  - You are authorized to push to the WORK BRANCH ONLY (the branch you are
+    already on). NEVER push to main / master. NEVER force-push. If the push
+    is rejected as non-fast-forward, STOP and report it — do not force.
+  - This does NOT change WHO owns source edits: you (the cycle subagent)
+    already own all source/test edits and commits per the cloud override
+    above. Adding `git push` is a git operation on work you already authored;
+    it does not touch the orchestrator's sentinel-only Write/Edit scope.
+
 After the skill returns:
-  1. Commit per .claude/skill-config/commit-policy.md (or standard pattern).
+  1. Commit per .claude/skill-config/commit-policy.md (or standard pattern)
+     for any final uncommitted changes, then push per the Commit + PUSH
+     policy above. By this point every batch commit should ALREADY be pushed.
   2. Report a one-paragraph summary (under 8 lines). If you ran /execute-plan
      or /retro, CONFIRM that you performed all source/test edits and research
      INLINE (zero Agent() calls) — this is the cloud-override audit signal,
      mirroring the sub-subagent-count signal /lazy-batch uses on workstation.
+     Also CONFIRM each batch commit was pushed as it landed (the reclaim-safety
+     audit signal).
 ```
 
 **LOOP DETECTED block (append only when the loop-guard fires):**
@@ -263,7 +346,7 @@ Agent({
 
 ### 1e. Record cycle outcome and loop
 
-Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, update `prev_cycle_signature = (feature_id, sub_skill, current_step)`, increment cycle, loop. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles. **The cycle-counter increment is also a uniform post-cycle action that NEVER resets on feature transitions (HARD CONSTRAINT 8) — when the next `lazy-state.py --cloud` call returns a different `feature_id` (e.g. after `__mark_complete__`, after `__write_deferred_non_cloud__` rolls the queue to the next ready feature, or any other queue-advance), `cycle` continues incrementing from where it was.**
+Same as `/lazy-batch`. Append to `cycle_log`, print one-line status, update `prev_cycle_signature = (feature_id, sub_skill, current_step)`, increment cycle, loop. **Post-cycle push backstop (HARD REQUIREMENT — cloud reclaim safety):** after the cycle subagent returns, the orchestrator verifies the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). Under guardrail B the cycle subagent already pushed every batch commit, so this normally reports "up to date" — it is the backstop for any cycle (or future skill) that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles. **The cycle-counter increment is also a uniform post-cycle action that NEVER resets on feature transitions (HARD CONSTRAINT 8) — when the next `lazy-state.py --cloud` call returns a different `feature_id` (e.g. after `__mark_complete__`, after `__write_deferred_non_cloud__` rolls the queue to the next ready feature, or any other queue-advance), `cycle` continues incrementing from where it was.**
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
@@ -428,6 +511,9 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Decision-resume mode (Step 1g) | `terminal_reason: needs-input` — **NOT a halt** in either variant. AskUserQuestion → append Resolution → commit → dispatch Sonnet apply-resolution subagent (edits SPEC/PHASES, neutralizes sentinel) → return to Step 1a. **Same shape** in both. | same shape as workstation. SPEC/PHASES edits are docs-only, no cloud limitations apply. |
 | In-Session Resume Protocol (Step 5) | chat-driven resume path for research uploads. User uploads research in next message → assistant materializes into staging dir → dispatches `/ingest-research` Sonnet subagent in-session → re-invokes `/lazy-batch` automatically. **Same shape** in both. | same shape as workstation, with the cloud-durability framing: in-session ingestion is the only path that writes tracked files (RESEARCH.md + RESEARCH_SUMMARY.md) before cloud-container reclaim. Re-invocation uses `/lazy-batch-cloud`. |
 | Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
+| Resume-time remote sync (Step 0.4, guardrail A) | **MIRRORED** — `git fetch origin <branch>` + `git merge --ff-only` before the first state probe; halt-on-divergence (no clobber). Workstation framing: a resumed/interrupted session, or a remote advanced by another machine, can leave local behind. **Same shape** in both. | same algorithm; cloud framing is container-reclaim → stale local snapshot. This is the load-bearing recovery for the reclaim-mid-cycle data-loss mode. |
+| In-cycle batch-level push (guardrail B) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** Workstation cycle subagents already push at end-of-cycle (Step 1d "commit … and push to the current branch"), and local commits survive an interrupted workstation session, so per-batch (vs per-cycle) push granularity buys no durability on a persistent disk. | cycle subagent prompt (Step 1d) requires `git push origin <work-branch>` after EACH batch commit (4× backoff retry, work-branch only, never main/force). Shrinks reclaim-loss exposure from "entire cycle runtime" to "one batch" — acute only because the cloud container is ephemeral and reclaim-prone. |
+| Post-cycle push backstop (guardrail C) | **MIRRORED** — after every cycle (real-skill Step 1e AND inline pseudo-skill Step 1c.5) the orchestrator pushes / verifies-up-to-date the work branch (4× backoff, work-branch only). A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 holds. **Same shape** in both. | same as workstation; on cloud it is the backstop behind guardrail B's per-batch pushes (normally a no-op "up to date"). |
 
 All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f and Step 1g are also shared shape; both orchestrators reach them via the same state-script terminal reasons.
 
