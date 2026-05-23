@@ -373,6 +373,58 @@ def count_deliverables(phases_text: str) -> tuple[int, int]:
     return unchecked, checked
 
 
+# Matches the title text of a "verification-only" subsection — rows under such
+# a subsection are workstation-only runtime/MCP checks that cloud cannot tick
+# and that the workstation /mcp-test step (not /write-plan) is responsible for.
+_VERIFICATION_SECTION_RE = re.compile(
+    r"runtime\s+verification|mcp\s+(?:integration\s+test|test\s+assertion|assertion)",
+    re.IGNORECASE,
+)
+
+
+def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
+    """Return True iff every '- [ ]' line in PHASES.md sits under a
+    Runtime Verification / MCP-assertion subsection.
+
+    Used by the Step 7 workstation bypass: when all implementation plans are
+    Complete and the only remaining unchecked rows are workstation-only
+    verification rows, /lazy should fall through to the retro→MCP gate rather
+    than loop on write-plan.
+
+    Handles BOTH subsection-marker formats:
+      - Markdown headings: `### Runtime Verification`,
+        `## MCP Integration Test`, etc.
+      - Bold markers (the real AlgoBooth PHASES.md format):
+        `**Runtime Verification** ...`, `**MCP Integration Test Assertions:**`.
+
+    Conservative: any heading or bold-marker subsection header whose title does
+    NOT match the verification pattern leaves verification scope, so a genuine
+    implementation row found outside a verification subsection returns False
+    (caller keeps write-plan / execute-plan). Returns False if no unchecked
+    rows are present.
+    """
+    in_verification = False
+    saw_unchecked = False
+    for line in phases_text.splitlines():
+        stripped = line.strip()
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        if heading:
+            in_verification = bool(_VERIFICATION_SECTION_RE.search(heading.group(1)))
+            continue
+        # Bold-marker subsection header (e.g. `**Runtime Verification** ...`).
+        # A list item like `- **x**` starts with '-', so it is not caught here.
+        if stripped.startswith("**"):
+            bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            if bold:
+                in_verification = bool(_VERIFICATION_SECTION_RE.search(bold.group(1)))
+                continue
+        if re.match(r"^-\s*\[\s*\]", stripped):
+            saw_unchecked = True
+            if not in_verification:
+                return False
+    return saw_unchecked
+
+
 # ---------------------------------------------------------------------------
 # Plan file discovery
 # ---------------------------------------------------------------------------
@@ -935,13 +987,24 @@ def compute_state(
     # Step 7: Phase completion
     if unchecked > 0:
         plans = find_implementation_plans(spec_path)
-        if cloud and not plans and _has_any_complete_plan(spec_path):
+        if not plans and _has_any_complete_plan(spec_path) and (
+            cloud or remaining_unchecked_are_verification_only(phases_text)
+        ):
             # All implementation plans are Complete; remaining PHASES.md
             # unchecked rows are workstation-only (e.g. per-phase Runtime
-            # Verification subsections ticked at MCP test time). Cloud can't
-            # tick them, so fall through to Step 8 — cloud will defer (or
-            # honor an existing DEFERRED_NON_CLOUD.md), Step 9 retro runs,
-            # and Step 2 cloud-saturated skip eventually fires.
+            # Verification / MCP-assertion subsections ticked at MCP test
+            # time).
+            #
+            # Cloud: always bypass — cloud can't tick any workstation row, so
+            # fall through to Step 8 (cloud defers or honors an existing
+            # DEFERRED_NON_CLOUD.md), Step 9 retro runs, and Step 2's
+            # cloud-saturated skip eventually fires.
+            #
+            # Workstation: bypass ONLY when the unchecked remainder is entirely
+            # verification rows. Workstation CAN run those checks, so falling
+            # through reaches Step 8 retro → Step 9 /mcp-test (the dispatch
+            # that actually ticks them). If any real implementation row is
+            # still unchecked we skip this branch and write-plan as before.
             pass
         elif not plans:
             return _state(
@@ -1248,10 +1311,11 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             deferred_by="lazy-cloud", date="2026-05-19",
         )
     elif name == "workstation-all-plans-complete-phases-unchecked":
-        # Workstation regression: bypass must NOT trigger when cloud=False.
-        # All plans Complete, PHASES.md still has unchecked rows. Workstation
-        # should keep emitting write-plan (preserves current behavior — the
-        # MCP-test step ticks Runtime Verification rows on workstation).
+        # Workstation MCP-gate bypass: all impl plans Complete and the only
+        # unchecked PHASES.md rows are workstation-only Runtime Verification
+        # rows. Workstation can run those checks, so /lazy must fall through to
+        # the retro→MCP gate. With no RETRO_DONE.md, Step 8 retro dispatches
+        # first (mirrors the cloud-bypass cases above).
         (features / "queue.json").write_text(json.dumps({
             "queue": [
                 {"id": "feat-wapcpu", "name": "Feature WAPCPU",
@@ -1272,6 +1336,100 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         plans.mkdir()
         (plans / "all-phases-w.md").write_text(
             "---\nkind: implementation-plan\nfeature_id: feat-wapcpu\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+    elif name == "workstation-verification-only-retro-done":
+        # Workstation bypass with RETRO_DONE.md already on disk: Step 8 retro
+        # is satisfied, so the fall-through reaches Step 9 → mcp-test (the
+        # dispatch that ticks the deferred Runtime Verification rows).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-wvrd", "name": "Feature WVRD",
+                 "spec_dir": "feat-wvrd", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        w = features / "feat-wvrd"
+        w.mkdir()
+        (w / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (w / "RESEARCH.md").write_text("# R\n")
+        (w / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (w / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] Done\n\n"
+            "### Runtime Verification\n- [ ] MCP test only\n"
+        )
+        plans = w / "plans"
+        plans.mkdir()
+        (plans / "all-phases-wvrd.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-wvrd\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+        _write_yaml_sentinel(
+            w / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-wvrd", date="2026-05-22",
+            rounds=1, retro_plans=["retro-1-feat-wvrd.md"],
+            mcp_validation_status="pending",
+        )
+    elif name == "workstation-verification-only-bold-marker":
+        # Bold-marker format (the real AlgoBooth PHASES.md style) rather than
+        # `### Runtime Verification` headings. Locks in that the detector
+        # handles `**Runtime Verification**` / `**MCP Integration Test
+        # Assertions:**`. All impl plans Complete, no RETRO_DONE.md →
+        # bypass → Step 8 retro.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-wbold", "name": "Feature WBOLD",
+                 "spec_dir": "feat-wbold", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        w = features / "feat-wbold"
+        w.mkdir()
+        (w / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (w / "RESEARCH.md").write_text("# R\n")
+        (w / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (w / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] Implement the thing\n\n"
+            "**Runtime Verification** (workstation-only):\n\n"
+            "- [ ] Live MCP smoke test passes\n\n"
+            "**MCP Integration Test Assertions:**\n\n"
+            "```\n- [ ] assertion one holds\n```\n"
+        )
+        plans = w / "plans"
+        plans.mkdir()
+        (plans / "all-phases-wbold.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-wbold\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+    elif name == "workstation-all-plans-complete-real-unchecked":
+        # NEGATIVE case: all impl plans Complete, but a remaining unchecked row
+        # is a genuine implementation deliverable (NOT under a verification
+        # subsection). Bypass must NOT fire — workstation keeps emitting
+        # write-plan.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-wreal", "name": "Feature WREAL",
+                 "spec_dir": "feat-wreal", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        w = features / "feat-wreal"
+        w.mkdir()
+        (w / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (w / "RESEARCH.md").write_text("# R\n")
+        (w / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (w / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] Done\n"
+            "- [ ] Real implementation deliverable still pending\n\n"
+            "### Runtime Verification\n- [ ] MCP test only\n"
+        )
+        plans = w / "plans"
+        plans.mkdir()
+        (plans / "all-phases-wreal.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-wreal\n"
             "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
             "# Plan (complete)\n"
         )
@@ -1641,10 +1799,34 @@ def run_smoke_tests() -> int:
                 "sub_skill": "retro-feature",
                 "feature_id": "feat-cwd",
             }),
-            # Workstation regression: bypass must NOT fire when cloud=False.
+            # Workstation MCP-gate bypass: all impl plans Complete, only
+            # unchecked rows are Runtime Verification → fall through to the
+            # retro→MCP gate. No RETRO_DONE.md yet → Step 8 retro fires first
+            # (mirrors the cloud-bypass cases above).
             ("workstation-all-plans-complete-phases-unchecked", False, False, {
-                "sub_skill": "write-plan",
+                "sub_skill": "retro-feature",
                 "feature_id": "feat-wapcpu",
+            }),
+            # Workstation bypass + RETRO_DONE.md present → Step 9 mcp-test
+            # (the dispatch that actually ticks the deferred verification rows).
+            ("workstation-verification-only-retro-done", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-wvrd",
+                "current_step": "Step 9: run MCP tests",
+            }),
+            # Workstation bypass with bold-marker (`**Runtime Verification**`)
+            # subsections instead of `### ` headings — real AlgoBooth format.
+            # No RETRO_DONE.md → Step 8 retro.
+            ("workstation-verification-only-bold-marker", False, False, {
+                "sub_skill": "retro-feature",
+                "feature_id": "feat-wbold",
+            }),
+            # NEGATIVE: all impl plans Complete but a remaining unchecked row is
+            # a real implementation deliverable (outside any verification
+            # subsection) → bypass must NOT fire; write-plan still dispatched.
+            ("workstation-all-plans-complete-real-unchecked", False, False, {
+                "sub_skill": "write-plan",
+                "feature_id": "feat-wreal",
             }),
             ("all-complete", False, False, {"terminal_reason": "all-features-complete"}),
             ("needs-research", False, False, {"terminal_reason": "needs-research"}),
