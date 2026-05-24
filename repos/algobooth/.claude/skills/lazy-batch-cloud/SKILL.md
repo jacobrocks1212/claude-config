@@ -24,7 +24,7 @@ This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended div
 
 ## HARD CONSTRAINTS (non-negotiable)
 
-Identical to `/lazy-batch`:
+Constraints 1-8 are identical to `/lazy-batch`; constraint 9 is cloud-only:
 
 1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` status lines when performing the `__mark_complete__` action. `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. All other `Write`/`Edit` operations require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
 2. The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool. Every sub-skill goes through a spawned `Agent` subagent. Pseudo-skills (`__*__`) are not real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
@@ -34,6 +34,8 @@ Identical to `/lazy-batch`:
 6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation as a quality issue and halt instead (see Step 1g.1).
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch-cloud` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 8. **The `cycle` counter is session-global and monotonic across feature transitions.** Identical to `/lazy-batch` HARD CONSTRAINT 8: `cycle` is initialized to 0 in Step 0 *once per `/lazy-batch-cloud` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e, Step 1g step 7). It MUST NOT be reset when `lazy-state.py --cloud` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next (via `__mark_complete__`, or because the prior feature hit `cloud-queue-exhausted`'s precondition and a later queue entry became current, or because the prior feature's `__write_deferred_non_cloud__` finished and the script rolled forward). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch-cloud` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch.
+
+9. **(CLOUD-ONLY, not in `/lazy-batch`) NEVER passively wait on a background-cycle completion notification across a container-reclaim boundary.** After ANY `SessionStart:resume` in cloud, the orchestrator MUST treat any in-flight background cycle agent as **unknown — reconcile from git + `lazy-state.py --cloud`** (Step 0.6), NEVER as "still running, awaiting its completion notification." A background-agent completion notification will NOT arrive across a container-reclaim boundary: the agent and the container it ran in are gone, so the signal can never fire. The orchestrator MUST re-probe and drive forward from the reconciled on-disk + remote state — it must never block waiting for that dead signal. **This is the OPPOSITE of HARD CONSTRAINT 7's rule, not a violation of it:** HARD CONSTRAINT 7 forbids *actively* polling/sleeping while research is in flight; HARD CONSTRAINT 9 forbids *passively* blocking on a notification that can never come. Both push the orchestrator to the same behavior — never block; reconcile and act on a single-turn signal.
 
 **Cloud-specific:** the cycle subagent operates under the same cloud-environment limitations documented in `/lazy-cloud` — no Tauri runtime, no MCP HTTP server, no audio device, no Windows-only tooling. **Additionally, the cloud cycle subagent does NOT have the `Agent` tool — recursive sub-subagent dispatch is not supported from inside a cloud subagent.** This forces a load-bearing override of any dispatched skill's sub-subagent contract: skills that nominally dispatch sub-subagents (e.g. `/execute-plan` → Sonnet test-agent + impl-agent fanout, `/retro` → research subagents A–G) are performed INLINE inside the cycle subagent itself using `Edit`/`Write`/`Read` directly. The cycle subagent's prompt (Step 1d below) makes both limitations explicit and enumerates the per-skill inline overrides. **This override applies only at the cycle-subagent level** — the orchestrator still dispatches exactly one `Agent` per cycle, identical to `/lazy-batch`. The override never expands the orchestrator's `Write`/`Edit` scope (HARD CONSTRAINT 1 still holds — the orchestrator edits only sentinels).
 
@@ -121,9 +123,51 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 0.5 for the full algorithm. Clou
 
 ---
 
+## Step 0.6: Resume-reconciliation (HARD REQUIREMENT — cloud reclaim recovery)
+
+**Runs once, after Step 0.5 and BEFORE the Step 1 main loop dispatches any real-work cycle. MANDATORY at the start of every `/lazy-batch-cloud` invocation AND treated as mandatory after any `SessionStart:resume`.** Like Step 0.4 this is single-turn git + state reconciliation, NOT polling (HARD CONSTRAINT 7 holds). It uses `Bash` git ops + the read-only state probe; the orchestrator itself performs no source `Write`/`Edit` (HARD CONSTRAINT 1 holds — the only file edits it may trigger are sentinel/SPEC/plan writes performed by a dispatched finalize subagent or by the inline pseudo-skill path, never by the orchestrator outside its sentinel scope).
+
+**Rationale.** A cloud cycle (especially a 20-45 min `/execute-plan`) can be killed by a container reclaim mid-run. Per HARD CONSTRAINT 9 the orchestrator must NOT assume that killed cycle is "still running" and wait on its completion notification — that notification can never arrive. Instead it must reconcile the true state from git + `lazy-state.py --cloud` and drive forward. A killed cycle leaves up to three residues that MUST be handled before re-entering the loop, or the loop will redo finished work, hang, or discard correct partial work:
+
+**Algorithm:**
+
+1. **Push any unpushed local commits.** A same-container `SessionStart:resume` (not a fresh-container reclaim) can leave local commits that never pushed — the killed cycle committed but died before its per-WU push (Step 1d Commit + PUSH policy) or before the Step 1e backstop. Push them now so the remote is the source of truth for steps 2-4:
+
+   ```bash
+   git push origin "$(git rev-parse --abbrev-ref HEAD)"
+   ```
+
+   Retry up to 4× with exponential backoff (2s/4s/8s/16s) on network error; WORK BRANCH only, never main, never force. "Up to date" is fine. (After a true fresh-container reclaim there are no local-only commits — those died with the prior container; this step is then a no-op, and the durable state is whatever the per-WU pushes already landed on `origin`.)
+
+2. **Probe state.** Run `python3 ~/.claude/scripts/lazy-state.py --cloud` (no `--skip-needs-research` — this is a reconciliation probe, identical invocation to Step 1a's default path). Parse the JSON. This is read-only.
+
+3. **Detect + handle the "finished-but-not-finalized" case.** A killed cycle commonly leaves a plan part whose WUs/phases are already DONE on the remote (per-WU pushes landed) but whose finalization never ran — the plan frontmatter is still `Ready`/`In-progress`, PHASES.md per-phase status is unticked, or deliverable checkboxes are unticked. Detect it by cross-checking, for the current feature's active plan part:
+   - `git log --oneline` shows the part's WU/batch commits are present, AND
+   - the plan file's `- [ ]` checkboxes are all (or nearly all) `- [x]`, AND
+   - the plan frontmatter `status:` is still `Ready` or `In-progress` (not `Complete`), OR PHASES.md's per-phase status / deliverable checkboxes for that phase are not yet ticked.
+
+   When this holds, do NOT dispatch a full re-execution of the part. Dispatch a SHORT finalize cycle instead (one subagent — Sonnet is sufficient, the work is mechanical) with a bounded job:
+     - verify the part's quality gates are green (run them; if RED, this is NOT finished-but-not-finalized — fall through to normal Step 1 loop execution to fix the failures);
+     - flip the plan part frontmatter `status:` → `Complete`, **subject to the No-premature-Complete guard** — if `DEFERRED_NON_CLOUD.md` exists and `VALIDATED.md` does not, leave it `In-progress` and let the cloud-saturated `__flip_plan_complete_cloud_saturated__` flow carry it;
+     - set PHASES.md per-phase status + tick that phase's deliverable checkboxes;
+     - commit AND push each change (per the Step 1d Commit + PUSH policy).
+   Record it as one cycle (append to `cycle_log`, update `prev_cycle_signature`, increment `cycle`), then return to the Step 1 loop. This converts a "redo the whole part" into a few-second finalize.
+
+4. **Reconcile a dirty working tree.** If `git status --porcelain` is non-empty, a killed agent left uncommitted partial work. Do NOT blindly `git checkout` / `git reset` it away — discarding work as a shortcut is forbidden. Read the diff (`git diff` + `git status`) and decide: if the partial work is correct-but-uncommitted, KEEP it and finish it (dispatch a bounded continue/finalize subagent, since source edits require a subagent per HARD CONSTRAINT 1 — the orchestrator must not edit source files itself); if a hunk is genuinely corrupt/half-applied, surface that diff to chat first and revert ONLY the broken hunk, never the whole tree. When in doubt, dispatch the bounded subagent to read the diff and either complete the in-flight WU or cleanly revert just the broken portion.
+
+After steps 1-4, print a one-line reconciliation summary and enter the Step 1 loop:
+
+```
+🔧 Resume-reconciliation: pushed {N} commit(s); {finalized plan part X | no finalize needed}; {reconciled dirty tree | clean tree}.
+```
+
+When steps 2-4 find nothing to reconcile (clean tree, no finished-but-not-finalized part), Step 0.6 is a fast no-op beyond the step-1 push — the normal fresh-start case.
+
+---
+
 ## Step 1: Cycle Loop
 
-Initialize per-session state — identical shape to `/lazy-batch` Step 0:
+Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This init is logically part of Step 0 (arg parse): it happens ONCE, before Steps 0.4 / 0.5 / 0.6 run, so any pre-loop cycle they record (Step 0.5's ingest dispatch, Step 0.6's finalize dispatch) increments `cycle` / sets `prev_cycle_signature` forward from these values — the loop entry NEVER re-initializes them.**
 - `cycle = 0` — initialized once per `/lazy-batch-cloud` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py --cloud` returns a new `feature_id`).
 - `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
 - `research_pending = set()` — feature_ids that hit `needs-research` this session. Only used when `allow_research_skip == true`; empty under the default strict-halt path.
@@ -280,6 +324,33 @@ No premature Complete (CLOUD HONESTY — HARD REQUIREMENT):
     sentinel + cloud-saturated flow carry it. Marking a feature `Complete` is
     exclusively the orchestrator's __mark_complete__ action, which itself
     refuses to fire without VALIDATED.md.
+
+Plan-part status + per-WU granularity (RESUME SAFETY — HARD REQUIREMENT):
+  A cloud cycle can be killed mid-run by a container reclaim. To make a killed
+  cycle resume CLEANLY instead of redoing the whole part, you MUST keep the
+  plan part's on-disk status and per-WU checkboxes accurate AS THE WORK LANDS —
+  not only at end-of-cycle:
+
+  - For /execute-plan (and any /retro / realign cycle that mutates a plan part):
+    BEFORE starting any work-unit work, flip the plan part's YAML frontmatter
+    `status:` from `Ready` → `In-progress`, then commit AND push that single
+    change immediately (per the Commit + PUSH policy below). A mid-run kill then
+    leaves an accurate `In-progress` marker that resumes cleanly, instead of a
+    stale `Ready` that makes the resume redo the entire part.
+  - As EACH work-unit lands, tick its `- [ ]` → `- [x]` checkbox in the plan
+    file, then commit AND push that tick immediately — folded into the same
+    per-WU commit as the WU's code, or as its own small commit. This makes
+    resume granularity PER-WU: a kill loses at most the in-flight WU, and the
+    next run's Step 0.6 probe resumes at the first still-unchecked box.
+  - Prefer plan work-units authored as parseable `- [ ]` markdown checkboxes
+    (one per WU) so the resume probe can read per-WU completion straight from
+    the plan file. If a plan part is authored as prose without checkboxes,
+    resume granularity collapses to per-part — flag this in your summary so the
+    plan can be re-authored with checkboxes next time.
+  - Do NOT flip the plan part to `Complete` from inside the cycle when
+    DEFERRED_NON_CLOUD.md exists and VALIDATED.md does not (see "No premature
+    Complete" above) — `In-progress` is the honest cloud terminal; the
+    orchestrator's pseudo-skills own the `Complete` flip.
 
 Commit + PUSH policy (CLOUD DURABILITY — HARD REQUIREMENT):
   This is a cloud container with NO persistent state — it is reclaimed on
@@ -535,8 +606,11 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | In-Session Resume Protocol (Step 5) | chat-driven resume path for research uploads. User uploads research in next message → assistant materializes into staging dir → dispatches `/ingest-research` Sonnet subagent in-session → re-invokes `/lazy-batch` automatically. **Same shape** in both. | same shape as workstation, with the cloud-durability framing: in-session ingestion is the only path that writes tracked files (RESEARCH.md + RESEARCH_SUMMARY.md) before cloud-container reclaim. Re-invocation uses `/lazy-batch-cloud`. |
 | Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
 | Resume-time remote sync (Step 0.4, guardrail A) | **MIRRORED** — `git fetch origin <branch>` + `git merge --ff-only` before the first state probe; halt-on-divergence (no clobber). Workstation framing: a resumed/interrupted session, or a remote advanced by another machine, can leave local behind. **Same shape** in both. | same algorithm; cloud framing is container-reclaim → stale local snapshot. This is the load-bearing recovery for the reclaim-mid-cycle data-loss mode. |
-| In-cycle batch-level push (guardrail B) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** Workstation cycle subagents already push at end-of-cycle (Step 1d "commit … and push to the current branch"), and local commits survive an interrupted workstation session, so per-batch (vs per-cycle) push granularity buys no durability on a persistent disk. | cycle subagent prompt (Step 1d) requires `git push origin <work-branch>` after EACH batch commit (4× backoff retry, work-branch only, never main/force). Shrinks reclaim-loss exposure from "entire cycle runtime" to "one batch" — acute only because the cloud container is ephemeral and reclaim-prone. |
+| In-cycle batch-level push (guardrail B) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** Workstation cycle subagents already push at end-of-cycle (Step 1d "commit … and push to the current branch"), and local commits survive an interrupted workstation session, so per-batch (vs per-cycle) push granularity buys no durability on a persistent disk. | cycle subagent prompt (Step 1d) requires `git push origin <work-branch>` after EACH batch / work-unit commit (4× backoff retry, work-branch only, never main/force) — including the per-WU checkbox-tick commits (see "Early + granular plan-part status" row). Shrinks reclaim-loss exposure from "entire cycle runtime" to "one batch" — acute only because the cloud container is ephemeral and reclaim-prone. |
 | Post-cycle push backstop (guardrail C) | **MIRRORED** — after every cycle (real-skill Step 1e AND inline pseudo-skill Step 1c.5) the orchestrator pushes / verifies-up-to-date the work branch (4× backoff, work-branch only). A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 holds. **Same shape** in both. | same as workstation; on cloud it is the backstop behind guardrail B's per-batch pushes (normally a no-op "up to date"). |
+| Early + granular plan-part status (Ready → In-progress before WU work; per-WU checkbox ticks; prefer parseable `- [ ]` WUs) | **MIRRORED (shared)** — `/lazy-batch` Step 1d cycle prompt requires the dispatched skill to flip the plan part `status:` `Ready` → `In-progress` and commit BEFORE starting WU work, tick + commit each `- [ ]` → `- [x]` checkbox as the WU lands, and prefer parseable checkbox-per-WU authoring so an interrupted session resumes per-WU. Helps both environments. **The per-commit PUSH of each flip/tick is cloud-only** (workstation relies on end-of-cycle push + local-commit survival). | same shared status-flip + checkbox-tick discipline, PLUS each flip/tick is pushed immediately (folds into guardrail B's per-WU push) so the granularity survives container reclaim, not just interruption. |
+| Resume-reconciliation step (Step 0.6) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** A killed/interrupted workstation session keeps its local commits and dirty tree on persistent disk, and Step 0.4's ff-sync covers the remote-advanced case; there is no reclaim residue to reconcile. | new Step 0.6, mandatory every invocation and after any `SessionStart:resume`: (a) push unpushed commits; (b) read-only `lazy-state.py --cloud` probe; (c) detect "finished-but-not-finalized" (WUs committed/pushed but frontmatter still Ready/In-progress) and handle with a SHORT finalize dispatch instead of full re-execution; (d) reconcile a killed agent's dirty working tree (keep + finish correct partial work, never wholesale-discard). |
+| No waiting on dead notifications (HARD CONSTRAINT 9) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** No container-reclaim boundary exists on workstation, so a background cycle agent's completion notification is never lost; the concept does not apply. | new HARD CONSTRAINT 9: after any `SessionStart:resume` the orchestrator MUST treat an in-flight background cycle agent as "unknown — reconcile from git + lazy-state" (Step 0.6), never "still running, awaiting notification." A completion notification cannot cross a reclaim boundary. This is the OPPOSITE of HARD CONSTRAINT 7 (forbids passively blocking on a dead signal), not a violation of it. |
 
 All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f and Step 1g are also shared shape; both orchestrators reach them via the same state-script terminal reasons.
 

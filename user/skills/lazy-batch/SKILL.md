@@ -294,6 +294,25 @@ Source/test file edits:
   - Other-skill paths: if the dispatched skill does its own internal dispatch
     and only requires you to invoke it once, just invoke it once.
 
+Plan-part status + per-WU granularity (RESUME SAFETY):
+  To make an interrupted cycle resume cleanly instead of redoing a whole plan
+  part, keep the plan part's on-disk status and per-WU checkboxes accurate AS
+  THE WORK LANDS, not only at end-of-cycle:
+    • For /execute-plan (and any /retro / realign cycle that mutates a plan
+      part): the dispatched skill MUST flip the plan part frontmatter `status:`
+      `Ready` → `In-progress` and commit it BEFORE starting work-unit work, and
+      tick each `- [ ]` → `- [x]` checkbox + commit as that work-unit lands. An
+      interrupted session then resumes at the first still-unchecked box with
+      accurate In-progress state instead of redoing the part from a stale
+      `Ready`.
+    • Prefer plan work-units authored as parseable `- [ ]` markdown checkboxes
+      (one per WU) so resume granularity is per-WU, not per-part. If a part is
+      prose-only, note it in your summary so it can be re-authored with
+      checkboxes.
+  (On workstation, local commits survive an interrupted session, so the
+  end-of-cycle push in the commit step below is sufficient durability — pushing
+  each flip/tick immediately is a cloud-only requirement in /lazy-batch-cloud.)
+
 After the skill returns:
   1. If a commit policy file exists at .claude/skill-config/commit-policy.md,
      follow it. Otherwise commit per the standard pattern and push to the
