@@ -1,7 +1,7 @@
 ---
 name: lazy
 description: Stateless dispatcher — infers project state from filesystem via lazy-state.py, invokes exactly ONE sub-skill per invocation to progress the current feature
-argument-hint: [optional: "status" to just report, or "skip" to skip current feature with reason]
+argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---
 
@@ -57,7 +57,14 @@ When this skill writes a sentinel (Step 4 special actions), emit the YAML frontm
 2. Parse `$ARGUMENTS`:
    - If `"status"` → run the same logic as `/lazy-status` (read-only report) and STOP
    - If `"skip"` → mark current feature as skipped (see Step 5) and STOP
-   - If empty or anything else → proceed to Step 1
+   - If it starts with `--adhoc` (optionally followed by task text), OR is any other non-empty free-text that is not one of the keywords above → treat it as an **ad-hoc task**: run **Step 0.3 (Ad-hoc Enqueue)**, then proceed to Step 1. (`--adhoc` with no text infers the task from the conversation.)
+   - If empty → proceed to Step 1 (normal queue order)
+
+---
+
+## Step 0.3: Ad-hoc Enqueue (only when an ad-hoc task was supplied)
+
+!`cat ~/.claude/skills/_components/adhoc-enqueue.md`
 
 ---
 
@@ -227,6 +234,7 @@ Call with:
 The state machine lives in `~/.claude/scripts/lazy-state.py`. This skill is a thin LLM wrapper that runs the script, dispatches the named sub-skill, and stops. See the script's docstring for the full per-step dispatch table; the high-level shape is:
 
 ```
+[ad-hoc task supplied?]  → Step 0.3 enqueue at top of queue (Bash, once) → fall through
 lazy-state.py → JSON {sub_skill, sub_skill_args, terminal_reason}
 
 terminal_reason set?     → notify + STOP
