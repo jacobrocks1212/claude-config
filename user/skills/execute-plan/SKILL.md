@@ -178,12 +178,12 @@ A batch that completes with **zero** Sonnet sub-subagent dispatches is a **contr
 
 #### Quality Gate escalation (MANDATORY when running QG)
 
-When the plan's Quality Gates step runs, prefer **workspace-level QG commands** to targeted single-crate commands. On AlgoBooth:
-- Workspace Rust QG: `npm run qg -- rust` (this is the gate the plan REQUIRES) — runs clippy, rustfmt, and the full workspace test suite.
-- Targeted `cargo test -p <crate>` is a faster developer convenience but does NOT satisfy the gate. It catches type/test errors in one crate but misses cross-crate breakage.
+When the plan's Quality Gates step runs, the gate level is right-sized per the **Batch frequency** rule in `~/.claude/skills/_components/quality-gates.md`. On AlgoBooth:
+- Workspace Rust QG: `npm run qg -- rust` — runs clippy, rustfmt, and the full workspace test suite. This is the gate REQUIRED at plan-part completion and on any escalation-triggering batch.
+- Targeted `cargo test -p <crate>` is a faster developer convenience that catches type/test errors in one crate but misses cross-crate breakage. It is ACCEPTABLE on intermediate batches (not the last batch of the part, and not a batch that trips an escalation trigger).
 - Mixed-language batches: `npm run qg` (all gates).
 
-A batch's QG step is satisfied only when the workspace-level command actually ran AND passed. If only targeted commands ran, the QG step is INCOMPLETE — record this in the Implementation Notes block and run the workspace command before committing. The `/lazy-batch-retro` auditor counts `Bash:qg` calls per cycle; ≥ 1 `npm run qg` call per batch is the audit signal.
+Apply the Batch-frequency rule: intermediate batches MAY run the targeted gate; the full workspace gate is MANDATORY (a) before the final commit of the plan part and (b) immediately on any escalation-triggering batch. The full workspace gate must actually run AND pass before the plan part is flipped to `Complete` — record the part-end full-QG run + result in the Implementation Notes block. The `/lazy-batch-retro` auditor counts `Bash:qg` calls per cycle; ≥ 1 full-workspace `npm run qg` run per plan part (plus one on each escalation-triggering batch) is the audit signal — a part that closed with only targeted runs and no part-end full gate is the INCOMPLETE state.
 
 ### Component Loading
 

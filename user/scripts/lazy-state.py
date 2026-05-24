@@ -974,10 +974,27 @@ def compute_state(
     # Step 6: PHASES.md
     phases_file = spec_path / "PHASES.md"
     if not phases_file.exists():
+        # Consolidated planning: dispatch /plan-feature (which runs /spec-phases
+        # THEN /write-plan back-to-back) instead of /spec-phases alone. This
+        # collapses the two planning cycles into one orchestrator round-trip —
+        # the next probe sees PHASES.md + a plan on disk and routes straight to
+        # /execute-plan, skipping the separate Step 7a write-plan dispatch.
+        #
+        # /plan-feature's hard precondition (SPEC.md + RESEARCH_SUMMARY.md both
+        # present) is GUARANTEED here: the research gates above (the
+        # `not research and not research_summary` and `research and not
+        # research_summary` branches) make RESEARCH_SUMMARY.md a precondition of
+        # ever reaching Step 6, so /plan-feature can never refuse on a missing
+        # summary at this node. /plan-feature surfaces any NEEDS_INPUT.md its
+        # sub-skills write (genuine design forks) and STOPs; the next probe sees
+        # the sentinel and routes to needs-input as before. Step 7a (write-plan)
+        # remains the fallback for a feature whose PHASES.md exists but has no
+        # plan yet (e.g. after a NEEDS_INPUT resolution that neutralized the
+        # sentinel write-plan halted on).
         return _state(
             **common,
-            current_step="Step 6: generate phases",
-            sub_skill="spec-phases",
+            current_step="Step 6: plan feature (phases + plan)",
+            sub_skill="plan-feature",
             sub_skill_args=f"{spec_path_str}/SPEC.md",
         )
 
@@ -1853,7 +1870,7 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-a",
             }),
             ("research-pending-skip", False, True, {
-                "sub_skill": "spec-phases",
+                "sub_skill": "plan-feature",
                 "feature_id": "feat-b",
             }),
             # --skip-needs-research with only research-pending features in queue
