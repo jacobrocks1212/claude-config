@@ -15,28 +15,40 @@ $ARGUMENTS
 
 ## Batch Mode (`--batch` flag)
 
-If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch`). Batch mode is scoped to **Phase 3 finalization only** — the prior phases require interactive brainstorming and human judgment that a batch orchestrator cannot supply.
+If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch` / `/lazy-batch-cloud`). Batch mode drives **Phase 1 (baseline brainstorm), Phase 2 (research-prompt generation), and Phase 3 (research integration)** autonomously — the loop advances on its own and pauses only when a genuine *product-behavior* decision needs the user. The mechanism is uniform across Phase 1 and Phase 3: do the mechanical work autonomously, auto-accept mechanical-internal decisions, and surface product-behavior decisions via `NEEDS_INPUT.md` — which `/lazy-batch`'s Step 1g resolves with `AskUserQuestion` and then resumes (it does NOT halt the run). Phase 2 is purely mechanical: it writes `RESEARCH_PROMPT.md` and returns; the `needs-research` gate is what pauses the loop for Gemini.
 
-**Per-phase eligibility for `NEEDS_INPUT.md` halts** (per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`):
+**Per-phase eligibility for `NEEDS_INPUT.md`** (per the halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`):
 
 | Phase | When | Pre/post research | May write `NEEDS_INPUT.md`? |
 |-------|------|--------------------|------------------------------|
-| Phase 1 (brainstorming) | First `/spec` invocation | Pre-research | **No** — auto-accept recommendations; if truly blocked, write `BLOCKED.md` with `blocker_kind: pre-research-input-required`. |
-| Phase 2 (research prompt generation) | SPEC.md exists, no RESEARCH.md | Pre-research | **No** — placeholder open questions go INTO `RESEARCH_PROMPT.md` for Gemini to answer; never lift them via `NEEDS_INPUT.md`. |
+| Phase 1 (brainstorming) | First `/spec` invocation (no SPEC.md) | Pre-research | **Yes — for product-behavior decisions that GATE the baseline** (scope / ownership / core UX / user-facing defaults). These are user-authority calls research can never answer. Auto-accept mechanical-internal decisions. **Research-*answerable* questions go into `RESEARCH_PROMPT.md` (Phase 2), never `NEEDS_INPUT.md`.** A true "can't proceed at all" → `BLOCKED.md` with `blocker_kind: pre-research-input-required`. See "Phase 1 under `--batch`" below. |
+| Phase 2 (research prompt generation) | SPEC.md exists, no RESEARCH.md | Pre-research | **No** — runs mechanically, writes `RESEARCH_PROMPT.md`, returns. Placeholder open questions go INTO the prompt for Gemini to answer; never lift them via `NEEDS_INPUT.md`. The `needs-research` gate pauses the loop. |
 | Phase 3 (research integration) | SPEC.md + RESEARCH.md both present | **Post-research** | **Yes — MANDATORY for product-behavior decisions, even when a strong recommendation exists.** See "Phase 3 under `--batch`" below for the always-halt rule and the product-behavior vs. mechanical-internal classification. |
 
-`--batch` only fires Phase 3 today; Phases 1 and 2 are explicitly refused below. The eligibility table is restated because the constraint is load-bearing for the broader batch-mode contract: the halt is allowed because the research is on disk.
-
-**Hard refusal — Phase 1 or Phase 2 under `--batch`:**
-
-If `--batch` is set AND the feature is still in Phase 1 (no SPEC.md draft yet) or Phase 2 (no RESEARCH.md yet), refuse with this exact error and STOP:
-
-> `/spec --batch` only supports Phase 3 finalization; ensure SPEC.md + RESEARCH.md exist before invoking in batch mode. Run `/spec` interactively first.
-
 Detect Phase context: examine `{spec-dir}/{feature-slug}/`:
-- No SPEC.md → Phase 1 territory → refuse
-- SPEC.md exists, no RESEARCH.md → Phase 2 territory (research prompt generation) → refuse
-- SPEC.md + RESEARCH.md both present → Phase 3 finalization → proceed in batch mode
+- No SPEC.md → Phase 1 (autonomous brainstorm contract below)
+- SPEC.md exists, no RESEARCH.md → Phase 2 (mechanical research-prompt generation below)
+- SPEC.md + RESEARCH.md both present → Phase 3 finalization (below)
+
+**Phase 1 under `--batch`:**
+
+Phase 1 is normally an interactive brainstorm. Under `--batch` it runs autonomously with the SAME product-behavior contract Phase 3 uses, so the loop advances until a decision the user must own surfaces — then pauses via `NEEDS_INPUT.md` / Step 1g rather than hard-halting.
+
+1. **Do the mechanical Phase 1 work autonomously** (no `AskUserQuestion`): Phase 0 project-context discovery, the Step 1b dependency-block search (upstream + downstream), and the Step 1c one-shot Atomic Decomposition Gate. These are analysis, not preference — complete them and record the results in the draft.
+2. **Draft the baseline `SPEC.md`** (the same structure Phase 3 finalizes later). Auto-accept every **mechanical-internal** decision using the single defensible option. For each unresolved **product-behavior** decision, write an explicit `## Open Questions` entry / inline `TBD (pending input)` marker — do NOT invent an answer. **Writing the draft is required** (this DIVERGES from Phase 3's "do not write a half-finished SPEC.md" rule, which holds only because in Phase 3 SPEC.md already exists): in Phase 1 the draft must exist on disk so the Step 1g apply-resolution subagent has a document to propagate the user's answers into.
+3. **Classify every Phase 1 decision** as `product-behavior` or `mechanical-internal` using the definitions in "Phase 3 under `--batch`" below, then route by class:
+   - **`product-behavior` decisions that GATE the baseline** (scope: what's in v1; ownership: which subsystem owns this; core UX shape; user-facing defaults) → collect into `NEEDS_INPUT.md` (Halt protocol below). These are user-authority calls research cannot decide, so they are NOT deferred into the research prompt.
+   - **research-answerable questions** (prior art, technical tradeoffs, industry conventions, "what do similar products do") → do NOT write `NEEDS_INPUT.md`. Leave them as `## Open Questions` in the draft; Phase 2 harvests them into `RESEARCH_PROMPT.md`.
+   - **`mechanical-internal`** → auto-accept silently.
+4. **Cap the `NEEDS_INPUT.md` round at the top 4 gating decisions** (sentinel schema cap). If more than 4 product-behavior decisions gate the baseline, surface the top 4 by impact and record the rest as `## Open Questions` — they resurface in Phase 3's post-research rounds (which support multiple rounds). **Phase 1 gets a single `NEEDS_INPUT.md` round**, because once `SPEC.md` exists the next probe routes to Phase 2.
+5. **If NO product-behavior decision gates the baseline** (the brief is unambiguous on scope / ownership / UX), finalize the baseline draft and return normally — the next cycle advances to Phase 2. Note this in your Phase 1 summary ("no gating decisions; auto-drafted baseline").
+6. **Genuine blocker** — the brief is so ambiguous that even a placeholder baseline + research prompt cannot be drafted → write `BLOCKED.md` with `blocker_kind: pre-research-input-required`. This is the ONLY Phase 1 path that halts the run; reserve it for true "can't proceed at all," not "pick option A or B" (which is `NEEDS_INPUT.md`).
+
+This contract **REPLACES** Phase 1's interactive brainstorming loop: run the mechanical sub-steps below (Step 1a "Understand Before Architecting", Step 1b dependency search, Step 1c's one-shot Atomic Decomposition Gate) but do NOT run Step 1c's iterative `AskUserQuestion` refinement rounds or any other `AskUserQuestion` in Phase 1 — the baseline draft (step 2) plus the single `NEEDS_INPUT.md` round (step 4) are how a batch run captures the choices a human would otherwise make in those rounds.
+
+**Phase 2 under `--batch`:**
+
+Phase 2 is mechanical — it generates `RESEARCH_PROMPT.md`. Under `--batch`, run Phase 2 to completion exactly as interactive mode does (compose the prompt, apply the identity prepend if present, length-check), then **return normally instead of the interactive "STOP and wait for the file path."** Do NOT write `NEEDS_INPUT.md` and do NOT refuse — placeholder open questions go INTO the research prompt for Gemini. The orchestrator's next probe sees `RESEARCH_PROMPT.md` with no `RESEARCH.md` and halts the loop at the `needs-research` gate, which is where the user runs Gemini and supplies the results.
 
 **Phase 3 under `--batch`:**
 
@@ -54,9 +66,14 @@ Detect Phase context: examine `{spec-dir}/{feature-slug}/`:
 
 **Why always-halt on product-behavior:** the autonomous tail is allowed to make mechanical decisions on the user's behalf (helpers, naming, file placement) because those don't change what the product does. Product-behavior decisions DO change what the product does — and the user has explicitly reserved final authority over them. A strong recommendation is still surfaced (it becomes the **Recommendation** line under each `## Decision Context` H3, and a chip option in `AskUserQuestion`), but the user gets to confirm before SPEC.md is finalized in a shape that bakes the choice in.
 
-**Halt protocol — `NEEDS_INPUT.md`:**
+**Halt protocol — `NEEDS_INPUT.md`** (shared by Phase 1 and Phase 3):
 
-When at least one decision is genuinely ambiguous, do NOT write a half-finished SPEC.md. Instead:
+When at least one decision must be surfaced to the user:
+
+- **In Phase 3**, do NOT write a half-finished SPEC.md — SPEC.md already exists, and the apply-resolution subagent edits it in place after the user answers.
+- **In Phase 1**, you HAVE already written the baseline draft per "Phase 1 under `--batch`" step 2 (with the gating product-behavior decisions left as `TBD (pending input)` / `## Open Questions`). That draft is what the apply-resolution subagent propagates the answers into. Do NOT bake an invented answer into the draft for any decision you are surfacing here.
+
+Then, in either phase:
 
 1. Compute `{spec-dir}/{feature-slug}/NEEDS_INPUT.md`.
 2. Write the sentinel per the canonical schema in `~/.claude/skills/_components/sentinel-frontmatter.md`. The frontmatter shape is the standard `kind: needs-input` schema; the markdown body MUST use the **rich-body convention** (`## Decision Context` H2 with one H3 per `decisions[i]`) defined in that component. Frame each option with concrete tradeoffs (cost / complexity / risk / reversibility) and include a `**Recommendation:**` line. The orchestrator re-prints this body verbatim to chat before calling `AskUserQuestion`, whose option descriptions are truncated.

@@ -196,29 +196,31 @@ This body is the **source of truth** for what the orchestrator displays to the u
 
 A `NEEDS_INPUT.md` that lacks the `## Decision Context` section is **malformed**. The orchestrator MUST refuse to call `AskUserQuestion` against a malformed file (see "Consumer rules" below).
 
-##### Post-research halting rule (HARD REQUIREMENT)
+##### Halting rule (HARD REQUIREMENT)
 
-Batch-mode skills (those invoked with `--batch` by `/lazy-batch` or `/lazy-batch-cloud`) MAY write `NEEDS_INPUT.md` ONLY when:
+Batch-mode skills (those invoked with `--batch` by `/lazy-batch` or `/lazy-batch-cloud`) MAY write `NEEDS_INPUT.md` ONLY for a **genuine design choice that requires human judgment** — NOT an operational/mechanical choice that has a single defensible answer the skill could have auto-accepted. Two state-machine windows are eligible:
 
-1. The current state machine step is **Step 5 (research integration) or later** (Steps 6, 7, 8, 9). That is: `RESEARCH.md` (or `RESEARCH_SUMMARY.md`) is on disk for the feature, AND the decision arises during finalization / phase decomposition / planning / implementation / retro.
-2. The decision is a **genuine design choice** that requires human judgment — NOT an operational/mechanical choice that has a single defensible answer the skill could have auto-accepted.
+1. **`/spec` Phase 1 (Step 4 / 4.5 — baseline brainstorm), for product-behavior decisions that GATE the baseline only.** Scope (what's in v1), ownership (which subsystem owns this), core UX shape, and user-facing defaults are **user-authority calls research can never decide** — deferring them into the research prompt would ask Gemini to answer a question only the user can. These are surfaced via `NEEDS_INPUT.md` so the loop advances through `/spec` and pauses (via Step 1g `AskUserQuestion`) only for the choices the user must own. See `~/.claude/skills/spec/SKILL.md` "Phase 1 under `--batch`" for the full contract (draft-the-baseline-first requirement, ≤4-gating-decision cap, classification).
+2. **Step 5 (research integration, `/spec` Phase 3) or later** (Steps 6, 7, 8, 9): `RESEARCH.md` (or `RESEARCH_SUMMARY.md`) is on disk and the decision arises during finalization / phase decomposition / planning / implementation / retro.
 
-**Pre-research steps MUST auto-accept the recommended option and proceed.** Specifically:
+**Two classes of pre-research input are NOT `NEEDS_INPUT.md`:**
 
-- Step 4.5 (stub-spec detection) — no halt; treat the stub as Phase 1 starting context.
-- Step 4.6 (upstream realign) — no halt; the realign plan's recommendation is authoritative.
-- Step 5 (research prompt generation, `/spec` Phase 2) — no halt; placeholder open questions go INTO `RESEARCH_PROMPT.md` to be answered by Gemini, not lifted to the human via `NEEDS_INPUT.md`.
+- **Research-*answerable* questions** (prior art, technical tradeoffs, industry conventions) — these go INTO `RESEARCH_PROMPT.md` to be answered by Gemini, NOT lifted to the human via `NEEDS_INPUT.md`. This is the load-bearing distinction in Phase 1: gating *product-behavior* decisions → `NEEDS_INPUT.md`; research-answerable questions → the research prompt.
+- **Mechanical / operational choices with a single defensible answer** — auto-accept and proceed. Specifically:
+  - Step 4.6 (upstream realign) — no halt; the realign plan's recommendation is authoritative.
+  - Step 5 (research prompt generation, `/spec` Phase 2) — no halt; runs mechanically, writes `RESEARCH_PROMPT.md`, returns. The `needs-research` gate (not `NEEDS_INPUT.md`) pauses the loop.
+  - Stub-spec detection (Step 4.5) — no halt for the detection itself; treat the stub as Phase 1 starting context (the Phase 1 product-behavior carve-out above still applies to genuinely gating decisions surfaced while brainstorming over the stub).
 
-Halting before research means asking the human to decide without the information needed to decide — which the user has explicitly flagged as the wrong shape of escalation. If a pre-research skill genuinely cannot proceed without input (e.g., the feature description is so ambiguous that even a placeholder research prompt cannot be drafted), it writes **`BLOCKED.md`** with `blocker_kind: pre-research-input-required`, NOT `NEEDS_INPUT.md`.
+If a `/spec` Phase 1 (or other pre-research) skill genuinely cannot proceed at all (e.g., the brief is so ambiguous that even a placeholder baseline draft + research prompt cannot be drafted), it writes **`BLOCKED.md`** with `blocker_kind: pre-research-input-required`, NOT `NEEDS_INPUT.md`. `BLOCKED.md` means "can't proceed at all"; `NEEDS_INPUT.md` means "pick between these well-defined options and I'll continue."
 
 **The distinction:**
 
 | File | Semantics | Auto-resume? |
 |------|-----------|--------------|
-| `NEEDS_INPUT.md` | "Human, choose between these well-defined options the research has clarified." | Yes — after the human appends `## Resolution`, the orchestrator re-runs and the writer skill consumes it. |
+| `NEEDS_INPUT.md` | "Human, choose between these well-defined options" (Phase 1: a baseline-gating product-behavior call; Phase 3+: a choice the research has clarified). | Yes — after the human appends `## Resolution`, the orchestrator re-runs and the writer skill consumes it. |
 | `BLOCKED.md` | "This can't proceed at all in the current state." | No — requires a fundamental change (spec rewrite, queue reorder, missing input). |
 
-If you're tempted to write `NEEDS_INPUT.md` from a pre-research step, you're either (a) writing `BLOCKED.md` instead, or (b) deferring the question into the research prompt.
+If you're tempted to write `NEEDS_INPUT.md` from a pre-research step, confirm it is a `/spec` Phase 1 product-behavior decision that GATES the baseline (the only eligible pre-research case). Otherwise you're either (a) writing `BLOCKED.md` instead (can't proceed at all), or (b) deferring a research-answerable question into the research prompt.
 
 ##### Producer responsibilities (HARD REQUIREMENT)
 
@@ -228,8 +230,8 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 2. **Use the exact 1:1 mapping between `decisions[i]` titles and the H3 subsection titles in the body.** The orchestrator pairs them by index for the `AskUserQuestion` call — drift breaks the pairing.
 3. **Cap to ≤ 4 decisions per file.** More than 4 means the cycle has too many uncoupled questions; split into sequential `NEEDS_INPUT.md` halts across cycles instead (resolve cycle 1's decisions, re-run, surface cycle 2's). Four also matches `AskUserQuestion`'s max questions per call.
 4. **Cap to ≤ 4 options per decision.** Matches `AskUserQuestion`'s `options` cap (2-4 entries).
-5. **Never write `NEEDS_INPUT.md` from a pre-research step** — see the post-research halting rule above. If a pre-research step truly cannot proceed, write `BLOCKED.md` instead.
-6. **For `/spec` Phase 3 specifically — always halt on product-behavior decisions, even with strong recommendations.** Classify each Phase 3 decision as `product-behavior` (changes what the user sees / does / experiences: UX, scope, user-facing functionality, workflow, defaults, copy, error states) or `mechanical-internal` (invisible to the user: helper placement, internal naming, internal library choice with no behavioral implications). If **any** decision is `product-behavior`, write `NEEDS_INPUT.md` regardless of how strong your `**My recommendation:**` line is — the user retains final authority over product-behavior choices, and the orchestrator's `AskUserQuestion` surfaces your recommendation alongside the alternatives so the user can confirm or override. Auto-accept is permitted **only** when every decision is `mechanical-internal` with a single defensible recommendation. See `~/.claude/skills/spec/SKILL.md` "Phase 3 under `--batch`" for the full algorithm and rationale.
+5. **Only write `NEEDS_INPUT.md` from an eligible step** — see the halting rule above. The pre-research exception is narrow: `/spec` Phase 1 product-behavior decisions that GATE the baseline. Research-answerable questions go into `RESEARCH_PROMPT.md`; a step that truly cannot proceed writes `BLOCKED.md`.
+6. **For `/spec` Phase 1 and Phase 3 — always halt on product-behavior decisions, even with strong recommendations.** Classify each decision as `product-behavior` (changes what the user sees / does / experiences: UX, scope, user-facing functionality, workflow, defaults, copy, error states) or `mechanical-internal` (invisible to the user: helper placement, internal naming, internal library choice with no behavioral implications). If **any** decision is `product-behavior`, write `NEEDS_INPUT.md` regardless of how strong your `**My recommendation:**` line is — the user retains final authority over product-behavior choices, and the orchestrator's `AskUserQuestion` surfaces your recommendation alongside the alternatives so the user can confirm or override. Auto-accept is permitted **only** when every decision is `mechanical-internal` with a single defensible recommendation. **Phase 1 additionally restricts its `NEEDS_INPUT.md` to product-behavior decisions that GATE the baseline (scope / ownership / core UX / defaults)** and routes research-answerable questions into `RESEARCH_PROMPT.md` instead. See `~/.claude/skills/spec/SKILL.md` "Phase 1 under `--batch`" and "Phase 3 under `--batch`" for the full algorithm and rationale.
 
 ### Lifecycle summary
 

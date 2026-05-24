@@ -296,7 +296,10 @@ For each cycle, walk the relevant skill's instructions verbatim and grade compli
 For each cycle whose `description` or prompt resolves to a downstream skill, grade against that skill's own SKILL.md text:
 
 #### `/spec` cycles
-- **R-SP-1** Phase gates: Phase 1/2 not invoked under `--batch` (refusal text present if attempted). Phase 3 only fired when `SPEC.md + RESEARCH.md` both existed (verify by inspecting the feature dir snapshot at cycle time).
+- **R-SP-1** Phase routing + Phase 1 contract: grade the cycle against the feature dir snapshot at cycle time.
+  - **Phase 1** (no SPEC.md at cycle start, e.g. an `--adhoc` brief): the cycle MUST run the mechanical work autonomously and EITHER write a baseline `SPEC.md` draft + (optionally) a `NEEDS_INPUT.md` capping ≤4 baseline-GATING product-behavior decisions, OR write `BLOCKED.md` with `blocker_kind: pre-research-input-required` only for a genuine "can't draft even a placeholder" blocker. `fail` if the cycle wrote `BLOCKED.md` for what were really pick-A-or-B decisions (those belong in `NEEDS_INPUT.md`), or lifted research-answerable questions into `NEEDS_INPUT.md` instead of the research prompt, or invented answers to gating product-behavior decisions instead of surfacing them.
+  - **Phase 2** (SPEC.md present, no RESEARCH.md): the cycle MUST write `RESEARCH_PROMPT.md` and return normally (no `NEEDS_INPUT.md`, no refusal); the `needs-research` gate is what pauses the loop.
+  - **Phase 3** fired only when `SPEC.md + RESEARCH.md` both existed.
 - **R-SP-2** Exit state: SPEC.md status not `Draft (research stub)` after a finalize cycle.
 
 #### `/spec-phases` cycles
