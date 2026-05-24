@@ -9,7 +9,7 @@ allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 
 # Lazy Batch — Autonomous Pipeline Orchestrator
 
-Drives the per-feature autonomous tail (`/spec-phases` → `/write-plan` → `/execute-plan` → `/retro` → `/mcp-test` → mark-complete) by looping on `~/.claude/scripts/lazy-state.py`. Each cycle spawns an Opus subagent that invokes the named sub-skill; the orchestrator (this skill, running in the main session) never touches source code, never invokes a skill directly, and never parses sentinel files manually.
+Drives the per-feature autonomous tail (`/plan-feature` (= `/spec-phases` + `/write-plan` in one cycle) → `/execute-plan` → `/retro` → `/mcp-test` → mark-complete) by looping on `~/.claude/scripts/lazy-state.py`. Each cycle spawns an Opus subagent that invokes the named sub-skill; the orchestrator (this skill, running in the main session) never touches source code, never invokes a skill directly, and never parses sentinel files manually.
 
 **Step ordering note:** `/retro` runs BEFORE `/mcp-test` (Step 8 retro → Step 9 MCP). `/retro` is a docs/analysis pass and runs identically in cloud and workstation; `/mcp-test` only runs on workstation (cloud defers). Behavior inside the loop is unchanged — the orchestrator dispatches whatever `lazy-state.py` returns.
 
@@ -280,6 +280,11 @@ Sub-subagent dispatch policy (LOAD-BEARING — READ CAREFULLY):
     • /mcp-test — REQUIRES one Sonnet test subagent (Step 5).
     • retro-feature — composed orchestrator that internally loops
       /retro + /execute-plan; its own SKILL.md governs nested dispatches.
+    • plan-feature — composed orchestrator that runs /spec-phases THEN
+      /write-plan via the Skill tool (in-context, not Agent dispatch); its
+      own SKILL.md governs the sequence. Orchestrator-only work — no
+      sub-subagent dispatch required. This is what lazy-state.py emits at
+      Step 6 (replacing the separate /spec-phases dispatch).
     • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
       orchestrator-only, no sub-subagent dispatch required.
 
@@ -713,8 +718,8 @@ When the loop exits (terminal state or max-cycles), print:
 ### Cycle log
 | # | Feature | Action | Summary |
 |---|---------|--------|---------|
-| 1 | ... | /spec-phases | ... |
-| 2 | ... | /write-plan | ... |
+| 1 | ... | /plan-feature | ... |
+| 2 | ... | /execute-plan | ... |
 | ... |
 
 **Next step:**

@@ -16,7 +16,7 @@ Cloud variant of `/lazy-batch`. Identical orchestration shape: loop on the state
 - Step 9 returns `__write_deferred_non_cloud__` instead of dispatching `/mcp-test`. The orchestrator writes the deferral sentinel inline (Step 1c.5 pseudo-skill handling) — the next cycle either advances to a ready feature or halts on `cloud-queue-exhausted`.
 - Step 10 (mark complete) is unreachable from cloud unless a workstation has already produced VALIDATED.md. `cloud-queue-exhausted` is the normal terminal state when every remaining feature is awaiting workstation MCP testing.
 
-**Per-cycle dispatch order:** `/spec` → `/spec-phases` → `/write-plan` → `/execute-plan` → `/retro` (Step 8, cloud-runnable) → `/mcp-test` (Step 9, cloud defers) → mark-complete (Step 10, cloud halts).
+**Per-cycle dispatch order:** `/spec` → `/plan-feature` (Step 6, = `/spec-phases` + `/write-plan` in one cycle) → `/execute-plan` → `/retro` (Step 8, cloud-runnable) → `/mcp-test` (Step 9, cloud defers) → mark-complete (Step 10, cloud halts).
 
 This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended divergences are documented in the "Differences from /lazy-batch" block below.
 
@@ -276,12 +276,27 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
       plan-file checkbox flips, sentinel emissions). Zero sub-subagent
       dispatches in a cloud /execute-plan cycle is the EXPECTED state —
       NOT a contract violation.
+      SKIP THE GROUND-TRUTH RE-RUN: subagent-review.md Step 1.5 exists to
+      detect a *separate* untrusted subagent falsifying its report by re-running
+      every command (git status / wc -l / grep / test runner) from the
+      orchestrator's shell and diffing. In this inline path YOU wrote both the
+      tests and the implementation in this same session — there is no separate
+      subagent report to police, so that mechanical command re-run is pure
+      redundant work. Do NOT re-run-and-diff your own commands; you already have
+      ground truth from having just run them. Still perform the SUBSTANTIVE
+      correctness review (spec alignment, deliverable coverage, logic/edge-case
+      check, propagation check per subagent-review.md Step 2.5) and still run
+      the quality gates — only the falsification-detection re-run is dropped.
+      (This matches /lazy-batch-retro, which already grades R-EP-4 — the
+      subagent-review step — as `n/a (cloud-override)` for cloud cycles.)
       KNOWN CLOUD LIMITATION: collapsing the test-agent/impl-agent split into
       one inline session trades away the STRUCTURAL test-first guarantee.
       You MUST still preserve test-first DISCIPLINE within each batch: write
       the failing tests FIRST (per the plan's test expectations), confirm they
       fail for the right reason, THEN implement until they pass. The
-      compensating controls are quality gates (run + pass every batch), the
+      compensating controls are quality gates (run + pass per the right-sized
+      cadence — targeted on intermediate batches, full workspace gate at
+      plan-part end + on any escalation trigger; see quality-gates.md), the
       workstation /retro pass, and the deferred MCP-validation pass — none of
       which substitute for writing tests before implementation here.
     • /retro — IGNORE Step 3's parallel research-subagent fanout (A–G). Do
@@ -290,6 +305,13 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
       only the parallelism is dropped.
     • retro-feature — composed orchestrator; same override — perform all
       internal work inline rather than dispatching nested sub-subagents.
+    • plan-feature — composed orchestrator; runs /spec-phases THEN
+      /write-plan via the Skill tool (in-context, NOT Agent dispatch). Both
+      sub-skills are docs-only (PHASES.md + plan files) and orchestrator-only
+      in cloud, so no recursive Agent dispatch is needed — invoke /plan-feature
+      once and let it run its two sub-skills in your context. This is what
+      lazy-state.py --cloud emits at Step 6 (replacing the separate
+      /spec-phases dispatch).
     • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
       already orchestrator-only; no change.
     • /mcp-test — cloud cannot run this (Step 8 deferral); should not appear
@@ -594,6 +616,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | `__flip_plan_complete_cloud_saturated__` pseudo-skill | listed in Step 1c.5 handlers as defensive (rare under workstation execution; included so any future state-script change that emits it under `--cloud=false` is still handled). | normal Step 7a action — emitted by `lazy-state.py --cloud` when an In-progress plan's only unchecked WUs are documented as workstation-only in `DEFERRED_NON_CLOUD.md`. Handled INLINE in Step 1c.5, no subagent dispatch. Prevents the `Step 7a: execute plan` no-op loop. |
 | No-premature-Complete guard (SPEC/PHASES `**Status:**`) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** On workstation, a feature reaches `__mark_complete__` only after the MCP-test pass has written `VALIDATED.md`, so `Complete` is always backed by validation; no guard is needed. | both the cycle subagent prompt (Step 1d "No premature Complete") and the `__mark_complete__` inline handler (Step 1c.5) FORBID flipping SPEC/PHASES top `**Status:**` to `Complete` while `DEFERRED_NON_CLOUD.md` exists and `VALIDATED.md` is absent — MCP validation is deferred to a workstation pass in cloud, so `Complete` before it runs is dishonest. Honest terminal cloud state is `In-progress`. `/lazy-batch-retro` adds matching low-severity rule **R-C-4**. |
 | Cycle subagent prompt (real skills only) | bare batch-mode instructions; cycle subagent honors each dispatched skill's sub-subagent contract (e.g. /execute-plan → Sonnet test-agent + impl-agent fanout, /retro → research subagents A–G) | adds cloud-environment limitations block AND a cloud-override block: cycle subagent has NO `Agent` tool (no recursive dispatch), so it performs all source/test edits and research INLINE using Edit / Write / Read, SUPERSEDING each dispatched skill's sub-subagent contract. Per-skill overrides (/execute-plan, /retro, retro-feature) are enumerated in the prompt template. **Known cloud limitation:** collapsing /execute-plan's test-agent→impl-agent split into one inline subagent trades away the STRUCTURAL test-first guarantee (the cycle subagent must still write tests-before-impl by discipline). Compensating controls: per-batch quality gates + workstation /retro + deferred MCP-validation pass. `/lazy-batch-retro` Step 4b cloud branch grades the corresponding R-EP-2/R-EP-3 as `n/a (cloud-override)`, not `fail`. |
+| Ground-truth re-run (subagent-review.md Step 1.5) | **performed** — the orchestrator/review subagent re-runs each Sonnet sub-subagent's reported commands (git status / wc -l / grep / test runner) and diffs to detect falsified reports. Valuable because the implementer is a *separate* untrusted subagent. | **CLOUD-SCOPED DIVERGENCE — skipped.** In the inline path the cycle subagent wrote both tests and implementation itself, so there is no separate subagent report to police — the mechanical re-run is pure redundant work. The cloud /execute-plan override drops it (substantive correctness + propagation review still run). Consistent with `/lazy-batch-retro` already grading R-EP-4 as `n/a (cloud-override)` for cloud cycles. |
 | Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
 | Cycle subagent model selection | normal cycles → `model: "opus"`. LOOP DETECTED branch → `model: "sonnet"`. **Same in both** — the loop-resolution work is mechanical (read sentinel schema, identify which sentinel preconditions are met, write it, commit), and the diagnosis is already in the prompt. Sonnet handles it at ~5× the cost-efficiency. | same as workstation. |
 | Forward-progress verification (Step 1.5 / "Step 2.5") | after loop exit, before final batch report. One additional read-only `lazy-state.py` invocation; compares probe tuple to `prev_cycle_signature`; prepends ✅ or ⚠ block to Step 2 report. Skipped on `blocked` / `needs-input` / `queue-missing`. **Same shape** in both. | same as workstation, but the WARNING block lists cloud-specific likely-cause bullets (notably the cloud-saturated In-progress → Complete plan-flip that `__flip_plan_complete_cloud_saturated__` exists to perform). |
