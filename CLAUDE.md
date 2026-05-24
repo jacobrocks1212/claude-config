@@ -98,6 +98,7 @@ At runtime, Claude Code expands this inline. The `project-skills.py` script pre-
 - `plan-file-output.md` — Writes plan files to `plans/` subdirs
 - `quality-gates.md` — Project-specific build/test gates
 - `subagent-launch.md` / `subagent-review.md` — Orchestrator+subagent execution model
+- `adhoc-enqueue.md` — Shared `/lazy*` ad-hoc enqueue protocol (`--adhoc`): prepends a feature to `queue.json` via `lazy-state.py --enqueue-adhoc`, seeds `ADHOC_BRIEF.md`, adds a ROADMAP row. Injected into all four `/lazy*` skills.
 - `tdd-protocol.md` / `tdd-test-agent.md` / `implementation-agent.md` — TDD pipeline
 - `work-log.md` — Interview prep work logging
 
@@ -127,8 +128,8 @@ Some skills are **paired** — they share a state machine and must stay in sync.
 
 | Pair | Files | Coupling rule |
 |------|-------|---------------|
-| `/lazy` ↔ `/lazy-cloud` | `user/skills/lazy/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` | Both are thin LLM wrappers around `user/scripts/lazy-state.py`; the state machine itself is the script. The skills' only intended divergence is whether they pass `--cloud` to the script. Any change to wrapper prose (status bookends, special-action handling, dispatch glue) MUST be mirrored. Any state-machine change goes into `lazy-state.py`, not the wrapper prose. When editing either, diff the other immediately afterward and confirm the diff matches what was intended. |
-| `/lazy-batch` ↔ `/lazy-batch-cloud` | `user/skills/lazy-batch/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` | Both are autonomous orchestrators looping on `lazy-state.py`. Their only intended divergences (state script `--cloud` flag, `cloud-queue-exhausted` normal vs. defensive, `__write_deferred_non_cloud__` pseudo-skill, cycle subagent prompt's cloud-limitations block, `NEEDS_RESEARCH.md written_by` field) are tabulated in `/lazy-batch-cloud`'s "Differences from /lazy-batch" block. Any change to orchestration shape (cycle loop, hard constraints, terminal handling, max-cycles semantics) MUST be mirrored. |
+| `/lazy` ↔ `/lazy-cloud` | `user/skills/lazy/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` | Both are thin LLM wrappers around `user/scripts/lazy-state.py`; the state machine itself is the script. The skills' only intended divergence is whether they pass `--cloud` to the script. Any change to wrapper prose (status bookends, special-action handling, dispatch glue, the shared Step 0.3 ad-hoc enqueue) MUST be mirrored. Any state-machine change goes into `lazy-state.py`, not the wrapper prose. When editing either, diff the other immediately afterward and confirm the diff matches what was intended. |
+| `/lazy-batch` ↔ `/lazy-batch-cloud` | `user/skills/lazy-batch/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` | Both are autonomous orchestrators looping on `lazy-state.py`. Their only intended divergences (state script `--cloud` flag, `cloud-queue-exhausted` normal vs. defensive, `__write_deferred_non_cloud__` pseudo-skill, cycle subagent prompt's cloud-limitations block, `NEEDS_RESEARCH.md written_by` field, Step 0.45 ad-hoc enqueue's immediate cloud push) are tabulated in `/lazy-batch-cloud`'s "Differences from /lazy-batch" block. The Step 0.45 ad-hoc enqueue itself (shared component `adhoc-enqueue.md`) is mirrored. Any change to orchestration shape (cycle loop, hard constraints, terminal handling, max-cycles semantics) MUST be mirrored. |
 
 When adding to a coupled pair, also update each file's State Machine Summary / orchestration shape at the bottom so the dispatch table reflects the new state.
 

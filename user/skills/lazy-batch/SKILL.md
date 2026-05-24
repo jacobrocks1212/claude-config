@@ -1,7 +1,7 @@
 ---
 name: lazy-batch
 description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. Research uploaded mid-session via chat (file attachment, pasted text, or absolute path) triggers in-session resume: /ingest-research is dispatched immediately and the loop is re-invoked — no manual re-run required.
-argument-hint: <max-cycles, e.g. 10> [--allow-research-skip]
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>"]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -36,9 +36,11 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 - **`--allow-research-skip`** (optional flag) → sets `allow_research_skip = true`. Default `false`. When set, the orchestrator restores the legacy "batch the research backlog" behavior: `lazy-state.py` is called with `--skip-needs-research`, Step 4 drops a `NEEDS_RESEARCH.md` sentinel for each research-pending feature without halting, and the loop halts on `queue-blocked-on-research` once every remaining feature is research-pending. This flag is for sessions where you have manually verified the remaining queue is independent — i.e., starting work on a downstream feature is safe even though an upstream feature is awaiting research. **Use case is rare.** The DEFAULT (flag absent) is to halt strictly on the FIRST `needs-research` so an ordered queue with dependencies cannot leak work onto unsafe downstream features.
 
+- **`--adhoc`** (optional flag) → sets `adhoc_task` to the remainder of `$ARGUMENTS` after the `--adhoc` token (everything following it, verbatim). If `--adhoc` is the last token with no trailing text, `adhoc_task` is empty and the task is inferred from the conversation (see Step 0.45). When `adhoc_task` is set (flag present), the orchestrator runs **Step 0.45 (Ad-hoc Enqueue)** before the main loop so the referenced work is enqueued at the top of the queue. Off by default (flag absent → no ad-hoc enqueue). Because `--adhoc` consumes the rest of the string, place `<N>` and `--allow-research-skip` BEFORE it.
+
 Unknown tokens are an error:
 
-> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip]`.
+> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"]`.
 
 Initialize counters and per-session state:
 - `cycle = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py` returns a new `feature_id`).
@@ -48,6 +50,7 @@ Initialize counters and per-session state:
 - `research_pending = set()` — feature_ids whose `RESEARCH.md` is missing and a `NEEDS_RESEARCH.md` sentinel was dropped this session. Only used when `allow_research_skip == true`. In the default (strict-halt) path this set never accumulates because Step 4 halts on the first feature; it stays empty.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. In the default path this stays `false` for the entire session because Step 4 halts before the loop continues.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
+- `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if the flag was absent). See Step 0.45.
 
 Print the start bookend:
 
@@ -108,6 +111,16 @@ Print the start bookend:
    ```
    🔄 Synced local {branch} to origin tip ({short-sha}) before resuming.
    ```
+
+---
+
+## Step 0.45: Ad-hoc Enqueue (only when `--adhoc` was supplied)
+
+**Runs once, after Step 0.4 (remote sync) and BEFORE Step 0.5 / the first state probe.** Skipped entirely when the `--adhoc` flag was absent. It runs AFTER the remote ff-sync deliberately: enqueuing mutates `queue.json` in the working tree, so it must happen on the reconciled remote tip, not a stale local snapshot that the Step 0.4 fast-forward would then conflict with.
+
+!`cat ~/.claude/skills/_components/adhoc-enqueue.md`
+
+After the enqueue returns, continue to Step 0.5. The first cycle's state probe will return the ad-hoc feature first and route it to `/spec`; its end-of-cycle commit+push carries the bootstrap files (`queue.json`, `ROADMAP.md`, the spec dir + `ADHOC_BRIEF.md`) to origin.
 
 ---
 

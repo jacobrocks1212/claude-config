@@ -1,7 +1,7 @@
 ---
 name: lazy-batch-cloud
 description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), cloud-queue-exhausted, or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. Research uploaded mid-session via chat triggers in-session resume: /ingest-research is dispatched immediately (writing the tracked RESEARCH.md + RESEARCH_SUMMARY.md — critical because docs/gemini-sprint/results/ is gitignored and bare .txt stages do not survive cloud-container reclaim) and the loop is re-invoked — no manual re-run required.
-argument-hint: <max-cycles, e.g. 10> [--allow-research-skip]
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>"]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -48,6 +48,7 @@ Constraints 1-8 are identical to `/lazy-batch`; constraint 9 is cloud-only:
 Same shape as `/lazy-batch` Step 0. `$ARGUMENTS` is tokenized:
 - positive integer → `max_cycles` (default `10`)
 - `--allow-research-skip` (optional) → `allow_research_skip = true` (default `false`)
+- `--adhoc` (optional) → sets `adhoc_task` to the remainder of `$ARGUMENTS` after the token (empty → infer from conversation). Triggers **Step 0.45 (Ad-hoc Enqueue)** before the loop. Off by default. Place `<N>` / `--allow-research-skip` BEFORE `--adhoc` since it consumes the rest of the string.
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 0 for the full flag semantics and rationale. The cloud variant inherits the same default-strict / opt-in-batched dichotomy — research-pending features halt the loop immediately by default; pass `--allow-research-skip` only when the remaining queue is known to be independent.
 
@@ -115,6 +116,16 @@ Print the start bookend:
 
 ---
 
+## Step 0.45: Ad-hoc Enqueue (only when `--adhoc` was supplied)
+
+**Runs once, after Step 0.4 (remote sync) and BEFORE Step 0.5 / the first state probe.** Skipped entirely when the `--adhoc` flag was absent. It runs AFTER the remote ff-sync deliberately: enqueuing mutates `queue.json` in the working tree, so it must happen on the reconciled remote tip — acute in cloud, where the local snapshot may be stale after container reclaim.
+
+!`cat ~/.claude/skills/_components/adhoc-enqueue.md`
+
+**Cloud durability note (divergence from `/lazy-batch`):** the bootstrap files are tracked, but to survive container reclaim before the first cycle commits, push the work branch immediately after the enqueue — `git push origin $(git rev-parse --abbrev-ref HEAD)` (4× exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This folds into guardrail B's per-batch push discipline. The `queue.json` mutation was made by the `Bash` script (not `Write`/`Edit`), and a `git push` of committed work is not a `Write`/`Edit`, so HARD CONSTRAINT 1 still holds. (If the bootstrap files are not yet committed, stage and commit them via `Bash` git with message `chore({feature_id}): enqueue ad-hoc task at top of queue`, then push.) Continue to Step 0.5.
+
+---
+
 ## Step 0.5: Pre-loop staged-research ingest check
 
 **Identical to `/lazy-batch` Step 0.5** — before entering the main loop, probe for staged `.txt` files in `docs/gemini-sprint/results/` and dispatch `/ingest-research` as cycle 1 if any exist. This is the "resume after halt" entry point that lets the user upload research between sessions without any active waiting.
@@ -173,6 +184,7 @@ Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This
 - `research_pending = set()` — feature_ids that hit `needs-research` this session. Only used when `allow_research_skip == true`; empty under the default strict-halt path.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. Stays `false` under the default path.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
+- `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if absent). See Step 0.45.
 
 ### 1a. Run lazy-state.py --cloud
 
@@ -628,6 +640,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Decision-resume mode (Step 1g) | `terminal_reason: needs-input` — **NOT a halt** in either variant. AskUserQuestion → append Resolution → commit → dispatch Sonnet apply-resolution subagent (edits SPEC/PHASES, neutralizes sentinel) → return to Step 1a. **Same shape** in both. | same shape as workstation. SPEC/PHASES edits are docs-only, no cloud limitations apply. |
 | In-Session Resume Protocol (Step 5) | chat-driven resume path for research uploads. User uploads research in next message → assistant materializes into staging dir → dispatches `/ingest-research` Sonnet subagent in-session → re-invokes `/lazy-batch` automatically. **Same shape** in both. | same shape as workstation, with the cloud-durability framing: in-session ingestion is the only path that writes tracked files (RESEARCH.md + RESEARCH_SUMMARY.md) before cloud-container reclaim. Re-invocation uses `/lazy-batch-cloud`. |
 | Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
+| Ad-hoc enqueue (Step 0.45, `--adhoc`) | **MIRRORED (shared component `_components/adhoc-enqueue.md`)** — when `--adhoc` is supplied, a one-time pre-loop bootstrap calls `lazy-state.py --enqueue-adhoc` (Bash) to prepend the referenced work to `queue.json`, seed `ADHOC_BRIEF.md`, and add a ROADMAP row; the first cycle's commit+push carries the bootstrap files. | same shared component + trigger, PLUS an immediate `git push` of the bootstrap right after enqueue (folds into guardrail B's per-batch push) so the new queue entry + brief survive container reclaim before the first cycle commits. |
 | Resume-time remote sync (Step 0.4, guardrail A) | **MIRRORED** — `git fetch origin <branch>` + `git merge --ff-only` before the first state probe; halt-on-divergence (no clobber). Workstation framing: a resumed/interrupted session, or a remote advanced by another machine, can leave local behind. **Same shape** in both. | same algorithm; cloud framing is container-reclaim → stale local snapshot. This is the load-bearing recovery for the reclaim-mid-cycle data-loss mode. |
 | In-cycle batch-level push (guardrail B) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** Workstation cycle subagents already push at end-of-cycle (Step 1d "commit … and push to the current branch"), and local commits survive an interrupted workstation session, so per-batch (vs per-cycle) push granularity buys no durability on a persistent disk. | cycle subagent prompt (Step 1d) requires `git push origin <work-branch>` after EACH batch / work-unit commit (4× backoff retry, work-branch only, never main/force) — including the per-WU checkbox-tick commits (see "Early + granular plan-part status" row). Shrinks reclaim-loss exposure from "entire cycle runtime" to "one batch" — acute only because the cloud container is ephemeral and reclaim-prone. |
 | Post-cycle push backstop (guardrail C) | **MIRRORED** — after every cycle (real-skill Step 1e AND inline pseudo-skill Step 1c.5) the orchestrator pushes / verifies-up-to-date the work branch (4× backoff, work-branch only). A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 holds. **Same shape** in both. | same as workstation; on cloud it is the backstop behind guardrail B's per-batch pushes (normally a no-op "up to date"). |

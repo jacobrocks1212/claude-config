@@ -1,7 +1,7 @@
 ---
 name: lazy-cloud
 description: Cloud-environment variant of /lazy — advances the AlgoBooth queue with the same state machine, but defers any step that cannot run in a cloud-based Linux environment (e.g. MCP testing requiring the desktop Tauri app) and documents the deferral so a later /lazy run from a workstation picks up exactly where this run stopped
-argument-hint: [optional: "status" to just report, or "skip" to skip current feature with reason]
+argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---
 
@@ -72,7 +72,14 @@ When `lazy-state.py --cloud` would normally dispatch a step that requires the de
 2. Parse `$ARGUMENTS`:
    - If `"status"` → run the same logic as `/lazy-status` (read-only report) and STOP. Additionally, if any feature has a `DEFERRED_NON_CLOUD.md`, list those features and what step is deferred.
    - If `"skip"` → mark current feature as skipped (see Step 5) and STOP
-   - If empty or anything else → proceed to Step 1
+   - If it starts with `--adhoc` (optionally followed by task text), OR is any other non-empty free-text that is not one of the keywords above → treat it as an **ad-hoc task**: run **Step 0.3 (Ad-hoc Enqueue)**, then proceed to Step 1. (`--adhoc` with no text infers the task from the conversation.)
+   - If empty → proceed to Step 1 (normal queue order)
+
+---
+
+## Step 0.3: Ad-hoc Enqueue (only when an ad-hoc task was supplied)
+
+!`cat ~/.claude/skills/_components/adhoc-enqueue.md`
 
 ---
 
@@ -235,6 +242,7 @@ The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to 
 **Current step ordering after phases complete:** Step 8 retro → Step 9 MCP test (deferred in cloud) → Step 10 mark complete. `/retro` runs FIRST so the implementation-time retrospective gate fires regardless of whether MCP testing is available. The lazy state machine does not auto-loop retro — additional rounds are triggered only by `/retro` itself writing a follow-up plan.
 
 ```
+[ad-hoc task supplied?]  → Step 0.3 enqueue at top of queue (Bash, once) → fall through
 lazy-state.py --cloud → JSON {sub_skill, sub_skill_args, terminal_reason}
 
 terminal_reason set?                                       → notify + STOP

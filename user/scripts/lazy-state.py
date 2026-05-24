@@ -103,6 +103,22 @@ def _diag(msg: str) -> None:
     _DIAGNOSTICS.append(msg)
 
 
+def _atomic_write(path: Path, content: str) -> None:
+    """Write content to path atomically (temp file in the same dir + replace)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _die(msg: str, path: Path | None = None) -> None:
     """Emit error JSON to stdout and exit 2."""
     out = {
@@ -181,6 +197,95 @@ def load_queue(repo_root: Path) -> list[dict[str, Any]]:
         _die("queue.json 'queue' field must be an array", queue_path)
         return []  # pragma: no cover
     return items
+
+
+def enqueue_adhoc(
+    repo_root: Path,
+    feature_id: str,
+    name: str,
+    brief: str,
+    spec_dir: str | None = None,
+    tier: int = 0,
+) -> dict[str, Any]:
+    """Insert an ad-hoc feature at the TOP of docs/features/queue.json.
+
+    Deterministic bootstrap for the /lazy ad-hoc path: prepends a queue entry
+    (so the next state probe picks it first), creates the spec dir, seeds
+    ADHOC_BRIEF.md (which Step 4 routes to /spec), and adds a ROADMAP.md row.
+    queue.json / ROADMAP.md are created if absent so ad-hoc works in a fresh
+    repo. Idempotent on the brief/dir; refuses a duplicate feature_id.
+    """
+    repo_root = repo_root.resolve()
+    if not re.match(r"^[a-z0-9][a-z0-9-]*$", feature_id):
+        _die(f"invalid feature_id (must be kebab-case): {feature_id!r}")
+    features = repo_root / "docs" / "features"
+    features.mkdir(parents=True, exist_ok=True)
+    spec_dir = spec_dir or feature_id
+
+    queue_path = features / "queue.json"
+    if queue_path.exists():
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            _die(f"invalid queue.json: {exc}", queue_path)
+            return {}  # pragma: no cover
+    else:
+        data = {"queue": []}
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die("queue.json 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+    if any(isinstance(e, dict) and e.get("id") == feature_id for e in items):
+        _die(f"feature_id already queued: {feature_id}", queue_path)
+        return {}  # pragma: no cover
+
+    items.insert(0, {
+        "id": feature_id,
+        "name": name,
+        "spec_dir": spec_dir,
+        "tier": tier,
+        "adhoc": True,
+    })
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+
+    spec_path = (features / spec_dir).resolve()
+    spec_path.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    brief_file = spec_path / "ADHOC_BRIEF.md"
+    if not brief_file.exists():
+        brief_file.write_text(
+            "---\n"
+            "kind: adhoc-brief\n"
+            f"feature_id: {feature_id}\n"
+            "enqueued_by: lazy-adhoc\n"
+            f"date: {today}\n"
+            "---\n\n"
+            f"# Ad-hoc task: {name}\n\n"
+            f"{brief.strip() or '(brief not supplied — infer from context during /spec)'}\n",
+            encoding="utf-8",
+        )
+
+    roadmap = features / "ROADMAP.md"
+    row = f"- {name} — (ad-hoc, enqueued {today})\n"
+    if roadmap.exists():
+        text = roadmap.read_text(encoding="utf-8")
+        if name not in text:
+            if text and not text.endswith("\n"):
+                text += "\n"
+            roadmap.write_text(text + row, encoding="utf-8")
+    else:
+        roadmap.write_text("# Roadmap\n\n" + row, encoding="utf-8")
+
+    return {
+        "enqueued": True,
+        "feature_id": feature_id,
+        "feature_name": name,
+        "spec_path": str(spec_path),
+        "brief_path": str(brief_file),
+        "queue_position": 0,
+        "queue_length": len(items),
+    }
 
 
 def is_workstation_complete(
@@ -871,6 +976,19 @@ def compute_state(
                 notify_message=(
                     f"{feature_name} needs spec input — no SPEC.md or research found. "
                     "Provide direction via /spec."
+                ),
+            )
+        # Ad-hoc enqueue path: an ADHOC_BRIEF.md seed (written by
+        # --enqueue-adhoc) routes to /spec with a brief-specific arg so /spec
+        # treats it as the task brief rather than "prior research".
+        if (spec_path / "ADHOC_BRIEF.md").exists():
+            return _state(
+                **common,
+                current_step="Step 4: ad-hoc brief → spec",
+                sub_skill="spec",
+                sub_skill_args=(
+                    f"{feature_name} — ad-hoc task; see "
+                    f"{spec_path_str}/ADHOC_BRIEF.md for the brief"
                 ),
             )
         return _state(
@@ -1764,6 +1882,24 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (p / "RESEARCH.md").write_text("# R\n")
         (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
         (p / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "adhoc-brief":
+        # Ad-hoc feature seeded by --enqueue-adhoc: queue entry at top, spec
+        # dir with ADHOC_BRIEF.md but no SPEC.md yet. Step 4 must route to /spec
+        # with the ad-hoc-specific arg.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "adhoc-x", "name": "Ad-hoc X", "spec_dir": "adhoc-x",
+                 "tier": 0, "adhoc": True}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        a = features / "adhoc-x"
+        a.mkdir()
+        (a / "ADHOC_BRIEF.md").write_text(
+            "---\nkind: adhoc-brief\nfeature_id: adhoc-x\n"
+            "enqueued_by: lazy-adhoc\ndate: 2026-05-24\n---\n\n"
+            "# Ad-hoc task: Ad-hoc X\n\nDo the thing.\n"
+        )
     elif name == "needs-realign":
         # feat-h has a hard dep on feat-up (complete upstream); no realign plan yet.
         (features / "queue.json").write_text(json.dumps({
@@ -1844,6 +1980,13 @@ def run_smoke_tests() -> int:
             ("workstation-all-plans-complete-real-unchecked", False, False, {
                 "sub_skill": "write-plan",
                 "feature_id": "feat-wreal",
+            }),
+            # Ad-hoc enqueue: ADHOC_BRIEF.md present, no SPEC.md → /spec with
+            # the ad-hoc-specific arg (Step 4 ad-hoc branch).
+            ("adhoc-brief", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "adhoc-x",
+                "current_step": "Step 4: ad-hoc brief → spec",
             }),
             ("all-complete", False, False, {"terminal_reason": "all-features-complete"}),
             ("needs-research", False, False, {"terminal_reason": "needs-research"}),
@@ -1970,10 +2113,59 @@ def run_smoke_tests() -> int:
                         f"[{name}] expected research-pending diagnostics; "
                         f"got diagnostics={diag!r}"
                     )
+            if name == "adhoc-brief":
+                args = got.get("sub_skill_args") or ""
+                if "ADHOC_BRIEF.md" not in args:
+                    failures.append(
+                        f"[{name}] expected sub_skill_args to reference "
+                        f"ADHOC_BRIEF.md; got {args!r}"
+                    )
             print(
                 f"  [{name}] cloud={cloud} skip_nr={skip_nr}: "
                 f"{got['current_step'] or got['terminal_reason']}"
             )
+
+        # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
+        # creates the spec dir, and adds a ROADMAP row.
+        enq_features = td_path / "enqueue-test" / "docs" / "features"
+        enq_features.mkdir(parents=True, exist_ok=True)
+        (enq_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-z", "name": "Z", "spec_dir": "feat-z", "tier": 1}
+            ]
+        }))
+        (enq_features / "ROADMAP.md").write_text("# Roadmap\n")
+        enq_root = td_path / "enqueue-test"
+        res = enqueue_adhoc(enq_root, "adhoc-test", "Adhoc Test", "Fix the thing")
+        enq_queue = json.loads((enq_features / "queue.json").read_text())
+        if not res.get("enqueued"):
+            failures.append("[enqueue] enqueue_adhoc did not report enqueued=True")
+        if enq_queue["queue"][0].get("id") != "adhoc-test":
+            failures.append(
+                f"[enqueue] expected adhoc-test at queue[0]; got "
+                f"{enq_queue['queue'][0].get('id')!r}"
+            )
+        if enq_queue["queue"][0].get("adhoc") is not True:
+            failures.append("[enqueue] queue[0] missing adhoc: true")
+        if len(enq_queue["queue"]) != 2:
+            failures.append(
+                f"[enqueue] expected 2 queue entries; got {len(enq_queue['queue'])}"
+            )
+        brief = enq_features / "adhoc-test" / "ADHOC_BRIEF.md"
+        if not brief.exists():
+            failures.append("[enqueue] ADHOC_BRIEF.md was not written")
+        elif "Fix the thing" not in brief.read_text():
+            failures.append("[enqueue] ADHOC_BRIEF.md missing the brief text")
+        roadmap_text = (enq_features / "ROADMAP.md").read_text()
+        if "Adhoc Test" not in roadmap_text:
+            failures.append("[enqueue] ROADMAP.md missing the ad-hoc row")
+        # Duplicate id must be refused (enqueue_adhoc calls _die → SystemExit).
+        try:
+            enqueue_adhoc(enq_root, "adhoc-test", "Dup", "x")
+            failures.append("[enqueue] duplicate feature_id was not refused")
+        except SystemExit:
+            pass
+        print("  [enqueue] enqueue_adhoc prepend + brief + roadmap: ok")
 
     if failures:
         print("\nFAILURES:")
@@ -2001,7 +2193,33 @@ def main() -> int:
                         help="Project root (default: $PWD)")
     parser.add_argument("--test", action="store_true",
                         help="Run fixture smoke tests instead of computing state")
+    # Ad-hoc enqueue mode: insert a feature at the top of the queue and exit.
+    parser.add_argument("--enqueue-adhoc", action="store_true",
+                        help=("Prepend an ad-hoc feature to docs/features/queue.json "
+                              "(requires --id and --name; --brief seeds ADHOC_BRIEF.md)."))
+    parser.add_argument("--id", help="Ad-hoc feature id (kebab-case).")
+    parser.add_argument("--name", help="Ad-hoc feature human-readable name.")
+    parser.add_argument("--brief", default="",
+                        help="One-paragraph ad-hoc task brief (seeds ADHOC_BRIEF.md).")
+    parser.add_argument("--spec-dir", default=None,
+                        help="Spec dir under docs/features/ (default: same as --id).")
+    parser.add_argument("--tier", type=int, default=0,
+                        help="Tier for the ad-hoc entry (default: 0).")
     args = parser.parse_args()
+
+    if args.enqueue_adhoc:
+        if not args.id or not args.name:
+            _die("--enqueue-adhoc requires --id and --name")
+        result = enqueue_adhoc(
+            Path(args.repo_root),
+            args.id,
+            args.name,
+            args.brief,
+            args.spec_dir,
+            args.tier,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
 
     if args.test:
         return run_smoke_tests()
