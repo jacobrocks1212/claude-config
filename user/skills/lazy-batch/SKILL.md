@@ -245,7 +245,7 @@ After the inline action:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
 2. **Push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** The inline pseudo-skill committed a sentinel / plan-frontmatter change locally; push it now — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This backstops inline cycles the orchestrator owns directly — a `git push` of an already-committed change, NOT a Write/Edit, so HARD CONSTRAINT 1 still holds. "Up to date" is a fine result (a prior cycle's push already carried it).
-3. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: {sub_skill} on {feature_name} → <inline outcome>"`.
+3. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the inline outcome, `**Commit:**` = the sentinel/plan commit sha. Nothing else.
 4. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` (same uniform post-cycle update as Step 1e — keeps loop-guard accurate across mixed pseudo-skill / real-skill cycles).
 5. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
 
@@ -394,7 +394,7 @@ Agent({
 After the subagent returns:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, subagent's one-paragraph summary}`.
-2. Print a one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: /{sub_skill} on {feature_name} → {first-line-of-summary}"`.
+2. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the first line of the subagent summary, `**Commit:**` = the cycle's commit sha (or `—`). For an `/execute-plan` cycle, add the `**Sub-agents:**` bullet with the dispatched Sonnet count (the contract-honored audit signal). No other prose.
 3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
 4. **Post-cycle push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** Verify the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). The cycle subagent's Step 1d already commits and pushes to the current branch at end-of-cycle, so this normally reports "up to date" — it is the backstop for any cycle that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds.
 5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the cycle counter continues counting from the value just produced here. Do NOT reset to 0 or 1 on the boundary; cycle N+1 is always the next cycle regardless of which feature it lands on.
@@ -648,7 +648,7 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
 
 7. **Record and continue the loop.**
    - Append to `cycle_log`: `{cycle+1, feature_name, "▶ needs-input (resolved + applied)", "<N> decision(s); <one-line subagent summary>"}`.
-   - Print one-line cycle status: `"Cycle {cycle+1}/{max_cycles}: needs-input resolved → {first-line-of-subagent-summary}"`.
+   - Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · needs-input`, `**Result:**` = "decision(s) resolved + applied — {first-line-of-subagent-summary}". No other prose.
    - Update `prev_cycle_signature = (feature_id, "__apply_needs_input__", current_step)`. The synthetic sub_skill token distinguishes this from any real-skill cycle so the Step 1d loop-guard treats it as its own kind of cycle.
    - Increment `cycle`. Return to Step 1a. **DO NOT halt, DO NOT print the final batch report.** The next state-script call should see the neutralized sentinel and route to the natural next step for the feature (typically resuming the skill that wrote NEEDS_INPUT.md — `/write-plan` or `/execute-plan` — now that the design ambiguity is resolved).
 
@@ -747,16 +747,26 @@ STOP.
 
 ---
 
-## Step 3: Status Bookend Discipline (per cycle)
+## Step 3: Cycle Output Discipline (lean · consistent · scannable)
 
-For each cycle, also produce a brief bookend pair (in addition to the one-line status in 1e):
+Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), or decision-resume (Step 1g) — emits **EXACTLY ONE update block** in this shape, and nothing else:
 
-**Before cycle N:**
 ```
-### Cycle {N} — {feature_name} ({sub_skill})
+### Cycle {N}/{max_cycles} · {feature_name} · {sub_skill}
+- **Result:** {one-line outcome}
+- **Commit:** {short-sha | "—"}
 ```
 
-**After cycle N:** part of the one-line status above. Keep it compact — many cycles fit in a single batch session.
+`{sub_skill}` is the real skill name, the `__pseudo_skill__` token, or `needs-input` for a decision-resume cycle. `**Result:**` is the first line of the subagent summary, the inline action's effect, or the resolved decision — ONE line. `**Commit:**` is the cycle's commit sha (or `—` when nothing was committed).
+
+**Rules (so many cycles stay scannable on a phone):**
+
+- **ONE block per cycle.** The heading + bullets ARE the cycle's entire chat footprint. Do not precede or follow it with prose.
+- **No dispatch narration.** Do NOT write "dispatching the subagent", "running in the background", "waiting on the completion notification before advancing", or similar. The loop mechanics are a fixed contract, not per-cycle news.
+- **No commit-strategy narration.** Do NOT explain commit ownership or in-flight races ("these uncommitted changes are the agent's in-flight work", "committing now would race the agent", "I'll let it own the commits"). Commits are owned by the cycle subagent (real skills) or by the inline action (pseudo-skills) — a fixed rule, never re-explained per cycle.
+- **Ignore commit prompts silently.** If a Stop hook or any other prompt asks whether to commit between cycles, do NOT answer with prose. The commit policy is already fixed; proceed to the next state probe without narration.
+- **At most 2–3 bullets, one line each.** Add a third bullet ONLY for a genuinely notable signal — e.g. `**Sub-agents:** 3 Sonnet` on an `/execute-plan` cycle (the contract-honored audit signal), or `**Note:** {flag}` for an issue worth surfacing.
+- **Halt/terminal announcements are exempt.** The Step 4 research halt, Step 1f research-wait, Step 1g malformed-sentinel halt, and Step 2 final report keep their own templated shapes — those are functional (copy-paste prompts, next-step guidance), not per-cycle narration.
 
 ---
 
