@@ -56,6 +56,20 @@ Phase 2 is mechanical — it generates `RESEARCH_PROMPT.md`. Under `--batch`, ru
 - **Classify every Phase 3 decision as `product-behavior` or `mechanical-internal`** before considering whether to auto-accept. The classification dictates the halt requirement:
   - **`product-behavior`** — the decision changes anything the user sees, does, or experiences: UX shape, scope (what's in v1 vs later), user-facing functionality, workflow, defaults, copy, naming visible to the user, error/empty states, data the user inputs or sees, surfaces the user interacts with. Decisions that affect *what the feature does for the user* are product-behavior regardless of how strong your recommendation is.
   - **`mechanical-internal`** — the decision is invisible to the user: which internal helper to use, file placement, naming of internal symbols, internal library choice with no behavioral implications, code-organization tradeoffs, internal data structure choices that don't change the user-facing contract.
+- **Product-behavior smells — concrete checklist (always classify as `product-behavior` if any apply; non-exhaustive):**
+  - **Defaults** the user sees on first run (initial values, pre-selected options, baseline configuration).
+  - **Scope of v1** — which subfeature ships now vs deferred, what controls/surfaces are exposed initially. ("Ship Open by default vs Quantized by default" is the canonical example: research can recommend, but the v1 default is a product call.)
+  - **UX shape** — which UI surface the feature lives in, the gesture/hotkey/menu it's accessed from, what's a control vs a hidden internal.
+  - **Copy / labels / names** visible to the user.
+  - **Error and empty states** — what the user sees when X fails, is unset, or returns nothing.
+  - **Workflow shape** — how many steps, ordering, what's optional vs required.
+  - **Data the user inputs or sees** — field shapes, formats, units, precision, display rounding.
+  - **Configurability boundary** — "this should be user-tunable" vs "this should be fixed in code" is itself a product-behavior call.
+  - **Research-multi-option calls** — when research surfaces multiple defensible options at a user-visible level (e.g. "industry uses A or B; here are the tradeoffs"), the *which* is product-behavior even when the recommendation is strong.
+  - **Toggles between behavioral modes** — any v1/v2 split, any "configurable vs hard-coded" question, any "shipped continuous vs quantized / opt-in vs opt-out / on by default vs off by default" question.
+
+  **Rule of thumb:** if removing the decision from SPEC.md would change what the user experiences in the running product, it is `product-behavior`. A strong `**Recommendation:**` line does NOT downgrade the classification — under `--batch` the recommendation is preserved as the lead option in the `NEEDS_INPUT.md` `## Decision Context` body and surfaces as the highlighted chip in `AskUserQuestion`.
+
 - **HALT RULE (always-halt on product-behavior):**
   - If **any** Phase 3 decision classifies as `product-behavior`, **halt with `NEEDS_INPUT.md`** that covers all such decisions (capped at 4 per the sentinel schema; if there are more than 4, surface the top 4 by impact and note the rest in the body for a follow-up cycle). Do this **regardless** of how strong your `**My recommendation:**` line is — the user retains final authority over product behavior, and the orchestrator's `AskUserQuestion` surfaces your recommendation alongside the alternatives so the user can confirm or override. Auto-accepting a strong product-behavior recommendation silently is **forbidden** under `--batch`.
   - If **every** Phase 3 decision is `mechanical-internal` AND each has a single defensible recommendation, accept silently and proceed to finalize SPEC.md. This is the only path that skips the halt. If even one mechanical-internal decision is genuinely ambiguous (no clear recommendation), include it in the `NEEDS_INPUT.md` alongside the product-behavior items.
@@ -65,6 +79,26 @@ Phase 2 is mechanical — it generates `RESEARCH_PROMPT.md`. Under `--batch`, ru
 - The cross-boundary validation (Step 9) still runs. Unverified quantities should be marked `(estimated — verify during Phase N)` as in interactive mode.
 
 **Why always-halt on product-behavior:** the autonomous tail is allowed to make mechanical decisions on the user's behalf (helpers, naming, file placement) because those don't change what the product does. Product-behavior decisions DO change what the product does — and the user has explicitly reserved final authority over them. A strong recommendation is still surfaced (it becomes the **Recommendation** line under each `## Decision Context` H3, and a chip option in `AskUserQuestion`), but the user gets to confirm before SPEC.md is finalized in a shape that bakes the choice in.
+
+**Decision-Classification Ledger (MANDATORY return under `--batch` — Phase 1 and Phase 3):**
+
+Every `/spec --batch` cycle MUST emit, as a structured section of its return summary back to the orchestrator, a ledger of every decision the cycle considered (whether baked in, deferred to research, or surfaced via `NEEDS_INPUT.md`). The ledger is the audit signal that the classification step actually ran — `/lazy-batch` and `/lazy-batch-cloud` dispatch a dedicated Opus **input-audit subagent** after the cycle (see their Step 1d.5) that verifies your ledger against the SPEC.md diff and writes its own `NEEDS_INPUT.md` if it finds product-behavior decisions you classified as `mechanical-internal` (or omitted from the ledger entirely). Treat the ledger as a hard contract, not a courtesy.
+
+Format (markdown table embedded in the return summary):
+
+```
+### Decision-Classification Ledger
+
+| # | Decision (one line) | Classification | Chosen option | Surfaced via | Rationale |
+|---|---------------------|----------------|---------------|--------------|-----------|
+| 1 | <decision title>    | product-behavior \| mechanical-internal | <option taken or "deferred to user"> | NEEDS_INPUT.md \| auto-accept \| RESEARCH_PROMPT.md \| Open Questions | <one-line why> |
+| 2 | ...                 | ...            | ...           | ...          | ...       |
+```
+
+- **Every** decision you made or actively *chose not to make* on the user's behalf belongs in the ledger — not just the controversial ones. Boring mechanical-internal calls (helper placement, internal symbol naming) are still ledger rows; their `Surfaced via: auto-accept` is what the audit checks for incorrectly-classified product calls hiding in the mechanical pile.
+- If you classified a decision as `product-behavior`, the `Surfaced via` column MUST be `NEEDS_INPUT.md` (or `Open Questions` if it overflowed the 4-cap and was deferred to a follow-up cycle). Any row with `product-behavior` + `auto-accept` is a self-declared contract violation — don't write it; surface the decision properly.
+- If the cycle made **zero** decisions (research confirmed the baseline without surfacing any new choices), emit the ledger heading + a `_(no decisions surfaced this cycle — auto-finalized)_` line. The empty ledger is still required.
+- The ledger lives in the **return-to-orchestrator summary**, not in SPEC.md. Do not commit it as a document; the orchestrator reads it from the cycle subagent's response.
 
 **Halt protocol — `NEEDS_INPUT.md`** (shared by Phase 1 and Phase 3):
 

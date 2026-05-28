@@ -1,6 +1,6 @@
 ---
 name: lazy-batch
-description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. Research uploaded mid-session via chat (file attachment, pasted text, or absolute path) triggers in-session resume: /ingest-research is dispatched immediately and the loop is re-invoked — no manual re-run required. --adhoc "<task>" enqueues an ad-hoc task at the TOP of the queue before the loop starts (Step 0.45) so the next cycle picks it up first; a brand-new ad-hoc feature begins at /spec Phase 1 and advances autonomously, pausing only for baseline-gating product-behavior decisions via Step 1g.
+description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. After every /spec or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES — Step 1g then resolves them inline on the next cycle. Research uploaded mid-session via chat (file attachment, pasted text, or absolute path) triggers in-session resume: /ingest-research is dispatched immediately and the loop is re-invoked — no manual re-run required. --adhoc "<task>" enqueues an ad-hoc task at the TOP of the queue before the loop starts (Step 0.45) so the next cycle picks it up first; a brand-new ad-hoc feature begins at /spec Phase 1 and advances autonomously, pausing only for baseline-gating product-behavior decisions via Step 1g.
 argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue]
 plan-mode: never
 model: opus
@@ -389,6 +389,148 @@ Agent({
 
 **Model selection.** Normal cycles dispatch on Opus because real-skill cycles can involve novel implementation decisions. The loop-resolution cycle (LOOP DETECTED branch) is mechanical — the prompt already contains the diagnosis (which sentinels to inspect, what conditions warrant which write) and the work is "read the canonical sentinel schema, identify which sentinel preconditions are met, write it, commit". Sonnet is sufficient at roughly 5× the cost-efficiency. Use `model: "sonnet"` when the LOOP DETECTED block was appended, `model: "opus"` otherwise.
 
+### 1d.5. Post-cycle input audit (Opus — runs only on `/spec` and `plan-feature` cycles)
+
+**Why this step exists.** The dispatched cycle subagent that ran `/spec` (or `plan-feature`, which composes `/spec-phases` + `/write-plan`) self-classifies its own decisions as product-behavior vs mechanical-internal and self-decides whether to halt via `NEEDS_INPUT.md`. In practice that self-classification gets short-shrift — the subagent juggles competing pressures (integrate research, draft updates, finalize SPEC, produce summary) and the classification step is biased toward "make progress". Across ~75 observed lazy-batch cycles, zero `NEEDS_INPUT.md` sentinels fired from `/spec`'s self-audit despite multiple cycles having surfaceable product-behavior calls. This step is the independent Opus second-opinion focused on one question: did any product-behavior decision get baked into SPEC.md / PHASES.md without surfacing to the user?
+
+**Skip when ANY of:**
+- `sub_skill` is NOT in {`/spec`, `plan-feature`}. (Most cycles — `/execute-plan`, `/retro`, `/mcp-test`, pseudo-skills — skip the audit; they don't author SPEC content.)
+- The cycle was a pseudo-skill (Step 1c.5 already ran inline; no `/spec`-shaped decisions to audit).
+- The cycle subagent already wrote `NEEDS_INPUT.md` for this feature this cycle (the cycle correctly surfaced; re-auditing would double-fire). Probe: `test -f {spec_path}/NEEDS_INPUT.md` AND `git diff HEAD~1 --name-only` lists it.
+- The cycle subagent returned a hard failure with no SPEC/PHASES delta (nothing to audit).
+
+**Inputs to gather before dispatch:**
+1. `spec_path` from this cycle's state-script result.
+2. `feature_id`, `feature_name`, `sub_skill` from the same result.
+3. The cycle subagent's one-paragraph summary, including its **Decision-Classification Ledger** section (mandatory under `/spec --batch` — see `~/.claude/skills/spec/SKILL.md`). If the ledger is missing or malformed, capture that fact for the audit prompt; do not synthesize one.
+4. The SPEC/PHASES delta: `git diff HEAD~1 -- {spec_path}/SPEC.md {spec_path}/PHASES.md` (or against the cycle's commit sha if known).
+
+**Dispatch:**
+
+```
+Agent({
+  description: "lazy-batch cycle {cycle+1}: input-audit for {feature_name}",
+  subagent_type: "general-purpose",
+  model: "opus",
+  prompt: <audit prompt below>
+})
+```
+
+**Audit prompt:**
+
+```
+You are the lazy-batch INPUT-AUDIT subagent — an independent Opus second-opinion
+that runs after a /spec or plan-feature cycle. Your sole job is to verify that
+no product-behavior decision was silently baked into SPEC.md / PHASES.md
+without surfacing to the user via NEEDS_INPUT.md.
+
+Scope (HARD): you MUST NOT edit source code, tests, plan files, or any file
+except {spec_path}/NEEDS_INPUT.md. You MAY commit that sentinel and push the
+work branch. You MUST NOT call the Skill tool, MUST NOT dispatch further
+subagents, and MUST NOT modify SPEC.md / PHASES.md (the cycle subagent's
+content stands until the user resolves the surfaced decisions via Step 1g).
+
+Inputs:
+  - Feature: {feature_name} ({feature_id})
+  - Spec path: {spec_path}
+  - Sub-skill that just ran: {sub_skill}
+  - Cycle commit (for diff): {cycle_commit_sha or "HEAD~1"}
+  - Cycle subagent's return summary, INCLUDING its Decision-Classification
+    Ledger section (or a note that the ledger was missing/malformed):
+    ---
+    {cycle_summary}
+    ---
+
+Bias: AGGRESSIVE — when in doubt, surface. Any decision that even *touches* a
+user-visible surface is `product-behavior` unless it has an unambiguous single
+defensible answer that the user could not reasonably want to override. The
+canonical product-behavior smells checklist lives in
+~/.claude/skills/spec/SKILL.md ("Product-behavior smells — concrete
+checklist"); read it and apply each smell to every decision visible in this
+cycle's diff. Examples that ALWAYS qualify as product-behavior regardless of
+recommendation strength:
+  - v1 default values the user sees on first run.
+  - "Ship continuous vs quantized" / "configurable vs fixed" toggles.
+  - Scope-of-v1 calls (ship subfeature now vs defer).
+  - Workflow shape and surface placement.
+  - Copy / labels / names visible to the user.
+  - Research-surfaced multi-option calls at the user-visible level.
+
+Audit algorithm:
+1. Read SPEC.md (and RESEARCH.md if it exists) from {spec_path}.
+2. Read the diff: `git show {cycle_commit_sha} -- {spec_path}/SPEC.md
+   {spec_path}/PHASES.md` (or `git diff HEAD~1 -- ...` if no sha was given).
+3. Cross-reference the cycle subagent's Decision-Classification Ledger against
+   the diff:
+   a. For each ledger row: independently re-classify per the smells checklist.
+      Flag any row classified `mechanical-internal` by the cycle subagent that
+      your independent classification says is `product-behavior`.
+   b. For each user-visible change in the diff NOT covered by a ledger row:
+      treat it as a hidden decision the cycle subagent failed to disclose;
+      classify and flag accordingly.
+   c. If the ledger was missing or malformed entirely, perform a diff-only
+      audit: identify every user-visible change in the diff, classify each.
+4. Compile the list of `product-behavior` decisions that were baked in without
+   surfacing (i.e. `Surfaced via: auto-accept` rather than `NEEDS_INPUT.md`).
+   These are the misclassifications you must surface.
+5. If the list is EMPTY: return a one-line summary
+   `clean — no product-behavior decisions baked in; cycle subagent's
+   auto-accepts were all mechanical-internal`. Write nothing. STOP.
+6. If the list is NON-EMPTY:
+   a. Cap at the top 4 by user-visibility impact (the sentinel schema's
+      `AskUserQuestion` 4-question cap). Note the rest in the body as
+      "## Open Questions" for a follow-up audit cycle.
+   b. Write {spec_path}/NEEDS_INPUT.md per the canonical schema in
+      ~/.claude/skills/_components/sentinel-frontmatter.md:
+        ---
+        kind: needs-input
+        feature_id: {feature_id}
+        written_by: lazy-batch-input-audit
+        decisions:
+          - <one-line decision 1>
+          - ...
+        date: <today>
+        next_skill: spec
+        ---
+      Body MUST follow the rich-body convention (## Decision Context H2,
+      one H3 per decision). For EACH surfaced decision:
+        - **Problem:** cite the exact SPEC.md section / line where it was
+          baked in, and (if Phase 3) the RESEARCH.md finding that frames the
+          tradeoff.
+        - **Options:** list (at minimum) the baked-in answer labeled
+          "Auto-accepted by cycle subagent: <option>" PLUS at least 2
+          alternatives the user might reasonably prefer (drawn from research
+          where possible). Include concrete tradeoffs per option.
+        - **Recommendation:** <strongest option, often the baked-in one if
+          it's defensible> — <one-sentence justification>. The user can
+          confirm the baked-in answer in one click via AskUserQuestion.
+   c. Commit the sentinel with a clear message:
+        git add {spec_path}/NEEDS_INPUT.md
+        git commit -m "{feature_id}: input-audit surfaced N product-behavior
+        decision(s) for user confirmation"
+      Push the work branch (`git push origin $(git rev-parse --abbrev-ref
+      HEAD)`, 4× backoff retry on network error; never main, never force).
+7. Return a one-paragraph summary (≤ 8 lines) covering:
+   - Decisions reviewed (count) and how many you classified as
+     product-behavior.
+   - Whether the cycle subagent's Decision-Classification Ledger was present
+     and well-formed; if missing/malformed, flag the contract violation by
+     skill name.
+   - The one-line titles of the surfaced decisions.
+   - Whether you wrote NEEDS_INPUT.md (and the commit sha if so).
+
+Do NOT halt the loop. The NEEDS_INPUT.md sentinel you write is picked up by
+lazy-state.py on the next cycle and resolved via Step 1g (decision-resume
+mode) inline — no orchestrator-side halt fires.
+```
+
+**After the audit subagent returns:**
+1. If it wrote `NEEDS_INPUT.md`, append a `**Audit:**` bullet to the per-cycle output block (Step 3): `**Audit:** {N} product-behavior decision(s) surfaced` (one line, no further prose).
+2. If it returned "clean — no product-behavior decisions baked in", append no audit bullet — the audit is silent on clean cycles to keep cycle output lean.
+3. If it flagged a missing/malformed Decision-Classification Ledger, append a `**Note:**` bullet: `**Note:** /spec --batch cycle returned no Decision-Classification Ledger (contract violation)`. This surfaces the contract issue without halting.
+4. Audit costs are NOT separate cycles — the audit shares the cycle's slot in `cycle_log` and does not increment the cycle counter. The audit subagent is bounded (read SPEC/RESEARCH/diff, classify, optionally write one sentinel), so its context footprint is small.
+5. Proceed to Step 1e. The next state-script call at Step 1a will surface `needs-input` if the audit wrote `NEEDS_INPUT.md`, and Step 1g handles resolution inline (no loop halt).
+
 ### 1e. Record cycle outcome and loop
 
 After the subagent returns:
@@ -765,7 +907,7 @@ Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), or decisi
 - **No dispatch narration.** Do NOT write "dispatching the subagent", "running in the background", "waiting on the completion notification before advancing", or similar. The loop mechanics are a fixed contract, not per-cycle news.
 - **No commit-strategy narration.** Do NOT explain commit ownership or in-flight races ("these uncommitted changes are the agent's in-flight work", "committing now would race the agent", "I'll let it own the commits"). Commits are owned by the cycle subagent (real skills) or by the inline action (pseudo-skills) — a fixed rule, never re-explained per cycle.
 - **Ignore commit prompts silently.** If a Stop hook or any other prompt asks whether to commit between cycles, do NOT answer with prose. The commit policy is already fixed; proceed to the next state probe without narration.
-- **At most 2–3 bullets, one line each.** Add a third bullet ONLY for a genuinely notable signal — e.g. `**Sub-agents:** 3 Sonnet` on an `/execute-plan` cycle (the contract-honored audit signal), or `**Note:** {flag}` for an issue worth surfacing.
+- **At most 2–3 bullets, one line each.** Add a third bullet ONLY for a genuinely notable signal — e.g. `**Sub-agents:** 3 Sonnet` on an `/execute-plan` cycle (the contract-honored audit signal), `**Audit:** {N} product-behavior decision(s) surfaced` on a `/spec` or `plan-feature` cycle whose Step 1d.5 input-audit fired, or `**Note:** {flag}` for an issue worth surfacing.
 - **Halt/terminal announcements are exempt.** The Step 4 research halt, Step 1f research-wait, Step 1g malformed-sentinel halt, and Step 2 final report keep their own templated shapes — those are functional (copy-paste prompts, next-step guidance), not per-cycle narration.
 
 ---
