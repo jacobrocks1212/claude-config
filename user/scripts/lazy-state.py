@@ -334,11 +334,30 @@ def is_workstation_complete(
 # SPEC parsing
 # ---------------------------------------------------------------------------
 
-def is_stub_spec(spec_text: str) -> bool:
-    """Detect stub-spec markers per /lazy Step 4.5."""
+def is_stub_spec(spec_text: str, queue_entry: dict[str, Any] | None = None) -> bool:
+    """Detect stub-spec markers per /lazy Step 4.5.
+
+    A SPEC is a stub iff any of these match:
+    - Legacy markers in spec_text (`**Status:** Draft (research stub)`,
+      `> Stub generated from advanced feature research`) — kept for back-compat.
+    - Canonical pre-Gemini marker `Draft (pre-Gemini)` substring in spec_text
+      (per AlgoBooth docs/CLAUDE.md).
+    - `queue_entry.get("stub") is True` — the queue.json cross-check (per
+      AlgoBooth docs/CLAUDE.md). Triggers stub mode even when the SPEC trailer
+      is absent.
+
+    Stub mode routes to interactive /spec at Step 4.5; the baseline doesn't
+    exist yet and needs design conversation. Structured-but-research-pending
+    specs (no stub markers, missing RESEARCH.md) are a different state — they
+    halt at Step 5 with needs-research and wait for a Gemini upload.
+    """
     if "**Status:** Draft (research stub)" in spec_text:
         return True
     if "> Stub generated from advanced feature research" in spec_text:
+        return True
+    if "Draft (pre-Gemini)" in spec_text:
+        return True
+    if queue_entry is not None and queue_entry.get("stub") is True:
         return True
     return False
 
@@ -896,6 +915,7 @@ def compute_state(
             "id": feature_id,
             "spec_path": spec_path,
             "tier": entry.get("tier"),
+            "queue_entry": entry,
         }
         break
 
@@ -1001,7 +1021,7 @@ def compute_state(
     spec_text = spec_file.read_text(encoding="utf-8")
 
     # Step 4.5: Stub spec
-    if is_stub_spec(spec_text):
+    if is_stub_spec(spec_text, current.get("queue_entry")):
         return _state(
             **common,
             current_step="Step 4.5: stub-spec detected",
@@ -1701,6 +1721,41 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         g.mkdir()
         (g / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
         (g / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+    elif name == "stub-pre-gemini-marker":
+        # Canonical pre-Gemini stub: SPEC carries the `> Draft (pre-Gemini)`
+        # trailer, queue.json has no `stub` field. Step 4.5 should fire.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-stub-marker", "name": "Stub Marker",
+                 "spec_dir": "feat-stub-marker", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sdir = features / "feat-stub-marker"
+        sdir.mkdir()
+        (sdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n\n"
+            "> Draft (pre-Gemini). Open questions in this spec are captured "
+            "in RESEARCH_PROMPT.md and will be addressed by the upcoming "
+            "manual Gemini deep-research sprint.\n"
+        )
+        (sdir / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+    elif name == "stub-queue-flag-only":
+        # queue.json `"stub": true` cross-check fires Step 4.5 even when the
+        # SPEC body has no stub marker (belt-and-suspenders per docs/CLAUDE.md).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-stub-queue", "name": "Stub Queue",
+                 "spec_dir": "feat-stub-queue", "tier": 1, "stub": True}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sdir = features / "feat-stub-queue"
+        sdir.mkdir()
+        (sdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (sdir / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
     elif name == "spec-status-complete":
         # SPEC.md Status: Complete should mark the feature done even when
         # the ROADMAP grep wouldn't (no strikethrough/COMPLETE token).
@@ -1990,6 +2045,22 @@ def run_smoke_tests() -> int:
             }),
             ("all-complete", False, False, {"terminal_reason": "all-features-complete"}),
             ("needs-research", False, False, {"terminal_reason": "needs-research"}),
+            # Canonical `> Draft (pre-Gemini)` SPEC trailer → Step 4.5 stub
+            # dispatch, NOT needs-research. Without this match, the script
+            # would halt the queue waiting on Gemini for a SPEC whose baseline
+            # doesn't exist yet.
+            ("stub-pre-gemini-marker", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-stub-marker",
+                "current_step": "Step 4.5: stub-spec detected",
+            }),
+            # queue.json `"stub": true` cross-check fires Step 4.5 even when
+            # the SPEC body has no stub marker.
+            ("stub-queue-flag-only", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-stub-queue",
+                "current_step": "Step 4.5: stub-spec detected",
+            }),
             ("needs-realign", False, False, {
                 "sub_skill": "realign-spec",
                 "feature_id": "feat-h",
