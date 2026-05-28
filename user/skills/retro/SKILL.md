@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Retrospective analysis of completed work — identifies issues, incorrect assumptions, and workflow improvements
+description: Retrospective analysis of completed work — identifies issues, incorrect assumptions, and workflow improvements. After writing the retro plan, dispatches a Sonnet spec-body-fixer (Step 6b.5) to propagate Minor doc-drift divergences (resolved-research checklists, stale counts, deferred-API surface entries, stale Status) into SPEC.md inline and annotates the plan's Minor rows with the fix commit — Significant rows untouched. RETRO_DONE.md (Step 6c) only fires when the Significant table is empty.
 argument-hint: [feature-name | SPEC path | PHASES path] [--auto]
 plan-mode: never
 ---
@@ -38,6 +38,8 @@ If `$ARGUMENTS` contains `--auto` OR `--batch`, this is an autonomous invocation
 ```
 
 If the "Significant" table has any rows, the retro MUST flag this clearly in its final output message: `"SIGNIFICANT SPEC DIVERGENCES FOUND — corrective phases needed before feature completion."` This signal is consumed by `/lazy` to trigger `/add-phase`.
+
+**Minor row propagation (Step 6b.5):** Minor divergences are NOT deferred to `/execute-plan`. After the plan file is written (Step 6b), Step 6b.5 dispatches a Sonnet spec-body-fixer subagent that propagates each Minor row into SPEC.md inline (e.g. "Needs Research" checklist → "Resolved by Research" with answers from RESEARCH_SUMMARY.md; stale counts bumped; deferred APIs removed from surface tables; stale Status flipped when phases are Complete). The plan file's Minor rows are then patched to record the fix commit per row (or the skip reason). This closes the 25%-of-features SPEC-drift gap the audit walk surfaced.
 
 ### Halt protocol — `NEEDS_INPUT.md` (under `--batch` only)
 
@@ -509,6 +511,136 @@ When writing the retro plan file, the YAML frontmatter MUST use:
 The retro plan file is colocated with the feature's other plans (`<feature-dir>/plans/retro-N-<slug>.md`) so the state script's `find_retro_plans()` discovers it the same way as implementation plans.
 
 !`cat ~/.claude/skills/_components/plan-file-output.md`
+
+---
+
+## Step 6b.5: Spec-Body Fixer (Minor divergences only — propagate inline)
+
+**Rationale.** The walk pattern repeatedly observed: `/retro` writes a `## Spec Divergences > Minor` table into the retro plan file, then the plan is archived without `/execute-plan` ever running its Minor rows — the SPEC body never catches up. Examples: research resolved every item under a "Needs Research" checklist but the checklist still shows `- [ ]` unchecked; SPEC advertises a deprecated API in its surface table that research deferred; SPEC `Status: Draft` despite every PHASES.md phase Complete. These are mechanical doc-drift fixes — not design decisions — so the fixer dispatches a dedicated Sonnet subagent to apply them inline and patches the plan file's Minor rows to mark them resolved. **Significant rows are untouched** — those continue to flow through `/add-phase` / follow-up retro as designed.
+
+### When to run
+
+Run iff Step 6b just wrote a retro plan whose `## Spec Divergences > Minor` table has **at least one** data row. Skip when the Minor table is empty (no rows = nothing to propagate) or absent (no `## Spec Divergences` section at all = retro was a clean pass).
+
+### When to skip the dispatch entirely
+
+- Runtime evidence was unavailable AND the Minor table was synthesized from code-level analysis only (the Step 4 top-level note `"Runtime evidence unavailable in this session"` is present). The fixer would be guessing about Minor row evidence; skip and leave the rows un-resolved for a later interactive retro to verify.
+- The orchestrator caller (`/lazy-batch`, `/lazy-batch-cloud`) is already inside Step 1c.5 pseudo-skill handling — irrelevant since `/retro --batch` is always dispatched as a real-skill cycle, never as a pseudo-skill, so this case cannot arise in practice. Documented for completeness.
+
+### Algorithm
+
+1. **Parse the Minor table from the just-written plan file.** Read `{spec_path}/plans/retro-N-<slug>.md` and locate the `## Spec Divergences > ### Minor` table. Extract each data row as `{idx, item, nature_of_divergence}`. If parsing fails (table malformed, missing header), skip Step 6b.5 entirely and note the parse failure in the chat output — do NOT improvise.
+
+2. **Compose the spec-body-fixer prompt.** ONE Sonnet subagent for ALL Minor rows (Q1 of the design — single commit, easier to audit, no SPEC.md race). The subagent receives the full table content + `{spec_path}/SPEC.md` + `{spec_path}/RESEARCH_SUMMARY.md` (or `RESEARCH.md` if summary absent).
+
+3. **Dispatch.**
+
+   ```
+   Agent({
+     description: "retro spec-body-fixer for {feature_id} ({N} minor rows)",
+     subagent_type: "general-purpose",
+     model: "sonnet",
+     prompt: <the prompt below>
+   })
+   ```
+
+   **Subagent prompt:**
+
+   ```
+   You are the /retro spec-body-fixer subagent. Your sole job is to propagate
+   the Minor doc-drift divergences from the retro plan into the SPEC.md body
+   inline — turning each "Needs Research" checklist whose answers exist in
+   RESEARCH_SUMMARY.md into a "Resolved by Research" block with the answers
+   inlined; bumping stale counts; removing deferred APIs from surface tables;
+   flipping stale Status fields when all phases are Complete; and so on.
+
+   Feature: {feature_id}
+   Working directory: {cwd}
+
+   Inputs you MUST read first:
+     - {spec_path}/SPEC.md
+     - {spec_path}/RESEARCH_SUMMARY.md (or RESEARCH.md if summary absent)
+     - {spec_path}/PHASES.md (for Status / phase-completion cross-checks only)
+     - The Minor divergences table below (verbatim from this round's retro plan)
+
+   HARD SCOPE — non-negotiable:
+     - You MAY Edit ONLY {spec_path}/SPEC.md. No other file.
+     - You MUST NOT touch source code, tests, PHASES.md, plan files, sentinels,
+       or any file outside {spec_path}/SPEC.md.
+     - You MUST NOT call Skill, MUST NOT dispatch further subagents, MUST NOT
+       call AskUserQuestion. Halt with a one-line summary if you encounter a
+       row that requires judgment (see "Row-skipping" below).
+     - You MUST commit exactly once at the end with all SPEC.md edits in a
+       single commit (per the project's commit policy at
+       .claude/skill-config/commit-policy.md if present, else the standard
+       pattern).
+
+   Row-by-row algorithm:
+     For each Minor row in the table:
+       a. Identify the target SPEC.md section / line referenced by the row's
+          "Item" column.
+       b. Apply the correction described in "Nature of Divergence":
+          - "Needs Research checklist with N unchecked items" → rewrite the
+            section heading from "Needs Research" to "Resolved by Research"
+            (keep the original heading level), replace each `- [ ]` with
+            `- [x]`, and append the one-line answer from RESEARCH_SUMMARY.md
+            to each item (format: `- [x] <original question> — <answer from
+            research>`).
+          - "Stale count (e.g., 19 vs actual 49)" → update the number in
+            place; leave surrounding prose intact.
+          - "Deferred API still advertised in surface table" → delete the row
+            from the surface table; if the row had narrative prose elsewhere
+            that referenced it, leave the prose alone (out of scope).
+          - "Status: Draft despite phases Complete" → flip the `Status:` line
+            to `Complete`; bump `Last updated:` to today's date if present.
+          - "Duplicate deliverable in single phase (both [ ] and [x])" → this
+            is a PHASES.md issue, NOT a SPEC.md issue. SKIP this row and
+            report it in your row-skipping list — out of fixer scope.
+          - Any other Minor row whose fix is genuinely mechanical and
+            unambiguous → apply.
+       c. If the target text is NOT findable (the SPEC section was already
+          fixed, was renamed since the retro snapshot, or the row's
+          description is ambiguous about WHICH line to edit), SKIP the row.
+          Do NOT improvise.
+
+     After all rows are processed:
+       1. Run a final read of SPEC.md to confirm the edits applied cleanly
+          (no syntax breakage in markdown tables, no orphaned bullets).
+       2. Commit with message:
+          docs({feature_id}): retro round N — propagate minor spec divergences inline
+          The commit should contain ONLY {spec_path}/SPEC.md.
+       3. Return a one-paragraph summary (≤ 8 lines) covering:
+          - N total Minor rows attempted.
+          - List of row indices applied (e.g. "applied: 1, 2, 4").
+          - List of row indices skipped + one-line reason per skip (e.g.
+            "skipped: 3 — target text not found, may already be fixed").
+          - The commit sha.
+          - Any failures (commit refused, dirty tree, etc.).
+
+   Minor divergences table (verbatim from this round's retro plan):
+
+   ---
+   {paste the Minor table content here, including the header row}
+   ---
+
+   Begin.
+   ```
+
+4. **Patch the plan file's Minor rows.** After the subagent returns, re-read the plan file and update the `## Spec Divergences > ### Minor` table:
+   - For each applied row (per the subagent's report), append a final column note (or trailing parenthetical inside the row's last cell): `(resolved inline by Step 6b.5 — commit <sha>)`.
+   - For each skipped row, append: `(skipped by Step 6b.5 — <reason>)`.
+   - Do NOT delete rows; mark them. The audit trail is the value here — the next reader sees both the original drift and how it was resolved.
+   - Re-write the plan file with the modified table. This is a SECOND commit on the plan file. Commit message: `docs({feature_id}): retro round N — mark minor divergences resolved inline`.
+
+5. **Chat-output note.** Print a one-line confirmation: `🔧 Step 6b.5: spec-body-fixer applied {N_applied}/{N_total} minor rows (commit {sha}); skipped {N_skipped} — see plan file for details.`
+
+### `--auto` / `--batch` mode
+
+Step 6b.5 runs in `--auto` and `--batch` modes identically to interactive. The fixer's row-skipping discipline (skip when the target text isn't findable) is the mechanical-vs-judgment guardrail — it never invents an edit, so it cannot "decide on the user's behalf" the way the deferred-to-`/execute-plan` flow did silently. If the fixer skips most rows for genuine ambiguity, that's a signal the Minor table was over-classified and a follow-up retro / interactive review is warranted; the plan file's annotated rows make this visible.
+
+### Interactive mode
+
+In interactive mode (no `--auto`/`--batch`), Step 6b.5 still runs. The user can review the fixer's commit before Step 6c writes RETRO_DONE.md (one commit window between the two steps), and revert the SPEC.md commit if dissatisfied — the plan file's Minor rows record what was attempted, which preserves the audit trail even if the SPEC edit is reverted.
 
 ---
 

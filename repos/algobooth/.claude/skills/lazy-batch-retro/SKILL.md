@@ -1,6 +1,6 @@
 ---
 name: lazy-batch-retro
-description: Audit and grade a completed /lazy-batch or /lazy-batch-cloud run for skill-compliance. Read-only. Writes per-feature review artifacts under docs/features/<feat>/LAZY_BATCH_REVIEW_<date>.md. Triggers on 'audit batch', 'grade batch', 'review batch run', '/lazy-batch-retro'.
+description: Audit and grade a completed /lazy-batch or /lazy-batch-cloud run for skill-compliance. Read-only. Writes per-feature review artifacts under docs/features/<feat>/LAZY_BATCH_REVIEW_<date>.md. After writing, Step 6c runs the shared audit-table-validator component over every artifact, annotating Compliance Matrix / Findings rows with ⚠ NOT-FOUND-IN-SPEC or ⚠ CROSS-FEATURE-DUP markers so the next audit walker spots misattributions and copy-paste errors before walking them as gaps. Triggers on 'audit batch', 'grade batch', 'review batch run', '/lazy-batch-retro'.
 argument-hint: [session-id | --branch <ref> | --features <feat,feat,...>]
 plan-mode: never
 model: opus
@@ -515,6 +515,51 @@ Body sections:
 4. **Links** to each per-feature artifact.
 
 Create `docs/features/_index/` if it does not exist (`mkdir -p`).
+
+---
+
+## Step 6c: Audit-Table Validator Pass (NEW — runs BEFORE commit)
+
+**Rationale.** The audit walk surfaced two failure modes in per-feature decision tables that this skill writes: (a) `audit-misattribution` — a row flags a decision as a gap when it's actually resolved in the current SPEC (4 of 199 walked decisions had this shape); (b) `cross-feature copy-paste error` — a row appears literally identical in two different feature artifacts (17.L5 was a literal duplicate of 15.L4 in the source ledger). Both root-cause to "table written against an early snapshot, never re-validated". This step runs the shared validator over every artifact written in Steps 6 and 6b, before the Step 7 commit, so the annotations land in the same commit as the artifacts themselves.
+
+The validator is non-destructive — it appends `⚠ NOT-FOUND-IN-SPEC` and/or `⚠ CROSS-FEATURE-DUP(<other-feature-id>)` markers to flagged table rows, never removes content. The audit walker (next operator or `/code-review`) sees the markers and can re-classify the rows before walking them as gaps.
+
+!`cat ~/.claude/skills/_components/audit-table-validator.md`
+
+### Invocation
+
+For each per-feature artifact written in Step 6, build a record:
+
+```
+{
+  artifact_path: "docs/features/<area>/<feature_id>/LAZY_BATCH_REVIEW_<date>.md",
+  feature_id: <from frontmatter>,
+  spec_md_path: <resolved via `find docs/features -name SPEC.md -path "*/<feature_id>/*"` — exactly one match expected>,
+  tables: [
+    {table_section_title: "## Compliance Matrix", row_anchor_column: 0},  # Rule column
+    {table_section_title: "## Findings",          row_anchor_column: 0},  # Title column
+  ]
+}
+```
+
+For the cross-cutting overview from Step 6b (if written), include it in `artifact_paths` for cross-feature dup detection only (no SPEC validation — it has no `feature_id` in frontmatter, only a `features:` list).
+
+Run the validator algorithm per the component above. The validator writes its annotations + summary block in place; capture its return status (`clean` or `annotated:N_not_found+M_dup`) for the Step 8 final bookend.
+
+### Status-bookend integration
+
+The Step 8 final bookend gains a `**Audit-table validator:**` line:
+
+- `clean` — `**Audit-table validator:** clean — no SPEC drift / cross-feature dup detected.`
+- `annotated:N+M` — `**Audit-table validator:** flagged {N} NOT-FOUND-IN-SPEC and {M} CROSS-FEATURE-DUP rows — review annotations in artifact files before walking.`
+
+If the validator runs in `annotated` mode, the Step 7 commit message should be:
+
+```
+docs(lazy-batch-retro): grade <branch> batch run (audit-table validator flagged N+M rows)
+```
+
+So the commit history surfaces the validation outcome without requiring the audit walker to re-run the validator manually.
 
 ---
 

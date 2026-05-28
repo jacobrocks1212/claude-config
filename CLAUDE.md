@@ -99,6 +99,8 @@ At runtime, Claude Code expands this inline. The `project-skills.py` script pre-
 - `quality-gates.md` — Project-specific build/test gates
 - `subagent-launch.md` / `subagent-review.md` — Orchestrator+subagent execution model
 - `adhoc-enqueue.md` — Shared `/lazy*` ad-hoc enqueue protocol (`--adhoc`): prepends a feature to `queue.json` via `lazy-state.py --enqueue-adhoc`, seeds `ADHOC_BRIEF.md`, adds a ROADMAP row. Injected into all four `/lazy*` skills.
+- `mcp-coverage-audit.md` — Gates `__mark_complete__` in all four `/lazy*` skills (Step 4.4 in `/lazy` + `/lazy-cloud`, Step 1c.5 in `/lazy-batch` + `/lazy-batch-cloud`). Reads SPEC.md's `## Locked Decisions` / `## Resolved by Research` / numbered key-decisions surface; greps `mcp-tests/*.md` for each decision's id + keywords; uncovered decisions write `NEEDS_INPUT.md` (test-or-exempt choice) instead of flipping SPEC to Complete. Docs-only — runs identically in cloud and workstation.
+- `audit-table-validator.md` — Post-generation validator for any audit artifact that writes per-feature decision tables. Non-destructive — appends `⚠ NOT-FOUND-IN-SPEC` (SPEC keyword search miss) and `⚠ CROSS-FEATURE-DUP(<other-feature-id>)` (literal duplicate row text across artifacts) markers in place + a `## Audit-Table Validator Report` summary. Injected into `/lazy-batch-retro` Step 6c; future ad-hoc audit-ledger generators inject it the same way.
 - `tdd-protocol.md` / `tdd-test-agent.md` / `implementation-agent.md` — TDD pipeline
 - `work-log.md` — Interview prep work logging
 

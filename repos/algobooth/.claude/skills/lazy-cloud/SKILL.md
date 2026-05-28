@@ -1,6 +1,6 @@
 ---
 name: lazy-cloud
-description: Cloud-environment variant of /lazy — advances the AlgoBooth queue with the same state machine, but defers any step that cannot run in a cloud-based Linux environment (e.g. MCP testing requiring the desktop Tauri app) and documents the deferral so a later /lazy run from a workstation picks up exactly where this run stopped
+description: Cloud-environment variant of /lazy — advances the AlgoBooth queue with the same state machine, but defers any step that cannot run in a cloud-based Linux environment (e.g. MCP testing requiring the desktop Tauri app) and documents the deferral so a later /lazy run from a workstation picks up exactly where this run stopped. The `__mark_complete__` special action runs the MCP-coverage audit gate (Step 4.4) before the SPEC flip — uncovered SPEC Locked Decisions write NEEDS_INPUT.md and defer the flip; the audit is docs-only and runs identically in cloud
 argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---
@@ -153,7 +153,18 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 
 ### `__mark_complete__`
 
-`sub_skill_args` is `{spec_path}`. Both VALIDATED.md AND RETRO_DONE.md exist (e.g., workstation produced VALIDATED.md while cloud has RETRO_DONE.md). Cloud CAN complete in this case:
+`sub_skill_args` is `{spec_path}`. Both VALIDATED.md AND RETRO_DONE.md exist (e.g., workstation produced VALIDATED.md while cloud has RETRO_DONE.md). Cloud CAN complete in this case — **but the MCP-coverage audit gate (Step 4.4) runs first**. The audit is docs-only (reads SPEC.md + `mcp-tests/*.md`, no Tauri / no MCP server) so it works identically in cloud and workstation. This closes the 30%-of-features Reopened-Complete gap the audit walk surfaced.
+
+**Step 4.4: MCP-coverage audit (NEW — runs BEFORE the flip).**
+
+!`cat ~/.claude/skills/_components/mcp-coverage-audit.md`
+
+Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
+
+- `clean` — proceed to the flip steps below.
+- `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the flip steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy-cloud` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
+
+**Flip steps (only when audit returned `clean`):**
 
 1. Update `docs/features/ROADMAP.md` — wrap the feature row in `~~ ... ~~` and append `**COMPLETE**`.
 2. Delete sentinels: `VALIDATED.md`, `RETRO_DONE.md`, `DEFERRED_NON_CLOUD.md` if present.

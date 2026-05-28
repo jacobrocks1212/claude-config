@@ -1,6 +1,6 @@
 ---
 name: lazy
-description: Stateless dispatcher — infers project state from filesystem via lazy-state.py, invokes exactly ONE sub-skill per invocation to progress the current feature
+description: Stateless dispatcher — infers project state from filesystem via lazy-state.py, invokes exactly ONE sub-skill per invocation to progress the current feature. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches interactive /spec to shape the baseline via AskUserQuestion) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload — single-turn, no conversation). The `__mark_complete__` special action runs an MCP-coverage audit (Step 4.4) before the SPEC flip — uncovered SPEC Locked Decisions write NEEDS_INPUT.md and defer the flip until the operator authors coverage or grants a test-exempt
 argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---
@@ -147,7 +147,18 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 
 ### `__mark_complete__`
 
-`sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize per /lazy's original Step 10:
+`sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize per /lazy's original Step 10 — **but first run the MCP-coverage audit gate** (Step 4.4 below) to verify every SPEC Locked Decision is represented in `mcp-tests/*.md`. The audit closes the 30%-of-features Reopened-Complete gap the audit walk surfaced: features whose VALIDATED.md only covered the original AQ-* assertions while new decisions (added later via research / inline edits) never got carved into MCP scenarios.
+
+**Step 4.4: MCP-coverage audit (NEW — runs BEFORE the flip).**
+
+!`cat ~/.claude/skills/_components/mcp-coverage-audit.md`
+
+Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
+
+- `clean` — proceed to the flip steps below.
+- `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the flip steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
+
+**Flip steps (only when audit returned `clean`):**
 
 1. Update `docs/features/ROADMAP.md` — find the feature row, wrap name+description in `~~ ... ~~`, append `**COMPLETE**`.
 2. Delete sentinels: `VALIDATED.md`, `RETRO_DONE.md`, `DEFERRED_NON_CLOUD.md` if present. Keep `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`, `plans/`.
@@ -243,5 +254,12 @@ sub_skill = real skill?  → Skill({skill, args}) → work-log → STOP
 ```
 
 The script mirrors the state machine documented in earlier revisions of this file (Step 3 blocker, Step 4 SPEC, Step 4.5 stub, Step 4.6 realign, Step 5 research gate, Step 6 phases, Step 7 plan, **Step 8 retro, Step 9 MCP**, Step 10 mark-complete). When the state machine needs to change, update `lazy-state.py` — and keep this skill's wrapper logic + the paired `/lazy-cloud` skill (per CLAUDE.md coupling rule) in sync.
+
+**Step 4.5 vs Step 5 — stub specs vs structured-research-pending specs.** Two pre-research states the script distinguishes via `is_stub_spec(spec_text, queue_entry)`:
+
+- **Stub spec** — SPEC carries the canonical `> Draft (pre-Gemini)` trailer (per AlgoBooth `docs/CLAUDE.md`) OR the queue.json entry has `"stub": true` OR one of the legacy markers (`**Status:** Draft (research stub)`, `> Stub generated from advanced feature research`). The baseline doesn't exist yet, so Step 4.5 dispatches `/spec` interactively to shape it. The dispatched `/spec` subagent can call `AskUserQuestion` freely — that's the legitimate user-input channel for design conversation, not a violation of any batch-mode constraint (the constraint scopes the orchestrator itself, not dispatched subagents).
+- **Structured but research-pending** — no stub markers, but `RESEARCH.md` / `RESEARCH_SUMMARY.md` is missing. The baseline is locked, only the deep-research input hasn't landed. Step 5 returns `needs-research` and the wrapper halts (or, under `/lazy-batch --allow-research-skip`, batches the backlog). The resume signal is a single-turn user action (upload research), not a conversation — no interactive `/spec` dispatch.
+
+The disambiguation source is the SPEC marker substring AND the queue.json `stub` field; both feed `is_stub_spec()` so the two detection points cannot drift.
 
 **Step 8 / Step 9 ordering (current):** `/retro` runs BEFORE `/mcp-test`. Rationale: cloud halts at the MCP-test deferral point, so under the old (MCP → retro) order, cloud runs never reached retro and workstation runs lacked an implementation-time retrospective gate. `/retro` is a docs/analysis pass — no Tauri, no MCP — so it runs identically in cloud and workstation. Step 8 is gated on `PHASES.md` all-phases-Complete AND no open BLOCKED/NEEDS_INPUT, and it runs **once per round** (additional rounds are triggered only by `/retro` itself writing a follow-up plan; the lazy state machine does not auto-loop retro). Step 9 (MCP test) is gated on `RETRO_DONE.md` presence — `lazy-state.py` will never dispatch `/mcp-test` until retro has concluded. Cloud Step 9 writes `DEFERRED_NON_CLOUD.md`; workstation Step 9 runs `/mcp-test`.
