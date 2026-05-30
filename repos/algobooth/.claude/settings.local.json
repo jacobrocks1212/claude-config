@@ -1,4 +1,7 @@
 {
+  "env": {
+    "BASH_ENV": "/home/jacob/.claude-bash-env.sh"
+  },
   "permissions": {
     "allow": [
       "Bash(git --version:*)",
