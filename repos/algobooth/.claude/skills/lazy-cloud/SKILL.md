@@ -161,14 +161,23 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 
 Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
 
-- `clean` — proceed to the flip steps below.
+- `clean` — proceed to the completion-integrity gate (Step 4.5 below).
 - `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the flip steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy-cloud` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
 
-**Flip steps (only when audit returned `clean`):**
+**Step 4.5: Completion-integrity gate (NEW — runs after the coverage audit returns `clean`, before the flip).**
+
+!`cat ~/.claude/skills/_components/completion-integrity-gate.md`
+
+Run the gate per the component above with `{spec_path}`, `{feature_id}`, and `{cloud}=true`. In cloud, `DEFERRED_NON_CLOUD.md` satisfies the validation-sentinel check ONLY when `VALIDATED.md` is also present (cloud completes a feature whose MCP pass was produced on a workstation); a bare deferral with no `VALIDATED.md` should never reach mark-complete (Step 2's cloud-saturated skip catches it). If the gate returns:
+
+- `gated` — `{spec_path}/COMPLETED.md` has been written (validation evidence folded in). Proceed to the flip steps below.
+- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the flip steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy-cloud` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), call work-log, STOP.
+
+**Flip steps (only when BOTH gates passed — coverage `clean` AND integrity `gated`):**
 
 1. Update `docs/features/ROADMAP.md` — wrap the feature row in `~~ ... ~~` and append `**COMPLETE**`.
-2. Delete sentinels: `VALIDATED.md`, `RETRO_DONE.md`, `DEFERRED_NON_CLOUD.md` if present.
-3. Update `{spec_path}/SPEC.md` — change `**Status:**` to `Complete`.
+2. Delete sentinels: `VALIDATED.md`, `RETRO_DONE.md`, `DEFERRED_NON_CLOUD.md` if present (evidence folded into `COMPLETED.md`). Keep `COMPLETED.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`, `plans/`.
+3. Update `{spec_path}/SPEC.md` — change `**Status:**` to `Complete` (and `PHASES.md` top-level `**Status:**` to `Complete`).
 4. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
 5. PushNotification: `"{feature_name} COMPLETE. Run /lazy-cloud to continue."`
 6. Print the after-status bookend, call work-log, STOP.

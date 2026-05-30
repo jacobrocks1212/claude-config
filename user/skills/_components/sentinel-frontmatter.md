@@ -92,6 +92,46 @@ mcp_validation_status: complete  # one of: complete | deferred-to-workstation
 
 Body keeps the per-round summary so humans can scan retro history.
 
+#### `COMPLETED.md` — `kind: completed`  *(new — completion receipt)*
+
+The **durable proof** that a feature reached `Complete` THROUGH the pipeline's
+completion-integrity gate (`__mark_complete__`), rather than via an out-of-band
+SPEC/ROADMAP edit. `lazy-state.py` Step 2 treats a feature as genuinely done
+ONLY when it claims completion (SPEC `**Status:** Complete` or the ROADMAP
+strikethrough+COMPLETE fallback) **AND** this receipt is present. A `Complete`
+claim WITHOUT a receipt is a `completion-unverified` hard-halt (it was flipped
+outside the gate). `Superseded` features are exempt — a retired feature was
+never validated and needs no receipt.
+
+Unlike `VALIDATED.md` / `RETRO_DONE.md` (which `__mark_complete__` clears),
+`COMPLETED.md` is **permanent** — it is the audit trail. The completion gate
+FOLDS the validation evidence into the receipt body before deleting those
+sentinels, so nothing is lost.
+
+Required:
+
+```yaml
+---
+kind: completed
+feature_id: <id>
+date: <YYYY-MM-DD>
+provenance: gated  # one of: gated | backfilled-unverified
+---
+```
+
+Optional (written by the gate at flip time; absent on backfill):
+- `completed_commit: <sha>` — the commit that performed the Complete flip.
+- `validated_via: <"mcp" | "skip-mcp-test" | "deferred-non-cloud">` — how the MCP gate was satisfied.
+- `mcp_pass_count: <int>` / `mcp_total_count: <int>` — folded from `MCP_TEST_RESULTS.md` / `VALIDATED.md`.
+
+`provenance: gated` is written by the completion-integrity gate after all
+preconditions pass (phase coherence + validation sentinel present + MCP-coverage
+audit clean). `provenance: backfilled-unverified` is written by
+`lazy-state.py --backfill-receipts` to grandfather features completed before the
+gate existed — it truthfully marks them as never gate-verified. Body keeps a
+human-readable completion summary (folded validation evidence, or the
+backfill grandfather note).
+
 #### `SKIP_MCP_TEST.md` — `kind: skip-mcp-test`
 
 Required:
@@ -239,8 +279,9 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 |------|-------------|--------------|
 | BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or via /add-phase / /lazy skip) |
 | DEFERRED_NON_CLOUD.md | /lazy-cloud cannot run a step in cloud | /lazy Step 10 (feature completion) |
-| VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 |
-| RETRO_DONE.md | /lazy after retro plan executes | /lazy Step 10 |
+| VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
+| RETRO_DONE.md | /lazy after retro plan executes | /lazy Step 10 (folded into COMPLETED.md) |
+| COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
 | SKIP_MCP_TEST.md | /lazy assessment: not testable | Persists permanently |
 | MCP_TEST_RESULTS.md | /lazy after mcp-test runs | Persists permanently (audit) |
 | NEEDS_RESEARCH.md | /lazy-batch when RESEARCH.md absent | Human runs research, drops RESEARCH.md, deletes this file |

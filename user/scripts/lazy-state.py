@@ -26,7 +26,8 @@ Output schema (stdout JSON):
   "terminal_reason":   null | "all-features-complete" | "cloud-queue-exhausted"
                             | "queue-blocked-on-research"
                             | "blocked" | "needs-research" | "needs-input"
-                            | "needs-spec-input" | "queue-missing",
+                            | "needs-spec-input" | "queue-missing"
+                            | "completion-unverified",
   "notify_message":    "<string>"      | null,
   "diagnostics":       []                                  # always present; non-empty
                                                            # surfaces backlog warnings
@@ -288,39 +289,31 @@ def enqueue_adhoc(
     }
 
 
-def is_workstation_complete(
-    roadmap_text: str,
-    feature_name: str,
-    spec_path: Path | None = None,
-) -> bool:
-    """Decide whether a feature is fully done.
+def spec_status(spec_path: Path | None) -> str | None:
+    """Return the feature SPEC.md `**Status:**` value (first occurrence), or None.
 
-    Primary signal: the feature's SPEC.md `**Status:**` line. Authoritative
-    because AlgoBooth's docs-consistency lint enforces SPEC.status ↔
-    PHASES.status agreement.
-
-    Fallback signal: a ROADMAP.md row with both `~~` strikethrough and the
-    `COMPLETE` token mentioning the feature name. Retained for safety while
-    the SPEC.md status backfill is rolling out and for repos that don't
-    follow the SPEC.md status convention.
+    The first `**Status:**` line wins; later occurrences are usually inside
+    Implementation Notes blocks describing prior state.
     """
-    # Primary: SPEC.md status
-    if spec_path is not None:
-        spec_md = spec_path / "SPEC.md"
-        if spec_md.exists():
-            try:
-                for line in spec_md.read_text(encoding="utf-8").splitlines():
-                    m = re.match(r"^\*\*Status:\*\*\s*(.+?)\s*$", line)
-                    if m:
-                        value = m.group(1).strip()
-                        if value in ("Complete", "Superseded"):
-                            return True
-                        # First Status: line wins; later occurrences are usually
-                        # inside Implementation Notes blocks describing prior state.
-                        break
-            except OSError:
-                pass
-    # Fallback: ROADMAP grep
+    if spec_path is None:
+        return None
+    spec_md = spec_path / "SPEC.md"
+    if not spec_md.exists():
+        return None
+    try:
+        for line in spec_md.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^\*\*Status:\*\*\s*(.+?)\s*$", line)
+            if m:
+                return m.group(1).strip()
+    except OSError:
+        pass
+    return None
+
+
+def roadmap_marks_complete(roadmap_text: str, feature_name: str) -> bool:
+    """Fallback completion signal: a ROADMAP.md row mentioning the feature with
+    both `~~` strikethrough AND the `COMPLETE` token. Retained for repos that
+    don't follow the SPEC.md status convention."""
     if not roadmap_text:
         return False
     needle = re.escape(feature_name)
@@ -328,6 +321,136 @@ def is_workstation_complete(
         if re.search(needle, line) and "~~" in line and "COMPLETE" in line:
             return True
     return False
+
+
+def has_completion_receipt(spec_path: Path | None) -> bool:
+    """True iff a durable `COMPLETED.md` receipt exists in the feature dir.
+
+    The receipt is written ONLY by `__mark_complete__`'s completion-integrity
+    gate (or backfilled with `provenance: backfilled-unverified`). Its presence
+    is the structural proof that a feature reached `Complete` THROUGH the
+    pipeline gate rather than via an out-of-band SPEC/ROADMAP edit. See
+    _components/completion-integrity-gate.md.
+    """
+    return spec_path is not None and (spec_path / "COMPLETED.md").exists()
+
+
+def completion_claimed(
+    roadmap_text: str,
+    feature_name: str,
+    spec_path: Path | None = None,
+) -> bool:
+    """True iff the feature CLAIMS completion — SPEC.md `**Status:**` is
+    `Complete`/`Superseded`, OR the ROADMAP strikethrough+COMPLETE fallback
+    matches.
+
+    A *claim* is not *proof*: a cycle subagent (or a hand edit) can flip
+    `**Status:** Complete` outside the validation gate. `has_completion_receipt()`
+    is the companion check that distinguishes a gated completion from a claimed
+    one. Step 2 uses both: claimed + receipt → genuinely done (skip);
+    claimed (Complete) without receipt → `completion-unverified` hard-halt.
+    `Superseded` is exempt from the receipt requirement (a retired feature was
+    never validated and never should be).
+    """
+    status = spec_status(spec_path)
+    if status in ("Complete", "Superseded"):
+        return True
+    return roadmap_marks_complete(roadmap_text, feature_name)
+
+
+def write_completed_receipt(
+    path: Path,
+    feature_id: str,
+    date: str,
+    *,
+    provenance: str,
+    completed_commit: str | None = None,
+    validated_via: str | None = None,
+    mcp_pass_count: int | None = None,
+    mcp_total_count: int | None = None,
+    body_note: str = "",
+) -> None:
+    """Write a COMPLETED.md receipt (kind: completed) per sentinel-frontmatter.md.
+
+    `provenance: gated` is written by the completion-integrity gate at flip time;
+    `provenance: backfilled-unverified` is written by --backfill-receipts for
+    features grandfathered in during the receipt-gating rollout.
+    """
+    lines = [
+        "---",
+        "kind: completed",
+        f"feature_id: {feature_id}",
+        f"date: {date}",
+        f"provenance: {provenance}",
+    ]
+    if completed_commit:
+        lines.append(f"completed_commit: {completed_commit}")
+    if validated_via:
+        lines.append(f"validated_via: {validated_via}")
+    if mcp_pass_count is not None and mcp_total_count is not None:
+        lines.append(f"mcp_pass_count: {mcp_pass_count}")
+        lines.append(f"mcp_total_count: {mcp_total_count}")
+    lines.append("---")
+    lines.append("")
+    lines.append("# Completion Receipt")
+    lines.append("")
+    if body_note:
+        lines.append(body_note)
+        lines.append("")
+    _atomic_write(path, "\n".join(lines))
+
+
+def backfill_receipts(repo_root: Path) -> dict[str, Any]:
+    """One-shot migration: write a COMPLETED.md (provenance:
+    backfilled-unverified) for every queue feature that currently CLAIMS
+    completion but lacks a receipt.
+
+    Grandfathers in features completed before receipt-gating shipped so they
+    don't trip the `completion-unverified` hard-halt, while truthfully labeling
+    them as never-gate-verified. Superseded features and features with a missing
+    spec_dir are skipped.
+    """
+    repo_root = repo_root.resolve()
+    queue = load_queue(repo_root)
+    roadmap_path = repo_root / "docs" / "features" / "ROADMAP.md"
+    roadmap_text = roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else ""
+    today = datetime.now().strftime("%Y-%m-%d")
+    written: list[str] = []
+    skipped_superseded: list[str] = []
+    for entry in queue:
+        name = entry.get("name")
+        feature_id = entry.get("id")
+        spec_subdir = entry.get("spec_dir")
+        if not name or not feature_id or not spec_subdir:
+            continue
+        spec_path = (repo_root / "docs" / "features" / spec_subdir).resolve()
+        if not spec_path.exists():
+            continue
+        if spec_status(spec_path) == "Superseded":
+            skipped_superseded.append(feature_id)
+            continue
+        if not completion_claimed(roadmap_text, name, spec_path):
+            continue
+        receipt = spec_path / "COMPLETED.md"
+        if receipt.exists():
+            continue
+        write_completed_receipt(
+            receipt, feature_id, today,
+            provenance="backfilled-unverified",
+            body_note=(
+                "Grandfathered during the receipt-gating rollout. This feature "
+                "was marked Complete BEFORE the completion-integrity gate existed, "
+                "so its pipeline validation (MCP / retro) was NOT verified by the "
+                "gate. Treat as completed-but-unverified; re-validate if its "
+                "behavior is load-bearing."
+            ),
+        )
+        written.append(feature_id)
+    return {
+        "backfilled": written,
+        "count": len(written),
+        "skipped_superseded": skipped_superseded,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -875,15 +998,63 @@ def compute_state(
     current = None
     cloud_saturated_skipped: list[str] = []
     research_pending_skipped: list[str] = []
+    seen_ids: set[str] = set()
     for entry in queue:
         name = entry.get("name")
         feature_id = entry.get("id")
         spec_subdir = entry.get("spec_dir")
         if not name or not feature_id or not spec_subdir:
             continue
+        # FM3 anti-fabrication guard: a queue entry whose spec_dir does NOT
+        # resolve to an on-disk directory is a dangling reference (typo, stale
+        # entry, or — the failure this guards — a hallucinated feature). Skip it
+        # with a loud diagnostic rather than returning it for dispatch; a cycle
+        # against a non-existent feature is exactly what lets a subagent
+        # FABRICATE the SPEC/RESEARCH/queue entries from a bare slug. The ONLY
+        # sanctioned dir-creating paths are --enqueue-adhoc (seeds the dir
+        # before the queue entry) and /spec on an already-seeded dir.
         spec_path = (repo_root / "docs" / "features" / spec_subdir).resolve()
-        if is_workstation_complete(roadmap_text, name, spec_path):
+        if not spec_path.exists():
+            _diag(
+                f"dangling queue entry: '{feature_id}' (spec_dir '{spec_subdir}') "
+                "does not resolve to an on-disk directory under docs/features/ — "
+                "skipped. Create the spec dir (via /spec or --enqueue-adhoc) or "
+                "remove the stale queue entry. A cycle is NEVER dispatched against "
+                "a feature that does not exist on disk."
+            )
             continue
+        # Duplicate-id guard: first entry wins; a second entry with the same id
+        # is silently orphaned otherwise. Surface it.
+        if feature_id in seen_ids:
+            _diag(f"duplicate queue id '{feature_id}' — second entry ignored.")
+            continue
+        seen_ids.add(feature_id)
+        # FM1 receipt-gated completion. A feature is genuinely DONE only when it
+        # CLAIMS completion AND carries a durable COMPLETED.md receipt proving it
+        # passed through __mark_complete__'s integrity gate. Superseded is exempt
+        # (a retired feature was never validated).
+        if completion_claimed(roadmap_text, name, spec_path):
+            if spec_status(spec_path) == "Superseded" or has_completion_receipt(spec_path):
+                continue
+            # Claimed Complete WITHOUT a receipt → the SPEC/ROADMAP was flipped
+            # outside the validation gate (a cycle subagent or hand edit). This
+            # is the exact failure that let a feature skip /retro + /mcp-test.
+            # Hard-halt and surface for reconciliation rather than silently
+            # treating it as done.
+            return _state(
+                feature_id=feature_id,
+                feature_name=name,
+                spec_path=str(spec_path),
+                current_step="Step 2: completion claimed without receipt",
+                terminal_reason="completion-unverified",
+                notify_message=(
+                    f"{name}: SPEC/ROADMAP marks this Complete but no COMPLETED.md "
+                    "receipt exists — it was flipped OUTSIDE the validation gate. "
+                    "Reconcile: reopen to In-progress for real validation, or run "
+                    "lazy-state.py --backfill-receipts to grandfather it as "
+                    "completed-but-unverified."
+                ),
+            )
         if cloud:
             # Cloud-saturated skip
             retro_done = (spec_path / "RETRO_DONE.md").exists()
@@ -1701,6 +1872,8 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         with (w / "DEFERRED_NON_CLOUD.md").open("a", encoding="utf-8") as fh:
             fh.write("\nDeferred WUs:\n- WU5 workstation gate\n")
     elif name == "all-complete":
+        # ROADMAP strikethrough+COMPLETE fallback AND a COMPLETED.md receipt →
+        # genuinely done, queue exhausts to all-features-complete.
         (features / "queue.json").write_text(json.dumps({
             "queue": [
                 {"id": "feat-f", "name": "Feature F", "spec_dir": "feat-f", "tier": 1}
@@ -1709,7 +1882,12 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (features / "ROADMAP.md").write_text(
             "# Roadmap\n\n- ~~Feature F — done~~ **COMPLETE**\n"
         )
-        (features / "feat-f").mkdir()
+        f = features / "feat-f"
+        f.mkdir()
+        _write_yaml_sentinel(
+            f / "COMPLETED.md", "completed",
+            feature_id="feat-f", date="2026-05-19", provenance="gated",
+        )
     elif name == "needs-research":
         (features / "queue.json").write_text(json.dumps({
             "queue": [
@@ -1757,8 +1935,8 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         (sdir / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
     elif name == "spec-status-complete":
-        # SPEC.md Status: Complete should mark the feature done even when
-        # the ROADMAP grep wouldn't (no strikethrough/COMPLETE token).
+        # SPEC.md Status: Complete WITH a COMPLETED.md receipt → genuinely done
+        # even when the ROADMAP grep wouldn't match (no strikethrough/COMPLETE).
         (features / "queue.json").write_text(json.dumps({
             "queue": [
                 {"id": "feat-i", "name": "Feature I", "spec_dir": "feat-i", "tier": 1}
@@ -1768,6 +1946,44 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         idir = features / "feat-i"
         idir.mkdir()
         (idir / "SPEC.md").write_text("# Spec\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            idir / "COMPLETED.md", "completed",
+            feature_id="feat-i", date="2026-05-19", provenance="gated",
+        )
+    elif name == "complete-no-receipt":
+        # FM1: SPEC.md Status: Complete but NO COMPLETED.md receipt → flipped
+        # outside the gate → completion-unverified hard-halt.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-nr", "name": "Feature NR", "spec_dir": "feat-nr", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        nr = features / "feat-nr"
+        nr.mkdir()
+        (nr / "SPEC.md").write_text("# Spec\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
+    elif name == "superseded-no-receipt":
+        # Superseded is exempt from the receipt requirement (retired, never
+        # validated) → skipped, queue exhausts to all-features-complete.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sup", "name": "Feature SUP", "spec_dir": "feat-sup", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sup = features / "feat-sup"
+        sup.mkdir()
+        (sup / "SPEC.md").write_text("# Spec\n\n**Status:** Superseded\n\n**Depends on:** (none)\n")
+    elif name == "dangling-queue-entry":
+        # FM3: queue entry whose spec_dir does not exist on disk → skipped with
+        # a diagnostic; queue exhausts to all-features-complete (not dispatched).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "ghost", "name": "Ghost Feature", "spec_dir": "ghost", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        # NOTE: deliberately do NOT create features/ghost/
     elif name == "plan-frontmatter-filter":
         # Three plans in plans/. One Complete (filtered), one with phases: [3],
         # one with phases: [4]. Expectation: lowest phase among non-Complete
@@ -2068,6 +2284,19 @@ def run_smoke_tests() -> int:
             ("spec-status-complete", False, False, {
                 "terminal_reason": "all-features-complete",
             }),
+            # FM1: Complete claim without a COMPLETED.md receipt hard-halts.
+            ("complete-no-receipt", False, False, {
+                "terminal_reason": "completion-unverified",
+                "feature_id": "feat-nr",
+            }),
+            # Superseded is exempt from the receipt requirement → skipped.
+            ("superseded-no-receipt", False, False, {
+                "terminal_reason": "all-features-complete",
+            }),
+            # FM3: dangling spec_dir is skipped (not dispatched).
+            ("dangling-queue-entry", False, False, {
+                "terminal_reason": "all-features-complete",
+            }),
             ("plan-frontmatter-filter", False, False, {
                 "sub_skill": "execute-plan",
                 "feature_id": "feat-j",
@@ -2264,6 +2493,11 @@ def main() -> int:
                         help="Project root (default: $PWD)")
     parser.add_argument("--test", action="store_true",
                         help="Run fixture smoke tests instead of computing state")
+    parser.add_argument("--backfill-receipts", action="store_true",
+                        help=("One-shot migration: write COMPLETED.md "
+                              "(provenance: backfilled-unverified) for every "
+                              "queue feature that claims completion but lacks a "
+                              "receipt. Grandfathers pre-gating completions."))
     # Ad-hoc enqueue mode: insert a feature at the top of the queue and exit.
     parser.add_argument("--enqueue-adhoc", action="store_true",
                         help=("Prepend an ad-hoc feature to docs/features/queue.json "
@@ -2289,6 +2523,11 @@ def main() -> int:
             args.spec_dir,
             args.tier,
         )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.backfill_receipts:
+        result = backfill_receipts(Path(args.repo_root))
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 

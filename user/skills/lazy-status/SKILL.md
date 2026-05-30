@@ -80,6 +80,7 @@ Terminal-reason mapping:
 | `needs-research` | "Awaiting Gemini research (RESEARCH_PROMPT.md exists, RESEARCH.md absent)" |
 | `needs-input` | "Awaiting human decision — see {spec_path}/NEEDS_INPUT.md" |
 | `needs-spec-input` | "No SPEC/research yet — run /spec interactively" |
+| `completion-unverified` | "⚠ {feature} marks Complete with no COMPLETED.md receipt — flipped outside the gate. Reconcile: reopen to In-progress, or `lazy-state.py --backfill-receipts` to grandfather." |
 | `all-features-complete` | "ALL FEATURES COMPLETE — nothing left in queue" |
 | `cloud-queue-exhausted` | "Cloud queue exhausted — run /lazy on workstation for MCP testing" |
 | `queue-missing` | "queue.json not found" |
