@@ -1,6 +1,6 @@
 {
   "env": {
-    "BASH_ENV": "/home/jacob/.claude-bash-env.sh"
+    "BASH_ENV": "/home/jacob/repos/claude-config/user/scripts/claude-bash-env.sh"
   },
   "permissions": {
     "allow": [
