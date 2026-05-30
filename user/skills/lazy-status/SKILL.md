@@ -83,6 +83,7 @@ Terminal-reason mapping:
 | `completion-unverified` | "⚠ {feature} marks Complete with no COMPLETED.md receipt — flipped outside the gate. Reconcile: reopen to In-progress, or `lazy-state.py --backfill-receipts` to grandfather." |
 | `all-features-complete` | "ALL FEATURES COMPLETE — nothing left in queue" |
 | `cloud-queue-exhausted` | "Cloud queue exhausted — run /lazy on workstation for MCP testing" |
+| `device-queue-exhausted` | "Device queue exhausted — remaining feature(s) have real-device-only assertions deferred via DEFERRED_REQUIRES_DEVICE.md. Re-run /lazy on a real-device host (ALGOBOOTH_REAL_AUDIO_DEVICE=1 or native hardware) to certify them." |
 | `queue-missing` | "queue.json not found" |
 
 ---
@@ -99,7 +100,7 @@ Output this exact format (fill in values, replacing missing fields with `—`):
 **Queue:** {completed}/{total queue length} features complete ({remaining} remaining)
 **Last commit:** {short hash} "{commit message}"
 **Blockers:** {None | "<BLOCKED phase>: <recovery_suggestion>"}
-**MCP Tests:** {count} scenarios linked | Not yet created | Skipped (see SKIP_MCP_TEST.md) | Deferred (cloud)
+**MCP Tests:** {count} scenarios linked | Not yet created | Skipped (see SKIP_MCP_TEST.md) | Deferred (cloud) | Deferred (real-device — see DEFERRED_REQUIRES_DEVICE.md)
 **Next /lazy action:** {mapped action from Step 3}
 ```
 
@@ -109,6 +110,7 @@ Notes:
 - When `terminal_reason` is `blocked`, the **Blockers** line takes the BLOCKED.md `phase` + `recovery_suggestion` from Step 2.4.
 - The "Phase {current}/{total}" annotation is best-effort; if PHASES.md doesn't exist yet, write `"—/— ({state})"`.
 - The "Skipped (cloud)" / "Deferred (cloud)" labels for MCP Tests apply when `$ARGUMENTS` contains `--cloud` AND the spec dir has SKIP_MCP_TEST.md / DEFERRED_NON_CLOUD.md respectively.
+- The "Deferred (real-device)" label applies when the spec dir has `DEFERRED_REQUIRES_DEVICE.md` — real-device-only assertions deferred on the device axis (independent of `--cloud`).
 
 **Do NOT execute any skills or modify any files. Report only.**
 

@@ -78,6 +78,17 @@ python3 ~/.claude/scripts/lazy-state.py
 
 Capture stdout (a single JSON object). If the script exits non-zero, surface the error to the user and STOP — do not try to parse malformed state.
 
+**Real-device capability (audio MCP deferral).** The script's `--real-device`
+defaults to `auto`, which reads `$ALGOBOOTH_REAL_AUDIO_DEVICE` (absent → no
+device). On a no-real-device host (WSL2/CI, where the audio backend runs the
+HeadlessPumpDriver) the state machine DEFERS real-device-only MCP assertions
+rather than skipping them; on a real-device host (set
+`ALGOBOOTH_REAL_AUDIO_DEVICE=1`, or native hardware) it RE-OPENS any deferred
+assertions for certification. You do not normally pass `--real-device` by hand —
+the env var is the host's standing declaration, and `/mcp-test` observes the live
+backend via `get_audio_mode` (`mode: cpal` & not `forced` → real device) when it
+runs. See `DEFERRED_REQUIRES_DEVICE.md` in the sentinel schema.
+
 Parse the JSON. You now have:
 - `feature_id`, `feature_name`, `spec_path` — current feature context (null if no current feature)
 - `current_step` — human-readable description of where we are in the state machine
@@ -107,6 +118,7 @@ Special handling per terminal reason:
 | `needs-spec-input` | Tell the user to run `/spec` directly — no inputs to dispatch on |
 | `all-features-complete` | Roadmap done; nothing else to do |
 | `cloud-queue-exhausted` | Workstation-only path — does not occur for plain `/lazy` |
+| `device-queue-exhausted` | Only on a NO-real-device host: the remaining feature(s) carry real-device-only assertions deferred via `DEFERRED_REQUIRES_DEVICE.md`. Tell the user to re-run `/lazy` on a real-device host (set `ALGOBOOTH_REAL_AUDIO_DEVICE=1` or run on native hardware) to certify them. |
 | `queue-missing` | queue.json missing — surface the expected path |
 
 ---
@@ -241,7 +253,8 @@ Call with:
 | `BLOCKED.md` | /execute-plan or /lazy | Blocker details | Persists until Jacob resolves |
 | `MCP_TEST_RESULTS.md` | /lazy (after mcp-test) | Test results with pass/fail details | Persists permanently (audit trail) |
 | `VALIDATED.md` | /lazy (after 100% pass) | Validation gate | Deleted on feature completion |
-| `SKIP_MCP_TEST.md` | /lazy (assessment) | Documents why MCP testing was skipped | Persists permanently |
+| `SKIP_MCP_TEST.md` | /lazy (assessment) | Documents why MCP testing was skipped (permanent waiver) | Persists permanently |
+| `DEFERRED_REQUIRES_DEVICE.md` | /mcp-test (no-device host) | Defers real-device-only assertions to a real-device host (NOT a skip) | Deleted by a real-device run after it certifies the deferred scenarios |
 | `RETRO_DONE.md` | /lazy (after retro execution) | Retro completion gate | Deleted on feature completion |
 | `NEEDS_RESEARCH.md` | /lazy-batch | Halt: research prompt exists, awaiting human Gemini run | Deleted when RESEARCH.md is dropped in place |
 | `NEEDS_INPUT.md` | any `--batch` skill | Halt: ambiguous decision encountered | Deleted when the human resolves the decision |
@@ -272,3 +285,5 @@ The script mirrors the state machine documented in earlier revisions of this fil
 The disambiguation source is the SPEC marker substring AND the queue.json `stub` field; both feed `is_stub_spec()` so the two detection points cannot drift.
 
 **Step 8 / Step 9 ordering (current):** `/retro` runs BEFORE `/mcp-test`. Rationale: cloud halts at the MCP-test deferral point, so under the old (MCP → retro) order, cloud runs never reached retro and workstation runs lacked an implementation-time retrospective gate. `/retro` is a docs/analysis pass — no Tauri, no MCP — so it runs identically in cloud and workstation. Step 8 is gated on `PHASES.md` all-phases-Complete AND no open BLOCKED/NEEDS_INPUT, and it runs **once per round** (additional rounds are triggered only by `/retro` itself writing a follow-up plan; the lazy state machine does not auto-loop retro). Step 9 (MCP test) is gated on `RETRO_DONE.md` presence — `lazy-state.py` will never dispatch `/mcp-test` until retro has concluded. Cloud Step 9 writes `DEFERRED_NON_CLOUD.md`; workstation Step 9 runs `/mcp-test`.
+
+**Device axis (orthogonal to cloud).** A third environment dimension governs audio MCP assertions that can only be CERTIFIED with a real output device. On a no-real-device host, `/mcp-test` writes `DEFERRED_REQUIRES_DEVICE.md` (scoped to specific scenario IDs) instead of a permanent `SKIP_MCP_TEST.md`; `lazy-state.py` then treats `RETRO_DONE.md` + that sentinel + no `VALIDATED.md` as **device-saturated** (Step 2 skips it, terminal `device-queue-exhausted`) — the feature does NOT complete here (no receipt is written). On a real-device host, Step 9 RE-OPENS the feature: it dispatches `/mcp-test` scoped to the deferred scenario IDs, which certifies them, deletes the sentinel, and writes `VALIDATED.md` — only then does the feature proceed to `__mark_complete__`. This is the inverse the framework previously lacked, and it mirrors the cloud→workstation deferral on the device axis. The decision was: device-deferral BLOCKS completion (stays In-progress) rather than completing-with-a-distinct-receipt, so `Complete` always means fully validated.

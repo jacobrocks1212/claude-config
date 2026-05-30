@@ -421,25 +421,35 @@ On WSL2 there is no ALSA output device, so the engine runs the `HeadlessPumpDriv
 **Decision rule when an AQ assertion fails on a non-deterministic metric:**
 1. Run the control (same metric, zero feature activity). If the artifact persists → environmental.
 2. Confirm `mode: headless` via `get_audio_mode`.
-3. If both hold, the assertion is **WSL2-untestable, not un-testable** — it will pass on a real-device host (Windows-native cpal callback, or any host with a real output device where headless is not forced). Record it via the scoped-skip sentinel pattern below; do NOT mark it failed, and do NOT fake a pass.
+3. If both hold, the assertion is **WSL2-untestable, not un-testable** — it will pass on a real-device host (Windows-native cpal callback, or any host with a real output device where headless is not forced). **DEFER it** via `DEFERRED_REQUIRES_DEVICE.md` (the device-axis deferral below) so a real-device run re-opens and certifies it; do NOT mark it failed, do NOT fake a pass, and do NOT write a *permanent* `SKIP_MCP_TEST.md` for it (a permanent skip means a later real-device run never re-validates — exactly the gap this deferral closes).
 
 ### Sentinel handling for environment-scoped partial validation (`--batch` / lazy-pipeline runs)
 
-When invoked under the lazy state machine (Step 9), `/mcp-test` writes a terminal sentinel into the feature dir (`docs/features/.../<feature>/`). Pick the right one — the distinction is load-bearing because `lazy-state.py` only advances on a terminal `VALIDATED.md` (or a justified skip):
+When invoked under the lazy state machine (Step 9), `/mcp-test` writes a terminal sentinel into the feature dir (`docs/features/.../<feature>/`). Pick the right one — the distinction is load-bearing because `lazy-state.py` advances the QUEUE on a terminal `VALIDATED.md`, a permanent `SKIP_MCP_TEST.md`, or a device-axis `DEFERRED_REQUIRES_DEVICE.md` (the last DEFERS rather than completes — the feature stays In-progress on a no-device host and is re-opened on a real-device host):
 
 | Outcome | Sentinel | When |
 |---------|----------|------|
 | Every scenario passed | `VALIDATED.md` (`kind: validated`, `result: all-passing`) | Full pass — nothing environment-blocked |
 | Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
-| Residual failures are purely environmental | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`) **scoped to the specific scenario IDs** | Pairs with the partial to let the feature complete on THIS host |
+| Residual failures are real-device-only but **certifiable on a real device** | `DEFERRED_REQUIRES_DEVICE.md` (`kind: deferred-requires-device`) **scoped to the specific scenario IDs** | The default for sustained-timing / dropout / jitter assertions that fail only under the headless pump. DEFERS to a real-device host — does NOT complete the feature here. |
+| Residual failures are un-testable on **ANY** host (genuinely no MCP path) | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`) **scoped to the specific scenario IDs** | Permanent waiver. The ONLY genuinely any-host-untestable path is raw-PCM injection into the Rust callback thread (per `docs/features/mcp-testing/SPEC.md`). Almost never the right call for a timing assertion. |
 
-**Scoped skip — the required shape (NOT a blanket whole-feature skip):**
+**Deferral vs skip — pick by re-testability (this is the load-bearing distinction):**
 
-- `reason:` names the **specific scenario IDs** and states the WSL2-specific cause (headless-pump preemption / no real device), explicitly noting the artifact reproduces with zero feature activity and that a real-device host does not exhibit it.
-- `alternative_validation:` cites the proxy that DOES cover it here (e.g. `npm run qg:realtime` — K=4 smoke + NIGHTLY 60s) AND states the re-enable path: *"re-run on a Windows-native (cpal) MCP host to assert this for real."*
-- Add a `scope:` field naming the skipped IDs so the skip is auditable and self-limiting — every *other* scenario must still have passed via MCP.
+- A sustained-timing/dropout/jitter assertion that fails ONLY because the host runs the HeadlessPumpDriver is **WSL2-untestable, not un-testable** → write `DEFERRED_REQUIRES_DEVICE.md`. It is NOT permanent: a real-device `/lazy` host re-opens it. (`lazy-state.py` Step 9 on a real-device host re-dispatches `/mcp-test` scoped to the deferred scenario IDs.)
+- An assertion that NO host can drive through MCP (raw-PCM injection only) → `SKIP_MCP_TEST.md` (permanent). Cross-check `docs/features/mcp-testing/SPEC.md` before writing one.
 
-The intent: a future real-device run re-enables the skipped assertions instead of inheriting a permanent blanket exemption. A blanket `SKIP_MCP_TEST.md` for an entire audio feature is almost always wrong — if the logic + signal-presence scenarios are MCP-testable here (they are), only the sustained-timing residual gets skipped, and only with the WSL2-specific justification above. Before writing any skip, cross-check `docs/features/mcp-testing/SPEC.md` (per the root CLAUDE.md gotcha) — the only path that is genuinely un-MCP-testable on *any* host is raw-PCM injection into the Rust callback thread; everything else is at most *WSL2*-untestable.
+**`DEFERRED_REQUIRES_DEVICE.md` — the required shape (NOT a blanket whole-feature deferral):**
+
+- `deferred_scenarios:` lists the **specific scenario IDs** being deferred (non-empty — every *other* scenario must have actually passed via MCP on this host). This is the self-limiting scope a real-device run re-opens.
+- `reason:` states the real-device-specific cause (headless-pump preemption / no real device), explicitly noting the artifact reproduces with **zero feature activity** (the control run) and that a real-device host does not exhibit it.
+- `proxy_validation:` (optional) cites the proxy that DOES cover the metric here (e.g. `npm run qg:realtime` — K=4 smoke + NIGHTLY 60s).
+- `backend_observed: headless` (optional) records the `get_audio_mode` reading at deferral.
+- See the canonical schema in `~/.claude/skills/_components/sentinel-frontmatter.md` (`kind: deferred-requires-device`).
+
+**Re-open contract (what a real-device run must do).** When `/mcp-test` is dispatched on a real-device host against a feature carrying `DEFERRED_REQUIRES_DEVICE.md` (its args name the deferred scenario IDs), run EXACTLY those scenarios against the live cpal backend (confirm `get_audio_mode` reports `mode: cpal`, not `forced`). On pass: **delete `DEFERRED_REQUIRES_DEVICE.md` and write `VALIDATED.md`** so the pipeline proceeds to completion. On a genuine failure (a real dropout on real hardware): that is a real bug → `BLOCKED.md`, NOT a re-deferral or a skip.
+
+The intent: a future real-device run re-validates the deferred assertions instead of inheriting a permanent blanket exemption. A blanket whole-feature deferral is wrong — if the logic + signal-presence scenarios are MCP-testable here (they are), only the sustained-timing residual gets deferred, and only with the device-specific justification above.
 
 ---
 

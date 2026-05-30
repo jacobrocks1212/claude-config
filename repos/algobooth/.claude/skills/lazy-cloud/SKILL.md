@@ -112,6 +112,7 @@ If `terminal_reason` is set, PushNotify and STOP exactly as `/lazy` does. Cloud-
 | `needs-spec-input` | Tell the user to run `/spec`; cloud cannot start from nothing |
 | `all-features-complete` | Roadmap done |
 | `cloud-queue-exhausted` | Every remaining feature is cloud-saturated; workstation /lazy is needed to finalize |
+| `device-queue-exhausted` | A remaining feature carries `DEFERRED_REQUIRES_DEVICE.md` (real-device-only assertions) but no `DEFERRED_NON_CLOUD.md`. Cloud has no device either — surface it and tell the user a **real-device** /lazy host is needed to certify the deferred scenarios. (Rare in cloud: cloud-saturated features normally carry `DEFERRED_NON_CLOUD.md` and hit `cloud-queue-exhausted` first.) |
 | `queue-missing` | queue.json missing |
 
 For `cloud-queue-exhausted`, the status bookend's "Next `/lazy` (workstation) will:" line should explicitly say "Run MCP tests for each deferred feature, in queue order".
@@ -247,7 +248,8 @@ Identical to `/lazy`, plus the cloud-deferral sentinel:
 | `BLOCKED.md` | /execute-plan or /lazy[-cloud] | Blocker details | Persists until Jacob resolves |
 | `MCP_TEST_RESULTS.md` | /lazy (after mcp-test) — NEVER /lazy-cloud | Test results with pass/fail details | Persists permanently |
 | `VALIDATED.md` | /lazy (after 100% pass) — NEVER /lazy-cloud from MCP results | Validation gate | Deleted on feature completion |
-| `SKIP_MCP_TEST.md` | /lazy (assessment) — never written by /lazy-cloud | Documents why MCP testing was skipped | Persists permanently |
+| `SKIP_MCP_TEST.md` | /lazy (assessment) — never written by /lazy-cloud | Documents why MCP testing was skipped (permanent waiver) | Persists permanently |
+| `DEFERRED_REQUIRES_DEVICE.md` | /mcp-test on a no-real-device host — NEVER /lazy-cloud | Defers real-device-only assertions to a real-device host (NOT a skip) | Deleted by a real-device run after it certifies the deferred scenarios |
 | `RETRO_DONE.md` | /lazy[-cloud] (after retro execution) | Retro completion gate | Deleted on feature completion |
 | **`DEFERRED_NON_CLOUD.md`** | **/lazy-cloud (cloud-blocked step)** | **Documents step deferred to workstation /lazy** | **Deleted on feature completion — left in place by /lazy as audit trail until then** |
 | `NEEDS_RESEARCH.md` | /lazy-batch[-cloud] | Halt: research prompt exists, awaiting human Gemini run | Deleted when RESEARCH.md is dropped in place |

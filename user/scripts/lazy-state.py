@@ -12,7 +12,8 @@ JSON object describing what to do next. Used by:
   - The /lazy-batch and /lazy-batch-cloud orchestrators (autonomous loop)
 
 Usage:
-    python3 lazy-state.py [--cloud] [--skip-needs-research] [--repo-root <path>]
+    python3 lazy-state.py [--cloud] [--skip-needs-research]
+                          [--real-device {yes,no,auto}] [--repo-root <path>]
     python3 lazy-state.py --test    # run fixture smoke tests
 
 Output schema (stdout JSON):
@@ -24,6 +25,7 @@ Output schema (stdout JSON):
   "sub_skill":         "<name>"        | null,
   "sub_skill_args":    "<args>"        | null,
   "terminal_reason":   null | "all-features-complete" | "cloud-queue-exhausted"
+                            | "device-queue-exhausted"
                             | "queue-blocked-on-research"
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing"
@@ -128,6 +130,58 @@ def _die(msg: str, path: Path | None = None) -> None:
     }
     sys.stdout.write(json.dumps(out, indent=2) + "\n")
     sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
+# Host-capability probe (real audio output device present?)
+# ---------------------------------------------------------------------------
+#
+# The framework now models THREE environments, not two:
+#   - cloud                          (--cloud)            — no Tauri, no MCP, no device
+#   - no-real-device workstation     (--real-device no)   — WSL2/CI: HeadlessPumpDriver
+#   - real-device workstation        (--real-device yes)  — native Windows etc.: CpalOutputDriver
+#
+# The device axis is ORTHOGONAL to the cloud axis. It exists because some MCP
+# audio assertions (sustained zero-dropout / timing-stability) can only be
+# certified when a real hardware device callback drives the audio clock from a
+# hardware interrupt — under AlgoBooth's HeadlessPumpDriver (a normal
+# OS-scheduled thread) those metrics are non-deterministic. Such assertions are
+# DEFERRED on a no-device host (DEFERRED_REQUIRES_DEVICE.md) and RE-OPENED on a
+# real-device host, rather than permanently skipped.
+
+# Standing override an operator sets on a real-device host (e.g. native Windows)
+# so `--real-device auto` resolves correctly without the app running. Absent →
+# treat as no-device (the conservative default: defer rather than fake-certify).
+REAL_DEVICE_ENV = "ALGOBOOTH_REAL_AUDIO_DEVICE"
+
+
+def resolve_real_device(flag_value: str) -> bool:
+    """Resolve whether the CURRENT host has a real audio output device.
+
+    Kept deliberately simple and PURE so the smoke tests stay hermetic (they run
+    with no audio hardware):
+
+    - ``yes`` / ``no`` — explicit injection. Tests and the orchestrator (which
+      probes the live backend via ``get_audio_mode`` — ``mode == cpal`` and not
+      ``forced`` → a real device) pass these directly. This is the injectable
+      path the SPEC requires: the AlgoBooth-specific cpal-vs-headless probe lives
+      in the orchestrator, NOT baked into this generic state script.
+    - ``auto`` — read the ``ALGOBOOTH_REAL_AUDIO_DEVICE`` env var (``1``/``true``
+      → real device); ABSENT → ``False`` (no device). Conservative: an unknown
+      host defers (safe) rather than claiming real-device (which would let a
+      sustained-timing assertion fake-certify under the headless pump).
+
+    We never key this on hostname or ``ALGOBOOTH_AUDIO_HEADLESS`` heuristics —
+    those mirror device presence only indirectly. The orchestrator owns the real
+    probe; this resolver just makes the result injectable + testable.
+    """
+    if flag_value == "yes":
+        return True
+    if flag_value == "no":
+        return False
+    # auto
+    raw = os.environ.get(REAL_DEVICE_ENV, "")
+    return raw == "1" or raw.strip().lower() == "true"
 
 
 # ---------------------------------------------------------------------------
@@ -983,7 +1037,21 @@ def compute_state(
     repo_root: Path,
     cloud: bool,
     skip_needs_research: bool = False,
+    real_device: bool = True,
 ) -> dict[str, Any]:
+    # `real_device` defaults to True (behavior-preserving: a feature completes
+    # exactly as before). ALL device-deferral logic below is gated on the
+    # presence of a `DEFERRED_REQUIRES_DEVICE.md` sentinel, so this default has
+    # NO effect on a feature that doesn't carry one. The CLI's `--real-device
+    # auto` resolves the host's true capability and passes the result.
+    #
+    # Cloud has no audio device by definition, so cloud forces no-device: a
+    # nonsensical `--cloud --real-device yes` is ignored. The device re-open
+    # path lives in the workstation branch, which cloud never reaches; the
+    # Step 2 device-saturated skip below is gated on `not real_device`, which
+    # cloud satisfies.
+    if cloud:
+        real_device = False
     # Reset diagnostics for this invocation so callers get a fresh list per
     # compute_state() call (matters in run_smoke_tests() which loops).
     _DIAGNOSTICS.clear()
@@ -1001,6 +1069,7 @@ def compute_state(
     # Step 2: find current feature
     current = None
     cloud_saturated_skipped: list[str] = []
+    device_saturated_skipped: list[str] = []
     research_pending_skipped: list[str] = []
     seen_ids: set[str] = set()
     for entry in queue:
@@ -1067,6 +1136,21 @@ def compute_state(
             if retro_done and deferred and not validated:
                 cloud_saturated_skipped.append(name)
                 continue
+        if not real_device:
+            # Device-saturated skip (the device-axis mirror of the cloud skip).
+            # A feature whose retro is done and whose only remaining MCP gap is
+            # real-device-only assertions (deferred via DEFERRED_REQUIRES_DEVICE.md,
+            # no VALIDATED.md yet) cannot be certified on THIS no-device host.
+            # Skip it so the queue advances — a real-device host re-opens it
+            # (Step 9) to run the deferred scenarios. This applies to cloud too
+            # (cloud has no device), but in practice cloud features carry
+            # DEFERRED_NON_CLOUD.md and are caught by the cloud skip above first.
+            retro_done = (spec_path / "RETRO_DONE.md").exists()
+            device_deferred = (spec_path / "DEFERRED_REQUIRES_DEVICE.md").exists()
+            validated = (spec_path / "VALIDATED.md").exists()
+            if retro_done and device_deferred and not validated:
+                device_saturated_skipped.append(name)
+                continue
         if skip_needs_research:
             # Cheap filesystem peek — don't run the full per-feature state machine.
             # Skip features that would terminate the loop with needs-research.
@@ -1101,6 +1185,21 @@ def compute_state(
                 notify_message=(
                     f"Cloud queue exhausted — {len(cloud_saturated_skipped)} feature(s) "
                     "awaiting workstation /lazy for MCP test."
+                ),
+            )
+        if (not real_device) and device_saturated_skipped:
+            # Device-axis mirror of cloud-queue-exhausted. The no-device host has
+            # done everything it can; the listed features carry deferred
+            # real-device-only assertions awaiting a real-device /lazy host.
+            for fname in device_saturated_skipped:
+                _diag(f"device-saturated skipped: {fname}")
+            return _state(
+                terminal_reason="device-queue-exhausted",
+                notify_message=(
+                    f"Device queue exhausted — {len(device_saturated_skipped)} feature(s) "
+                    "carry real-device-only assertions deferred to a real-device "
+                    "/lazy host (set ALGOBOOTH_REAL_AUDIO_DEVICE=1 or run on native "
+                    "hardware)."
                 ),
             )
         if skip_needs_research and research_pending_skipped:
@@ -1398,6 +1497,55 @@ def compute_state(
             current_step="Step 8: retro phase",
             sub_skill="retro-feature",
             sub_skill_args=f"{spec_path_str} --batch",
+        )
+
+    # Step 9-pre: device-deferral re-open / guard. A feature carrying
+    # DEFERRED_REQUIRES_DEVICE.md has real-device-only MCP assertions that a
+    # prior no-device /mcp-test could not certify (e.g. sustained zero-dropout
+    # under the HeadlessPumpDriver). This is keyed on the device axis, NOT the
+    # cloud axis, and is checked BEFORE the cloud/workstation split so it
+    # governs both. A SKIP_MCP_TEST.md (permanent waiver) or an existing
+    # VALIDATED.md takes precedence and short-circuits this.
+    device_deferred_file = spec_path / "DEFERRED_REQUIRES_DEVICE.md"
+    if device_deferred_file.exists() and not validated_file.exists() and not skip_mcp_file.exists():
+        if real_device:
+            # RE-OPEN — the inverse the framework previously lacked. On a
+            # real-device host, route back to /mcp-test scoped to the deferred
+            # scenario set so the hardware-clock-driven assertions get a real
+            # certification. /mcp-test certifies them, DELETES this sentinel, and
+            # writes VALIDATED.md; the next probe reaches Step 10 mark-complete.
+            meta = parse_sentinel(device_deferred_file) or {}
+            scenarios = meta.get("deferred_scenarios") or []
+            scen_str = (
+                ", ".join(str(s) for s in scenarios)
+                if scenarios else "(see DEFERRED_REQUIRES_DEVICE.md)"
+            )
+            return _state(
+                **common,
+                current_step="Step 9: re-open device-deferred scenarios (real-device host)",
+                sub_skill="mcp-test",
+                sub_skill_args=(
+                    f"re-validate {feature_name} deferred real-device assertions "
+                    f"[{scen_str}] on THIS real-device host — see "
+                    f"{spec_path_str}/DEFERRED_REQUIRES_DEVICE.md. On pass, delete "
+                    "that sentinel and write VALIDATED.md; on a genuine failure "
+                    "treat it as a real bug (BLOCKED.md), not an environment skip."
+                ),
+            )
+        # No-device host: the feature is device-saturated. Step 2's
+        # device-saturated skip catches this before Step 9 (RETRO_DONE is present
+        # by Step 8), so this is a defensive guard ensuring a no-device host NEVER
+        # re-dispatches /mcp-test for an already-deferred scenario set (which
+        # would no-op-loop). Surface the same device-queue terminal.
+        return _state(
+            **common,
+            current_step="Step 9: device-deferred (no real device on this host)",
+            terminal_reason="device-queue-exhausted",
+            notify_message=(
+                f"{feature_name}: real-device-only assertions are deferred and "
+                "cannot be certified here. Awaiting a real-device /lazy host "
+                "(set ALGOBOOTH_REAL_AUDIO_DEVICE=1 or run on native hardware)."
+            ),
         )
 
     # Step 9: MCP gate (retro complete; now validate runtime).
@@ -2195,6 +2343,66 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "# Spec\n\n**Status:** Draft\n\n**Depends on:**\n\n"
             "- feat-up — hard — relies on the upstream contract\n"
         )
+    elif name == "device-deferred-pending":
+        # Phases + retro complete; a prior no-device /mcp-test deferred the
+        # real-device-only assertion AQ-TE-05 via DEFERRED_REQUIRES_DEVICE.md
+        # (no VALIDATED.md). Exercised under BOTH device states:
+        #   real_device=False → Step 2 device-saturated skip → device-queue-exhausted
+        #   real_device=True  → Step 9 re-open → mcp-test scoped to AQ-TE-05
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-dd", "name": "Feature DD",
+                 "spec_dir": "feat-dd", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dd = features / "feat-dd"
+        dd.mkdir()
+        (dd / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (dd / "RESEARCH.md").write_text("# R\n")
+        (dd / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (dd / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            dd / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-dd", date="2026-05-30",
+            rounds=1, retro_plans=["retro-1-feat-dd.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            dd / "DEFERRED_REQUIRES_DEVICE.md", "deferred-requires-device",
+            feature_id="feat-dd",
+            deferred_scenarios=["AQ-TE-05"],
+            reason="sustained zero-dropout not certifiable under HeadlessPumpDriver",
+            deferred_by="lazy", date="2026-05-30",
+        )
+    elif name == "device-deferred-cleared":
+        # The real-device re-open succeeded: /mcp-test deleted
+        # DEFERRED_REQUIRES_DEVICE.md and wrote VALIDATED.md. With retro already
+        # done, a real-device run proceeds straight to __mark_complete__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-dc", "name": "Feature DC",
+                 "spec_dir": "feat-dc", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dc = features / "feat-dc"
+        dc.mkdir()
+        (dc / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (dc / "RESEARCH.md").write_text("# R\n")
+        (dc / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (dc / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            dc / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-dc", date="2026-05-30",
+            rounds=1, retro_plans=["retro-1-feat-dc.md"],
+            mcp_validation_status="complete",
+        )
+        _write_yaml_sentinel(
+            dc / "VALIDATED.md", "validated",
+            feature_id="feat-dc", date="2026-05-30",
+            mcp_scenarios=["AQ-TE-05"], result="all-passing",
+        )
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2377,11 +2585,39 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-wcs",
                 "current_step": "Step 7a: execute plan",
             }),
+            # Device-deferral (real-device axis). Same fixture under both device
+            # states (5-tuple pins real_device):
+            #   no-device → Step 2 device-saturated skip → device-queue-exhausted
+            ("device-deferred-pending", False, False, {
+                "terminal_reason": "device-queue-exhausted",
+            }, False),
+            #   real-device → Step 9 re-open → /mcp-test scoped to the deferred
+            #   scenario set (AQ-TE-05). Asserts the scenario IDs are threaded
+            #   into the dispatch args (extra check below).
+            ("device-deferred-pending", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-dd",
+                "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
+            }, True),
+            # After re-open succeeds (sentinel deleted, VALIDATED.md written),
+            # a real-device run proceeds to __mark_complete__.
+            ("device-deferred-cleared", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-dc",
+            }, True),
         ]
-        for name, cloud, skip_nr, expected in cases:
+        for case in cases:
+            # Cases are 4-tuples (real_device defaults to True — behavior
+            # preserving) or 5-tuples that pin real_device explicitly for the
+            # device-deferral fixtures.
+            name, cloud, skip_nr, expected = case[0], case[1], case[2], case[3]
+            real_device = case[4] if len(case) > 4 else True
             root = _build_fixture(td_path, name)
             try:
-                got = compute_state(root, cloud=cloud, skip_needs_research=skip_nr)
+                got = compute_state(
+                    root, cloud=cloud, skip_needs_research=skip_nr,
+                    real_device=real_device,
+                )
             except SystemExit as exc:
                 failures.append(f"[{name}] SystemExit: {exc.code}")
                 continue
@@ -2424,8 +2660,25 @@ def run_smoke_tests() -> int:
                         f"[{name}] expected sub_skill_args to reference "
                         f"ADHOC_BRIEF.md; got {args!r}"
                     )
+            if name == "device-deferred-pending" and real_device:
+                # The re-open MUST thread the specific deferred scenario IDs so
+                # /mcp-test knows exactly which assertions to certify.
+                args = got.get("sub_skill_args") or ""
+                if "AQ-TE-05" not in args:
+                    failures.append(
+                        f"[{name}] re-open args must name the deferred scenario "
+                        f"IDs (AQ-TE-05); got {args!r}"
+                    )
+            if name == "device-deferred-pending" and not real_device:
+                diag = got.get("diagnostics") or []
+                if not any("device-saturated skipped" in d for d in diag):
+                    failures.append(
+                        f"[{name}] expected device-saturated diagnostics; "
+                        f"got diagnostics={diag!r}"
+                    )
             print(
-                f"  [{name}] cloud={cloud} skip_nr={skip_nr}: "
+                f"  [{name}] cloud={cloud} skip_nr={skip_nr} "
+                f"real_device={real_device}: "
                 f"{got['current_step'] or got['terminal_reason']}"
             )
 
@@ -2495,6 +2748,14 @@ def main() -> int:
                               "exhausted with only research-pending features remaining."))
     parser.add_argument("--repo-root", default=os.getcwd(),
                         help="Project root (default: $PWD)")
+    parser.add_argument("--real-device", choices=["yes", "no", "auto"], default="auto",
+                        help=("Whether THIS host has a real audio output device "
+                              "(governs real-device-only MCP-assertion deferral). "
+                              "'auto' reads $ALGOBOOTH_REAL_AUDIO_DEVICE (absent → "
+                              "'no'). The orchestrator probes the live backend "
+                              "(get_audio_mode: cpal & not forced) and may pass "
+                              "yes/no explicitly. Ignored under --cloud (cloud has "
+                              "no device)."))
     parser.add_argument("--test", action="store_true",
                         help="Run fixture smoke tests instead of computing state")
     parser.add_argument("--backfill-receipts", action="store_true",
@@ -2542,6 +2803,7 @@ def main() -> int:
         Path(args.repo_root),
         cloud=args.cloud,
         skip_needs_research=args.skip_needs_research,
+        real_device=resolve_real_device(args.real_device),
     )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0

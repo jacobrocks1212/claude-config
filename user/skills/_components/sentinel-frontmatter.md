@@ -59,6 +59,60 @@ Optional:
 
 Body keeps the existing detailed `## State at deferral` / `## How to resume` sections.
 
+#### `DEFERRED_REQUIRES_DEVICE.md` — `kind: deferred-requires-device`  *(new — real-device deferral)*
+
+Records that specific MCP audio assertions **ran (or were attempted) but can only
+be CERTIFIED on a host with a real audio output device** — they are deferred to a
+real-device `/lazy` host, NOT skipped. Written by `/mcp-test` (Step 4.5) on a
+no-real-device host (e.g. WSL2/CI, where AlgoBooth's `classify_audio_backend`
+selects the `HeadlessPumpDriver` — a normal OS-scheduled thread whose preemption
+makes sustained-timing metrics like zero-dropout non-deterministic). On a
+real-device host the cpal device callback drives the audio clock from the
+hardware interrupt and these same assertions are trustworthy.
+
+This is the device-axis sibling of `DEFERRED_NON_CLOUD.md` and is **distinct from
+both** of its neighbors:
+
+| Sentinel | Means | Resolution |
+|----------|-------|------------|
+| `SKIP_MCP_TEST.md` | Permanent waiver — un-testable on *any* host (e.g. raw-PCM injection). | Never re-opened. |
+| `DEFERRED_NON_CLOUD.md` | Cloud can't run the step *at all* (no Tauri/MCP). | Workstation `/lazy` runs it. |
+| `DEFERRED_REQUIRES_DEVICE.md` | Assertion is WSL2-untestable but **real-device-testable** — deferred on the device axis. | A real-device `/lazy` host re-opens it (`lazy-state.py` Step 9) and certifies the deferred scenarios. |
+
+`lazy-state.py` keys on this file: a no-real-device host with `RETRO_DONE.md` +
+this sentinel + no `VALIDATED.md` is **device-saturated** — Step 2 skips it so the
+queue advances (terminal `device-queue-exhausted`), exactly mirroring the
+cloud-saturated skip. The feature does NOT reach `Complete` on a no-device host
+(no receipt is written): completion stays blocked until a real-device run clears
+the deferral, so `Complete` always means fully validated.
+
+Required:
+
+```yaml
+---
+kind: deferred-requires-device
+feature_id: <id>
+deferred_scenarios: [<scenario-id>, ...]   # WHICH assertions are deferred — a real-device run re-opens exactly these
+reason: <one-line — the real-device-specific cause, e.g. headless-pump preemption>
+deferred_by: lazy   # one of: lazy | lazy-batch
+date: <YYYY-MM-DD>
+---
+```
+
+`deferred_scenarios` is **load-bearing and MUST be non-empty** — it is the
+self-limiting scope a real-device run re-opens. A blanket whole-feature deferral
+with no scenario IDs is malformed: every *other* scenario must have actually
+passed via MCP on this host.
+
+Optional:
+- `proxy_validation: <one-line>` — the proxy that DOES cover the deferred metric here (e.g. `npm run qg:realtime` K=4 smoke + NIGHTLY 60s).
+- `backend_observed: <"headless" | "cpal">` — the `get_audio_mode` backend at deferral (normally `headless`; pairs with the control-run evidence).
+
+Body keeps a `## What was deferred and why` section: the control-run evidence
+(the artifact reproduces with zero feature activity), the `get_audio_mode`
+reading, and the re-enable path (*"re-run on a real-device MCP host to certify
+these for real"*).
+
 #### `VALIDATED.md` — `kind: validated`
 
 Required:
@@ -279,6 +333,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 |------|-------------|--------------|
 | BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or via /add-phase / /lazy skip) |
 | DEFERRED_NON_CLOUD.md | /lazy-cloud cannot run a step in cloud | /lazy Step 10 (feature completion) |
+| DEFERRED_REQUIRES_DEVICE.md | /mcp-test on a no-real-device host can't certify a real-device-only assertion | A real-device /lazy host re-opens (Step 9), certifies the deferred scenarios, then deletes it + writes VALIDATED.md |
 | VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
 | RETRO_DONE.md | /lazy after retro plan executes | /lazy Step 10 (folded into COMPLETED.md) |
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
