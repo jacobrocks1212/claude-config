@@ -396,6 +396,53 @@ Verify the response contains `"is_connected": true`.
 
 ---
 
+## Step 4.5: Environment Capability — Headless Pump vs Real Device
+
+**Read this whenever an audio-quality assertion fails on a *non-deterministic metric* (dropouts, sustained-stability, timing jitter) rather than a logic metric.** It tells you whether the failure is your code or the test substrate, and which sentinel to write.
+
+### Which audio backend is live, and why it matters
+
+The Rust backend (`src-tauri/src/audio/context.rs`, `classify_audio_backend(forced, probe)`) picks ONE of two output drivers at startup:
+
+| Driver | Selected when | Clock source | Fidelity for AQ assertions |
+|--------|---------------|--------------|----------------------------|
+| `CpalOutputDriver` (`cpal_driver.rs`) | A usable default output device + negotiated config exists AND headless is not forced | **Real hardware device callback** | Full — sustained-stability/dropout/timing metrics are trustworthy |
+| `HeadlessPumpDriver` (`headless_pump.rs`) | `ALGOBOOTH_AUDIO_HEADLESS=1` (forced) **OR** no default device / no supported config (auto-degrade) | **Software pump** — a paced thread (`spin_sleep::SpinSleeper`, absolute-target pacing + xrun recovery) | Logic/signal-presence trustworthy; **sustained-timing metrics are NOT** |
+
+Confirm the live backend before trusting (or distrusting) an AQ result: `GET /tools/get_audio_mode` reports `mode` (`cpal` | `headless`) + `forced`. `get_audio_silence_diagnostics` reports `v2VoicesTriggered` / `queueLen`.
+
+### The WSL2 limitation (and why it is environmental, not a product defect)
+
+On WSL2 there is no ALSA output device, so the engine runs the `HeadlessPumpDriver` (forced via `ALGOBOOTH_AUDIO_HEADLESS=1`, or auto-degraded). The pump is a normal OS-scheduled thread, so it gets **preempted** under load. Consequences:
+
+- **What WORKS faithfully under the headless pump:** all behavioral/logic assertions (commit/abort/state/correlationId), and instantaneous signal-integrity — RMS presence, clicks, clipping, DC offset, silence-while-playing — via `load_test_tone` + `get_audio_buffer`/`audio_capture` (per CLAUDE.md "Audio IS MCP-testable"). Voices DO flow under the pump (`v2VoicesTriggered > 0`); a zero-voice result is a real bug, not this limitation.
+- **What is NOT faithful under the headless pump:** any assertion over *sustained playback time* whose pass condition is timing-stability — e.g. zero-dropout, jitter bounds. `audio_artifact_scan` will report dropouts on a steady tone **even with zero transactional activity**, because the pump was preempted. Prove this is environmental with a **control run**: capture the same metric with no feature activity; if the artifact still appears, it is the substrate, not the code.
+
+**Decision rule when an AQ assertion fails on a non-deterministic metric:**
+1. Run the control (same metric, zero feature activity). If the artifact persists → environmental.
+2. Confirm `mode: headless` via `get_audio_mode`.
+3. If both hold, the assertion is **WSL2-untestable, not un-testable** — it will pass on a real-device host (Windows-native cpal callback, or any host with a real output device where headless is not forced). Record it via the scoped-skip sentinel pattern below; do NOT mark it failed, and do NOT fake a pass.
+
+### Sentinel handling for environment-scoped partial validation (`--batch` / lazy-pipeline runs)
+
+When invoked under the lazy state machine (Step 9), `/mcp-test` writes a terminal sentinel into the feature dir (`docs/features/.../<feature>/`). Pick the right one — the distinction is load-bearing because `lazy-state.py` only advances on a terminal `VALIDATED.md` (or a justified skip):
+
+| Outcome | Sentinel | When |
+|---------|----------|------|
+| Every scenario passed | `VALIDATED.md` (`kind: validated`, `result: all-passing`) | Full pass — nothing environment-blocked |
+| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
+| Residual failures are purely environmental | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`) **scoped to the specific scenario IDs** | Pairs with the partial to let the feature complete on THIS host |
+
+**Scoped skip — the required shape (NOT a blanket whole-feature skip):**
+
+- `reason:` names the **specific scenario IDs** and states the WSL2-specific cause (headless-pump preemption / no real device), explicitly noting the artifact reproduces with zero feature activity and that a real-device host does not exhibit it.
+- `alternative_validation:` cites the proxy that DOES cover it here (e.g. `npm run qg:realtime` — K=4 smoke + NIGHTLY 60s) AND states the re-enable path: *"re-run on a Windows-native (cpal) MCP host to assert this for real."*
+- Add a `scope:` field naming the skipped IDs so the skip is auditable and self-limiting — every *other* scenario must still have passed via MCP.
+
+The intent: a future real-device run re-enables the skipped assertions instead of inheriting a permanent blanket exemption. A blanket `SKIP_MCP_TEST.md` for an entire audio feature is almost always wrong — if the logic + signal-presence scenarios are MCP-testable here (they are), only the sustained-timing residual gets skipped, and only with the WSL2-specific justification above. Before writing any skip, cross-check `docs/features/mcp-testing/SPEC.md` (per the root CLAUDE.md gotcha) — the only path that is genuinely un-MCP-testable on *any* host is raw-PCM injection into the Rust callback thread; everything else is at most *WSL2*-untestable.
+
+---
+
 ## Step 5: Dispatch Sonnet Subagent
 
 Launch a **Sonnet** subagent via the Agent tool (`model: "sonnet"`). The prompt references files by path — do NOT inline their content.
