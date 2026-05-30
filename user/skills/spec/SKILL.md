@@ -218,7 +218,7 @@ Do NOT skip the mechanical search and rely on intuition or Phase 0 context alone
 
 2. **Read queue/ROADMAP if present.** If `docs/features/queue.json` exists, read it to map feature-id → directory and tier. If `docs/features/ROADMAP.md` exists, read it to learn which features are Complete vs. pending — `hard` deps on Complete upstreams will trigger reality-check via `/realign-spec` in `/lazy` Step 4.6.
 
-3. **Read any project-level dependency catalog** if it exists (e.g., `docs/features/dependency-audit.md`, `docs/features/PARTITIONING.md`). These pre-classify coupling between features and are gold for candidate selection.
+3. **Read any project-level dependency catalog** if it exists (e.g., `docs/features/dependency-audit.md`). These pre-classify coupling between features and are gold for candidate selection.
 
 #### 1b.2. Search for upstream dependencies (what THIS feature consumes)
 
@@ -262,7 +262,7 @@ If this is a re-spec, stub expansion, or expansion of an existing concept, downs
 
 3. **Grep advanced-feature catalogs and research summaries** for the feature-id or its keywords:
    ```bash
-   grep -l -i -E "<feature-id>|<load-bearing-terms>" docs/features/*RESEARCH*.md docs/features/*AUDIT*.md docs/features/*PARTITIONING*.md 2>/dev/null
+   grep -l -i -E "<feature-id>|<load-bearing-terms>" docs/features/*RESEARCH*.md docs/features/*AUDIT*.md 2>/dev/null
    ```
 
 4. For each downstream dependee found, record: `feature-id`, the kind they declared, and the file path. These are not added to the new SPEC's Depends-on block — they're recorded as a side note for the user.

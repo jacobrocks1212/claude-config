@@ -77,7 +77,6 @@ For **each** PHASES.md:
 
 Also read:
 - `CLAUDE.md` (project root) — for quality gates, critical rules, directory layout
-- `docs/features/PARTITIONING.md` — for wave plan, dependency graph, phased-spec guidance, cross-feature ordering constraints
 
 ### 1b.1. Load Upstream Plan References (per hard dep on Complete upstream)
 

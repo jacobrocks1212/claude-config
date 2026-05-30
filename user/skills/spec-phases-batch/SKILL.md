@@ -36,17 +36,16 @@ For **each** SPEC.md:
 
 Also read:
 - `CLAUDE.md` (project root) — for quality gates, critical rules, directory layout
-- `docs/features/PARTITIONING.md` — for wave plan, dependency graph, phased-spec guidance (especially the "Phased specs" section which describes cross-wave phasing for auth-bootstrap, orchestration, tui)
 - `docs/features/architecture/SPEC.md` — skim Locked Decisions and Tech Stack for cross-cutting context
 
 ### 1c. Identify Cross-Feature Constraints
 
-From PARTITIONING.md + the specs themselves, identify:
+From each input spec's `**Depends on:**` block (the source of truth for cross-feature coupling) and the specs themselves, identify:
 1. **Cross-feature dependencies** — which features depend on which (e.g. auth-bootstrap depends on foundation at implementation time)
 2. **Phased specs** — features that implement across multiple waves (auth-bootstrap, orchestration, tui). These specs' PHASES.md files must be scoped to the appropriate wave(s), with later-wave phases noted as placeholders.
 3. **Shared-file ownership** — features that touch the same files (e.g. `src/cli/main.py` owned by orchestration; auth-bootstrap registers subcommands into it). Phase decomposition must assign clear ownership.
 4. **Entry-criteria alignment** — Phase N of feature A might depend on Phase M of feature B completing first. These cross-references must be explicit in the PHASES.md files.
-5. **Dependency-chain depth and speculation flagging** — Compute the longest dependency chain across the input specs (using PARTITIONING.md's dependency graph). Specs deep in the chain (2+ hops from a root spec) produce **speculative** phase breakdowns because their implementation details will be informed by actual implementation decisions in earlier specs. Example: if the batch includes A → B → C → D, then C's and D's phase breakdowns are speculative — they will likely change once A and B are actually implemented and their Implementation Notes reveal real interfaces, gotchas, and file structures.
+5. **Dependency-chain depth and speculation flagging** — Compute the longest dependency chain across the input specs (derived from the specs' `**Depends on:**` blocks). Specs deep in the chain (2+ hops from a root spec) produce **speculative** phase breakdowns because their implementation details will be informed by actual implementation decisions in earlier specs. Example: if the batch includes A → B → C → D, then C's and D's phase breakdowns are speculative — they will likely change once A and B are actually implemented and their Implementation Notes reveal real interfaces, gotchas, and file structures.
 
    **Flag these specs explicitly:**
    - In the plan's Decomposition Schedule, mark them with a `Speculative` column
@@ -93,11 +92,10 @@ The plan must follow this structure exactly:
 - [path1] ([feature1])
 [- [path2] ([feature2])]
 
-**PARTITIONING.md:** [path]
 **Architecture SPEC.md:** [path]
 
 **Total specs to decompose:** N
-**Phased-spec constraints:** [list any specs that must be scoped to specific waves per PARTITIONING.md]
+**Phased-spec constraints:** [list any specs that must be scoped to specific waves per their `**Depends on:**` blocks]
 
 ---
 
@@ -135,7 +133,7 @@ The plan must follow this structure exactly:
 
 [The prompt must include:]
 - The full SPEC.md content (quoted or summarized — enough for the subagent to decompose without reading additional files)
-- Relevant PARTITIONING.md context (wave assignment, dependency graph, phased-spec constraints)
+- Relevant cross-feature dependency context (dependency graph, phased-spec constraints) derived from the specs' `**Depends on:**` blocks in Step 1c
 - Cross-feature dependency constraints (which other features' phases this feature's phases depend on, and vice versa)
 - The exact PHASES.md output format (copied from the /spec-phases skill format):
 
@@ -220,7 +218,7 @@ The plan must follow this structure exactly:
 After ALL individual PHASES.md files are written and individually reviewed, perform a cross-feature review:
 
 **Dependency Alignment:**
-- For each cross-feature dependency in PARTITIONING.md, verify the PHASES.md files reference each other correctly
+- For each cross-feature dependency identified in Step 1c, verify the PHASES.md files reference each other correctly
 - Example: if auth-bootstrap Phase 1 says "Entry criteria: Foundation Phase 1 complete", verify that foundation Phase 1 exists and its deliverables are sufficient for auth-bootstrap to proceed
 - Fix any misaligned cross-references
 
@@ -231,7 +229,7 @@ After ALL individual PHASES.md files are written and individually reviewed, perf
 - Update the PHASES.md files to reflect resolved ownership
 
 **Phase Ordering Consistency:**
-- Verify the cross-feature phase ordering is implementable — no feature's Phase N requires another feature's Phase M that hasn't been scheduled yet in the PARTITIONING.md wave plan
+- Verify the cross-feature phase ordering is implementable — no feature's Phase N requires another feature's Phase M that hasn't been scheduled yet in the cross-feature ordering from Step 1c
 - If ordering issues found, adjust phase boundaries or add explicit "blocked by" notes
 
 **Entry-Criteria Completeness:**

@@ -28,6 +28,10 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 8. **The `cycle` counter is session-global and monotonic across feature transitions.** It is initialized to 0 in Step 0 *once per `/lazy-batch` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e step 5, Step 1g step 7). It MUST NOT be reset when `lazy-state.py` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next via `__mark_complete__` (or because the prior feature hit a terminal state and a later queue entry became current). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch; the orchestrator runs ONE cycle log across every feature it touches. The per-cycle status line's `{feature_name}` segment changes across the boundary; the `N` does not.
 
+**Cycle-subagent execution model (recursive dispatch is NOT available — inline edits required).** The cycle subagent dispatched at Step 1d does **not** have the `Agent` tool: recursive sub-subagent dispatch is not supported from inside a dispatched subagent, even on workstation. (This was confirmed empirically — an `/execute-plan` cycle subagent that tried to dispatch Sonnet test/impl agents found the tool unavailable and could only halt.) This forces a load-bearing override of any dispatched skill's sub-subagent contract: skills that nominally fan out to sub-subagents (e.g. `/execute-plan` → Sonnet test-agent + impl-agent, `/retro` → research subagents A–G) MUST be performed INLINE inside the cycle subagent itself using `Edit`/`Write`/`Read` directly. **This override applies only at the cycle-subagent level** — the orchestrator still dispatches exactly one `Agent` per cycle, and the override never expands the orchestrator's `Write`/`Edit` scope (HARD CONSTRAINT 1 still holds; the orchestrator edits only sentinels). This is the same execution model as `/lazy-batch-cloud`; the two orchestrators are coupled per CLAUDE.md. (Unlike cloud, workstation retains the Tauri runtime, MCP HTTP server, audio device, and Windows tooling — only the recursive-dispatch limit and its inline-edit override are shared.)
+
+> **Known limitation — TDD agent-separation is traded away.** Collapsing `/execute-plan`'s test-agent→impl-agent split into ONE inline cycle subagent means the *structural* test-first guarantee (a separate agent writes failing tests before a separate agent implements — the `R-EP-2`/`R-EP-3` separation) is GONE: it cannot be enforced from sub-subagent dispatch evidence when there is no dispatch. This is an intentional tradeoff given the no-recursive-dispatch reality, not a defect. Compensating controls: (1) per-batch **quality gates** (`R-EP-6`) still run and must pass 100%; (2) the **`/retro`** pass audits the landed work; (3) the **MCP-validation** pass (which writes `VALIDATED.md`) gates final completion. The inline cycle subagent SHOULD still write **tests-before-impl within each batch** — read the test expectations, write the failing tests, confirm they fail for the right reason, THEN implement — even though the ordering can't be structurally verified. `/lazy-batch-retro`'s cloud branch already grades `R-EP-2`/`R-EP-3` as `n/a (cloud-override)`; the same grading applies to inline workstation cycles.
+
 `$ARGUMENTS` is tokenized on whitespace. Recognized tokens:
 
 - **Positive integer** → `max_cycles`. If absent, default to `10`. If a non-numeric / `< 1` integer is supplied, refuse with:
@@ -49,7 +53,7 @@ Initialize counters and per-session state:
 - `cycle_log = []` — each entry: `{cycle, feature, action, subagent_summary}`
 - `research_pending = set()` — feature_ids whose `RESEARCH.md` is missing and a `NEEDS_RESEARCH.md` sentinel was dropped this session. Only used when `allow_research_skip == true`. In the default (strict-halt) path this set never accumulates because Step 4 halts on the first feature; it stays empty.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. In the default path this stays `false` for the entire session because Step 4 halts before the loop continues.
-- `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched.
+- `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched. **`sub_skill_args` is part of the tuple deliberately:** a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3) returns the same `(feature_id, sub_skill, current_step)` on every part but a *different* `sub_skill_args` (the plan-part path), which is real forward progress, not a loop. Omitting `sub_skill_args` made the loop-guard false-trigger on every multi-part plan. Including it lets the guard fire only on a genuine no-progress repeat (identical part re-returned).
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if the flag was absent). See Step 0.45.
 
 Print the start bookend:
@@ -246,7 +250,7 @@ After the inline action:
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
 2. **Push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** The inline pseudo-skill committed a sentinel / plan-frontmatter change locally; push it now — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This backstops inline cycles the orchestrator owns directly — a `git push` of an already-committed change, NOT a Write/Edit, so HARD CONSTRAINT 1 still holds. "Up to date" is a fine result (a prior cycle's push already carried it).
 3. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the inline outcome, `**Commit:**` = the sentinel/plan commit sha. Nothing else.
-4. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` (same uniform post-cycle update as Step 1e — keeps loop-guard accurate across mixed pseudo-skill / real-skill cycles).
+4. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` (same uniform post-cycle update as Step 1e — keeps loop-guard accurate across mixed pseudo-skill / real-skill cycles).
 5. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
 
 This saves one Opus dispatch per pseudo-skill action. On a typical feature lifecycle (workstation: 1 × `__write_validated_*` + 1 × `__mark_complete__` = 2 dispatches reclaimed; cloud: 1 × `__write_deferred_non_cloud__` minimum) the savings compound across a multi-feature queue pass.
@@ -255,7 +259,7 @@ This saves one Opus dispatch per pseudo-skill action. On a typical feature lifec
 
 If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else.
 
-**Loop-guard check (BEFORE composing the prompt):** Compute the current cycle's signature as the tuple `(feature_id, sub_skill, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, current_step)`, the state script has returned the same triple two cycles in a row — almost always a sign that a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing or that a plan/sentinel write the previous cycle was supposed to perform did not actually land. The orchestrator MUST append the **LOOP DETECTED** block below to the subagent prompt so the subagent diagnoses the missing sentinel rather than producing yet another plan / running the same skill against unchanged state.
+**Loop-guard check (BEFORE composing the prompt):** Compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, the state script has returned the same tuple two cycles in a row — almost always a sign that a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing or that a plan/sentinel write the previous cycle was supposed to perform did not actually land. **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3, same `feature_id`/`sub_skill`/`current_step` but a different plan-part path in `sub_skill_args`) false-triggers the guard on every part despite genuine forward progress. The orchestrator MUST append the **LOOP DETECTED** block below to the subagent prompt so the subagent diagnoses the missing sentinel rather than producing yet another plan / running the same skill against unchanged state.
 
 Base prompt template:
 
@@ -275,42 +279,103 @@ Operating mode: batch
   - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the decision —
     that's a halt for a human.
 
-Sub-subagent dispatch policy (LOAD-BEARING — READ CAREFULLY):
-  The dispatched skill's own SKILL.md is AUTHORITATIVE on whether/how to
-  spawn sub-subagents. Follow what the skill says — do NOT impose a blanket
-  prohibition on top of it. The only prohibition you carry is "no parallel
-  pipeline orchestrators" (do NOT spawn another /lazy or /lazy-batch).
+Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
+  This subagent does NOT have the `Agent` tool — you CANNOT spawn further
+  sub-subagents from inside this cycle. Any Agent() call you attempt will fail
+  (tool unavailable) and waste the cycle. (Recursive sub-subagent dispatch is
+  not supported from inside a dispatched subagent, on workstation as in cloud.)
 
-  Per-skill expectations (must match the skill's own contract):
-    • /execute-plan — REQUIRES you (as ITS orchestrator) to dispatch Sonnet
-      test-agent + impl-agent sub-subagents per batch. You MUST NOT call Edit
-      or Write on source/test files yourself; compose Agent({model: "sonnet"})
-      calls instead, per /execute-plan's Step 3 "Execution Model Enforcement".
-      Zero sub-subagents in an /execute-plan cycle = hard contract violation.
-    • /retro — REQUIRES parallel research subagents A–G (implementation
-      notes, spec diff, commit history, quality, runtime, session history,
-      skill compliance) per /retro's Step 3.
-    • /mcp-test — REQUIRES one Sonnet test subagent (Step 5).
-    • retro-feature — composed orchestrator that internally loops
-      /retro + /execute-plan; its own SKILL.md governs nested dispatches.
-    • plan-feature — composed orchestrator that runs /spec-phases THEN
-      /write-plan via the Skill tool (in-context, not Agent dispatch); its
-      own SKILL.md governs the sequence. Orchestrator-only work — no
-      sub-subagent dispatch required. This is what lazy-state.py emits at
+  Therefore, regardless of what the dispatched skill's SKILL.md says about
+  spawning sub-subagents (test-agent, impl-agent, research subagents A–G,
+  etc.), you MUST perform that work INLINE in this subagent session using
+  Edit / Write / Read directly. The cycle subagent SUPERSEDES the dispatched
+  skill's sub-subagent dispatch contract — this is the documented inline
+  override, not a hard contract violation. The only prohibition you still
+  carry is "no parallel pipeline orchestrators" (do NOT invoke another /lazy
+  or /lazy-batch).
+
+  Per-skill inline overrides (override the SKILL.md dispatch contract):
+    • /execute-plan — IGNORE Step 3's "Execution Model Enforcement". Do NOT
+      attempt Agent({model: "sonnet"}) test-agent / impl-agent dispatches.
+      Perform each batch's test additions and implementation edits INLINE
+      with Edit / Write / Read on source/test files directly
+      (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files included).
+      Follow the rest of /execute-plan as written (batch ordering, commits,
+      plan-file checkbox flips, sentinel emissions). Zero sub-subagent
+      dispatches in an /execute-plan cycle is the EXPECTED state — NOT a
+      contract violation.
+      SKIP THE GROUND-TRUTH RE-RUN: subagent-review.md Step 1.5 exists to
+      detect a *separate* untrusted subagent falsifying its report by
+      re-running every command (git status / wc -l / grep / test runner) and
+      diffing. In this inline path YOU wrote both the tests and the
+      implementation in this same session — there is no separate subagent
+      report to police, so that mechanical re-run is pure redundant work. Do
+      NOT re-run-and-diff your own commands. Still perform the SUBSTANTIVE
+      correctness review (spec alignment, deliverable coverage, logic/edge-case
+      check, propagation check per subagent-review.md Step 2.5) and still run
+      the quality gates — only the falsification-detection re-run is dropped.
+      KNOWN LIMITATION: collapsing the test-agent/impl-agent split into one
+      inline session trades away the STRUCTURAL test-first guarantee. You MUST
+      still preserve test-first DISCIPLINE within each batch: write the failing
+      tests FIRST (per the plan's test expectations), confirm they fail for the
+      right reason, THEN implement until they pass.
+    • /retro — IGNORE Step 3's parallel research-subagent fanout (A–G). Do the
+      research INLINE: read each input serially, synthesize, and write the
+      retro plan + RETRO_DONE.md directly. The deliverable is identical; only
+      the parallelism is dropped.
+    • /mcp-test — perform the Step 5 test work INLINE (read the MCP usage
+      guide, run the MCP HTTP tools yourself, analyze the session logs) rather
+      than dispatching a Sonnet test subagent. Workstation retains the Tauri
+      runtime + MCP HTTP server, so the runtime work itself is unchanged — only
+      the sub-subagent dispatch is replaced with inline execution.
+    • retro-feature — composed orchestrator; same override — perform all
+      internal work inline rather than dispatching nested sub-subagents.
+    • plan-feature — composed orchestrator; runs /spec-phases THEN /write-plan
+      via the Skill tool (in-context, NOT Agent dispatch). Both sub-skills are
+      docs-only (PHASES.md + plan files) and orchestrator-only, so no recursive
+      Agent dispatch is needed — invoke /plan-feature once and let it run its
+      two sub-skills in your context. This is what lazy-state.py emits at
       Step 6 (replacing the separate /spec-phases dispatch).
     • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
-      orchestrator-only, no sub-subagent dispatch required.
+      already orchestrator-only; no change.
 
-  If your dispatch prompt (this prompt) appears to contradict the dispatched
-  skill's SKILL.md, the SKILL.md wins. Re-read it from disk to confirm — do
-  NOT rely on memory.
+  If you find yourself about to write Agent({...}) inside this cycle, STOP and
+  replace it with the equivalent Edit / Write / Read sequence. Do NOT write
+  BLOCKED.md because of the recursive-dispatch limit — that limit is exactly
+  what this override exists to handle.
+
+  The dispatched skill's own SKILL.md remains authoritative for everything
+  else: batch ordering, sentinel emissions, commit policy, file-shape
+  invariants, plan-checkbox semantics. Re-read it from disk if any
+  non-dispatch detail is unclear — do NOT rely on memory.
 
 Source/test file edits:
-  - /execute-plan path: you MUST dispatch Sonnet sub-subagents; never Edit/Write
-    source/test files directly. The skill enumerates the source-file extensions
-    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) that trigger this.
-  - Other-skill paths: if the dispatched skill does its own internal dispatch
-    and only requires you to invoke it once, just invoke it once.
+  - All paths: perform Edit / Write on source/test files
+    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) DIRECTLY in this
+    subagent session. The inline override above removes the /execute-plan
+    sub-subagent dispatch requirement and replaces it with inline edits.
+
+No premature Complete (PIPELINE-GATE HONESTY — HARD REQUIREMENT):
+  - You MUST NOT set the top-level `**Status:**` of SPEC.md or PHASES.md to
+    `Complete`. That flip is reserved EXCLUSIVELY for the orchestrator's
+    `__mark_complete__` pseudo-skill, which runs ONLY after the feature has
+    passed the full downstream tail: /retro (writes RETRO_DONE.md) → /mcp-test
+    (writes VALIDATED.md or a justified SKIP_MCP_TEST.md) → the __mark_complete__
+    MCP-coverage audit. If a phase-implementation cycle flips SPEC/PHASES
+    `**Status:** Complete` itself, lazy-state.py sees the feature as done and
+    rolls the queue forward, SILENTLY SKIPPING /retro + /mcp-test + the coverage
+    audit — the exact bypass this guard exists to prevent.
+  - What you MAY flip when an /execute-plan part finishes: the PLAN-PART
+    frontmatter `status:` (Ready → In-progress → Complete) and the per-PHASE
+    checkboxes/`Status:` line for the phase you just implemented (e.g. Phase 3
+    deliverables → checked, that phase → Complete). When the last phase's work
+    lands, set the top-level PHASES `**Status:**` to `In-progress` (NOT
+    `Complete`) — implementation is done but validation is still pending. The
+    feature reaches `Complete` only through __mark_complete__.
+  - If you believe the feature is genuinely finished and validated, STILL do not
+    flip the top-level Status — let the state machine route to /retro and
+    /mcp-test next. Those passes are cheap insurance, and __mark_complete__'s
+    coverage audit is the single authorized place the SPEC flips to Complete.
 
 Plan-part status + per-WU granularity (RESUME SAFETY):
   To make an interrupted cycle resume cleanly instead of redoing a whole plan
@@ -338,15 +403,17 @@ After the skill returns:
   2. Report a one-paragraph summary: what state was advanced, files modified,
      commit hash (or "no commit"), and any issues. Keep it under 8 lines so the
      orchestrator's per-cycle log stays compact. If you ran /execute-plan,
-     INCLUDE the count of Sonnet sub-subagents you dispatched — this is the
-     audit signal that the contract was honored.
+     CONFIRM you performed the test + implementation edits INLINE (zero Agent()
+     calls) — this is the inline-override audit signal, and note for each batch
+     that you wrote the failing tests before implementing (test-first
+     discipline).
 ```
 
 **LOOP DETECTED block (append only when the loop-guard fires):**
 
 ```
 ⚠️  LOOP DETECTED: The state script returned this exact
-(feature_id={feature_id}, sub_skill={sub_skill}, current_step={current_step})
+(feature_id={feature_id}, sub_skill={sub_skill}, sub_skill_args={sub_skill_args}, current_step={current_step})
 tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
 (RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
 missing — the skill that was supposed to write it on the prior cycle did not.
@@ -536,12 +603,12 @@ mode) inline — no orchestrator-side halt fires.
 After the subagent returns:
 
 1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, subagent's one-paragraph summary}`.
-2. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the first line of the subagent summary, `**Commit:**` = the cycle's commit sha (or `—`). For an `/execute-plan` cycle, add the `**Sub-agents:**` bullet with the dispatched Sonnet count (the contract-honored audit signal). No other prose.
-3. Update `prev_cycle_signature = (feature_id, sub_skill, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
+2. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the first line of the subagent summary, `**Commit:**` = the cycle's commit sha (or `—`). For an `/execute-plan` cycle, add the `**Inline:**` bullet confirming the subagent performed the edits inline (zero Agent() calls) with test-first discipline per batch — the inline-override audit signal. No other prose.
+3. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
 4. **Post-cycle push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** Verify the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). The cycle subagent's Step 1d already commits and pushes to the current branch at end-of-cycle, so this normally reports "up to date" — it is the backstop for any cycle that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds.
 5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the cycle counter continues counting from the value just produced here. Do NOT reset to 0 or 1 on the boundary; cycle N+1 is always the next cycle regardless of which feature it lands on.
 
-**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, current_step)` triple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the cycle-counter increment: it is a uniform post-cycle action that happens once per cycle (real, pseudo, or decision-resume) and never resets.
+**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, sub_skill_args, current_step)` tuple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the cycle-counter increment: it is a uniform post-cycle action that happens once per cycle (real, pseudo, or decision-resume) and never resets.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
@@ -791,7 +858,7 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
 7. **Record and continue the loop.**
    - Append to `cycle_log`: `{cycle+1, feature_name, "▶ needs-input (resolved + applied)", "<N> decision(s); <one-line subagent summary>"}`.
    - Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · needs-input`, `**Result:**` = "decision(s) resolved + applied — {first-line-of-subagent-summary}". No other prose.
-   - Update `prev_cycle_signature = (feature_id, "__apply_needs_input__", current_step)`. The synthetic sub_skill token distinguishes this from any real-skill cycle so the Step 1d loop-guard treats it as its own kind of cycle.
+   - Update `prev_cycle_signature = (feature_id, "__apply_needs_input__", sub_skill_args, current_step)`. The synthetic sub_skill token distinguishes this from any real-skill cycle so the Step 1d loop-guard treats it as its own kind of cycle.
    - Increment `cycle`. Return to Step 1a. **DO NOT halt, DO NOT print the final batch report.** The next state-script call should see the neutralized sentinel and route to the natural next step for the feature (typically resuming the skill that wrote NEEDS_INPUT.md — `/write-plan` or `/execute-plan` — now that the design ambiguity is resolved).
 
 This eliminates the legacy "answer → halt → manual SPEC/PHASES edit → re-run /lazy-batch" friction. The user's autonomy is preserved in step 3 (the choice itself); steps 6–7 are bounded mechanical work delegated to Sonnet so the orchestrator's Opus context stays lean.
@@ -814,7 +881,7 @@ Skip this step entirely when `terminal_reason in {"blocked", "needs-input", "que
 
    Pass `--skip-needs-research` under the same double-gate condition as Step 1a (`allow_research_skip == true AND skip_needs_research == true`). Parse the JSON.
 
-2. Compute the probe tuple `(feature_id, sub_skill, current_step)` from the new output (any field may be `null` for terminal exits — that is fine, the comparison still works).
+2. Compute the probe tuple `(feature_id, sub_skill, sub_skill_args, current_step)` from the new output (any field may be `null` for terminal exits — that is fine, the comparison still works).
 
 3. Compare against `prev_cycle_signature` (the signature of the last real-skill or pseudo-skill cycle run during THIS invocation). Three cases:
 
@@ -829,13 +896,13 @@ Skip this step entirely when `terminal_reason in {"blocked", "needs-input", "que
      - Pseudo-skill (`__*__`) → `"perform {sub_skill} on {feature_name} ({current_step})"`.
      - Real skill → `"dispatch /{sub_skill} on {feature_name} ({current_step})"`.
 
-   **(b) Forward-progress WARNING.** Probe tuple equals `prev_cycle_signature` (same `feature_id`, same `sub_skill`, same `current_step`, no terminal reason). This means the next `/lazy-batch` invocation would re-issue the cycle this run just finished — the queue did not advance. Print this block at the top of the Step 2 final batch report:
+   **(b) Forward-progress WARNING.** Probe tuple equals `prev_cycle_signature` (same `feature_id`, same `sub_skill`, same `sub_skill_args`, same `current_step`, no terminal reason). This means the next `/lazy-batch` invocation would re-issue the cycle this run just finished — the queue did not advance. Print this block at the top of the Step 2 final batch report:
 
    ```
    ⚠ FORWARD-PROGRESS WARNING: the next /lazy-batch invocation will return
    the same state as the cycle we just finished
    (feature_id={feature_id}, sub_skill={sub_skill},
-   current_step={current_step}).
+   sub_skill_args={sub_skill_args}, current_step={current_step}).
 
    This run did not advance the queue. Likely causes:
      • A sentinel that should have been written wasn't (RETRO_DONE.md,
@@ -907,7 +974,7 @@ Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), or decisi
 - **No dispatch narration.** Do NOT write "dispatching the subagent", "running in the background", "waiting on the completion notification before advancing", or similar. The loop mechanics are a fixed contract, not per-cycle news.
 - **No commit-strategy narration.** Do NOT explain commit ownership or in-flight races ("these uncommitted changes are the agent's in-flight work", "committing now would race the agent", "I'll let it own the commits"). Commits are owned by the cycle subagent (real skills) or by the inline action (pseudo-skills) — a fixed rule, never re-explained per cycle.
 - **Ignore commit prompts silently.** If a Stop hook or any other prompt asks whether to commit between cycles, do NOT answer with prose. The commit policy is already fixed; proceed to the next state probe without narration.
-- **At most 2–3 bullets, one line each.** Add a third bullet ONLY for a genuinely notable signal — e.g. `**Sub-agents:** 3 Sonnet` on an `/execute-plan` cycle (the contract-honored audit signal), `**Audit:** {N} product-behavior decision(s) surfaced` on a `/spec` or `plan-feature` cycle whose Step 1d.5 input-audit fired, or `**Note:** {flag}` for an issue worth surfacing.
+- **At most 2–3 bullets, one line each.** Add a third bullet ONLY for a genuinely notable signal — e.g. `**Inline:** edits performed inline, test-first per batch` on an `/execute-plan` cycle (the inline-override audit signal), `**Audit:** {N} product-behavior decision(s) surfaced` on a `/spec` or `plan-feature` cycle whose Step 1d.5 input-audit fired, or `**Note:** {flag}` for an issue worth surfacing.
 - **Halt/terminal announcements are exempt.** The Step 4 research halt, Step 1f research-wait, Step 1g malformed-sentinel halt, and Step 2 final report keep their own templated shapes — those are functional (copy-paste prompts, next-step guidance), not per-cycle narration.
 
 ---
