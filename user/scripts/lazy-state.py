@@ -93,6 +93,12 @@ def _state(
         "terminal_reason": terminal_reason,
         "notify_message": notify_message,
         "diagnostics": merged_diag,
+        # Structured list of features the device axis deferred this probe (each
+        # has RETRO_DONE.md + DEFERRED_REQUIRES_DEVICE.md + no VALIDATED.md on a
+        # no-real-device host). Always present so /lazy-status and orchestrators
+        # can surface lingering In-progress device-deferrals deterministically,
+        # not only when the queue exhausts. Mirrors _DIAGNOSTICS.
+        "device_deferred_features": list(_DEVICE_DEFERRED),
     }
 
 
@@ -100,6 +106,10 @@ def _state(
 # the start of each invocation and merges into the returned state dict before
 # returning.
 _DIAGNOSTICS: list[str] = []
+
+# Device-deferred features observed this invocation (see _state()). Reset at the
+# start of each compute_state() call alongside _DIAGNOSTICS.
+_DEVICE_DEFERRED: list[str] = []
 
 
 def _diag(msg: str) -> None:
@@ -1055,6 +1065,7 @@ def compute_state(
     # Reset diagnostics for this invocation so callers get a fresh list per
     # compute_state() call (matters in run_smoke_tests() which loops).
     _DIAGNOSTICS.clear()
+    _DEVICE_DEFERRED.clear()
     repo_root = repo_root.resolve()
     queue = load_queue(repo_root)
     if not queue:
@@ -1150,6 +1161,18 @@ def compute_state(
             validated = (spec_path / "VALIDATED.md").exists()
             if retro_done and device_deferred and not validated:
                 device_saturated_skipped.append(name)
+                _DEVICE_DEFERRED.append(name)
+                # Per-feature diagnostic on EVERY probe (not only when the queue
+                # exhausts) so a lingering In-progress device-deferral is always
+                # visible, even when a later feature is dispatched this cycle.
+                meta = parse_sentinel(spec_path / "DEFERRED_REQUIRES_DEVICE.md") or {}
+                scen = meta.get("deferred_scenarios") or []
+                scen_str = ", ".join(str(s) for s in scen) if scen else "(unspecified)"
+                _diag(
+                    f"device-saturated skipped: {name} — real-device-only "
+                    f"assertions deferred [{scen_str}] (DEFERRED_REQUIRES_DEVICE.md); "
+                    "re-opens on a real-device /lazy host."
+                )
                 continue
         if skip_needs_research:
             # Cheap filesystem peek — don't run the full per-feature state machine.
@@ -1191,8 +1214,8 @@ def compute_state(
             # Device-axis mirror of cloud-queue-exhausted. The no-device host has
             # done everything it can; the listed features carry deferred
             # real-device-only assertions awaiting a real-device /lazy host.
-            for fname in device_saturated_skipped:
-                _diag(f"device-saturated skipped: {fname}")
+            # (Per-feature diagnostics were already emitted inline at the skip
+            # site above, on every probe — not just here at exhaustion.)
             return _state(
                 terminal_reason="device-queue-exhausted",
                 notify_message=(
@@ -1504,10 +1527,22 @@ def compute_state(
     # prior no-device /mcp-test could not certify (e.g. sustained zero-dropout
     # under the HeadlessPumpDriver). This is keyed on the device axis, NOT the
     # cloud axis, and is checked BEFORE the cloud/workstation split so it
-    # governs both. A SKIP_MCP_TEST.md (permanent waiver) or an existing
-    # VALIDATED.md takes precedence and short-circuits this.
+    # governs both.
+    #
+    # The sentinel's MERE PRESENCE blocks completion — we deliberately do NOT
+    # require `not VALIDATED.md` here. The contract is that a real-device
+    # /mcp-test DELETES this sentinel on success; so if a VALIDATED.md and this
+    # sentinel coexist, the re-open's cleanup did not happen (a race / aborted
+    # run). Rather than letting that stray VALIDATED.md flip the feature Complete
+    # — leaving Complete + a deferral sentinel, the `complete-not-device-deferred`
+    # lint contradiction — we re-fire the re-open on a real-device host (mcp-test
+    # is idempotent: it re-certifies the deferred scenarios and deletes the
+    # sentinel, self-healing the state). The completion-integrity gate enforces
+    # the same invariant a second time at flip time (refuses while the sentinel
+    # is present). A genuine permanent `SKIP_MCP_TEST.md` (any-host-untestable)
+    # still takes precedence and short-circuits this.
     device_deferred_file = spec_path / "DEFERRED_REQUIRES_DEVICE.md"
-    if device_deferred_file.exists() and not validated_file.exists() and not skip_mcp_file.exists():
+    if device_deferred_file.exists() and not skip_mcp_file.exists():
         if real_device:
             # RE-OPEN — the inverse the framework previously lacked. On a
             # real-device host, route back to /mcp-test scoped to the deferred
@@ -2403,6 +2438,43 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             feature_id="feat-dc", date="2026-05-30",
             mcp_scenarios=["AQ-TE-05"], result="all-passing",
         )
+    elif name == "device-deferred-stale-validated":
+        # Stray-race state: a real-device re-open wrote VALIDATED.md but did NOT
+        # delete DEFERRED_REQUIRES_DEVICE.md. The sentinel's presence MUST still
+        # block completion — on a real-device host it re-fires the re-open
+        # (idempotent, self-healing) rather than flipping Complete (which would
+        # leave Complete + a deferral sentinel, the lint contradiction).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-dsv", "name": "Feature DSV",
+                 "spec_dir": "feat-dsv", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dsv = features / "feat-dsv"
+        dsv.mkdir()
+        (dsv / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (dsv / "RESEARCH.md").write_text("# R\n")
+        (dsv / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (dsv / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            dsv / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-dsv", date="2026-05-30",
+            rounds=1, retro_plans=["retro-1-feat-dsv.md"],
+            mcp_validation_status="complete",
+        )
+        _write_yaml_sentinel(
+            dsv / "VALIDATED.md", "validated",
+            feature_id="feat-dsv", date="2026-05-30",
+            mcp_scenarios=["AQ-TE-05"], result="all-passing",
+        )
+        _write_yaml_sentinel(
+            dsv / "DEFERRED_REQUIRES_DEVICE.md", "deferred-requires-device",
+            feature_id="feat-dsv",
+            deferred_scenarios=["AQ-TE-05"],
+            reason="sustained zero-dropout not certifiable under HeadlessPumpDriver",
+            deferred_by="lazy", date="2026-05-30",
+        )
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2604,6 +2676,15 @@ def run_smoke_tests() -> int:
             ("device-deferred-cleared", False, False, {
                 "sub_skill": "__mark_complete__",
                 "feature_id": "feat-dc",
+            }, True),
+            # Stray-race hardening: VALIDATED.md present but the deferral sentinel
+            # was NOT deleted. The sentinel's presence MUST block completion — a
+            # real-device host re-fires the re-open (self-healing), it does NOT
+            # flip Complete. Proves VALIDATED.md alone cannot bypass the deferral.
+            ("device-deferred-stale-validated", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-dsv",
+                "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
             }, True),
         ]
         for case in cases:

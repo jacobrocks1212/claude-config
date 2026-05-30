@@ -50,6 +50,21 @@ identically in cloud and workstation.
    Also confirm `{spec_path}/RETRO_DONE.md` exists (retro ran). If neither a
    validation sentinel nor RETRO_DONE.md is present → **refuse** (Step 4).
 
+2a. **Device-deferral check (NEW).** Confirm `{spec_path}/DEFERRED_REQUIRES_DEVICE.md`
+   is **NOT present**. That sentinel means real-device-only MCP assertions are
+   still outstanding — device-deferral BLOCKS completion until a real-device run
+   certifies the deferred scenarios and DELETES the sentinel. Its presence at
+   mark-complete time means either the feature is being flipped without clearing
+   the deferral, or a real-device re-open wrote `VALIDATED.md` but failed to
+   delete the sentinel. Either way the on-disk state is incoherent — completing
+   now would leave `Complete` + a deferral sentinel (the
+   `complete-not-device-deferred` repo-lint contradiction). If present →
+   **refuse** (Step 4) with a decision describing the gap (e.g. "feature carries
+   DEFERRED_REQUIRES_DEVICE.md at mark-complete — certify the deferred scenarios
+   on a real-device host, or delete the stale sentinel if already certified").
+   This is the gate-level enforcement of the same invariant `lazy-state.py`
+   routes around (it re-opens rather than completing while the sentinel exists).
+
 3. **All preconditions pass → write the receipt, then flip.** Write
    `{spec_path}/COMPLETED.md` (`kind: completed`, `provenance: gated`) per
    `sentinel-frontmatter.md`, FOLDING the validation evidence into it BEFORE the
@@ -71,7 +86,7 @@ identically in cloud and workstation.
    `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` / `COMPLETED.md` / `plans/`,
    commit per project policy.
 
-4. **Refuse path (any precondition in steps 1–2 fails).** Do NOT flip. Do NOT
+4. **Refuse path (any precondition in steps 1–2a fails).** Do NOT flip. Do NOT
    write `COMPLETED.md`. This means the state script emitted `__mark_complete__`
    for a feature that isn't actually finishable — a genuine inconsistency. Write
    `{spec_path}/NEEDS_INPUT.md` (`written_by: completion-integrity-gate`,

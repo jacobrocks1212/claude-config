@@ -36,6 +36,7 @@ Parse the JSON:
 - `current_step` — the state script's human-readable position
 - `sub_skill`, `sub_skill_args` — what /lazy would dispatch next
 - `terminal_reason`, `notify_message` — set when the pipeline halts
+- `device_deferred_features` — features the device axis skipped this probe (each has `DEFERRED_REQUIRES_DEVICE.md` + no `VALIDATED.md` on a no-real-device host). Always present; non-empty means lingering In-progress deferrals awaiting a real-device host.
 
 ---
 
@@ -101,6 +102,7 @@ Output this exact format (fill in values, replacing missing fields with `—`):
 **Last commit:** {short hash} "{commit message}"
 **Blockers:** {None | "<BLOCKED phase>: <recovery_suggestion>"}
 **MCP Tests:** {count} scenarios linked | Not yet created | Skipped (see SKIP_MCP_TEST.md) | Deferred (cloud) | Deferred (real-device — see DEFERRED_REQUIRES_DEVICE.md)
+**Device-deferred:** {None | comma-separated `device_deferred_features`} — features awaiting a real-device host
 **Next /lazy action:** {mapped action from Step 3}
 ```
 
@@ -111,6 +113,7 @@ Notes:
 - The "Phase {current}/{total}" annotation is best-effort; if PHASES.md doesn't exist yet, write `"—/— ({state})"`.
 - The "Skipped (cloud)" / "Deferred (cloud)" labels for MCP Tests apply when `$ARGUMENTS` contains `--cloud` AND the spec dir has SKIP_MCP_TEST.md / DEFERRED_NON_CLOUD.md respectively.
 - The "Deferred (real-device)" label applies when the spec dir has `DEFERRED_REQUIRES_DEVICE.md` — real-device-only assertions deferred on the device axis (independent of `--cloud`).
+- The **Device-deferred** line lists `device_deferred_features` from the state JSON (features the QUEUE skipped past this probe, distinct from the current feature). Drop the line when the list is empty. This is the deterministic surface for lingering In-progress deferrals that would otherwise be invisible until queue exhaustion.
 
 **Do NOT execute any skills or modify any files. Report only.**
 
