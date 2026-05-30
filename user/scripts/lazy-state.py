@@ -1539,10 +1539,17 @@ def compute_state(
     # is idempotent: it re-certifies the deferred scenarios and deletes the
     # sentinel, self-healing the state). The completion-integrity gate enforces
     # the same invariant a second time at flip time (refuses while the sentinel
-    # is present). A genuine permanent `SKIP_MCP_TEST.md` (any-host-untestable)
-    # still takes precedence and short-circuits this.
+    # is present).
+    #
+    # The deferral ALSO takes precedence over a SKIP_MCP_TEST.md — we do NOT
+    # require `not skip_mcp`. A feature can legitimately carry BOTH (some
+    # assertions any-host-untestable → skip; one real-device-only → deferral);
+    # the deferral must still gate completion until a real-device run certifies
+    # its scenarios, even though the skip alone would otherwise validate-and-
+    # complete. Once the deferral is cleared (sentinel deleted), the residual
+    # skip resumes its normal `__write_validated_from_skip__` path.
     device_deferred_file = spec_path / "DEFERRED_REQUIRES_DEVICE.md"
-    if device_deferred_file.exists() and not skip_mcp_file.exists():
+    if device_deferred_file.exists():
         if real_device:
             # RE-OPEN — the inverse the framework previously lacked. On a
             # real-device host, route back to /mcp-test scoped to the deferred
@@ -2475,6 +2482,45 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             reason="sustained zero-dropout not certifiable under HeadlessPumpDriver",
             deferred_by="lazy", date="2026-05-30",
         )
+    elif name == "device-deferred-with-skip":
+        # Mixed waiver: some assertions are any-host-untestable (permanent
+        # SKIP_MCP_TEST.md) AND one is real-device-only (DEFERRED_REQUIRES_DEVICE.md)
+        # — the learn-system-v2 shape. The deferral MUST take precedence: on a
+        # real-device host the feature RE-OPENS (does not validate-from-skip and
+        # complete), so the device assertion is certified before completion.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-dws", "name": "Feature DWS",
+                 "spec_dir": "feat-dws", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dws = features / "feat-dws"
+        dws.mkdir()
+        (dws / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (dws / "RESEARCH.md").write_text("# R\n")
+        (dws / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (dws / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            dws / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-dws", date="2026-05-30",
+            rounds=1, retro_plans=["retro-1-feat-dws.md"],
+            mcp_validation_status="complete",
+        )
+        _write_yaml_sentinel(
+            dws / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-dws",
+            reason="two items need a live LLM API key / dev-console — not MCP-drivable here",
+            alternative_validation="covered by the deterministic test suite",
+            date="2026-05-30", skipped_by="lazy",
+        )
+        _write_yaml_sentinel(
+            dws / "DEFERRED_REQUIRES_DEVICE.md", "deferred-requires-device",
+            feature_id="feat-dws",
+            deferred_scenarios=["modeling-audio-in-cue"],
+            reason="audio item blocked by no-device ALSA failure under HeadlessPumpDriver",
+            deferred_by="lazy", date="2026-05-30",
+        )
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2684,6 +2730,14 @@ def run_smoke_tests() -> int:
             ("device-deferred-stale-validated", False, False, {
                 "sub_skill": "mcp-test",
                 "feature_id": "feat-dsv",
+                "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
+            }, True),
+            # Mixed skip+deferral: the deferral takes precedence — a real-device
+            # host RE-OPENS rather than completing via the skip. Proves a buried
+            # real-device assertion can't be masked by a co-present permanent skip.
+            ("device-deferred-with-skip", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-dws",
                 "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
             }, True),
         ]
