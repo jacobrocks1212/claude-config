@@ -406,36 +406,40 @@ def backfill_receipts(repo_root: Path) -> dict[str, Any]:
     completion but lacks a receipt.
 
     Grandfathers in features completed before receipt-gating shipped so they
-    don't trip the `completion-unverified` hard-halt, while truthfully labeling
-    them as never-gate-verified. Superseded features and features with a missing
-    spec_dir are skipped.
+    don't trip the `completion-unverified` hard-halt (in lazy-state.py) or the
+    `spec-complete-requires-receipt` lint rule, while truthfully labeling them as
+    never-gate-verified.
+
+    Walks EVERY on-disk `SPEC.md` under `docs/features/` (excluding `_archive/`)
+    whose `**Status:**` is `Complete` — NOT just queued features. The receipt is
+    a repo-wide audit artifact: many shipped features have been dequeued, so a
+    queue-only walk would leave them receiptless and tripping the repo lint.
+    `Superseded` specs are exempt (retired, never validated). The feature_id is
+    the SPEC directory basename.
     """
     repo_root = repo_root.resolve()
-    queue = load_queue(repo_root)
-    roadmap_path = repo_root / "docs" / "features" / "ROADMAP.md"
-    roadmap_text = roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else ""
+    features_root = repo_root / "docs" / "features"
     today = datetime.now().strftime("%Y-%m-%d")
     written: list[str] = []
     skipped_superseded: list[str] = []
-    for entry in queue:
-        name = entry.get("name")
-        feature_id = entry.get("id")
-        spec_subdir = entry.get("spec_dir")
-        if not name or not feature_id or not spec_subdir:
+    if not features_root.exists():
+        return {"backfilled": [], "count": 0, "skipped_superseded": []}
+    for spec_md in sorted(features_root.glob("**/SPEC.md")):
+        # Skip archived specs.
+        if "_archive" in spec_md.parts:
             continue
-        spec_path = (repo_root / "docs" / "features" / spec_subdir).resolve()
-        if not spec_path.exists():
+        spec_dir = spec_md.parent
+        status = spec_status(spec_dir)
+        if status == "Superseded":
+            skipped_superseded.append(spec_dir.name)
             continue
-        if spec_status(spec_path) == "Superseded":
-            skipped_superseded.append(feature_id)
+        if status != "Complete":
             continue
-        if not completion_claimed(roadmap_text, name, spec_path):
-            continue
-        receipt = spec_path / "COMPLETED.md"
+        receipt = spec_dir / "COMPLETED.md"
         if receipt.exists():
             continue
         write_completed_receipt(
-            receipt, feature_id, today,
+            receipt, spec_dir.name, today,
             provenance="backfilled-unverified",
             body_note=(
                 "Grandfathered during the receipt-gating rollout. This feature "
@@ -445,7 +449,7 @@ def backfill_receipts(repo_root: Path) -> dict[str, Any]:
                 "behavior is load-bearing."
             ),
         )
-        written.append(feature_id)
+        written.append(spec_dir.name)
     return {
         "backfilled": written,
         "count": len(written),
