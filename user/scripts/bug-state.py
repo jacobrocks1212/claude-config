@@ -39,10 +39,11 @@ Output schema (stdout JSON) — same keys as lazy-state.py:
   "terminal_reason":   null | "all-bugs-fixed" | "cloud-queue-exhausted"
                             | "device-queue-exhausted" | "blocked"
                             | "needs-input" | "completion-unverified"
-                            | "queue-missing",
+                            | "queue-missing" | "all-remaining-deferred",
   "notify_message":    "<string>"      | null,
   "diagnostics":       [],
   "device_deferred_features": [],
+  "operator_deferred": [],
 }
 
 Exit codes:
@@ -104,6 +105,7 @@ TR_COMPLETION_UNVERIFIED = "completion-unverified"
 TR_DEVICE_QUEUE_EXHAUSTED = "device-queue-exhausted"
 TR_CLOUD_QUEUE_EXHAUSTED = "cloud-queue-exhausted"
 TR_QUEUE_MISSING = "queue-missing"
+TR_ALL_DEFERRED = "all-remaining-deferred"
 
 # sub_skill tokens for bug-specific actions
 SKILL_INVESTIGATE = "spec-bug"             # root-cause investigation / spec-bug skill
@@ -151,6 +153,10 @@ REAL_DEVICE_ENV = "ALGOBOOTH_REAL_AUDIO_DEVICE"
 # Module-level mutable list for device-deferred bugs (mirrors lazy-state.py's
 # _DEVICE_DEFERRED).  Reset at the start of each compute_state() call.
 _DEVICE_DEFERRED: list[str] = []
+
+# Module-level mutable list for operator-deferred bugs (DEFERRED.md sentinel).
+# Reset at the start of each compute_state() call, mirroring _DEVICE_DEFERRED.
+_OPERATOR_DEFERRED: list[str] = []
 
 
 # ===========================================================================
@@ -200,6 +206,9 @@ def _bug_state(
         # present so /lazy-bug-status and orchestrators can surface lingering
         # In-progress device-deferrals deterministically.
         "device_deferred_features": list(_DEVICE_DEFERRED),
+        # Structured list of bugs the operator explicitly deferred via DEFERRED.md.
+        # Present so orchestrators can surface parked bugs without halting the queue.
+        "operator_deferred": list(_OPERATOR_DEFERRED),
     }
 
 
@@ -404,9 +413,10 @@ def compute_state(
     if cloud:
         real_device = False
 
-    # Reset diagnostics and device-deferred list for this invocation.
+    # Reset diagnostics and deferred lists for this invocation.
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
+    _OPERATOR_DEFERRED.clear()
     repo_root = repo_root.resolve()
 
     # Load the hybrid-ordered bug queue.
@@ -475,6 +485,22 @@ def compute_state(
                 )
                 continue
 
+        # -----------------------------------------------------------------------
+        # Operator-deferred skip: DEFERRED.md present → operator parked this bug.
+        # Skip and continue to the next candidate so the queue keeps moving.
+        # Re-include by deleting DEFERRED.md.
+        # -----------------------------------------------------------------------
+        deferred_md = spec_dir / "DEFERRED.md"
+        if deferred_md.exists():
+            _OPERATOR_DEFERRED.append(bug_name)
+            meta = parse_sentinel(deferred_md) or {}
+            reason = meta.get("reason") or "(no reason recorded)"
+            _diag(
+                f"operator-deferred skipped: {bug_name} — DEFERRED.md "
+                f"(reason: {reason}); re-include by deleting DEFERRED.md."
+            )
+            continue
+
         # This bug is actionable — stop scanning.
         current = {
             "id": bug_id,
@@ -494,6 +520,19 @@ def compute_state(
                     f"Device queue exhausted — {len(device_saturated_skipped)} bug(s) "
                     "carry real-device-only assertions deferred to a real-device "
                     "/lazy-bug host."
+                ),
+            )
+        if _OPERATOR_DEFERRED:
+            # All remaining bugs were explicitly parked by the operator via DEFERRED.md.
+            # Report this as a distinct terminal rather than all-bugs-fixed so the
+            # orchestrator knows the queue isn't empty — just paused by the operator.
+            return _bug_state(
+                terminal_reason=TR_ALL_DEFERRED,
+                current_step="All remaining bugs are operator-deferred",
+                notify_message=(
+                    f"All remaining bugs are operator-deferred — "
+                    f"{len(_OPERATOR_DEFERRED)} bug(s) parked via DEFERRED.md. "
+                    "Re-include by deleting DEFERRED.md in each bug dir."
                 ),
             )
         return _bug_state(
@@ -795,6 +834,9 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
       wont-fix-exempt         — Won't-fix with NO receipt → skip (receipt-exempt)
       fixed-no-receipt-halt   — Fixed with NO FIXED.md → completion-unverified
       all-bugs-fixed          — no open bugs remain → all-bugs-fixed terminal
+      operator-deferred-skip  — 2 bugs: one with DEFERRED.md (parked), one actionable;
+                                the actionable bug must be selected (DEFERRED.md skipped)
+      all-operator-deferred   — only bug has DEFERRED.md → all-remaining-deferred terminal
     """
     root = tmpdir / name
     bugs_dir = root / "docs" / "bugs"
@@ -1101,6 +1143,67 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             provenance="gated",
         )
 
+    elif name == "operator-deferred-skip":
+        # Two bugs: bug-deferred (DEFERRED.md present) and bug-actionable (Open, no sentinel).
+        # Queue lists deferred first; the actionable bug must be selected instead.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-deferred", "name": "Deferred Bug", "spec_dir": "bug-deferred"},
+                {"id": "bug-actionable", "name": "Actionable Bug", "spec_dir": "bug-actionable"},
+            ]
+        }), encoding="utf-8")
+        # Deferred bug: Open status + DEFERRED.md sentinel
+        bd = bugs_dir / "bug-deferred"
+        bd.mkdir()
+        (bd / "SPEC.md").write_text(
+            "# Deferred Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bd / "DEFERRED.md", "deferred",
+            bug_id="bug-deferred",
+            reason="Needs human audio audition — cannot be validated autonomously.",
+            deferred_at="2026-06-01",
+        )
+        # Actionable bug: Open status, no sentinels → should dispatch spec-bug
+        ba = bugs_dir / "bug-actionable"
+        ba.mkdir()
+        (ba / "SPEC.md").write_text(
+            "# Actionable Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-05-15\n",
+            encoding="utf-8",
+        )
+
+    elif name == "all-operator-deferred":
+        # Only bug has DEFERRED.md — no actionable bugs remain.
+        # Expected: terminal_reason == TR_ALL_DEFERRED and operator_deferred non-empty.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-only-deferred", "name": "Only Deferred Bug",
+                 "spec_dir": "bug-only-deferred"},
+            ]
+        }), encoding="utf-8")
+        bod = bugs_dir / "bug-only-deferred"
+        bod.mkdir()
+        (bod / "SPEC.md").write_text(
+            "# Only Deferred Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-20\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bod / "DEFERRED.md", "deferred",
+            bug_id="bug-only-deferred",
+            reason="Pending hardware setup.",
+            deferred_at="2026-06-01",
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1237,6 +1340,22 @@ def run_smoke_tests() -> int:
             "all-bugs-fixed", False, True,
             {
                 "terminal_reason": TR_ALL_BUGS_FIXED,
+            },
+        ),
+        # 12. Operator-deferred skip: deferred bug is skipped; actionable bug is selected
+        (
+            "operator-deferred-skip", False, True,
+            {
+                "feature_id": "bug-actionable",
+                "sub_skill": SKILL_INVESTIGATE,
+                "current_step": STEP_INVESTIGATE,
+            },
+        ),
+        # 13. All operator-deferred: only remaining bug has DEFERRED.md → all-remaining-deferred
+        (
+            "all-operator-deferred", False, True,
+            {
+                "terminal_reason": TR_ALL_DEFERRED,
             },
         ),
     ]
