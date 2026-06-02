@@ -24,19 +24,57 @@ it mutates the production features pipeline.
 **Entry criteria:** None — first phase.
 
 **Deliverables:**
-- [ ] Create `user/scripts/lazy_core.py` with the extracted helpers + a module docstring.
-- [ ] Rewire `lazy-state.py` to `from lazy_core import …` (or `import lazy_core`); resolve the
+- [x] Create `user/scripts/lazy_core.py` with the extracted helpers + a module docstring.
+- [x] Rewire `lazy-state.py` to `from lazy_core import …` (or `import lazy_core`); resolve the
       `_DIAGNOSTICS` global so both modules share one diagnostics list per invocation (core owns
       it; each `compute_state()` calls `clear_diagnostics()` at entry).
-- [ ] `python3 lazy-state.py --test` passes with zero fixture changes.
-- [ ] Sanity: `python3 lazy-state.py` against AlgoBooth produces the same JSON as before
+- [x] `python3 lazy-state.py --test` passes with zero fixture changes.
+- [x] Sanity: `python3 lazy-state.py` against AlgoBooth produces the same JSON as before
       (diff a captured baseline).
 
 **Runtime Verification (workstation):**
-- [ ] `python3 ~/.claude/scripts/lazy-state.py --test` exits 0.
+- [x] `python3 ~/.claude/scripts/lazy-state.py --test` exits 0.
 
 **Implementation Notes:**
-<!-- executor appends date, work completed, integration notes, pitfalls, files modified -->
+
+#### Implementation Notes (Phase 1)
+**Completed:** 2026-06-01
+**Work completed:**
+- `lazy_core.py` (581 lines, new): extracted domain-agnostic helpers verbatim — infra
+  (`_atomic_write`, `_die`, `_DIAGNOSTICS`/`_diag`/`clear_diagnostics`, `_FENCE`), sentinel/plan
+  parsing (`parse_sentinel`, `_parse_plan_frontmatter`, `_plan_status`, `_plan_lowest_phase`,
+  `_plan_phase_set`, `_unchecked_wus_in_plan_scope`, `find_implementation_plans`,
+  `_has_any_complete_plan`, `find_retro_plans`, `latest_retro_plan`,
+  `retro_plan_has_significant_divergences`), PHASES analysis (`count_deliverables`,
+  `_VERIFICATION_SECTION_RE`, `remaining_unchecked_are_verification_only`), receipts
+  (`spec_status`, `has_completion_receipt`, `write_completed_receipt`).
+- `lazy-state.py` (2948 → 2520 lines): rewired to `import lazy_core` + `from lazy_core import (...)`.
+  `_state()` reads `lazy_core._DIAGNOSTICS` (the canonical shared list); `compute_state()` calls
+  `clear_diagnostics()` at entry.
+- `receipts` trio generalized for Phase-2 reuse: `write_completed_receipt(kind=, filename=)`,
+  `has_completion_receipt(filename=)`, `spec_status` generic `**Status:**` reader — all with
+  defaults reproducing current `COMPLETED.md`/`complete` behavior byte-for-byte.
+- Characterization harness `test_lazy_core.py` (783 lines, 43 tests, stdlib-only — pytest is NOT
+  installed in this env) + baselines under `tests/baselines/`.
+**Integration notes:**
+- Phase 2 `bug-state.py` imports the SAME `lazy_core` — reuse the generalized receipt helpers with
+  `kind="fixed"`, `filename="FIXED.md"`.
+- The diagnostics list is owned by `lazy_core`; any new state-computer MUST call
+  `lazy_core.clear_diagnostics()` at the top of its `compute_state()`.
+**Pitfalls & guidance:**
+- Zero-behavior-change contract proven two ways: (1) `lazy-state.py --test` byte-identical to
+  baseline after normalizing the per-run `tempfile` suffix (`lazy-state-fixtures-XXXXXXXX`
+  placeholder), folded into a durable test `test_lazy_state_test_output_matches_baseline`; (2)
+  `lazy-state.py --repo-root <AlgoBooth>` JSON byte-identical (empty diff).
+- `lazy_core` MUST keep the underscore name and sit in `user/scripts/` so `import lazy_core`
+  resolves under the `~/.claude/scripts` symlink.
+- Two test-infra defects were fixed by a follow-up subagent (NOT production code): the baseline's
+  non-deterministic temp path, and an assertion placed outside a `with TemporaryDirectory()` block.
+**Files modified:**
+- `user/scripts/lazy_core.py` — new shared core.
+- `user/scripts/lazy-state.py` — rewired to import from `lazy_core`.
+- `user/scripts/test_lazy_core.py` — new characterization harness (43 tests).
+- `user/scripts/tests/baselines/{lazy-state-test-baseline.txt,lazy-state-algobooth.json,README.md}` — baselines.
 
 ---
 
