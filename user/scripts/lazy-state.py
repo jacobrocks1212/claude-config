@@ -812,6 +812,7 @@ def compute_state(
     cloud: bool,
     skip_needs_research: bool = False,
     real_device: bool = True,
+    scope_feature_id: str | None = None,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -878,6 +879,10 @@ def compute_state(
             _diag(f"duplicate queue id '{feature_id}' — second entry ignored.")
             continue
         seen_ids.add(feature_id)
+        # --feature-id scoping: when set, process ONLY the matching queue entry.
+        # Absent the flag (None) behavior is byte-identical to single-current.
+        if scope_feature_id is not None and feature_id != scope_feature_id:
+            continue
         # FM1 receipt-gated completion. A feature is genuinely DONE only when it
         # CLAIMS completion AND carries a durable COMPLETED.md receipt proving it
         # passed through __mark_complete__'s integrity gate. Superseded is exempt
@@ -3071,6 +3076,87 @@ def run_smoke_tests() -> int:
         except SystemExit as exc:
             failures.append(f"[{fix_name_halt}] SystemExit: {exc.code}")
 
+        # -------------------------------------------------------------------
+        # Fixture WU-4.2-1: scoped-feature-id (RED — param does not exist yet)
+        # Two actionable ad-hoc features; default picks the FIRST (feat-scope-alpha),
+        # so scoping to the SECOND (feat-scope-beta) proves the filter took effect.
+        # This call passes `scope_feature_id` which does not exist on compute_state
+        # yet → raises TypeError. Wrapped so the harness records a clean FAIL.
+        # -------------------------------------------------------------------
+        fix_scope_root = td_path / "scope-filter"
+        scope_features = fix_scope_root / "docs" / "features"
+        scope_features.mkdir(parents=True, exist_ok=True)
+        (scope_features / "ROADMAP.md").write_text("# Roadmap\n")
+        (scope_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-scope-alpha", "name": "Scope Alpha",
+                 "spec_dir": "feat-scope-alpha", "tier": 1},
+                {"id": "feat-scope-beta", "name": "Scope Beta",
+                 "spec_dir": "feat-scope-beta", "tier": 1},
+            ]
+        }))
+        for fid in ("feat-scope-alpha", "feat-scope-beta"):
+            fdir = scope_features / fid
+            fdir.mkdir()
+            (fdir / "SPEC.md").write_text(
+                "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+            )
+            (fdir / "RESEARCH.md").write_text("# R\n")
+            (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # RED: scope_feature_id kwarg does not exist yet — expect TypeError
+        try:
+            got_scoped = compute_state(
+                fix_scope_root, cloud=False, real_device=True,
+                scope_feature_id="feat-scope-beta",
+            )
+            # If we reach here the param already exists; validate the filter result.
+            if got_scoped.get("feature_id") != "feat-scope-beta":
+                failures.append(
+                    f"[scoped-feature-id] expected feature_id='feat-scope-beta', "
+                    f"got {got_scoped.get('feature_id')!r}"
+                )
+                print("  FAIL [scoped-feature-id] scoping did not select feat-scope-beta")
+            else:
+                print("  PASS [scoped-feature-id] scope_feature_id selected feat-scope-beta")
+        except TypeError as e:
+            failures.append(
+                f"[scoped-feature-id] TypeError (scope_feature_id param not yet "
+                f"implemented): {e}"
+            )
+            print(f"  FAIL [scoped-feature-id] TypeError — {e}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-4.2-2: baseline-regression-default (GREEN GUARD)
+        # Same two-feature queue; default (no scope param) must pick the FIRST
+        # actionable feature (feat-scope-alpha). This fixture is intentionally
+        # GREEN now and must stay GREEN after the impl lands — it proves the
+        # upcoming change is non-breaking.
+        # -------------------------------------------------------------------
+        try:
+            got_default = compute_state(
+                fix_scope_root, cloud=False, real_device=True,
+            )
+            default_ok = True
+            if got_default.get("feature_id") != "feat-scope-alpha":
+                failures.append(
+                    f"[baseline-regression-default] expected feature_id='feat-scope-alpha', "
+                    f"got {got_default.get('feature_id')!r}"
+                )
+                default_ok = False
+            if got_default.get("current_step") != "Step 6: plan feature (phases + plan)":
+                failures.append(
+                    f"[baseline-regression-default] expected current_step='Step 6: plan "
+                    f"feature (phases + plan)', got {got_default.get('current_step')!r}"
+                )
+                default_ok = False
+            print(
+                f"  {'PASS' if default_ok else 'FAIL'} [baseline-regression-default] "
+                f"default picks feat-scope-alpha at "
+                f"{got_default.get('current_step')!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[baseline-regression-default] SystemExit: {exc.code}")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -3124,6 +3210,8 @@ def main() -> int:
                         help="Tier for the ad-hoc entry (default: 0).")
     parser.add_argument("--materialize-wi", type=int, default=None,
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
+    parser.add_argument("--feature-id", default=None,
+                        help="Scope this run to a single feature by id (queue entry id). Absent → single-current default.")
     args = parser.parse_args()
 
     if args.enqueue_adhoc:
@@ -3164,6 +3252,7 @@ def main() -> int:
         cloud=args.cloud,
         skip_needs_research=args.skip_needs_research,
         real_device=resolve_real_device(args.real_device),
+        scope_feature_id=args.feature_id,
     )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0

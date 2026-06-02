@@ -386,6 +386,7 @@ def compute_state(
     repo_root: Path,
     cloud: bool,
     real_device: bool = True,
+    scope_bug_id: str | None = None,
 ) -> dict[str, Any]:
     """Walk the bug lifecycle and return the next action as a JSON-serializable dict.
 
@@ -424,6 +425,11 @@ def compute_state(
         spec_dir: Path = entry.get("spec_path")
 
         if not bug_id or not bug_name or not spec_dir:
+            continue
+
+        # --bug-id scoping: when set, process ONLY the matching queue entry.
+        # Absent the flag (None) behavior is byte-identical to today.
+        if scope_bug_id is not None and str(bug_id) != str(scope_bug_id):
             continue
 
         # -----------------------------------------------------------------------
@@ -1177,6 +1183,44 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             encoding="utf-8",
         )
 
+    elif name == "scope-bug-id-two-bugs":
+        # Two actionable bugs in queue.json order:
+        #   1st: "bug-scope-alpha" (Open, P1) — the one default picks
+        #   2nd: "bug-scope-beta"  (Open, P2) — the one scope_bug_id targets
+        # Both have only a SPEC.md at an actionable status (Open), so both are
+        # normally actionable.  The queue order guarantees alpha is always first
+        # under the default path, making a result of beta non-tautological.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-scope-alpha", "name": "Scope Alpha Bug",
+                 "spec_dir": "bug-scope-alpha"},
+                {"id": "bug-scope-beta", "name": "Scope Beta Bug",
+                 "spec_dir": "bug-scope-beta"},
+            ]
+        }), encoding="utf-8")
+        # First bug (alpha) — default walk would pick this one
+        ba = bugs_dir / "bug-scope-alpha"
+        ba.mkdir()
+        (ba / "SPEC.md").write_text(
+            "# Scope Alpha Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-01\n\n"
+            "## Description\n\nFirst actionable bug.\n",
+            encoding="utf-8",
+        )
+        # Second bug (beta) — scope_bug_id targets this one
+        bb = bugs_dir / "bug-scope-beta"
+        bb.mkdir()
+        (bb / "SPEC.md").write_text(
+            "# Scope Beta Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-05-02\n\n"
+            "## Description\n\nSecond actionable bug.\n",
+            encoding="utf-8",
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1461,6 +1505,91 @@ def run_smoke_tests() -> int:
             )
             print(f"  FAIL [{fix_name_idem}]: NotImplementedError — {exc}")
 
+        # -------------------------------------------------------------------
+        # scoped-bug-id (RED): compute_state() with scope_bug_id="bug-scope-beta"
+        # must advance the SECOND bug in the queue, not the default first one.
+        # The kwarg does not exist yet → TypeError: unexpected keyword argument.
+        # Wrapped in try/except TypeError so the harness reports a clean FAIL.
+        # -------------------------------------------------------------------
+        fix_name_scope = "scope-bug-id-two-bugs"
+        root_scope = _build_bug_fixture(td_path, fix_name_scope)
+        try:
+            got_scope = compute_state(
+                root_scope, cloud=False, real_device=True,
+                scope_bug_id="bug-scope-beta",
+            )
+            # Post-impl: assert it advanced beta, not alpha.
+            scope_ok = True
+            fid_scope = got_scope.get("feature_id")
+            if fid_scope != "bug-scope-beta":
+                failures.append(
+                    f"[{fix_name_scope}] scoped-bug-id: expected feature_id='bug-scope-beta', "
+                    f"got {fid_scope!r}"
+                )
+                scope_ok = False
+            # Also must NOT have advanced alpha (the default pick).
+            if fid_scope == "bug-scope-alpha":
+                failures.append(
+                    f"[{fix_name_scope}] scoped-bug-id: erroneously advanced 'bug-scope-alpha' "
+                    "instead of scoped 'bug-scope-beta'"
+                )
+                scope_ok = False
+            print(
+                f"  {'PASS' if scope_ok else 'FAIL'} [{fix_name_scope}] "
+                f"scoped-bug-id: feature_id={fid_scope!r}"
+            )
+        except TypeError as exc:
+            # Expected RED: scope_bug_id kwarg not yet accepted.
+            failures.append(
+                f"[{fix_name_scope}] scoped-bug-id: TypeError (scope_bug_id param missing): {exc}"
+            )
+            print(
+                f"  FAIL [{fix_name_scope}] scoped-bug-id: "
+                f"TypeError — {exc}"
+            )
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_scope}] scoped-bug-id: NotImplementedError: {exc}"
+            )
+            print(f"  FAIL [{fix_name_scope}] scoped-bug-id: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # baseline-regression-default (GREEN guard): compute_state() WITHOUT
+        # scope_bug_id on the SAME two-bug queue must still advance the FIRST
+        # actionable bug (bug-scope-alpha).  Proves the new param is non-breaking.
+        # This is intentionally GREEN before AND after impl — a regression guard.
+        # -------------------------------------------------------------------
+        fix_name_base = "scope-bug-id-two-bugs"  # reuse same fixture root
+        root_base = _build_bug_fixture(td_path, fix_name_base)
+        try:
+            got_base = compute_state(root_base, cloud=False, real_device=True)
+            base_ok = True
+            fid_base = got_base.get("feature_id")
+            step_base = got_base.get("current_step")
+            if fid_base != "bug-scope-alpha":
+                failures.append(
+                    f"[baseline-regression-default] expected feature_id='bug-scope-alpha' "
+                    f"(default queue order), got {fid_base!r}"
+                )
+                base_ok = False
+            if step_base != STEP_INVESTIGATE:
+                failures.append(
+                    f"[baseline-regression-default] expected current_step={STEP_INVESTIGATE!r}, "
+                    f"got {step_base!r}"
+                )
+                base_ok = False
+            print(
+                f"  {'PASS' if base_ok else 'FAIL'} [baseline-regression-default] "
+                f"default picks alpha: feature_id={fid_base!r} step={step_base!r}"
+            )
+        except NotImplementedError as exc:
+            failures.append(
+                f"[baseline-regression-default] NotImplementedError: {exc}"
+            )
+            print(
+                f"  FAIL [baseline-regression-default]: NotImplementedError — {exc}"
+            )
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -1536,6 +1665,10 @@ def main() -> int:
         "--severity", default=None,
         help="Bug severity, e.g. P0/P1/P2/Low (optional for --enqueue-adhoc).",
     )
+    parser.add_argument(
+        "--bug-id", default=None,
+        help="Scope this run to a single bug by id. Absent → default behavior.",
+    )
     args = parser.parse_args()
 
     if args.enqueue_adhoc:
@@ -1562,6 +1695,7 @@ def main() -> int:
         Path(args.repo_root),
         cloud=args.cloud,
         real_device=real_device,
+        scope_bug_id=args.bug_id,
     )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
