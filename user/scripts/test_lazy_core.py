@@ -105,6 +105,21 @@ def test_symbols_present():
     assert not missing, f"missing symbols: {missing}"
 
 
+def test_stale_and_materialized_symbols_present():
+    """All 6 new stale-upstream and materialized-list helpers must be importable from lazy_core."""
+    _guard()
+    expected = [
+        "read_stale_upstream",
+        "write_stale_upstream",
+        "clear_stale_upstream",
+        "read_materialized",
+        "append_materialized",
+        "update_materialized_changeddate",
+    ]
+    missing = [sym for sym in expected if not hasattr(lazy_core, sym)]
+    assert not missing, f"missing symbols: {missing}"
+
+
 # ---------------------------------------------------------------------------
 # Tests: count_deliverables — characterize (unchecked, checked) counts
 # ---------------------------------------------------------------------------
@@ -615,6 +630,133 @@ def test_plan_phase_set_alpha_entries_skipped():
 
 
 # ---------------------------------------------------------------------------
+# Tests: read_stale_upstream / write_stale_upstream / clear_stale_upstream
+# ---------------------------------------------------------------------------
+
+def test_read_stale_upstream_absent():
+    """Empty temp dir (no STALE_UPSTREAM.md) → returns None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.read_stale_upstream(Path(td))
+    assert result is None, f"expected None, got {result!r}"
+
+
+def test_write_then_read_stale_upstream():
+    """write_stale_upstream then read returns the exact diff body written."""
+    _guard()
+    diff = "diff --git a/foo.py b/foo.py\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n"
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.write_stale_upstream(item_dir, diff)
+        result = lazy_core.read_stale_upstream(item_dir)
+    assert result == diff, f"body mismatch:\n  expected: {diff!r}\n  got:      {result!r}"
+
+
+def test_clear_stale_upstream_removes_file():
+    """After write then clear, read returns None and the file no longer exists on disk."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.write_stale_upstream(item_dir, "some diff content\n")
+        lazy_core.clear_stale_upstream(item_dir)
+        result = lazy_core.read_stale_upstream(item_dir)
+        file_exists = (item_dir / "STALE_UPSTREAM.md").exists()
+    assert result is None, f"expected None after clear, got {result!r}"
+    assert not file_exists, "STALE_UPSTREAM.md still exists on disk after clear"
+
+
+def test_clear_stale_upstream_absent_is_noop():
+    """clear_stale_upstream on a dir with no STALE_UPSTREAM.md does not raise."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        try:
+            lazy_core.clear_stale_upstream(Path(td))
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(f"clear_stale_upstream raised on absent file: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Tests: read_materialized / append_materialized / update_materialized_changeddate
+# ---------------------------------------------------------------------------
+
+def test_read_materialized_absent():
+    """Work dir with no materialized.json → returns [] (empty list, not None)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.read_materialized(Path(td))
+    assert result == [], f"expected [], got {result!r}"
+
+
+def test_append_materialized_creates_record():
+    """Append once → read returns a 1-element list with correct keys/values."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        work_dir = Path(td)
+        lazy_core.append_materialized(work_dir, 1001, "add-widget", "2026-06-01T10:00:00Z")
+        result = lazy_core.read_materialized(work_dir)
+    assert len(result) == 1, f"expected 1 record, got {len(result)}: {result}"
+    record = result[0]
+    assert record.get("wi_id") == 1001, f"wi_id mismatch: {record}"
+    assert record.get("feature_id") == "add-widget", f"feature_id mismatch: {record}"
+    assert record.get("materialized_changedDate") == "2026-06-01T10:00:00Z", f"changedDate mismatch: {record}"
+
+
+def test_append_materialized_idempotent_on_wi_id():
+    """Appending wi_id=1001 twice (different feature_id/date) → exactly ONE entry retaining the original values."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        work_dir = Path(td)
+        lazy_core.append_materialized(work_dir, 1001, "add-widget", "2026-06-01T10:00:00Z")
+        # Second call with different values — should be a no-op because wi_id already exists
+        lazy_core.append_materialized(work_dir, 1001, "different-feature", "2026-07-01T00:00:00Z")
+        result = lazy_core.read_materialized(work_dir)
+    assert len(result) == 1, f"expected exactly 1 record after idempotent append, got {len(result)}: {result}"
+    record = result[0]
+    assert record.get("feature_id") == "add-widget", f"original feature_id should be preserved: {record}"
+    assert record.get("materialized_changedDate") == "2026-06-01T10:00:00Z", f"original changedDate should be preserved: {record}"
+
+
+def test_append_materialized_multiple_distinct():
+    """Append wi_id 1001 then 1002 → read returns exactly 2 entries."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        work_dir = Path(td)
+        lazy_core.append_materialized(work_dir, 1001, "feature-a", "2026-06-01T10:00:00Z")
+        lazy_core.append_materialized(work_dir, 1002, "feature-b", "2026-06-02T10:00:00Z")
+        result = lazy_core.read_materialized(work_dir)
+    assert len(result) == 2, f"expected 2 records, got {len(result)}: {result}"
+    wi_ids = {r.get("wi_id") for r in result}
+    assert wi_ids == {1001, 1002}, f"expected wi_ids {{1001, 1002}}, got {wi_ids}"
+
+
+def test_update_materialized_changeddate():
+    """Append wi_id 1001 with date 'A', update to 'B' → read returns 1 entry with changedDate == 'B'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        work_dir = Path(td)
+        lazy_core.append_materialized(work_dir, 1001, "add-widget", "2026-06-01T10:00:00Z")
+        lazy_core.update_materialized_changeddate(work_dir, 1001, "2026-06-15T12:00:00Z")
+        result = lazy_core.read_materialized(work_dir)
+    assert len(result) == 1, f"expected 1 record, got {len(result)}: {result}"
+    assert result[0].get("materialized_changedDate") == "2026-06-15T12:00:00Z", f"changedDate not updated: {result[0]}"
+
+
+def test_update_materialized_changeddate_absent_wi_is_noop():
+    """update_materialized_changeddate for a wi_id not present → no exception, list unchanged."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        work_dir = Path(td)
+        lazy_core.append_materialized(work_dir, 1001, "add-widget", "2026-06-01T10:00:00Z")
+        try:
+            lazy_core.update_materialized_changeddate(work_dir, 9999, "2026-07-01T00:00:00Z")
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(f"update_materialized_changeddate raised on absent wi_id: {exc}") from exc
+        result = lazy_core.read_materialized(work_dir)
+    assert len(result) == 1, f"list should be unchanged (1 record), got {len(result)}: {result}"
+    assert result[0].get("wi_id") == 1001, f"original record should be preserved: {result[0]}"
+
+
+# ---------------------------------------------------------------------------
 # Tests: clear_diagnostics
 # ---------------------------------------------------------------------------
 
@@ -744,6 +886,20 @@ _TESTS = [
     ("test_clear_diagnostics_callable", test_clear_diagnostics_callable),
     # --test baseline (zero-behavior-change contract)
     ("test_lazy_state_test_output_matches_baseline", test_lazy_state_test_output_matches_baseline),
+    # stale_upstream / materialized — new symbol coverage
+    ("test_stale_and_materialized_symbols_present", test_stale_and_materialized_symbols_present),
+    # read_stale_upstream / write_stale_upstream / clear_stale_upstream
+    ("test_read_stale_upstream_absent", test_read_stale_upstream_absent),
+    ("test_write_then_read_stale_upstream", test_write_then_read_stale_upstream),
+    ("test_clear_stale_upstream_removes_file", test_clear_stale_upstream_removes_file),
+    ("test_clear_stale_upstream_absent_is_noop", test_clear_stale_upstream_absent_is_noop),
+    # read_materialized / append_materialized / update_materialized_changeddate
+    ("test_read_materialized_absent", test_read_materialized_absent),
+    ("test_append_materialized_creates_record", test_append_materialized_creates_record),
+    ("test_append_materialized_idempotent_on_wi_id", test_append_materialized_idempotent_on_wi_id),
+    ("test_append_materialized_multiple_distinct", test_append_materialized_multiple_distinct),
+    ("test_update_materialized_changeddate", test_update_materialized_changeddate),
+    ("test_update_materialized_changeddate_absent_wi_is_noop", test_update_materialized_changeddate_absent_wi_is_noop),
 ]
 
 

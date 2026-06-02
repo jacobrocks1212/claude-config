@@ -200,7 +200,7 @@ ASSERTIONS:
 - [ ] `materialized.json` record: append `{wi_id: <id>, feature_id: <slug>, materialized_changedDate: <changedDate from mirror>}` atomically; second materialize of same WI MUST be a no-op (check `wi_id` before writing)
 - [ ] `STALE_UPSTREAM.md` detection: on each materialize probe (or sync event), for every entry in `materialized.json`, compare `mirror[wi_id].changedDate` to `materialized_changedDate`; if newer, write `<item_dir>/STALE_UPSTREAM.md` (body = field-level diff); do NOT clobber `SPEC.md`; the state machine will halt at its next gate
 - [ ] STALE_UPSTREAM halt wiring: add an early-step check in both `lazy-state.py` and `bug-state.py` `compute_state()` (analogous to BLOCKED.md / NEEDS_INPUT.md handling around Steps 3–4.6): if `STALE_UPSTREAM.md` exists for the current item, return `state=stale_upstream` and do not advance; after human absorb/reject, the absorb path re-copies WI fields into `SPEC.md` and updates `materialized_changedDate` in `materialized.json`
-- [ ] Sentinel parsing helpers in `lazy_core.py`: `read_stale_upstream(item_dir)` → diff string or `None`; `write_stale_upstream(item_dir, diff)` → writes file; `clear_stale_upstream(item_dir)` → removes file; place beside existing sentinel helpers in `lazy_core.py`
+- [x] Sentinel parsing helpers in `lazy_core.py`: `read_stale_upstream(item_dir)` → diff string or `None`; `write_stale_upstream(item_dir, diff)` → writes file; `clear_stale_upstream(item_dir)` → removes file; place beside existing sentinel helpers in `lazy_core.py`
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] Materializing a `Bug` WI creates `docs/bugs/<slug>/ADHOC_BRIEF.md` whose content is a verbatim subset of the mirror WI fields (diff produces no invented text)
@@ -236,6 +236,22 @@ ASSERTIONS:
 - The `enqueue_adhoc` entry schema for bugs (`{id, name, spec_dir, severity}`) must be stable — Phase 4's worker reads `queue.json` entries and expects this shape
 - The STALE_UPSTREAM halt in `compute_state()` must check its condition BEFORE attempting any file mutation — Phase 4 workers rely on this to be safe to call under the fencing-token check
 - `lazy_core.py` sentinel helpers are imported by `ado-sync.py`-adjacent code for the stale-check loop; keep them side-effect-free (read: return data; write/clear: single file op, no queue mutations)
+
+#### Implementation Notes (Phase 3)
+
+##### WU-3.1 — `lazy_core.py` STALE_UPSTREAM + materialized helpers
+**Completed:** 2026-06-02
+**Work completed:**
+- Added 6 net-new helpers to `user/scripts/lazy_core.py` (now 670 lines) via TDD (RED test-agent → GREEN impl-agent). Full suite `python test_lazy_core.py` = 53/54 (the lone fail `test_lazy_state_test_output_matches_baseline` is the pre-existing Windows-temp-path golden mismatch — NOT this change).
+- Stale-upstream sentinel helpers (beside existing sentinel/receipt helpers): `read_stale_upstream(item_dir)→str|None` (reads `<item_dir>/STALE_UPSTREAM.md`, None if absent), `write_stale_upstream(item_dir, diff)` (atomic via `_atomic_write`, byte-exact round-trip), `clear_stale_upstream(item_dir)` (`unlink(missing_ok=True)`, no-op if absent).
+- `materialized.json` helpers (foundation for the WU-3.3 record deliverable): `read_materialized(work_dir)→list[dict]` ([] if absent), `append_materialized(work_dir, wi_id, feature_id, changed_date)` (atomic; idempotent on `wi_id` — early-return preserves the original record, never overwrites or duplicates), `update_materialized_changeddate(work_dir, wi_id, new_changed_date)` (absorb path; atomic; no-op if `wi_id` absent). JSON record shape: `{wi_id, feature_id, materialized_changedDate}`.
+**Integration notes:**
+- New symbols added to `lazy_core` WITHOUT removing/renaming any of the ~21 existing exports — both state machines still import cleanly (`lazy-state.py --test` and `bug-state.py --test` both pass at exit 0 post-change). WU-3.2/3.3 consume these via `lazy_core.read_stale_upstream` (halt reader) and `lazy_core.append_materialized` / `write_stale_upstream` (materialize/stale-check writer).
+- `wi_id` is stored verbatim (no type coercion) — JSON round-trips ints; callers must compare consistently.
+- All writes route through `_atomic_write` and mutate only the single target file (no queue side-effects) — safe for Phase 4 workers to call under the global lock.
+**Files modified:**
+- `user/scripts/lazy_core.py` — 6 net-new helpers + `_STALE_UPSTREAM_FILENAME`/`_MATERIALIZED_FILENAME` constants.
+- `user/scripts/test_lazy_core.py` — 12 net-new tests (11 behavioral + symbol-presence).
 
 ---
 

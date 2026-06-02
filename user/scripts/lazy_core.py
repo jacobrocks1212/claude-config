@@ -258,6 +258,88 @@ def write_completed_receipt(
 
 
 # ---------------------------------------------------------------------------
+# Stale-upstream helpers
+# ---------------------------------------------------------------------------
+
+_STALE_UPSTREAM_FILENAME = "STALE_UPSTREAM.md"
+
+
+def read_stale_upstream(item_dir: Path) -> str | None:
+    """Return the full text of <item_dir>/STALE_UPSTREAM.md, or None if absent."""
+    path = item_dir / _STALE_UPSTREAM_FILENAME
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def write_stale_upstream(item_dir: Path, diff: str) -> None:
+    """Write <item_dir>/STALE_UPSTREAM.md with diff as its content (atomic)."""
+    path = item_dir / _STALE_UPSTREAM_FILENAME
+    _atomic_write(path, diff)
+
+
+def clear_stale_upstream(item_dir: Path) -> None:
+    """Remove <item_dir>/STALE_UPSTREAM.md; no-op if absent."""
+    path = item_dir / _STALE_UPSTREAM_FILENAME
+    path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Materialized-list helpers
+# ---------------------------------------------------------------------------
+
+_MATERIALIZED_FILENAME = "materialized.json"
+
+
+def read_materialized(work_dir: Path) -> list[dict]:
+    """Read <work_dir>/materialized.json and return the list of records.
+
+    Returns an empty list if the file is absent.
+    """
+    path = work_dir / _MATERIALIZED_FILENAME
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def append_materialized(work_dir: Path, wi_id, feature_id, changed_date) -> None:
+    """Append a record to <work_dir>/materialized.json (atomic, idempotent on wi_id).
+
+    If a record with the given wi_id already exists, this is a no-op — the
+    existing record's values are preserved and no duplicate is written.
+    """
+    records = read_materialized(work_dir)
+    for record in records:
+        if record.get("wi_id") == wi_id:
+            return
+    records.append({
+        "wi_id": wi_id,
+        "feature_id": feature_id,
+        "materialized_changedDate": changed_date,
+    })
+    path = work_dir / _MATERIALIZED_FILENAME
+    _atomic_write(path, json.dumps(records, indent=2))
+
+
+def update_materialized_changeddate(work_dir: Path, wi_id, new_changed_date) -> None:
+    """Update the materialized_changedDate for the record matching wi_id (atomic).
+
+    If no record with the given wi_id is found, this is a no-op (no exception).
+    """
+    records = read_materialized(work_dir)
+    found = False
+    for record in records:
+        if record.get("wi_id") == wi_id:
+            record["materialized_changedDate"] = new_changed_date
+            found = True
+            break
+    if not found:
+        return
+    path = work_dir / _MATERIALIZED_FILENAME
+    _atomic_write(path, json.dumps(records, indent=2))
+
+
+# ---------------------------------------------------------------------------
 # Plan file parsing
 # ---------------------------------------------------------------------------
 
