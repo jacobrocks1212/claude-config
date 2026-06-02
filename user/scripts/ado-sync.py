@@ -260,6 +260,22 @@ def work_item_from_api(raw: dict) -> dict:
     }
 
 
+def build_wiql(area_path: str, watermark: str) -> str:
+    """Return the WIQL query string for fetching work items changed since watermark.
+
+    ADO requires bracketed [System.*] reference names (bare names cause TF51005).
+    If watermark is empty, falls back to the epoch so all items are returned.
+    """
+    if not watermark:
+        watermark = "1970-01-01T00:00:00Z"
+    return (
+        f"SELECT [System.Id] FROM workitems "
+        f"WHERE ([System.AssignedTo] = @Me OR [System.AreaPath] UNDER '{area_path}') "
+        f"AND [System.ChangedDate] >= '{watermark}' "
+        f"ORDER BY [System.ChangedDate] ASC"
+    )
+
+
 def fetch_delta_ids(pat: str, org: str, project: str, area_path: str, watermark: str) -> list[int]:
     """Run a WIQL query filtered by area path and changedDate >= watermark; return work-item ids.
 
@@ -281,16 +297,7 @@ def fetch_delta_ids(pat: str, org: str, project: str, area_path: str, watermark:
         "Accept": "application/json",
     }
 
-    # If no watermark, use a far-past date to pull everything
-    if not watermark:
-        watermark = "1970-01-01T00:00:00Z"
-
-    wiql = (
-        f"SELECT [System.Id] FROM workitems "
-        f"WHERE (AssignedTo = @Me OR AreaPath UNDER '{area_path}') "
-        f"AND ChangedDate >= '{watermark}' "
-        f"ORDER BY ChangedDate ASC"
-    )
+    wiql = build_wiql(area_path, watermark)
 
     url = f"https://dev.azure.com/{org}/{project}/_apis/wit/wiql?api-version=7.1"
     resp = _requests.post(url, headers=headers, json={"query": wiql}, timeout=30)
@@ -562,8 +569,39 @@ def run_self_tests() -> int:
         print(f"FAIL fixture3_serialize_determinism: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture 4: build_wiql uses bracketed [System.*] field references
+    # ------------------------------------------------------------------
+    try:
+        wiql = build_wiql("Cognito Forms\\\\Poseidon", "2026-01-01T00:00:00Z")
+
+        assert "[System.AssignedTo]" in wiql, \
+            f"expected [System.AssignedTo] in wiql, got: {wiql!r}"
+        assert "[System.AreaPath]" in wiql, \
+            f"expected [System.AreaPath] in wiql, got: {wiql!r}"
+        assert "[System.ChangedDate]" in wiql, \
+            f"expected [System.ChangedDate] in wiql, got: {wiql!r}"
+        assert "ORDER BY [System.ChangedDate]" in wiql, \
+            f"expected 'ORDER BY [System.ChangedDate]' in wiql, got: {wiql!r}"
+        # Bare field names in WHERE/ORDER-BY position must not be present
+        assert "AssignedTo = @Me" not in wiql, \
+            f"bare 'AssignedTo' field ref found in wiql (ADO TF51005): {wiql!r}"
+        assert "AreaPath UNDER" not in wiql, \
+            f"bare 'AreaPath' field ref found in wiql (ADO TF51005): {wiql!r}"
+        assert "ORDER BY ChangedDate" not in wiql, \
+            f"bare 'ChangedDate' in ORDER BY found in wiql (ADO TF51005): {wiql!r}"
+        # Watermark default: empty string should resolve to epoch
+        wiql_default = build_wiql("Cognito Forms\\\\Poseidon", "")
+        assert "1970-01-01T00:00:00Z" in wiql_default, \
+            f"expected epoch watermark fallback in default wiql, got: {wiql_default!r}"
+
+        print("PASS fixture4_build_wiql_bracketed_fields")
+    except Exception as exc:
+        print(f"FAIL fixture4_build_wiql_bracketed_fields: {exc}")
+        failures += 1
+
     # Summary
-    total = 3
+    total = 4
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures
