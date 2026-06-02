@@ -132,12 +132,12 @@ ASSERTIONS:
 **Scope:** Implement `user/scripts/work-status.py` and `user/skills/work-status/SKILL.md` — a read-only cross-source terminal dashboard. Aggregates the ADO mirror, both queue files, `materialized.json`, `leases.json`, `STALE_UPSTREAM.md` sentinels, and live per-item state from both state machines. Must degrade gracefully when Phase 3/4 artifacts do not yet exist.
 
 **Deliverables:**
-- [ ] `user/scripts/work-status.py` (net-new): reads `ado-mirror.json`, `docs/features/queue.json`, `docs/bugs/queue.json`, `docs/work/materialized.json`, `docs/work/leases.json`; scans `docs/features/` and `docs/bugs/` for `STALE_UPSTREAM.md` sentinels; calls `lazy-state.py --feature-id <id> --status` and `bug-state.py --bug-id <id> --status` (or equivalent read-only probe) for live per-item state
-- [ ] Five display panels: *My queue* (queued items + live lazy/bug state including current step, blockers, NEEDS_INPUT/BLOCKED sentinels), *In flight* (leases: `worker_pid`, worktree slot, stage, heartbeat age, STALE flags), *My ADO inbox* (mirror WIs assigned to me, not yet materialized — type/state/linkedPRs), *Team* (teammates' WIs from mirror + `pr`/`prStatus`/`autotestStatus` columns), *Pool & sync health* (slot occupancy, mirror `syncedAt`, staleness indicator, last poll result)
-- [ ] Graceful degradation: if `leases.json` is absent → *In flight* panel shows "No leases yet"; if `materialized.json` is absent → treat all WIs as un-materialized; if `queue.json` is absent → panel shows empty; if `docs/work/` dir is absent → sync-health panel shows "Mirror not yet initialized" — no unhandled exception in any case
-- [ ] Branch-name self-link: for items in the queue with `wi_id` present, derive the expected branch `p/<wi_id>-<slug>` and check `linkedPRs[]` in the mirror — display link if found; regex `^p/(\d+)-`
-- [ ] Optional `--markdown` flag: writes formatted output to `<COG_DOCS>/docs/work/DASHBOARD.md` (no mutation of any other artifact)
-- [ ] `user/skills/work-status/SKILL.md` (net-new): frontmatter with `name: work-status`, `description`, `argument-hint`, `plan-mode: false`; invocation pattern; documentation of all five panels and the `--markdown` flag; read-only safety note
+- [x] `user/scripts/work-status.py` (net-new): reads `ado-mirror.json`, `docs/features/queue.json`, `docs/bugs/queue.json`, `docs/work/materialized.json`, `docs/work/leases.json`; scans `docs/features/` and `docs/bugs/` for `STALE_UPSTREAM.md` sentinels; calls `lazy-state.py --feature-id <id> --status` and `bug-state.py --bug-id <id> --status` (or equivalent read-only probe) for live per-item state
+- [x] Five display panels: *My queue* (queued items + live lazy/bug state including current step, blockers, NEEDS_INPUT/BLOCKED sentinels), *In flight* (leases: `worker_pid`, worktree slot, stage, heartbeat age, STALE flags), *My ADO inbox* (mirror WIs assigned to me, not yet materialized — type/state/linkedPRs), *Team* (teammates' WIs from mirror + `pr`/`prStatus`/`autotestStatus` columns), *Pool & sync health* (slot occupancy, mirror `syncedAt`, staleness indicator, last poll result)
+- [x] Graceful degradation: if `leases.json` is absent → *In flight* panel shows "No leases yet"; if `materialized.json` is absent → treat all WIs as un-materialized; if `queue.json` is absent → panel shows empty; if `docs/work/` dir is absent → sync-health panel shows "Mirror not yet initialized" — no unhandled exception in any case
+- [x] Branch-name self-link: for items in the queue with `wi_id` present, derive the expected branch `p/<wi_id>-<slug>` and check `linkedPRs[]` in the mirror — display link if found; regex `^p/(\d+)-`
+- [x] Optional `--markdown` flag: writes formatted output to `<COG_DOCS>/docs/work/DASHBOARD.md` (no mutation of any other artifact)
+- [x] `user/skills/work-status/SKILL.md` (net-new): frontmatter with `name: work-status`, `description`, `argument-hint`, `plan-mode: false`; invocation pattern; documentation of all five panels and the `--markdown` flag; read-only safety note
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] Running `work-status.py` with only `ado-mirror.json` present (no Phase 3/4 artifacts) exits 0 and renders the inbox and team panels; all other panels degrade gracefully with informational messages
@@ -167,6 +167,24 @@ ASSERTIONS:
 - Phase 3 sets the `materialized` boolean on WI entries in `ado-mirror.json` (or in the separate `materialized.json`); the dashboard reads `materialized.json` to distinguish inbox items from queued items — the Phase 3 schema (`{wi_id → feature_id, materialized_changedDate}`) is the contract
 - The `leases.json` schema (`{wi_id: {worker_pid, worktree_slot, term_token, heartbeat_timestamp, ttl_seconds}}`) established in Phase 4 is what the *In flight* panel will parse; the graceful-degradation path keeps Phase 2 forward-compatible
 - `compute_state()` in `lazy-state.py` and `bug-state.py` must expose a read-only probe mode (status-only, no side effects) for the dashboard to call safely; verify this contract is not broken by the Phase 3/4 additions
+
+#### Implementation Notes (Phase 2)
+**Completed:** 2026-06-02
+**Work completed:**
+- `user/scripts/work-status.py` (net-new, 663 lines) authored via TDD (RED test-agent → GREEN impl-agent). `python work-status.py --test` exits 0 with `4/4 fixtures passed`.
+- Read-only aggregator helpers: `load_sources(repo_root)` (reads mirror + both queue.json + materialized.json + leases.json via `_read_json`, scans for STALE_UPSTREAM sentinels via `_scan_stale_upstream`; never raises — missing files → empty/None), `render_dashboard(sources, current_branch)` (all five panels with per-panel graceful degradation), `match_self_pr(branch, linked_prs)` (regex `^p/(\d+)-` → matching PR dict or None), `write_markdown(repo_root, text)` (atomic `_atomic_write` to `docs/work/DASHBOARD.md`, returns resolved Path, mutates nothing else).
+- `user/skills/work-status/SKILL.md` (net-new, 76 lines): frontmatter cloned from sibling `lazy-status/SKILL.md` (key order name/description/argument-hint/model/plan-mode/allowed-tools; `model: haiku`; `plan-mode: never`); documents all five panels, the `--markdown` flag, invocation, and the read-only safety note. Lint-clean.
+**Integration notes:**
+- Frontmatter uses `plan-mode: never` (NOT the plan's literal `plan-mode: false`) — `never` is the repo convention for non-plan-producing skills, matching every sibling `*-status` skill. Functionally equivalent intent (skill never enters plan mode); the `false` in the deliverable text is loose plan wording.
+- `--markdown` no-mutation invariant is enforced by fixture_d (captures `st_mtime_ns` on leases.json + queue.json before/after, asserts unchanged while DASHBOARD.md is created). `write_markdown` is the only write path in the script.
+- Live smoke test against `cog-docs` (mirror absent) rendered all five panels with graceful-degradation messages and exited 0 — confirms Phase-1-only forward-compat.
+- Phase 2 reads the LOCKED Phase 1 mirror schema verbatim; `match_self_pr` consumes `linkedPRs[]` `{prNumber, repo}` shape. `compute_state()` scoped-probe wiring (`--feature-id --status`) is a Phase 4 enhancement — Phase 2 degrades to sentinel-direct reads until then (per Review Notes nuance).
+**Pitfalls & guidance:**
+- `--test` is offline/stdlib-only; run all gates with `PYTHONUTF8=1` (Windows cp1252 crashes on Unicode in panel output).
+- Dashboard treats `materialized.json` as the authoritative inbox-vs-queued signal (per Review Notes resolution), not the mirror's per-WI `materialized` convenience flag.
+**Files modified:**
+- `user/scripts/work-status.py` — net-new read-only dashboard (all Phase 2 deliverables).
+- `user/skills/work-status/SKILL.md` — net-new skill doc.
 
 ---
 
