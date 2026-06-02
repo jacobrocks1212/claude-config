@@ -1,0 +1,3 @@
+# Python bytecode generated when running the lazy-state / bug-state / lazy_core scripts
+__pycache__/
+*.pyc
