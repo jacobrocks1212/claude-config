@@ -1,0 +1,17 @@
+wiql_identity:
+  project: "Cognito Forms"
+  team: Poseidon
+  areaPath: "Cognito Forms\\Poseidon"
+  includeChildren: false
+type_pipeline_map:
+  bug:     [Bug, Defect, Story Bug, Engineering Bug]
+  feature: [User Story, Refactor Story, Enabler Story, Requirement]
+  # any type not listed -> skip-and-log (no silent default)
+github_repo:
+  owner: cognitoforms
+  name: cognito
+  pr_artifact_repo_guid: "TODO_FILL_FROM_REAL_WI_ARTIFACTLINK"   # TODO: fill from a real WI ArtifactLink (vstfs:///GitHub/PullRequest/<repoGuid>%2f<prNumber>); single repo => constant GUID
+pool:
+  pool_size: 3
+  lease_ttl_seconds: 1800
+  heartbeat_interval_seconds: 600   # ttl/3
