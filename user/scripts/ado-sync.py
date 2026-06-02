@@ -260,6 +260,13 @@ def work_item_from_api(raw: dict) -> dict:
     }
 
 
+def build_wiql_url(org: str, project: str) -> str:
+    """WIQL POST endpoint. timePrecision=true is REQUIRED so date comparisons
+    accept a time component (watermark carries seconds) — without it ADO 400s
+    with 'cannot supply a time with the date when running a query using date precision'."""
+    return f"https://dev.azure.com/{org}/{project}/_apis/wit/wiql?api-version=7.1&timePrecision=true"
+
+
 def build_wiql(area_path: str, watermark: str) -> str:
     """Return the WIQL query string for fetching work items changed since watermark.
 
@@ -299,7 +306,7 @@ def fetch_delta_ids(pat: str, org: str, project: str, area_path: str, watermark:
 
     wiql = build_wiql(area_path, watermark)
 
-    url = f"https://dev.azure.com/{org}/{project}/_apis/wit/wiql?api-version=7.1"
+    url = build_wiql_url(org, project)
     resp = _requests.post(url, headers=headers, json={"query": wiql}, timeout=30)
     resp.raise_for_status()
     data = resp.json()
@@ -600,8 +607,26 @@ def run_self_tests() -> int:
         print(f"FAIL fixture4_build_wiql_bracketed_fields: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture 5: build_wiql_url includes timePrecision=true
+    # ------------------------------------------------------------------
+    try:
+        url = build_wiql_url("cognitoforms", "Cognito Forms")
+
+        assert url.startswith("https://dev.azure.com/cognitoforms/Cognito Forms/_apis/wit/wiql"), \
+            f"expected URL to start with ADO WIQL base, got: {url!r}"
+        assert "api-version=7.1" in url, \
+            f"expected api-version=7.1 in url, got: {url!r}"
+        assert "timePrecision=true" in url, \
+            f"expected timePrecision=true in url (required for timestamp watermarks), got: {url!r}"
+
+        print("PASS fixture5_build_wiql_url_time_precision")
+    except Exception as exc:
+        print(f"FAIL fixture5_build_wiql_url_time_precision: {exc}")
+        failures += 1
+
     # Summary
-    total = 4
+    total = 5
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures

@@ -194,7 +194,10 @@ Facts the design now binds to, replacing draft assumptions:
   ORDER BY [System.ChangedDate] ASC`. Dates **must** be UTC + `Z`. Field references **must** be the
   bracketed `[System.*]` reference names — bare names (`AssignedTo`, `AreaPath`, `ChangedDate`) are
   rejected by ADO with `400 TF51005` (caught in runtime verification, fixed via the pure `build_wiql()`
-  helper). (Grounded: project name has a space; Poseidon is a single area, no sub-areas.)
+  helper). The WIQL endpoint **must** also carry `&timePrecision=true` on the URL (`build_wiql_url()`):
+  ADO defaults to date precision, which rejects a `ChangedDate` comparison that carries a time
+  component (`"cannot supply a time with the date…"`) once the incremental watermark is a real
+  timestamp rather than the `T00:00:00Z` epoch. (Grounded: project name has a space; Poseidon is a single area, no sub-areas.)
 - **Pagination (critical):** the WIQL endpoint returns ≤20,000 ids, but hydration
   (`wit/workitems?ids=…&$expand=all`) is capped at **200 ids/batch** — the poller **chunks ids into
   ≤200** or hits HTTP 400.

@@ -78,7 +78,7 @@ N/A — no runtime-observable behavior in this phase (environment provisioning o
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] Running `ado-sync.py --once` twice on unchanged ADO state produces byte-identical `workItems[]` arrays (modulo `syncedAt` and `watermark`)
-- [ ] After simulating multi-day downtime (advance the watermark to a past timestamp), a single poll fetches all accumulated changes and the resulting mirror matches live ADO state
+- [x] After simulating multi-day downtime (advance the watermark to a past timestamp), a single poll fetches all accumulated changes and the resulting mirror matches live ADO state — *verified 2026-06-02: incremental poll against a stored watermark (`2026-06-02T19:56:57Z`) fetched the 15-item delta and merged to 7503 items*
 - [x] Syncing a WI set with total count >200 succeeds without HTTP 400; poller logs show ≥2 hydration batches — *verified 2026-06-02: live poll fetched 7502 items in 38 hydration batches (37×200 + 1×102), no 400*
 - [x] `ado-mirror.json` parses as valid JSON immediately after write (no torn write possible) — *verified 2026-06-02: `json.load` of the written mirror succeeded, 7502 workItems*
 - [ ] A WI with a linked GitHub PR shows `linkedPRs: [{prNumber: <N>, repo: "cognitoforms/cognito"}]`
@@ -122,9 +122,12 @@ ASSERTIONS:
 - `--test` is fully offline: keyring/requests/yaml are all lazy-imported inside the functions that need them, so the fixtures run with zero non-stdlib deps. Do not hoist those imports to module top.
 - Windows console is cp1252 — run gates with `PYTHONUTF8=1` or unicode in diagnostics crashes the runner.
 - `pr_artifact_repo_guid` in config is still the `TODO_FILL_FROM_REAL_WI_ARTIFACTLINK` placeholder; `parse_linked_prs` does not depend on it (regex is guid-agnostic), so this is non-blocking until a real ArtifactLink is available to confirm the GUID.
-**Runtime verification + fix (2026-06-02):** first live `--once` poll against real ADO returned `400 TF51005` — the WIQL used bare field names (`AssignedTo`, `AreaPath`, `ChangedDate`), which ADO rejects. Fixed by extracting a pure `build_wiql(area_path, watermark)` helper that emits bracketed `[System.*]` reference names; added fixture `fixture4_build_wiql_bracketed_fields` (RED→GREEN, `--test` now `4/4`). Re-ran the poll: 7502 work items hydrated across 38 batches, mirror written atomically and re-loaded cleanly. `cog-docs/.claude/skill-config/ado-doc-integration.yml` was provisioned (the poller reads config from `<repo-root>/.claude/skill-config/`, and cog-docs — the runtime repo-root — had none). Committed `1116627`.
+**Runtime verification + fixes (2026-06-02):** two distinct WIQL bugs surfaced only under live ADO, each fixed via a pure helper + RED→GREEN fixture (`--test` now `5/5`):
+1. *Bare field names* — first `--once` poll returned `400 TF51005` (`AssignedTo`/`AreaPath`/`ChangedDate` are not valid bare). Fixed via `build_wiql(area_path, watermark)` emitting bracketed `[System.*]` refs; `fixture4_build_wiql_bracketed_fields`. First full poll: 7502 items across 38 batches, mirror atomic + re-loaded cleanly. Committed `1116627`.
+2. *Date precision* — the next (incremental) poll `400`'d with *"cannot supply a time with the date when running a query using date precision"*: once the watermark carried a real time (`2026-06-02T19:56:57Z`, not the `T00:00:00Z` epoch), ADO's default date precision rejected it. Fixed by adding `&timePrecision=true` to the WIQL **URL** (body placement does NOT work) via `build_wiql_url(org, project)`; `fixture5_build_wiql_url_time_precision`. Incremental poll then fetched the 15-item delta → mirror 7503 items.
+`cog-docs/.claude/skill-config/ado-doc-integration.yml` was provisioned (the poller reads config from `<repo-root>/.claude/skill-config/`, and cog-docs — the runtime repo-root — had none).
 **Files modified:**
-- `user/scripts/ado-sync.py` — net-new poller (all Phase 1 deliverables); `build_wiql()` bracket fix (2026-06-02).
+- `user/scripts/ado-sync.py` — net-new poller (all Phase 1 deliverables); `build_wiql()` bracket fix + `build_wiql_url()` `timePrecision=true` fix (2026-06-02, `--test` 5/5).
 
 ---
 
