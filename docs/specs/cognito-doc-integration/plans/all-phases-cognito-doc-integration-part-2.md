@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cognito-doc-integration
-status: Ready
+status: Complete
 created: 2026-06-02
 phases: [4]
 ---
