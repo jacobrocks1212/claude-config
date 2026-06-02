@@ -257,6 +257,8 @@ def work_item_from_api(raw: dict) -> dict:
         "autotestBuildId":    custom["autotestBuildId"],
         "autotestRun":        custom["autotestRun"],
         "materialized":       False,
+        "boardColumn":        fields.get("System.BoardColumn") or "",
+        "boardColumnDone":    bool(fields.get("System.BoardColumnDone", False)),
     }
 
 
@@ -625,8 +627,60 @@ def run_self_tests() -> int:
         print(f"FAIL fixture5_build_wiql_url_time_precision: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture 6: work_item_from_api captures boardColumn / boardColumnDone
+    # ------------------------------------------------------------------
+    try:
+        # On-board case: both fields present
+        raw_on_board = {
+            "id": 42,
+            "fields": {
+                "System.WorkItemType": "User Story",
+                "System.Title": "Test board column capture",
+                "System.State": "Active",
+                "System.BoardColumn": "In Progress",
+                "System.BoardColumnDone": True,
+            },
+        }
+        result_on = work_item_from_api(raw_on_board)
+        assert result_on["boardColumn"] == "In Progress", \
+            f"expected boardColumn='In Progress', got {result_on['boardColumn']!r}"
+        assert result_on["boardColumnDone"] is True, \
+            f"expected boardColumnDone=True, got {result_on['boardColumnDone']!r}"
+
+        # Off-board case: neither field present — must not raise, must use safe defaults
+        raw_off_board = {
+            "id": 43,
+            "fields": {
+                "System.WorkItemType": "Task",
+                "System.Title": "No board column",
+                "System.State": "New",
+            },
+        }
+        result_off = work_item_from_api(raw_off_board)
+        assert result_off["boardColumn"] == "", \
+            f"expected boardColumn='' (empty string), got {result_off['boardColumn']!r}"
+        assert result_off["boardColumnDone"] is False, \
+            f"expected boardColumnDone=False, got {result_off['boardColumnDone']!r}"
+
+        # Regression: all 19 pre-existing keys must still be present
+        expected19 = {
+            "id", "type", "title", "state", "assignedTo", "areaPath",
+            "iteration", "parentId", "url", "acceptanceCriteria", "description",
+            "changedDate", "linkedPRs", "pr", "prStatus", "autotestStatus",
+            "autotestBuildId", "autotestRun", "materialized",
+        }
+        missing = expected19 - set(result_on.keys())
+        assert not missing, \
+            f"regression: pre-existing keys missing from result: {missing}"
+
+        print("PASS fixture6_board_column_capture")
+    except Exception as exc:
+        print(f"FAIL fixture6_board_column_capture: {exc}")
+        failures += 1
+
     # Summary
-    total = 5
+    total = 6
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures

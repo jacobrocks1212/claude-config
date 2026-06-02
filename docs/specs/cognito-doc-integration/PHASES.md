@@ -349,9 +349,9 @@ ASSERTIONS:
 **Testing Strategy:** `--test` / `run_smoke_tests()` fixtures in `lazy_coord.py` cover the five concurrency cases listed in Deliverables. The `--feature-id` / `--bug-id` baseline regression fixtures use a canned `queue.json` snapshot — run once without the flag, capture output, run once with an unrelated flag, assert queue state is identical. Live concurrency testing requires two terminal sessions; the Runtime Verification steps above serve as the acceptance criteria.
 
 **Integration Notes for Next Phase:**
-- Phase 5 builds on the `leases.json` schema and the `wait_on_pr` state introduced here; the transition `wait_on_pr → implement` (on CI fail / changes-requested) is the new path Phase 5 adds
-- The `gh pr view --json statusCheckRollup,reviews` command Phase 5 polls is safe to add without any changes to `lazy_coord.py` — it reads GH state and writes only to `FEEDBACK.md` + triggers a `queue.json` state flip under the lock
-- On PR merge, Phase 5 calls the scrub-to-clean sequence already defined here to return the slot; the slot scrub contract must remain stable
+- The deferred Phase 6 (PR Shepherding) builds on the `leases.json` schema and the `wait_on_pr` state introduced here; the transition `wait_on_pr → implement` (on CI fail / changes-requested) is the new path Phase 6 adds
+- The `gh pr view --json statusCheckRollup,reviews` command Phase 6 polls is safe to add without any changes to `lazy_coord.py` — it reads GH state and writes only to `FEEDBACK.md` + triggers a `queue.json` state flip under the lock
+- On PR merge, Phase 6 calls the scrub-to-clean sequence already defined here to return the slot; the slot scrub contract must remain stable
 - The branch regex `^p/(\d+)-` used by the Phase 2 dashboard to self-link items is the same convention enforced by the scrub sequence here — keep them in sync
 
 #### Implementation Notes (Phase 4)
@@ -380,7 +380,78 @@ ASSERTIONS:
 
 ---
 
-### Phase 5: PR Shepherding *(DEFERRED — not scheduled for v1)*
+### Phase 5: Board-Aware & Feature-Grouped Dashboard
+
+**Scope:** Replace the flat WI list in `DASHBOARD.md` with a Poseidon-board summary at the top and a feature-grouped priority queue. Additively extend the mirror to capture each WI's Kanban **board column**; reorganize `render_markdown()` to lead with a compact board-column summary and an **active-feature** section (configurable, default AB#54423) whose children are the highest-priority queue. Builds only on the complete Phases 1–2, so it is schedulable now, ahead of the deferred Phase 6. No change to the terminal renderer (`render_dashboard`) or to any locked mirror field name.
+
+**Deliverables:**
+- [x] `user/scripts/ado-sync.py` `work_item_from_api`: capture `System.BoardColumn` → `boardColumn` (str, `""` when off-board) and `System.BoardColumnDone` → `boardColumnDone` (bool, `false` default) — **append-only** schema additions; the existing 19 keys are unchanged and un-renamed; `serialize_mirror`'s `sort_keys=True` slots the new keys in deterministically
+- [x] Config: add `active_feature_id: 54423` and `board_columns: [New, Next, "In Progress", "PR Review", "Ready for Testing", Reviewing, Merged]` (canonical lane order) to `ado-doc-integration.yml` — in **both** the Cognito-forms copy and the `cog-docs` runtime copy
+- [ ] `order_board(wis, board_columns) -> "OrderedDict[str, list]"` (pure helper in `work-status.py`): bucket WIs by `boardColumn` in canonical config order; missing/unknown column → a trailing `"(no column)"` bucket; deterministic (no clock reads)
+- [ ] `group_by_feature(team_wis, active_feature_id, mirror_index) -> ordered groups` (pure helper): active feature's children first (the priority queue), remaining features grouped after, orphans (no `parentId`) last; resolve each feature's title from the mirror parent WI when present, else `Feature <id>`; attribute deeper nesting by walking the `parentId` chain within the mirror (ancestors absent from the mirror → attribute to nearest known parent, else orphan)
+- [ ] `render_markdown` extension: a lead `## Poseidon Board` section (compact column→count table only) followed by an `### 🎯 Active Feature: <title> (AB#<id>)` priority-queue table (columns: rank, WI, lane, title, PR) sorted by board-lane order, then the remaining feature groups; reuse `_escape_md_pipe` for all new cells; deterministic (config + mirror data only — no `datetime.now()`)
+- [ ] `--feature <id>` CLI override on `work-status.py` (defaults to config `active_feature_id`); `user/skills/dashboard/SKILL.md` documents the `--feature` passthrough
+- [ ] Tests: board bucketing (canonical order + unknown bucket); feature grouping (active pinned first, title resolution, orphan handling, multi-level `parentId` chain-walk); active-feature sort-by-lane; graceful render against a pre-Phase-5 mirror with no `boardColumn`
+
+**Runtime Verification** *(checked by manual/live testing — NOT by the implementation agent):*
+- [ ] After a `--refresh` poll, on-board Poseidon WIs carry a non-empty `boardColumn` matching the board (e.g. a "Merged" card → `boardColumn: "Merged"`); WIs not on the board → `""`
+- [ ] `DASHBOARD.md` opens with a `## Poseidon Board` section whose per-column counts match the board's lane headers
+- [ ] The `### 🎯 Active Feature` section lists AB#54423's children first, ahead of every other feature group
+- [ ] Rendering against a pre-Phase-5 mirror (no `boardColumn` key) degrades gracefully — the board section notes "no board data; run `/dashboard --refresh`" rather than raising
+
+**MCP Integration Test Assertions:**
+
+```
+ASSERTIONS:
+1. After ado-sync.py --once runs post-Phase-5: every workItems[] entry MUST contain a boardColumn (str) and boardColumnDone (bool) key; entries for WIs on the Poseidon board MUST have non-empty boardColumn; the 19 prior keys MUST be unchanged
+2. After render_markdown runs with active_feature_id=54423: the doc MUST contain a "## Poseidon Board" section before any feature section, and an "### 🎯 Active Feature" section whose first listed feature group is 54423's children
+3. After order_board runs with a WI whose boardColumn is "" or an out-of-config value: that WI MUST land in the trailing "(no column)" bucket, never silently dropped
+4. After group_by_feature runs on a mirror where 54423 is present: the active group's title MUST be resolved from the mirror parent WI (not the literal "Feature 54423" fallback)
+5. After render_markdown runs against a mirror lacking the boardColumn key (pre-Phase-5): exit MUST be 0; the board section MUST show the "no board data" notice; no traceback
+```
+
+**Prerequisites:** Phase 1 complete (mirror carries `parentId` already; `boardColumn`/`boardColumnDone` are added here) and Phase 2 complete (`render_markdown`, `filter_recent_team`, `_escape_md_pipe`, `--out`/`--all-team` are in place)
+
+**Files likely modified:**
+- `user/scripts/ado-sync.py` (exists → refactor) — `work_item_from_api` board-column capture (additive schema); a fixture asserting the two new keys round-trip
+- `user/scripts/work-status.py` (exists → refactor) — `order_board` + `group_by_feature` pure helpers; `render_markdown` board + active-feature sections; `--feature` flag; fixtures (`total` grows past 9)
+- `user/skills/dashboard/SKILL.md` (exists → refactor) — document the `--feature` passthrough in arg-parse + invocation
+- `claude-config/repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` and `cog-docs/.claude/skill-config/ado-doc-integration.yml` (config) — add `active_feature_id` + `board_columns`
+
+**Testing Strategy:** Extend `run_self_tests()` in `work-status.py` with canned mirror fixtures: (1) a WI set spanning all seven lanes + one off-board WI → assert `order_board` buckets in canonical order with the off-board WI in `"(no column)"`; (2) a mirror containing feature 54423 + children + a second feature + an orphan → assert `group_by_feature` pins 54423 first, resolves its title, and floors the orphan; (3) a three-level nest (Story Bug → User Story → 54423) → assert chain-walk attributes it to 54423; (4) a pre-Phase-5 mirror (no `boardColumn`) → assert `render_markdown` emits the no-data notice and exits 0. Add one `ado-sync.py` `--test` fixture confirming `work_item_from_api` emits `boardColumn`/`boardColumnDone`. All fixtures offline/stdlib-only; run with `PYTHONUTF8=1`.
+
+**Integration Notes for Next Phase:**
+- The deferred Phase 6 (PR Shepherding) is independent of this phase — it consumes `linkedPRs[]`/`leases.json` from Phases 1/4, not the board/feature grouping added here.
+- `boardColumn` is now part of the mirror contract; if Phase 6 surfaces PR state per lane, it can read `boardColumn` directly rather than re-deriving from `state`.
+- `order_board` / `group_by_feature` are pure and clock-free — any future grouped view (per-iteration, per-assignee) should follow the same config-driven, mirror-only pattern to preserve determinism.
+
+**Context from prior phases:**
+- The mirror schema is described as "LOCKED" (Phase 1 Implementation Notes) but is **additive-safe**: append new keys and initialize them to a default, never rename or remove existing keys — Phases 2/3/4 read fields by name, and `serialize_mirror` uses `sort_keys=True` so new keys slot in without perturbing existing output ordering.
+- `render_markdown(sources, current_branch=None, *, all_team=False)` (Phase 2, `work-status.py:382`) is the only seam to touch — do **not** alter `render_dashboard` (the terminal renderer); the two share data selection (`_is_mine`, `match_self_pr`, `filter_recent_team`) but render independently.
+- `filter_recent_team` (Phase 2, `work-status.py:330`) established the deterministic-clock rule: it uses the mirror's `syncedAt` as "now", never `datetime.now()`. The board/feature helpers must stay equally clock-free (they need no time input at all).
+- `parentId` is the **immediate** parent only; the screenshot's "Parent" links resolve to the feature for direct children (54423 has 79 direct children in the mirror today), but Story-Bug-under-User-Story items need the in-mirror `parentId` chain-walk to roll up to the root feature.
+- `System.BoardColumn` is returned by the `$expand=all` hydration `ado-sync.py` already performs, but is **empty for WIs not on the Poseidon board** — confirm the exact field name against a live hydration in runtime verification before relying on it.
+- Always run Python gates with `PYTHONUTF8=1` (Windows cp1252 crashes on Unicode in ADO titles); escape `|` in any new table cell via the existing `_escape_md_pipe`.
+
+#### Implementation Notes (Phase 5 — Batch 1: WU-1 mirror boardColumn + WU-2 config keys)
+**Completed:** 2026-06-02
+**Work completed:**
+- **WU-1 (`ado-sync.py`, TDD RED→GREEN):** `work_item_from_api` (@213) now appends two keys to its returned dict — `"boardColumn": fields.get("System.BoardColumn") or ""` and `"boardColumnDone": bool(fields.get("System.BoardColumnDone", False))` — strictly additive, after `"materialized": False,`. The 19 pre-existing keys are unchanged and un-renamed. New in-file fixture `fixture6_board_column_capture` (`run_self_tests()`, `total = 5`→`6`) asserts on-board capture (`"In Progress"` / `is True`), off-board defaults (`""` / `is False`, never `None`/`KeyError`), and a 19-key regression superset. `python ado-sync.py --test` = **6/6** (orchestrator-reverified, exit 0).
+- **WU-2 (config, both YAML copies):** appended `active_feature_id: 54423` and a 7-element `board_columns` lane list (`New, Next, "In Progress", "PR Review", "Ready for Testing", Reviewing, Merged`) to both `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` (tracked in claude-config) and `cog-docs/.claude/skill-config/ado-doc-integration.yml` (untracked runtime copy). The four pre-existing blocks (`wiql_identity`/`type_pipeline_map`/`github_repo`/`pool`) are preserved verbatim; the two files remain **byte-identical** (`diff` → IDENTICAL) and both parse (`active_feature_id==54423`, 7-lane list).
+**Integration notes:**
+- `serialize_mirror`'s `sort_keys=True` slots `boardColumn`/`boardColumnDone` into the mirror alphabetically with no ordering churn on existing keys — the additive change is determinism-safe. WU-4 (Batch 3) consumes `boardColumn` from each WI; WU-3/WU-4 read `board_columns`/`active_feature_id` from the runtime config copy under `cog-docs`.
+- The mirror still must be re-polled (`/dashboard --refresh`) before live WIs carry `boardColumn` — pre-Phase-5 mirrors lack the key, so WU-4 must degrade gracefully (its deliverable).
+**Pitfalls & guidance:**
+- Git warns `LF will be replaced by CRLF` on the tracked YAML; the on-disk bytes are LF and byte-identical to the cog-docs copy (runtime reads the disk bytes), so this is a git autocrlf normalization note, not a runtime divergence.
+- The cog-docs runtime copy is in a **different, untracked** repo — it received the keys for runtime correctness but is NOT committed by this plan; only the claude-config copy is staged.
+**Files modified:**
+- `user/scripts/ado-sync.py` — `boardColumn`/`boardColumnDone` in `work_item_from_api` + `fixture6` + `total` bump.
+- `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` — `active_feature_id` + `board_columns` (committed).
+- `cog-docs/.claude/skill-config/ado-doc-integration.yml` — same keys (untracked runtime copy, uncommitted).
+
+---
+
+### Phase 6: PR Shepherding *(DEFERRED — not scheduled for v1)*
 
 **Scope:** `gh`-based provider module for polling GitHub PR state; automatic `FEEDBACK.md` routing on CI failure or changes-requested reviews; `wait_on_pr → implement` transition; teammate guardrails; slot scrub on merge. Marked DEFERRED — do not implement until Phase 4 is stable and the deferred decision is explicitly revisited.
 
@@ -409,7 +480,7 @@ N/A — Phase deferred; assertions will be defined when this phase is scheduled.
 **Testing Strategy:** *(DEFERRED)*
 
 **Integration Notes for Next Phase:**
-- This is the terminal phase; there is no Phase 6.
+- This is the terminal phase; there is no Phase 7.
 - The `wait_on_pr` queue state, `FEEDBACK.md` sentinel, and the slot-scrub-on-merge path are the three new contracts this phase introduces on top of Phase 4's stable foundation.
 - When scheduling, re-read `RESEARCH.md` section on `gh pr view --json statusCheckRollup,reviews` output shape and the `vstfs://...` ArtifactLink parse for merge detection before implementation.
 
