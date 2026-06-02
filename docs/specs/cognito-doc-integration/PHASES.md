@@ -7,24 +7,42 @@
 **Scope:** Provision the `cog-docs` standalone git repo and seed all Cognito skill-config inputs; install Python dependencies for Phase 1; mint and store the ADO PAT. No scripts are authored here — this phase establishes the durable environment every subsequent phase requires.
 
 **Deliverables:**
-- [ ] Create `repos/cog-docs` as a new standalone git repo with `docs/features/`, `docs/bugs/`, `docs/work/` directories (empty but tracked by a `.gitkeep`)
-- [ ] Add `.gitignore` to `cog-docs` excluding `pool/` (worktree pool dir), `docs/work/leases.json`, `docs/work/global.lock.d`, `docs/work/DASHBOARD.md`, and any other runtime-only coordination files
-- [ ] Create `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` (or `.json`) containing: WIQL identity (`project: "Cognito Forms"`, `team: Poseidon`, `areaPath: "Cognito Forms\\Poseidon"`); type→pipeline map (`Bug/Defect/Story Bug/Engineering Bug → bug`; `User Story/Refactor Story/Enabler Story/Requirement → feature`; unknown → skip-and-log); pool defaults (`pool_size: 3`, `lease_ttl_seconds: 1800`, `heartbeat_interval_seconds: 600` i.e. ttl/3)
-- [ ] Install Python dependencies on the work machine: `pip install keyring requests` (or `pip install keyring httpx`); document the install command in a comment block at the top of `ado-sync.py` (Phase 1), since the repo has no `requirements.txt`
-- [ ] Mint a `vso.work`-scoped PAT in ADO (Work Items – Read only) and store it: `keyring.set_password("ado-local-poller", "vso_pat_readonly", "<PAT>")`
-- [ ] Tests: manually verify `python -c "import keyring, requests; print('ok')"` succeeds; verify `keyring.get_password("ado-local-poller", "vso_pat_readonly")` returns the PAT without prompting
+- [x] Create `repos/cog-docs` as a new standalone git repo with `docs/features/`, `docs/bugs/`, `docs/work/` directories (empty but tracked by a `.gitkeep`)
+- [x] Add `.gitignore` to `cog-docs` excluding `pool/` (worktree pool dir), `docs/work/leases.json`, `docs/work/global.lock.d`, `docs/work/DASHBOARD.md`, and any other runtime-only coordination files
+- [x] Create `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` (or `.json`) containing: WIQL identity (`project: "Cognito Forms"`, `team: Poseidon`, `areaPath: "Cognito Forms\\Poseidon"`); type→pipeline map (`Bug/Defect/Story Bug/Engineering Bug → bug`; `User Story/Refactor Story/Enabler Story/Requirement → feature`; unknown → skip-and-log); pool defaults (`pool_size: 3`, `lease_ttl_seconds: 1800`, `heartbeat_interval_seconds: 600` i.e. ttl/3)
+- [x] Install Python dependencies on the work machine: `pip install keyring requests` (or `pip install keyring httpx`); document the install command in a comment block at the top of `ado-sync.py` (Phase 1), since the repo has no `requirements.txt`
+- [x] Mint a `vso.work`-scoped PAT in ADO (Work Items – Read only) and store it: `keyring.set_password("ado-local-poller", "vso_pat_readonly", "<PAT>")`
+- [x] Tests: manually verify `python -c "import keyring, requests; print('ok')"` succeeds; verify `keyring.get_password("ado-local-poller", "vso_pat_readonly")` returns the PAT without prompting
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] `python -c "import keyring; print(keyring.get_password('ado-local-poller','vso_pat_readonly'))"` prints the PAT value (not `None`)
-- [ ] `python -c "import keyring, requests"` exits 0 with no ImportError
-- [ ] `repos/cog-docs` is a valid git repo: `git -C repos/cog-docs status` exits 0
-- [ ] `docs/features/`, `docs/bugs/`, `docs/work/` all exist under `repos/cog-docs`
-- [ ] `pool/` is listed in `repos/cog-docs/.gitignore`; `leases.json` and `global.lock.d` are also listed
-- [ ] `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` parses as valid YAML/JSON and contains all type→pipeline entries
+- [x] `python -c "import keyring; print(keyring.get_password('ado-local-poller','vso_pat_readonly'))"` prints the PAT value (not `None`) — verified `PAT_PRESENT`
+- [x] `python -c "import keyring, requests"` exits 0 with no ImportError — verified `DEPS_OK` (Python 3.14.0)
+- [x] `repos/cog-docs` is a valid git repo: `git -C repos/cog-docs status` exits 0 — clean tree, commit `4bdd575`
+- [x] `docs/features/`, `docs/bugs/`, `docs/work/` all exist under `repos/cog-docs`
+- [x] `pool/` is listed in `repos/cog-docs/.gitignore`; `leases.json` and `global.lock.d` are also listed — confirmed via `git check-ignore`
+- [x] `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` parses as valid YAML/JSON and contains all type→pipeline entries — `PARSE_OK`, areaPath decodes to `Cognito Forms\Poseidon`
 
 **MCP Integration Test Assertions:**
 
 N/A — no runtime-observable behavior in this phase (environment provisioning only).
+
+#### Implementation Notes (Phase 0)
+**Completed:** 2026-06-02
+**Work completed:**
+- cog-docs repo: standalone git repo at `C:\Users\JacobMadsen\source\repos\cog-docs` (commit `4bdd575`, personal identity `jacobmadsen12321@gmail.com`). Tracks `.gitignore` + `docs/{features,bugs,work}/.gitkeep`. `.gitignore` = exactly `pool/`, `docs/work/leases.json`, `docs/work/global.lock.d`, `docs/work/DASHBOARD.md` (all confirmed ignored via `git check-ignore`).
+- `ado-doc-integration.yml`: written with wiql_identity (project/team Poseidon/areaPath `Cognito Forms\Poseidon`/includeChildren false), type_pipeline_map (bug: [Bug, Defect, Story Bug, Engineering Bug]; feature: [User Story, Refactor Story, Enabler Story, Requirement]), github_repo (cognitoforms/cognito), pool (3 / 1800 / 600). 17 lines, parses cleanly.
+- Manual prereqs: PAT present in keyring (`ado-local-poller` / `vso_pat_readonly`); `keyring`+`requests` import OK; `pyyaml` present. Python 3.14.0.
+**Integration notes:**
+- **SYMLINK DISCOVERY (load-bearing for all later phases):** `Cognito Forms/.claude/skill-config/` is a symlink into the claude-config repo. The `.yml` physically lives at `claude-config/repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` and shows as untracked (`??`) in **claude-config**, not in the Cognito work repo. Per plan it MUST stay uncommitted → never use `git add -A` for phase commits; stage only explicit per-file paths so this `.yml` is never swept in.
+- `pr_artifact_repo_guid` is a placeholder (`TODO_FILL_FROM_REAL_WI_ARTIFACTLINK`). Phase 1 (`ado-sync.py` linkedPRs parse) can hardcode the constant GitHub repo GUID or read this key; fill from a real WI ArtifactLink when available.
+- `<COG_DOCS>` = `C:\Users\JacobMadsen\source\repos\cog-docs`. Phase 1 writes `<COG_DOCS>/docs/work/ado-mirror.json` here.
+- **Windows console encoding:** Python test runners crash on cp1252 when printing `→`/Unicode in FAIL messages. All Python gates MUST run with `PYTHONUTF8=1` (bash: `export PYTHONUTF8=1`).
+- **Baseline gate state (pre-this-plan boundary):** `lazy-state.py --test` PASS, `bug-state.py --test` PASS, `test_lazy_core.py` 42/43 — the 1 failure (`test_lazy_state_test_output_matches_baseline`) is a pre-existing Windows-temp-path vs POSIX `/tmp/claude-1000/` golden mismatch, NOT a logic bug. Do not attribute it to this plan.
+**Pitfalls & guidance:**
+- claude-config push fails with HTTP 403 (credential helper authenticates as work account `jacob-cognitoforms`, which lacks access to personal `jacobrocks1212/claude-config`). Local commits succeed; remote sync needs user to fix git credentials / `gh auth switch`. Treated as non-fatal — work proceeds with local commits.
+**Files modified:**
+- `C:\Users\JacobMadsen\source\repos\cog-docs\` — net-new repo (.gitignore, docs/{features,bugs,work}/.gitkeep)
+- `claude-config/repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` — net-new config (uncommitted, via symlink from Cognito Forms tree)
 
 **Prerequisites:** None (first phase)
 
