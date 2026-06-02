@@ -200,23 +200,51 @@ it mutates the production features pipeline.
 **Entry criteria:** Phase 2 complete (wrappers dispatch against `bug-state.py`).
 
 **Deliverables:**
-- [ ] `user/skills/lazy-bug/SKILL.md` — mirror of `lazy` (one sub-skill per invocation;
+- [x] `user/skills/lazy-bug/SKILL.md` — mirror of `lazy` (one sub-skill per invocation;
       `__mark_fixed__` special action; status bookends; work-log).
-- [ ] `user/skills/lazy-bug-batch/SKILL.md` — mirror of `lazy-batch` (autonomous loop).
-- [ ] `user/skills/lazy-bug-status/SKILL.md` — mirror of `lazy-status` (read-only).
-- [ ] Reuse `_components/`: `sentinel-frontmatter.md`, `mcp-coverage-audit.md`,
+- [x] `user/skills/lazy-bug-batch/SKILL.md` — mirror of `lazy-batch` (autonomous loop).
+- [x] `user/skills/lazy-bug-status/SKILL.md` — mirror of `lazy-status` (read-only).
+- [x] Reuse `_components/`: `sentinel-frontmatter.md`, `mcp-coverage-audit.md`,
       `completion-integrity-gate.md` where they generalize; add a bug-specific
       `mark-fixed-archive.md` component (the `git mv` + inbound-ref repoint) and decompose any
       shared block per /crud-skill Step 6.
-- [ ] Frontmatter `plan-mode: never` on all three (mirrors `lazy`).
-- [ ] Lint (`lint-skills.py` exit 0), projection (`project-skills.py`), capability lint.
+- [x] Frontmatter `plan-mode: never` on all three (mirrors `lazy`).
+- [x] Lint (`lint-skills.py` exit 0), projection (`project-skills.py`), capability lint.
 
 **Runtime Verification (workstation):**
-- [ ] `python3 ~/.claude/scripts/lint-skills.py` exits 0.
-- [ ] `python3 ~/.claude/scripts/project-skills.py` resolves the three skills with no circular includes.
+- [x] `python3 ~/.claude/scripts/lint-skills.py` exits 0.
+- [x] `python3 ~/.claude/scripts/project-skills.py` resolves the three skills with no circular includes.
 
 **Implementation Notes:**
-<!-- executor appends -->
+
+#### Implementation Notes (Phase 4)
+**Completed:** 2026-06-01 · repo: claude-config (branch `feature/lazy-bug-family`)
+**Work completed:**
+- `user/skills/lazy-bug/SKILL.md` (320 lines) — mirror of `/lazy`: stateless one-sub-skill-per-
+  invocation dispatcher over `bug-state.py`; routes `spec-bug`/`spec-phases`/`write-plan`/
+  `execute-plan`/`retro-feature`/`mcp-test` + the `__mark_fixed__` archive-on-fix terminal;
+  FIXED.md receipt; status + work-log bookends. Research/Gemini/stub/realign steps dropped.
+- `user/skills/lazy-bug-batch/SKILL.md` (595 lines) — mirror of `/lazy-batch`: autonomous Opus
+  cycle loop; all 9 HARD CONSTRAINTS, Step 1g inline NEEDS_INPUT resolution, Step 1d.5 input-audit
+  preserved; research-halt/`--allow-research-skip`/ingest machinery dropped.
+- `user/skills/lazy-bug-status/SKILL.md` (152 lines) — mirror of `/lazy-status`: read-only
+  dashboard (`allowed-tools: Bash, Read`; `model: haiku`).
+- `user/skills/_components/mark-fixed-archive.md` (180 lines, new) — archive-on-fix procedure:
+  completion-integrity gate → SPEC Status/Fixed/Fix-commit header → sentinel cleanup → `git mv`
+  to `_archive/` → inbound-ref repoint (root-relative) + queue.json entry removal → commit.
+  Won't-fix is receipt-exempt but still archived.
+- All three carry `plan-mode: never`; all `!cat` component injections resolve.
+**Integration notes:**
+- The skills are now live (visible in the Skill tool registry as `lazy-bug`/`-batch`/`-status`).
+- Projection: 69 skills / 74 components / 0 errors; projected lazy-bug skills have 0 unexpanded
+  `!cat`. Phase 6's dry run exercises `/lazy-bug-status` + one `/lazy-bug` cycle end-to-end.
+**Pitfalls & guidance:**
+- All stray `lazy-state.py`/`docs/features`/`__mark_complete__` mentions in the new skills are
+  intentional CONTRAST language ("drives bug-state.py NOT lazy-state.py"), verified — not leftovers.
+- `!cat` injections must be standalone lines pointing at existing components (lint enforces this).
+**Files modified (claude-config):**
+- `user/skills/lazy-bug/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`,
+  `user/skills/lazy-bug-status/SKILL.md`, `user/skills/_components/mark-fixed-archive.md` (all new).
 
 ---
 
