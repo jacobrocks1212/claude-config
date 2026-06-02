@@ -26,6 +26,28 @@
   <knowledge-base>
     Feature docs in `.claude.local/knowledge/features/`
   </knowledge-base>
+
+  <coding-conventions>
+    - Never reference personal/planning documentation (SPEC, PHASES, WU, work-item docs, etc.) in
+      code, test names, comments, commit messages, or anything checked into the repo. These are
+      local artifacts that mean nothing to other contributors.
+    - Write comments only for non-obvious behavior — intent, invariants, contracts, or subtle edge
+      cases. Do not narrate straightforward code.
+  </coding-conventions>
+
+  <claude-config>
+    Claude Code config for this repo is authored in the `claude-config` repo and symlinked in.
+    This file itself (`CLAUDE.local.md`), plus `.claude/{CLAUDE.md, settings.json, settings.local.json,
+    skill-config, skills, commands, knowledge}`, are symlinks into
+    `~/source/repos/claude-config/repos/cognito-forms/`.
+
+    - Editing through a symlink writes through to `claude-config` — but the Edit tool refuses to
+      write through symlinks, so edit the real target under `claude-config/repos/cognito-forms/`.
+    - These files are NOT tracked by this repo's git; `git status` here never shows them. Commit
+      config changes in the `claude-config` repo instead.
+    - Mappings live in `claude-config/manifest.psd1`; `claude-config/setup.ps1 check|repair` verifies them.
+    - See `~/source/repos/CLAUDE.md` ("Claude Config") and `claude-config/CLAUDE.md` for the full system.
+  </claude-config>
 </local-constitution>
 
 # Build & Test Workflow
