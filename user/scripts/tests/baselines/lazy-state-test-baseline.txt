@@ -1,0 +1,44 @@
+  [fresh-queue] cloud=False skip_nr=False real_device=True: Step 4: no SPEC, no research
+  [blocker] cloud=False skip_nr=False real_device=True: Step 3: blocked
+  [mid-implementation] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [cloud-saturated] cloud=True skip_nr=False real_device=True: Step 4: no SPEC, no research
+  [cloud-workstation-only-remainder] cloud=True skip_nr=False real_device=True: Step 8: retro phase
+  [cloud-workstation-only-with-deferred] cloud=True skip_nr=False real_device=True: Step 8: retro phase
+  [workstation-all-plans-complete-phases-unchecked] cloud=False skip_nr=False real_device=True: Step 8: retro phase
+  [workstation-verification-only-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [workstation-verification-only-bold-marker] cloud=False skip_nr=False real_device=True: Step 8: retro phase
+  [workstation-all-plans-complete-real-unchecked] cloud=False skip_nr=False real_device=True: Step 7a: write plan
+  [adhoc-brief] cloud=False skip_nr=False real_device=True: Step 4: ad-hoc brief → spec
+  [all-complete] cloud=False skip_nr=False real_device=True: all-features-complete
+  [needs-research] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research
+  [stub-pre-gemini-marker] cloud=False skip_nr=False real_device=True: Step 4.5: stub-spec detected
+  [stub-queue-flag-only] cloud=False skip_nr=False real_device=True: Step 4.5: stub-spec detected
+  [needs-realign] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
+  [spec-status-complete] cloud=False skip_nr=False real_device=True: all-features-complete
+  [complete-no-receipt] cloud=False skip_nr=False real_device=True: Step 2: completion claimed without receipt
+  [superseded-no-receipt] cloud=False skip_nr=False real_device=True: all-features-complete
+  [dangling-queue-entry] cloud=False skip_nr=False real_device=True: all-features-complete
+  [plan-frontmatter-filter] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [legacy-plan-diagnostics] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [research-pending-skip] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research
+  [research-pending-skip] cloud=False skip_nr=True real_device=True: Step 6: plan feature (phases + plan)
+  [research-pending-only] cloud=False skip_nr=True real_device=True: queue-blocked-on-research
+  [phases-complete-no-retro-done] cloud=False skip_nr=False real_device=True: Step 8: retro phase
+  [phases-complete-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [phases-complete-no-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 8: retro phase
+  [phases-complete-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test
+  [cloud-saturated-in-progress-plan] cloud=True skip_nr=False real_device=True: Step 7a: flip plan Complete (cloud-saturated)
+  [cloud-in-progress-plan-not-saturated] cloud=True skip_nr=False real_device=True: Step 7a: execute plan
+  [workstation-in-progress-plan-with-deferred] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [device-deferred-pending] cloud=False skip_nr=False real_device=False: device-queue-exhausted
+  [device-deferred-pending] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
+  [device-deferred-cleared] cloud=False skip_nr=False real_device=True: Step 10: mark complete
+  [device-deferred-stale-validated] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
+  [device-deferred-with-skip] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
+{
+  "error": "feature_id already queued: adhoc-test",
+  "path": "/tmp/claude-1000/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
+}
+  [enqueue] enqueue_adhoc prepend + brief + roadmap: ok
+
+All smoke tests passed.

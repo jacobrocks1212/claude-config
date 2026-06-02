@@ -1,0 +1,18 @@
+{
+  "feature_id": "hardware-override-protocol",
+  "feature_name": "Hardware Override Protocol",
+  "spec_path": "/home/jacob/repos/AlgoBooth/docs/features/mixer/hardware-override-protocol",
+  "current_step": "Step 7a: write plan",
+  "sub_skill": "write-plan",
+  "sub_skill_args": "/home/jacob/repos/AlgoBooth/docs/features/mixer/hardware-override-protocol/PHASES.md",
+  "terminal_reason": null,
+  "notify_message": null,
+  "diagnostics": [
+    "device-saturated skipped: Learn System v2 \u2014 real-device-only assertions deferred [modeling-produces-audio-in-cue] (DEFERRED_REQUIRES_DEVICE.md); re-opens on a real-device /lazy host.",
+    "device-saturated skipped: Transactional Eval Primitive \u2014 real-device-only assertions deferred [AQ-TE-05] (DEFERRED_REQUIRES_DEVICE.md); re-opens on a real-device /lazy host."
+  ],
+  "device_deferred_features": [
+    "Learn System v2",
+    "Transactional Eval Primitive"
+  ]
+}

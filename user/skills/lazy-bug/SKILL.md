@@ -1,0 +1,320 @@
+---
+name: lazy-bug
+description: Stateless dispatcher — infers bug state from filesystem via bug-state.py, invokes exactly ONE sub-skill per invocation to progress the current bug. Drives docs/bugs/ (NOT docs/features/). The `__mark_fixed__` special action performs the archive-on-fix flow: writes/verifies FIXED.md receipt (kind: fixed, gated by the completion-integrity gate), sets SPEC **Status:** Fixed + **Fixed:** and **Fix commit:** header lines, git mv to docs/bugs/_archive/, repoints inbound root-relative references, and commits. Receipt is FIXED.md (kind: fixed); Won't-fix bugs are receipt-EXEMPT. No research/Gemini steps, no stub-spec step, no realign step — N/A to bugs. Status vocab: Open | Investigating | In-progress | Fixed | Won't-fix.
+argument-hint: [optional: "status" to report, "skip" to skip current bug, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
+plan-mode: never
+---
+
+# Lazy Bug — Autonomous Bug Dispatcher
+
+Thin LLM wrapper around `~/.claude/scripts/bug-state.py`. Each invocation:
+
+1. Loads tools and parses arguments
+2. Runs the state script to determine the next action
+3. Either reports a terminal state and stops, or dispatches **exactly one** sub-skill
+4. Logs work and stops
+
+Designed for fresh sessions. Run `/lazy-bug` repeatedly to progress through the entire bug queue.
+The state-machine logic lives in `bug-state.py` (source of truth). This skill is dispatch glue.
+
+**HARD REQUIREMENT — ONE SKILL PER INVOCATION:** Execute at most one sub-skill (via Skill tool).
+After it completes, report what happened and STOP. Do not chain multiple skills.
+
+**HARD REQUIREMENT — NO PLAN MODE:** Do NOT call `EnterPlanMode` or `ExitPlanMode`. This skill
+dispatches directly.
+
+**HARD REQUIREMENT — STATUS BOOKENDS:** Every /lazy-bug invocation must produce two status messages:
+
+1. **Before acting** (after running bug-state.py, before invoking any skill):
+   ```
+   ## /lazy-bug — {bug_name} (Severity {severity})
+   **State:** {current_step from state script}
+   **Action:** {what skill will be invoked and why}
+   ```
+   No user confirmation needed — just announce and proceed.
+
+2. **After acting** (after the dispatched skill returns or after a STOP decision):
+   ```
+   ## /lazy-bug — Done
+   **Completed:** {what was accomplished this invocation}
+   **Issues:** {any problems encountered, or "None"}
+   **Next `/lazy-bug` will:** {best guess based on the state script's output, or "Run bug-state.py to find out"}
+   ```
+   If there were issues (partial failures, warnings, unexpected state), surface them here.
+
+---
+
+## Sentinel File Format
+
+All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema:
+
+!`cat ~/.claude/skills/_components/sentinel-frontmatter.md`
+
+When this skill writes a sentinel (Step 4 special actions), emit the YAML frontmatter first, then a
+blank line, then a human-readable markdown body. When this skill reads a sentinel, parse the
+frontmatter per the protocol above; the markdown body is for humans only.
+
+---
+
+## Step 0: Load Tools and Parse Arguments
+
+1. Load PushNotification: `ToolSearch({ query: "select:PushNotification" })`
+2. Parse `$ARGUMENTS`:
+   - If `"status"` → run the same logic as `/lazy-bug-status` (read-only report) and STOP
+   - If `"skip"` → mark current bug as skipped (see Step 5) and STOP
+   - If it starts with `--adhoc` (optionally followed by task text), OR is any other non-empty
+     free-text that is not one of the keywords above → treat it as an **ad-hoc task**: run
+     **Step 0.3 (Ad-hoc Enqueue)**, then proceed to Step 1. (`--adhoc` with no text infers the
+     task from the conversation.)
+   - If empty → proceed to Step 1 (normal queue order)
+
+---
+
+## Step 0.3: Ad-hoc Enqueue (only when an ad-hoc task was supplied)
+
+!`cat ~/.claude/skills/_components/adhoc-enqueue.md`
+
+---
+
+## Step 1: Run bug-state.py
+
+Invoke the state inference script with the project root as the working directory:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py
+```
+
+Capture stdout (a single JSON object). If the script exits non-zero, surface the error to the user
+and STOP — do not try to parse malformed state.
+
+**Real-device capability (audio MCP deferral).** The script's `--real-device` defaults to `auto`,
+which reads `$ALGOBOOTH_REAL_AUDIO_DEVICE` (absent → no device). On a no-real-device host (WSL2/CI,
+where the audio backend runs the HeadlessPumpDriver) the state machine DEFERS real-device-only MCP
+assertions rather than skipping them; on a real-device host (set `ALGOBOOTH_REAL_AUDIO_DEVICE=1`,
+or native hardware) it RE-OPENS any deferred assertions for certification. You do not normally pass
+`--real-device` by hand — the env var is the host's standing declaration, and `/mcp-test` observes
+the live backend via `get_audio_mode` (`mode: cpal` & not `forced` → real device) when it runs.
+See `DEFERRED_REQUIRES_DEVICE.md` in the sentinel schema.
+
+Parse the JSON. You now have:
+- `feature_id`, `feature_name`, `spec_path` — current bug context (null if no current bug)
+- `current_step` — human-readable description of where we are in the state machine
+- `sub_skill` — the skill to dispatch (null when terminal or when a special action is needed)
+- `sub_skill_args` — exact args string for the sub-skill
+- `terminal_reason` — set when the state machine halts (e.g. `"blocked"`, `"all-bugs-fixed"`)
+- `notify_message` — string for PushNotification when terminal
+
+---
+
+## Step 2: Handle Terminal States
+
+If `terminal_reason` is set:
+
+1. PushNotification with `notify_message`.
+2. Print the **before** status bookend (use `current_step` as State, `"halt — {terminal_reason}"` as Action).
+3. Print the **after** status bookend (Completed: "halted on {terminal_reason}"; Next `/lazy-bug` will: "Wait for the underlying condition to be resolved before re-running.")
+4. STOP. Skip the work-log step (terminal halts without dispatch are not meaningful work).
+
+Special handling per terminal reason:
+
+| `terminal_reason` | Operator action implied |
+|------|---|
+| `blocked` | Read `{spec_path}/BLOCKED.md`, present details + recovery suggestion |
+| `needs-input` | Read `{spec_path}/NEEDS_INPUT.md`, list the decisions a `--batch` skill halted on |
+| `completion-unverified` | Bug's SPEC claims Fixed but no FIXED.md receipt exists — flipped outside the gate. Reconcile: reopen to In-progress, or run `bug-state.py --backfill-receipts` to grandfather it |
+| `all-bugs-fixed` | All bugs fixed or retired; nothing else to do |
+| `cloud-queue-exhausted` | Workstation-only path — does not occur for plain `/lazy-bug` |
+| `device-queue-exhausted` | Only on a NO-real-device host: the remaining bug(s) carry real-device-only assertions deferred via `DEFERRED_REQUIRES_DEVICE.md`. Tell the user to re-run `/lazy-bug` on a real-device host (set `ALGOBOOTH_REAL_AUDIO_DEVICE=1` or run on native hardware) to certify them. |
+| `queue-missing` | `docs/bugs/queue.json` missing — surface the expected path; the queue is optional (on-disk bugs are auto-discovered), so this is informational |
+
+---
+
+## Step 3: Handle Special Actions (sentinel writes / completion)
+
+If `sub_skill` begins with `__` (double-underscore), it is a **special action** the wrapper
+performs directly, not a Skill dispatch. The wrapper itself does the small file edits and commit.
+
+### `__write_validated_from_skip__`
+
+`sub_skill_args` is `{spec_path}`. SKIP_MCP_TEST.md exists; write VALIDATED.md so the state
+machine progresses to retro on the next invocation.
+
+1. Parse `{spec_path}/SKIP_MCP_TEST.md`'s frontmatter.
+2. Write `{spec_path}/VALIDATED.md` with kind `validated`, `mcp_scenarios: []`,
+   `result: all-passing`, and a body note: "MCP tests skipped per prior SKIP_MCP_TEST.md".
+3. Print the after-status bookend, call work-log, STOP.
+
+### `__write_validated_from_results__`
+
+`sub_skill_args` is `{spec_path}`. MCP_TEST_RESULTS.md exists with all-passing; write VALIDATED.md.
+
+1. Parse `{spec_path}/MCP_TEST_RESULTS.md`'s frontmatter — extract `scenarios`.
+2. Write `{spec_path}/VALIDATED.md` with kind `validated`, the parsed scenarios,
+   `result: all-passing`.
+3. Print the after-status bookend, call work-log, STOP.
+
+### `__mark_fixed__`
+
+`sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize the bug
+via the archive-on-fix procedure.
+
+**Step 3.1: Completion-integrity gate and FIXED.md receipt.**
+
+The gate and archive procedure are documented in the shared component below:
+
+!`cat ~/.claude/skills/_components/mark-fixed-archive.md`
+
+Run the gate and archive procedure per the component above with `{spec_path}`, `{bug_id}`, and
+`{cloud}=false` (workstation). If the gate returns:
+
+- `gated` — receipt written, all preconditions met. Proceed with the archive steps documented in
+  the component.
+- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the archive
+  steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-fixed
+  — {reason}", Next `/lazy-bug` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"),
+  call work-log, STOP.
+
+After the component's archive procedure completes successfully:
+1. PushNotification: `"{bug_name} FIXED and archived. Run /lazy-bug to continue."`
+2. Print the after-status bookend, call work-log, STOP.
+
+### `__flip_plan_complete_cloud_saturated__`
+
+`sub_skill_args` is the absolute path of a plan file with `status: In-progress`. Emitted only by
+`bug-state.py --cloud` when the plan's only unchecked WUs are documented in
+`{spec_path}/DEFERRED_NON_CLOUD.md` as workstation-only.
+
+1. Read the plan file. Locate the `status:` line inside the YAML frontmatter fence.
+2. Replace ONLY the value: `In-progress` → `Complete`. Leave every other frontmatter field and
+   the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
+3. Stage the plan file and invoke `Skill({ skill: "commit", args: "chore({bug_id}): mark plan
+   Complete (cloud-saturated)" })`.
+4. Print the after-status bookend, call work-log, STOP.
+
+### Any other `__*__` action
+
+Print the after-status bookend with an explanatory message ("unrecognized special action:
+<name>") and STOP. Do not improvise.
+
+---
+
+## Step 4: Dispatch the Sub-Skill
+
+If `sub_skill` is a regular skill name (not `__*__`), invoke it exactly:
+
+```
+Skill({ skill: "<sub_skill>", args: "<sub_skill_args>" })
+```
+
+Sub-skill routing table (from `bug-state.py`'s `SKILL_*` constants):
+
+| `sub_skill` from script | Dispatches to |
+|------------------------|--------------|
+| `spec-bug` | `/spec-bug` — root-cause investigation |
+| `spec-phases` | `/spec-phases` — decompose bug SPEC into PHASES |
+| `write-plan` | `/write-plan` — write implementation plan |
+| `execute-plan` | `/execute-plan` — run the next ready plan |
+| `retro-feature` | `/retro-feature` — retrospective pass |
+| `mcp-test` | `/mcp-test` — MCP / runtime validation |
+
+After the skill returns:
+1. Print the after-status bookend (Completed: "ran /<sub_skill>", Next `/lazy-bug` will:
+   "Re-run bug-state.py to determine.").
+2. Call the work-log step below.
+3. STOP.
+
+The sub-skill is responsible for its own internal status bookends and work-log entry. /lazy-bug's
+work-log entry captures the dispatch-level view only.
+
+---
+
+## Step 5: Skip Current Bug
+
+Only triggered when `$ARGUMENTS` contains `"skip"`.
+
+1. Run `python3 ~/.claude/scripts/bug-state.py` to find the current bug.
+2. Ask why (via AskUserQuestion): "Why should {bug_name} be skipped?"
+3. Mark the bug as Won't-fix in its SPEC.md (update `**Status:** Won't-fix`) and note the
+   reason in a `> Skipped: {reason}` line below the status block.
+4. The next `/lazy-bug` invocation will automatically pick up the following bug.
+5. STOP.
+
+---
+
+## Work Log (MANDATORY — DO NOT SKIP)
+
+Every /lazy-bug invocation that performs meaningful work MUST call `interview_work_log_append`
+before producing the "After" status bookend.
+
+Load the tool: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
+
+Call with:
+- `skill`: `"lazy-bug"`
+- `project`: project root basename
+- `title`: `"/lazy-bug → {action taken}"` (e.g., "/lazy-bug → /spec-bug cue-channel-audio-bleed")
+- `summary`: 2-4 sentences. What state was detected, what skill was dispatched (or what special
+  action ran), what it accomplished, any issues.
+- `files_modified`: files modified during this invocation (from sub-skill output, plus any
+  sentinel writes the wrapper performed)
+- `technologies`: relevant tech stack
+- `patterns`: patterns applied
+- `technical_context`: architectural context of what was fixed or investigated
+
+**Skip work-log only when:** /lazy-bug did nothing meaningful (terminal halt without dispatch,
+status query, or skip command).
+
+**The sub-skill invoked by /lazy-bug is ALSO expected to log its own work** — both logs are
+required when a dispatch happened. /lazy-bug logs the dispatch-level view; the sub-skill logs the
+implementation-level detail.
+
+---
+
+## Sentinel Files Reference
+
+| File | Created by | Purpose | Lifecycle |
+|------|-----------|---------|-----------|
+| `plans/*.md` | /write-plan, /retro-feature, etc. | Colocated plan files | Persists (audit trail) |
+| `BLOCKED.md` | /execute-plan or /lazy-bug | Blocker details | Persists until resolved |
+| `MCP_TEST_RESULTS.md` | /lazy-bug (after mcp-test) | Test results with pass/fail | Persists permanently (audit trail) |
+| `VALIDATED.md` | /lazy-bug (after 100% pass) | Validation gate | Deleted on bug archival |
+| `SKIP_MCP_TEST.md` | /lazy-bug (assessment) | Documents why MCP testing was skipped | Persists permanently |
+| `DEFERRED_REQUIRES_DEVICE.md` | /mcp-test (no-device host) | Defers real-device-only assertions | Deleted by a real-device run after certification |
+| `RETRO_DONE.md` | /lazy-bug (after retro execution) | Retro completion gate | Deleted on bug archival |
+| `NEEDS_INPUT.md` | any `--batch` skill | Halt: ambiguous decision encountered | Deleted when the human resolves the decision |
+| `FIXED.md` | /lazy-bug `__mark_fixed__` gate | Completion receipt (kind: fixed) | Persists permanently in `_archive/` |
+| `mcp-tests/*.md` | /lazy-bug (symlinks) | Links to test scenarios | Persists permanently |
+
+---
+
+## State Machine Summary
+
+The state machine lives in `~/.claude/scripts/bug-state.py`. This skill is a thin LLM wrapper
+that runs the script, dispatches the named sub-skill, and stops. The high-level shape is:
+
+```
+[ad-hoc task supplied?]  → Step 0.3 enqueue at top of queue (Bash, once) → fall through
+bug-state.py → JSON {sub_skill, sub_skill_args, terminal_reason}
+
+terminal_reason set?     → notify + STOP
+sub_skill = "__*__"?     → wrapper performs special action (sentinel write / mark fixed) + STOP
+sub_skill = real skill?  → Skill({skill, args}) → work-log → STOP
+```
+
+The script mirrors the lifecycle:
+
+```
+SPEC (Open/Investigating) → spec-bug (investigation) → PHASES → write-plan → execute-plan
+→ retro-feature (RETRO_DONE.md) → mcp-test (VALIDATED.md / skip / device-defer)
+→ __mark_fixed__ (FIXED.md receipt → Status: Fixed → git mv _archive/ → commit)
+```
+
+**No research/Gemini steps (N/A to bugs).** The feature pipeline's Step 4.5 stub-spec, Step 4.6
+realign, and Step 5 research gate have no bug analog — bugs have a root cause to investigate
+(dispatched as `spec-bug`), not a feature to design via Gemini research.
+
+**Won't-fix vs Fixed:** `Won't-fix` is receipt-exempt (never produces a FIXED.md; retired without
+fix). `Fixed` without a receipt halts on `completion-unverified`. The only valid terminal is
+`Fixed` + `FIXED.md` (written by the `__mark_fixed__` gate) + in `_archive/`.
+
+When the state machine needs to change, update `bug-state.py`. This skill is dispatch glue; the
+logic lives in the script.
