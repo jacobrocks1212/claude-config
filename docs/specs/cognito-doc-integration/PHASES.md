@@ -387,8 +387,8 @@ ASSERTIONS:
 **Deliverables:**
 - [x] `user/scripts/ado-sync.py` `work_item_from_api`: capture `System.BoardColumn` → `boardColumn` (str, `""` when off-board) and `System.BoardColumnDone` → `boardColumnDone` (bool, `false` default) — **append-only** schema additions; the existing 19 keys are unchanged and un-renamed; `serialize_mirror`'s `sort_keys=True` slots the new keys in deterministically
 - [x] Config: add `active_feature_id: 54423` and `board_columns: [New, Next, "In Progress", "PR Review", "Ready for Testing", Reviewing, Merged]` (canonical lane order) to `ado-doc-integration.yml` — in **both** the Cognito-forms copy and the `cog-docs` runtime copy
-- [ ] `order_board(wis, board_columns) -> "OrderedDict[str, list]"` (pure helper in `work-status.py`): bucket WIs by `boardColumn` in canonical config order; missing/unknown column → a trailing `"(no column)"` bucket; deterministic (no clock reads)
-- [ ] `group_by_feature(team_wis, active_feature_id, mirror_index) -> ordered groups` (pure helper): active feature's children first (the priority queue), remaining features grouped after, orphans (no `parentId`) last; resolve each feature's title from the mirror parent WI when present, else `Feature <id>`; attribute deeper nesting by walking the `parentId` chain within the mirror (ancestors absent from the mirror → attribute to nearest known parent, else orphan)
+- [x] `order_board(wis, board_columns) -> "OrderedDict[str, list]"` (pure helper in `work-status.py`): bucket WIs by `boardColumn` in canonical config order; missing/unknown column → a trailing `"(no column)"` bucket; deterministic (no clock reads)
+- [x] `group_by_feature(team_wis, active_feature_id, mirror_index) -> ordered groups` (pure helper): active feature's children first (the priority queue), remaining features grouped after, orphans (no `parentId`) last; resolve each feature's title from the mirror parent WI when present, else `Feature <id>`; attribute deeper nesting by walking the `parentId` chain within the mirror (ancestors absent from the mirror → attribute to nearest known parent, else orphan)
 - [ ] `render_markdown` extension: a lead `## Poseidon Board` section (compact column→count table only) followed by an `### 🎯 Active Feature: <title> (AB#<id>)` priority-queue table (columns: rank, WI, lane, title, PR) sorted by board-lane order, then the remaining feature groups; reuse `_escape_md_pipe` for all new cells; deterministic (config + mirror data only — no `datetime.now()`)
 - [ ] `--feature <id>` CLI override on `work-status.py` (defaults to config `active_feature_id`); `user/skills/dashboard/SKILL.md` documents the `--feature` passthrough
 - [ ] Tests: board bucketing (canonical order + unknown bucket); feature grouping (active pinned first, title resolution, orphan handling, multi-level `parentId` chain-walk); active-feature sort-by-lane; graceful render against a pre-Phase-5 mirror with no `boardColumn`
@@ -448,6 +448,21 @@ ASSERTIONS:
 - `user/scripts/ado-sync.py` — `boardColumn`/`boardColumnDone` in `work_item_from_api` + `fixture6` + `total` bump.
 - `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` — `active_feature_id` + `board_columns` (committed).
 - `cog-docs/.claude/skill-config/ado-doc-integration.yml` — same keys (untracked runtime copy, uncommitted).
+
+#### Implementation Notes (Phase 5 — Batch 2: WU-3 pure grouping helpers)
+**Completed:** 2026-06-02
+**Work completed:**
+- **WU-3 (`work-status.py`, TDD RED→GREEN):** added two pure, clock-free helpers co-located after `_escape_md_pipe` (`order_board` @383, `group_by_feature` @407), plus `from collections import OrderedDict` (@30).
+  - `order_board(wis, board_columns) -> OrderedDict[str, list]`: pre-seeds every lane key in canonical order + a trailing `"(no column)"`, so `list(keys()) == [*board_columns, "(no column)"]` always (empty lanes included). WIs with empty/missing/`None`/unknown `boardColumn` fall into `"(no column)"`; input order preserved; nothing dropped.
+  - `group_by_feature(team_wis, active_feature_id, mirror_index) -> list[{feature_id,title,wis}]`: per-WI attribution walks the `parentId` chain through `mirror_index` (cycle-safe via a `visited` set) — if `active_feature_id` is reached anywhere in the chain the WI rolls up to the active feature; else it attributes to the topmost reachable known ancestor (`chain[-1]`); a missing/absent immediate parent → orphan. Output order: active group FIRST (always present when `active_feature_id is not None`, even empty), other features with ≥1 WI sorted ascending, orphan group (`feature_id=None`, title `"(no parent)"`) LAST. Title = `mirror_index[fid]["title"]` or `f"Feature {fid}"` fallback.
+  - Three non-tautological fixtures (`fixture_j_order_board`, `fixture_k_group_by_feature`, `fixture_l_chain_walk`); `total` bumped 9→12. `python work-status.py --test` = **12/12** (orchestrator-reverified, exit 0).
+**Integration notes:**
+- Both helpers take plain in-memory data — WU-4's `render_markdown` will build `mirror_index = {wi["id"]: wi for wi in sources["mirror"]["workItems"]}`, call `order_board(team_wis, board_columns)` for the `## Poseidon Board` count table and `group_by_feature(team_wis, active_feature_id, mirror_index)` for the active-feature priority queue + feature groups.
+- **Type-matching contract:** the helpers compare `parentId`/ids and `active_feature_id` with `==` and use ids as dict keys — WU-4 MUST coerce the `--feature <id>` CLI string and the config `active_feature_id` to the same type as the mirror's integer `id`/`parentId` before calling, or attribution silently misses.
+**Pitfalls & guidance:**
+- The RED test agent initially appended a second `total = 12` instead of editing the original `total = 9`; the orchestrator removed the now-dead early assignment and the stale "nine" docstring (single `total = 12` @1318 remains). 12/12 re-verified after the cleanup.
+**Files modified:**
+- `user/scripts/work-status.py` — `order_board` + `group_by_feature` + `OrderedDict` import + fixtures J/K/L + `total` 9→12.
 
 ---
 

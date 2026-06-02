@@ -27,6 +27,7 @@ import os
 import re
 import sys
 import tempfile
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -379,6 +380,131 @@ def _escape_md_pipe(text: str) -> str:
     return text.replace("|", r"\|")
 
 
+def order_board(wis: list[dict], board_columns: list[str]) -> "OrderedDict[str, list]":
+    """Bucket WIs into an ordered mapping keyed by board_columns + '(no column)'.
+
+    Keys are always exactly [*board_columns, "(no column)"] in that order, even
+    when a bucket is empty.  A WI whose boardColumn is missing, None, "", or not
+    in board_columns goes into "(no column)".  Input order within each bucket is
+    preserved.  No WI is ever dropped.
+    """
+    result: OrderedDict[str, list] = OrderedDict()
+    for col in board_columns:
+        result[col] = []
+    result["(no column)"] = []
+
+    column_set = set(board_columns)
+    for wi in wis:
+        col = wi.get("boardColumn")
+        if col and col in column_set:
+            result[col].append(wi)
+        else:
+            result["(no column)"].append(wi)
+
+    return result
+
+
+def group_by_feature(
+    team_wis: list[dict],
+    active_feature_id: int | None,
+    mirror_index: dict,
+) -> list[dict]:
+    """Group WIs by their root feature via parentId chain traversal.
+
+    Attribution algorithm per WI:
+      - No parentId → orphan (feature_id None).
+      - Walk the parentId chain through mirror_index; if the active_feature_id is
+        encountered, attribute to it.  Otherwise attribute to the topmost reachable
+        known ancestor (chain[-1]).  If the immediate parent is absent from
+        mirror_index, attribute as orphan.
+
+    Output order:
+      1. Active feature group FIRST (included even with zero WIs) when
+         active_feature_id is not None.
+      2. All other feature groups with >=1 WI, sorted ascending by feature_id.
+      3. Orphan group LAST (feature_id=None, title="(no parent)") only if >=1 orphan.
+
+    Title resolution: mirror_index[fid]["title"] if fid in mirror_index, else
+    "Feature {fid}".
+    """
+    # Buckets: feature_id -> list[wi]
+    feature_buckets: dict[int | None, list] = {}
+    if active_feature_id is not None:
+        feature_buckets[active_feature_id] = []
+
+    for wi in team_wis:
+        pid = wi.get("parentId")
+        if pid is None:
+            # No parent → orphan
+            feature_buckets.setdefault(None, []).append(wi)
+            continue
+
+        # Walk the chain
+        cur: int | None = pid
+        visited: set = set()
+        chain: list = []
+        attributed: int | None = None
+
+        while cur is not None and cur in mirror_index and cur not in visited:
+            visited.add(cur)
+            chain.append(cur)
+            if active_feature_id is not None and cur == active_feature_id:
+                attributed = active_feature_id
+                break
+            cur = mirror_index[cur].get("parentId")
+
+        if attributed is not None:
+            # Rolled up to active feature
+            feature_buckets[active_feature_id].append(wi)  # type: ignore[index]
+        elif chain:
+            # Topmost reachable known ancestor
+            root_fid = chain[-1]
+            feature_buckets.setdefault(root_fid, []).append(wi)
+        else:
+            # Immediate parent absent from mirror_index → orphan
+            feature_buckets.setdefault(None, []).append(wi)
+
+    # Build output list
+    groups: list[dict] = []
+
+    def _title(fid: int) -> str:
+        entry = mirror_index.get(fid)
+        if entry:
+            return entry.get("title") or f"Feature {fid}"
+        return f"Feature {fid}"
+
+    # 1. Active feature group first
+    if active_feature_id is not None:
+        groups.append({
+            "feature_id": active_feature_id,
+            "title": _title(active_feature_id),
+            "wis": feature_buckets.get(active_feature_id, []),
+        })
+
+    # 2. Other feature groups (>=1 WI), sorted by feature_id ascending
+    other_fids = sorted(
+        fid for fid in feature_buckets
+        if fid is not None and fid != active_feature_id and feature_buckets[fid]
+    )
+    for fid in other_fids:
+        groups.append({
+            "feature_id": fid,
+            "title": _title(fid),
+            "wis": feature_buckets[fid],
+        })
+
+    # 3. Orphan group last (only if >=1 orphan)
+    orphans = feature_buckets.get(None, [])
+    if orphans:
+        groups.append({
+            "feature_id": None,
+            "title": "(no parent)",
+            "wis": orphans,
+        })
+
+    return groups
+
+
 def render_markdown(
     sources: dict,
     current_branch: str | None = None,
@@ -594,9 +720,8 @@ def write_markdown(repo_root: Path, text: str) -> Path:
 # ---------------------------------------------------------------------------
 
 def run_self_tests() -> int:
-    """Run nine built-in fixtures. Returns number of failures (0 = all pass)."""
+    """Run twelve built-in fixtures. Returns number of failures (0 = all pass)."""
     failures = 0
-    total = 9
 
     # ------------------------------------------------------------------
     # Fixture A — mirror-only degradation
@@ -1077,7 +1202,120 @@ def run_self_tests() -> int:
         print(f"FAIL fixture_i_hidden_items_note: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture J — order_board: canonical column order + unknown/empty/missing bucket
+    # ------------------------------------------------------------------
+    try:
+        board_columns_j = ["New", "In Progress", "Merged"]
+        wis_j = [
+            {"id": 1, "boardColumn": "New"},
+            {"id": 2, "boardColumn": "Merged"},
+            {"id": 3, "boardColumn": "In Progress"},
+            {"id": 4, "boardColumn": ""},
+            {"id": 5, "boardColumn": "Bogus"},
+            {"id": 6},  # no boardColumn key
+        ]
+        result_j = order_board(wis_j, board_columns_j)
+        actual_keys_j = list(result_j.keys())
+        expected_keys_j = ["New", "In Progress", "Merged", "(no column)"]
+        assert actual_keys_j == expected_keys_j, \
+            f"order_board keys must be {expected_keys_j}, got {actual_keys_j}"
+        assert [wi["id"] for wi in result_j["New"]] == [1], \
+            f"'New' bucket must contain id 1 only, got {[wi['id'] for wi in result_j['New']]}"
+        assert [wi["id"] for wi in result_j["Merged"]] == [2], \
+            f"'Merged' bucket must contain id 2 only, got {[wi['id'] for wi in result_j['Merged']]}"
+        assert [wi["id"] for wi in result_j["In Progress"]] == [3], \
+            f"'In Progress' bucket must contain id 3 only, got {[wi['id'] for wi in result_j['In Progress']]}"
+        no_col_ids_j = [wi["id"] for wi in result_j["(no column)"]]
+        assert set(no_col_ids_j) == {4, 5, 6}, \
+            f"'(no column)' bucket must contain ids {{4, 5, 6}}, got {no_col_ids_j}"
+        total_bucketed_j = sum(len(v) for v in result_j.values())
+        assert total_bucketed_j == 6, \
+            f"Total bucketed WIs must be 6 (none dropped), got {total_bucketed_j}"
+        print("PASS fixture_j_order_board")
+    except Exception as exc:
+        print(f"FAIL fixture_j_order_board: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture K — group_by_feature: active pinned first + title resolution + orphan floor
+    # ------------------------------------------------------------------
+    try:
+        mirror_index_k = {
+            54423: {"id": 54423, "title": "Active Feature Title", "parentId": None},
+            999: {"id": 999, "title": "Other Feature", "parentId": None},
+        }
+        team_wis_k = [
+            {"id": 100, "parentId": 54423},
+            {"id": 101, "parentId": 54423},
+            {"id": 200, "parentId": 999},
+            {"id": 300, "parentId": None},
+        ]
+        groups_k = group_by_feature(team_wis_k, 54423, mirror_index_k)
+
+        # Active feature group must be first
+        assert groups_k[0]["feature_id"] == 54423, \
+            f"groups[0] must be the active feature (54423), got feature_id={groups_k[0]['feature_id']}"
+        assert groups_k[0]["title"] == "Active Feature Title", \
+            f"Active group title must be 'Active Feature Title', got {groups_k[0]['title']!r}"
+        active_ids_k = [wi["id"] for wi in groups_k[0]["wis"]]
+        assert active_ids_k == [100, 101], \
+            f"Active group must contain ids [100, 101], got {active_ids_k}"
+
+        # Other feature group
+        other_groups_k = [g for g in groups_k if g["feature_id"] == 999]
+        assert len(other_groups_k) == 1, \
+            f"Expected exactly one group with feature_id=999, got {[g['feature_id'] for g in groups_k]}"
+        assert other_groups_k[0]["title"] == "Other Feature", \
+            f"Other group title must be 'Other Feature', got {other_groups_k[0]['title']!r}"
+        assert [wi["id"] for wi in other_groups_k[0]["wis"]] == [200], \
+            f"Other group must contain id 200, got {[wi['id'] for wi in other_groups_k[0]['wis']]}"
+
+        # Orphan group must be last
+        assert groups_k[-1]["feature_id"] is None, \
+            f"Last group must be orphan (feature_id=None), got {groups_k[-1]['feature_id']}"
+        assert groups_k[-1]["title"] == "(no parent)", \
+            f"Orphan group title must be '(no parent)', got {groups_k[-1]['title']!r}"
+        assert [wi["id"] for wi in groups_k[-1]["wis"]] == [300], \
+            f"Orphan group must contain id 300, got {[wi['id'] for wi in groups_k[-1]['wis']]}"
+
+        # Title fallback when active id is not in mirror_index
+        groups_k_empty = group_by_feature(team_wis_k, 54423, {})
+        assert groups_k_empty[0]["feature_id"] == 54423, \
+            f"Active group must still be first with empty mirror_index, got feature_id={groups_k_empty[0]['feature_id']}"
+        assert groups_k_empty[0]["title"] == "Feature 54423", \
+            f"Active group title must fall back to 'Feature 54423' when not in mirror_index, got {groups_k_empty[0]['title']!r}"
+
+        print("PASS fixture_k_group_by_feature")
+    except Exception as exc:
+        print(f"FAIL fixture_k_group_by_feature: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture L — group_by_feature: 3-level parentId chain rolls up to active feature
+    # Story Bug (700) → User Story (600) → Active Feature (54423)
+    # ------------------------------------------------------------------
+    try:
+        mirror_index_l = {
+            54423: {"id": 54423, "title": "Active", "parentId": None},
+            600: {"id": 600, "title": "User Story", "parentId": 54423},
+        }
+        team_wis_l = [{"id": 700, "parentId": 600}]
+        groups_l = group_by_feature(team_wis_l, 54423, mirror_index_l)
+
+        assert groups_l[0]["feature_id"] == 54423, \
+            f"groups[0] must be the active feature (54423), got feature_id={groups_l[0]['feature_id']}"
+        active_wis_l = [wi["id"] for wi in groups_l[0]["wis"]]
+        assert 700 in active_wis_l, \
+            f"WI 700 must roll up two levels to the active feature; got active wis={active_wis_l}"
+
+        print("PASS fixture_l_chain_walk")
+    except Exception as exc:
+        print(f"FAIL fixture_l_chain_walk: {exc}")
+        failures += 1
+
     # Summary
+    total = 12
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures
