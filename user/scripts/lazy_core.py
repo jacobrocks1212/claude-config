@@ -211,13 +211,14 @@ def write_completed_receipt(
     date: str,
     *,
     provenance: str,
+    kind: str = "completed",
     completed_commit: str | None = None,
     validated_via: str | None = None,
     mcp_pass_count: int | None = None,
     mcp_total_count: int | None = None,
     body_note: str = "",
 ) -> None:
-    """Write a COMPLETED.md receipt (kind: completed) per sentinel-frontmatter.md.
+    """Write a completion receipt (kind: completed by default) per sentinel-frontmatter.md.
 
     ``provenance: gated`` is written by the completion-integrity gate at flip
     time; ``provenance: backfilled-unverified`` is written by --backfill-receipts
@@ -226,10 +227,15 @@ def write_completed_receipt(
     Generalized from lazy-state.py for reuse in bug-state.py (Phase 2).
     The ``kind: completed`` value and the ``# Completion Receipt`` title are
     the defaults that preserve byte-for-byte behavior at all existing call sites.
+
+    ``kind`` is keyword-only and defaults to ``"completed"`` so that lazy-state.py's
+    feature pipeline behavior is unchanged.  bug-state.py passes ``kind="fixed"``
+    so that FIXED.md receipts carry the correct ``kind: fixed`` frontmatter value
+    required by the Phase-5 consistency checker.
     """
     lines = [
         "---",
-        "kind: completed",
+        f"kind: {kind}",
         f"feature_id: {feature_id}",
         f"date: {date}",
         f"provenance: {provenance}",

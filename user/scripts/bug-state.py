@@ -687,6 +687,7 @@ def backfill_receipts(repo_root: Path) -> dict[str, Any]:
         write_completed_receipt(
             receipt, bug_id, today,
             provenance="backfilled-unverified",
+            kind="fixed",
             body_note=(
                 "Grandfathered during the receipt-gating rollout. This bug was "
                 "marked Fixed BEFORE the FIXED.md receipt gate existed, so its "

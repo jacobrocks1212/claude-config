@@ -255,18 +255,54 @@ it mutates the production features pipeline.
 **Entry criteria:** Phase 3 complete (gate validates the migrated standard).
 
 **Deliverables:**
-- [ ] Extend `scripts/check-docs-consistency.ts` (or a sibling `check-bugs-consistency.ts`) to
+- [x] Extend `scripts/check-docs-consistency.ts` (or a sibling `check-bugs-consistency.ts`) to
       validate: bug SPEC frontmatter (canonical Status/Severity), `docs/bugs/queue.json` schema,
       bug sentinels/plans frontmatter, `fixed-requires-receipt`, archive-coherence (`Fixed` ⇒
       under `_archive/`).
-- [ ] Wire into `npm run qg` (new `qg:bugs-consistency` or fold into `qg:docs-consistency`).
-- [ ] Gate passes against the migrated tree from Phase 3.
+- [x] Wire into `npm run qg` (new `qg:bugs-consistency` or fold into `qg:docs-consistency`).
+- [x] Gate passes against the migrated tree from Phase 3.
 
 **Runtime Verification (workstation):**
-- [ ] `npm run qg:bugs-consistency` (or folded gate) exits 0 against migrated `docs/bugs/`.
+- [x] `npm run qg:bugs-consistency` (or folded gate) exits 0 against migrated `docs/bugs/`.
 
 **Implementation Notes:**
-<!-- executor appends -->
+
+#### Implementation Notes (Phase 5)
+**Completed:** 2026-06-01 · repos: AlgoBooth (checker) + claude-config (receipt-kind fix)
+**Work completed:**
+- `scripts/check-bugs-consistency.ts` (592 lines, new, AlgoBooth) — sibling of
+  `check-docs-consistency.ts`. Exports a pure `analyzeBugsConsistency(bugsRoot)` returning
+  `{violations, warnings}`; `main()` guarded by `import.meta.url` (importable in tests).
+  Rules: `bug-status-canonical`, `bug-severity-canonical`, `queue-schema`, `queue-dangling-id`,
+  `fixed-requires-receipt` (Won't-fix exempt), `archive-coherence`, `sentinel-frontmatter`
+  (`FIXED.md` ⇒ `kind: fixed`).
+- `scripts/__tests__/check-bugs-consistency.test.ts` (663 lines, 29 cases) — TDD red→green, temp
+  fixture trees, one PASS + one FAIL per rule. All 29 green.
+- Wired `"qg:bugs-consistency": "tsx scripts/check-bugs-consistency.ts"` in `package.json`.
+  Gate exits 0 against the live migrated `docs/bugs/` tree.
+- **Cross-repo receipt-kind fix (corrects a Phase 1/2 gap):** `write_completed_receipt` had no
+  `kind` param (hardcoded `kind: completed`), so the 27 backfilled `FIXED.md` carried
+  `kind: completed`. Added keyword-only `kind: str = "completed"` to `lazy_core.write_completed_receipt`
+  (default keeps lazy-state byte-identical — verified), passed `kind="fixed"` in
+  `bug-state.backfill_receipts`, and regenerated all 27 `FIXED.md` → `kind: fixed`.
+**Integration notes:**
+- The bug gate is now a standing `npm run qg:bugs-consistency` check, parallel to the feature gate.
+- Receipt-kind fix verified: `lazy-state.py --test` byte-identical, `test_lazy_core.py` + `bug-state.py
+  --test` both green.
+**Pitfalls & guidance:**
+- KNOWN PREEXISTING (out of scope, NOT introduced here): full `npm run qg -- ts` (the project-wide
+  typecheck) reports 5 tsc errors in unrelated Vue component test files
+  (`SettingsRHSPanel.test.ts`, `PanelDivider.test.ts`, `DiffOverlay.test.ts` ×2,
+  `HubSettingsView.test.ts`) on the `chore/qg-wave1-green` base — Vue test-utils prop-typing debt
+  belonging to the qg-wave workstream. The Phase-5 deliverable itself typechecks clean
+  (`tsc --noEmit` reports zero errors in `check-bugs-consistency.ts`); the targeted gate
+  (`qg:bugs-consistency`) + its 29 vitest cases pass. eslint ignores `scripts/` by config.
+- `import.meta.url` entrypoint guard is mandatory so the test can import the analysis fn without
+  triggering `main()`/`process.exit`.
+**Files modified:**
+- AlgoBooth: `scripts/check-bugs-consistency.ts` (new), `scripts/__tests__/check-bugs-consistency.test.ts`
+  (new), `package.json`, 27 `_archive/**/FIXED.md` (regenerated kind: fixed).
+- claude-config: `user/scripts/lazy_core.py` (kind param), `user/scripts/bug-state.py` (kind="fixed").
 
 ---
 
