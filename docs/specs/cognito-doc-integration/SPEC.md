@@ -163,7 +163,7 @@ Facts the design now binds to, replacing draft assumptions:
    gate for a human absorb/reject; other items continue.
 6. `/work-status` shows each in-flight item, its worktree, stage, and (once open) its linked PR + CI.
 
-### Deferred workflow (Phase 5)
+### Deferred workflow (Phase 6)
 
 7. PR shepherding: poll GH PR state (`gh pr view --json statusCheckRollup,reviews`); on
    changes-requested/CI-fail, route feedback to `FEEDBACK.md` and transition `wait_on_pr → implement`;
@@ -299,7 +299,7 @@ cognito checkout.
 See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown. Summary: **Phase 0** bootstrap
 (`cog-docs` repo + Cognito config + secrets/deps), **Phase 1** deterministic ADO sync, **Phase 2**
 work dashboard, **Phase 3** WI→doc materialization, **Phase 4** parallel execution, **Phase 5**
-(deferred) PR shepherding.
+board-aware & feature-grouped dashboard, **Phase 6** (deferred) PR shepherding.
 
 ## Validation Criteria
 

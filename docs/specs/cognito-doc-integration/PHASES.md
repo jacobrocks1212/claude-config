@@ -389,9 +389,9 @@ ASSERTIONS:
 - [x] Config: add `active_feature_id: 54423` and `board_columns: [New, Next, "In Progress", "PR Review", "Ready for Testing", Reviewing, Merged]` (canonical lane order) to `ado-doc-integration.yml` — in **both** the Cognito-forms copy and the `cog-docs` runtime copy
 - [x] `order_board(wis, board_columns) -> "OrderedDict[str, list]"` (pure helper in `work-status.py`): bucket WIs by `boardColumn` in canonical config order; missing/unknown column → a trailing `"(no column)"` bucket; deterministic (no clock reads)
 - [x] `group_by_feature(team_wis, active_feature_id, mirror_index) -> ordered groups` (pure helper): active feature's children first (the priority queue), remaining features grouped after, orphans (no `parentId`) last; resolve each feature's title from the mirror parent WI when present, else `Feature <id>`; attribute deeper nesting by walking the `parentId` chain within the mirror (ancestors absent from the mirror → attribute to nearest known parent, else orphan)
-- [ ] `render_markdown` extension: a lead `## Poseidon Board` section (compact column→count table only) followed by an `### 🎯 Active Feature: <title> (AB#<id>)` priority-queue table (columns: rank, WI, lane, title, PR) sorted by board-lane order, then the remaining feature groups; reuse `_escape_md_pipe` for all new cells; deterministic (config + mirror data only — no `datetime.now()`)
-- [ ] `--feature <id>` CLI override on `work-status.py` (defaults to config `active_feature_id`); `user/skills/dashboard/SKILL.md` documents the `--feature` passthrough
-- [ ] Tests: board bucketing (canonical order + unknown bucket); feature grouping (active pinned first, title resolution, orphan handling, multi-level `parentId` chain-walk); active-feature sort-by-lane; graceful render against a pre-Phase-5 mirror with no `boardColumn`
+- [x] `render_markdown` extension: a lead `## Poseidon Board` section (compact column→count table only) followed by an `### 🎯 Active Feature: <title> (AB#<id>)` priority-queue table (columns: rank, WI, lane, title, PR) sorted by board-lane order, then the remaining feature groups; reuse `_escape_md_pipe` for all new cells; deterministic (config + mirror data only — no `datetime.now()`)
+- [x] `--feature <id>` CLI override on `work-status.py` (defaults to config `active_feature_id`); `user/skills/dashboard/SKILL.md` documents the `--feature` passthrough
+- [x] Tests: board bucketing (canonical order + unknown bucket); feature grouping (active pinned first, title resolution, orphan handling, multi-level `parentId` chain-walk); active-feature sort-by-lane; graceful render against a pre-Phase-5 mirror with no `boardColumn`
 
 **Runtime Verification** *(checked by manual/live testing — NOT by the implementation agent):*
 - [ ] After a `--refresh` poll, on-board Poseidon WIs carry a non-empty `boardColumn` matching the board (e.g. a "Merged" card → `boardColumn: "Merged"`); WIs not on the board → `""`
@@ -463,6 +463,26 @@ ASSERTIONS:
 - The RED test agent initially appended a second `total = 12` instead of editing the original `total = 9`; the orchestrator removed the now-dead early assignment and the stale "nine" docstring (single `total = 12` @1318 remains). 12/12 re-verified after the cleanup.
 **Files modified:**
 - `user/scripts/work-status.py` — `order_board` + `group_by_feature` + `OrderedDict` import + fixtures J/K/L + `total` 9→12.
+
+#### Implementation Notes (Phase 5 — Batch 3: WU-4 renderer + `--feature`, WU-5 skill doc)
+**Completed:** 2026-06-02
+**Work completed:**
+- **WU-4 (`work-status.py`, TDD RED→GREEN):**
+  - Module constant `DEFAULT_BOARD_COLUMNS` (@35) = the 7 canonical lanes.
+  - `render_markdown` signature extended (@511) to `(sources, current_branch=None, *, all_team=False, board_columns=None, active_feature_id=None)` — backward-compatible defaults (`board_columns is None` → `DEFAULT_BOARD_COLUMNS`; `active_feature_id is None` → no active section). Two sections inserted AFTER the `_Synced:_` subtitle and BEFORE `## My Queue` (@562-612): a `## Poseidon Board` count table (one row per canonical lane; `has_board = any("boardColumn" in wi …)` gate → emits `_No board data yet — run `/dashboard --refresh`…_` when no WI carries the key, never a traceback), and a gated `### 🎯 Active Feature: <title> (AB#<id>)` priority queue (`| Rank | WI | Lane | Title | PR |`, stable-sorted by lane index with off-board last, PR cell from `linkedPRs`, `—` when none), followed by the remaining feature groups. Every cell uses `_escape_md_pipe`. Reuses the existing int-keyed `wi_by_id` as `mirror_index`. Deterministic — no clock.
+  - `load_board_config(repo_root)` (@765): lazy `import yaml` INSIDE the fn; reads `<repo_root>/.claude/skill-config/ado-doc-integration.yml`; returns `(board_columns or DEFAULT, active_feature_id)`; any error/missing → `(DEFAULT_BOARD_COLUMNS, None)`. `--test` stays stdlib-only (yaml never at module top).
+  - `--feature` argparse flag (@1612) + `--markdown`-block wiring (@1634): `load_board_config` → `active = args.feature if args.feature is not None else cfg_active` → digit-string coerced to `int` (matches mirror int ids) → threaded into `render_markdown`. Flag wins over config.
+  - 5 fixtures M/N/O/P/Q; `total` 12→17. `python work-status.py --test` = **17/17** (orchestrator-reverified, exit 0). `render_dashboard` (terminal) untouched — fixture Q guards that board markup never leaks into it.
+- **WU-5 (`dashboard/SKILL.md`, doc):** `argument-hint` now `"[--refresh] [--all-team] [--feature <id>] [--out <path>]"`; new Step 1 bullet for `--feature <id>` (overrides config `active_feature_id`, pins that feature's children); Step 4 command line + pass-through sentence updated. `python lint-skills.py` exits 0.
+**Integration notes:**
+- End-to-end seam confirmed offline against the live `cog-docs` mirror (7503 pre-Phase-5 items, no `boardColumn`): board section renders the graceful "no board data" notice (correct — mirror predates WU-1's capture), and because the `cog-docs` config copy now carries `active_feature_id: 54423` (WU-2), the `### 🎯 Active Feature` section renders 54423's children. Exit 0, no traceback — proving the config→loader→helpers→renderer path is wired.
+- **MCP Integration Test Assertions (5) are deferred-to-manual** (consistent with Phases 1/2): they require a live `--refresh` poll so on-board WIs actually carry `boardColumn`. The current mirror is pre-Phase-5; after the next `/dashboard --refresh`, assertion 1 (every WI has `boardColumn`/`boardColumnDone`, on-board non-empty) and assertions 2-5 (board section first, 🎯 group leads, off-board → `(no column)`, title from mirror parent, graceful pre-Phase-5) become live-verifiable.
+**Pitfalls & guidance:**
+- The renderer takes `board_columns`/`active_feature_id` as params (config resolved in `main`, not inside `render_markdown`) so fixtures stay file-IO-free and stdlib-only; `load_board_config` is the only yaml consumer and is lazy.
+- `--feature` digit-string → int coercion is load-bearing: the mirror's `id`/`parentId` are ints, and `group_by_feature` compares with `==`, so a string id would silently miss every child.
+**Files modified:**
+- `user/scripts/work-status.py` — `DEFAULT_BOARD_COLUMNS`, `render_markdown` board + active-feature sections, `load_board_config`, `--feature` flag + wiring, fixtures M/N/O/P/Q, `total` 12→17.
+- `user/skills/dashboard/SKILL.md` — `--feature` documented in arg-hint + Step 1 + Step 4.
 
 ---
 

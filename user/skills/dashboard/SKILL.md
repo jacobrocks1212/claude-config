@@ -1,7 +1,7 @@
 ---
 name: dashboard
 description: Regenerate the work-status markdown dashboard from the local ADO mirror. Pass --refresh to live-poll ADO first; pass --all-team to include older terminal items.
-argument-hint: "[--refresh] [--all-team] [--out <path>]"
+argument-hint: "[--refresh] [--all-team] [--feature <id>] [--out <path>]"
 plan-mode: never
 ---
 
@@ -20,6 +20,7 @@ Tokenize `$ARGUMENTS` on whitespace:
 
 - `--refresh` → run a live ADO poll before rendering (see Step 3).
 - `--all-team` → pass through to `work-status.py` (includes terminal items older than 5 days).
+- `--feature <id>` → pass through to `work-status.py`; overrides the config `active_feature_id` and pins that feature's children as the priority queue.
 - `--out <path>` → pass through to `work-status.py` (overrides the default output path).
 
 Unknown tokens are an error: report them and STOP.
@@ -60,10 +61,10 @@ Run the renderer from the scripts directory:
 
 ```
 cd "C:/Users/JacobMadsen/source/repos/claude-config/user/scripts"
-python work-status.py --markdown --repo-root "C:/Users/JacobMadsen/source/repos/cog-docs" [--all-team] [--out <path>]
+python work-status.py --markdown --repo-root "C:/Users/JacobMadsen/source/repos/cog-docs" [--all-team] [--feature <id>] [--out <path>]
 ```
 
-Pass through `--all-team` and/or `--out <path>` exactly as received from `$ARGUMENTS`. Omit flags that were not supplied.
+Pass through `--all-team`, `--feature <id>`, and/or `--out <path>` exactly as received from `$ARGUMENTS`. Omit flags that were not supplied.
 
 The script writes `DASHBOARD.md` atomically and also prints a terminal summary to stdout.
 

@@ -32,6 +32,9 @@ from pathlib import Path
 from typing import Any
 
 
+DEFAULT_BOARD_COLUMNS = ["New", "Next", "In Progress", "PR Review", "Ready for Testing", "Reviewing", "Merged"]
+
+
 # ---------------------------------------------------------------------------
 # Infrastructure helpers
 # ---------------------------------------------------------------------------
@@ -510,6 +513,8 @@ def render_markdown(
     current_branch: str | None = None,
     *,
     all_team: bool = False,
+    board_columns: list[str] | None = None,
+    active_feature_id: int | None = None,
 ) -> str:
     """Render the five-panel dashboard as GitHub-flavored Markdown.
 
@@ -517,6 +522,8 @@ def render_markdown(
     from render_dashboard.  Data-selection logic mirrors render_dashboard exactly
     (mine vs team via _is_mine, branch→PR via match_self_pr, degradation messages).
     """
+    if board_columns is None:
+        board_columns = DEFAULT_BOARD_COLUMNS
     lines: list[str] = []
 
     mirror: dict | None = sources.get("mirror")
@@ -550,6 +557,59 @@ def render_markdown(
         synced_at = mirror.get("syncedAt", "")
         lines.append(f"_Synced: {synced_at} · {len(work_items)} work items_")
     lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section: Poseidon Board
+    # ------------------------------------------------------------------
+    lines.append("## Poseidon Board")
+    lines.append("")
+    has_board = any("boardColumn" in wi for wi in work_items)
+    if not has_board:
+        lines.append("_No board data yet — run `/dashboard --refresh` to populate board columns._")
+    else:
+        buckets = order_board(work_items, board_columns)
+        lines.append("| Column | # |")
+        lines.append("| --- | --- |")
+        for col in board_columns:
+            lines.append(f"| {_escape_md_pipe(col)} | {len(buckets[col])} |")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section: Active Feature (only when active_feature_id is provided)
+    # ------------------------------------------------------------------
+    if active_feature_id is not None:
+        groups = group_by_feature(work_items, active_feature_id, wi_by_id)
+        active_group = groups[0] if groups and groups[0].get("feature_id") == active_feature_id else None
+        if active_group is not None:
+            lines.append(f"### \U0001f3af Active Feature: {_escape_md_pipe(active_group['title'])} (AB#{active_feature_id})")
+            lines.append("")
+
+            def _lane_key(wi: dict) -> int:
+                lane = wi.get("boardColumn") or ""
+                return board_columns.index(lane) if lane in board_columns else len(board_columns)
+
+            ranked = sorted(active_group["wis"], key=_lane_key)
+            lines.append("| Rank | WI | Lane | Title | PR |")
+            lines.append("| --- | --- | --- | --- | --- |")
+            for i, wi in enumerate(ranked, start=1):
+                lane = wi.get("boardColumn") or "(no column)"
+                title = _escape_md_pipe(wi.get("title") or "(no title)")
+                linked = wi.get("linkedPRs") or []
+                pr_nums = [str(lp.get("prNumber")) for lp in linked if lp.get("prNumber")]
+                pr_cell = ", ".join(f"#{n}" for n in pr_nums) if pr_nums else "—"
+                lines.append(f"| {i} | AB#{wi.get('id')} | {_escape_md_pipe(lane)} | {title} | {pr_cell} |")
+            lines.append("")
+
+            for grp in groups[1:]:
+                fid = grp.get("feature_id")
+                if fid is None:
+                    lines.append("### Other (no parent feature)")
+                else:
+                    lines.append(f"### Feature: {_escape_md_pipe(grp['title'])} (AB#{fid})")
+                lines.append("")
+                ids = ", ".join(f"AB#{wi.get('id')}" for wi in grp["wis"])
+                lines.append(ids if ids else "_(none)_")
+                lines.append("")
 
     # ------------------------------------------------------------------
     # Section 1: My Queue
@@ -700,6 +760,23 @@ def render_markdown(
         lines.append(f"- **Missing artifacts:** {', '.join(missing)}")
 
     return "\n".join(lines)
+
+
+def load_board_config(repo_root: Path) -> "tuple[list[str], int | None]":
+    """Read board_columns + active_feature_id from the skill-config YAML.
+
+    Returns (board_columns, active_feature_id); falls back to
+    (DEFAULT_BOARD_COLUMNS, None) on any error / missing file / missing keys.
+    """
+    try:
+        import yaml
+        cfg_path = Path(repo_root) / ".claude" / "skill-config" / "ado-doc-integration.yml"
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        cols = cfg.get("board_columns") or DEFAULT_BOARD_COLUMNS
+        return (cols, cfg.get("active_feature_id"))
+    except Exception:
+        return (DEFAULT_BOARD_COLUMNS, None)
 
 
 def write_markdown(repo_root: Path, text: str) -> Path:
@@ -1314,8 +1391,190 @@ def run_self_tests() -> int:
         print(f"FAIL fixture_l_chain_walk: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture M — render_markdown: Poseidon Board section
+    # WIs with boardColumn across lanes; assert board section appears before
+    # ## My Queue and In Progress lane shows count 2.
+    # RED: render_markdown does not yet accept board_columns/active_feature_id.
+    # ------------------------------------------------------------------
+    try:
+        mirror_m = {
+            "syncedAt": "2026-06-01T10:00:00Z",
+            "watermark": "2026-06-01T10:00:00Z",
+            "query": {},
+            "workItems": [
+                {"id": 1, "title": "WI One",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 2, "title": "WI Two",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 3, "title": "WI Three", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
+                {"id": 4, "title": "WI Four",  "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "",            "linkedPRs": []},
+            ],
+        }
+        sources_m = {"mirror": mirror_m, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
+        out_m = render_markdown(
+            sources_m,
+            board_columns=["New", "Next", "In Progress", "PR Review", "Ready for Testing", "Reviewing", "Merged"],
+            active_feature_id=None,
+        )
+        assert "## Poseidon Board" in out_m, \
+            f"Expected '## Poseidon Board' in output, got: {out_m!r}"
+        assert "| Column | # |" in out_m, \
+            f"Expected board table header '| Column | # |' in output, got: {out_m!r}"
+        assert "| In Progress | 2 |" in out_m, \
+            f"Expected '| In Progress | 2 |' in output, got: {out_m!r}"
+        board_pos = out_m.index("## Poseidon Board")
+        queue_pos = out_m.index("## My Queue")
+        assert board_pos < queue_pos, \
+            f"Expected '## Poseidon Board' (pos {board_pos}) before '## My Queue' (pos {queue_pos})"
+        print("PASS fixture_m_poseidon_board_section")
+    except Exception as exc:
+        print(f"FAIL fixture_m_poseidon_board_section: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture N — render_markdown: Active Feature section
+    # Feature WI + two children with boardColumns; assert 🎯 header appears,
+    # priority table is present, and lane-sort puts New child before In Progress child.
+    # RED: render_markdown does not yet accept board_columns/active_feature_id.
+    # ------------------------------------------------------------------
+    try:
+        mirror_n = {
+            "syncedAt": "2026-06-01T10:00:00Z",
+            "watermark": "2026-06-01T10:00:00Z",
+            "query": {},
+            "workItems": [
+                {"id": 54423, "title": "Board Feature", "state": "Active", "assignedTo": "Someone Else", "parentId": None,  "boardColumn": "",            "linkedPRs": []},
+                {"id": 100,   "title": "Child A",       "state": "Active", "assignedTo": "Someone Else", "parentId": 54423, "boardColumn": "In Progress", "linkedPRs": [{"prNumber": 555, "repo": "cognitoforms/cognito"}]},
+                {"id": 101,   "title": "Child B",       "state": "Active", "assignedTo": "Someone Else", "parentId": 54423, "boardColumn": "New",         "linkedPRs": []},
+            ],
+        }
+        sources_n = {"mirror": mirror_n, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
+        out_n = render_markdown(
+            sources_n,
+            board_columns=["New", "Next", "In Progress", "PR Review", "Ready for Testing", "Reviewing", "Merged"],
+            active_feature_id=54423,
+        )
+        assert "### 🎯 Active Feature: Board Feature (AB#54423)" in out_n, \
+            f"Expected active feature header in output, got: {out_n!r}"
+        assert "| Rank | WI | Lane | Title | PR |" in out_n, \
+            f"Expected priority table header in output, got: {out_n!r}"
+        assert "AB#100" in out_n, \
+            f"Expected 'AB#100' in output, got: {out_n!r}"
+        assert "AB#101" in out_n, \
+            f"Expected 'AB#101' in output, got: {out_n!r}"
+        pos_100 = out_n.index("AB#100")
+        pos_101 = out_n.index("AB#101")
+        assert pos_101 < pos_100, \
+            f"Expected AB#101 (New lane, pos {pos_101}) before AB#100 (In Progress lane, pos {pos_100}) due to lane-sort"
+        assert "#555" in out_n, \
+            f"Expected '#555' PR link for Child A in output, got: {out_n!r}"
+        print("PASS fixture_n_active_feature_section")
+    except Exception as exc:
+        print(f"FAIL fixture_n_active_feature_section: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture O — render_markdown: pre-phase5 graceful (no boardColumn keys)
+    # WIs without boardColumn; no active_feature_id; assert graceful notice
+    # and no board table, no 🎯 section.
+    # RED: render_markdown does not yet accept active_feature_id kwarg.
+    # ------------------------------------------------------------------
+    try:
+        mirror_o = {
+            "syncedAt": "2026-06-01T10:00:00Z",
+            "watermark": "2026-06-01T10:00:00Z",
+            "query": {},
+            "workItems": [
+                {"id": 1, "title": "Old item", "state": "Active", "assignedTo": "Someone Else", "parentId": None},
+            ],
+        }
+        sources_o = {"mirror": mirror_o, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
+        out_o = render_markdown(sources_o, active_feature_id=None)
+        assert isinstance(out_o, str), \
+            f"render_markdown must return str, got {type(out_o)}"
+        assert "No board data" in out_o, \
+            f"Expected 'No board data' graceful notice in output, got: {out_o!r}"
+        assert "| Column | # |" not in out_o, \
+            f"Expected no board table when no boardColumn keys present, got: {out_o!r}"
+        assert "\U0001f3af" not in out_o, \
+            f"Expected no 🎯 active-feature section when active_feature_id=None, got: {out_o!r}"
+        print("PASS fixture_o_pre_phase5_graceful")
+    except Exception as exc:
+        print(f"FAIL fixture_o_pre_phase5_graceful: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture P — load_board_config: reads YAML config; falls back on missing file
+    # RED: load_board_config does not yet exist (NameError).
+    # ------------------------------------------------------------------
+    try:
+        yaml_available = True
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            yaml_available = False
+
+        if not yaml_available:
+            print("PASS fixture_p_config_loader (skipped: no yaml)")
+        else:
+            import tempfile as _tempfile
+            import os as _os
+
+            # Case 1: file present with both keys
+            tmp_p = _tempfile.mkdtemp(prefix="ws_test_p_")
+            skill_dir = _os.path.join(tmp_p, ".claude", "skill-config")
+            _os.makedirs(skill_dir, exist_ok=True)
+            yaml_path = _os.path.join(skill_dir, "ado-doc-integration.yml")
+            with open(yaml_path, "w", encoding="utf-8") as fh:
+                fh.write("active_feature_id: 777\nboard_columns:\n  - A\n  - B\n  - C\n")
+            result_p = load_board_config(Path(tmp_p))
+            assert result_p == (["A", "B", "C"], 777), \
+                f"Expected (['A','B','C'], 777) from load_board_config, got {result_p!r}"
+
+            # Case 2: file absent → fallback to DEFAULT_BOARD_COLUMNS, None
+            tmp_p2 = _tempfile.mkdtemp(prefix="ws_test_p2_")
+            result_p2 = load_board_config(Path(tmp_p2))
+            expected_default = ["New", "Next", "In Progress", "PR Review", "Ready for Testing", "Reviewing", "Merged"]
+            assert result_p2[1] is None, \
+                f"Expected active_feature_id=None for missing file, got {result_p2[1]!r}"
+            assert result_p2[0] == expected_default, \
+                f"Expected default board_columns {expected_default!r}, got {result_p2[0]!r}"
+
+            print("PASS fixture_p_config_loader")
+    except Exception as exc:
+        print(f"FAIL fixture_p_config_loader: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture Q — render_dashboard unchanged (regression guard)
+    # Board-carrying mirror must NOT produce board/active-feature markup in
+    # the terminal renderer. This passes now and must keep passing after impl.
+    # ------------------------------------------------------------------
+    try:
+        mirror_q = {
+            "syncedAt": "2026-06-01T10:00:00Z",
+            "watermark": "2026-06-01T10:00:00Z",
+            "query": {},
+            "workItems": [
+                {"id": 1, "title": "WI One",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 2, "title": "WI Two",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 3, "title": "WI Three", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
+            ],
+        }
+        sources_q = {"mirror": mirror_q, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
+        term_q = render_dashboard(sources_q)
+        assert isinstance(term_q, str), \
+            f"render_dashboard must return str, got {type(term_q)}"
+        assert "## Poseidon Board" not in term_q, \
+            f"render_dashboard must NOT contain '## Poseidon Board', got: {term_q!r}"
+        assert "\U0001f3af" not in term_q, \
+            f"render_dashboard must NOT contain 🎯 active-feature markup, got: {term_q!r}"
+        print("PASS fixture_q_render_dashboard_unchanged")
+    except Exception as exc:
+        print(f"FAIL fixture_q_render_dashboard_unchanged: {exc}")
+        failures += 1
+
     # Summary
-    total = 12
+    total = 17
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures
@@ -1350,6 +1609,10 @@ def main() -> None:
         "--current-branch", default=None,
         help="Current git branch name (used to auto-link My Queue items to PRs)"
     )
+    parser.add_argument(
+        "--feature", default=None,
+        help="Active feature WI id; overrides config active_feature_id"
+    )
     args = parser.parse_args()
 
     if args.test:
@@ -1369,10 +1632,16 @@ def main() -> None:
     print(text)
 
     if args.markdown:
+        cfg_cols, cfg_active = load_board_config(repo_root)
+        active = args.feature if args.feature is not None else cfg_active
+        if isinstance(active, str) and active.strip().lstrip("-").isdigit():
+            active = int(active)
         md_text = render_markdown(
             sources,
             current_branch=args.current_branch,
             all_team=args.all_team,
+            board_columns=cfg_cols,
+            active_feature_id=active,
         )
         if args.out:
             out_path = args.out.resolve()
