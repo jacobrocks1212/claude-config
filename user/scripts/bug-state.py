@@ -562,21 +562,33 @@ def compute_state(
     # already dispatched spec-bug above.  If PHASES.md exists but no plan → write-plan.)
     if unchecked > 0:
         plans = find_implementation_plans(spec_dir)
-        if not plans:
+        if not plans and _has_any_complete_plan(spec_dir) and \
+                remaining_unchecked_are_verification_only(phases_text):
+            # All implementation plans are Complete; remaining PHASES.md
+            # unchecked rows are verification-only (e.g. per-phase Runtime
+            # Verification / MCP-assertion subsections ticked at MCP test
+            # time).  Fall through to Step 8 (retro) → Step 9 (/mcp-test),
+            # which is the dispatch that actually ticks them.  Without this
+            # carve-out the script loops: find_implementation_plans filters
+            # out Complete plans → plans is empty → write-plan dispatched
+            # forever.  Mirrors the identical bypass in lazy-state.py.
+            pass
+        elif not plans:
             return _bug_state(
                 **common,
                 current_step=STEP_WRITE_PLAN,
                 sub_skill=SKILL_WRITE_PLAN,
                 sub_skill_args=f"{spec_dir_str}/PHASES.md",
             )
-        # A Ready plan exists — execute it.
-        plan = plans[0]
-        return _bug_state(
-            **common,
-            current_step=STEP_EXECUTE_PLAN,
-            sub_skill=SKILL_EXECUTE_PLAN,
-            sub_skill_args=str(plan),
-        )
+        else:
+            # A Ready/In-progress plan exists — execute it.
+            plan = plans[0]
+            return _bug_state(
+                **common,
+                current_step=STEP_EXECUTE_PLAN,
+                sub_skill=SKILL_EXECUTE_PLAN,
+                sub_skill_args=str(plan),
+            )
 
     # All PHASES.md deliverables are checked.
 
