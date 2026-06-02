@@ -146,22 +146,50 @@ it mutates the production features pipeline.
 **Entry criteria:** Phase 2 complete (`bug-state.py --backfill-receipts` available).
 
 **Deliverables:**
-- [ ] Define the canonical bug SPEC header (Status/Severity/Discovered/Fixed/Fix commit/optional
+- [x] Define the canonical bug SPEC header (Status/Severity/Discovered/Fixed/Fix commit/optional
       Depends-on) and document it in `docs/bugs/CLAUDE.md` (Phase 6 finalizes prose).
-- [ ] Create `docs/bugs/queue.json` (hybrid seed from the 10 open bugs; minimal — explicit
+- [x] Create `docs/bugs/queue.json` (hybrid seed from the open bugs; minimal — explicit
       ordering only where it matters).
-- [ ] Normalize the **10 open** bug SPEC headers: bare `**Status:**` token, prose moved to a `>`
-      description / note line (fixes `cue-channel-audio-bleed` et al.).
-- [ ] Backfill `FIXED.md` receipts for the **27 archived** bugs (via `bug-state.py
+- [x] Normalize the open bug SPEC headers: bare `**Status:**` token, prose moved to a `>`
+      description / note line (fixed `cue-channel-audio-bleed` et al.).
+- [x] Backfill `FIXED.md` receipts for the **27 archived** bugs (via `bug-state.py
       --backfill-receipts`) so future probes don't trip the receipt gate.
-- [ ] No bug-internal relative links broken (root-relative path rule already in CLAUDE.md).
+- [x] No bug-internal relative links broken (root-relative path rule already in CLAUDE.md).
 
 **Runtime Verification (workstation):**
-- [ ] `python3 ~/.claude/scripts/bug-state.py --repo-root <AlgoBooth>` parses every migrated SPEC
+- [x] `python3 ~/.claude/scripts/bug-state.py --repo-root <AlgoBooth>` parses every migrated SPEC
       header without diagnostics warnings.
 
 **Implementation Notes:**
-<!-- executor appends -->
+
+#### Implementation Notes (Phase 3)
+**Completed:** 2026-06-01 · repo: AlgoBooth (branch `feature/lazy-bug-pipeline`)
+**Work completed:**
+- **9 open bugs** (NOT 10): `qg-inventory-2026-05-30` is a QG audit artifact (INVENTORY.md +
+  logs, no SPEC.md), NOT a lifecycle bug — `bug-state.py` silently skips SPEC-less dirs, so it is
+  correctly excluded. Normalized the 9 real bug SPEC headers to bare canonical `**Status:**`
+  tokens; mapped non-vocab statuses: `Draft`→`Open`, `Partially Fixed (downscoped)`→`In-progress`;
+  moved all trailing prose to `>` notes (no info lost).
+- `docs/bugs/queue.json` created — 9 entries (`id`/`name`/`severity`), hybrid-order note. NOTE:
+  `bug-state.py load_bug_queue` requires BOTH `id` and `name` per entry (a name-less entry falls
+  through to severity sort) — Phase 5's queue.json schema check enforces this.
+- Backfilled `FIXED.md` for all **27 archived** bugs. The backfill surfaced **5 archived SPECs**
+  with non-bare Status lines (`Fixed (downstream of …)`, `RESOLVED (…)`, etc.) + 1 with trailing
+  whitespace — all normalized so the receipt gate recognizes them as `Fixed`.
+- `docs/bugs/check-bug-links.py` (168 lines, stdlib) — reusable root-relative link-integrity
+  checker; zero broken links introduced.
+- `docs/bugs/CLAUDE.md` gained a canonical-header + queue.json section (Phase 6 finalizes prose).
+**Integration notes:**
+- Selected bug under the migrated tree = `cue-channel-audio-bleed` (top P1), diagnostics `[]`.
+- Phase 5's docs-consistency checker validates this migrated tree (queue.json schema, bare Status,
+  archive-coherence, fixed-requires-receipt) — `check-bug-links.py` is a complementary local check.
+**Pitfalls & guidance:**
+- Archiving moves dirs, so bug docs MUST use root-relative links (enforced by `check-bug-links.py`).
+- Non-canonical Status prose is the #1 migration hazard — the bare-token rule is load-bearing for
+  `spec_status()`.
+**Files modified (AlgoBooth):**
+- 11 open+archived `SPEC.md` headers normalized; `docs/bugs/queue.json` (new);
+  `docs/bugs/check-bug-links.py` (new); 27 `_archive/**/FIXED.md` (new); `docs/bugs/CLAUDE.md`.
 
 ---
 
