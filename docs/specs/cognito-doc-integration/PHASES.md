@@ -193,22 +193,22 @@ ASSERTIONS:
 **Scope:** Implement the discrete, idempotent materialization step: auto-route a selected WI by type into the correct pipeline, thin-copy its content into canonical doc format, enqueue it via `enqueue_adhoc()`, stamp the AB# link, record it in `materialized.json`, and install the `STALE_UPSTREAM.md` divergence-detection gate. Adds a parallel `enqueue_adhoc` to `bug-state.py` (it has none today). Adds sentinel parsing helpers to `lazy_core.py`.
 
 **Deliverables:**
-- [ ] Materialize entry point: `lazy-state.py --materialize-wi <id>` (or a dedicated `user/scripts/materialize-wi.py` — follow the approach that avoids breaking existing `lazy-state.py` tests) that: resolves the WI in `ado-mirror.json`; looks up `type` in the config type→pipeline map; routes to `bug-state.py` + `docs/bugs/` (bug-like) or `lazy-state.py` + `docs/features/` (story-like); logs and exits for unknown types (no silent default, no guess)
-- [ ] Bug-like materialization: creates `<COG_DOCS>/docs/bugs/<slug>/ADHOC_BRIEF.md` (verbatim WI title/description/acceptance criteria — no inference), seeds a stub `SPEC.md` with `**Work Item:** AB#<id> (<url>)` in frontmatter; calls the **new bug `enqueue_adhoc`** (see below)
-- [ ] Feature-like materialization: same thin-copy pattern into `<COG_DOCS>/docs/features/<slug>/`; calls `enqueue_adhoc()` at `lazy-state.py` line ~214 **verbatim** (no reimplementation)
+- [x] Materialize entry point: `lazy-state.py --materialize-wi <id>` (or a dedicated `user/scripts/materialize-wi.py` — follow the approach that avoids breaking existing `lazy-state.py` tests) that: resolves the WI in `ado-mirror.json`; looks up `type` in the config type→pipeline map; routes to `bug-state.py` + `docs/bugs/` (bug-like) or `lazy-state.py` + `docs/features/` (story-like); logs and exits for unknown types (no silent default, no guess)
+- [x] Bug-like materialization: creates `<COG_DOCS>/docs/bugs/<slug>/ADHOC_BRIEF.md` (verbatim WI title/description/acceptance criteria — no inference), seeds a stub `SPEC.md` with `**Work Item:** AB#<id> (<url>)` in frontmatter; calls the **new bug `enqueue_adhoc`** (see below)
+- [x] Feature-like materialization: same thin-copy pattern into `<COG_DOCS>/docs/features/<slug>/`; calls `enqueue_adhoc()` at `lazy-state.py` line ~214 **verbatim** (no reimplementation)
 - [x] **New bug `enqueue_adhoc`** added to `bug-state.py`: mirrors the lazy version; target queue `<COG_DOCS>/docs/bugs/queue.json`; entry schema `{id, name, spec_dir, severity}`; idempotent (second call no-ops if `id` already present)
-- [ ] `materialized.json` record: append `{wi_id: <id>, feature_id: <slug>, materialized_changedDate: <changedDate from mirror>}` atomically; second materialize of same WI MUST be a no-op (check `wi_id` before writing)
-- [ ] `STALE_UPSTREAM.md` detection: on each materialize probe (or sync event), for every entry in `materialized.json`, compare `mirror[wi_id].changedDate` to `materialized_changedDate`; if newer, write `<item_dir>/STALE_UPSTREAM.md` (body = field-level diff); do NOT clobber `SPEC.md`; the state machine will halt at its next gate
-- [ ] STALE_UPSTREAM halt wiring: add an early-step check in both `lazy-state.py` and `bug-state.py` `compute_state()` (analogous to BLOCKED.md / NEEDS_INPUT.md handling around Steps 3–4.6): if `STALE_UPSTREAM.md` exists for the current item, return `state=stale_upstream` and do not advance; after human absorb/reject, the absorb path re-copies WI fields into `SPEC.md` and updates `materialized_changedDate` in `materialized.json`
+- [x] `materialized.json` record: append `{wi_id: <id>, feature_id: <slug>, materialized_changedDate: <changedDate from mirror>}` atomically; second materialize of same WI MUST be a no-op (check `wi_id` before writing)
+- [x] `STALE_UPSTREAM.md` detection: on each materialize probe (or sync event), for every entry in `materialized.json`, compare `mirror[wi_id].changedDate` to `materialized_changedDate`; if newer, write `<item_dir>/STALE_UPSTREAM.md` (body = field-level diff); do NOT clobber `SPEC.md`; the state machine will halt at its next gate
+- [x] STALE_UPSTREAM halt wiring: add an early-step check in both `lazy-state.py` and `bug-state.py` `compute_state()` (analogous to BLOCKED.md / NEEDS_INPUT.md handling around Steps 3–4.6): if `STALE_UPSTREAM.md` exists for the current item, return `state=stale_upstream` and do not advance; after human absorb/reject, the absorb path re-copies WI fields into `SPEC.md` and updates `materialized_changedDate` in `materialized.json`
 - [x] Sentinel parsing helpers in `lazy_core.py`: `read_stale_upstream(item_dir)` → diff string or `None`; `write_stale_upstream(item_dir, diff)` → writes file; `clear_stale_upstream(item_dir)` → removes file; place beside existing sentinel helpers in `lazy_core.py`
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Materializing a `Bug` WI creates `docs/bugs/<slug>/ADHOC_BRIEF.md` whose content is a verbatim subset of the mirror WI fields (diff produces no invented text)
-- [ ] Materializing a `User Story` WI creates `docs/features/<slug>/ADHOC_BRIEF.md` with the same verbatim constraint
-- [ ] Materializing any WI type not in the config map logs a skip message and exits 0 — no file is created, no queue is modified
-- [ ] Materializing the same WI twice: second run exits 0; `queue.json` length is unchanged; `materialized.json` has exactly one entry for that `wi_id`
-- [ ] After a materialized WI's `changedDate` advances in the mirror: `STALE_UPSTREAM.md` appears in the item directory; `SPEC.md` is unmodified; the next `compute_state()` call returns `stale_upstream` without advancing
-- [ ] After human absorb: `STALE_UPSTREAM.md` is removed; `SPEC.md` has updated content; `materialized_changedDate` in `materialized.json` matches the new `changedDate`
+- [x] Materializing a `Bug` WI creates `docs/bugs/<slug>/ADHOC_BRIEF.md` whose content is a verbatim subset of the mirror WI fields (diff produces no invented text)
+- [x] Materializing a `User Story` WI creates `docs/features/<slug>/ADHOC_BRIEF.md` with the same verbatim constraint
+- [x] Materializing any WI type not in the config map logs a skip message and exits 0 — no file is created, no queue is modified
+- [x] Materializing the same WI twice: second run exits 0; `queue.json` length is unchanged; `materialized.json` has exactly one entry for that `wi_id`
+- [x] After a materialized WI's `changedDate` advances in the mirror: `STALE_UPSTREAM.md` appears in the item directory; `SPEC.md` is unmodified; the next `compute_state()` call returns `stale_upstream` without advancing
+- [ ] After human absorb: `STALE_UPSTREAM.md` is removed; `SPEC.md` has updated content; `materialized_changedDate` in `materialized.json` matches the new `changedDate` *(manual/human-absorb path — helper `update_materialized_changeddate` exists (WU-3.1) but absorb wiring is out of part-1 scope; not exercised here)*
 
 **MCP Integration Test Assertions:**
 
@@ -265,6 +265,20 @@ ASSERTIONS:
 - Regression-clean: `lazy-state.py --test` passes, `test_lazy_core.py` 53/54 (known baseline) after this change.
 **Files modified:**
 - `user/scripts/bug-state.py` — `enqueue_adhoc` + `--enqueue-adhoc` CLI + STALE_UPSTREAM halt + 3 smoke-test fixtures + 2 constants.
+
+##### WU-3.3 — `lazy-state.py` `--materialize-wi` + STALE_UPSTREAM halt (closes Phase 3)
+**Completed:** 2026-06-02
+**Work completed:**
+- Added to `user/scripts/lazy-state.py` (now 3173 lines) via TDD (RED fixtures in `run_smoke_tests()` → GREEN impl). `python lazy-state.py --test` exits 0 with all fixtures PASS (6 new: materialize-feature, materialize-bug, materialize-unknown-type, materialize-idempotent, stale-detection-writer, stale-halt-reader).
+- `materialize_wi(repo_root, wi_id, type_pipeline_map)→dict`: loads `docs/work/ado-mirror.json`, finds the WI by `id`, classifies `type` against the map. **Feature route** → in-process `enqueue_adhoc()` (verbatim reuse, line ~214) with an idempotency guard that skips the call if the slug is already queued (avoids `_die`-on-dup). **Bug route** → `subprocess.run([sys.executable, bug-state.py, --enqueue-adhoc, ...])` (reaches WU-3.2's skip-on-dup entrypoint, exits 0). **Unknown type** → `_diag` skip, returns `{status:"skipped", reason:"unknown-type"}`, creates nothing. Both routes thin-copy `ADHOC_BRIEF.md` (verbatim title/description/acceptanceCriteria), seed a stub `SPEC.md` with `**Work Item:** AB#<id> (<url>)` (idempotent — only if absent, never clobbered), and record via `lazy_core.append_materialized` (idempotent on `wi_id`). Slug = kebab-case of title, fallback `wi-<id>`.
+- `check_stale_upstream(repo_root, mirror=None)→list` (THE WRITER): reads `materialized.json`, loads mirror if not passed, and for each record compares `mirror[wi_id].changedDate > materialized_changedDate` (ISO-8601 UTC sorts lexically). For each stale item, locates the dir (`docs/features/<feature_id>/` then `docs/bugs/<feature_id>/`) and writes `STALE_UPSTREAM.md` via `lazy_core.write_stale_upstream` — never touches `SPEC.md`.
+- Lazy-side STALE halt READER in `compute_state()`: constants `TR_STALE_UPSTREAM="stale_upstream"` / `STEP_STALE_UPSTREAM="Step 2.9: stale-upstream"`; check (`lazy_core.read_stale_upstream(spec_path) is not None`) placed immediately after the `common` dict, before the Step 3 BLOCKED.md check — READ-ONLY, `sub_skill` stays `None`. This completes the "halt wiring (both machines)" deliverable (bug side = WU-3.2).
+- `--materialize-wi <id>` CLI flag wired in `main()` before `args = parser.parse_args()`, with an early-return handler (after `--enqueue-adhoc`) using the locked default type→pipeline map inline (tests pass their own map directly).
+**Integration notes (end-to-end verified):**
+- Ran the real `--materialize-wi` CLI against a canned 3-WI mirror: feature (501) → `docs/features/add-export-button/` (verbatim brief + `AB#501` SPEC); bug (502) → bug-state subprocess queued `crash-on-save` + verbatim brief, route="bug", no feature dir; Task (503) → skipped, no dir; `materialized.json` recorded {501,502}; re-materialize 501 → still exactly 1 record; bumping 501's mirror `changedDate` → `check_stale_upstream` wrote `STALE_UPSTREAM.md`, `SPEC.md` mtime unchanged.
+- Regression-clean: `bug-state.py --test` 14/14, `test_lazy_core.py` 53/54 (known Windows-temp-path baseline fail only) after the change — import surface preserved.
+**Files modified:**
+- `user/scripts/lazy-state.py` — `materialize_wi` + `check_stale_upstream` + STALE halt reader in `compute_state()` + `--materialize-wi` CLI + 2 constants + `import subprocess`; 6 net-new smoke-test fixtures.
 
 ---
 

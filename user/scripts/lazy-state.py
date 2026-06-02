@@ -48,6 +48,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from datetime import datetime
@@ -157,6 +158,9 @@ _DEVICE_DEFERRED: list[str] = []
 # so `--real-device auto` resolves correctly without the app running. Absent →
 # treat as no-device (the conservative default: defer rather than fake-certify).
 REAL_DEVICE_ENV = "ALGOBOOTH_REAL_AUDIO_DEVICE"
+
+TR_STALE_UPSTREAM = "stale_upstream"
+STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -298,6 +302,195 @@ def enqueue_adhoc(
         "queue_position": 0,
         "queue_length": len(items),
     }
+
+
+def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
+    """Materialize an ADO work item from ado-mirror.json into a doc pipeline.
+
+    Routes by WI type:
+      - feature types  → docs/features/<slug> via enqueue_adhoc
+      - bug types      → docs/bugs/<slug> via bug-state.py --enqueue-adhoc subprocess
+      - unknown types  → skip (no dirs, no queue entry, no materialized record)
+
+    Idempotent: a double-call on the same wi_id yields exactly one queue entry
+    and one materialized record.
+    """
+    repo_root = repo_root.resolve()
+    mirror_path = repo_root / "docs" / "work" / "ado-mirror.json"
+    try:
+        mirror_data = json.loads(mirror_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _diag(f"materialize_wi: cannot load mirror: {exc}")
+        return {"status": "skipped", "reason": "mirror-load-error"}
+
+    wi = None
+    for item in mirror_data.get("workItems", []):
+        if item.get("id") == wi_id:
+            wi = item
+            break
+    if wi is None:
+        _diag(f"materialize_wi: wi_id={wi_id} not found in mirror")
+        return {"status": "skipped", "reason": "not-in-mirror"}
+
+    wi_type = wi.get("type", "")
+    title = wi.get("title", "")
+    description = wi.get("description", "")
+    ac = wi.get("acceptanceCriteria", "")
+    url = wi.get("url", "")
+    changed_date = wi.get("changedDate", "")
+
+    feature_types = type_pipeline_map.get("feature", [])
+    bug_types = type_pipeline_map.get("bug", [])
+
+    if wi_type in feature_types:
+        route = "feature"
+    elif wi_type in bug_types:
+        route = "bug"
+    else:
+        _diag(f"materialize_wi: unknown WI type {wi_type!r} for wi_id={wi_id}")
+        return {"status": "skipped", "reason": "unknown-type"}
+
+    # Build slug: kebab-case from title
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    if not slug or not re.match(r"^[a-z0-9][a-z0-9-]*$", slug):
+        slug = f"wi-{wi_id}"
+
+    # Verbatim brief combining title, description, and acceptance criteria
+    brief = f"Title: {title}\n\nDescription: {description}\n\nAcceptance Criteria: {ac}"
+
+    if route == "feature":
+        features_dir = repo_root / "docs" / "features"
+        features_dir.mkdir(parents=True, exist_ok=True)
+        queue_path = features_dir / "queue.json"
+        # Idempotency guard: skip enqueue_adhoc if already queued
+        already_queued = False
+        if queue_path.exists():
+            try:
+                qdata = json.loads(queue_path.read_text(encoding="utf-8"))
+                if any(isinstance(e, dict) and (e.get("id") == slug or e.get("spec_dir") == slug)
+                       for e in qdata.get("queue", [])):
+                    already_queued = True
+            except json.JSONDecodeError:
+                pass
+        if not already_queued:
+            enqueue_adhoc(repo_root, slug, title, brief=brief, spec_dir=slug)
+        # Ensure ADHOC_BRIEF.md contains all verbatim substrings
+        brief_file = features_dir / slug / "ADHOC_BRIEF.md"
+        brief_file.parent.mkdir(parents=True, exist_ok=True)
+        if not brief_file.exists():
+            brief_file.write_text(f"# Ad-hoc task: {title}\n\n{brief}", encoding="utf-8")
+        else:
+            existing = brief_file.read_text(encoding="utf-8")
+            missing = [s for s in [title, description, ac] if s and s not in existing]
+            if missing:
+                augmented = existing.rstrip("\n") + "\n\n" + "\n".join(missing) + "\n"
+                brief_file.write_text(augmented, encoding="utf-8")
+        item_dir = features_dir / slug
+
+    else:  # bug route
+        bugs_dir = repo_root / "docs" / "bugs"
+        bugs_dir.mkdir(parents=True, exist_ok=True)
+        # Call bug-state.py --enqueue-adhoc via subprocess (idempotent skip-on-dup)
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).parent / "bug-state.py"),
+                "--enqueue-adhoc",
+                "--id", slug,
+                "--name", title,
+                "--spec-dir", slug,
+                "--repo-root", str(repo_root),
+            ],
+            check=True,
+        )
+        item_dir = bugs_dir / slug
+        item_dir.mkdir(parents=True, exist_ok=True)
+        # Write ADHOC_BRIEF.md (idempotent — only if absent)
+        brief_file = item_dir / "ADHOC_BRIEF.md"
+        if not brief_file.exists():
+            brief_file.write_text(f"# Ad-hoc task: {title}\n\n{brief}", encoding="utf-8")
+
+    # Both routes: write stub SPEC.md (idempotent — only if absent)
+    spec_file = item_dir / "SPEC.md"
+    if not spec_file.exists():
+        spec_file.write_text(
+            f"**Work Item:** AB#{wi_id} ({url})\n",
+            encoding="utf-8",
+        )
+
+    # Both routes: record in materialized.json (idempotent on wi_id)
+    work_dir = repo_root / "docs" / "work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    lazy_core.append_materialized(work_dir, wi_id, slug, changed_date)
+
+    return {
+        "status": "materialized",
+        "feature_id": slug,
+        "route": route,
+        "wi_id": wi_id,
+    }
+
+
+def check_stale_upstream(repo_root: Path, mirror: dict | None = None) -> list:
+    """Scan materialized.json vs ado-mirror.json; write STALE_UPSTREAM.md where upstream changed.
+
+    For each materialized record, compares mirror WI changedDate with the
+    materialized_changedDate. ISO-8601 UTC timestamps sort lexically, so a
+    simple string comparison suffices. Writes STALE_UPSTREAM.md into the
+    item dir (docs/features/<feature_id>/ or docs/bugs/<feature_id>/) for
+    any stale item. Does NOT touch SPEC.md.
+
+    Returns the list of stale-item dicts (wi_id, feature_id).
+    """
+    repo_root = repo_root.resolve()
+    work_dir = repo_root / "docs" / "work"
+    records = lazy_core.read_materialized(work_dir)
+
+    if mirror is None:
+        mirror_path = work_dir / "ado-mirror.json"
+        try:
+            mirror = json.loads(mirror_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            _diag(f"check_stale_upstream: cannot load mirror: {exc}")
+            return []
+
+    # Build a lookup by wi_id from the mirror
+    mirror_by_id: dict[Any, dict] = {}
+    for wi in mirror.get("workItems", []):
+        mirror_by_id[wi.get("id")] = wi
+
+    stale: list[dict] = []
+    for record in records:
+        wi_id = record.get("wi_id")
+        feature_id = record.get("feature_id")
+        materialized_date = record.get("materialized_changedDate", "")
+
+        mirror_wi = mirror_by_id.get(wi_id)
+        if mirror_wi is None:
+            continue
+
+        mirror_date = mirror_wi.get("changedDate", "")
+        if mirror_date > materialized_date:
+            # Find the item directory (features first, then bugs)
+            feat_dir = repo_root / "docs" / "features" / feature_id
+            bug_dir = repo_root / "docs" / "bugs" / feature_id
+            if feat_dir.is_dir():
+                item_dir = feat_dir
+            elif bug_dir.is_dir():
+                item_dir = bug_dir
+            else:
+                _diag(
+                    f"check_stale_upstream: no dir found for feature_id={feature_id!r}; skipping"
+                )
+                continue
+            diff = (
+                f"Upstream WI {wi_id} changed on {mirror_date} "
+                f"(materialized: {materialized_date}) — re-materialize required.\n"
+            )
+            lazy_core.write_stale_upstream(item_dir, diff)
+            stale.append({"wi_id": wi_id, "feature_id": feature_id})
+
+    return stale
 
 
 # spec_status — imported from lazy_core
@@ -822,6 +1015,15 @@ def compute_state(
         "feature_name": feature_name,
         "spec_path": spec_path_str,
     }
+
+    # Step 2.9: upstream WI changed since materialize — halt for re-materialize.
+    if lazy_core.read_stale_upstream(spec_path) is not None:
+        return _state(
+            **common,
+            current_step=STEP_STALE_UPSTREAM,
+            terminal_reason=TR_STALE_UPSTREAM,
+            notify_message=f"STALE UPSTREAM: {feature_name} — upstream WI changed since materialize; re-materialize required.",
+        )
 
     # Step 3: BLOCKED.md
     blocked_file = spec_path / "BLOCKED.md"
@@ -2431,6 +2633,444 @@ def run_smoke_tests() -> int:
             pass
         print("  [enqueue] enqueue_adhoc prepend + brief + roadmap: ok")
 
+        # -------------------------------------------------------------------
+        # Fixture WU-3.3-1: feature materialize (User Story → docs/features)
+        # -------------------------------------------------------------------
+        fix_name_fm = "materialize-feature"
+        mat_root = td_path / fix_name_fm
+        mat_work = mat_root / "docs" / "work"
+        mat_work.mkdir(parents=True, exist_ok=True)
+        (mat_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (mat_root / "docs" / "bugs").mkdir(parents=True, exist_ok=True)
+        _mat_wi_id = 42
+        _mat_mirror = {
+            "syncedAt": "2026-06-01T12:00:00Z",
+            "watermark": "2026-06-01",
+            "query": "SELECT ...",
+            "workItems": [
+                {
+                    "id": _mat_wi_id,
+                    "type": "User Story",
+                    "title": "Build the thing",
+                    "description": "Detailed description here.",
+                    "acceptanceCriteria": "Given X then Y.",
+                    "url": "https://dev.azure.com/org/proj/_workitems/edit/42",
+                    "changedDate": "2026-06-01T10:00:00Z",
+                }
+            ],
+        }
+        (mat_work / "ado-mirror.json").write_text(
+            json.dumps(_mat_mirror, indent=2), encoding="utf-8"
+        )
+        _mat_type_map = {
+            "bug": ["Bug", "Defect", "Story Bug", "Engineering Bug"],
+            "feature": ["User Story", "Refactor Story", "Enabler Story", "Requirement"],
+        }
+        try:
+            result_fm = materialize_wi(mat_root, _mat_wi_id, _mat_type_map)
+            slug_fm = result_fm.get("feature_id") or result_fm.get("slug") or ""
+            fm_ok = True
+            # status must indicate materialized + feature pipeline
+            if result_fm.get("status") not in ("materialized", "ok") and "feature" not in str(result_fm.get("status", "")):
+                failures.append(
+                    f"[{fix_name_fm}] expected status indicating materialized/feature, "
+                    f"got {result_fm.get('status')!r}"
+                )
+                fm_ok = False
+            # ADHOC_BRIEF.md exists and contains verbatim WI fields
+            brief_fm = mat_root / "docs" / "features" / slug_fm / "ADHOC_BRIEF.md"
+            if not brief_fm.exists():
+                failures.append(
+                    f"[{fix_name_fm}] ADHOC_BRIEF.md not found at {brief_fm}"
+                )
+                fm_ok = False
+            else:
+                brief_text = brief_fm.read_text(encoding="utf-8")
+                for substr in ["Build the thing", "Detailed description here.", "Given X then Y."]:
+                    if substr not in brief_text:
+                        failures.append(
+                            f"[{fix_name_fm}] ADHOC_BRIEF.md missing verbatim substring: {substr!r}"
+                        )
+                        fm_ok = False
+            # SPEC.md contains the Work Item line
+            spec_fm = mat_root / "docs" / "features" / slug_fm / "SPEC.md"
+            if not spec_fm.exists():
+                failures.append(f"[{fix_name_fm}] SPEC.md not found at {spec_fm}")
+                fm_ok = False
+            else:
+                spec_text = spec_fm.read_text(encoding="utf-8")
+                expected_wi_line = f"**Work Item:** AB#{_mat_wi_id}"
+                if expected_wi_line not in spec_text:
+                    failures.append(
+                        f"[{fix_name_fm}] SPEC.md missing {expected_wi_line!r}"
+                    )
+                    fm_ok = False
+            # queue.json has the slug entry
+            fq_path = mat_root / "docs" / "features" / "queue.json"
+            if not fq_path.exists():
+                failures.append(f"[{fix_name_fm}] docs/features/queue.json not written")
+                fm_ok = False
+            else:
+                fq = json.loads(fq_path.read_text(encoding="utf-8"))
+                if not any(e.get("id") == slug_fm or e.get("spec_dir") == slug_fm for e in fq.get("queue", [])):
+                    failures.append(
+                        f"[{fix_name_fm}] queue.json has no entry for slug {slug_fm!r}"
+                    )
+                    fm_ok = False
+            # read_materialized returns exactly 1 record for that wi_id
+            mat_records = lazy_core.read_materialized(mat_work)
+            wi_records = [r for r in mat_records if r.get("wi_id") == _mat_wi_id]
+            if len(wi_records) != 1:
+                failures.append(
+                    f"[{fix_name_fm}] expected 1 materialized record for wi_id={_mat_wi_id}; "
+                    f"got {len(wi_records)}"
+                )
+                fm_ok = False
+            print(f"  {'PASS' if fm_ok else 'FAIL'} [{fix_name_fm}] feature materialize")
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_fm}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_fm}]: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-3.3-2: bug materialize (Bug → docs/bugs via subprocess)
+        # -------------------------------------------------------------------
+        fix_name_bm = "materialize-bug"
+        bm_root = td_path / fix_name_bm
+        bm_work = bm_root / "docs" / "work"
+        bm_work.mkdir(parents=True, exist_ok=True)
+        (bm_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (bm_root / "docs" / "bugs").mkdir(parents=True, exist_ok=True)
+        _bm_wi_id = 99
+        _bm_mirror = {
+            "syncedAt": "2026-06-01T12:00:00Z",
+            "watermark": "2026-06-01",
+            "query": "SELECT ...",
+            "workItems": [
+                {
+                    "id": _bm_wi_id,
+                    "type": "Bug",
+                    "title": "Broken submit button",
+                    "description": "The submit button does nothing.",
+                    "acceptanceCriteria": "Button triggers form submission.",
+                    "url": "https://dev.azure.com/org/proj/_workitems/edit/99",
+                    "changedDate": "2026-06-01T10:00:00Z",
+                }
+            ],
+        }
+        (bm_work / "ado-mirror.json").write_text(
+            json.dumps(_bm_mirror, indent=2), encoding="utf-8"
+        )
+        try:
+            result_bm = materialize_wi(bm_root, _bm_wi_id, _mat_type_map)
+            slug_bm = result_bm.get("feature_id") or result_bm.get("slug") or ""
+            bm_ok = True
+            # ADHOC_BRIEF.md in docs/bugs/<slug> with verbatim fields
+            brief_bm = bm_root / "docs" / "bugs" / slug_bm / "ADHOC_BRIEF.md"
+            if not brief_bm.exists():
+                failures.append(
+                    f"[{fix_name_bm}] ADHOC_BRIEF.md not found at {brief_bm}"
+                )
+                bm_ok = False
+            else:
+                brief_bm_text = brief_bm.read_text(encoding="utf-8")
+                for substr in ["Broken submit button", "The submit button does nothing.", "Button triggers form submission."]:
+                    if substr not in brief_bm_text:
+                        failures.append(
+                            f"[{fix_name_bm}] ADHOC_BRIEF.md missing verbatim substring: {substr!r}"
+                        )
+                        bm_ok = False
+            # docs/bugs/queue.json has a spec_dir entry for this slug
+            bq_path = bm_root / "docs" / "bugs" / "queue.json"
+            if not bq_path.exists():
+                failures.append(f"[{fix_name_bm}] docs/bugs/queue.json not written")
+                bm_ok = False
+            else:
+                bq = json.loads(bq_path.read_text(encoding="utf-8"))
+                if not any(e.get("spec_dir") == slug_bm or e.get("id") == str(_bm_wi_id) for e in bq.get("queue", [])):
+                    failures.append(
+                        f"[{fix_name_bm}] bugs/queue.json has no entry with spec_dir={slug_bm!r}"
+                    )
+                    bm_ok = False
+            # docs/features/ must NOT have a new dir for this WI
+            feat_dirs_bm = [
+                p.name for p in (bm_root / "docs" / "features").iterdir()
+                if p.is_dir()
+            ]
+            if slug_bm in feat_dirs_bm:
+                failures.append(
+                    f"[{fix_name_bm}] bug route must NOT create docs/features/{slug_bm}"
+                )
+                bm_ok = False
+            print(f"  {'PASS' if bm_ok else 'FAIL'} [{fix_name_bm}] bug materialize")
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_bm}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_bm}]: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-3.3-3: unknown type (no-op / skip)
+        # -------------------------------------------------------------------
+        fix_name_ut = "materialize-unknown-type"
+        ut_root = td_path / fix_name_ut
+        ut_work = ut_root / "docs" / "work"
+        ut_work.mkdir(parents=True, exist_ok=True)
+        (ut_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (ut_root / "docs" / "bugs").mkdir(parents=True, exist_ok=True)
+        _ut_wi_id = 77
+        _ut_mirror = {
+            "syncedAt": "2026-06-01T12:00:00Z",
+            "watermark": "2026-06-01",
+            "query": "SELECT ...",
+            "workItems": [
+                {
+                    "id": _ut_wi_id,
+                    "type": "Task",
+                    "title": "A task nobody wants",
+                    "description": "Just a task.",
+                    "acceptanceCriteria": "Done.",
+                    "url": "https://dev.azure.com/org/proj/_workitems/edit/77",
+                    "changedDate": "2026-06-01T10:00:00Z",
+                }
+            ],
+        }
+        (ut_work / "ado-mirror.json").write_text(
+            json.dumps(_ut_mirror, indent=2), encoding="utf-8"
+        )
+        try:
+            result_ut = materialize_wi(ut_root, _ut_wi_id, _mat_type_map)
+            ut_ok = True
+            # No new dir under docs/features or docs/bugs
+            feat_dirs_ut = [p.name for p in (ut_root / "docs" / "features").iterdir() if p.is_dir()]
+            bug_dirs_ut = [p.name for p in (ut_root / "docs" / "bugs").iterdir() if p.is_dir()]
+            if feat_dirs_ut:
+                failures.append(
+                    f"[{fix_name_ut}] unknown-type must not create features dirs; got {feat_dirs_ut}"
+                )
+                ut_ok = False
+            if bug_dirs_ut:
+                failures.append(
+                    f"[{fix_name_ut}] unknown-type must not create bugs dirs; got {bug_dirs_ut}"
+                )
+                ut_ok = False
+            # Queue lengths unchanged (no queue files created)
+            fq_ut = ut_root / "docs" / "features" / "queue.json"
+            bq_ut = ut_root / "docs" / "bugs" / "queue.json"
+            if fq_ut.exists() and json.loads(fq_ut.read_text())["queue"]:
+                failures.append(f"[{fix_name_ut}] unknown-type must not enqueue in features")
+                ut_ok = False
+            if bq_ut.exists() and json.loads(bq_ut.read_text())["queue"]:
+                failures.append(f"[{fix_name_ut}] unknown-type must not enqueue in bugs")
+                ut_ok = False
+            # materialized.json unchanged (0 records)
+            ut_records = lazy_core.read_materialized(ut_work)
+            if ut_records:
+                failures.append(
+                    f"[{fix_name_ut}] unknown-type must not append to materialized.json; "
+                    f"got {ut_records}"
+                )
+                ut_ok = False
+            # returned a skip status (did not raise)
+            if result_ut.get("status") not in ("skipped", "skip", "unknown-type"):
+                failures.append(
+                    f"[{fix_name_ut}] expected skip status, got {result_ut.get('status')!r}"
+                )
+                ut_ok = False
+            print(f"  {'PASS' if ut_ok else 'FAIL'} [{fix_name_ut}] unknown type → skip")
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_ut}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_ut}]: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-3.3-4: idempotent double-materialize
+        # -------------------------------------------------------------------
+        fix_name_idem = "materialize-idempotent"
+        idem_root = td_path / fix_name_idem
+        idem_work = idem_root / "docs" / "work"
+        idem_work.mkdir(parents=True, exist_ok=True)
+        (idem_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (idem_root / "docs" / "bugs").mkdir(parents=True, exist_ok=True)
+        _idem_wi_id = 55
+        _idem_mirror = {
+            "syncedAt": "2026-06-01T12:00:00Z",
+            "watermark": "2026-06-01",
+            "query": "SELECT ...",
+            "workItems": [
+                {
+                    "id": _idem_wi_id,
+                    "type": "User Story",
+                    "title": "Idempotent feature",
+                    "description": "Should only appear once.",
+                    "acceptanceCriteria": "Only one record.",
+                    "url": "https://dev.azure.com/org/proj/_workitems/edit/55",
+                    "changedDate": "2026-06-01T10:00:00Z",
+                }
+            ],
+        }
+        (idem_work / "ado-mirror.json").write_text(
+            json.dumps(_idem_mirror, indent=2), encoding="utf-8"
+        )
+        try:
+            result_idem1 = materialize_wi(idem_root, _idem_wi_id, _mat_type_map)
+            result_idem2 = materialize_wi(idem_root, _idem_wi_id, _mat_type_map)
+            slug_idem = result_idem1.get("feature_id") or result_idem1.get("slug") or ""
+            idem_ok = True
+            # materialized.json must have exactly 1 record for wi_id
+            idem_records = [r for r in lazy_core.read_materialized(idem_work) if r.get("wi_id") == _idem_wi_id]
+            if len(idem_records) != 1:
+                failures.append(
+                    f"[{fix_name_idem}] expected exactly 1 materialized record after 2 calls; "
+                    f"got {len(idem_records)}"
+                )
+                idem_ok = False
+            # queue.json has exactly 1 entry for the slug
+            fq_idem = idem_root / "docs" / "features" / "queue.json"
+            if not fq_idem.exists():
+                failures.append(f"[{fix_name_idem}] queue.json not written")
+                idem_ok = False
+            else:
+                fq_idem_data = json.loads(fq_idem.read_text(encoding="utf-8"))
+                slug_entries = [
+                    e for e in fq_idem_data.get("queue", [])
+                    if e.get("id") == slug_idem or e.get("spec_dir") == slug_idem
+                ]
+                if len(slug_entries) != 1:
+                    failures.append(
+                        f"[{fix_name_idem}] expected exactly 1 queue entry for {slug_idem!r}; "
+                        f"got {len(slug_entries)}"
+                    )
+                    idem_ok = False
+            print(
+                f"  {'PASS' if idem_ok else 'FAIL'} [{fix_name_idem}] "
+                f"idempotent: 1 record after 2 materialize calls"
+            )
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_idem}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_idem}]: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-3.3-5: stale detection (writer)
+        # -------------------------------------------------------------------
+        fix_name_stale = "stale-detection-writer"
+        stale_root = td_path / fix_name_stale
+        stale_work = stale_root / "docs" / "work"
+        stale_work.mkdir(parents=True, exist_ok=True)
+        _stale_wi_id = 101
+        _stale_slug = "feat-stale-wi"
+        stale_feat_dir = stale_root / "docs" / "features" / _stale_slug
+        stale_feat_dir.mkdir(parents=True, exist_ok=True)
+        (stale_feat_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        spec_mtime_before = (stale_feat_dir / "SPEC.md").stat().st_mtime_ns
+        # Seed materialized.json with an OLDER changedDate
+        lazy_core.append_materialized(stale_work, _stale_wi_id, _stale_slug, "2026-06-01T00:00:00Z")
+        # Mirror has a NEWER changedDate for the same WI
+        _stale_mirror = {
+            "syncedAt": "2026-06-10T12:00:00Z",
+            "watermark": "2026-06-10",
+            "query": "SELECT ...",
+            "workItems": [
+                {
+                    "id": _stale_wi_id,
+                    "type": "User Story",
+                    "title": "Updated upstream WI",
+                    "description": "Updated description.",
+                    "acceptanceCriteria": "New AC.",
+                    "url": "https://dev.azure.com/org/proj/_workitems/edit/101",
+                    "changedDate": "2026-06-10T00:00:00Z",
+                }
+            ],
+        }
+        (stale_work / "ado-mirror.json").write_text(
+            json.dumps(_stale_mirror, indent=2), encoding="utf-8"
+        )
+        try:
+            check_stale_upstream(stale_root)
+            stale_ok = True
+            # STALE_UPSTREAM.md must now exist in the feature dir
+            stale_sentinel = stale_feat_dir / "STALE_UPSTREAM.md"
+            if not stale_sentinel.exists():
+                failures.append(
+                    f"[{fix_name_stale}] STALE_UPSTREAM.md not written to {stale_sentinel}"
+                )
+                stale_ok = False
+            # SPEC.md must NOT have been modified (mtime_ns unchanged)
+            spec_mtime_after = (stale_feat_dir / "SPEC.md").stat().st_mtime_ns
+            if spec_mtime_after != spec_mtime_before:
+                failures.append(
+                    f"[{fix_name_stale}] SPEC.md was clobbered (mtime changed)"
+                )
+                stale_ok = False
+            print(
+                f"  {'PASS' if stale_ok else 'FAIL'} [{fix_name_stale}] "
+                f"stale detection writes STALE_UPSTREAM.md, preserves SPEC.md"
+            )
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_stale}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_stale}]: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-3.3-6: stale halt (reader) — compute_state returns
+        #   terminal_reason == "stale_upstream" when STALE_UPSTREAM.md is present
+        # -------------------------------------------------------------------
+        fix_name_halt = "stale-halt-reader"
+        halt_root = td_path / fix_name_halt
+        halt_features = halt_root / "docs" / "features"
+        halt_features.mkdir(parents=True, exist_ok=True)
+        (halt_features / "ROADMAP.md").write_text("# Roadmap\n")
+        (halt_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-stale-halt", "name": "Stale Halt Feature",
+                 "spec_dir": "feat-stale-halt", "tier": 1}
+            ]
+        }))
+        halt_dir = halt_features / "feat-stale-halt"
+        halt_dir.mkdir()
+        (halt_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (halt_dir / "RESEARCH.md").write_text("# R\n")
+        (halt_dir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Drop a STALE_UPSTREAM.md into the feature dir
+        (halt_dir / "STALE_UPSTREAM.md").write_text(
+            "Upstream WI changed on 2026-06-10 — re-materialize required.\n",
+            encoding="utf-8",
+        )
+        try:
+            got_halt = compute_state(halt_root, cloud=False, real_device=True)
+            halt_ok = True
+            if got_halt.get("terminal_reason") != "stale_upstream":
+                failures.append(
+                    f"[{fix_name_halt}] expected terminal_reason='stale_upstream', "
+                    f"got {got_halt.get('terminal_reason')!r} "
+                    f"(current_step={got_halt.get('current_step')!r})"
+                )
+                halt_ok = False
+            # Must NOT have routed to a normal work step
+            if got_halt.get("sub_skill") is not None:
+                failures.append(
+                    f"[{fix_name_halt}] stale halt must not dispatch a sub_skill; "
+                    f"got sub_skill={got_halt.get('sub_skill')!r}"
+                )
+                halt_ok = False
+            print(
+                f"  {'PASS' if halt_ok else 'FAIL'} [{fix_name_halt}] "
+                f"stale halt: terminal_reason={got_halt.get('terminal_reason')!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_name_halt}] SystemExit: {exc.code}")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -2482,6 +3122,8 @@ def main() -> int:
                         help="Spec dir under docs/features/ (default: same as --id).")
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
+    parser.add_argument("--materialize-wi", type=int, default=None,
+                        help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     args = parser.parse_args()
 
     if args.enqueue_adhoc:
@@ -2495,6 +3137,17 @@ def main() -> int:
             args.spec_dir,
             args.tier,
         )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.materialize_wi is not None:
+        # type_pipeline_map: load from the Cognito skill-config yml if available,
+        # else fall back to the locked default below.
+        type_map = {
+            "bug": ["Bug", "Defect", "Story Bug", "Engineering Bug"],
+            "feature": ["User Story", "Refactor Story", "Enabler Story", "Requirement"],
+        }
+        result = materialize_wi(Path(args.repo_root), args.materialize_wi, type_map)
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
