@@ -67,7 +67,7 @@ N/A — no runtime-observable behavior in this phase (environment provisioning o
 **Deliverables:**
 - [x] `user/scripts/ado-sync.py` (net-new): CLI entry point with `--repo-root <COG_DOCS>`, `--config <skill-config-yml>`, `--test`, `--once` (single poll, no scheduler)
 - [x] Keyring auth: `keyring.get_password("ado-local-poller", "vso_pat_readonly")` — fail fast with a clear error if absent
-- [x] WIQL delta query: `SELECT [System.Id] FROM workitems WHERE (AssignedTo = @Me OR AreaPath UNDER 'Cognito Forms\Poseidon') AND ChangedDate >= '<lastSync-UTC>Z' ORDER BY ChangedDate ASC` — dates MUST be UTC + `Z` suffix; watermark persisted alongside the mirror (or embedded in `ado-mirror.json`)
+- [x] WIQL delta query: `SELECT [System.Id] FROM workitems WHERE ([System.AssignedTo] = @Me OR [System.AreaPath] UNDER 'Cognito Forms\Poseidon') AND [System.ChangedDate] >= '<lastSync-UTC>Z' ORDER BY [System.ChangedDate] ASC` — dates MUST be UTC + `Z` suffix; field references MUST be bracketed `[System.*]` names (bare names → `400 TF51005`); watermark persisted alongside the mirror (or embedded in `ado-mirror.json`)
 - [x] 200-id chunked hydration: `wit/workitems?ids=<chunk>&$expand=all` — ids sliced into ≤200; merge batches before writing; log chunk count
 - [x] Atomic write: write to a temp file alongside the target, then `os.replace(tmp, target)` — no partial reads possible
 - [x] Full mirror schema written to `<COG_DOCS>/docs/work/ado-mirror.json`: `syncedAt`, `watermark`, `query` (identity snapshot), `workItems[]` — each entry: `{id, type, title, state, assignedTo, areaPath, iteration, parentId, url, acceptanceCriteria, description, changedDate, linkedPRs[], pr, prStatus, autotestStatus, autotestBuildId, autotestRun, materialized}`
@@ -79,8 +79,8 @@ N/A — no runtime-observable behavior in this phase (environment provisioning o
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] Running `ado-sync.py --once` twice on unchanged ADO state produces byte-identical `workItems[]` arrays (modulo `syncedAt` and `watermark`)
 - [ ] After simulating multi-day downtime (advance the watermark to a past timestamp), a single poll fetches all accumulated changes and the resulting mirror matches live ADO state
-- [ ] Syncing a WI set with total count >200 succeeds without HTTP 400; poller logs show ≥2 hydration batches
-- [ ] `ado-mirror.json` parses as valid JSON immediately after write (no torn write possible)
+- [x] Syncing a WI set with total count >200 succeeds without HTTP 400; poller logs show ≥2 hydration batches — *verified 2026-06-02: live poll fetched 7502 items in 38 hydration batches (37×200 + 1×102), no 400*
+- [x] `ado-mirror.json` parses as valid JSON immediately after write (no torn write possible) — *verified 2026-06-02: `json.load` of the written mirror succeeded, 7502 workItems*
 - [ ] A WI with a linked GitHub PR shows `linkedPRs: [{prNumber: <N>, repo: "cognitoforms/cognito"}]`
 - [ ] A WI with custom fields populated shows non-null `pr`, `prStatus`, `autotestStatus`
 
@@ -122,8 +122,9 @@ ASSERTIONS:
 - `--test` is fully offline: keyring/requests/yaml are all lazy-imported inside the functions that need them, so the fixtures run with zero non-stdlib deps. Do not hoist those imports to module top.
 - Windows console is cp1252 — run gates with `PYTHONUTF8=1` or unicode in diagnostics crashes the runner.
 - `pr_artifact_repo_guid` in config is still the `TODO_FILL_FROM_REAL_WI_ARTIFACTLINK` placeholder; `parse_linked_prs` does not depend on it (regex is guid-agnostic), so this is non-blocking until a real ArtifactLink is available to confirm the GUID.
+**Runtime verification + fix (2026-06-02):** first live `--once` poll against real ADO returned `400 TF51005` — the WIQL used bare field names (`AssignedTo`, `AreaPath`, `ChangedDate`), which ADO rejects. Fixed by extracting a pure `build_wiql(area_path, watermark)` helper that emits bracketed `[System.*]` reference names; added fixture `fixture4_build_wiql_bracketed_fields` (RED→GREEN, `--test` now `4/4`). Re-ran the poll: 7502 work items hydrated across 38 batches, mirror written atomically and re-loaded cleanly. `cog-docs/.claude/skill-config/ado-doc-integration.yml` was provisioned (the poller reads config from `<repo-root>/.claude/skill-config/`, and cog-docs — the runtime repo-root — had none). Committed `1116627`.
 **Files modified:**
-- `user/scripts/ado-sync.py` — net-new poller (all Phase 1 deliverables).
+- `user/scripts/ado-sync.py` — net-new poller (all Phase 1 deliverables); `build_wiql()` bracket fix (2026-06-02).
 
 ---
 
@@ -140,10 +141,10 @@ ASSERTIONS:
 - [x] `user/skills/work-status/SKILL.md` (net-new): frontmatter with `name: work-status`, `description`, `argument-hint`, `plan-mode: false`; invocation pattern; documentation of all five panels and the `--markdown` flag; read-only safety note
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Running `work-status.py` with only `ado-mirror.json` present (no Phase 3/4 artifacts) exits 0 and renders the inbox and team panels; all other panels degrade gracefully with informational messages
+- [x] Running `work-status.py` with only `ado-mirror.json` present (no Phase 3/4 artifacts) exits 0 and renders the inbox and team panels; all other panels degrade gracefully with informational messages — *verified 2026-06-02 against the live 7502-item mirror: exit 0, Team panel populated, My Queue / In Flight / Inbox show graceful `_(none)_` / `_No leases yet_`*
 - [ ] After Phase 3 artifacts exist, *My queue* panel lists materialized items with their current lazy/bug state step
 - [ ] After Phase 4 artifacts exist, *In flight* panel lists active leases with heartbeat age
-- [ ] `--markdown` writes `DASHBOARD.md` without mutating `leases.json`, `queue.json`, or `materialized.json`
+- [x] `--markdown` writes `DASHBOARD.md` without mutating `leases.json`, `queue.json`, or `materialized.json` — *fixture_d asserts `st_mtime_ns` unchanged on leases/queue while DASHBOARD.md is created; verified 2026-06-02 e2e: 467-line GFM doc written, exit 0*
 
 **MCP Integration Test Assertions:**
 
@@ -185,6 +186,20 @@ ASSERTIONS:
 **Files modified:**
 - `user/scripts/work-status.py` — net-new read-only dashboard (all Phase 2 deliverables).
 - `user/skills/work-status/SKILL.md` — net-new skill doc.
+
+#### Implementation Notes (Phase 2 — Markdown doc enhancement, 2026-06-02)
+**Why:** the original `--markdown` flag wrote the raw terminal text to `DASHBOARD.md`, and the TEAM panel dumped all WIs (≈849 KB / 7502 rows incl. `Closed`/`Removed` back to 2022) — unusable as a doc. Added a true GFM renderer, a recency filter, and a dedicated regenerate skill (`/dashboard`). Authored via TDD (RED→GREEN), `--test` now `9/9`.
+**Work completed:**
+- `render_markdown(sources, current_branch=None, *, all_team=False)` (work-status.py:382) — real GFM: `# Work Dashboard` + synced/count subtitle + five `## ` panels with markdown tables; mirrors `render_dashboard`'s data selection (`_is_mine`, `match_self_pr`) without altering the terminal renderer. `--markdown` now emits this instead of the terminal text.
+- `filter_recent_team(team_wis, synced_at, window_days=5) -> (kept, hidden_count)` (work-status.py:330) — keeps active WIs plus terminal-state (`closed/removed/done/resolved`, case-insensitive `frozenset` at :327) WIs changed within 5 days; **`synced_at` is the deterministic reference clock — no `datetime.now()`**. Empty/unparseable `synced_at` → keep all (graceful); terminal WI with missing/unparseable `changedDate` → hidden. `--all-team` bypasses; hidden count surfaced in the doc.
+- `_escape_md_pipe()` (work-status.py:377) escapes `|` in titles/cells for table safety.
+- `main()` gained `--all-team` (store_true) and `--out PATH` (atomic write to an override path; else `write_markdown` default `docs/work/DASHBOARD.md`).
+- `user/skills/dashboard/SKILL.md` (`/dashboard`, net-new, 76 lines, `plan-mode: never`, lint-clean): offline render by default; `--refresh` runs `ado-sync.py --once` first (fails loud, no stale fallthrough); `--all-team`/`--out` pass through.
+- New fixtures E–I in `run_self_tests()` (`total` 4→9): filter active/recent/old + empty-synced-at edge (E), missing-date terminal hidden (F), markdown structure/headers/subtitle (G), pipe escape (H), hidden-items note (I).
+**Verification:** e2e against the live mirror — `DASHBOARD.md` rendered in 467 lines (down from ~849 KB), `_Hiding 7061 terminal item(s) older than 5 days_` note present, all five panels correct, exit 0.
+**Files modified:**
+- `user/scripts/work-status.py` — `render_markdown` + `filter_recent_team` + `_escape_md_pipe` + `--all-team`/`--out` + fixtures E–I.
+- `user/skills/dashboard/SKILL.md` — net-new `/dashboard` skill.
 
 ---
 

@@ -189,9 +189,12 @@ Facts the design now binds to, replacing draft assumptions:
 
 - **Engine:** `user/scripts/ado-sync.py` (project-agnostic). Auth = PAT via `keyring`
   (`keyring.get_password("ado-local-poller", "vso_pat_readonly")`), scope **`vso.work` read-only**.
-- **WIQL (delta):** `SELECT … FROM workitems WHERE (AssignedTo = @Me OR AreaPath UNDER 'Cognito
-  Forms\Poseidon') AND ChangedDate >= '<lastSync-UTC>Z' ORDER BY ChangedDate ASC`. Dates **must** be
-  UTC + `Z`. (Grounded: project name has a space; Poseidon is a single area, no sub-areas.)
+- **WIQL (delta):** `SELECT [System.Id] FROM workitems WHERE ([System.AssignedTo] = @Me OR
+  [System.AreaPath] UNDER 'Cognito Forms\Poseidon') AND [System.ChangedDate] >= '<lastSync-UTC>Z'
+  ORDER BY [System.ChangedDate] ASC`. Dates **must** be UTC + `Z`. Field references **must** be the
+  bracketed `[System.*]` reference names — bare names (`AssignedTo`, `AreaPath`, `ChangedDate`) are
+  rejected by ADO with `400 TF51005` (caught in runtime verification, fixed via the pure `build_wiql()`
+  helper). (Grounded: project name has a space; Poseidon is a single area, no sub-areas.)
 - **Pagination (critical):** the WIQL endpoint returns ≤20,000 ids, but hydration
   (`wit/workitems?ids=…&$expand=all`) is capped at **200 ids/batch** — the poller **chunks ids into
   ≤200** or hits HTTP 400.
@@ -213,8 +216,16 @@ Facts the design now binds to, replacing draft assumptions:
 - **Engine:** `user/scripts/work-status.py` reads `ado-mirror.json`, both `queue.json`s,
   `materialized.json`, `leases.json`, scans for `STALE_UPSTREAM.md`, and calls
   `lazy-state.py`/`bug-state.py` for live per-item status. Emits JSON the skill formats.
-- **Skill:** `user/skills/work-status/SKILL.md` — read-only terminal render; optional `--markdown`
-  writes `docs/work/DASHBOARD.md`. No mutation of any artifact.
+- **Rendering:** `render_dashboard()` produces the read-only terminal text; `render_markdown()`
+  produces a real GitHub-flavored markdown doc (`# Work Dashboard` + five `## ` panels, markdown
+  tables for queue/inbox/team). The TEAM panel is scoped by the pure `filter_recent_team()` helper:
+  it keeps active WIs plus terminal-state WIs (`Closed/Removed/Done/Resolved`) changed within a
+  5-day window of `syncedAt` (the mirror timestamp is the deterministic "now" — no clock reads).
+  `--all-team` opts out of the filter; hidden counts are surfaced in the doc.
+- **Skills:** `user/skills/work-status/SKILL.md` — read-only terminal render; optional `--markdown`
+  writes `docs/work/DASHBOARD.md`. `user/skills/dashboard/SKILL.md` (`/dashboard`) regenerates the
+  markdown doc from the local mirror (offline by default); `--refresh` runs `ado-sync.py --once`
+  first, `--all-team`/`--out` pass through. No mutation of any artifact beyond `DASHBOARD.md`.
 
 ### Layer 3 — Materialization + orchestration
 

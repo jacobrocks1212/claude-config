@@ -21,6 +21,7 @@ Dependencies: stdlib only (no third-party requirements for --test).
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -323,6 +324,258 @@ def match_self_pr(branch: str, linked_prs: list[dict]) -> dict | None:
     return None
 
 
+_TERMINAL_STATES = frozenset({"closed", "removed", "done", "resolved"})
+
+
+def filter_recent_team(
+    team_wis: list[dict],
+    synced_at: str,
+    window_days: int = 5,
+) -> tuple[list[dict], int]:
+    """Keep WIs that are still active, plus terminal-state WIs changed within
+    window_days of synced_at. Returns (kept, hidden_count).
+
+    'now' reference is synced_at (the mirror timestamp) — deterministic, no clock reads.
+    Terminal states (case-insensitive): Closed, Removed, Done, Resolved.
+    If synced_at is missing/unparseable, return (team_wis, 0) — graceful, hide nothing.
+    A WI with a missing/unparseable changedDate that is terminal is treated as OLD (hidden).
+    """
+    if not synced_at:
+        return (team_wis, 0)
+
+    try:
+        synced_dt = datetime.datetime.fromisoformat(synced_at.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return (team_wis, 0)
+
+    cutoff = synced_dt - datetime.timedelta(days=window_days)
+
+    kept: list[dict] = []
+    hidden = 0
+    for wi in team_wis:
+        state = (wi.get("state") or "").strip().lower()
+        if state not in _TERMINAL_STATES:
+            kept.append(wi)
+            continue
+        # Terminal state — keep only if recently changed
+        changed_raw = wi.get("changedDate") or ""
+        try:
+            changed_dt = datetime.datetime.fromisoformat(
+                changed_raw.replace("Z", "+00:00")
+            )
+            if changed_dt >= cutoff:
+                kept.append(wi)
+            else:
+                hidden += 1
+        except (ValueError, AttributeError):
+            # Missing/unparseable changedDate on a terminal WI → treat as old
+            hidden += 1
+
+    return (kept, hidden)
+
+
+def _escape_md_pipe(text: str) -> str:
+    """Escape pipe characters in text so they don't break Markdown tables."""
+    return text.replace("|", r"\|")
+
+
+def render_markdown(
+    sources: dict,
+    current_branch: str | None = None,
+    *,
+    all_team: bool = False,
+) -> str:
+    """Render the five-panel dashboard as GitHub-flavored Markdown.
+
+    Produces real GFM (tables, headers) rather than the terminal-style text
+    from render_dashboard.  Data-selection logic mirrors render_dashboard exactly
+    (mine vs team via _is_mine, branch→PR via match_self_pr, degradation messages).
+    """
+    lines: list[str] = []
+
+    mirror: dict | None = sources.get("mirror")
+    feat_queue: dict | None = sources.get("feat_queue")
+    bug_queue: dict | None = sources.get("bug_queue")
+    leases: dict | None = sources.get("leases")
+    stale_paths: list[Path] = sources.get("stale_paths") or []
+
+    work_items: list[dict] = []
+    if mirror and isinstance(mirror.get("workItems"), list):
+        work_items = mirror["workItems"]
+
+    wi_by_id: dict[int, dict] = {int(wi["id"]): wi for wi in work_items}
+
+    self_pr: dict | None = None
+    branch_wi_id: int | None = None
+    if current_branch:
+        m = re.match(r"^p/(\d+)-", current_branch)
+        if m:
+            branch_wi_id = int(m.group(1))
+            wi = wi_by_id.get(branch_wi_id)
+            if wi:
+                linked_prs = wi.get("linkedPRs") or []
+                self_pr = match_self_pr(current_branch, linked_prs)
+
+    # Header
+    lines.append("# Work Dashboard")
+    if mirror is None:
+        lines.append("_Mirror not yet initialized_")
+    else:
+        synced_at = mirror.get("syncedAt", "")
+        lines.append(f"_Synced: {synced_at} · {len(work_items)} work items_")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section 1: My Queue
+    # ------------------------------------------------------------------
+    lines.append("## My Queue")
+    lines.append("")
+    queue_items: list[dict] = []
+    for q in [feat_queue, bug_queue]:
+        if q and isinstance(q.get("items"), list):
+            queue_items.extend(q["items"])
+
+    if queue_items:
+        lines.append("| WI | Title | Priority | PR |")
+        lines.append("| --- | --- | --- | --- |")
+        for item in queue_items:
+            wi_id = item.get("wi_id", "")
+            title = _escape_md_pipe(item.get("title") or "(no title)")
+            priority = item.get("priority", "")
+            pr_info = ""
+            if wi_id is not None and wi_id == branch_wi_id and self_pr is not None:
+                pr_num = self_pr.get("prNumber")
+                pr_repo = self_pr.get("repo", "")
+                pr_info = f"PR #{pr_num} ({_escape_md_pipe(pr_repo)})"
+            lines.append(f"| {wi_id} | {title} | {priority} | {pr_info} |")
+    else:
+        lines.append("_(none)_")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section 2: In Flight
+    # ------------------------------------------------------------------
+    lines.append("## In Flight")
+    lines.append("")
+    if leases is None:
+        lines.append("_No leases yet (leases.json not found)_")
+    else:
+        lease_list = leases.get("leases") or []
+        if not lease_list:
+            lines.append("_No active leases_")
+        else:
+            lines.append("| WI | Branch | Started | Worker | Stage |")
+            lines.append("| --- | --- | --- | --- | --- |")
+            for lease in lease_list:
+                wi_id = lease.get("wi_id", "?")
+                branch = _escape_md_pipe(lease.get("branch") or "?")
+                started = lease.get("startedAt", "?")
+                worker = lease.get("worker_pid", lease.get("slot", ""))
+                stage = _escape_md_pipe(lease.get("stage") or "")
+                stale_flag = " **[STALE]**" if lease.get("stale") else ""
+                lines.append(
+                    f"| {wi_id} | {branch} | {started} | {worker} | {stage}{stale_flag} |"
+                )
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section 3: My ADO Inbox
+    # ------------------------------------------------------------------
+    lines.append("## My ADO Inbox")
+    lines.append("")
+    if mirror is None:
+        lines.append("_Mirror not yet initialized_")
+    else:
+        my_wis = [
+            wi for wi in work_items
+            if _is_mine(wi.get("assignedTo")) and not wi.get("materialized", False)
+        ]
+        if not my_wis:
+            lines.append("_(none)_")
+        else:
+            lines.append("| WI | Title | State | PR Status | URL |")
+            lines.append("| --- | --- | --- | --- | --- |")
+            for wi in my_wis:
+                wi_id = wi.get("id", "?")
+                title = _escape_md_pipe(wi.get("title") or "(no title)")
+                state = wi.get("state", "?")
+                pr_status = _escape_md_pipe(wi.get("prStatus") or "")
+                url = wi.get("url") or ""
+                url_cell = f"[link]({url})" if url else ""
+                lines.append(f"| {wi_id} | {title} | {state} | {pr_status} | {url_cell} |")
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section 4: Team
+    # ------------------------------------------------------------------
+    lines.append("## Team")
+    lines.append("")
+    if mirror is None:
+        lines.append("_Mirror not yet initialized_")
+    else:
+        team_wis = [wi for wi in work_items if not _is_mine(wi.get("assignedTo"))]
+        hidden_count = 0
+        if not all_team:
+            team_wis, hidden_count = filter_recent_team(
+                team_wis, mirror.get("syncedAt", ""), 5
+            )
+        if not team_wis:
+            lines.append("_(no teammate WIs in mirror)_")
+        else:
+            lines.append("| WI | Title | Assigned | State | PR | Autotest |")
+            lines.append("| --- | --- | --- | --- | --- | --- |")
+            for wi in team_wis:
+                wi_id = wi.get("id", "?")
+                title = _escape_md_pipe(wi.get("title") or "(no title)")
+                assigned = _escape_md_pipe(wi.get("assignedTo") or "Unassigned")
+                state = wi.get("state", "?")
+                linked_prs = wi.get("linkedPRs") or []
+                pr_nums = [
+                    str(lp.get("prNumber"))
+                    for lp in linked_prs
+                    if lp.get("prNumber")
+                ]
+                pr_cell = ", ".join(f"#{n}" for n in pr_nums) if pr_nums else ""
+                autotest = _escape_md_pipe(wi.get("autotestStatus") or "")
+                lines.append(
+                    f"| {wi_id} | {title} | {assigned} | {state} | {pr_cell} | {autotest} |"
+                )
+        if hidden_count:
+            lines.append(
+                f"_Hiding {hidden_count} terminal item(s) older than 5 days. "
+                "Re-run with --all-team to include._"
+            )
+    lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section 5: Pool & Sync
+    # ------------------------------------------------------------------
+    lines.append("## Pool & Sync")
+    lines.append("")
+    if mirror is None:
+        lines.append("_Mirror not yet initialized_")
+    else:
+        synced_at = mirror.get("syncedAt", "(unknown)")
+        lines.append(f"- **Mirror synced at:** {synced_at}")
+        lines.append(f"- **Work items:** {len(work_items)}")
+        lines.append(f"- **Stale upstream:** {len(stale_paths)} marker(s)")
+        if stale_paths:
+            for p in stale_paths:
+                lines.append(f"  - `{p}`")
+
+    missing: list[str] = []
+    if feat_queue is None:
+        missing.append("`docs/features/queue.json`")
+    if bug_queue is None:
+        missing.append("`docs/bugs/queue.json`")
+    if leases is None:
+        missing.append("`docs/work/leases.json`")
+    if missing:
+        lines.append(f"- **Missing artifacts:** {', '.join(missing)}")
+
+    return "\n".join(lines)
+
+
 def write_markdown(repo_root: Path, text: str) -> Path:
     """Write dashboard text to docs/work/DASHBOARD.md atomically.
 
@@ -341,9 +594,9 @@ def write_markdown(repo_root: Path, text: str) -> Path:
 # ---------------------------------------------------------------------------
 
 def run_self_tests() -> int:
-    """Run four built-in fixtures. Returns number of failures (0 = all pass)."""
+    """Run nine built-in fixtures. Returns number of failures (0 = all pass)."""
     failures = 0
-    total = 4
+    total = 9
 
     # ------------------------------------------------------------------
     # Fixture A — mirror-only degradation
@@ -609,6 +862,221 @@ def run_self_tests() -> int:
         print(f"FAIL fixture_d_markdown_no_mutation: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture E — filter_recent_team: active kept, recent-closed kept, old-closed hidden
+    # synced_at = 2026-06-02T20:00:00Z, window_days=5 → cutoff = 2026-05-28T20:00:00Z
+    # ------------------------------------------------------------------
+    try:
+        synced_at_e = "2026-06-02T20:00:00Z"
+        team_wis_e = [
+            {
+                "id": 5001,
+                "title": "Active item",
+                "state": "Active",
+                "assignedTo": "Bob",
+                "changedDate": "2026-06-01T10:00:00Z",
+            },
+            {
+                "id": 5002,
+                "title": "Recent closed",
+                "state": "Closed",
+                "assignedTo": "Carol",
+                "changedDate": "2026-05-30T10:00:00Z",  # within 5d → kept
+            },
+            {
+                "id": 5003,
+                "title": "Old closed",
+                "state": "Closed",
+                "assignedTo": "Dave",
+                "changedDate": "2026-01-01T00:00:00Z",  # old → hidden
+            },
+        ]
+        kept_e, hidden_e = filter_recent_team(team_wis_e, synced_at_e, 5)
+        kept_ids = {wi["id"] for wi in kept_e}
+
+        assert 5001 in kept_ids, f"Active WI 5001 must be kept, got kept={kept_ids}"
+        assert 5002 in kept_ids, f"Recent-closed WI 5002 must be kept, got kept={kept_ids}"
+        assert 5003 not in kept_ids, f"Old-closed WI 5003 must be hidden, got kept={kept_ids}"
+        assert hidden_e == 1, f"hidden_count must be 1, got {hidden_e}"
+
+        # Empty synced_at → all kept, hidden 0
+        kept_empty, hidden_empty = filter_recent_team(team_wis_e, "", 5)
+        assert len(kept_empty) == len(team_wis_e), \
+            f"Empty synced_at must keep all WIs, got {len(kept_empty)}"
+        assert hidden_empty == 0, \
+            f"Empty synced_at must have hidden=0, got {hidden_empty}"
+
+        print("PASS fixture_e_filter_recent_team")
+    except Exception as exc:
+        print(f"FAIL fixture_e_filter_recent_team: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture F — filter_recent_team: missing changedDate on terminal WI → hidden
+    # ------------------------------------------------------------------
+    try:
+        team_wis_f = [
+            {
+                "id": 6001,
+                "title": "Done no date",
+                "state": "Done",
+                "assignedTo": "Eve",
+                "changedDate": None,
+            },
+        ]
+        kept_f, hidden_f = filter_recent_team(team_wis_f, "2026-06-02T20:00:00Z", 5)
+        assert len(kept_f) == 0, \
+            f"Terminal WI with no changedDate must be hidden, got kept={[w['id'] for w in kept_f]}"
+        assert hidden_f == 1, f"hidden_count must be 1, got {hidden_f}"
+
+        print("PASS fixture_f_filter_missing_date")
+    except Exception as exc:
+        print(f"FAIL fixture_f_filter_missing_date: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture G — render_markdown: top-level structure
+    # Assert starts with "# Work Dashboard", contains all five ## sections,
+    # and subtitle line with syncedAt.
+    # ------------------------------------------------------------------
+    try:
+        tmp_g = tempfile.mkdtemp(prefix="ws_test_g_")
+        repo_g = Path(tmp_g)
+        work_dir_g = repo_g / "docs" / "work"
+        work_dir_g.mkdir(parents=True, exist_ok=True)
+
+        mirror_g = {
+            "syncedAt": "2026-06-01T10:00:00Z",
+            "watermark": "2026-06-01T10:00:00Z",
+            "query": {},
+            "workItems": [
+                {
+                    "id": 7001,
+                    "title": "Team item",
+                    "state": "Active",
+                    "assignedTo": "Frank",
+                    "changedDate": "2026-06-01T09:00:00Z",
+                    "linkedPRs": [],
+                    "pr": None,
+                    "prStatus": None,
+                    "autotestStatus": None,
+                    "autotestBuildId": None,
+                    "autotestRun": None,
+                    "materialized": False,
+                }
+            ],
+        }
+        (work_dir_g / "ado-mirror.json").write_text(
+            json.dumps(mirror_g, indent=2), encoding="utf-8"
+        )
+        sources_g = load_sources(repo_g)
+        md_g = render_markdown(sources_g)
+
+        assert md_g.startswith("# Work Dashboard"), \
+            f"render_markdown must start with '# Work Dashboard', got: {md_g[:60]!r}"
+        for section in ["## My Queue", "## In Flight", "## My ADO Inbox", "## Team", "## Pool & Sync"]:
+            assert section in md_g, f"render_markdown must contain '{section}'"
+        assert "| WI | Title | Assigned | State |" in md_g, \
+            "Team table header row missing in render_markdown output"
+        assert "2026-06-01T10:00:00Z" in md_g, \
+            "Subtitle must contain syncedAt timestamp"
+
+        print("PASS fixture_g_render_markdown_structure")
+    except Exception as exc:
+        print(f"FAIL fixture_g_render_markdown_structure: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture H — render_markdown: pipe in title is escaped
+    # ------------------------------------------------------------------
+    try:
+        tmp_h = tempfile.mkdtemp(prefix="ws_test_h_")
+        repo_h = Path(tmp_h)
+        work_dir_h = repo_h / "docs" / "work"
+        work_dir_h.mkdir(parents=True, exist_ok=True)
+
+        mirror_h = {
+            "syncedAt": "2026-06-02T10:00:00Z",
+            "watermark": "2026-06-02T10:00:00Z",
+            "query": {},
+            "workItems": [
+                {
+                    "id": 8001,
+                    "title": "A | B title",
+                    "state": "Active",
+                    "assignedTo": "Grace",
+                    "changedDate": "2026-06-02T08:00:00Z",
+                    "linkedPRs": [],
+                    "pr": None,
+                    "prStatus": None,
+                    "autotestStatus": None,
+                    "autotestBuildId": None,
+                    "autotestRun": None,
+                    "materialized": False,
+                }
+            ],
+        }
+        (work_dir_h / "ado-mirror.json").write_text(
+            json.dumps(mirror_h, indent=2), encoding="utf-8"
+        )
+        sources_h = load_sources(repo_h)
+        md_h = render_markdown(sources_h)
+
+        assert r"A \| B title" in md_h, \
+            f"Pipe in title must be escaped as '\\|', got relevant section: {md_h!r}"
+
+        print("PASS fixture_h_pipe_escape")
+    except Exception as exc:
+        print(f"FAIL fixture_h_pipe_escape: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture I — render_markdown: hidden-items note when old-closed teammate filtered
+    # synced_at = 2026-06-02T20:00:00Z; one old-closed teammate WI → note appears
+    # ------------------------------------------------------------------
+    try:
+        tmp_i = tempfile.mkdtemp(prefix="ws_test_i_")
+        repo_i = Path(tmp_i)
+        work_dir_i = repo_i / "docs" / "work"
+        work_dir_i.mkdir(parents=True, exist_ok=True)
+
+        mirror_i = {
+            "syncedAt": "2026-06-02T20:00:00Z",
+            "watermark": "2026-06-02T20:00:00Z",
+            "query": {},
+            "workItems": [
+                {
+                    "id": 9001,
+                    "title": "Old closed team item",
+                    "state": "Closed",
+                    "assignedTo": "Hank",
+                    "changedDate": "2026-01-01T00:00:00Z",  # old → filtered
+                    "linkedPRs": [],
+                    "pr": None,
+                    "prStatus": None,
+                    "autotestStatus": None,
+                    "autotestBuildId": None,
+                    "autotestRun": None,
+                    "materialized": False,
+                }
+            ],
+        }
+        (work_dir_i / "ado-mirror.json").write_text(
+            json.dumps(mirror_i, indent=2), encoding="utf-8"
+        )
+        sources_i = load_sources(repo_i)
+        md_i = render_markdown(sources_i)  # all_team=False → filtered
+
+        assert "Hiding 1 terminal item" in md_i or "Hiding 1" in md_i, \
+            f"Hidden-items note must appear when old-closed teammate WI filtered; got:\n{md_i}"
+        assert "--all-team" in md_i, \
+            "Hidden-items note must mention --all-team"
+
+        print("PASS fixture_i_hidden_items_note")
+    except Exception as exc:
+        print(f"FAIL fixture_i_hidden_items_note: {exc}")
+        failures += 1
+
     # Summary
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
@@ -630,7 +1098,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--markdown", action="store_true",
-        help="Write docs/work/DASHBOARD.md in addition to terminal output"
+        help="Write GFM DASHBOARD.md (--out path or docs/work/DASHBOARD.md)"
+    )
+    parser.add_argument(
+        "--all-team", action="store_true",
+        help="Include all team WIs in markdown output (disables recent-terminal filter)"
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None,
+        help="Write markdown to this path instead of the default docs/work/DASHBOARD.md"
     )
     parser.add_argument(
         "--current-branch", default=None,
@@ -655,7 +1131,17 @@ def main() -> None:
     print(text)
 
     if args.markdown:
-        md_path = write_markdown(repo_root, text)
+        md_text = render_markdown(
+            sources,
+            current_branch=args.current_branch,
+            all_team=args.all_team,
+        )
+        if args.out:
+            out_path = args.out.resolve()
+            _atomic_write(out_path, md_text)
+            md_path = out_path
+        else:
+            md_path = write_markdown(repo_root, md_text)
         print(f"\nDashboard written to {md_path}", file=sys.stderr)
 
 
