@@ -189,8 +189,8 @@ def spec_status(spec_path: Path | None) -> str | None:
     return None
 
 
-def has_completion_receipt(spec_path: Path | None) -> bool:
-    """True iff a durable ``COMPLETED.md`` receipt exists in the feature dir.
+def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md") -> bool:
+    """True iff a durable completion receipt exists in the feature/bug dir.
 
     The receipt is written ONLY by ``__mark_complete__``'s completion-integrity
     gate (or backfilled with ``provenance: backfilled-unverified``). Its presence
@@ -200,8 +200,9 @@ def has_completion_receipt(spec_path: Path | None) -> bool:
 
     Generalized from lazy-state.py for reuse in bug-state.py (Phase 2).
     Default receipt filename is ``COMPLETED.md`` — matches current behavior.
+    Bug-state.py passes ``filename="FIXED.md"`` for the bug receipt convention.
     """
-    return spec_path is not None and (spec_path / "COMPLETED.md").exists()
+    return spec_path is not None and (spec_path / filename).exists()
 
 
 def write_completed_receipt(

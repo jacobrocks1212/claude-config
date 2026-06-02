@@ -86,29 +86,56 @@ it mutates the production features pipeline.
 **Entry criteria:** Phase 1 complete (`lazy_core.py` importable, `lazy-state.py --test` green).
 
 **Deliverables:**
-- [ ] `load_bug_queue(repo_root)` reads `docs/bugs/queue.json` (same shape; `severity` optional).
+- [x] `load_bug_queue(repo_root)` reads `docs/bugs/queue.json` (same shape; `severity` optional).
       Hybrid order: queued entries first (listed order), then on-disk open bug dirs not in the
       queue, sorted by severity rank then `**Discovered:**` ascending. Skip `_archive/`.
-- [ ] `bug_severity(spec_path)` + `bug_discovered(spec_path)` frontmatter readers.
-- [ ] State machine steps: find-current → BLOCKED/NEEDS_INPUT → SPEC present? → PHASES? →
+- [x] `bug_severity(spec_path)` + `bug_discovered(spec_path)` frontmatter readers.
+- [x] State machine steps: find-current → BLOCKED/NEEDS_INPUT → SPEC present? → PHASES? →
       plan/execute → retro → MCP gate (cloud/device aware, reused from core patterns) →
       `__mark_fixed__`.
-- [ ] Completion semantics: `Fixed`/`Won't-fix` + `FIXED.md` receipt → genuinely done; `Fixed`
+- [x] Completion semantics: `Fixed`/`Won't-fix` + `FIXED.md` receipt → genuinely done; `Fixed`
       without receipt → `completion-unverified` halt; `Won't-fix` receipt-exempt.
-- [ ] Terminals: `blocked`, `needs-input`, `all-bugs-fixed`, `cloud-queue-exhausted`,
+- [x] Terminals: `blocked`, `needs-input`, `all-bugs-fixed`, `cloud-queue-exhausted`,
       `device-queue-exhausted`, `queue-missing`-equivalent (no queue **and** no open bugs →
       `all-bugs-fixed`; queue optional under hybrid).
-- [ ] `--backfill-receipts` writes `FIXED.md` for archived/`Fixed` bugs lacking one.
-- [ ] CLI mirrors `lazy-state.py` (`--cloud`, `--real-device`, `--repo-root`, `--test`).
-- [ ] In-file smoke fixtures covering: fresh-open-bug, blocked, mid-fix, phases-complete-no-retro,
+- [x] `--backfill-receipts` writes `FIXED.md` for archived/`Fixed` bugs lacking one.
+- [x] CLI mirrors `lazy-state.py` (`--cloud`, `--real-device`, `--repo-root`, `--test`).
+- [x] In-file smoke fixtures covering: fresh-open-bug, blocked, mid-fix, phases-complete-no-retro,
       retro-done-needs-mcp, ready-to-mark-fixed, device-deferred, hybrid-ordering (queue + unlisted
       severity fallback), won't-fix-exempt, fixed-no-receipt-halt.
 
 **Runtime Verification (workstation):**
-- [ ] `python3 ~/.claude/scripts/bug-state.py --test` exits 0.
+- [x] `python3 ~/.claude/scripts/bug-state.py --test` exits 0.
 
 **Implementation Notes:**
-<!-- executor appends -->
+
+#### Implementation Notes (Phase 2)
+**Completed:** 2026-06-01
+**Work completed:**
+- `bug-state.py` (1329 lines, new): full bug-lifecycle `compute_state()` mirroring
+  `lazy-state.py`'s structure. `_bug_state()` builder emits the identical JSON contract keys
+  (incl. `device_deferred_features`). `load_bug_queue()` (hybrid: queue.json order, then on-disk
+  open dirs by `_SEVERITY_RANK` P0→P1→P2→Low then `**Discovered:**` asc, skipping `_archive/`).
+  `bug_severity`/`bug_discovered` frontmatter readers. Completion gate (Fixed+FIXED.md=done,
+  Fixed+no-receipt=`completion-unverified` halt, Won't-fix=receipt-exempt). Device axis
+  (`resolve_real_device`, `_DEVICE_DEFERRED`, device-deferred terminal + real-device re-open)
+  mirrored from lazy-state. `--backfill-receipts`, full CLI parity.
+- 11 in-file `--test` smoke fixtures (test-agent owned section), all green.
+- `lazy_core.has_completion_receipt` generalized with optional `filename="COMPLETED.md"` param
+  (backward-compatible; bug-state passes `filename="FIXED.md"`).
+**Integration notes:**
+- Contract tokens are module-level constants (`TR_*`/`STEP_*`/`SKILL_*`) shared between the state
+  machine and its `--test` assertions — single source of truth, no drift. Phase-4 skills dispatch
+  against the `sub_skill`/`current_step` these emit.
+- `bug-state.py --repo-root <AlgoBooth>` already runs clean against the UN-migrated tree (picks the
+  first open bug for `spec-bug` investigation) — Phase 3 migration makes the parse warning-free.
+**Pitfalls & guidance:**
+- The fixtures + their assertions ARE the precise behavioral spec; implement to satisfy them.
+- Shared-core regression guard is load-bearing: any `lazy_core` change must keep `lazy-state.py
+  --test` byte-identical (verified) + `test_lazy_core.py` green.
+**Files modified:**
+- `user/scripts/bug-state.py` — new bug state machine.
+- `user/scripts/lazy_core.py` — `has_completion_receipt` filename param (backward-compatible).
 
 ---
 
