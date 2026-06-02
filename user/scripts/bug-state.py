@@ -639,23 +639,54 @@ def compute_state(
 
     # Step 9: MCP gate (retro complete; now validate runtime).
     validated_file = spec_dir / "VALIDATED.md"
+    skip_mcp_file = spec_dir / "SKIP_MCP_TEST.md"
+    deferred_file = spec_dir / "DEFERRED_NON_CLOUD.md"
+    mcp_results_file = spec_dir / "MCP_TEST_RESULTS.md"
 
-    if not validated_file.exists():
-        # Cloud defers MCP to workstation; workstation runs it.
-        if cloud:
+    if cloud:
+        if not validated_file.exists() and not skip_mcp_file.exists() and not deferred_file.exists():
+            # Cloud halts at Step 9 — defer to workstation.
             return _bug_state(
                 **common,
                 current_step=STEP_CLOUD_DEFER_MCP,
                 sub_skill="__write_deferred_non_cloud__",
                 sub_skill_args=spec_dir_str,
             )
-        # Workstation: run MCP tests.
-        return _bug_state(
-            **common,
-            current_step=STEP_MCP,
-            sub_skill=SKILL_MCP_TEST,
-            sub_skill_args=f"validate {bug_name} — see {spec_dir_str}/SPEC.md",
-        )
+        # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
+        if skip_mcp_file.exists() and not validated_file.exists():
+            return _bug_state(
+                **common,
+                current_step=STEP_MCP_SKIP,
+                sub_skill="__write_validated_from_skip__",
+                sub_skill_args=spec_dir_str,
+            )
+    else:
+        # Workstation Step 9: run MCP tests (or use existing results / skip marker).
+        if not validated_file.exists():
+            if skip_mcp_file.exists():
+                return _bug_state(
+                    **common,
+                    current_step=STEP_MCP_SKIP,
+                    sub_skill="__write_validated_from_skip__",
+                    sub_skill_args=spec_dir_str,
+                )
+            # 100%-passing results already on disk?
+            if mcp_results_file.exists():
+                meta = parse_sentinel(mcp_results_file) or {}
+                if meta.get("result") == "all-passing":
+                    return _bug_state(
+                        **common,
+                        current_step="Step 9b: write validated",
+                        sub_skill="__write_validated_from_results__",
+                        sub_skill_args=spec_dir_str,
+                    )
+            # Run MCP tests.
+            return _bug_state(
+                **common,
+                current_step=STEP_MCP,
+                sub_skill=SKILL_MCP_TEST,
+                sub_skill_args=f"validate {bug_name} — see {spec_dir_str}/SPEC.md",
+            )
 
     # Step 10: Mark fixed.
     # Entry: RETRO_DONE.md + VALIDATED.md (+ Status not yet Fixed).
