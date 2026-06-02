@@ -104,6 +104,7 @@ TR_COMPLETION_UNVERIFIED = "completion-unverified"
 TR_DEVICE_QUEUE_EXHAUSTED = "device-queue-exhausted"
 TR_CLOUD_QUEUE_EXHAUSTED = "cloud-queue-exhausted"
 TR_QUEUE_MISSING = "queue-missing"
+TR_STALE_UPSTREAM = "stale_upstream"
 
 # sub_skill tokens for bug-specific actions
 SKILL_INVESTIGATE = "spec-bug"             # root-cause investigation / spec-bug skill
@@ -129,6 +130,7 @@ STEP_CLOUD_DEFER_MCP = "Step 9: cloud defers MCP test"
 STEP_DEVICE_DEFERRED_GUARD = "Step 9: device-deferred (no real device on this host)"
 STEP_DEVICE_REOPEN = "Step 9: re-open device-deferred scenarios (real-device host)"
 STEP_COMPLETION_UNVERIFIED = "Step 2: completion claimed without receipt"
+STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
 
 # Severity rank for on-disk ordering (lower number = higher priority)
 _SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
@@ -515,6 +517,16 @@ def compute_state(
         "spec_path": spec_dir_str,
     }
 
+    # Step 2.9: STALE_UPSTREAM.md — upstream work item diverged; halt before
+    # normal gates so the human can absorb or reject the change.
+    if lazy_core.read_stale_upstream(spec_dir) is not None:
+        return _bug_state(
+            **common,
+            current_step=STEP_STALE_UPSTREAM,
+            terminal_reason=TR_STALE_UPSTREAM,
+            notify_message=f"STALE UPSTREAM: {bug_name} — work item changed upstream. Absorb or reject.",
+        )
+
     # Step 3: BLOCKED.md
     blocked_file = spec_dir / "BLOCKED.md"
     if blocked_file.exists():
@@ -698,6 +710,54 @@ def backfill_receipts(repo_root: Path) -> dict[str, Any]:
         written.append(bug_id)
 
     return {"backfilled": written, "count": len(written)}
+
+
+def enqueue_adhoc(
+    repo_root: Path,
+    bug_id: str,
+    name: str,
+    spec_dir: str | None = None,
+    severity: str | None = None,
+) -> dict[str, Any]:
+    """Prepend an ad-hoc bug entry to docs/bugs/queue.json.
+
+    Idempotent: if bug_id is already queued, emits a diagnostic and returns
+    without modifying the file (exits 0 — safe to call from a re-materialize path).
+    Creates queue.json (with empty queue) and docs/bugs/ if absent.
+    """
+    repo_root = repo_root.resolve()
+    spec_dir = spec_dir or bug_id
+    bugs_dir = repo_root / "docs" / "bugs"
+    bugs_dir.mkdir(parents=True, exist_ok=True)
+    queue_path = bugs_dir / "queue.json"
+
+    if queue_path.exists():
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            _die(f"invalid bugs/queue.json: {exc}", queue_path)
+            return {}  # pragma: no cover
+    else:
+        data = {"queue": []}
+
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die("bugs/queue.json 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+
+    if any(isinstance(e, dict) and e.get("id") == bug_id for e in items):
+        _diag(f"bug already queued: {bug_id} — enqueue is a no-op")
+        return {"id": bug_id, "spec_dir": spec_dir, "status": "duplicate"}
+
+    items.insert(0, {
+        "id": bug_id,
+        "name": name,
+        "spec_dir": spec_dir,
+        "severity": severity,
+    })
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    return {"id": bug_id, "spec_dir": spec_dir, "status": "queued"}
 
 
 # ===========================================================================
@@ -1058,6 +1118,65 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             provenance="gated",
         )
 
+    elif name == "enqueue-adhoc-writes-entry":
+        # Fixture root for testing enqueue_adhoc writes a spec_dir-keyed entry.
+        # The bug dir must exist so load_bug_queue can resolve it.
+        bugs_dir.mkdir(parents=True, exist_ok=True)
+        # Pre-create queue.json with no entries (enqueue_adhoc will prepend to it).
+        (bugs_dir / "queue.json").write_text(json.dumps({"queue": []}), encoding="utf-8")
+        bdir = bugs_dir / "fix-the-thing"
+        bdir.mkdir(parents=True, exist_ok=True)
+        (bdir / "SPEC.md").write_text(
+            "# Fix the thing\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n",
+            encoding="utf-8",
+        )
+
+    elif name == "enqueue-adhoc-idempotent":
+        # Fixture root for testing enqueue_adhoc skips duplicate ids cleanly.
+        bugs_dir.mkdir(parents=True, exist_ok=True)
+        (bugs_dir / "queue.json").write_text(json.dumps({"queue": []}), encoding="utf-8")
+        bdir = bugs_dir / "dup-bug"
+        bdir.mkdir(parents=True, exist_ok=True)
+        (bdir / "SPEC.md").write_text(
+            "# Dup Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-01\n",
+            encoding="utf-8",
+        )
+
+    elif name == "stale-upstream-halt":
+        # Bug dir with SPEC.md (Open, no PHASES → would normally dispatch spec-bug)
+        # PLUS a STALE_UPSTREAM.md file.  Expected: terminal_reason == "stale_upstream".
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-stale", "name": "Stale Upstream Bug",
+                 "spec_dir": "bug-stale"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-stale"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Stale Upstream Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n",
+            encoding="utf-8",
+        )
+        # Write a STALE_UPSTREAM.md with a representative upstream diff.
+        (bdir / "STALE_UPSTREAM.md").write_text(
+            "Upstream changes detected:\n\n"
+            "--- a/Cognito/SomeFile.cs\n"
+            "+++ b/Cognito/SomeFile.cs\n"
+            "@@ -10,3 +10,4 @@\n"
+            " existing line\n"
+            "+new upstream line\n",
+            encoding="utf-8",
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1196,6 +1315,14 @@ def run_smoke_tests() -> int:
                 "terminal_reason": TR_ALL_BUGS_FIXED,
             },
         ),
+        # 12. STALE_UPSTREAM.md present → compute_state halts with terminal_reason "stale_upstream"
+        #     (FAIL: compute_state ignores STALE_UPSTREAM.md until impl adds the halt)
+        (
+            "stale-upstream-halt", False, True,
+            {
+                "terminal_reason": "stale_upstream",
+            },
+        ),
     ]
 
     with tempfile.TemporaryDirectory(prefix="bug-state-fixtures-") as td:
@@ -1250,6 +1377,89 @@ def run_smoke_tests() -> int:
                 f"  {status_marker} [{fix_name}] cloud={cloud} "
                 f"real_device={real_device}: {step_or_terminal}"
             )
+
+        # -------------------------------------------------------------------
+        # Fixture 12: enqueue_adhoc writes a spec_dir-keyed queue entry.
+        # Calls enqueue_adhoc directly (not via compute_state).
+        # Expected RED: NotImplementedError until impl.
+        # -------------------------------------------------------------------
+        fix_name_ea = "enqueue-adhoc-writes-entry"
+        root_ea = _build_bug_fixture(td_path, fix_name_ea)
+        try:
+            enqueue_adhoc(
+                root_ea, "1234", "Fix the thing",
+                spec_dir="fix-the-thing", severity="P1",
+            )
+            # If we reach here (post-impl), assert the queue entry was written.
+            queue_path_ea = root_ea / "docs" / "bugs" / "queue.json"
+            data_ea = json.loads(queue_path_ea.read_text(encoding="utf-8"))
+            queue_ea = data_ea.get("queue", [])
+            entry_ea = next((e for e in queue_ea if e.get("id") == "1234"), None)
+            ea_ok = True
+            if entry_ea is None:
+                failures.append(
+                    f"[{fix_name_ea}] no queue entry with id='1234' found in queue.json"
+                )
+                ea_ok = False
+            else:
+                for field, val in [
+                    ("name", "Fix the thing"),
+                    ("spec_dir", "fix-the-thing"),
+                    ("severity", "P1"),
+                ]:
+                    if entry_ea.get(field) != val:
+                        failures.append(
+                            f"[{fix_name_ea}] expected entry[{field!r}]={val!r}, "
+                            f"got {entry_ea.get(field)!r}"
+                        )
+                        ea_ok = False
+            print(
+                f"  {'PASS' if ea_ok else 'FAIL'} [{fix_name_ea}] "
+                f"entry written with correct fields"
+            )
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_ea}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_ea}]: NotImplementedError — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture 13: enqueue_adhoc is idempotent — duplicate id is a no-op.
+        # Calls enqueue_adhoc twice with the same id; second call MUST NOT raise.
+        # Expected RED: NotImplementedError on both calls until impl.
+        # -------------------------------------------------------------------
+        fix_name_idem = "enqueue-adhoc-idempotent"
+        root_idem = _build_bug_fixture(td_path, fix_name_idem)
+        try:
+            enqueue_adhoc(
+                root_idem, "9999", "Dup Bug",
+                spec_dir="dup-bug", severity="P2",
+            )
+            # Second call: same id, different name+severity — MUST be a silent no-op.
+            enqueue_adhoc(
+                root_idem, "9999", "Dup Bug (second attempt)",
+                spec_dir="dup-bug", severity="P1",
+            )
+            # Assert exactly one entry for id "9999".
+            queue_path_idem = root_idem / "docs" / "bugs" / "queue.json"
+            data_idem = json.loads(queue_path_idem.read_text(encoding="utf-8"))
+            entries_for_id = [e for e in data_idem.get("queue", []) if e.get("id") == "9999"]
+            idem_ok = True
+            if len(entries_for_id) != 1:
+                failures.append(
+                    f"[{fix_name_idem}] expected exactly 1 entry for id='9999' after "
+                    f"two enqueue calls; got {len(entries_for_id)}"
+                )
+                idem_ok = False
+            print(
+                f"  {'PASS' if idem_ok else 'FAIL'} [{fix_name_idem}] "
+                f"idempotent: {len(entries_for_id)} entry(ies) after 2 calls"
+            )
+        except NotImplementedError as exc:
+            failures.append(
+                f"[{fix_name_idem}] NotImplementedError (stub not yet implemented): {exc}"
+            )
+            print(f"  FAIL [{fix_name_idem}]: NotImplementedError — {exc}")
 
     # Summary
     if failures:
@@ -1306,7 +1516,38 @@ def main() -> int:
             "for every Fixed/archived bug that lacks a receipt."
         ),
     )
+    parser.add_argument(
+        "--enqueue-adhoc", action="store_true",
+        help="Prepend an ad-hoc bug entry to docs/bugs/queue.json.",
+    )
+    parser.add_argument(
+        "--id",
+        help="Bug id (required for --enqueue-adhoc).",
+    )
+    parser.add_argument(
+        "--name",
+        help="Bug name/title (required for --enqueue-adhoc).",
+    )
+    parser.add_argument(
+        "--spec-dir", default=None,
+        help="Spec subdirectory under docs/bugs/ (defaults to --id).",
+    )
+    parser.add_argument(
+        "--severity", default=None,
+        help="Bug severity, e.g. P0/P1/P2/Low (optional for --enqueue-adhoc).",
+    )
     args = parser.parse_args()
+
+    if args.enqueue_adhoc:
+        if not args.id:
+            _die("--enqueue-adhoc requires --id")
+        if not args.name:
+            _die("--enqueue-adhoc requires --name")
+        result = enqueue_adhoc(
+            Path(args.repo_root), args.id, args.name, args.spec_dir, args.severity
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
 
     if args.test:
         return run_smoke_tests()

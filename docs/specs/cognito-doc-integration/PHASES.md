@@ -196,7 +196,7 @@ ASSERTIONS:
 - [ ] Materialize entry point: `lazy-state.py --materialize-wi <id>` (or a dedicated `user/scripts/materialize-wi.py` — follow the approach that avoids breaking existing `lazy-state.py` tests) that: resolves the WI in `ado-mirror.json`; looks up `type` in the config type→pipeline map; routes to `bug-state.py` + `docs/bugs/` (bug-like) or `lazy-state.py` + `docs/features/` (story-like); logs and exits for unknown types (no silent default, no guess)
 - [ ] Bug-like materialization: creates `<COG_DOCS>/docs/bugs/<slug>/ADHOC_BRIEF.md` (verbatim WI title/description/acceptance criteria — no inference), seeds a stub `SPEC.md` with `**Work Item:** AB#<id> (<url>)` in frontmatter; calls the **new bug `enqueue_adhoc`** (see below)
 - [ ] Feature-like materialization: same thin-copy pattern into `<COG_DOCS>/docs/features/<slug>/`; calls `enqueue_adhoc()` at `lazy-state.py` line ~214 **verbatim** (no reimplementation)
-- [ ] **New bug `enqueue_adhoc`** added to `bug-state.py`: mirrors the lazy version; target queue `<COG_DOCS>/docs/bugs/queue.json`; entry schema `{id, name, spec_dir, severity}`; idempotent (second call no-ops if `id` already present)
+- [x] **New bug `enqueue_adhoc`** added to `bug-state.py`: mirrors the lazy version; target queue `<COG_DOCS>/docs/bugs/queue.json`; entry schema `{id, name, spec_dir, severity}`; idempotent (second call no-ops if `id` already present)
 - [ ] `materialized.json` record: append `{wi_id: <id>, feature_id: <slug>, materialized_changedDate: <changedDate from mirror>}` atomically; second materialize of same WI MUST be a no-op (check `wi_id` before writing)
 - [ ] `STALE_UPSTREAM.md` detection: on each materialize probe (or sync event), for every entry in `materialized.json`, compare `mirror[wi_id].changedDate` to `materialized_changedDate`; if newer, write `<item_dir>/STALE_UPSTREAM.md` (body = field-level diff); do NOT clobber `SPEC.md`; the state machine will halt at its next gate
 - [ ] STALE_UPSTREAM halt wiring: add an early-step check in both `lazy-state.py` and `bug-state.py` `compute_state()` (analogous to BLOCKED.md / NEEDS_INPUT.md handling around Steps 3–4.6): if `STALE_UPSTREAM.md` exists for the current item, return `state=stale_upstream` and do not advance; after human absorb/reject, the absorb path re-copies WI fields into `SPEC.md` and updates `materialized_changedDate` in `materialized.json`
@@ -252,6 +252,19 @@ ASSERTIONS:
 **Files modified:**
 - `user/scripts/lazy_core.py` — 6 net-new helpers + `_STALE_UPSTREAM_FILENAME`/`_MATERIALIZED_FILENAME` constants.
 - `user/scripts/test_lazy_core.py` — 12 net-new tests (11 behavioral + symbol-presence).
+
+##### WU-3.2 — `bug-state.py` enqueue_adhoc + STALE_UPSTREAM halt
+**Completed:** 2026-06-02
+**Work completed:**
+- Added to `user/scripts/bug-state.py` (now 1571 lines) via TDD (RED fixtures in `run_smoke_tests()` → GREEN impl). `python bug-state.py --test` = 14/14 PASS.
+- `enqueue_adhoc(repo_root, bug_id, name, spec_dir=None, severity=None)`: prepends `{id, name, spec_dir, severity}` to `docs/bugs/queue.json` (`{"queue":[...]}` shape), atomic via `_atomic_write`. Uses key **`spec_dir`** — the exact key `load_bug_queue()` reads (`entry.get("spec_dir", bug_id)`, line ~257), resolving the `spec_dir`-vs-`spec_path` audit ambiguity. Idempotent **skip-with-diag** on duplicate id: emits `_diag` and returns `{status:"duplicate"}` WITHOUT writing or `_die` — DELIBERATELY diverges from lazy-state's `_die`-on-dup so the WU-3.3 subprocess re-materialize exits 0.
+- `--enqueue-adhoc` CLI flag (+ `--id/--name/--spec-dir/--severity`) wired in `main()` before the `--test` branch, mirroring lazy-state's wiring — this is the subprocess entrypoint WU-3.3 invokes for bug-type WIs.
+- STALE_UPSTREAM halt in `compute_state()`: new constants `TR_STALE_UPSTREAM="stale_upstream"` / `STEP_STALE_UPSTREAM="Step 2.9: stale-upstream"`; the check (`lazy_core.read_stale_upstream(spec_dir) is not None` → return halt state) sits between the `common` dict and the BLOCKED.md check — READ-ONLY, fires before normal gates.
+**Integration notes:**
+- `bug-state.py` reaches the helper via the existing `import lazy_core` (it already uses `lazy_core._DIAGNOSTICS`) — no import-surface change. The lazy-side halt (feature dirs) lands in WU-3.3; the "STALE_UPSTREAM halt wiring" deliverable (both state machines) stays unchecked until then.
+- Regression-clean: `lazy-state.py --test` passes, `test_lazy_core.py` 53/54 (known baseline) after this change.
+**Files modified:**
+- `user/scripts/bug-state.py` — `enqueue_adhoc` + `--enqueue-adhoc` CLI + STALE_UPSTREAM halt + 3 smoke-test fixtures + 2 constants.
 
 ---
 
