@@ -32,6 +32,7 @@ queue.json + per-item SPEC/PHASES/plans/sentinels
 | `lazy-state.py` | **Source of truth** for the feature state machine. Computes the next `/lazy` / `/lazy-cloud` action from `docs/features/`. ~2500 lines incl. an in-file smoke-test harness. Imports `lazy_core`. |
 | `lazy_core.py` | Shared, domain-agnostic helpers (sentinel/plan parsing, deliverable counting, receipt writers, diagnostics infra) imported by both `lazy-state.py` and `bug-state.py`. Owns the per-invocation `_DIAGNOSTICS` list. `write_completed_receipt(..., kind=)`/`has_completion_receipt(..., filename=)` are parameterized so the bug pipeline can write `FIXED.md` (`kind: fixed`). |
 | `bug-state.py` | Bug-lifecycle state machine over `docs/bugs/`. Same JSON contract as `lazy-state.py`; research/Gemini/stub steps dropped; terminal action is **archive-on-fix** (`__mark_fixed__`). Hybrid ordering (`queue.json` overrides, then severity + Discovered date). In-file `--test` smoke harness. Imports `lazy_core`. |
+| `lazy_coord.py` | **Concurrency plane** (Phase 4) — net-new, **kept separate from `lazy_core.py`**. Stdlib-only `os.mkdir` global lock + fencing-token leases (`leases.json`), heartbeat, expiry reclamation, and worktree-pool provisioning + scrub-to-clean. Imported by the `lazy-worker` skill (and available to the state machines). In-file `--test` smoke harness (5 concurrency fixtures). See "Concurrency plane" below. |
 | `claude-bash-env.sh` | Restores `node`/`cargo` onto PATH for Claude Code's non-login Bash (sourced via `BASH_ENV`). Unrelated to the pipeline. |
 
 ## The skill family (thin wrappers)
@@ -50,6 +51,7 @@ All wrappers run `lazy-state.py`, dispatch the one named sub-skill (or perform a
 | `lazy-bug` | user-level (`user/skills/`) | `bug-state.py` | One sub-skill per invocation over `docs/bugs/`; `__mark_fixed__` archive-on-fix terminal. |
 | `lazy-bug-batch` | user-level | `bug-state.py` | Autonomous bug loop; spawns one Opus subagent per cycle. |
 | `lazy-bug-status` | user-level | `bug-state.py` (read-only) | Bug dashboard; never acts. |
+| `lazy-worker` | user-level | `lazy_coord.py` + `lazy-state.py --feature-id` / `bug-state.py --bug-id` | One concurrent worker session: claims a leased item (+ worktree slot), implements → opens a GH PR, finalizes under the lock. Bounded by `pool_size`. |
 
 > **Why some are repo-scoped:** `lazy`/`-batch`/`-status` are user-level but are in
 > practice AlgoBooth-flavored (they read `$ALGOBOOTH_REAL_AUDIO_DEVICE`, dispatch
@@ -119,6 +121,42 @@ python3 lazy-state.py --test                # run the in-file fixture smoke test
 ```
 
 Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json).
+
+## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
+
+The concurrency plane lets multiple `lazy-worker` sessions run different queue items at once
+without corrupting shared state. **All shared-state mutation goes through one writer under a
+global lock** — this is the load-bearing invariant; violating it corrupts `leases.json` /
+`queue.json` / `materialized.json`.
+
+- **Global lock = `os.mkdir(<COG_DOCS>/docs/work/global.lock.d)`** — atomic on NTFS. Acquire =
+  mkdir succeeds; `FileExistsError` = held → exponential backoff until timeout → `TimeoutError`.
+  Release = `os.rmdir`. **Never `fcntl`/`flock`/`LockFileEx`/`msvcrt`.** The lock is **NOT
+  re-entrant** — never call one public locked function from inside another (reclamation inside
+  `acquire_lease` uses a private inline helper, not the public `reclaim_expired`).
+- **Every `leases.json` write happens under the lock and via atomic temp-file `os.replace`**
+  (`acquire_lease` / `heartbeat` / `reclaim_expired` / `release_lease`). `verify_fencing` is the
+  only read-only op (no lock).
+- **Fencing tokens prevent zombie writes.** `acquire_lease` increments `term_token` per claim and
+  returns it; the worker carries that token and `verify_fencing(expected_token=term_token)` BEFORE
+  every `queue.json` transition. A superseded worker raises `FencingError` and must abort.
+- **`leases.json` LOCKED schema** (per entry, keyed `str(wi_id)`):
+  `{worker_pid:int, worktree_slot:str, term_token:int, heartbeat_timestamp:<ISO-8601 UTC 'Z'>, ttl_seconds:int}`.
+- **Time is injected** (`now` epoch float, default `time.time()`) so `--test` reclamation is deterministic.
+- **Scoping flags:** `lazy-state.py --feature-id <slug>` and `bug-state.py --bug-id <id>` restrict
+  `compute_state()` to a single queue item. Both are **opt-in and backward-compatible** — absent the
+  flag, behavior is byte-identical to single-current (guarded by the `baseline-regression-default`
+  smoke fixtures). The new params are **appended** to `compute_state()` (positional callers unbroken).
+- **Worktree pool:** `provision_pool` adds `pool/wt-NN` worktrees on the cognito repo and applies
+  `gc.auto 0` / `core.filemode false` / `core.autocrlf input`; `scrub_slot` runs the exact
+  ordered reset (rm `index.lock` → `fetch` under lock → `checkout --detach origin/main` →
+  `reset --hard` → `clean -fdx` → `checkout -b p/<wi_id>-<slug>`; **no submodule step**).
+- **Gate:** `python lazy_coord.py --test` (5 fixtures). Because the scoping flags touch both state
+  machines' shared import surface, run the FULL set after any change here: `lazy_coord.py --test`,
+  `lazy-state.py --test`, `bug-state.py --test`, `test_lazy_core.py`.
+
+> **PR shepherding (Phase 5) is DEFERRED.** `lazy-worker` opens the PR and stops — it never polls
+> CI, auto-replies to comments, or auto-merges.
 
 ## Coupling Rule (HARD REQUIREMENT)
 
