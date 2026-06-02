@@ -30,6 +30,8 @@ Optional:
 - `phases: [<phase-number-or-letter>, ...]` — which PHASES.md phases this plan implements. Used by `lazy-state.py` to pick the lowest-phase-numbered plan first instead of sorting alphabetically. Always include this when the plan covers one or more specific phases.
 - `deliverables: [<phase-N-WU-A>, ...]` — explicit list of PHASES.md deliverable IDs the plan covers. Reserved for a future deterministic completion check (§5 stretch goal). Not currently parsed by `lazy-state.py`.
 - `superseded_by: <plan-filename>` — when a plan was abandoned in favor of another. Treat as Complete for state-machine purposes.
+- `source_branch: <git branch the plan was authored against>` — advisory provenance. NOT parsed by `lazy-state.py`; used by `/execute-plan` to detect plan/branch drift (when the executing branch differs, file:line anchors and named producers may no longer exist). Producers SHOULD populate it.
+- `source_commit: <short SHA at authoring time>` — advisory provenance, paired with `source_branch`. NOT parsed by `lazy-state.py`; lets `/execute-plan` gauge how far the working tree has moved since the plan was authored. Producers SHOULD populate it.
 
 ### `kind` → writer-skill mapping
 

@@ -14,7 +14,6 @@ Projects use `.claude/skill-config/` for project-specific quality gates and skil
 
 ### Work (Cognito Forms)
 - **Cognito Forms/** — Main product. Multi-tenant form builder. .NET Framework 4.7.2 backend + Vue 2.7/TypeScript/Nx frontend. Has extensive `CLAUDE.local.md` with build commands, architecture, and workflow skills. This is the most complex repo in the workspace.
-- **Cognito Forms-side-repo/** — Mirror of Cognito Forms for parallel worktree experiments.
 - **Cognito Forms.wiki/** — Azure DevOps wiki content.
 - **cognito-docs/** — Documentation sync repo.
 - **Overwatch/** — Internal Cognito admin/monitoring tool (.NET).

@@ -96,6 +96,9 @@ TDD DISCIPLINE (for TDD work units):
 - Do tests cover the deliverables' acceptance criteria?
 - Are test assertions specific enough to catch regressions (not overly broad or tautological)?
 - Did the implementation agent satisfy the test contract without modifying test files?
+- **Assertion-vs-intent:** each test's assertion must match the behavior its name/description claims. A green test whose assertion contradicts its own name (e.g. a `..._ReturnsTrue` test that actually asserts `Unknown`/`False`) is **defective** → `NEEDS-REWORK`. Ground-truth diffing cannot catch this (the test genuinely passes) — read the assertion against the name.
+- **Would-it-fail check:** a passing test must be one that would FAIL if the behavior under test were removed or inverted. Tests that pass against a default/empty/null value, or that would still pass with the feature deleted, are tautological → `NEEDS-REWORK`.
+- **RED-for-the-right-reason:** for TDD work units, confirm the test was genuinely RED before implementation for the documented reason — not a setup/compile/import error, and not asserting the same value that the broken or absent implementation already returns by default.
 
 SECONDARY — Code quality:
 - Performance: any obvious inefficiencies or scalability concerns?

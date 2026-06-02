@@ -20,6 +20,8 @@ For each completed work unit, update PHASES.md:
    - `path/to/file` — [what changed]
    ```
 
+   **Notes must reflect verified disk state, not sub-agent narrative.** Before writing the "Work completed" / "Files modified" sections, confirm them against reality: re-read the actual changed files and the real test-run output — do not transcribe a sub-agent's prose description of what it built. If a previously written notes block is contradicted by the current implementation (e.g. it describes different method names or structure than the code now on disk), correct or strike the stale block rather than appending a contradictory one.
+
 3. **Verify the write:** Re-read PHASES.md from disk after editing. Confirm:
    - [ ] All completed deliverables show `- [x]` (not still `- [ ]`)
    - [ ] Implementation Notes block is present with today's date

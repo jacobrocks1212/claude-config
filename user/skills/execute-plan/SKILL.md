@@ -200,12 +200,18 @@ For each step/batch defined in the plan:
 
 1. **Load components** — Read the component files listed for this step
 2. **Update task status** — Mark the relevant task(s) as `in_progress`
-3. **Execute** — Follow the plan's instructions for this step exactly
-4. **Verify** — Complete any verification/review gates the plan specifies
+3. **Execute (with pre-dispatch drift reconciliation)** — Before dispatching a work unit, confirm its targets still exist on the current branch. Plan file:line anchors and named producers are **advisory** and may have drifted since the plan was authored — especially if the current branch differs from the plan's `source_branch` (see `~/.claude/skills/_components/plan-frontmatter.md`). Confirm each work unit's target (file, symbol, or producer call-site) still exists. If a target is absent, do NOT dispatch an agent to flail against it — reconcile: locate the equivalent on the current branch, or record the work unit as N/A / subsumed with a one-line rationale in PHASES.md, and continue. Then follow the plan's instructions for this step exactly.
+4. **Verify (MANDATORY BLOCKING review gate)** — Run the full **Batch Review Gate** injected below (the shared `subagent-review.md` protocol) before you touch PHASES.md, commit, or start the next batch. Its Step 1.5 Ground-Truth Verification Gate — independently re-running every subagent's `GROUND-TRUTH OUTPUT` commands from your own shell and diffing the output — is mandatory and blocking: a `no`/`mismatch` outcome (or a semantically-defective test caught by the TDD-discipline checks) forces `NEEDS-REWORK` no matter how clean the prose report reads. Never accept a subagent's "tests pass / work done" self-report without this independent re-verification. Then complete any additional verification/review gates the plan specifies.
 5. **Update PHASES.md (BLOCKING GATE)** — Read `~/.claude/skills/_components/phases-update.md` and follow it. Check off completed deliverables, write Implementation Notes, then re-read PHASES.md to verify the write landed. Do NOT proceed until verified.
 6. **Update task status** — Mark completed task(s) as `completed`
 7. **Satisfy checklist** — Must include: "PHASES.md updated and verified for this batch"
 8. **Proceed** — Move to the next step/batch
+
+#### Batch Review Gate (MANDATORY — injected, BLOCKING)
+
+This is the per-batch review protocol referenced by Per-Step Protocol item 4. It is **mandatory and blocking**: run it in full once a batch's subagents complete and BEFORE any PHASES.md update / commit / next batch. Do NOT shortcut it ("read a couple files, looks fine, move on" is a protocol violation). The load-bearing parts are (a) the Step 1.5 Ground-Truth Verification Gate — which catches falsified subagent reports by re-running their `GROUND-TRUTH OUTPUT` commands independently — and (b) the TDD-discipline semantic-defect checks, which catch vacuous/tautological tests that a green test count would otherwise hide. A subagent reporting "N/N passing" is a hypothesis until you re-verify it yourself.
+
+!`cat ~/.claude/skills/_components/subagent-review.md`
 
 ### Blocking Issues
 

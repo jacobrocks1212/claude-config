@@ -55,6 +55,10 @@ All PR descriptions MUST follow this exact structure:
    - Omit obvious supporting files (DTOs, test implementations)
    - Focus on components that represent key decisions
 
+9. **No em dashes**: The PR description MUST NOT contain em dashes (`—`). Use a comma, colon, parentheses, or two separate sentences instead. This applies to the generated description text only, not to file names or code identifiers.
+
+10. **Work item references**: When the branch addresses a work item, reference it as `AB#<WI_ID>` (e.g., `AB#56565`). Infer the WI ID from the branch name, commit messages, or the conversation. Place the reference in the Background section. Use the bare `AB#<WI_ID>` form, not a URL or `#<WI_ID>`.
+
 ## File Annotation Conventions
 
 | Annotation | When to Use |
@@ -153,3 +157,18 @@ Group test files by what they cover (write path tests, repository tests, etc.)
 - No journey language (replaced, superseded, previous)
 - All identifiers in backticks
 - Architecture-first, not file-first
+- No em dashes (`—`) anywhere in the description
+- Work item referenced as `AB#<WI_ID>` (if a WI applies)
+
+### Step 8: Deliver the Description
+
+Decide where the finished description goes based on whether a feature doc directory exists for this work:
+
+1. **Infer the feature doc directory from the conversation.** Look for a feature directory already in play this session (e.g., a `plans/<feature>/` folder, a `.claude.local/knowledge/features/<feature>/` directory, or a SPEC/PHASES doc location referenced in chat). The directory associated with the current branch's feature is the target.
+
+2. **If a feature doc directory exists:**
+   - If a PR description doc already exists there (e.g., `PR_DESCRIPTION.md` or similar), **update it in place** with the new content.
+   - Otherwise, **write a new `PR_DESCRIPTION.md`** (or a clearly-named `*-pr-description.md`) into that directory.
+   - Tell the user the path you wrote to.
+
+3. **If no feature doc directory can be inferred:** Do NOT write a file. Return the description in a **single fenced code block** for easy copy-paste. Watch the formatting: the description itself contains fenced code blocks and backticks, so wrap the whole thing in a higher-level fence (e.g., a `````md` four-backtick fence) so the inner triple-backtick blocks render correctly inside it.

@@ -44,6 +44,10 @@
     Example: "This is ~2 sessions" or "Single session, straightforward"
   </estimates>
 
+  <orchestration>
+    **One writer per file.** Never run a background or parallel agent that edits files while you (or another agent) also edit those same files — concurrent writers silently clobber each other. If a sweep is delegated to a background agent, treat its target files as owned by it: do not edit them in-session, and block on the agent's completion before touching or verifying them. If you take over a file the agent was editing, stop the agent first (`TaskStop`).
+  </orchestration>
+
   <scripts>
     ## project-skills.py — Skill Projection
 

@@ -102,3 +102,7 @@ Rules:
 ```
 
 Then the `GROUND-TRUTH OUTPUT` fenced block defined above. Your job ends when both are produced — do NOT run `git add`, `git commit`, or `git push`. The orchestrator handles commits after reviewing your work.
+
+### Git safety (MANDATORY)
+
+When reverting build-regenerated or collateral files, use ONLY a **scoped** revert of explicit paths (`git checkout -- <path>`). NEVER run repo-wide destructive git commands — `git checkout .` / `git checkout -- .` / `git clean` / `git reset --hard`. These delete untracked files (newly created source/test files that are not yet committed) with no recovery. If unsure which files a build regenerated, list them with `git status --short` and revert each by explicit path.
