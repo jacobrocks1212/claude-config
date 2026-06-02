@@ -65,16 +65,16 @@ N/A — no runtime-observable behavior in this phase (environment provisioning o
 **Scope:** Implement `user/scripts/ado-sync.py` — the headless WIQL poller that writes the ADO mirror to disk. Covers keyring auth, delta watermark, 200-id chunked hydration, atomic file write, full mirror schema (including PR/CI fields and `linkedPRs[]` parsing), Windows Task Scheduler registration, and `--test` fixtures covering the three critical correctness properties.
 
 **Deliverables:**
-- [ ] `user/scripts/ado-sync.py` (net-new): CLI entry point with `--repo-root <COG_DOCS>`, `--config <skill-config-yml>`, `--test`, `--once` (single poll, no scheduler)
-- [ ] Keyring auth: `keyring.get_password("ado-local-poller", "vso_pat_readonly")` — fail fast with a clear error if absent
-- [ ] WIQL delta query: `SELECT [System.Id] FROM workitems WHERE (AssignedTo = @Me OR AreaPath UNDER 'Cognito Forms\Poseidon') AND ChangedDate >= '<lastSync-UTC>Z' ORDER BY ChangedDate ASC` — dates MUST be UTC + `Z` suffix; watermark persisted alongside the mirror (or embedded in `ado-mirror.json`)
-- [ ] 200-id chunked hydration: `wit/workitems?ids=<chunk>&$expand=all` — ids sliced into ≤200; merge batches before writing; log chunk count
-- [ ] Atomic write: write to a temp file alongside the target, then `os.replace(tmp, target)` — no partial reads possible
-- [ ] Full mirror schema written to `<COG_DOCS>/docs/work/ado-mirror.json`: `syncedAt`, `watermark`, `query` (identity snapshot), `workItems[]` — each entry: `{id, type, title, state, assignedTo, areaPath, iteration, parentId, url, acceptanceCriteria, description, changedDate, linkedPRs[], pr, prStatus, autotestStatus, autotestBuildId, autotestRun, materialized}`
-- [ ] `linkedPRs[]` parsing: extract from `ArtifactLink` relations matching `vstfs:///GitHub/PullRequest/<repoGuid>%2f<prNumber>` → `{prNumber, repo: "cognitoforms/cognito"}`; repo GUID is constant — hardcode or embed in config (no HierarchyQuery)
-- [ ] Custom fields: copy `Custom.PR` → `pr`, `Custom.PRStatus` → `prStatus`, `Custom.AutotestStatus/BuildID/Run` → `autotestStatus/autotestBuildId/autotestRun` verbatim
-- [ ] Windows Task Scheduler registration: `schtasks /create` command or XML task definition; runs `ado-sync.py --once --repo-root <COG_DOCS>` every N minutes (N from config), headless (no window)
-- [ ] `--test` mode: three fixture-driven assertions (see Testing Strategy)
+- [x] `user/scripts/ado-sync.py` (net-new): CLI entry point with `--repo-root <COG_DOCS>`, `--config <skill-config-yml>`, `--test`, `--once` (single poll, no scheduler)
+- [x] Keyring auth: `keyring.get_password("ado-local-poller", "vso_pat_readonly")` — fail fast with a clear error if absent
+- [x] WIQL delta query: `SELECT [System.Id] FROM workitems WHERE (AssignedTo = @Me OR AreaPath UNDER 'Cognito Forms\Poseidon') AND ChangedDate >= '<lastSync-UTC>Z' ORDER BY ChangedDate ASC` — dates MUST be UTC + `Z` suffix; watermark persisted alongside the mirror (or embedded in `ado-mirror.json`)
+- [x] 200-id chunked hydration: `wit/workitems?ids=<chunk>&$expand=all` — ids sliced into ≤200; merge batches before writing; log chunk count
+- [x] Atomic write: write to a temp file alongside the target, then `os.replace(tmp, target)` — no partial reads possible
+- [x] Full mirror schema written to `<COG_DOCS>/docs/work/ado-mirror.json`: `syncedAt`, `watermark`, `query` (identity snapshot), `workItems[]` — each entry: `{id, type, title, state, assignedTo, areaPath, iteration, parentId, url, acceptanceCriteria, description, changedDate, linkedPRs[], pr, prStatus, autotestStatus, autotestBuildId, autotestRun, materialized}`
+- [x] `linkedPRs[]` parsing: extract from `ArtifactLink` relations matching `vstfs:///GitHub/PullRequest/<repoGuid>%2f<prNumber>` → `{prNumber, repo: "cognitoforms/cognito"}`; repo GUID is constant — hardcode or embed in config (no HierarchyQuery)
+- [x] Custom fields: copy `Custom.PR` → `pr`, `Custom.PRStatus` → `prStatus`, `Custom.AutotestStatus/BuildID/Run` → `autotestStatus/autotestBuildId/autotestRun` verbatim
+- [x] Windows Task Scheduler registration: `schtasks /create` command or XML task definition; runs `ado-sync.py --once --repo-root <COG_DOCS>` every N minutes (N from config), headless (no window)
+- [x] `--test` mode: three fixture-driven assertions (see Testing Strategy)
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] Running `ado-sync.py --once` twice on unchanged ADO state produces byte-identical `workItems[]` arrays (modulo `syncedAt` and `watermark`)
@@ -107,6 +107,23 @@ ASSERTIONS:
 - The `watermark` field in the mirror is the only mutable coordination state Phase 1 owns; Phase 3 adds `materialized` flags on top of the same file (must merge cleanly)
 - Phase 3 reads `changedDate` from each WI entry to compare against `materialized_changedDate`; the field MUST be present and ISO-8601 UTC+Z on every entry
 - The `query` identity snapshot embedded in the mirror lets Phase 2 display the WIQL scope in the dashboard's sync-health panel
+
+#### Implementation Notes (Phase 1)
+**Completed:** 2026-06-02
+**Work completed:**
+- `user/scripts/ado-sync.py` (net-new, 643 lines) authored via TDD (RED test-agent → GREEN impl-agent). `python ado-sync.py --test` exits 0 with `3/3 fixtures passed`.
+- Pure helpers (test-covered): `chunk_ids` (≤200, order-preserving), `merge_work_items` (id-keyed, delta-wins, sorted by `int(id)`), `compute_watermark` (lexicographic max over `changedDate` + prior), `serialize_mirror` (`json.dumps(indent=2, sort_keys=True, ensure_ascii=False)`).
+- Network/IO path (not fixture-covered — exercised by Runtime Verification, still unchecked): `get_pat` (lazy keyring, fail-fast non-zero), `fetch_delta_ids` (WIQL POST, UTC+Z watermark, basic-auth PAT), `hydrate` (chunked `?ids=...&$expand=all`), `work_item_from_api` (raw→LOCKED schema), `build_mirror`, `install_task` (`schtasks /create` minute-interval), `_atomic_write` (`tempfile.mkstemp`+`os.replace`, mirrors `lazy_core`), `_load_config` (PyYAML + minimal fallback), `_load_mirror`.
+**Integration notes:**
+- LOCKED mirror schema field names are emitted verbatim by `work_item_from_api` — all 19 keys present, `materialized` initialized `false`, `changedDate` normalized to `YYYY-MM-DDTHH:MM:SSZ` via `_normalize_changed_date`. Phases 2/3/4 consume these names; do not rename.
+- `parse_linked_prs` matches `vstfs:///GitHub/PullRequest/<guid>%2f<prNumber>` (case-insensitive) → `{prNumber:int, repo:"cognitoforms/cognito"}`; default `repo` arg keeps the constant out of per-call config.
+- ADO org is hardcoded `cognitoforms` in `fetch_delta_ids`/`hydrate` URLs (`https://dev.azure.com/cognitoforms/...`); project/areaPath read from config `wiql_identity`. If the real ADO org slug differs, adjust there — runtime-only, not test-covered.
+**Pitfalls & guidance:**
+- `--test` is fully offline: keyring/requests/yaml are all lazy-imported inside the functions that need them, so the fixtures run with zero non-stdlib deps. Do not hoist those imports to module top.
+- Windows console is cp1252 — run gates with `PYTHONUTF8=1` or unicode in diagnostics crashes the runner.
+- `pr_artifact_repo_guid` in config is still the `TODO_FILL_FROM_REAL_WI_ARTIFACTLINK` placeholder; `parse_linked_prs` does not depend on it (regex is guid-agnostic), so this is non-blocking until a real ArtifactLink is available to confirm the GUID.
+**Files modified:**
+- `user/scripts/ado-sync.py` — net-new poller (all Phase 1 deliverables).
 
 ---
 
