@@ -373,13 +373,20 @@ def build_mirror(
 
 
 def install_task(repo_root: Path) -> None:
-    """Install a Windows Scheduled Task that runs ado-sync.py --once periodically.
+    """Install a Windows Scheduled Task that refreshes the mirror AND re-renders
+    DASHBOARD.md periodically.
 
-    Uses schtasks /create with a minute-interval trigger. The task runs
-    headless (no window) as the current user. Interval is derived from
-    config pool.heartbeat_interval_seconds (default 600s = 10 min).
+    Generates a wrapper .cmd that runs `ado-sync.py --once` followed by
+    `work-status.py --markdown`, then schedules it via schtasks with a
+    minute-interval trigger. Pointing the task at the wrapper avoids schtasks'
+    fragile nested-quote handling for multi-command triggers. The wrapper is
+    machine-specific (absolute python + repo paths) so it is gitignored, not
+    committed. The task runs headless as the current user; interval is derived
+    from config pool.heartbeat_interval_seconds (default 600s = 10 min).
     """
     script_path = Path(__file__).resolve()
+    scripts_dir = script_path.parent
+    render_script = scripts_dir / "work-status.py"
     python_exe = sys.executable
 
     # Load config to get interval
@@ -388,24 +395,56 @@ def install_task(repo_root: Path) -> None:
     interval_seconds = pool.get("heartbeat_interval_seconds", 600)
     interval_minutes = max(1, interval_seconds // 60)
 
-    task_name = "AdoMirrorSync"
-    cmd = f'"{python_exe}" "{script_path}" --once --repo-root "{repo_root}"'
-
-    schtasks_cmd = (
-        f'schtasks /create /tn "{task_name}" /tr {cmd!r} '
-        f"/sc minute /mo {interval_minutes} /f /rl LIMITED"
+    # Wrapper chains sync -> render. PYTHONUTF8=1 so Unicode in ADO titles does
+    # not crash the cp1252 console under the headless task host.
+    wrapper_path = scripts_dir / "_ado-mirror-sync.cmd"
+    wrapper = (
+        "@echo off\r\n"
+        "set PYTHONUTF8=1\r\n"
+        f'"{python_exe}" "{script_path}" --once --repo-root "{repo_root}"\r\n'
+        f'"{python_exe}" "{render_script}" --markdown --repo-root "{repo_root}"\r\n'
     )
-    print(f"Installing scheduled task '{task_name}' (every {interval_minutes} min)...")
-    print(f"Command: {schtasks_cmd}")
-    exit_code = os.system(schtasks_cmd)
+    wrapper_path.write_text(wrapper, encoding="ascii")
+
+    task_name = "AdoMirrorSync"
+    # Register via PowerShell's ScheduledTasks module rather than schtasks: schtasks
+    # cannot clear the default battery start-conditions, which leave the task stuck
+    # "Queued" on a laptop (DisallowStartIfOnBatteries / StopIfGoingOnBatteries).
+    # -StartWhenAvailable catches up a missed run after the machine wakes from sleep;
+    # -ExecutionTimeLimit caps a hung instance so IgnoreNew never wedges the schedule.
+    ps_script = f"""$ErrorActionPreference = 'Stop'
+$action   = New-ScheduledTaskAction -Execute '{wrapper_path}'
+$trigger  = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes {interval_minutes})
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName '{task_name}' -Action $action -Trigger $trigger -Settings $settings -User "$env:USERNAME" -Force | Out-Null
+"""
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".ps1", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(ps_script)
+        ps_path = handle.name
+
+    print(f"Installing scheduled task '{task_name}' (sync + render every {interval_minutes} min)...")
+    print(f"Wrapper: {wrapper_path}")
+    try:
+        exit_code = os.system(
+            f'powershell -NoProfile -ExecutionPolicy Bypass -File "{ps_path}"'
+        )
+    finally:
+        try:
+            os.unlink(ps_path)
+        except OSError:
+            pass
     if exit_code != 0:
         print(
-            f"ERROR: schtasks returned exit code {exit_code}. "
-            "Try running as Administrator.",
+            f"ERROR: PowerShell task registration returned exit code {exit_code}.",
             file=sys.stderr,
         )
         sys.exit(1)
-    print(f"Task '{task_name}' installed successfully.")
+    print(
+        f"Task '{task_name}' installed successfully "
+        f"(runs on battery, catches up after sleep)."
+    )
 
 
 # ---------------------------------------------------------------------------
