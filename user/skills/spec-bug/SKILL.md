@@ -1,7 +1,7 @@
 ---
 name: spec-bug
 description: Investigate a complex bug or issue — gather evidence, verify symptoms, produce an investigation spec, then optionally transition to /fix
-argument-hint: [bug description or area of concern]
+argument-hint: [bug description, area of concern, or work-item id]
 ---
 
 # Spec Bug
@@ -22,6 +22,8 @@ $ARGUMENTS
 ## Step 1: Context Gathering (Parallel Subagents)
 
 Launch parallel research subagents to collect all available evidence. Each subagent returns structured findings. Adapt the subagent set based on what's available — skip subagents whose data sources don't exist.
+
+If the user's description is (or references) a work-item id, the work-item context subagent (F, below) fetches that item and its related items first, so the rest of the investigation is grounded in what was actually reported.
 
 ### Subagent A: Conversation & Session History
 
@@ -67,6 +69,8 @@ Report format: list of related documents with relevance summary for each.
 4. Note any code that looks suspicious, fragile, or inconsistent with surrounding patterns
 
 Report format: annotated code path summary with flagged areas of concern.
+
+!`cat .claude/skill-config/spec-bug-work-item-context.md 2>/dev/null || cat ~/.claude/skills/_components/spec-bug-work-item-context.md`
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: manual-testing
+name: write-manual-testing-doc
 description: Write manual testing docs (usually informed by SPEC and PHASES docs) focused on behavior, not implementation
 argument-hint: [path-to-feature-dir or description]
 ---
