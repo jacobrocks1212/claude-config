@@ -439,6 +439,26 @@ def _escape_md_pipe(text: str) -> str:
     return text.replace("|", r"\|")
 
 
+# Base for constructing an ADO work-item edit URL when a mirror record's own
+# `url` is absent (e.g. queue/lease items that aren't hydrated from ADO).
+_ADO_EDIT_BASE = (
+    "https://dev.azure.com/cognitoforms/"
+    "54d9f307-1306-430c-b206-1a55b294a94b/_workitems/edit/"
+)
+
+
+def _wi_link(wi_id, url: str | None = None) -> str:
+    """Render a work-item id as a Markdown link to the item in ADO.
+
+    Prefers the record's own `url`; falls back to the canonical edit URL built
+    from the id. Returns "" for a missing id so table cells stay empty.
+    """
+    if wi_id is None or wi_id == "":
+        return ""
+    href = url or f"{_ADO_EDIT_BASE}{wi_id}"
+    return f"[{wi_id}]({href})"
+
+
 def order_board(wis: list[dict], board_columns: list[str]) -> "OrderedDict[str, list]":
     """Bucket WIs into an ordered mapping keyed by board_columns + '(no column)'.
 
@@ -628,7 +648,7 @@ def render_markdown(
 
     def _card_line(wi: dict) -> str:
         parts = [
-            f"**AB#{wi.get('id')}** {_escape_md_pipe(wi.get('title') or '(no title)')}",
+            f"**{_wi_link(wi.get('id'), wi.get('url'))}** {_escape_md_pipe(wi.get('title') or '(no title)')}",
             _escape_md_pipe(wi.get("assignedTo") or "Unassigned"),
         ]
         pr_nums = [
@@ -689,7 +709,7 @@ def render_markdown(
                 pr_num = self_pr.get("prNumber")
                 pr_repo = self_pr.get("repo", "")
                 pr_info = f"PR #{pr_num} ({_escape_md_pipe(pr_repo)})"
-            lines.append(f"| {wi_id} | {title} | {priority} | {pr_info} |")
+            lines.append(f"| {_wi_link(wi_id, item.get('url'))} | {title} | {priority} | {pr_info} |")
     else:
         lines.append("_(none)_")
     lines.append("")
@@ -716,7 +736,7 @@ def render_markdown(
                 stage = _escape_md_pipe(lease.get("stage") or "")
                 stale_flag = " **[STALE]**" if lease.get("stale") else ""
                 lines.append(
-                    f"| {wi_id} | {branch} | {started} | {worker} | {stage}{stale_flag} |"
+                    f"| {_wi_link(wi_id, lease.get('url'))} | {branch} | {started} | {worker} | {stage}{stale_flag} |"
                 )
     lines.append("")
 
@@ -737,16 +757,14 @@ def render_markdown(
         if not my_wis:
             lines.append("_(none)_")
         else:
-            lines.append("| WI | Title | State | PR Status | URL |")
-            lines.append("| --- | --- | --- | --- | --- |")
+            lines.append("| WI | Title | State | PR Status |")
+            lines.append("| --- | --- | --- | --- |")
             for wi in my_wis:
-                wi_id = wi.get("id", "?")
+                wi_link = _wi_link(wi.get("id"), wi.get("url"))
                 title = _escape_md_pipe(wi.get("title") or "(no title)")
                 state = wi.get("state", "?")
                 pr_status = _escape_md_pipe(wi.get("prStatus") or "")
-                url = wi.get("url") or ""
-                url_cell = f"[link]({url})" if url else ""
-                lines.append(f"| {wi_id} | {title} | {state} | {pr_status} | {url_cell} |")
+                lines.append(f"| {wi_link} | {title} | {state} | {pr_status} |")
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -1294,7 +1312,7 @@ def run_self_tests() -> int:
         sources_i = load_sources(repo_i)
         md_i = render_markdown(sources_i)
 
-        assert "AB#9001" not in md_i, \
+        assert "[9001]" not in md_i, \
             f"Closed item with stale board column must not render as a card; got:\n{md_i}"
         assert "No cards on the board" in md_i, \
             f"Board must report no cards when only a closed/stale item is present; got:\n{md_i}"
@@ -1444,8 +1462,10 @@ def run_self_tests() -> int:
             f"Expected '## Poseidon Board' in output, got: {out_m!r}"
         assert "### In Progress (2)" in out_m, \
             f"Expected 'In Progress (2)' column header in output, got: {out_m!r}"
-        assert "**AB#1**" in out_m and "**AB#2**" in out_m, \
-            f"Expected AB#1 and AB#2 cards in output, got: {out_m!r}"
+        assert "**[1](" in out_m and "**[2](" in out_m, \
+            f"Expected linked id cards [1] and [2] in output, got: {out_m!r}"
+        assert "AB#" not in out_m, \
+            f"Card ids must render as plain linked ids, not AB# prefixed, got: {out_m!r}"
         assert "WI Three" not in out_m, \
             f"New-column card must be excluded from board view, got: {out_m!r}"
         assert "WI Four" not in out_m, \
@@ -1484,12 +1504,12 @@ def run_self_tests() -> int:
         )
         assert "\U0001f3af" not in out_n, \
             f"Active-feature section must be gone (no 🎯 header), got: {out_n!r}"
-        assert "AB#54423" not in out_n, \
+        assert "[54423]" not in out_n, \
             f"Portfolio parent (Feature) must be excluded from board, got: {out_n!r}"
-        assert "AB#101" not in out_n, \
+        assert "[101]" not in out_n, \
             f"New-column child must be hidden from board, got: {out_n!r}"
-        assert "**AB#100**" in out_n, \
-            f"Expected In Progress child card 'AB#100' in output, got: {out_n!r}"
+        assert "**[100](" in out_n, \
+            f"Expected In Progress child card linked id [100] in output, got: {out_n!r}"
         assert "#555" in out_n, \
             f"Expected '#555' PR link for Child A in output, got: {out_n!r}"
         print("PASS fixture_n_board_excludes_portfolio_and_new")
