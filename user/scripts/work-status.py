@@ -545,6 +545,17 @@ def render_markdown(
 
     wi_by_id: dict[int, dict] = {int(wi["id"]): wi for wi in work_items}
 
+    # Items shown on the board and in feature groups: hide stale terminal items
+    # (closed/done/removed/resolved older than 5 days) unless --all-team. The
+    # full work_items list is retained as wi_by_id so parent-chain resolution
+    # still walks through long-closed ancestors.
+    board_wis = work_items
+    board_hidden = 0
+    if mirror is not None and not all_team:
+        board_wis, board_hidden = filter_recent_team(
+            work_items, mirror.get("syncedAt", ""), 5
+        )
+
     self_pr: dict | None = None
     branch_wi_id: int | None = None
     if current_branch:
@@ -570,22 +581,28 @@ def render_markdown(
     # ------------------------------------------------------------------
     lines.append("## Poseidon Board")
     lines.append("")
-    has_board = any("boardColumn" in wi for wi in work_items)
+    has_board = any("boardColumn" in wi for wi in board_wis)
     if not has_board:
         lines.append("_No board data yet — run `/dashboard --refresh` to populate board columns._")
     else:
-        buckets = order_board(work_items, board_columns)
+        buckets = order_board(board_wis, board_columns)
         lines.append("| Column | # |")
         lines.append("| --- | --- |")
         for col in board_columns:
             lines.append(f"| {_escape_md_pipe(col)} | {len(buckets[col])} |")
+    if board_hidden:
+        lines.append("")
+        lines.append(
+            f"_Hiding {board_hidden} terminal item(s) older than 5 days. "
+            "Re-run with --all-team to include._"
+        )
     lines.append("")
 
     # ------------------------------------------------------------------
     # Section: Active Feature (only when active_feature_id is provided)
     # ------------------------------------------------------------------
     if active_feature_id is not None:
-        groups = group_by_feature(work_items, active_feature_id, wi_by_id)
+        groups = group_by_feature(board_wis, active_feature_id, wi_by_id)
         active_group = groups[0] if groups and groups[0].get("feature_id") == active_feature_id else None
         if active_group is not None:
             lines.append(f"### \U0001f3af Active Feature: {_escape_md_pipe(active_group['title'])} (AB#{active_feature_id})")
