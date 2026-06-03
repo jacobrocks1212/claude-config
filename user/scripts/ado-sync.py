@@ -285,6 +285,73 @@ def build_wiql(area_path: str, watermark: str) -> str:
     )
 
 
+# Display name / email forms that identify the current user in stored mirror
+# records. Mirrors work-status.py's _MY_IDENTITIES (minus the @Me query token,
+# which is never a stored value).
+_MY_IDENTITIES = frozenset({"jacob madsen", "jacob@cognitoforms.com"})
+
+
+def _looks_like_me(assigned_to: str | None) -> bool:
+    """True if a stored assignedTo value identifies the current user."""
+    if not assigned_to:
+        return False
+    return assigned_to.strip().lower() in _MY_IDENTITIES
+
+
+def reconcile_assigned_ids(mirror_items: list[dict], current_mine_ids) -> set[int]:
+    """Return work-item ids whose 'assigned to me' state in the mirror is stale
+    and must be re-hydrated.
+
+    The incremental delta query matches `AssignedTo = @Me OR AreaPath UNDER <team>`.
+    It cannot observe an item LEAVING that scope: unassigning yourself from an
+    item outside the team area satisfies neither clause, so the delta never
+    returns it again and the mirror keeps the stale assignment indefinitely.
+
+    Two drift classes, reconciled against ADO's live @Me set each sync:
+      - ghosts:    mirror says mine, ADO no longer does -> re-hydrate to clear.
+      - newcomers: ADO says mine, mirror does not reflect it -> hydrate to add.
+    """
+    current = {int(i) for i in current_mine_ids}
+    by_id = {wi.get("id"): wi for wi in mirror_items}
+    ghosts = {
+        wid
+        for wid, wi in by_id.items()
+        if _looks_like_me(wi.get("assignedTo")) and wid not in current
+    }
+    newcomers = {
+        wid
+        for wid in current
+        if not _looks_like_me(by_id.get(wid, {}).get("assignedTo"))
+    }
+    return ghosts | newcomers
+
+
+def fetch_mine_ids(pat: str, org: str, project: str) -> list[int]:
+    """Return all work-item ids currently assigned to @Me, unbounded by watermark
+    or area path. Used to reconcile assignment drift the delta query can't see.
+    """
+    try:
+        import requests as _requests  # lazy import
+    except ImportError:
+        print("ERROR: requests is not installed. Run: pip install requests", file=sys.stderr)
+        sys.exit(1)
+
+    import base64
+
+    token = base64.b64encode(f":{pat}".encode("utf-8")).decode("utf-8")
+    headers = {
+        "Authorization": f"Basic {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    wiql = "SELECT [System.Id] FROM workitems WHERE [System.AssignedTo] = @Me"
+    url = build_wiql_url(org, project)
+    resp = _requests.post(url, headers=headers, json={"query": wiql}, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    return [item["id"] for item in data.get("workItems", [])]
+
+
 def fetch_delta_ids(pat: str, org: str, project: str, area_path: str, watermark: str) -> list[int]:
     """Run a WIQL query filtered by area path and changedDate >= watermark; return work-item ids.
 
@@ -718,8 +785,40 @@ def run_self_tests() -> int:
         print(f"FAIL fixture6_board_column_capture: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture 7: reconcile_assigned_ids detects ghosts and newcomers
+    # ------------------------------------------------------------------
+    try:
+        mirror_items = [
+            # ghost: mirror says mine, ADO no longer lists it -> re-hydrate
+            {"id": 27005, "assignedTo": "Jacob Madsen"},
+            # still mine and still in current set -> no action
+            {"id": 56080, "assignedTo": "Jacob Madsen"},
+            # someone else's item, not in current set -> no action
+            {"id": 999, "assignedTo": "Laython Childers"},
+            # unassigned item already reflected -> no action
+            {"id": 111, "assignedTo": None},
+        ]
+        # current @Me set: 56080 stays, 27005 dropped, 222 is a newcomer not yet
+        # in the mirror as mine
+        current_mine = [56080, 222]
+        drift = reconcile_assigned_ids(mirror_items, current_mine)
+        assert drift == {27005, 222}, f"expected {{27005, 222}}, got {drift}"
+        # Idempotency: once the mirror reflects the live set, nothing drifts
+        settled = [
+            {"id": 56080, "assignedTo": "Jacob Madsen"},
+            {"id": 222, "assignedTo": "jacob@cognitoforms.com"},
+            {"id": 27005, "assignedTo": None},
+        ]
+        assert reconcile_assigned_ids(settled, [56080, 222]) == set(), \
+            "expected no drift once mirror matches the live @Me set"
+        print("PASS fixture7_reconcile_assigned_ids")
+    except Exception as exc:
+        print(f"FAIL fixture7_reconcile_assigned_ids: {exc}")
+        failures += 1
+
     # Summary
-    total = 6
+    total = 7
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures
@@ -793,6 +892,18 @@ def main() -> None:
 
         synced_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         mirror = build_mirror(prior_items, delta_items, prior_watermark, query_meta, synced_at)
+
+        # Reconcile assignment drift the delta query structurally cannot see (items
+        # unassigned-from-me while outside the team area path). Re-hydrate any
+        # ghosts/newcomers so the inbox reflects ADO's live @Me set.
+        mine_ids = fetch_mine_ids(pat, org, project)
+        reconcile_ids = sorted(reconcile_assigned_ids(mirror["workItems"], mine_ids))
+        if reconcile_ids:
+            _diag(f"Reconciling {len(reconcile_ids)} assignment-drift item(s)")
+            reconciled = hydrate(pat, org, reconcile_ids)
+            mirror = build_mirror(
+                mirror["workItems"], reconciled, mirror["watermark"], query_meta, synced_at
+            )
 
         content = serialize_mirror(mirror) + "\n"
         _atomic_write(mirror_path, content)
