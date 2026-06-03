@@ -22,8 +22,11 @@
         'cognito-forms' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\Cognito Forms'
             RootFiles      = @('CLAUDE.local.md')
-            DotClaudeFiles = @('CLAUDE.md', 'settings.json', 'settings.local.json')
-            DotClaudeDirs  = @('skill-config', 'skills', 'commands', 'knowledge')
+            # .claude/CLAUDE.md and commands/{msbuild,review-pr,work-item}.md are team-owned
+            # (git-tracked by the Cognito Forms repo) — do NOT whole-dir/whole-file symlink them.
+            # Only personal, git-ignored command files are symlinked individually.
+            DotClaudeFiles = @('settings.json', 'settings.local.json', 'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md')
+            DotClaudeDirs  = @('skill-config', 'skills', 'knowledge')
         }
         'cognito-forms-side-repo' = @{
             Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-side-repo'
