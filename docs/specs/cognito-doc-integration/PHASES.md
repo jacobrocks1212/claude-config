@@ -527,7 +527,7 @@ N/A — Phase deferred; assertions will be defined when this phase is scheduled.
 
 **Deliverables — Cluster A (filesystem-derived tracking):**
 - [x] `derive_stage(item_dir) -> str` pure helper in `user/scripts/lazy_core.py`, placed beside the existing sentinel readers — maps the on-disk ladder to exactly one of `spec | research | phases | plan | implement | review | reviewed | blocked | needs-input | stale-upstream | done`, reusing `parse_sentinel` / `read_stale_upstream` / the `COMPLETED.md`/`FIXED.md` receipt readers. Read-only, clock-free, side-effect-free. **Stage is derived, never asserted by a skill.**
-- [ ] `track_open` / `track_touch` / `track_close` helpers in `lazy_core.py` managing a per-item `WIP.md` liveness sentinel (frontmatter per `_components/sentinel-frontmatter.md`: `kind: wip`, `wi_id`, `slug`, `branch`, `host`, `started_at`, `last_touched`), all writes atomic via `_atomic_write`. `track_open` is **idempotent** — creates the item-dir registration if absent and refreshes `last_touched` on every call (a free heartbeat-equivalent); `track_close` removes the sentinel.
+- [x] `track_open` / `track_touch` / `track_close` helpers in `lazy_core.py` managing a per-item `WIP.md` liveness sentinel (frontmatter per `_components/sentinel-frontmatter.md`: `kind: wip`, `wi_id`, `slug`, `branch`, `host`, `started_at`, `last_touched`), all writes atomic via `_atomic_write`. `track_open` is **idempotent** — creates the item-dir registration if absent and refreshes `last_touched` on every call (a free heartbeat-equivalent); `track_close` removes the sentinel.
 - [ ] `user/scripts/track-work.py` (net-new): a thin `open | touch | close` CLI over those helpers. Resolves the current item from the git branch (`^p/(\d+)-`) joined through `materialized.json` (`wi_id → feature_id`), or from an explicit `--slug`. **Safe no-op (exit 0) when no cog-docs root/config is resolvable** — so the cognito-forms skill hook never disturbs other repos even if the injection somehow runs.
 - [x] **Cognito-forms-scoped skill hook:** add a single fallback-cat injection line — resolving `.claude/skill-config/cog-doc-track.md` with an `echo ""` no-op fallback (the live runtime idiom already used by `spec-bug`/`spec-phases`/`write-plan`) — to each of `spec`, `spec-bug`, `spec-phases`, `write-plan`, `execute-plan`, `retro`. The net-new `claude-config/repos/cognito-forms/.claude/skill-config/cog-doc-track.md` carries the actual instruction (front-half skills → `track-work.py open`; terminal skills → `track-work.py close`), so the behavior is present **only in the cognito-forms projection**.
 - [ ] `user/scripts/work-status.py`: the *In flight* panel becomes **leases ∪ `WIP.md` markers**, deduped by `wi_id`/branch (a lazy item holding both a lease and a WIP marker appears once); stage column sourced from `derive_stage`; staleness flagged from `last_touched` age against a config threshold (mirrors the lease-TTL notion); items carrying a `COMPLETED.md`/`FIXED.md` receipt drop out of in-flight. Absent any WIP marker, behavior is byte-identical to the Phase 2/5 dashboard (graceful degradation preserved).
@@ -535,7 +535,7 @@ N/A — Phase deferred; assertions will be defined when this phase is scheduled.
 
 **Deliverables — Cluster B (review-pr → cog-docs co-location + reviewed status):**
 - [x] `cognito-pr-review:review-pr` resolves the WI id (`AB#\d+` in the PR description, fallback branch regex `^p/(\d+)-`) → cog-docs item dir via `materialized.json` (`wi_id → feature_id` slug), and writes its review artifact (`PR-<id>.md` + the persistent journey) into `<COG_DOCS>/docs/{features,bugs}/<slug>/`. **Falls back to the current `.claude.local/reviews/` location** when the WI is not materialized (no cog-docs dir to target) — no silent loss of output.
-- [ ] `review-pr` emits a local `REVIEWED.md` sentinel in the item dir on completion, so `derive_stage` reports `reviewed` — this is the "reviewing → reviewed" transition. **No ADO board write** (the poller PAT is `vso.work` read-only); the status is tracked locally and surfaced by the dashboard's derivation.
+- [x] `review-pr` emits a local `REVIEWED.md` sentinel in the item dir on completion, so `derive_stage` reports `reviewed` — this is the "reviewing → reviewed" transition. **No ADO board write** (the poller PAT is `vso.work` read-only); the status is tracked locally and surfaced by the dashboard's derivation.
 - [ ] Tests: review-path resolution (materialized → cog-docs item dir; unmaterialized → `.claude.local/reviews/` fallback); `REVIEWED.md` present → `derive_stage == reviewed`.
 
 **Runtime Verification** *(checked by manual/live testing — NOT by the implementation agent):*
@@ -596,7 +596,7 @@ ASSERTIONS:
 - WU-7 will add the `REVIEWED.md` emit to the same `review-pr.md`; the `derive_stage == reviewed` half of the Cluster B test deliverable is already satisfied by WU-1's `test_derive_stage_reviewed`.
 **Pitfalls & guidance:**
 - Pre-existing, unrelated uncommitted changes exist in this repo (`repos/cognito-forms/.claude/skill-config/quality-gates.md`, `user/skills/_components/subagent-launch.md`) — NOT part of this batch; staged out of all Phase 7 commits (explicit per-file staging only).
-- The plugin lives under `~/.claude/plugins/` (not symlinked into claude-config); its changes are committed in plugin source separately, not in claude-config.
+- The plugin lives under `~/.claude/plugins/` and is **gitignored** in the only enclosing repo (`~/.claude`, a legacy/half-migrated repo: `.gitignore` line `/*`). There is NO repo to commit the plugin source into — `prep-pr.ts`/`review-pr.md` edits are **disk-only** (the plugin loads from disk, so they are live regardless). This is a documented deviation from the plan's "commit plugin changes separately" instruction; surfaced for the user.
 **Files modified:**
 - `user/scripts/lazy_core.py` — `derive_stage` + 2 constants.
 - `user/scripts/test_lazy_core.py` — 16 derive_stage tests + registry + symbol-presence assert.
@@ -608,6 +608,26 @@ ASSERTIONS:
 ##### Review Notes (Phase 7 — Batch 1)
 **Batch:** Batch 1 (WU-1, WU-4, WU-6 — 9 files in claude-config + 2 plugin files). **Reviewed:** 2026-06-03. **Verdict: PASS.**
 Ground-truth verified for all three WUs (test suite 69/70, projection greps 5/0, tsc errors pre-existing & outside new code — all independently re-run by the orchestrator and matched). TDD discipline sound (genuine RED via AttributeError, non-tautological assertions, full precedence + "omit PR.md→implement" coverage). Idiom byte-correct; cog-docs resolution fully guarded; fallback paths preserved (zero behavior change unmaterialized). No blocking actionable items.
+
+#### Implementation Notes (Phase 7 — Batch 2)
+**Completed:** 2026-06-03
+**Work completed:**
+- **WU-2 — `track_open` / `track_touch` / `track_close`** (+ private `_write_wip`) in `user/scripts/lazy_core.py` (lines ~434-505, immediately after `derive_stage`). Manage a per-item `WIP.md` liveness sentinel with frontmatter `kind: wip`, `wi_id`, `slug`, `branch`, `host`, `started_at`, `last_touched`, all writes atomic via `_atomic_write`, round-tripping through `parse_sentinel`. `track_open` is idempotent: creates the item-dir + sentinel if absent, and on a repeat call re-reads the existing sentinel to **preserve `started_at`** while advancing `last_touched` to the injected `now`. `track_touch` refreshes `last_touched` only if the sentinel exists (no-op otherwise — does not register). `track_close` removes it (`unlink(missing_ok=True)`). Time is injected via a `now` parameter (ISO-8601 string) — **no `datetime.now()`** in these paths, for deterministic tests. 9 new `test_track_*` tests (suite 78/79; only the known `test_lazy_state_test_output_matches_baseline` baseline fails).
+- **WU-7 — `review-pr` emits `REVIEWED.md`** (plugin `commands/review-pr.md`, new Step 12.6, ~line 383). When `cogDocsItemDir` (from WU-6's `pr-context.json`) is non-null, writes `<cogDocsItemDir>/REVIEWED.md` with frontmatter `kind: reviewed`, `pr`, `date`, and the Step-12 finding counts — making `derive_stage` report `reviewed`. Null → explicit no-op; write failure → warn-and-continue (never blocks the review); **no ADO board write** (read-only PAT).
+**Integration notes:**
+- The WIP liveness sentinel is deliberately STRING-typed for timestamps (quoted in YAML) so `parse_sentinel`/PyYAML keep them as `str`, not `datetime` — load-bearing for the exact-string idempotency assertions and for any future age comparison done in `work-status.py` (WU-5) against `syncedAt`.
+- WU-3 (`track-work.py`) is the thin CLI over these helpers (next batch); WU-5 (`work-status.py` In Flight union) reads `WIP.md` via `parse_sentinel` and `derive_stage`.
+- The `derive_stage == reviewed` half of the Cluster B test deliverable is satisfied by Batch 1's `test_derive_stage_reviewed`; the review-PATH-resolution test is plugin-only with no harness → deferred-to-manual (consistent with prior phases).
+**Pitfalls & guidance:**
+- WU-7's `review-pr.md` is in the gitignored, disk-only plugin (see Batch 1 note) — the REVIEWED.md emit is live on disk but uncommitted.
+**Files modified:**
+- `user/scripts/lazy_core.py` — `_write_wip` + `track_open`/`track_touch`/`track_close`.
+- `user/scripts/test_lazy_core.py` — 9 `test_track_*` tests + registry + symbol-presence assert.
+- (plugin, disk-only) `cognito-pr-review/commands/review-pr.md` — Step 12.6 REVIEWED.md emit (`date` quoted for string round-trip consistency).
+
+##### Review Notes (Phase 7 — Batch 2)
+**Batch:** Batch 2 (WU-2, WU-7 — `lazy_core.py` + `test_lazy_core.py` + plugin `review-pr.md`). **Reviewed:** 2026-06-03. **Verdict: PASS.**
+Ground-truth verified (suite 78/79; lazy_core.py +76, test +157; all independently re-run). TDD discipline strong: idempotency test asserts BOTH `started_at` preserved AND `last_touched` advanced; touch-absent test asserts no file created; genuine RED via missing-symbol AttributeError. WU-7 reuses the existing `cogDocsItemDir` field, null no-op + warn-continue + no-ADO rules explicit. No blocking items (cosmetic `date`-quoting note applied).
 
 ---
 

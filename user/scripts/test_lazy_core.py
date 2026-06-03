@@ -962,6 +962,153 @@ def test_derive_stage_symbol_present():
 
 
 # ---------------------------------------------------------------------------
+# Tests: track_open / track_touch / track_close
+# ---------------------------------------------------------------------------
+
+_NOW1 = "2026-06-03T10:00:00Z"
+_NOW2 = "2026-06-03T11:30:00Z"
+_NOW3 = "2026-06-03T12:45:00Z"
+
+
+def test_track_open_creates_wip_md():
+    """track_open creates WIP.md; parse_sentinel returns all expected fields with correct values."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.track_open(
+            item_dir,
+            wi_id=42,
+            slug="my-feature",
+            branch="p/my-feature",
+            host="DEVBOX",
+            now=_NOW1,
+        )
+        wip = item_dir / "WIP.md"
+        assert wip.exists(), "WIP.md was not created"
+        data = lazy_core.parse_sentinel(wip)
+    assert isinstance(data, dict), f"parse_sentinel should return dict, got {type(data)}"
+    assert data.get("kind") == "wip", f"kind mismatch: {data}"
+    assert data.get("wi_id") == 42, f"wi_id mismatch: {data}"
+    assert data.get("slug") == "my-feature", f"slug mismatch: {data}"
+    assert data.get("branch") == "p/my-feature", f"branch mismatch: {data}"
+    assert data.get("host") == "DEVBOX", f"host mismatch: {data}"
+    assert data.get("started_at") == _NOW1, f"started_at mismatch: {data}"
+    assert data.get("last_touched") == _NOW1, f"last_touched mismatch: {data}"
+
+
+def test_track_open_idempotent_preserves_started_at():
+    """Second track_open with a different now: exactly one WIP.md, started_at preserved, last_touched advanced."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.track_open(
+            item_dir, wi_id=42, slug="my-feature", branch="p/my-feature", host="DEVBOX", now=_NOW1,
+        )
+        lazy_core.track_open(
+            item_dir, wi_id=42, slug="my-feature", branch="p/my-feature", host="DEVBOX", now=_NOW2,
+        )
+        wip_files = list(item_dir.glob("WIP*.md"))
+        assert len(wip_files) == 1, f"expected exactly 1 WIP.md, found {wip_files}"
+        data = lazy_core.parse_sentinel(item_dir / "WIP.md")
+    assert data.get("started_at") == _NOW1, f"started_at should be preserved (now1): {data}"
+    assert data.get("last_touched") == _NOW2, f"last_touched should advance to now2: {data}"
+
+
+def test_track_open_creates_dir_if_absent():
+    """track_open creates the item dir if it does not exist, then writes WIP.md."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td) / "new-item"
+        assert not item_dir.exists(), "pre-condition: item_dir must not exist"
+        lazy_core.track_open(
+            item_dir, wi_id=99, slug="new-item", branch="p/new-item", host="DEVBOX", now=_NOW1,
+        )
+        assert item_dir.exists(), "item_dir was not created by track_open"
+        assert (item_dir / "WIP.md").exists(), "WIP.md was not created in new item_dir"
+
+
+def test_track_touch_refreshes_last_touched():
+    """track_touch on an existing WIP.md refreshes last_touched; started_at and other fields preserved."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.track_open(
+            item_dir, wi_id=7, slug="touch-test", branch="p/touch-test", host="BOX", now=_NOW1,
+        )
+        lazy_core.track_touch(item_dir, now=_NOW3)
+        data = lazy_core.parse_sentinel(item_dir / "WIP.md")
+    assert data.get("last_touched") == _NOW3, f"last_touched should be now3: {data}"
+    assert data.get("started_at") == _NOW1, f"started_at should be preserved (now1): {data}"
+    assert data.get("kind") == "wip", f"kind should be unchanged: {data}"
+    assert data.get("wi_id") == 7, f"wi_id should be unchanged: {data}"
+    assert data.get("slug") == "touch-test", f"slug should be unchanged: {data}"
+    assert data.get("branch") == "p/touch-test", f"branch should be unchanged: {data}"
+    assert data.get("host") == "BOX", f"host should be unchanged: {data}"
+
+
+def test_track_touch_absent_wip_is_noop():
+    """track_touch when WIP.md is absent: no file is created, no exception raised."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        try:
+            lazy_core.track_touch(item_dir, now=_NOW1)
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(f"track_touch raised on absent WIP.md: {exc}") from exc
+        assert not (item_dir / "WIP.md").exists(), "track_touch must NOT create WIP.md when absent"
+
+
+def test_track_close_removes_wip_md():
+    """track_close removes an existing WIP.md."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.track_open(
+            item_dir, wi_id=5, slug="close-test", branch="p/close-test", host="BOX", now=_NOW1,
+        )
+        assert (item_dir / "WIP.md").exists(), "pre-condition: WIP.md must exist before close"
+        lazy_core.track_close(item_dir)
+        assert not (item_dir / "WIP.md").exists(), "WIP.md should be gone after track_close"
+
+
+def test_track_close_absent_is_noop():
+    """track_close when WIP.md is absent: no exception, file still absent."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        try:
+            lazy_core.track_close(item_dir)
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(f"track_close raised on absent WIP.md: {exc}") from exc
+        assert not (item_dir / "WIP.md").exists(), "WIP.md should remain absent after no-op close"
+
+
+def test_track_open_frontmatter_roundtrip():
+    """After track_open, file content starts with '---' and parse_sentinel returns all 7 WIP keys."""
+    _guard()
+    _EXPECTED_KEYS = {"kind", "wi_id", "slug", "branch", "host", "started_at", "last_touched"}
+    with tempfile.TemporaryDirectory() as td:
+        item_dir = Path(td)
+        lazy_core.track_open(
+            item_dir, wi_id=3, slug="roundtrip", branch="p/roundtrip", host="HOST", now=_NOW1,
+        )
+        wip = item_dir / "WIP.md"
+        content = wip.read_text(encoding="utf-8")
+        data = lazy_core.parse_sentinel(wip)
+    assert content.startswith("---"), f"WIP.md must start with '---' fence, got: {content[:30]!r}"
+    missing = _EXPECTED_KEYS - set(data.keys())
+    assert not missing, f"parse_sentinel missing keys: {missing} in {data}"
+
+
+def test_track_symbols_present():
+    """track_open, track_touch, and track_close must be attributes of lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "track_open"), "lazy_core.track_open does not exist"
+    assert hasattr(lazy_core, "track_touch"), "lazy_core.track_touch does not exist"
+    assert hasattr(lazy_core, "track_close"), "lazy_core.track_close does not exist"
+
+
+# ---------------------------------------------------------------------------
 # Tests: clear_diagnostics
 # ---------------------------------------------------------------------------
 
@@ -1104,6 +1251,16 @@ _TESTS = [
     ("test_derive_stage_blocked_wins_over_ladder", test_derive_stage_blocked_wins_over_ladder),
     ("test_derive_stage_needs_input_wins_over_ladder", test_derive_stage_needs_input_wins_over_ladder),
     ("test_derive_stage_done_wins_over_blocked", test_derive_stage_done_wins_over_blocked),
+    # track_open / track_touch / track_close
+    ("test_track_symbols_present", test_track_symbols_present),
+    ("test_track_open_creates_wip_md", test_track_open_creates_wip_md),
+    ("test_track_open_idempotent_preserves_started_at", test_track_open_idempotent_preserves_started_at),
+    ("test_track_open_creates_dir_if_absent", test_track_open_creates_dir_if_absent),
+    ("test_track_touch_refreshes_last_touched", test_track_touch_refreshes_last_touched),
+    ("test_track_touch_absent_wip_is_noop", test_track_touch_absent_wip_is_noop),
+    ("test_track_close_removes_wip_md", test_track_close_removes_wip_md),
+    ("test_track_close_absent_is_noop", test_track_close_absent_is_noop),
+    ("test_track_open_frontmatter_roundtrip", test_track_open_frontmatter_roundtrip),
     # clear_diagnostics
     ("test_clear_diagnostics_callable", test_clear_diagnostics_callable),
     # --test baseline (zero-behavior-change contract)

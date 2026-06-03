@@ -428,6 +428,82 @@ def derive_stage(item_dir) -> str:
 
 
 # ---------------------------------------------------------------------------
+# WIP liveness sentinel helpers
+# ---------------------------------------------------------------------------
+
+def _write_wip(item_dir: Path, fields: dict) -> None:
+    """Serialize WIP frontmatter and atomically write <item_dir>/WIP.md."""
+    lines = [
+        "---",
+        f"kind: {fields['kind']}",
+        f"wi_id: {fields['wi_id']}",
+        f"slug: {fields['slug']}",
+        f"branch: {fields['branch']}",
+        f"host: {fields['host']}",
+        f"started_at: \"{fields['started_at']}\"",
+        f"last_touched: \"{fields['last_touched']}\"",
+        "---",
+        "",
+        "# Work in progress",
+    ]
+    _atomic_write(item_dir / _WIP_FILENAME, "\n".join(lines))
+
+
+def track_open(item_dir, wi_id, slug, branch, host, now: str) -> None:
+    """Create or refresh <item_dir>/WIP.md as the liveness sentinel for an active work item.
+
+    Idempotent: if WIP.md already exists, ``started_at`` is preserved from the
+    existing file and only ``last_touched`` is advanced to ``now``.  Time is
+    injected via ``now`` (ISO-8601 string) for determinism — no ``datetime.now()``
+    call occurs here.
+    """
+    item_dir = Path(item_dir)
+    item_dir.mkdir(parents=True, exist_ok=True)
+
+    wip_path = item_dir / _WIP_FILENAME
+    existing = parse_sentinel(wip_path)
+    if existing and existing.get("started_at"):
+        started_at = existing["started_at"]
+    else:
+        started_at = now
+
+    _write_wip(item_dir, {
+        "kind": "wip",
+        "wi_id": wi_id,
+        "slug": slug,
+        "branch": branch,
+        "host": host,
+        "started_at": started_at,
+        "last_touched": now,
+    })
+
+
+def track_touch(item_dir, now: str) -> None:
+    """Advance ``last_touched`` in an existing <item_dir>/WIP.md to ``now``.
+
+    If WIP.md is absent, this is a no-op — the file is never created here.
+    All other fields are preserved unchanged.  Time is injected via ``now``
+    for determinism.
+    """
+    item_dir = Path(item_dir)
+    wip_path = item_dir / _WIP_FILENAME
+    existing = parse_sentinel(wip_path)
+    if not existing:
+        return
+    existing["last_touched"] = now
+    _write_wip(item_dir, existing)
+
+
+def track_close(item_dir) -> None:
+    """Remove <item_dir>/WIP.md, marking the work item as no longer active.
+
+    No-op if WIP.md is absent.
+    """
+    item_dir = Path(item_dir)
+    (item_dir / _WIP_FILENAME).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
 # Plan file parsing
 # ---------------------------------------------------------------------------
 
