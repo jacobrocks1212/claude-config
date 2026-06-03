@@ -13,6 +13,8 @@ Use this skill when writing or rewriting pull request descriptions to ensure con
 All PR descriptions MUST follow this exact structure:
 
 ```markdown
+# [Concise, imperative PR title summarizing the net change]
+
 ## Background
 - [Business need or capability being added]
 - [Scale/performance requirements if relevant]
@@ -28,6 +30,8 @@ All PR descriptions MUST follow this exact structure:
 
 ### Test Coverage
 - `test-file.ts`: [Scenarios covered]
+
+**Work Items:** [AB#<id> references, when found — omit this section entirely if no work item applies]
 ```
 
 ## Core Principles
@@ -42,7 +46,9 @@ All PR descriptions MUST follow this exact structure:
 
 3. **Architecture over files**: Lead with high-level architectural concepts (e.g., "read model", "write path", "linking modes") rather than file-by-file lists. Group related files by their architectural role.
 
-4. **Two main sections only**: Background and Solution
+4. **Section structure**: A single H1 PR title (`# ...`) leads the description, followed by the Background and Solution main sections. A `**Work Items:**` section is appended at the end only when a work item is found.
+
+4a. **PR title**: The description MUST open with a single H1 (`# <title>`). Make it concise and imperative (e.g., `Classify target action viability and add Create New Person Entries toggle`), summarizing the net change. No trailing period, no PR number, no work-item id in the title.
 
 5. **Backticks required**: All file names, function names, variable names, class names, identifiers, and code references must be enclosed in backticks (e.g., `computeImageValue`, `PersonEntryId`). Do NOT bold file names.
 
@@ -57,7 +63,7 @@ All PR descriptions MUST follow this exact structure:
 
 9. **No em dashes**: The PR description MUST NOT contain em dashes (`—`). Use a comma, colon, parentheses, or two separate sentences instead. This applies to the generated description text only, not to file names or code identifiers.
 
-10. **Work item references**: When the branch addresses a work item, reference it as `AB#<WI_ID>` (e.g., `AB#56565`). Infer the WI ID from the branch name, commit messages, or the conversation. Place the reference in the Background section. Use the bare `AB#<WI_ID>` form, not a URL or `#<WI_ID>`.
+10. **Work item references**: When the branch addresses a work item, reference it as `AB#<WI_ID>` (e.g., `AB#56565`). Infer the WI ID from the branch name, commit messages, or the conversation. Place the reference(s) in a final `**Work Items:**` section at the end of the description (after Test Coverage), not in the Background. Use the bare `AB#<WI_ID>` form, not a URL or `#<WI_ID>`. List multiple work items separated by commas. When no work item is found, omit the section entirely.
 
 ## File Annotation Conventions
 
@@ -72,6 +78,8 @@ All PR descriptions MUST follow this exact structure:
 ## Example
 
 ```markdown
+# Add PersonSubmissions read model for person-scoped entry queries
+
 ## Background
 - CognitoPay needs to query all entries related to a person at scale (10K+ entries)
 - `PersonEntryId` serves as the canonical `CustomerId` — no separate Customer entity needed
@@ -99,6 +107,8 @@ Introduce a `PersonSubmissions` Cosmos read model partitioned by `PersonEntryId`
 ### Test Coverage
 - `PersonSubmissionsIndexingTests.cs`: Write path for all linking modes, status propagation
 - `PersonSubmissionControllerTests.cs`: API authorization and validation
+
+**Work Items:** AB#56565
 ```
 
 ## Process
@@ -153,12 +163,13 @@ Group file changes by architectural component rather than listing alphabetically
 Group test files by what they cover (write path tests, repository tests, etc.)
 
 ### Step 7: Validate
+- Opens with a single H1 PR title (`# ...`): concise, imperative, no trailing period, no PR number
 - Under 4000 characters
 - No journey language (replaced, superseded, previous)
 - All identifiers in backticks
 - Architecture-first, not file-first
 - No em dashes (`—`) anywhere in the description
-- Work item referenced as `AB#<WI_ID>` (if a WI applies)
+- Work item(s) referenced as `AB#<WI_ID>` in a final `**Work Items:**` section (if a WI applies); section omitted when none found
 
 ### Step 8: Deliver the Description
 
