@@ -24,7 +24,7 @@
   </subdirectory-docs>
 
   <knowledge-base>
-    Feature docs in `.claude.local/knowledge/features/`
+    Feature docs in `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/` (sibling cog-docs repo)
   </knowledge-base>
 
   <coding-conventions>

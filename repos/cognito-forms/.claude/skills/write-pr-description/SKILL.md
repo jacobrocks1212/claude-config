@@ -164,7 +164,7 @@ Group test files by what they cover (write path tests, repository tests, etc.)
 
 Decide where the finished description goes based on whether a feature doc directory exists for this work:
 
-1. **Infer the feature doc directory from the conversation.** Look for a feature directory already in play this session (e.g., a `plans/<feature>/` folder, a `.claude.local/knowledge/features/<feature>/` directory, or a SPEC/PHASES doc location referenced in chat). The directory associated with the current branch's feature is the target.
+1. **Infer the feature doc directory from the conversation.** Look for a feature directory already in play this session (e.g., a `plans/<feature>/` folder, a `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/<feature>/` directory, or a SPEC/PHASES doc location referenced in chat). The directory associated with the current branch's feature is the target.
 
 2. **If a feature doc directory exists:**
    - If a PR description doc already exists there (e.g., `PR_DESCRIPTION.md` or similar), **update it in place** with the new content.

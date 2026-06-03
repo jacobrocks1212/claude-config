@@ -1,5 +1,5 @@
 ---
-description: Brainstorm, research, and draft a feature spec in .claude.local/knowledge/features/
+description: Brainstorm, research, and draft a feature spec in C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, Agent, WebSearch
 ---
 
@@ -18,7 +18,7 @@ Before starting, understand the existing architecture:
 
 1. Read `.claude/KNOWLEDGE_INDEX.md` to understand where knowledge is stored and what exists.
 2. Read relevant skills in `.claude/skills/` that relate to the feature domain (e.g., `cognito-payments/`, `cognito-forms/`, `cognito-auth/`).
-3. Check `.claude.local/knowledge/features/` for related specs that might conflict or overlap.
+3. Check `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/` for related specs that might conflict or overlap.
 4. Identify which layers are affected: `Cognito.Core`, `Cognito`, `Cognito.Services`, `Cognito.Web.Client`.
 5. Note any work items or PRs that relate to this feature.
 
@@ -67,7 +67,7 @@ Agent tool with run_in_background=true:
    - **Design decisions** — Where there are multiple valid approaches, present options with tradeoffs.
    - **Edge cases** — What happens in unusual scenarios?
    - **Testing strategy** — Which test projects need coverage (Unit, Integration, MSTest patterns)?
-3. **Iteratively update the SPEC file** as decisions are locked in. Don't wait until the end — write to `.claude.local/knowledge/features/{feature-slug}/SPEC.md` after each brainstorming round with confirmed decisions. Mark undecided items as "TBD" or "Open Question".
+3. **Iteratively update the SPEC file** as decisions are locked in. Don't wait until the end — write to `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/{feature-slug}/SPEC.md` after each brainstorming round with confirmed decisions. Mark undecided items as "TBD" or "Open Question".
 4. Continue brainstorming rounds until the user signals they're satisfied with the baseline.
 5. Summarize the agreed-upon baseline spec clearly before moving to Phase 2.
 
@@ -85,8 +85,8 @@ Agent tool with run_in_background=true:
 
 **Goal:** Draft a comprehensive research prompt for Gemini Deep Research to validate ideas, explore prior art, and surface pitfalls.
 
-1. Create the feature directory: `.claude.local/knowledge/features/{feature-slug}/`
-2. Write the research prompt to `.claude.local/knowledge/features/{feature-slug}/RESEARCH_PROMPT.md`.
+1. Create the feature directory: `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/{feature-slug}/`
+2. Write the research prompt to `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/{feature-slug}/RESEARCH_PROMPT.md`.
 
 **Research prompt structure:**
 - **Research Question** — Clear, specific main question
@@ -114,7 +114,7 @@ Agent tool with run_in_background=true:
 **Goal:** Incorporate research findings and finalize the complete feature specification.
 
 1. Read the research results file the user provides.
-2. Copy it to `.claude.local/knowledge/features/{feature-slug}/RESEARCH.md`.
+2. Copy it to `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/{feature-slug}/RESEARCH.md`.
 3. Write a research summary analyzing:
    - Key findings relevant to our baseline spec
    - Ideas we should adopt from prior art
@@ -126,7 +126,7 @@ Agent tool with run_in_background=true:
    - **Technical approach** — Has research clarified the right technical direction?
    - **Open questions** — Anything still unresolved?
 5. Continue refining until the user is satisfied.
-6. Write the final `.claude.local/knowledge/features/{feature-slug}/SPEC.md` with this structure:
+6. Write the final `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/{feature-slug}/SPEC.md` with this structure:
 
 ```markdown
 # {Feature Name} — Feature Specification
@@ -192,5 +192,5 @@ Agent tool with run_in_background=true:
 - The feature slug should be kebab-case, derived from the feature name (e.g., `conditional-payments`).
 - If the user says "skip research" or similar, skip Phase 2 and go directly to finalizing the spec in Phase 3 (without research integration).
 - If the user provides a research file path at any point, treat it as the Phase 2→3 transition.
-- Always check `.claude.local/knowledge/features/` for related specs that might conflict or overlap.
+- Always check `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/` for related specs that might conflict or overlap.
 - Reference relevant skills from `.claude/skills/` when discussing technical approaches.
