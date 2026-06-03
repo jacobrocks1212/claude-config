@@ -10,6 +10,12 @@ Actions:
     touch  -- Advance last_touched in an existing WIP.md.
     close  -- Remove WIP.md (marks item as no longer active).
 
+After any successful action the work-status dashboard (DASHBOARD.md) is
+regenerated against the resolved cog-docs root so the new stage/staleness is
+reflected immediately. The refresh shells out to work-status.py --markdown and
+is best-effort: it is timeout-guarded and never fails the action. Pass
+--no-refresh to skip it.
+
 Resolution order:
     1. --repo-root / COG_DOCS_ROOT env var / sibling cog-docs dir -> cog_docs root
     2. --wi-id / branch pattern ^p/(\\d+)- -> wi_id
@@ -30,11 +36,12 @@ import json
 import os
 import re
 import socket
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # ---------------------------------------------------------------------------
 # Bootstrap: add the script's own directory to sys.path so that lazy_core
@@ -45,6 +52,45 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import lazy_core  # noqa: E402  (after sys.path surgery)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard refresh (impure I/O — confined here, injected into run() so the
+# pure resolution logic stays testable without spawning a subprocess).
+# ---------------------------------------------------------------------------
+
+def refresh_dashboard(cog_docs: Path) -> bool:
+    """Regenerate DASHBOARD.md against ``cog_docs`` by invoking work-status.py.
+
+    Shells out to the canonical renderer (``work-status.py --markdown
+    --repo-root <cog_docs>``) rather than re-implementing the render wiring, so
+    the hook-triggered refresh can never drift from the scheduled/manual one.
+
+    Best-effort and hook-safe: captures output, enforces a timeout, and returns
+    a bool instead of raising. A failed or slow refresh never blocks the
+    tracking action that triggered it.
+
+    Returns:
+        True if the renderer exited 0, False on any failure/timeout/exception.
+    """
+    render_script = _SCRIPT_DIR / "work-status.py"
+    if not render_script.exists():
+        return False
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"  # Windows cp1252 crashes on Unicode dashboard glyphs
+    try:
+        result = subprocess.run(
+            [sys.executable, str(render_script), "--markdown",
+             "--repo-root", str(cog_docs)],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +215,7 @@ def run(
     host: str,
     now: str,
     materialized: list[dict] | None = None,
+    refresh: Callable[[Path], bool] | None = None,
 ) -> int:
     """Orchestrate a track-work action end-to-end.
 
@@ -190,6 +237,11 @@ def run(
         materialized: Injectable list of materialized records.  When None,
                       the function reads from disk via
                       lazy_core.read_materialized(cog_docs / "docs" / "work").
+        refresh: Optional callback invoked with the resolved cog_docs Path
+                 after a successful dispatch, to regenerate DASHBOARD.md.
+                 None (the default, used by tests) skips the refresh entirely.
+                 main() wires this to refresh_dashboard. The no-op resolution
+                 paths return before dispatch, so refresh is never called there.
 
     Returns:
         0 always (never a failure exit code — hook-safe).
@@ -231,6 +283,14 @@ def run(
 
     # 6. Success diagnostic
     print(f"track-work: {action} on {item_dir.name} (wi_id={wi_id} slug={slug_used})")
+
+    # 7. Refresh the dashboard so the new stage/staleness is reflected at once.
+    #    Best-effort: a failed refresh must not turn a successful action into a
+    #    failure, so the result is reported but never changes the return code.
+    if refresh is not None:
+        ok = refresh(cog_docs)
+        print(f"track-work: dashboard refresh {'ok' if ok else 'skipped/failed'}")
+
     return 0
 
 
@@ -448,9 +508,110 @@ def run_self_tests() -> int:
         failures += 1
 
     # ------------------------------------------------------------------
+    # Fixture 6 — refresh callback fires once with cog_docs after success
+    # Successful open must invoke the injected refresh exactly once, with the
+    # resolved cog_docs Path.
+    # ------------------------------------------------------------------
+    try:
+        tmp6 = tempfile.mkdtemp(prefix="tw_test6_")
+        cog_docs6 = Path(tmp6) / "cog-docs"
+        feat_dir6 = cog_docs6 / "docs" / "features" / "my-slug"
+        feat_dir6.mkdir(parents=True, exist_ok=True)
+        (cog_docs6 / "docs" / "work").mkdir(parents=True, exist_ok=True)
+
+        refresh_calls6: list[Path] = []
+
+        rc6 = run(
+            "open",
+            repo_root_arg=str(cog_docs6),
+            slug="my-slug",
+            wi_id_arg=None,
+            branch="main",
+            env={},
+            sibling_base=Path(tmp6),
+            host="h",
+            now="2026-06-03T15:00:00Z",
+            materialized=[],
+            refresh=lambda p: (refresh_calls6.append(p) or True),
+        )
+        assert rc6 == 0, f"expected 0, got {rc6}"
+        assert len(refresh_calls6) == 1, \
+            f"expected refresh called once, got {len(refresh_calls6)}"
+        assert refresh_calls6[0] == cog_docs6, \
+            f"expected refresh arg {cog_docs6}, got {refresh_calls6[0]}"
+
+        print("PASS fixture_6_refresh_fires_after_success")
+    except Exception as exc:
+        print(f"FAIL fixture_6_refresh_fires_after_success: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture 7 — refresh NOT fired when cog-docs is unresolvable (no-op)
+    # ------------------------------------------------------------------
+    try:
+        tmp7 = tempfile.mkdtemp(prefix="tw_test7_")  # no cog-docs child
+        refresh_calls7: list[Path] = []
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc7 = run(
+                "open",
+                repo_root_arg=None,
+                slug=None,
+                wi_id_arg=None,
+                branch="p/1-x",
+                env={},
+                sibling_base=Path(tmp7),
+                host="h",
+                now="2026-06-03T16:00:00Z",
+                materialized=None,
+                refresh=lambda p: (refresh_calls7.append(p) or True),
+            )
+        assert rc7 == 0, f"expected 0, got {rc7}"
+        assert len(refresh_calls7) == 0, \
+            f"refresh must NOT fire on no-cog-docs no-op; got {refresh_calls7}"
+
+        print("PASS fixture_7_refresh_not_fired_on_noop")
+    except Exception as exc:
+        print(f"FAIL fixture_7_refresh_not_fired_on_noop: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture 8 — a refresh that returns False does not change the rc
+    # A failing dashboard refresh must never turn a successful action into a
+    # failure exit code.
+    # ------------------------------------------------------------------
+    try:
+        tmp8 = tempfile.mkdtemp(prefix="tw_test8_")
+        cog_docs8 = Path(tmp8) / "cog-docs"
+        feat_dir8 = cog_docs8 / "docs" / "features" / "my-slug"
+        feat_dir8.mkdir(parents=True, exist_ok=True)
+        (cog_docs8 / "docs" / "work").mkdir(parents=True, exist_ok=True)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc8 = run(
+                "open",
+                repo_root_arg=str(cog_docs8),
+                slug="my-slug",
+                wi_id_arg=None,
+                branch="main",
+                env={},
+                sibling_base=Path(tmp8),
+                host="h",
+                now="2026-06-03T17:00:00Z",
+                materialized=[],
+                refresh=lambda p: False,
+            )
+        assert rc8 == 0, f"failing refresh must not change rc; got {rc8}"
+
+        print("PASS fixture_8_failing_refresh_keeps_rc_zero")
+    except Exception as exc:
+        print(f"FAIL fixture_8_failing_refresh_keeps_rc_zero: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
-    total = 5
+    total = 8
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed, {failures} failed.")
     return failures
@@ -489,6 +650,11 @@ def main() -> None:
         "--test",
         action="store_true",
         help="Run built-in self-tests and exit with failure count",
+    )
+    parser.add_argument(
+        "--no-refresh",
+        action="store_true",
+        help="Skip regenerating DASHBOARD.md after the action (debugging/perf)",
     )
     args = parser.parse_args()
 
@@ -540,6 +706,7 @@ def main() -> None:
         sibling_base=sibling_base,
         host=host,
         now=now,
+        refresh=None if args.no_refresh else refresh_dashboard,
     )
     sys.exit(rc)
 
