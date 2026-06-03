@@ -434,6 +434,51 @@ def filter_recent_team(
     return (kept, hidden)
 
 
+# Board columns that represent completed work (vs. the in-flight working
+# columns). ADO stamps closed items with boardColumn "Closed" and merged-but-
+# open items with "Merged"; both are surfaced in the Recently Completed bucket.
+_COMPLETED_COLUMNS = frozenset({"Merged", "Closed"})
+
+
+def recently_completed_cards(
+    work_items: list[dict],
+    synced_at: str,
+    window_hours: int = 24,
+) -> list[dict]:
+    """Return non-portfolio cards in a completed board column (Merged/Closed)
+    that changed within window_hours of synced_at, most-recent first.
+
+    'now' reference is synced_at (the mirror timestamp) — deterministic, no clock
+    reads, consistent with filter_recent_team. Returns [] if synced_at is missing
+    or unparseable. Cards with a missing/unparseable changedDate are excluded.
+    """
+    if not synced_at:
+        return []
+    try:
+        synced_dt = datetime.datetime.fromisoformat(synced_at.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return []
+
+    cutoff = synced_dt - datetime.timedelta(hours=window_hours)
+    scored: list[tuple[datetime.datetime, dict]] = []
+    for wi in work_items:
+        if (wi.get("type") or "") in _PORTFOLIO_TYPES:
+            continue
+        if (wi.get("boardColumn") or "") not in _COMPLETED_COLUMNS:
+            continue
+        try:
+            changed_dt = datetime.datetime.fromisoformat(
+                (wi.get("changedDate") or "").replace("Z", "+00:00")
+            )
+        except (ValueError, AttributeError):
+            continue
+        if changed_dt >= cutoff:
+            scored.append((changed_dt, wi))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [wi for _, wi in scored]
+
+
 def _escape_md_pipe(text: str) -> str:
     """Escape pipe characters in text so they don't break Markdown tables."""
     return text.replace("|", r"\|")
@@ -626,66 +671,13 @@ def render_markdown(
                 self_pr = match_self_pr(current_branch, linked_prs)
 
     # Header
+    synced_at = mirror.get("syncedAt", "") if mirror else ""
     lines.append("# Work Dashboard")
     if mirror is None:
         lines.append("_Mirror not yet initialized_")
     else:
-        synced_at = mirror.get("syncedAt", "")
         lines.append(f"_Synced: {synced_at} · {len(work_items)} work items_")
     lines.append("")
-
-    # ------------------------------------------------------------------
-    # Section: Poseidon Board — story-level cards grouped by working column.
-    # The "New" backlog column is omitted (it holds the full area-path backlog,
-    # not in-flight work); portfolio parents and terminal-state ghosts are
-    # excluded by on_board_cards. This mirrors the team's working board.
-    # ------------------------------------------------------------------
-    lines.append("## Poseidon Board")
-    lines.append("")
-    working_columns = [c for c in board_columns if c.strip().lower() != "new"]
-    board_buckets = on_board_cards(work_items, working_columns)
-    board_total = sum(len(v) for v in board_buckets.values())
-
-    def _card_line(wi: dict) -> str:
-        parts = [
-            f"**{_wi_link(wi.get('id'), wi.get('url'))}** {_escape_md_pipe(wi.get('title') or '(no title)')}",
-            _escape_md_pipe(wi.get("assignedTo") or "Unassigned"),
-        ]
-        pr_nums = [
-            str(lp.get("prNumber"))
-            for lp in (wi.get("linkedPRs") or [])
-            if lp.get("prNumber")
-        ]
-        pr_status = (wi.get("prStatus") or "").strip()
-        if pr_nums:
-            pr = "PR " + ", ".join(f"#{n}" for n in pr_nums)
-            if pr_status:
-                pr += f" ({_escape_md_pipe(pr_status)})"
-            parts.append(pr)
-        elif pr_status:
-            parts.append(f"PR {_escape_md_pipe(pr_status)}")
-        autotest = (wi.get("autotestStatus") or "").strip()
-        if autotest:
-            parts.append(f"autotest {_escape_md_pipe(autotest)}")
-        return "- " + " · ".join(parts)
-
-    if board_total == 0:
-        lines.append(
-            "_No cards on the board — run `/dashboard --refresh` to update board columns._"
-        )
-        lines.append("")
-    else:
-        lines.append(f"_{board_total} card(s) on board · New backlog hidden_")
-        lines.append("")
-        for col in working_columns:
-            items = board_buckets.get(col) or []
-            if not items:
-                continue
-            lines.append(f"### {_escape_md_pipe(col)} ({len(items)})")
-            lines.append("")
-            for wi in items:
-                lines.append(_card_line(wi))
-            lines.append("")
 
     # ------------------------------------------------------------------
     # Section 1: My Queue
@@ -741,7 +733,76 @@ def render_markdown(
     lines.append("")
 
     # ------------------------------------------------------------------
-    # Section 3: My ADO Inbox
+    # Section 3: Poseidon Board — story-level cards grouped by working column.
+    # Working columns render in a fixed priority order (In Progress, PR Review,
+    # Next) followed by any other non-empty working column. The "New" backlog
+    # and the "Merged" done-column are omitted here; completed work appears in
+    # Recently Completed (Merged/Closed cards changed within 24h). Portfolio
+    # parents and terminal-state ghosts are excluded by on_board_cards.
+    # ------------------------------------------------------------------
+    lines.append("## Poseidon Board")
+    lines.append("")
+
+    def _card_line(wi: dict) -> str:
+        parts = [
+            f"**{_wi_link(wi.get('id'), wi.get('url'))}** {_escape_md_pipe(wi.get('title') or '(no title)')}",
+            _escape_md_pipe(wi.get("assignedTo") or "Unassigned"),
+        ]
+        pr_nums = [
+            str(lp.get("prNumber"))
+            for lp in (wi.get("linkedPRs") or [])
+            if lp.get("prNumber")
+        ]
+        pr_status = (wi.get("prStatus") or "").strip()
+        if pr_nums:
+            pr = "PR " + ", ".join(f"#{n}" for n in pr_nums)
+            if pr_status:
+                pr += f" ({_escape_md_pipe(pr_status)})"
+            parts.append(pr)
+        elif pr_status:
+            parts.append(f"PR {_escape_md_pipe(pr_status)}")
+        autotest = (wi.get("autotestStatus") or "").strip()
+        if autotest:
+            parts.append(f"autotest {_escape_md_pipe(autotest)}")
+        return "- " + " · ".join(parts)
+
+    _board_priority = ["In Progress", "PR Review", "Next"]
+    working_columns = [
+        c for c in board_columns if c.strip().lower() not in ("new", "merged")
+    ]
+    board_buckets = on_board_cards(work_items, working_columns)
+    # Priority columns first, then any remaining working column so nothing is
+    # silently dropped if a card lands in an unlisted column.
+    display_columns = [c for c in _board_priority if c in board_buckets] + [
+        c for c in working_columns if c not in _board_priority
+    ]
+    completed = recently_completed_cards(work_items, synced_at)
+    board_total = sum(len(v) for v in board_buckets.values())
+
+    if board_total == 0 and not completed:
+        lines.append(
+            "_No cards on the board — run `/dashboard --refresh` to update board columns._"
+        )
+        lines.append("")
+    else:
+        for col in display_columns:
+            items = board_buckets.get(col) or []
+            if not items:
+                continue
+            lines.append(f"### {_escape_md_pipe(col)} ({len(items)})")
+            lines.append("")
+            for wi in items:
+                lines.append(_card_line(wi))
+            lines.append("")
+        if completed:
+            lines.append(f"### Recently Completed ({len(completed)})")
+            lines.append("")
+            for wi in completed:
+                lines.append(_card_line(wi))
+            lines.append("")
+
+    # ------------------------------------------------------------------
+    # Section 4: My ADO Inbox
     # ------------------------------------------------------------------
     lines.append("## My ADO Inbox")
     lines.append("")
@@ -1435,10 +1496,11 @@ def run_self_tests() -> int:
         failures += 1
 
     # ------------------------------------------------------------------
-    # Fixture M — render_markdown: Poseidon Board section
-    # Story-level cards grouped by working column; the board appears before
-    # ## My Queue, the In Progress column shows 2 cards, and the New-column /
-    # no-column items are excluded from the board view.
+    # Fixture M — render_markdown: Poseidon Board section + Recently Completed
+    # Section order is My Queue -> In Flight -> Poseidon Board -> My ADO Inbox.
+    # Working columns render In Progress/PR Review/Next (no count subtitle, New /
+    # no-column / portfolio excluded). Merged + Closed cards changed within 24h
+    # of synced_at surface under Recently Completed (older ones are dropped).
     # ------------------------------------------------------------------
     try:
         mirror_m = {
@@ -1450,6 +1512,10 @@ def run_self_tests() -> int:
                 {"id": 2, "title": "WI Two",   "type": "User Story", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
                 {"id": 3, "title": "WI Three", "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
                 {"id": 4, "title": "WI Four",  "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "",            "linkedPRs": []},
+                # Recently Completed candidates
+                {"id": 5, "title": "WI Five",  "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "Merged", "changedDate": "2026-06-01T09:00:00Z", "linkedPRs": []},
+                {"id": 6, "title": "WI Six",   "type": "Bug",        "state": "Closed", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "Closed", "changedDate": "2026-05-28T10:00:00Z", "linkedPRs": []},
+                {"id": 7, "title": "WI Seven", "type": "Bug",        "state": "Closed", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "Closed", "changedDate": "2026-06-01T08:00:00Z", "linkedPRs": []},
             ],
         }
         sources_m = {"mirror": mirror_m, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
@@ -1466,14 +1532,28 @@ def run_self_tests() -> int:
             f"Expected linked id cards [1] and [2] in output, got: {out_m!r}"
         assert "AB#" not in out_m, \
             f"Card ids must render as plain linked ids, not AB# prefixed, got: {out_m!r}"
+        assert "card(s) on board" not in out_m, \
+            f"Board count subtitle must be dropped, got: {out_m!r}"
         assert "WI Three" not in out_m, \
             f"New-column card must be excluded from board view, got: {out_m!r}"
         assert "WI Four" not in out_m, \
             f"No-column card must be excluded from board view, got: {out_m!r}"
-        board_pos = out_m.index("## Poseidon Board")
+        # Recently Completed: Merged (id5) + recent Closed (id7); old Closed (id6) dropped.
+        assert "### Recently Completed (2)" in out_m, \
+            f"Expected 'Recently Completed (2)' header, got: {out_m!r}"
+        assert "WI Five" in out_m and "WI Seven" in out_m, \
+            f"Merged + recent Closed cards must appear in Recently Completed, got: {out_m!r}"
+        assert "WI Six" not in out_m, \
+            f"Closed card older than 24h must be excluded, got: {out_m!r}"
+        assert "### Merged" not in out_m, \
+            f"Merged must not render as a working column, got: {out_m!r}"
+        # Section order: My Queue -> In Flight -> Poseidon Board -> My ADO Inbox
         queue_pos = out_m.index("## My Queue")
-        assert board_pos < queue_pos, \
-            f"Expected '## Poseidon Board' (pos {board_pos}) before '## My Queue' (pos {queue_pos})"
+        flight_pos = out_m.index("## In Flight")
+        board_pos = out_m.index("## Poseidon Board")
+        inbox_pos = out_m.index("## My ADO Inbox")
+        assert queue_pos < flight_pos < board_pos < inbox_pos, \
+            f"Section order must be Queue<Flight<Board<Inbox, got {queue_pos},{flight_pos},{board_pos},{inbox_pos}"
         print("PASS fixture_m_poseidon_board_section")
     except Exception as exc:
         print(f"FAIL fixture_m_poseidon_board_section: {exc}")
