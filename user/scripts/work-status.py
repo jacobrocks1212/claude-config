@@ -312,7 +312,7 @@ def render_dashboard(
         lines.append("  Mirror not yet initialized")
     else:
         synced_at = mirror.get("syncedAt", "(unknown)")
-        lines.append(f"  Mirror synced at: {synced_at}")
+        lines.append(f"  Mirror synced at: {_fmt_local(synced_at)}")
         lines.append(f"  Work items: {len(work_items)}")
         lines.append(f"  Stale upstream: {len(stale_paths)} marker(s)")
         if stale_paths:
@@ -514,6 +514,25 @@ def _pr_link(pr_number, repo: str | None = None) -> str:
     return f"[#{pr_number}](https://github.com/{slug}/pull/{pr_number})"
 
 
+def _fmt_local(ts: str, tz: datetime.tzinfo | None = None) -> str:
+    """Format a UTC ISO-8601 timestamp ('...Z') as a friendly local time.
+
+    Renders as 'dd/mm at H:MM AM/PM' in the machine's local timezone (tz=None
+    uses the system tz, so it adapts to DST and timezone changes automatically).
+    Returns the input unchanged if it is empty or can't be parsed.
+    """
+    if not ts:
+        return ts
+    try:
+        dt = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return ts
+    local = dt.astimezone(tz)
+    hour12 = local.hour % 12 or 12
+    ampm = "AM" if local.hour < 12 else "PM"
+    return f"{local.strftime('%d/%m')} at {hour12}:{local.strftime('%M')} {ampm}"
+
+
 def order_board(wis: list[dict], board_columns: list[str]) -> "OrderedDict[str, list]":
     """Bucket WIs into an ordered mapping keyed by board_columns + '(no column)'.
 
@@ -686,7 +705,7 @@ def render_markdown(
     if mirror is None:
         lines.append("_Mirror not yet initialized_")
     else:
-        lines.append(f"_Synced: {synced_at} · {len(work_items)} work items_")
+        lines.append(f"_Synced: {_fmt_local(synced_at)} · {len(work_items)} work items_")
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -843,7 +862,7 @@ def render_markdown(
         lines.append("_Mirror not yet initialized_")
     else:
         synced_at = mirror.get("syncedAt", "(unknown)")
-        lines.append(f"- **Mirror synced at:** {synced_at}")
+        lines.append(f"- **Mirror synced at:** {_fmt_local(synced_at)}")
         lines.append(f"- **Work items:** {len(work_items)}")
         lines.append(f"- **Stale upstream:** {len(stale_paths)} marker(s)")
         if stale_paths:
@@ -1285,8 +1304,10 @@ def run_self_tests() -> int:
             assert section in md_g, f"render_markdown must contain '{section}'"
         assert "## Team" not in md_g, \
             "Team section was dropped from markdown (board cards already show assignees)"
-        assert "2026-06-01T10:00:00Z" in md_g, \
-            "Subtitle must contain syncedAt timestamp"
+        assert _fmt_local("2026-06-01T10:00:00Z") in md_g, \
+            "Subtitle must contain syncedAt rendered as friendly local time"
+        assert "2026-06-01T10:00:00Z" not in md_g, \
+            "Raw UTC syncedAt must be converted to local time, not shown verbatim"
 
         print("PASS fixture_g_render_markdown_structure")
     except Exception as exc:
@@ -1707,8 +1728,36 @@ def run_self_tests() -> int:
         print(f"FAIL fixture_q_render_dashboard_board_centric: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture R — _fmt_local: UTC ISO -> friendly local 'dd/mm at H:MM AM/PM'.
+    # Pin an explicit tz so the expected string is deterministic regardless of
+    # the test machine's timezone. Also assert graceful passthrough.
+    # ------------------------------------------------------------------
+    try:
+        tz_central = datetime.timezone(datetime.timedelta(hours=-6))
+        # 2026-06-03T15:14:51Z -> 09:14 local (-06:00)
+        out_r = _fmt_local("2026-06-03T15:14:51Z", tz=tz_central)
+        assert out_r == "03/06 at 9:14 AM", \
+            f"_fmt_local afternoon-UTC case wrong: {out_r!r}"
+        # Noon/PM + 12-hour wrap: 2026-06-03T23:05:00Z -> 17:05 local -> 5:05 PM
+        out_r_pm = _fmt_local("2026-06-03T23:05:00Z", tz=tz_central)
+        assert out_r_pm == "03/06 at 5:05 PM", \
+            f"_fmt_local pm case wrong: {out_r_pm!r}"
+        # Midnight wrap: 00:30 local -> 12:30 AM
+        out_r_mid = _fmt_local("2026-06-03T06:30:00Z", tz=tz_central)
+        assert out_r_mid == "03/06 at 12:30 AM", \
+            f"_fmt_local midnight case wrong: {out_r_mid!r}"
+        # Graceful passthrough on empty / unparseable input.
+        assert _fmt_local("") == "", "_fmt_local('') must return ''"
+        assert _fmt_local("not-a-date") == "not-a-date", \
+            "_fmt_local must return unparseable input unchanged"
+        print("PASS fixture_r_fmt_local")
+    except Exception as exc:
+        print(f"FAIL fixture_r_fmt_local: {exc}")
+        failures += 1
+
     # Summary
-    total = 17
+    total = 18
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures
