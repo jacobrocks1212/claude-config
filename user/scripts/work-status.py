@@ -504,6 +504,16 @@ def _wi_link(wi_id, url: str | None = None) -> str:
     return f"[{wi_id}]({href})"
 
 
+# GitHub repo backing linked PRs when a record omits its own repo slug.
+_DEFAULT_GH_REPO = "cognitoforms/cognito"
+
+
+def _pr_link(pr_number, repo: str | None = None) -> str:
+    """Render a PR number as a Markdown link to the pull request on GitHub."""
+    slug = (repo or _DEFAULT_GH_REPO).strip("/")
+    return f"[#{pr_number}](https://github.com/{slug}/pull/{pr_number})"
+
+
 def order_board(wis: list[dict], board_columns: list[str]) -> "OrderedDict[str, list]":
     """Bucket WIs into an ordered mapping keyed by board_columns + '(no column)'.
 
@@ -698,9 +708,7 @@ def render_markdown(
             priority = item.get("priority", "")
             pr_info = ""
             if wi_id is not None and wi_id == branch_wi_id and self_pr is not None:
-                pr_num = self_pr.get("prNumber")
-                pr_repo = self_pr.get("repo", "")
-                pr_info = f"PR #{pr_num} ({_escape_md_pipe(pr_repo)})"
+                pr_info = _pr_link(self_pr.get("prNumber"), self_pr.get("repo"))
             lines.append(f"| {_wi_link(wi_id, item.get('url'))} | {title} | {priority} | {pr_info} |")
     else:
         lines.append("_(none)_")
@@ -743,28 +751,34 @@ def render_markdown(
     lines.append("## Poseidon Board")
     lines.append("")
 
-    def _card_line(wi: dict) -> str:
-        parts = [
-            f"**{_wi_link(wi.get('id'), wi.get('url'))}** {_escape_md_pipe(wi.get('title') or '(no title)')}",
-            _escape_md_pipe(wi.get("assignedTo") or "Unassigned"),
-        ]
-        pr_nums = [
-            str(lp.get("prNumber"))
+    def _pr_cell(wi: dict) -> str:
+        pr_links = [
+            _pr_link(lp.get("prNumber"), lp.get("repo"))
             for lp in (wi.get("linkedPRs") or [])
             if lp.get("prNumber")
         ]
         pr_status = (wi.get("prStatus") or "").strip()
-        if pr_nums:
-            pr = "PR " + ", ".join(f"#{n}" for n in pr_nums)
+        if pr_links:
+            cell = ", ".join(pr_links)
             if pr_status:
-                pr += f" ({_escape_md_pipe(pr_status)})"
-            parts.append(pr)
-        elif pr_status:
-            parts.append(f"PR {_escape_md_pipe(pr_status)}")
-        autotest = (wi.get("autotestStatus") or "").strip()
-        if autotest:
-            parts.append(f"autotest {_escape_md_pipe(autotest)}")
-        return "- " + " · ".join(parts)
+                cell += f" ({_escape_md_pipe(pr_status)})"
+            return cell
+        return _escape_md_pipe(pr_status)
+
+    def _emit_card_table(heading: str, items: list[dict]) -> None:
+        lines.append(f"### {heading} ({len(items)})")
+        lines.append("")
+        lines.append("| WI | Title | Assignee | PR | Autotest |")
+        lines.append("| --- | --- | --- | --- | --- |")
+        for wi in items:
+            lines.append(
+                f"| {_wi_link(wi.get('id'), wi.get('url'))} "
+                f"| {_escape_md_pipe(wi.get('title') or '(no title)')} "
+                f"| {_escape_md_pipe(wi.get('assignedTo') or 'Unassigned')} "
+                f"| {_pr_cell(wi)} "
+                f"| {_escape_md_pipe((wi.get('autotestStatus') or '').strip())} |"
+            )
+        lines.append("")
 
     _board_priority = ["In Progress", "PR Review", "Next"]
     working_columns = [
@@ -789,17 +803,9 @@ def render_markdown(
             items = board_buckets.get(col) or []
             if not items:
                 continue
-            lines.append(f"### {_escape_md_pipe(col)} ({len(items)})")
-            lines.append("")
-            for wi in items:
-                lines.append(_card_line(wi))
-            lines.append("")
+            _emit_card_table(col, items)
         if completed:
-            lines.append(f"### Recently Completed ({len(completed)})")
-            lines.append("")
-            for wi in completed:
-                lines.append(_card_line(wi))
-            lines.append("")
+            _emit_card_table("Recently Completed", completed)
 
     # ------------------------------------------------------------------
     # Section 4: My ADO Inbox
@@ -1528,7 +1534,7 @@ def run_self_tests() -> int:
             f"Expected '## Poseidon Board' in output, got: {out_m!r}"
         assert "### In Progress (2)" in out_m, \
             f"Expected 'In Progress (2)' column header in output, got: {out_m!r}"
-        assert "**[1](" in out_m and "**[2](" in out_m, \
+        assert "[1](" in out_m and "[2](" in out_m, \
             f"Expected linked id cards [1] and [2] in output, got: {out_m!r}"
         assert "AB#" not in out_m, \
             f"Card ids must render as plain linked ids, not AB# prefixed, got: {out_m!r}"
@@ -1588,10 +1594,10 @@ def run_self_tests() -> int:
             f"Portfolio parent (Feature) must be excluded from board, got: {out_n!r}"
         assert "[101]" not in out_n, \
             f"New-column child must be hidden from board, got: {out_n!r}"
-        assert "**[100](" in out_n, \
+        assert "[100](" in out_n, \
             f"Expected In Progress child card linked id [100] in output, got: {out_n!r}"
-        assert "#555" in out_n, \
-            f"Expected '#555' PR link for Child A in output, got: {out_n!r}"
+        assert "[#555](https://github.com/cognitoforms/cognito/pull/555)" in out_n, \
+            f"Expected linked PR #555 for Child A in output, got: {out_n!r}"
         print("PASS fixture_n_board_excludes_portfolio_and_new")
     except Exception as exc:
         print(f"FAIL fixture_n_board_excludes_portfolio_and_new: {exc}")
