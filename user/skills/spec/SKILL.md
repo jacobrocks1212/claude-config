@@ -154,6 +154,8 @@ Strip `--batch` from `$ARGUMENTS` before processing the rest of this skill so ph
 
 ## Task Tracking (MANDATORY — DO NOT SKIP)
 
+!`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
+
 Before any work, load task tools and create tasks for compaction recovery:
 
 ```

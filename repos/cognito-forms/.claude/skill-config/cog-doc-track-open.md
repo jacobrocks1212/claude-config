@@ -1,0 +1,1 @@
+At this point, register or refresh work-dashboard tracking for the current item: run `python ~/.claude/scripts/track-work.py open` (it resolves the item from the current `p/<id>-` git branch via materialized.json and writes/refreshes a WIP.md liveness marker). This is non-fatal — if no cog-docs item resolves, it exits 0 and writes nothing. Do not block on its result.

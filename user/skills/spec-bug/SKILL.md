@@ -21,6 +21,8 @@ $ARGUMENTS
 
 ## Step 1: Context Gathering (Parallel Subagents)
 
+!`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
+
 Launch parallel research subagents to collect all available evidence. Each subagent returns structured findings. Adapt the subagent set based on what's available — skip subagents whose data sources don't exist.
 
 If the user's description is (or references) a work-item id, the work-item context subagent (F, below) fetches that item and its related items first, so the rest of the investigation is grounded in what was actually reported.

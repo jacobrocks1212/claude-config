@@ -515,9 +515,99 @@ N/A — Phase deferred; assertions will be defined when this phase is scheduled.
 **Testing Strategy:** *(DEFERRED)*
 
 **Integration Notes for Next Phase:**
-- This is the terminal phase; there is no Phase 7.
+- This remains the terminal phase of the **PR-shepherding** track. Phase 7 (filesystem-derived manual-work tracking + review-artifact co-location) is additive and independent — it does not depend on PR shepherding and is schedulable ahead of this deferred phase (as Phase 5 was).
 - The `wait_on_pr` queue state, `FEEDBACK.md` sentinel, and the slot-scrub-on-merge path are the three new contracts this phase introduces on top of Phase 4's stable foundation.
 - When scheduling, re-read `RESEARCH.md` section on `gh pr view --json statusCheckRollup,reviews` output shape and the `vstfs://...` ArtifactLink parse for merge detection before implementation.
+
+---
+
+### Phase 7: Filesystem-Derived Tracking for Manual Work + Review Artifact Co-location
+
+**Scope:** Extend in-flight tracking so **manually-invoked** workflow skills — not only `/lazy-worker` — surface on the dashboard as in-flight with a derived stage, **purely from on-disk state, with no lease required**. Tracking is *triggered* by the workflow skills (item registration + liveness), but the stage stays *derived* from the existing sentinel/artifact ladder — preserving the determinism contract: skills produce artifacts, and `derive_stage` is a pure, clock-free transform of those bytes (it is never asserted by a skill, which would create a second, drift-prone source of truth). The same change co-locates `cognito-pr-review:review-pr` output into the cog-docs item directory and has it emit a local "reviewed" stage signal. The skill triggers are scoped to the **cognito-forms projection** via the established fallback-cat idiom (the injected line resolves to content only where `.claude/skill-config/cog-doc-track.md` exists, and to an `echo ""` no-op in `_default`, personal, and every other repo). This phase is independent of the deferred Phase 6 and schedulable now (as Phase 5 was).
+
+**Deliverables — Cluster A (filesystem-derived tracking):**
+- [x] `derive_stage(item_dir) -> str` pure helper in `user/scripts/lazy_core.py`, placed beside the existing sentinel readers — maps the on-disk ladder to exactly one of `spec | research | phases | plan | implement | review | reviewed | blocked | needs-input | stale-upstream | done`, reusing `parse_sentinel` / `read_stale_upstream` / the `COMPLETED.md`/`FIXED.md` receipt readers. Read-only, clock-free, side-effect-free. **Stage is derived, never asserted by a skill.**
+- [ ] `track_open` / `track_touch` / `track_close` helpers in `lazy_core.py` managing a per-item `WIP.md` liveness sentinel (frontmatter per `_components/sentinel-frontmatter.md`: `kind: wip`, `wi_id`, `slug`, `branch`, `host`, `started_at`, `last_touched`), all writes atomic via `_atomic_write`. `track_open` is **idempotent** — creates the item-dir registration if absent and refreshes `last_touched` on every call (a free heartbeat-equivalent); `track_close` removes the sentinel.
+- [ ] `user/scripts/track-work.py` (net-new): a thin `open | touch | close` CLI over those helpers. Resolves the current item from the git branch (`^p/(\d+)-`) joined through `materialized.json` (`wi_id → feature_id`), or from an explicit `--slug`. **Safe no-op (exit 0) when no cog-docs root/config is resolvable** — so the cognito-forms skill hook never disturbs other repos even if the injection somehow runs.
+- [x] **Cognito-forms-scoped skill hook:** add a single fallback-cat injection line — resolving `.claude/skill-config/cog-doc-track.md` with an `echo ""` no-op fallback (the live runtime idiom already used by `spec-bug`/`spec-phases`/`write-plan`) — to each of `spec`, `spec-bug`, `spec-phases`, `write-plan`, `execute-plan`, `retro`. The net-new `claude-config/repos/cognito-forms/.claude/skill-config/cog-doc-track.md` carries the actual instruction (front-half skills → `track-work.py open`; terminal skills → `track-work.py close`), so the behavior is present **only in the cognito-forms projection**.
+- [ ] `user/scripts/work-status.py`: the *In flight* panel becomes **leases ∪ `WIP.md` markers**, deduped by `wi_id`/branch (a lazy item holding both a lease and a WIP marker appears once); stage column sourced from `derive_stage`; staleness flagged from `last_touched` age against a config threshold (mirrors the lease-TTL notion); items carrying a `COMPLETED.md`/`FIXED.md` receipt drop out of in-flight. Absent any WIP marker, behavior is byte-identical to the Phase 2/5 dashboard (graceful degradation preserved).
+- [ ] Tests: `derive_stage` rung-by-rung fixtures (each ladder state → expected label, including precedence when several sentinels coexist); `track_open` idempotency + `last_touched` refresh; work-status union/dedup/receipt-drop/staleness fixtures. Offline/stdlib-only; run with `PYTHONUTF8=1`.
+
+**Deliverables — Cluster B (review-pr → cog-docs co-location + reviewed status):**
+- [x] `cognito-pr-review:review-pr` resolves the WI id (`AB#\d+` in the PR description, fallback branch regex `^p/(\d+)-`) → cog-docs item dir via `materialized.json` (`wi_id → feature_id` slug), and writes its review artifact (`PR-<id>.md` + the persistent journey) into `<COG_DOCS>/docs/{features,bugs}/<slug>/`. **Falls back to the current `.claude.local/reviews/` location** when the WI is not materialized (no cog-docs dir to target) — no silent loss of output.
+- [ ] `review-pr` emits a local `REVIEWED.md` sentinel in the item dir on completion, so `derive_stage` reports `reviewed` — this is the "reviewing → reviewed" transition. **No ADO board write** (the poller PAT is `vso.work` read-only); the status is tracked locally and surfaced by the dashboard's derivation.
+- [ ] Tests: review-path resolution (materialized → cog-docs item dir; unmaterialized → `.claude.local/reviews/` fallback); `REVIEWED.md` present → `derive_stage == reviewed`.
+
+**Runtime Verification** *(checked by manual/live testing — NOT by the implementation agent):*
+- [ ] Running `/spec` (or any hooked skill) on a `p/<id>-<slug>` branch in the cognito-forms repo creates `WIP.md` in the matching cog-docs item dir; `/work-status` then lists the item under *In flight* with a non-lease source and a stage derived from its artifacts — with no lease present.
+- [ ] Running the same hooked skill in a non-cognito repo (or personal config) produces no `WIP.md` and no error (the injection resolved to the `echo ""` no-op).
+- [ ] Advancing an item through `spec → spec-phases → write-plan → execute-plan` flips the dashboard stage column accordingly, sourced purely from the artifacts each skill emits (no skill writes a stage field).
+- [ ] An item left untouched past the staleness threshold shows a STALE flag in *In flight*; an item with a `COMPLETED.md`/`FIXED.md` receipt no longer appears in *In flight*.
+- [ ] `review-pr` on a materialized WI writes `PR-<id>.md` into its cog-docs item dir and drops `REVIEWED.md`; `/work-status` shows that item's stage as `reviewed`. On an unmaterialized WI, the review lands in `.claude.local/reviews/` as before.
+
+**MCP Integration Test Assertions:**
+
+```
+ASSERTIONS:
+1. After track-work.py open runs for a materialized item: WIP.md MUST exist in the item dir with kind: wip frontmatter carrying wi_id/branch/last_touched; a second open MUST NOT duplicate the item dir or the sentinel, and MUST refresh last_touched
+2. After derive_stage runs on an item dir at each ladder state (SPEC only; +RESEARCH; +PHASES; +plans/; mid-implement; +REVIEWED.md; +COMPLETED.md): it MUST return spec/research/phases/plan/implement/reviewed/done respectively, and MUST return blocked/needs-input/stale-upstream when those sentinels are present (precedence honored)
+3. After work-status.py renders with both a lease and a WIP marker for the same wi_id: the In flight panel MUST list that item exactly once; an item present only as a WIP marker (no lease) MUST still appear In flight
+4. After an item gains a COMPLETED.md/FIXED.md receipt: it MUST NOT appear in the In flight panel
+5. After the cog-doc-track injection is projected for a non-cognito repo: the resolved skill text MUST contain no track-work invocation (the echo "" no-op resolved); for cognito-forms it MUST contain the track-work instruction
+6. After review-pr runs on a materialized WI: PR-<id>.md MUST be written under docs/{features,bugs}/<slug>/ and REVIEWED.md MUST exist there; on an unmaterialized WI, output MUST land in .claude.local/reviews/ (fallback) and no cog-docs dir is created
+```
+
+**Prerequisites:** Phase 2 complete (`render_markdown` / `render_dashboard` seams and the *In flight* panel exist), Phase 3 complete (`materialized.json` `wi_id → feature_id` join, the sentinel read/write helpers, and the `COMPLETED.md`/`FIXED.md` receipts). Independent of the deferred Phase 6.
+
+**Files likely modified:**
+- `user/scripts/lazy_core.py` (exists → reuse) — add `derive_stage` + `track_open`/`track_touch`/`track_close` + a `WIP.md` filename constant beside the existing sentinel helpers; reuse `_atomic_write`/`parse_sentinel`, do not alter existing exports
+- `user/scripts/track-work.py` (net-new) — thin `open|touch|close` CLI; branch-regex + `materialized.json` item resolution; no-op-when-no-cog-docs guard
+- `user/scripts/work-status.py` (exists → refactor) — *In flight* union (leases ∪ WIP markers), dedup, `derive_stage` column, receipt-drop, staleness; do not change `render_dashboard` semantics beyond the union; add fixtures
+- `claude-config/repos/cognito-forms/.claude/skill-config/cog-doc-track.md` (net-new) — the cognito-only injected instruction (open on front-half skills, close on terminal skills)
+- `user/skills/{spec,spec-bug,spec-phases,write-plan,execute-plan,retro}/SKILL.md` (exists → refactor) — one fallback-cat injection line each (no-op fallback); run `lint-skills.py` after
+- `cognito-pr-review` plugin (exists → refactor, **plugin source — NOT symlinked into claude-config**): `commands/review-pr.md` (Step 10 output path), `agents/synthesizer-v2.md` (cog-docs path resolution), `scripts/prep-pr.ts` (branch-name WI fallback) — plus the `REVIEWED.md` emit
+- `repos/cognito-forms/.claude/skill-config/ado-doc-integration.yml` and the `cog-docs` runtime copy (config, optional) — add a liveness staleness threshold and (optionally) the list of tracked skills
+
+**Testing Strategy:** Extend the state-machine / `work-status.py` self-tests with offline fixtures: temp item-dir trees exercising every `derive_stage` rung and sentinel-precedence case; `track_open` idempotency (two opens → one sentinel, `last_touched` advances under an injected clock); a work-status fixture seeding a lease + a WIP marker for one `wi_id` plus a WIP-only item plus a receipt-bearing item, asserting the union/dedup/drop; a review-path fixture with a materialized vs unmaterialized `materialized.json` asserting the target dir vs fallback. Projection scoping is verified via `project-skills.py` + `lint-skills.py --check-projected` (the `cog-doc-track` injection present for cognito-forms, no-op elsewhere). Live two-surface verification (cognito vs non-cognito repo) is the manual acceptance step. All Python gates run with `PYTHONUTF8=1`.
+
+**Integration Notes for Next Phase:**
+- `derive_stage` is the single authority for an item's stage — any future surface (a per-feature drill-down, a status badge) MUST call it rather than re-reading sentinels, to keep one derivation path.
+- The `WIP.md` liveness sentinel is deliberately distinct from a Phase 4 lease: a lease implies a worktree + heartbeat thread (machine liveness); `WIP.md` implies a human session touched the item (`last_touched`). The dashboard unions them but they are not interchangeable — do not collapse the two schemas.
+- `REVIEWED.md` is the local stand-in for an ADO board transition; if a future phase gains a write-scoped PAT, the board write becomes an *additional* emitter, not a replacement for the derived stage.
+
+**Context from prior phases:**
+- **Determinism contract (SPEC § "The determinism contract"):** sync/materialize/dashboard are inference-free pure transforms; judgment lives only in dispatched skills via `NEEDS_INPUT.md`/`BLOCKED.md`. `derive_stage`/`track-work` extend this — they are pure transforms; the skills only *trigger* registration, they do not *decide* stage.
+- The sentinel ladder and receipts already exist (Phase 3 Implementation Notes): `STALE_UPSTREAM.md`, `BLOCKED.md`, `NEEDS_INPUT.md`, `COMPLETED.md`, `FIXED.md`, plus `SPEC.md`/`RESEARCH*.md`/`PHASES.md`/`plans/` — `derive_stage` reads these, it does not invent new ones (except `WIP.md` liveness and `REVIEWED.md`).
+- `materialized.json` (`{wi_id, feature_id, materialized_changedDate}`, Phase 3) is the **join key** for both clusters — branch/PR `AB#<id>` → `feature_id` slug → item dir. `wi_id` is stored verbatim (no coercion); compare consistently.
+- Branch convention `p/<wi_id>-<slug>` / regex `^p/(\d+)-` (Phases 2/4) is reused for item resolution; keep it in sync with the scrub sequence.
+- `work-status.py` seams: `render_dashboard` (terminal) and `render_markdown` (GFM) share data selection (`_is_mine`, `match_self_pr`); the *In flight* union must feed both without forking their logic, and must not read the clock (use `syncedAt`/`last_touched`, never `datetime.now()`).
+- **`cognito-pr-review` is a plugin at `~/.claude/plugins/local-tools/plugins/cognito-pr-review/` — not symlinked into claude-config.** Its edits are inherently Cognito-scoped (no projection mechanism needed) but are tracked in plugin source, not `claude-config`; commit them there separately.
+- Always run Python gates with `PYTHONUTF8=1` (Windows cp1252 crashes on Unicode).
+
+#### Implementation Notes (Phase 7 — Batch 1)
+**Completed:** 2026-06-03
+**Work completed:**
+- **WU-1 — `derive_stage(item_dir) -> str`** (`user/scripts/lazy_core.py`, ~line 350, +constants `_WIP_FILENAME="WIP.md"` / `_REVIEWED_FILENAME="REVIEWED.md"` @346-347). Pure, read-only, clock-free, stdlib-only (`os`/`pathlib`/`re` — **no `yaml`**, so it stays callable from `--test`). Reuses `has_completion_receipt` (for both `COMPLETED.md` and `FIXED.md`) and `read_stale_upstream` rather than re-rolling probes. **Locked precedence (first match wins):** `done` (COMPLETED/FIXED receipt — terminal, intentionally beats halt sentinels) → `stale-upstream` → `blocked` → `needs-input` → `reviewed` (REVIEWED.md) → `review` (a `PR.md` marker present **and** PHASES.md present) → artifact ladder: plans/*.md present + PHASES has ≥1 checked `- [x]` → `implement`; plans/*.md + 0 checked → `plan`; PHASES present → `phases`; RESEARCH(_SUMMARY).md present → `research`; else → `spec` (also the missing-dir default). 16 rung-by-rung + precedence tests in `test_lazy_core.py` (suite 69/70; the lone failure `test_lazy_state_test_output_matches_baseline` is the pre-existing Windows-temp-path / `0x97`-decode baseline, NOT a regression).
+- **WU-4 — Cognito-forms-scoped skill hook.** Net-new `repos/cognito-forms/.claude/skill-config/cog-doc-track-open.md` + `cog-doc-track-close.md` (the real `python ~/.claude/scripts/track-work.py open|close` instruction, non-fatal/no-op-safe) and net-new no-op fallbacks `user/skills/_components/cog-doc-track-open.md` + `close.md` (single HTML comment each). One fallback-cat injection line added to each of `spec`, `spec-bug`, `spec-phases`, `write-plan`, `execute-plan` (open hook) and `retro` (close hook), using the live idiom `` !`cat .claude/skill-config/<f> 2>/dev/null || cat ~/.claude/skills/_components/<f>` ``. Verified via `project-skills.py`: the 5 front-half + retro projections under `Cognito Forms/` carry the `track-work.py` instruction; `_default/` resolves to the no-op (0 matches). `lint-skills.py`, `--check-projected --check-capabilities` all exit 0.
+- **WU-6 — `review-pr` cog-docs output-path resolution** (plugin, NOT in claude-config). `scripts/prep-pr.ts` `fetchPrContext`: additive branch `^p/(\d+)-` fallback for `workItems` (only when no `AB#` found; never removes AB# items) + fully-guarded cog-docs resolution (`COG_DOCS_ROOT` env → sibling `../cog-docs` → null) that reads `docs/work/materialized.json` (array), matches `String(wi_id)` of `workItems[0]`, probes `docs/features/<slug>` then `docs/bugs/<slug>`, and writes `cogDocsItemDir` (abs path or null) into `pr-context.json`. `commands/review-pr.md` Step 10: writes `PR-{id}.md` + journey under `<cogDocsItemDir>/` when set, else the existing `.claude.local/reviews/` fallback (zero behavior change unmaterialized; Local Mode untouched). `npx tsc --noEmit` introduces zero new errors (4 pre-existing errors at lines 497/512/515/1174 remain, outside the new code).
+**Integration notes:**
+- `derive_stage` is now the single stage authority; WU-5 (`work-status.py` In Flight union) consumes it for the stage column. The `review` rung keys on a `PR.md` marker — until the deferred PR-shepherding track drops one, the rung simply never fires and items sit at `implement` (the documented "omit and let implement stand" fallback).
+- WU-2 (`track_*` helpers) lands beside `derive_stage` next; `_WIP_FILENAME` is the forward-declared constant it will use (intentionally unused in Batch 1).
+- WU-7 will add the `REVIEWED.md` emit to the same `review-pr.md`; the `derive_stage == reviewed` half of the Cluster B test deliverable is already satisfied by WU-1's `test_derive_stage_reviewed`.
+**Pitfalls & guidance:**
+- Pre-existing, unrelated uncommitted changes exist in this repo (`repos/cognito-forms/.claude/skill-config/quality-gates.md`, `user/skills/_components/subagent-launch.md`) — NOT part of this batch; staged out of all Phase 7 commits (explicit per-file staging only).
+- The plugin lives under `~/.claude/plugins/` (not symlinked into claude-config); its changes are committed in plugin source separately, not in claude-config.
+**Files modified:**
+- `user/scripts/lazy_core.py` — `derive_stage` + 2 constants.
+- `user/scripts/test_lazy_core.py` — 16 derive_stage tests + registry + symbol-presence assert.
+- `repos/cognito-forms/.claude/skill-config/cog-doc-track-open.md`, `cog-doc-track-close.md` — net-new (cognito-only instruction).
+- `user/skills/_components/cog-doc-track-open.md`, `cog-doc-track-close.md` — net-new (no-op fallbacks).
+- `user/skills/{spec,spec-bug,spec-phases,write-plan,execute-plan,retro}/SKILL.md` — one injection line each.
+- (plugin) `cognito-pr-review/scripts/prep-pr.ts`, `cognito-pr-review/commands/review-pr.md` — cog-docs path resolution + Step 10 write target.
+
+##### Review Notes (Phase 7 — Batch 1)
+**Batch:** Batch 1 (WU-1, WU-4, WU-6 — 9 files in claude-config + 2 plugin files). **Reviewed:** 2026-06-03. **Verdict: PASS.**
+Ground-truth verified for all three WUs (test suite 69/70, projection greps 5/0, tsc errors pre-existing & outside new code — all independently re-run by the orchestrator and matched). TDD discipline sound (genuine RED via AttributeError, non-tautological assertions, full precedence + "omit PR.md→implement" coverage). Idiom byte-correct; cog-docs resolution fully guarded; fallback paths preserved (zero behavior change unmaterialized). No blocking actionable items.
 
 ---
 

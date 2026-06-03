@@ -757,6 +757,211 @@ def test_update_materialized_changeddate_absent_wi_is_noop():
 
 
 # ---------------------------------------------------------------------------
+# Tests: derive_stage — maps artifact ladder to a stage label
+# ---------------------------------------------------------------------------
+
+def _make_laddered_dir(td: str) -> Path:
+    """Helper: build a fully-laddered item dir (spec→research→phases→plan→implement)."""
+    d = Path(td)
+    (d / "SPEC.md").write_text("# Feature Spec\n", encoding="utf-8")
+    (d / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (d / "PHASES.md").write_text(
+        "# Phases\n\n- [x] Phase 1 done\n- [ ] Phase 2 todo\n",
+        encoding="utf-8",
+    )
+    plans_dir = d / "plans"
+    plans_dir.mkdir()
+    (plans_dir / "plan-phase-1.md").write_text(
+        "---\nkind: implementation-plan\nstatus: Complete\nphases:\n  - 1\n---\n",
+        encoding="utf-8",
+    )
+    return d
+
+
+def test_derive_stage_missing_dir():
+    """Missing directory → 'spec' (documented default)."""
+    _guard()
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        absent = Path(td) / "does-not-exist"
+    # td is now cleaned up, absent definitely does not exist
+    result = lazy_core.derive_stage(absent)
+    assert result == "spec", f"expected 'spec' for missing dir, got {result!r}"
+
+
+def test_derive_stage_spec_only():
+    """Dir with only SPEC.md → 'spec'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "SPEC.md").write_text("# Spec\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "spec", f"expected 'spec', got {result!r}"
+
+
+def test_derive_stage_research_md():
+    """SPEC.md + RESEARCH.md (no PHASES) → 'research'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "SPEC.md").write_text("# Spec\n", encoding="utf-8")
+        (d / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "research", f"expected 'research', got {result!r}"
+
+
+def test_derive_stage_research_summary_md():
+    """SPEC.md + RESEARCH_SUMMARY.md (no PHASES, no RESEARCH.md) → 'research'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "SPEC.md").write_text("# Spec\n", encoding="utf-8")
+        (d / "RESEARCH_SUMMARY.md").write_text("# Research Summary\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "research", f"expected 'research', got {result!r}"
+
+
+def test_derive_stage_phases_only():
+    """SPEC.md + PHASES.md (no plans/) → 'phases'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "SPEC.md").write_text("# Spec\n", encoding="utf-8")
+        (d / "PHASES.md").write_text("# Phases\n\n- [ ] Phase 1\n- [ ] Phase 2\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "phases", f"expected 'phases', got {result!r}"
+
+
+def test_derive_stage_plan_no_checked_deliverables():
+    """PHASES.md (zero checked deliverables) + plans/*.md → 'plan'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "SPEC.md").write_text("# Spec\n", encoding="utf-8")
+        (d / "PHASES.md").write_text("# Phases\n\n- [ ] Phase 1\n- [ ] Phase 2\n", encoding="utf-8")
+        plans_dir = d / "plans"
+        plans_dir.mkdir()
+        (plans_dir / "plan-phase-1.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases:\n  - 1\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.derive_stage(d)
+    assert result == "plan", f"expected 'plan', got {result!r}"
+
+
+def test_derive_stage_implement_checked_deliverable():
+    """PHASES.md with ≥1 checked deliverable + plans/*.md → 'implement'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "SPEC.md").write_text("# Spec\n", encoding="utf-8")
+        (d / "PHASES.md").write_text(
+            "# Phases\n\n- [x] Phase 1 done\n- [ ] Phase 2 todo\n",
+            encoding="utf-8",
+        )
+        plans_dir = d / "plans"
+        plans_dir.mkdir()
+        (plans_dir / "plan-phase-1.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Complete\nphases:\n  - 1\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.derive_stage(d)
+    assert result == "implement", f"expected 'implement', got {result!r}"
+
+
+def test_derive_stage_review():
+    """PR.md + PHASES.md present (impl-complete), no receipt/halt sentinels → 'review'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "PR.md").write_text("# Pull Request\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "review", f"expected 'review', got {result!r}"
+
+
+def test_derive_stage_reviewed():
+    """REVIEWED.md present (fully laddered dir) → 'reviewed'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "PR.md").write_text("# Pull Request\n", encoding="utf-8")
+        (d / "REVIEWED.md").write_text("# Reviewed\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "reviewed", f"expected 'reviewed', got {result!r}"
+
+
+def test_derive_stage_done_completed_md():
+    """COMPLETED.md present → 'done' (terminal, wins over everything)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "PR.md").write_text("# Pull Request\n", encoding="utf-8")
+        (d / "REVIEWED.md").write_text("# Reviewed\n", encoding="utf-8")
+        (d / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "done", f"expected 'done', got {result!r}"
+
+
+def test_derive_stage_done_fixed_md():
+    """FIXED.md present (no COMPLETED.md) → 'done'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "FIXED.md").write_text("# Fix Receipt\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "done", f"expected 'done' for FIXED.md receipt, got {result!r}"
+
+
+def test_derive_stage_stale_upstream_wins_over_ladder():
+    """STALE_UPSTREAM.md + full artifact ladder → 'stale-upstream' (halt beats ladder)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "STALE_UPSTREAM.md").write_text("upstream changed\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "stale-upstream", f"expected 'stale-upstream', got {result!r}"
+
+
+def test_derive_stage_blocked_wins_over_ladder():
+    """BLOCKED.md + full artifact ladder → 'blocked'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "BLOCKED.md").write_text("# Blocked\n\nWaiting on external API.\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "blocked", f"expected 'blocked', got {result!r}"
+
+
+def test_derive_stage_needs_input_wins_over_ladder():
+    """NEEDS_INPUT.md + full artifact ladder → 'needs-input'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "NEEDS_INPUT.md").write_text("# Needs Input\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "needs-input", f"expected 'needs-input', got {result!r}"
+
+
+def test_derive_stage_done_wins_over_blocked():
+    """COMPLETED.md + BLOCKED.md coexist → 'done' (receipt is terminal, beats halt sentinels)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = _make_laddered_dir(td)
+        (d / "BLOCKED.md").write_text("# Blocked\n", encoding="utf-8")
+        (d / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        result = lazy_core.derive_stage(d)
+    assert result == "done", f"expected 'done' (receipt beats BLOCKED.md), got {result!r}"
+
+
+def test_derive_stage_symbol_present():
+    """derive_stage must be an attribute of the lazy_core module."""
+    _guard()
+    assert hasattr(lazy_core, "derive_stage"), (
+        "lazy_core.derive_stage does not exist — implement the function"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: clear_diagnostics
 # ---------------------------------------------------------------------------
 
@@ -882,6 +1087,23 @@ _TESTS = [
     ("test_plan_phase_set_numeric", test_plan_phase_set_numeric),
     ("test_plan_phase_set_no_phases", test_plan_phase_set_no_phases),
     ("test_plan_phase_set_alpha_entries_skipped", test_plan_phase_set_alpha_entries_skipped),
+    # derive_stage
+    ("test_derive_stage_symbol_present", test_derive_stage_symbol_present),
+    ("test_derive_stage_missing_dir", test_derive_stage_missing_dir),
+    ("test_derive_stage_spec_only", test_derive_stage_spec_only),
+    ("test_derive_stage_research_md", test_derive_stage_research_md),
+    ("test_derive_stage_research_summary_md", test_derive_stage_research_summary_md),
+    ("test_derive_stage_phases_only", test_derive_stage_phases_only),
+    ("test_derive_stage_plan_no_checked_deliverables", test_derive_stage_plan_no_checked_deliverables),
+    ("test_derive_stage_implement_checked_deliverable", test_derive_stage_implement_checked_deliverable),
+    ("test_derive_stage_review", test_derive_stage_review),
+    ("test_derive_stage_reviewed", test_derive_stage_reviewed),
+    ("test_derive_stage_done_completed_md", test_derive_stage_done_completed_md),
+    ("test_derive_stage_done_fixed_md", test_derive_stage_done_fixed_md),
+    ("test_derive_stage_stale_upstream_wins_over_ladder", test_derive_stage_stale_upstream_wins_over_ladder),
+    ("test_derive_stage_blocked_wins_over_ladder", test_derive_stage_blocked_wins_over_ladder),
+    ("test_derive_stage_needs_input_wins_over_ladder", test_derive_stage_needs_input_wins_over_ladder),
+    ("test_derive_stage_done_wins_over_blocked", test_derive_stage_done_wins_over_blocked),
     # clear_diagnostics
     ("test_clear_diagnostics_callable", test_clear_diagnostics_callable),
     # --test baseline (zero-behavior-change contract)

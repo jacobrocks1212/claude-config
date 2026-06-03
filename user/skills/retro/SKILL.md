@@ -716,6 +716,8 @@ If a later session re-runs `/retro` on the same feature and finds new Significan
 
 ## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
 
+!`cat .claude/skill-config/cog-doc-track-close.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-close.md`
+
 !`cat ~/.claude/skills/_components/work-log.md`
 
 **Extra fields for retro:**

@@ -73,6 +73,8 @@ When red-flag detection triggers under `--batch`:
 
 ## Task Tracking (MANDATORY — DO NOT SKIP)
 
+!`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
+
 Load task tools and create tasks for compaction recovery:
 
 ```

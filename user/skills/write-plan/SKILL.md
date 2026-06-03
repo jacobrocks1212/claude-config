@@ -63,6 +63,8 @@ Plan-file frontmatter under a halt: set `status: Draft` (not `Ready`) on any par
 
 ## Step 1: Load All Context
 
+!`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
+
 ### 1a. Resolve PHASES.md Paths
 
 - `$ARGUMENTS` must contain 1+ `.md` paths. If none are provided, use **AskUserQuestion** to ask for them.

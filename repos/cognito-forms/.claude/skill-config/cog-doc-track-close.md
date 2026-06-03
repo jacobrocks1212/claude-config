@@ -1,0 +1,1 @@
+At this point, close work-dashboard tracking for the current item: run `python ~/.claude/scripts/track-work.py close` (it removes the WIP.md liveness marker for the item resolved from the current `p/<id>-` git branch). Non-fatal — exits 0 and writes nothing if no cog-docs item resolves. Do not block on its result.

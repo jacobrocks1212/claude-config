@@ -124,6 +124,8 @@ Mode: fully autonomous (no approval gates)
 
 ## Step 2: Initialize Task Tracking (MANDATORY — BEFORE ANY EXECUTION)
 
+!`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
+
 **This step is critical for surviving context compaction.** If the context window compacts mid-execution, tasks are the only persistent state that tells you where you left off.
 
 1. Call `ToolSearch({ query: "select:TaskCreate,TaskUpdate,TaskGet,TaskList" })` to load task tools

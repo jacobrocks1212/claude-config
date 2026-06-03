@@ -340,6 +340,94 @@ def update_materialized_changeddate(work_dir: Path, wi_id, new_changed_date) -> 
 
 
 # ---------------------------------------------------------------------------
+# Stage derivation
+# ---------------------------------------------------------------------------
+
+_WIP_FILENAME = "WIP.md"
+_REVIEWED_FILENAME = "REVIEWED.md"
+
+
+def derive_stage(item_dir) -> str:
+    """Derive the current workflow stage of an item directory from its artifact set.
+
+    Stage is DERIVED from filesystem artifacts (never asserted by a skill directly).
+    Accepts any path-like object; coerces to Path internally. Never raises on a
+    missing directory — returns "spec" as the documented default.
+
+    Precedence (first match wins):
+      1. done          — COMPLETED.md or FIXED.md receipt present (terminal; intentionally
+                         wins over halt sentinels because receipts are permanent, irreversible).
+      2. stale-upstream — STALE_UPSTREAM.md present (read_stale_upstream is not None).
+      3. blocked       — BLOCKED.md present.
+      4. needs-input   — NEEDS_INPUT.md present.
+      5. reviewed      — REVIEWED.md present.
+      6. review        — PR.md present AND PHASES.md present.  If PR.md is absent, this
+                         rung is skipped and the artifact-ladder result (implement or lower)
+                         stands — "omit PR.md and let implement stand" fallback.
+      Artifact ladder:
+      7. implement     — plans/ subdir with ≥1 *.md file AND PHASES.md has ≥1 checked
+                         deliverable (line matching r"^\\s*-\\s*\\[[xX]\\]").
+      8. plan          — plans/ subdir with ≥1 *.md file (but zero checked deliverables).
+      9. phases        — PHASES.md exists (but no plans/).
+     10. research      — RESEARCH.md or RESEARCH_SUMMARY.md exists.
+     11. spec          — default / fallback.
+
+    Returns one of: spec | research | phases | plan | implement | review |
+                    reviewed | blocked | needs-input | stale-upstream | done
+    """
+    item_dir = Path(item_dir)
+    if not item_dir.exists():
+        return "spec"
+
+    # 1. done — receipt files are terminal
+    if has_completion_receipt(item_dir, "COMPLETED.md") or has_completion_receipt(item_dir, "FIXED.md"):
+        return "done"
+
+    # 2. stale-upstream
+    if read_stale_upstream(item_dir) is not None:
+        return "stale-upstream"
+
+    # 3. blocked
+    if (item_dir / "BLOCKED.md").exists():
+        return "blocked"
+
+    # 4. needs-input
+    if (item_dir / "NEEDS_INPUT.md").exists():
+        return "needs-input"
+
+    # 5. reviewed
+    if (item_dir / _REVIEWED_FILENAME).exists():
+        return "reviewed"
+
+    # 6. review — PR.md + PHASES.md both present
+    if (item_dir / "PR.md").exists() and (item_dir / "PHASES.md").exists():
+        return "review"
+
+    # 7-8. Artifact ladder: plans/ subdir with ≥1 *.md
+    plans_dir = item_dir / "plans"
+    if plans_dir.exists() and any(plans_dir.glob("*.md")):
+        # Determine implement vs plan by checking for ≥1 checked deliverable in PHASES.md
+        phases_path = item_dir / "PHASES.md"
+        if phases_path.exists():
+            phases_text = phases_path.read_text(encoding="utf-8")
+            for line in phases_text.splitlines():
+                if re.match(r"^\s*-\s*\[[xX]\]", line):
+                    return "implement"
+        return "plan"
+
+    # 9. phases
+    if (item_dir / "PHASES.md").exists():
+        return "phases"
+
+    # 10. research
+    if (item_dir / "RESEARCH.md").exists() or (item_dir / "RESEARCH_SUMMARY.md").exists():
+        return "research"
+
+    # 11. spec (default)
+    return "spec"
+
+
+# ---------------------------------------------------------------------------
 # Plan file parsing
 # ---------------------------------------------------------------------------
 
