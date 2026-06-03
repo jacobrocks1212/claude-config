@@ -705,7 +705,7 @@ def render_markdown(
     if mirror is None:
         lines.append("_Mirror not yet initialized_")
     else:
-        lines.append(f"_Synced: {_fmt_local(synced_at)} · {len(work_items)} work items_")
+        lines.append(f"_Synced: {_fmt_local(synced_at)}_")
     lines.append("")
 
     # ------------------------------------------------------------------
