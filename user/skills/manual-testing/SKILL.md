@@ -18,8 +18,8 @@ Write manual testing documents for features that are ready for QA or PO review. 
 
 Read the feature's source documents. Look for these in the feature directory (or ask the user where they are):
 
-1. **SPEC.md** (or `requirements.md`, `overview.md`) — what the feature does, decisions made, edge cases
-2. **PHASES.md** (or `implementation-plan.md`, `progress.md`) — what was actually built, bug fixes applied, scope changes
+1. **SPEC.md** — what the feature does, decisions made, edge cases
+2. **PHASES.md** — what was actually built, bug fixes applied, scope changes
 3. **Existing MANUAL_TESTING.md** — if one exists, use it as a starting point for structure
 
 If PHASES.md shows completed phases with bug fixes or scope changes, the testing doc must reflect the **final shipped behavior**, not the original plan.

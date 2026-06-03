@@ -135,7 +135,7 @@ Infer whether this belongs in `docs/features/` or `docs/bugs/` based on context:
 
 ### Directory creation
 
-- **Bug:** `docs/bugs/BUG-{NNN}-{slug}/SPEC.md` — use next sequential number per `docs/bugs/CLAUDE.md` conventions
+- **Bug:** `docs/bugs/{bug-dir}/SPEC.md` — name `{bug-dir}` per the repo's `docs/bugs/CLAUDE.md` naming convention (e.g. `<WI_ID>-<slug>` where bugs map to work items, or a descriptive `<slug>` otherwise). Read that file first; do not assume a fixed format.
 - **Feature:** `docs/features/{group}/{feature-slug}/SPEC.md` — use existing feature directory if one exists, or create new
 
 For bugs, also create the standard bug doc header fields alongside the investigation spec format.
