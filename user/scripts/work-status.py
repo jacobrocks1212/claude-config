@@ -127,21 +127,28 @@ def _is_mine(assigned_to: str | None) -> bool:
     return assigned_to.strip().lower() in _MY_IDENTITIES
 
 
-def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
-    """Build the full five-panel dashboard text from pre-loaded sources.
+def render_dashboard(
+    sources: dict,
+    current_branch: str | None = None,
+    board_columns: list[str] | None = None,
+) -> str:
+    """Build the board-centric terminal dashboard text from pre-loaded sources.
 
     Panels (each separated by a blank line and a header line):
+      POSEIDON BOARD — story-level cards grouped by working column (mirrors the
+                       markdown board: New backlog and portfolio parents excluded)
       MY QUEUE     — queue.json items assigned to me (feat + bug)
       IN FLIGHT    — active leases
       MY ADO INBOX — mirror WIs assigned to current user, not yet materialized
-      TEAM         — teammates' mirror WIs with pr/prStatus/autotestStatus
       POOL & SYNC  — mirror freshness (syncedAt), stale-upstream count, missing artifacts
 
     Graceful degradation: absent sources show informational text (e.g.
     "No leases" when leases.json missing) rather than raising.
 
-    Returns a single string suitable for print() or write to DASHBOARD.md.
+    Returns a single string suitable for print().
     """
+    if board_columns is None:
+        board_columns = DEFAULT_BOARD_COLUMNS
     lines: list[str] = []
 
     mirror: dict | None = sources.get("mirror")
@@ -169,6 +176,47 @@ def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
             if wi:
                 linked_prs = wi.get("linkedPRs") or []
                 self_pr = match_self_pr(current_branch, linked_prs)
+
+    # ------------------------------------------------------------------
+    # Panel 0: POSEIDON BOARD — story-level cards grouped by working column.
+    # New backlog, portfolio parents, and terminal-state ghosts are excluded
+    # (see on_board_cards), mirroring the markdown board.
+    # ------------------------------------------------------------------
+    lines.append("=== POSEIDON BOARD ===")
+    working_columns = [c for c in board_columns if c.strip().lower() != "new"]
+    board_buckets = on_board_cards(work_items, working_columns)
+    board_total = sum(len(v) for v in board_buckets.values())
+    if mirror is None:
+        lines.append("  Mirror not yet initialized")
+    elif board_total == 0:
+        lines.append("  (no cards on the board)")
+    else:
+        for col in working_columns:
+            items = board_buckets.get(col) or []
+            if not items:
+                continue
+            lines.append(f"  {col} ({len(items)})")
+            for wi in items:
+                wi_id = wi.get("id", "?")
+                title = wi.get("title", "(no title)")
+                assigned = wi.get("assignedTo") or "Unassigned"
+                parts = [f"    [{wi_id}] {title}  assigned={assigned}"]
+                pr_nums = [
+                    str(lp.get("prNumber"))
+                    for lp in (wi.get("linkedPRs") or [])
+                    if lp.get("prNumber")
+                ]
+                if pr_nums:
+                    parts.append(f"  PR#{','.join(pr_nums)}")
+                pr_status = wi.get("prStatus") or ""
+                if pr_status:
+                    parts.append(f"  prStatus={pr_status}")
+                autotest = wi.get("autotestStatus") or ""
+                if autotest:
+                    parts.append(f"  autotestStatus={autotest}")
+                lines.append("".join(parts))
+
+    lines.append("")
 
     # ------------------------------------------------------------------
     # Panel 1: MY QUEUE
@@ -253,46 +301,6 @@ def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
                 lines.append(f"  [{wi_id}] {title}  state={state}{pr_info}")
                 if url:
                     lines.append(f"    {url}")
-
-    lines.append("")
-
-    # ------------------------------------------------------------------
-    # Panel 4: TEAM
-    # ------------------------------------------------------------------
-    lines.append("=== TEAM ===")
-    if mirror is None:
-        lines.append("  Mirror not yet initialized")
-    else:
-        team_wis = [wi for wi in work_items if not _is_mine(wi.get("assignedTo"))]
-        team_wis, hidden_count = filter_recent_team(
-            team_wis, mirror.get("syncedAt", "")
-        )
-        if not team_wis:
-            lines.append("  (no teammate WIs in mirror)")
-        else:
-            for wi in team_wis:
-                wi_id = wi.get("id", "?")
-                title = wi.get("title", "(no title)")
-                assigned = wi.get("assignedTo", "Unassigned")
-                state = wi.get("state", "?")
-                pr_status = wi.get("prStatus") or ""
-                autotest = wi.get("autotestStatus") or ""
-                pr = wi.get("pr") or ""
-                linked_prs = wi.get("linkedPRs") or []
-                pr_nums = [str(lp.get("prNumber")) for lp in linked_prs if lp.get("prNumber")]
-
-                info_parts = [f"  [{wi_id}] {title}  assigned={assigned}  state={state}"]
-                if pr_nums:
-                    info_parts.append(f"  PR#{','.join(pr_nums)}")
-                if pr_status:
-                    info_parts.append(f"  prStatus={pr_status}")
-                if autotest:
-                    info_parts.append(f"  autotestStatus={autotest}")
-                lines.append("".join(info_parts))
-        if hidden_count:
-            lines.append(
-                f"  (hiding {hidden_count} terminal item(s) older than 5 days)"
-            )
 
     lines.append("")
 
@@ -894,6 +902,7 @@ def run_self_tests() -> int:
                     "title": "Teammate feature",
                     "state": "Active",
                     "assignedTo": "Alice Smith",
+                    "boardColumn": "In Progress",
                     "areaPath": "Cognito Forms\\Poseidon",
                     "iteration": "Cognito Forms\\Sprint 42",
                     "parentId": None,
@@ -920,14 +929,15 @@ def run_self_tests() -> int:
 
         assert isinstance(dashboard_b, str), "render_dashboard must return str"
 
-        # TEAM panel must surface the teammate's pr/prStatus/autotestStatus
+        # The board panel must surface the teammate card's pr/prStatus/autotest
+        assert "=== POSEIDON BOARD ===" in dashboard_b, \
+            "render_dashboard must contain the board panel"
         assert "Review Required" in dashboard_b, \
-            "TEAM panel must contain prStatus 'Review Required'"
+            "board card must contain prStatus 'Review Required'"
         assert "Passed" in dashboard_b, \
-            "TEAM panel must contain autotestStatus 'Passed'"
-        # At minimum, one of the PR signals should appear
+            "board card must contain autotestStatus 'Passed'"
         assert "555" in dashboard_b or "Alice Smith" in dashboard_b, \
-            "TEAM panel must reference teammate WI 2001 / PR 555"
+            "board card must reference teammate WI 2001 / PR 555"
 
         print("PASS fixture_b_teammate_pr_ci")
     except Exception as exc:
@@ -1557,9 +1567,9 @@ def run_self_tests() -> int:
         failures += 1
 
     # ------------------------------------------------------------------
-    # Fixture Q — render_dashboard unchanged (regression guard)
-    # Board-carrying mirror must NOT produce board/active-feature markup in
-    # the terminal renderer. This passes now and must keep passing after impl.
+    # Fixture Q — render_dashboard is board-centric
+    # Terminal renderer groups story cards by working column, hides the New
+    # backlog and no-column items, drops the Team panel, and emits no markdown.
     # ------------------------------------------------------------------
     try:
         mirror_q = {
@@ -1567,22 +1577,28 @@ def run_self_tests() -> int:
             "watermark": "2026-06-01T10:00:00Z",
             "query": {},
             "workItems": [
-                {"id": 1, "title": "WI One",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
-                {"id": 2, "title": "WI Two",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
-                {"id": 3, "title": "WI Three", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
+                {"id": 1, "title": "WI One",   "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 2, "title": "WI Two",   "type": "User Story", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 3, "title": "WI Three", "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
             ],
         }
         sources_q = {"mirror": mirror_q, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
         term_q = render_dashboard(sources_q)
         assert isinstance(term_q, str), \
             f"render_dashboard must return str, got {type(term_q)}"
-        assert "## Poseidon Board" not in term_q, \
-            f"render_dashboard must NOT contain '## Poseidon Board', got: {term_q!r}"
-        assert "\U0001f3af" not in term_q, \
-            f"render_dashboard must NOT contain 🎯 active-feature markup, got: {term_q!r}"
-        print("PASS fixture_q_render_dashboard_unchanged")
+        assert "=== POSEIDON BOARD ===" in term_q, \
+            f"render_dashboard must contain the board panel, got: {term_q!r}"
+        assert "In Progress (2)" in term_q, \
+            f"board panel must show 'In Progress (2)', got: {term_q!r}"
+        assert "WI Three" not in term_q, \
+            f"New-column card must be hidden from the board panel, got: {term_q!r}"
+        assert "=== TEAM ===" not in term_q, \
+            f"Team panel must be dropped from the terminal renderer, got: {term_q!r}"
+        assert "## Poseidon Board" not in term_q and "\U0001f3af" not in term_q, \
+            f"render_dashboard must not emit markdown markup, got: {term_q!r}"
+        print("PASS fixture_q_render_dashboard_board_centric")
     except Exception as exc:
-        print(f"FAIL fixture_q_render_dashboard_unchanged: {exc}")
+        print(f"FAIL fixture_q_render_dashboard_board_centric: {exc}")
         failures += 1
 
     # Summary
@@ -1640,11 +1656,13 @@ def main() -> None:
         repo_root = Path(__file__).resolve().parent.parent.parent
 
     sources = load_sources(repo_root)
-    text = render_dashboard(sources, current_branch=args.current_branch)
+    cfg_cols, cfg_active = load_board_config(repo_root)
+    text = render_dashboard(
+        sources, current_branch=args.current_branch, board_columns=cfg_cols
+    )
     print(text)
 
     if args.markdown:
-        cfg_cols, cfg_active = load_board_config(repo_root)
         active = args.feature if args.feature is not None else cfg_active
         if isinstance(active, str) and active.strip().lstrip("-").isdigit():
             active = int(active)
