@@ -253,6 +253,9 @@ def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
         lines.append("  Mirror not yet initialized")
     else:
         team_wis = [wi for wi in work_items if not _is_mine(wi.get("assignedTo"))]
+        team_wis, hidden_count = filter_recent_team(
+            team_wis, mirror.get("syncedAt", "")
+        )
         if not team_wis:
             lines.append("  (no teammate WIs in mirror)")
         else:
@@ -275,6 +278,10 @@ def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
                 if autotest:
                     info_parts.append(f"  autotestStatus={autotest}")
                 lines.append("".join(info_parts))
+        if hidden_count:
+            lines.append(
+                f"  (hiding {hidden_count} terminal item(s) older than 5 days)"
+            )
 
     lines.append("")
 
