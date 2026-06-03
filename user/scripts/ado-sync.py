@@ -698,6 +698,13 @@ def main() -> None:
     parser.add_argument("--repo-root", type=Path, default=None, help="Path to repo root")
     parser.add_argument("--config", type=Path, default=None, help="Path to config JSON")
     parser.add_argument("--once", action="store_true", help="Run once and exit (no loop)")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Ignore the stored watermark and re-hydrate every item in the area "
+        "path (backfills fields added to the parser after items were last synced, "
+        "e.g. boardColumn). Slower; intended for occasional manual refresh.",
+    )
     parser.add_argument("--install-task", action="store_true", help="Install scheduled task")
     args = parser.parse_args()
 
@@ -717,7 +724,7 @@ def main() -> None:
         install_task(repo_root)
         sys.exit(0)
 
-    if args.once:
+    if args.once or args.full:
         config = _load_config(repo_root)
         wiql = config.get("wiql_identity", {})
         org = "cognitoforms"
@@ -727,7 +734,8 @@ def main() -> None:
         mirror_path = repo_root / "docs" / "work" / "ado-mirror.json"
         prior_mirror = _load_mirror(mirror_path)
         prior_items: list[dict] = prior_mirror.get("workItems", [])
-        prior_watermark: str = prior_mirror.get("watermark", "")
+        # --full ignores the watermark so every item is re-fetched and re-parsed.
+        prior_watermark: str = "" if args.full else prior_mirror.get("watermark", "")
 
         query_meta = {
             "areaPath": area_path,

@@ -114,11 +114,17 @@ def load_sources(repo_root: Path) -> dict:
     }
 
 
+# Identities that represent the current user in a WI's assignedTo. ADO WIQL
+# uses the literal "@Me", but the mirror stores resolved display names, so the
+# display name and email must match too (compared case-insensitively).
+_MY_IDENTITIES = frozenset({"@me", "jacob madsen", "jacob@cognitoforms.com"})
+
+
 def _is_mine(assigned_to: str | None) -> bool:
     """Return True if the assignedTo value represents the current user."""
     if assigned_to is None:
         return False
-    return assigned_to == "@Me"
+    return assigned_to.strip().lower() in _MY_IDENTITIES
 
 
 def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
@@ -227,7 +233,12 @@ def render_dashboard(sources: dict, current_branch: str | None = None) -> str:
     if mirror is None:
         lines.append("  Mirror not yet initialized")
     else:
-        my_wis = [wi for wi in work_items if _is_mine(wi.get("assignedTo")) and not wi.get("materialized", False)]
+        my_wis = [
+            wi for wi in work_items
+            if _is_mine(wi.get("assignedTo"))
+            and not wi.get("materialized", False)
+            and (wi.get("state") or "").strip().lower() not in _TERMINAL_STATES
+        ]
         if not my_wis:
             lines.append("  (no unmaterilaized WIs assigned to you)")
         else:
@@ -336,6 +347,36 @@ def match_self_pr(branch: str, linked_prs: list[dict]) -> dict | None:
 
 
 _TERMINAL_STATES = frozenset({"closed", "removed", "done", "resolved"})
+
+# Portfolio backlog levels carry their own board columns (on the Features/Epics
+# board) whose names can collide with the Stories board (e.g. "In Progress").
+# Excluding them keeps the Poseidon Board view to actual story/bug/defect cards.
+_PORTFOLIO_TYPES = frozenset({"Feature", "Epic", "Objective"})
+
+
+def on_board_cards(
+    work_items: list[dict],
+    working_columns: list[str],
+) -> dict[str, list[dict]]:
+    """Group story-level cards by their board column.
+
+    A card qualifies when its boardColumn is one of working_columns, its type is
+    not a portfolio level (Feature/Epic/Objective), and its state is not terminal
+    (guards against stale board columns left on closed items). Returns an ordered
+    dict keyed by working_columns; empty columns map to empty lists.
+    """
+    buckets: dict[str, list[dict]] = {c: [] for c in working_columns}
+    allowed = set(working_columns)
+    for wi in work_items:
+        col = wi.get("boardColumn") or ""
+        if col not in allowed:
+            continue
+        if (wi.get("type") or "") in _PORTFOLIO_TYPES:
+            continue
+        if (wi.get("state") or "").strip().lower() in _TERMINAL_STATES:
+            continue
+        buckets[col].append(wi)
+    return buckets
 
 
 def filter_recent_team(
@@ -545,17 +586,6 @@ def render_markdown(
 
     wi_by_id: dict[int, dict] = {int(wi["id"]): wi for wi in work_items}
 
-    # Items shown on the board and in feature groups: hide stale terminal items
-    # (closed/done/removed/resolved older than 5 days) unless --all-team. The
-    # full work_items list is retained as wi_by_id so parent-chain resolution
-    # still walks through long-closed ancestors.
-    board_wis = work_items
-    board_hidden = 0
-    if mirror is not None and not all_team:
-        board_wis, board_hidden = filter_recent_team(
-            work_items, mirror.get("syncedAt", ""), 5
-        )
-
     self_pr: dict | None = None
     branch_wi_id: int | None = None
     if current_branch:
@@ -577,63 +607,57 @@ def render_markdown(
     lines.append("")
 
     # ------------------------------------------------------------------
-    # Section: Poseidon Board
+    # Section: Poseidon Board — story-level cards grouped by working column.
+    # The "New" backlog column is omitted (it holds the full area-path backlog,
+    # not in-flight work); portfolio parents and terminal-state ghosts are
+    # excluded by on_board_cards. This mirrors the team's working board.
     # ------------------------------------------------------------------
     lines.append("## Poseidon Board")
     lines.append("")
-    has_board = any("boardColumn" in wi for wi in board_wis)
-    if not has_board:
-        lines.append("_No board data yet — run `/dashboard --refresh` to populate board columns._")
-    else:
-        buckets = order_board(board_wis, board_columns)
-        lines.append("| Column | # |")
-        lines.append("| --- | --- |")
-        for col in board_columns:
-            lines.append(f"| {_escape_md_pipe(col)} | {len(buckets[col])} |")
-    if board_hidden:
-        lines.append("")
+    working_columns = [c for c in board_columns if c.strip().lower() != "new"]
+    board_buckets = on_board_cards(work_items, working_columns)
+    board_total = sum(len(v) for v in board_buckets.values())
+
+    def _card_line(wi: dict) -> str:
+        parts = [
+            f"**AB#{wi.get('id')}** {_escape_md_pipe(wi.get('title') or '(no title)')}",
+            _escape_md_pipe(wi.get("assignedTo") or "Unassigned"),
+        ]
+        pr_nums = [
+            str(lp.get("prNumber"))
+            for lp in (wi.get("linkedPRs") or [])
+            if lp.get("prNumber")
+        ]
+        pr_status = (wi.get("prStatus") or "").strip()
+        if pr_nums:
+            pr = "PR " + ", ".join(f"#{n}" for n in pr_nums)
+            if pr_status:
+                pr += f" ({_escape_md_pipe(pr_status)})"
+            parts.append(pr)
+        elif pr_status:
+            parts.append(f"PR {_escape_md_pipe(pr_status)}")
+        autotest = (wi.get("autotestStatus") or "").strip()
+        if autotest:
+            parts.append(f"autotest {_escape_md_pipe(autotest)}")
+        return "- " + " · ".join(parts)
+
+    if board_total == 0:
         lines.append(
-            f"_Hiding {board_hidden} terminal item(s) older than 5 days. "
-            "Re-run with --all-team to include._"
+            "_No cards on the board — run `/dashboard --refresh` to update board columns._"
         )
-    lines.append("")
-
-    # ------------------------------------------------------------------
-    # Section: Active Feature (only when active_feature_id is provided)
-    # ------------------------------------------------------------------
-    if active_feature_id is not None:
-        groups = group_by_feature(board_wis, active_feature_id, wi_by_id)
-        active_group = groups[0] if groups and groups[0].get("feature_id") == active_feature_id else None
-        if active_group is not None:
-            lines.append(f"### \U0001f3af Active Feature: {_escape_md_pipe(active_group['title'])} (AB#{active_feature_id})")
+        lines.append("")
+    else:
+        lines.append(f"_{board_total} card(s) on board · New backlog hidden_")
+        lines.append("")
+        for col in working_columns:
+            items = board_buckets.get(col) or []
+            if not items:
+                continue
+            lines.append(f"### {_escape_md_pipe(col)} ({len(items)})")
             lines.append("")
-
-            def _lane_key(wi: dict) -> int:
-                lane = wi.get("boardColumn") or ""
-                return board_columns.index(lane) if lane in board_columns else len(board_columns)
-
-            ranked = sorted(active_group["wis"], key=_lane_key)
-            lines.append("| Rank | WI | Lane | Title | PR |")
-            lines.append("| --- | --- | --- | --- | --- |")
-            for i, wi in enumerate(ranked, start=1):
-                lane = wi.get("boardColumn") or "(no column)"
-                title = _escape_md_pipe(wi.get("title") or "(no title)")
-                linked = wi.get("linkedPRs") or []
-                pr_nums = [str(lp.get("prNumber")) for lp in linked if lp.get("prNumber")]
-                pr_cell = ", ".join(f"#{n}" for n in pr_nums) if pr_nums else "—"
-                lines.append(f"| {i} | AB#{wi.get('id')} | {_escape_md_pipe(lane)} | {title} | {pr_cell} |")
+            for wi in items:
+                lines.append(_card_line(wi))
             lines.append("")
-
-            for grp in groups[1:]:
-                fid = grp.get("feature_id")
-                if fid is None:
-                    lines.append("### Other (no parent feature)")
-                else:
-                    lines.append(f"### Feature: {_escape_md_pipe(grp['title'])} (AB#{fid})")
-                lines.append("")
-                ids = ", ".join(f"AB#{wi.get('id')}" for wi in grp["wis"])
-                lines.append(ids if ids else "_(none)_")
-                lines.append("")
 
     # ------------------------------------------------------------------
     # Section 1: My Queue
@@ -698,7 +722,9 @@ def render_markdown(
     else:
         my_wis = [
             wi for wi in work_items
-            if _is_mine(wi.get("assignedTo")) and not wi.get("materialized", False)
+            if _is_mine(wi.get("assignedTo"))
+            and not wi.get("materialized", False)
+            and (wi.get("state") or "").strip().lower() not in _TERMINAL_STATES
         ]
         if not my_wis:
             lines.append("_(none)_")
@@ -713,48 +739,6 @@ def render_markdown(
                 url = wi.get("url") or ""
                 url_cell = f"[link]({url})" if url else ""
                 lines.append(f"| {wi_id} | {title} | {state} | {pr_status} | {url_cell} |")
-    lines.append("")
-
-    # ------------------------------------------------------------------
-    # Section 4: Team
-    # ------------------------------------------------------------------
-    lines.append("## Team")
-    lines.append("")
-    if mirror is None:
-        lines.append("_Mirror not yet initialized_")
-    else:
-        team_wis = [wi for wi in work_items if not _is_mine(wi.get("assignedTo"))]
-        hidden_count = 0
-        if not all_team:
-            team_wis, hidden_count = filter_recent_team(
-                team_wis, mirror.get("syncedAt", ""), 5
-            )
-        if not team_wis:
-            lines.append("_(no teammate WIs in mirror)_")
-        else:
-            lines.append("| WI | Title | Assigned | State | PR | Autotest |")
-            lines.append("| --- | --- | --- | --- | --- | --- |")
-            for wi in team_wis:
-                wi_id = wi.get("id", "?")
-                title = _escape_md_pipe(wi.get("title") or "(no title)")
-                assigned = _escape_md_pipe(wi.get("assignedTo") or "Unassigned")
-                state = wi.get("state", "?")
-                linked_prs = wi.get("linkedPRs") or []
-                pr_nums = [
-                    str(lp.get("prNumber"))
-                    for lp in linked_prs
-                    if lp.get("prNumber")
-                ]
-                pr_cell = ", ".join(f"#{n}" for n in pr_nums) if pr_nums else ""
-                autotest = _escape_md_pipe(wi.get("autotestStatus") or "")
-                lines.append(
-                    f"| {wi_id} | {title} | {assigned} | {state} | {pr_cell} | {autotest} |"
-                )
-        if hidden_count:
-            lines.append(
-                f"_Hiding {hidden_count} terminal item(s) older than 5 days. "
-                "Re-run with --all-team to include._"
-            )
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -1179,8 +1163,10 @@ def run_self_tests() -> int:
                 {
                     "id": 7001,
                     "title": "Team item",
+                    "type": "Bug",
                     "state": "Active",
                     "assignedTo": "Frank",
+                    "boardColumn": "In Progress",
                     "changedDate": "2026-06-01T09:00:00Z",
                     "linkedPRs": [],
                     "pr": None,
@@ -1200,10 +1186,10 @@ def run_self_tests() -> int:
 
         assert md_g.startswith("# Work Dashboard"), \
             f"render_markdown must start with '# Work Dashboard', got: {md_g[:60]!r}"
-        for section in ["## My Queue", "## In Flight", "## My ADO Inbox", "## Team", "## Pool & Sync"]:
+        for section in ["## Poseidon Board", "## My Queue", "## In Flight", "## My ADO Inbox", "## Pool & Sync"]:
             assert section in md_g, f"render_markdown must contain '{section}'"
-        assert "| WI | Title | Assigned | State |" in md_g, \
-            "Team table header row missing in render_markdown output"
+        assert "## Team" not in md_g, \
+            "Team section was dropped from markdown (board cards already show assignees)"
         assert "2026-06-01T10:00:00Z" in md_g, \
             "Subtitle must contain syncedAt timestamp"
 
@@ -1229,8 +1215,10 @@ def run_self_tests() -> int:
                 {
                     "id": 8001,
                     "title": "A | B title",
+                    "type": "Bug",
                     "state": "Active",
                     "assignedTo": "Grace",
+                    "boardColumn": "In Progress",
                     "changedDate": "2026-06-02T08:00:00Z",
                     "linkedPRs": [],
                     "pr": None,
@@ -1257,8 +1245,9 @@ def run_self_tests() -> int:
         failures += 1
 
     # ------------------------------------------------------------------
-    # Fixture I — render_markdown: hidden-items note when old-closed teammate filtered
-    # synced_at = 2026-06-02T20:00:00Z; one old-closed teammate WI → note appears
+    # Fixture I — render_markdown: terminal-state guard on stale board column.
+    # A Closed item that still carries a working board column (stale, e.g. it
+    # was closed without being dragged off the board) must NOT appear as a card.
     # ------------------------------------------------------------------
     try:
         tmp_i = tempfile.mkdtemp(prefix="ws_test_i_")
@@ -1273,10 +1262,12 @@ def run_self_tests() -> int:
             "workItems": [
                 {
                     "id": 9001,
-                    "title": "Old closed team item",
+                    "title": "Closed item with stale board column",
+                    "type": "Bug",
                     "state": "Closed",
                     "assignedTo": "Hank",
-                    "changedDate": "2026-01-01T00:00:00Z",  # old → filtered
+                    "boardColumn": "In Progress",  # stale — item is Closed
+                    "changedDate": "2026-01-01T00:00:00Z",
                     "linkedPRs": [],
                     "pr": None,
                     "prStatus": None,
@@ -1291,16 +1282,16 @@ def run_self_tests() -> int:
             json.dumps(mirror_i, indent=2), encoding="utf-8"
         )
         sources_i = load_sources(repo_i)
-        md_i = render_markdown(sources_i)  # all_team=False → filtered
+        md_i = render_markdown(sources_i)
 
-        assert "Hiding 1 terminal item" in md_i or "Hiding 1" in md_i, \
-            f"Hidden-items note must appear when old-closed teammate WI filtered; got:\n{md_i}"
-        assert "--all-team" in md_i, \
-            "Hidden-items note must mention --all-team"
+        assert "AB#9001" not in md_i, \
+            f"Closed item with stale board column must not render as a card; got:\n{md_i}"
+        assert "No cards on the board" in md_i, \
+            f"Board must report no cards when only a closed/stale item is present; got:\n{md_i}"
 
-        print("PASS fixture_i_hidden_items_note")
+        print("PASS fixture_i_terminal_board_guard")
     except Exception as exc:
-        print(f"FAIL fixture_i_hidden_items_note: {exc}")
+        print(f"FAIL fixture_i_terminal_board_guard: {exc}")
         failures += 1
 
     # ------------------------------------------------------------------
@@ -1417,9 +1408,9 @@ def run_self_tests() -> int:
 
     # ------------------------------------------------------------------
     # Fixture M — render_markdown: Poseidon Board section
-    # WIs with boardColumn across lanes; assert board section appears before
-    # ## My Queue and In Progress lane shows count 2.
-    # RED: render_markdown does not yet accept board_columns/active_feature_id.
+    # Story-level cards grouped by working column; the board appears before
+    # ## My Queue, the In Progress column shows 2 cards, and the New-column /
+    # no-column items are excluded from the board view.
     # ------------------------------------------------------------------
     try:
         mirror_m = {
@@ -1427,10 +1418,10 @@ def run_self_tests() -> int:
             "watermark": "2026-06-01T10:00:00Z",
             "query": {},
             "workItems": [
-                {"id": 1, "title": "WI One",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
-                {"id": 2, "title": "WI Two",   "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
-                {"id": 3, "title": "WI Three", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
-                {"id": 4, "title": "WI Four",  "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "",            "linkedPRs": []},
+                {"id": 1, "title": "WI One",   "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 2, "title": "WI Two",   "type": "User Story", "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 3, "title": "WI Three", "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "New",         "linkedPRs": []},
+                {"id": 4, "title": "WI Four",  "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": None, "boardColumn": "",            "linkedPRs": []},
             ],
         }
         sources_m = {"mirror": mirror_m, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
@@ -1441,10 +1432,14 @@ def run_self_tests() -> int:
         )
         assert "## Poseidon Board" in out_m, \
             f"Expected '## Poseidon Board' in output, got: {out_m!r}"
-        assert "| Column | # |" in out_m, \
-            f"Expected board table header '| Column | # |' in output, got: {out_m!r}"
-        assert "| In Progress | 2 |" in out_m, \
-            f"Expected '| In Progress | 2 |' in output, got: {out_m!r}"
+        assert "### In Progress (2)" in out_m, \
+            f"Expected 'In Progress (2)' column header in output, got: {out_m!r}"
+        assert "**AB#1**" in out_m and "**AB#2**" in out_m, \
+            f"Expected AB#1 and AB#2 cards in output, got: {out_m!r}"
+        assert "WI Three" not in out_m, \
+            f"New-column card must be excluded from board view, got: {out_m!r}"
+        assert "WI Four" not in out_m, \
+            f"No-column card must be excluded from board view, got: {out_m!r}"
         board_pos = out_m.index("## Poseidon Board")
         queue_pos = out_m.index("## My Queue")
         assert board_pos < queue_pos, \
@@ -1455,10 +1450,10 @@ def run_self_tests() -> int:
         failures += 1
 
     # ------------------------------------------------------------------
-    # Fixture N — render_markdown: Active Feature section
-    # Feature WI + two children with boardColumns; assert 🎯 header appears,
-    # priority table is present, and lane-sort puts New child before In Progress child.
-    # RED: render_markdown does not yet accept board_columns/active_feature_id.
+    # Fixture N — render_markdown: portfolio exclusion + New hiding + PR cell
+    # A portfolio parent (Feature) carrying a working board column must be
+    # excluded; the New-column child must be hidden; the In Progress child must
+    # render as a card with its PR number.
     # ------------------------------------------------------------------
     try:
         mirror_n = {
@@ -1466,9 +1461,9 @@ def run_self_tests() -> int:
             "watermark": "2026-06-01T10:00:00Z",
             "query": {},
             "workItems": [
-                {"id": 54423, "title": "Board Feature", "state": "Active", "assignedTo": "Someone Else", "parentId": None,  "boardColumn": "",            "linkedPRs": []},
-                {"id": 100,   "title": "Child A",       "state": "Active", "assignedTo": "Someone Else", "parentId": 54423, "boardColumn": "In Progress", "linkedPRs": [{"prNumber": 555, "repo": "cognitoforms/cognito"}]},
-                {"id": 101,   "title": "Child B",       "state": "Active", "assignedTo": "Someone Else", "parentId": 54423, "boardColumn": "New",         "linkedPRs": []},
+                {"id": 54423, "title": "Board Feature", "type": "Feature",    "state": "Active", "assignedTo": "Someone Else", "parentId": None,  "boardColumn": "In Progress", "linkedPRs": []},
+                {"id": 100,   "title": "Child A",       "type": "User Story", "state": "Active", "assignedTo": "Someone Else", "parentId": 54423, "boardColumn": "In Progress", "linkedPRs": [{"prNumber": 555, "repo": "cognitoforms/cognito"}]},
+                {"id": 101,   "title": "Child B",       "type": "Bug",        "state": "Active", "assignedTo": "Someone Else", "parentId": 54423, "boardColumn": "New",         "linkedPRs": []},
             ],
         }
         sources_n = {"mirror": mirror_n, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
@@ -1477,30 +1472,25 @@ def run_self_tests() -> int:
             board_columns=["New", "Next", "In Progress", "PR Review", "Ready for Testing", "Reviewing", "Merged"],
             active_feature_id=54423,
         )
-        assert "### 🎯 Active Feature: Board Feature (AB#54423)" in out_n, \
-            f"Expected active feature header in output, got: {out_n!r}"
-        assert "| Rank | WI | Lane | Title | PR |" in out_n, \
-            f"Expected priority table header in output, got: {out_n!r}"
-        assert "AB#100" in out_n, \
-            f"Expected 'AB#100' in output, got: {out_n!r}"
-        assert "AB#101" in out_n, \
-            f"Expected 'AB#101' in output, got: {out_n!r}"
-        pos_100 = out_n.index("AB#100")
-        pos_101 = out_n.index("AB#101")
-        assert pos_101 < pos_100, \
-            f"Expected AB#101 (New lane, pos {pos_101}) before AB#100 (In Progress lane, pos {pos_100}) due to lane-sort"
+        assert "\U0001f3af" not in out_n, \
+            f"Active-feature section must be gone (no 🎯 header), got: {out_n!r}"
+        assert "AB#54423" not in out_n, \
+            f"Portfolio parent (Feature) must be excluded from board, got: {out_n!r}"
+        assert "AB#101" not in out_n, \
+            f"New-column child must be hidden from board, got: {out_n!r}"
+        assert "**AB#100**" in out_n, \
+            f"Expected In Progress child card 'AB#100' in output, got: {out_n!r}"
         assert "#555" in out_n, \
             f"Expected '#555' PR link for Child A in output, got: {out_n!r}"
-        print("PASS fixture_n_active_feature_section")
+        print("PASS fixture_n_board_excludes_portfolio_and_new")
     except Exception as exc:
-        print(f"FAIL fixture_n_active_feature_section: {exc}")
+        print(f"FAIL fixture_n_board_excludes_portfolio_and_new: {exc}")
         failures += 1
 
     # ------------------------------------------------------------------
-    # Fixture O — render_markdown: pre-phase5 graceful (no boardColumn keys)
-    # WIs without boardColumn; no active_feature_id; assert graceful notice
-    # and no board table, no 🎯 section.
-    # RED: render_markdown does not yet accept active_feature_id kwarg.
+    # Fixture O — render_markdown: graceful empty board (no on-board cards)
+    # WIs without a working board column; assert graceful notice and no
+    # active-feature section.
     # ------------------------------------------------------------------
     try:
         mirror_o = {
@@ -1508,22 +1498,20 @@ def run_self_tests() -> int:
             "watermark": "2026-06-01T10:00:00Z",
             "query": {},
             "workItems": [
-                {"id": 1, "title": "Old item", "state": "Active", "assignedTo": "Someone Else", "parentId": None},
+                {"id": 1, "title": "Old item", "type": "Bug", "state": "Active", "assignedTo": "Someone Else", "parentId": None},
             ],
         }
         sources_o = {"mirror": mirror_o, "feat_queue": None, "bug_queue": None, "leases": None, "stale_paths": []}
         out_o = render_markdown(sources_o, active_feature_id=None)
         assert isinstance(out_o, str), \
             f"render_markdown must return str, got {type(out_o)}"
-        assert "No board data" in out_o, \
-            f"Expected 'No board data' graceful notice in output, got: {out_o!r}"
-        assert "| Column | # |" not in out_o, \
-            f"Expected no board table when no boardColumn keys present, got: {out_o!r}"
+        assert "No cards on the board" in out_o, \
+            f"Expected 'No cards on the board' graceful notice in output, got: {out_o!r}"
         assert "\U0001f3af" not in out_o, \
-            f"Expected no 🎯 active-feature section when active_feature_id=None, got: {out_o!r}"
-        print("PASS fixture_o_pre_phase5_graceful")
+            f"Expected no 🎯 active-feature section, got: {out_o!r}"
+        print("PASS fixture_o_graceful_empty_board")
     except Exception as exc:
-        print(f"FAIL fixture_o_pre_phase5_graceful: {exc}")
+        print(f"FAIL fixture_o_graceful_empty_board: {exc}")
         failures += 1
 
     # ------------------------------------------------------------------
