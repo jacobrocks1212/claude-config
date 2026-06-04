@@ -1732,6 +1732,51 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
             "# Plan (complete)\n"
         )
+    elif name == "superseded-phase-unchecked":
+        # All impl plans Complete. PHASES.md has one In-progress phase whose only
+        # unchecked rows are under **Runtime Verification:**, PLUS a Superseded
+        # phase with plain unchecked deliverable rows. The bypass must fire (True)
+        # because the Superseded phase's boxes are out-of-scope and the only
+        # remaining In-progress unchecked rows are verification-only.
+        # Expected: Step 8 retro (bypass fires → no write-plan loop).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sup", "name": "Feature SUP",
+                 "spec_dir": "feat-sup", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        w = features / "feat-sup"
+        w.mkdir()
+        (w / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (w / "RESEARCH.md").write_text("# R\n")
+        (w / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Phase 9 is In-progress with only verification-only unchecked rows.
+        # Phase 10 is Superseded with plain unchecked deliverable rows — these
+        # must be ignored by remaining_unchecked_are_verification_only.
+        (w / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 9: Realignment MCP tests\n\n"
+            "**Status:** In-progress\n\n"
+            "**Deliverables:**\n\n"
+            "- [x] Scenario document authored\n\n"
+            "**Runtime Verification:**\n\n"
+            "- [ ] Workstation: /mcp-test passes\n\n"
+            "---\n\n"
+            "### Phase 10: Replay stages\n\n"
+            "**Status:** Superseded\n\n"
+            "> Superseded into successor-feature.\n\n"
+            "**Deliverables:**\n\n"
+            "- [ ] Extend the ledger with orbit_gain field\n"
+            "- [ ] Implement stage 3 replay\n"
+        )
+        plans = w / "plans"
+        plans.mkdir()
+        (plans / "all-phases-sup.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-sup\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [9]\n---\n\n"
+            "# Plan (complete)\n"
+        )
     elif name == "cloud-saturated-in-progress-plan":
         # In-progress plan whose only unchecked WU is documented in
         # DEFERRED_NON_CLOUD.md as workstation-only. Cloud Step 7a should emit
@@ -2360,6 +2405,14 @@ def run_smoke_tests() -> int:
             ("workstation-all-plans-complete-real-unchecked", False, False, {
                 "sub_skill": "write-plan",
                 "feature_id": "feat-wreal",
+            }),
+            # Superseded-phase bypass: one In-progress phase with only
+            # verification-only unchecked rows, plus a Superseded phase with
+            # plain unchecked deliverable rows. Superseded boxes must be ignored
+            # → bypass fires → Step 8 retro (no write-plan loop).
+            ("superseded-phase-unchecked", False, False, {
+                "sub_skill": "retro-feature",
+                "feature_id": "feat-sup",
             }),
             # Ad-hoc enqueue: ADHOC_BRIEF.md present, no SPEC.md → /spec with
             # the ad-hoc-specific arg (Step 4 ad-hoc branch).

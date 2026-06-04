@@ -822,23 +822,50 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     implementation row found outside a verification subsection returns False
     (caller keeps write-plan / execute-plan). Returns False if no unchecked
     rows are present.
+
+    Superseded phases: a ``### Phase N:`` (or ``## Phase N:``) heading enters a
+    new phase and resets the superseded flag. The first ``**Status:** Superseded``
+    bold-status line seen inside that phase marks the entire phase exempt — its
+    unchecked boxes are out-of-scope and must not cause a False return.
     """
     in_verification = False
+    in_superseded_phase = False
     saw_unchecked = False
     for line in phases_text.splitlines():
         stripped = line.strip()
         heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
         if heading:
-            in_verification = bool(_VERIFICATION_SECTION_RE.search(heading.group(1)))
+            heading_text = heading.group(1)
+            # A Phase-level heading (e.g. "### Phase 10: ...") starts a new phase
+            # block — reset both tracking flags so the new phase begins clean.
+            if re.match(r"Phase\s+\d+", heading_text):
+                in_superseded_phase = False
+                in_verification = False
+            else:
+                # Non-phase heading (e.g. "### Runtime Verification") updates
+                # in_verification as before; does NOT reset superseded tracking.
+                in_verification = bool(_VERIFICATION_SECTION_RE.search(heading_text))
             continue
         # Bold-marker subsection header (e.g. ``**Runtime Verification** ...``).
         # A list item like ``- **x**`` starts with '-', so it is not caught here.
         if stripped.startswith("**"):
             bold = re.match(r"^\*\*(.+?)\*\*", stripped)
             if bold:
-                in_verification = bool(_VERIFICATION_SECTION_RE.search(bold.group(1)))
+                bold_text = bold.group(1)
+                # Detect a per-phase "**Status:** Superseded" status line.
+                # Mark the entire current phase exempt; do not alter in_verification
+                # because a Superseded phase has no effective verification rows either.
+                if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
+                    in_superseded_phase = True
+                    continue
+                in_verification = bool(_VERIFICATION_SECTION_RE.search(bold_text))
                 continue
         if re.match(r"^-\s*\[\s*\]", stripped):
+            # Unchecked boxes inside a Superseded phase are out of scope —
+            # deliverables moved to a successor feature; do not treat as remaining
+            # implementation work.
+            if in_superseded_phase:
+                continue
             saw_unchecked = True
             if not in_verification:
                 return False
