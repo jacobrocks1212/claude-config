@@ -34,6 +34,11 @@ if [[ "$file_path" == *"/.claude/plugins/"* ]]; then
     exit 0
 fi
 
+# Always allow reading cog-docs (review artifacts and work-item docs live there)
+if [[ "$file_path" == *"/cog-docs/"* ]]; then
+    exit 0
+fi
+
 # Always allow reading knowledge files
 if [[ "$file_path" == *"/knowledge/"* ]]; then
     exit 0
