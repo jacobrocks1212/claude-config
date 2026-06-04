@@ -95,6 +95,14 @@ Compare the new phase's scope against existing phases:
 
 ---
 
+## Step 3.5: Runtime Assumption Validation (where appropriate — BEFORE DRAFTING THE PHASE)
+
+A new phase often rests on assumptions about how the *running* system behaves — the actual shape of data crossing a boundary, whether an existing code path fires, the live output of a separate process, the rendered result of an audio/effect path. These are NOT provable from source: reading the types or the function body can mislead (a value's runtime shape, a stale build, a module-singleton split, timing). Where the new phase rests on a load-bearing **runtime-coupled** assumption, validate it against the running system BEFORE drafting the phase — or make the validation an explicit early deliverable of the phase itself. Do not draft (and then implement) a phase against a code-read assumption the runtime might contradict. This is especially important for `/add-phase`, which frequently appends *corrective* phases that exist precisely because a prior assumption proved wrong — confirm the new assumption is real before building on it.
+
+!`cat .claude/skill-config/phases-runtime-validation.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-validation.md`
+
+---
+
 ## Step 4: Draft the New Phase
 
 Determine the next phase number (highest existing + 1, or fill a gap if prior phases were superseded and removed).

@@ -13,6 +13,23 @@ $ARGUMENTS
 
 ---
 
+## Global Rule: Chat-Presented Options MUST Match the Picker 1:1 (HARD REQUIREMENT)
+
+This skill repeatedly uses a "surface full context in chat, THEN call `AskUserQuestion`" pattern (Step 1b.4/1b.5, Step 1c brainstorming, Phase 3 Step 4/5). Whenever you do this, the chat block is the **expanded explanation OF the picker** — never a different or larger set of choices.
+
+**The questions and options in the chat block MUST correspond 1:1 and verbatim with the questions and options you pass to `AskUserQuestion`:**
+
+- **Same number of questions**, in the same order.
+- **Same number of options per question**, in the same order.
+- **Same labels/titles** — each picker `label` must be the exact chat option label, or a length-truncated shortening of it (never a re-worded or different label).
+- **Same recommendation** — the option you recommend in chat must be the same option flagged/highlighted in the picker.
+
+The **only** allowed differences are unavoidable picker-length truncations: (a) a picker `label` may be a shortened form of the chat option's bolded label, and (b) a picker option `description` may be truncated relative to the chat's full pros/cons. The *set* of choices must be identical.
+
+**If you revise the questions or options after writing the chat block, you MUST rewrite the chat block to match BEFORE calling `AskUserQuestion`.** A chat block that presents 3 options and a picker that offers 4 (or differently-worded options, or a different recommendation) is a defect — it confuses the user, who reads the rich chat block and then sees a mismatched picker. Re-read your chat block against your `AskUserQuestion` payload immediately before the call and confirm they match.
+
+---
+
 ## Batch Mode (`--batch` flag)
 
 If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically from `/lazy-batch` / `/lazy-batch-cloud`). Batch mode drives **Phase 1 (baseline brainstorm), Phase 2 (research-prompt generation), and Phase 3 (research integration)** autonomously — the loop advances on its own and pauses only when a genuine *product-behavior* decision needs the user. The mechanism is uniform across Phase 1 and Phase 3: do the mechanical work autonomously, auto-accept mechanical-internal decisions, and surface product-behavior decisions via `NEEDS_INPUT.md` — which `/lazy-batch`'s Step 1g resolves with `AskUserQuestion` and then resumes (it does NOT halt the run). Phase 2 is purely mechanical: it writes `RESEARCH_PROMPT.md` and returns; the `needs-research` gate is what pauses the loop for Gemini.
@@ -304,6 +321,8 @@ If the upstream candidate set has any rows the user might want to add/remove/rec
 - One question per ambiguous candidate, with options like "Keep as hard", "Reclassify as soft", "Drop — not a real dep".
 - If every candidate is unambiguous (clear hard deps with strong evidence), skip the picker and proceed.
 
+**HARD REQUIREMENT — match the chat block 1:1.** The candidate rows and per-candidate options you present in the 1b.4 chat block MUST correspond verbatim (modulo picker-label truncation) to the questions and options you pass to `AskUserQuestion` here: same number of questions, same number of options per question, same labels in the same order, same recommendation. If you reclassify or drop a candidate after writing the 1b.4 block, rewrite that block to match before calling the picker. See the **Global Rule** at the top of this skill.
+
 Do NOT ask about dependees — they're informational, not authored here.
 
 #### 1b.6. Record the dep block immediately
@@ -338,6 +357,7 @@ After the decomposition, proceed with iterative brainstorming below.
 - Ask 2-4 focused questions per round (not more).
 - Present concrete options where possible — don't ask open-ended "what do you think?" questions.
 - **Surface full option context in chat BEFORE calling `AskUserQuestion`.** The picker UI truncates option descriptions (~80 chars on mobile), so the user cannot make an informed decision from labels alone. For every multi-option question you are about to ask, first write a chat-visible block containing: (a) the question and why it matters now, (b) each option as a bullet with a 1-2 sentence description, explicit pros, explicit cons, and any relevant project/research context, (c) which option you'd recommend and why (or "no strong preference — depends on X"). Only after that block goes out, call `AskUserQuestion` with the same options as concise picker labels. The picker is for capturing the choice, not for explaining it.
+  - **HARD REQUIREMENT — the chat block and the picker MUST match 1:1.** Same number of questions, same number of options per question, same labels in the same order, same recommendation. The picker `label` may only be a length-truncated shortening of the chat option's bolded label, and the picker `description` may only be a truncation of the chat's full pros/cons — the *set* of choices must be identical. If you revise the questions or options after writing the chat block, rewrite the chat block to match before calling `AskUserQuestion`. See the **Global Rule** at the top of this skill.
 - Reference existing project patterns and conventions.
 - Flag any conflicts with current architecture early.
 - **For UI proposals:** Use `AskUserQuestion` with `markdown` previews to show ASCII wireframe mockups where helpful.
@@ -391,13 +411,16 @@ After the decomposition, proceed with iterative brainstorming below.
 
 5. **Length check.** After writing, read the file back and measure its character count. Compare against `GEMINI_PROMPT_CHAR_CAP = 24,000`.
 
-6. **Phase 2 summary to chat.** Report:
+6. **Echo the full research prompt to chat in a fenced code block (HARD REQUIREMENT — interactive mode).** After writing `RESEARCH_PROMPT.md` and doing the length check, output the **FULL final research prompt** — the exact file contents, including any identity prepend — to chat inside a fenced code block so the user can copy it directly into Gemini Deep Research without opening the file. Use a **quadruple-backtick fence** (````` ```` `````) to open and close this block, so that any triple-backtick fenced sub-blocks inside the prompt render correctly. Echo the contents verbatim — do not summarize, paraphrase, or abbreviate. (Under `--batch`, skip this echo — batch mode just writes the file and returns; there is no chat audience.)
+
+7. **Phase 2 summary to chat.** Report:
    - The file path written.
    - Whether the identity prepend was applied (and the source path, if so) or skipped (with the conventional path that was probed).
    - The actual character count and whether it's under / over the 24,000 cap. If over, state explicitly that the operator may need to trim before pasting into Gemini Deep Research, and suggest which sections (Context / Research Areas / Specific Questions) are most condensable.
+   - Confirmation that the full prompt was echoed to chat in a quadruple-backtick fenced code block (per step 6) for direct copy-paste.
 
-7. Tell the user: "Research prompt saved. Run deep research, then give me the file path to the results."
-8. **STOP and wait for the user to return with the research file path.**
+8. Tell the user: "Research prompt saved. Run deep research, then give me the file path to the results."
+9. **STOP and wait for the user to return with the research file path.**
 
 ---
 
@@ -439,7 +462,9 @@ After the decomposition, proceed with iterative brainstorming below.
    Cover at minimum: spec adjustments based on research, v1-vs-later prioritization, technical approach clarifications, and any remaining open questions. Use the actual research findings — don't restate generic categories.
 
 5. **Then** use `AskUserQuestion` to capture the choices. Each picker question should match one decision from the chat block above, with concise labels (the full tradeoff context already lives in chat). Ask 2-4 questions per round.
-6. Continue refining until the user is satisfied. On each new round of decisions, repeat the "surface context in chat first, then ask" pattern.
+
+   **HARD REQUIREMENT — the "Open Decisions" chat block and the picker MUST match 1:1.** The decisions and options in the chat block correspond verbatim (modulo picker-label truncation) to the questions and options passed to `AskUserQuestion`: same number of questions, same number of options per question, same option labels in the same order, same recommendation (the chat block's **My recommendation** must be the flagged option in the picker). The picker `label` may only be a length-truncated shortening of the chat option's bolded label, and the picker `description` may only be a truncation of the chat's full pros/cons. If you add, drop, reword, or re-recommend any decision/option after writing the chat block, rewrite the "Open Decisions" block to match before calling `AskUserQuestion`. See the **Global Rule** at the top of this skill.
+6. Continue refining until the user is satisfied. On each new round of decisions, repeat the "surface context in chat first, then ask" pattern — re-applying the 1:1 match requirement on every round.
 7. Write the final `{spec-dir}/{feature-slug}/SPEC.md` with this structure:
 
 ```markdown

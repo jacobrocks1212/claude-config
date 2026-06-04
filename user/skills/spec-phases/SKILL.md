@@ -149,6 +149,12 @@ Hold this list in working memory (or jot it in your reasoning) — the gate belo
 
 !`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
 
+### Step 2.7: Runtime Assumption Validation (where appropriate — BEFORE DRAFTING PHASES)
+
+Some phase plans rest on assumptions about how the *running* system behaves — the actual shape of data crossing a boundary, whether an existing code path fires, the live output of a separate process, the rendered result of an audio/effect path. These are NOT provable from source: reading the types or the function body can mislead (a value's runtime shape, a stale build, a module-singleton split, timing). Where the plan rests on a load-bearing **runtime-coupled** assumption, validate it against the running system BEFORE committing the phases — or schedule an explicit early validation spike. Do not plan (and then implement) against a code-read assumption the runtime might contradict.
+
+!`cat .claude/skill-config/phases-runtime-validation.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-validation.md`
+
 ### Step 3: Propose Phase Structure
 
 **Under `--batch`:** skip the picker below. Run the red-flag detection block at the end of this file. If clean, proceed to Step 4. If any red flag triggers, halt with NEEDS_INPUT.md per the Batch Mode section above.
