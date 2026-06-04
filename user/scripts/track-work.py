@@ -166,12 +166,17 @@ def resolve_item_dir(
       - If ``slug`` is given, use it directly.
       - Else, find the record in ``materialized`` whose ``wi_id`` matches
         (compare as str on both sides); take its ``feature_id`` as the slug.
+      - Else, scan docs/features/ then docs/bugs/ for a directory named
+        ``<wi_id>`` or ``<wi_id>-*`` (sorted, first match wins). Manually
+        worked items follow the ``docs/{features,bugs}/<WI_ID>-<slug>/``
+        naming convention and never get a materialized.json entry, so the
+        id alone must be sufficient.
       - If no slug can be resolved, return None.
 
-    Directory probe (first match wins):
-      1. cog_docs / "docs" / "features" / slug  — if it exists as a dir
-      2. cog_docs / "docs" / "bugs"     / slug  — if it exists as a dir
-      3. None — item directory not found
+    Directory probe for a resolved slug (first match wins):
+      1. cog_docs / "docs" / "features" / slug  -- if it exists as a dir
+      2. cog_docs / "docs" / "bugs"     / slug  -- if it exists as a dir
+      3. None -- item directory not found
 
     Args:
         cog_docs: Resolved cog-docs root Path.
@@ -190,6 +195,17 @@ def resolve_item_dir(
             if str(rec.get("wi_id")) == str(wi_id):
                 resolved_slug = rec.get("feature_id")
                 break
+    # Fallback: id-prefix directory scan (manual items have no materialized
+    # record; their dirs are named "<wi_id>-<slug>" or bare "<wi_id>").
+    if not resolved_slug and wi_id is not None:
+        wid = str(wi_id)
+        for pipeline in ("features", "bugs"):
+            base = cog_docs / "docs" / pipeline
+            if not base.is_dir():
+                continue
+            for child in sorted(base.iterdir()):
+                if child.is_dir() and (child.name == wid or child.name.startswith(wid + "-")):
+                    return child
     if not resolved_slug:
         return None
 
@@ -249,7 +265,7 @@ def run(
     # 1. Resolve cog_docs
     cog_docs = resolve_cog_docs(repo_root_arg, env, sibling_base)
     if cog_docs is None:
-        print("track-work: no cog-docs root resolvable — no-op")
+        print("track-work: no cog-docs root resolvable -- no-op")
         return 0
 
     # 2. Resolve wi_id (only needed when slug absent)
@@ -259,23 +275,38 @@ def run(
     if materialized is None:
         materialized = lazy_core.read_materialized(cog_docs / "docs" / "work")
 
-    # 4. Resolve item_dir; also capture the slug used for dispatch
-    # Determine slug_used inline (mirrors resolve_item_dir logic so we capture it)
-    slug_used = slug
-    if not slug_used and wi_id is not None:
-        for rec in materialized:
-            if str(rec.get("wi_id")) == str(wi_id):
-                slug_used = rec.get("feature_id")
-                break
-
+    # 4. Resolve item_dir; the dir name is the authoritative slug for dispatch
+    #    (explicit slug == dir name; materialized feature_id == dir name; the
+    #    id-prefix scan resolves the dir directly).
     item_dir = resolve_item_dir(cog_docs, materialized, wi_id=wi_id, slug=slug)
     if item_dir is None:
-        print(f"track-work: could not resolve item dir (wi_id={wi_id} slug={slug}) — no-op")
+        print(
+            f"track-work: could not resolve item dir (wi_id={wi_id} slug={slug}) "
+            "-- not materialized and no docs/{features,bugs}/<id>-* dir found; no-op"
+        )
         return 0
+    slug_used = slug or item_dir.name
+
+    # Backfill wi_id from the resolved dir name (manual dirs are "<id>-<slug>",
+    # so a --slug-only invocation still records the work-item id).
+    if wi_id is None:
+        m = re.match(r"^(\d+)(?:-|$)", item_dir.name)
+        if m:
+            wi_id = m.group(1)
+
+    # Record the branch only when it is a work branch whose embedded id matches
+    # this item (p/<wi_id>-...). Skills are often invoked from an arbitrary
+    # branch (or another repo entirely), so anything else is noise; passing
+    # None lets track_open preserve any branch already in WIP.md.
+    branch_record = None
+    if branch and wi_id is not None:
+        m = re.match(r"^p/(\d+)-", branch)
+        if m and m.group(1) == str(wi_id):
+            branch_record = branch
 
     # 5. Dispatch
     if action == "open":
-        lazy_core.track_open(item_dir, wi_id, slug_used, branch, host, now)
+        lazy_core.track_open(item_dir, wi_id, slug_used, branch_record, host, now)
     elif action == "touch":
         lazy_core.track_touch(item_dir, now)
     elif action == "close":
@@ -609,9 +640,185 @@ def run_self_tests() -> int:
         failures += 1
 
     # ------------------------------------------------------------------
+    # Fixture 9 — id-prefix scan resolves a manual (unmaterialized) item
+    # Only docs/bugs/56650-save-crash/ exists; materialized is empty.
+    # run("open", wi_id_arg="56650") must find it via the <id>-* scan.
+    # ------------------------------------------------------------------
+    try:
+        tmp9 = tempfile.mkdtemp(prefix="tw_test9_")
+        cog_docs9 = Path(tmp9) / "cog-docs"
+        bug_dir9 = cog_docs9 / "docs" / "bugs" / "56650-save-crash"
+        bug_dir9.mkdir(parents=True, exist_ok=True)
+        (cog_docs9 / "docs" / "work").mkdir(parents=True, exist_ok=True)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc9 = run(
+                "open",
+                repo_root_arg=str(cog_docs9),
+                slug=None,
+                wi_id_arg="56650",
+                branch=None,
+                env={},
+                sibling_base=Path(tmp9),
+                host="h",
+                now="2026-06-04T10:00:00Z",
+                materialized=[],
+            )
+        assert rc9 == 0, f"expected 0, got {rc9}"
+
+        wip_path9 = bug_dir9 / "WIP.md"
+        assert wip_path9.exists(), "WIP.md not written via id-prefix scan"
+
+        fm9 = lazy_core.parse_sentinel(wip_path9)
+        assert fm9 is not None and fm9, "WIP.md frontmatter empty or None"
+        assert str(fm9.get("wi_id")) == "56650", f"expected wi_id=56650, got {fm9.get('wi_id')}"
+        assert fm9.get("slug") == "56650-save-crash", \
+            f"expected slug=56650-save-crash (dir name), got {fm9.get('slug')}"
+
+        print("PASS fixture_9_id_prefix_scan_resolves_manual_item")
+    except Exception as exc:
+        print(f"FAIL fixture_9_id_prefix_scan_resolves_manual_item: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture 10 — scan order is deterministic: features before bugs
+    # Both docs/features/77-aaa/ and docs/bugs/77-bbb/ exist; the scan must
+    # pick the features dir and leave the bugs dir untouched.
+    # ------------------------------------------------------------------
+    try:
+        tmp10 = tempfile.mkdtemp(prefix="tw_test10_")
+        cog_docs10 = Path(tmp10) / "cog-docs"
+        feat_dir10 = cog_docs10 / "docs" / "features" / "77-aaa"
+        bug_dir10 = cog_docs10 / "docs" / "bugs" / "77-bbb"
+        feat_dir10.mkdir(parents=True, exist_ok=True)
+        bug_dir10.mkdir(parents=True, exist_ok=True)
+        (cog_docs10 / "docs" / "work").mkdir(parents=True, exist_ok=True)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc10 = run(
+                "open",
+                repo_root_arg=str(cog_docs10),
+                slug=None,
+                wi_id_arg="77",
+                branch=None,
+                env={},
+                sibling_base=Path(tmp10),
+                host="h",
+                now="2026-06-04T11:00:00Z",
+                materialized=[],
+            )
+        assert rc10 == 0, f"expected 0, got {rc10}"
+        assert (feat_dir10 / "WIP.md").exists(), "expected WIP.md in features/77-aaa (features scanned first)"
+        assert not (bug_dir10 / "WIP.md").exists(), "bugs/77-bbb must be untouched"
+
+        print("PASS fixture_10_scan_features_before_bugs")
+    except Exception as exc:
+        print(f"FAIL fixture_10_scan_features_before_bugs: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture 11 — materialized lookup wins over the id-prefix scan
+    # materialized maps 99 -> "my-slug" (docs/features/my-slug exists) while a
+    # scan-eligible docs/bugs/99-other/ also exists; the materialized mapping
+    # must be used.
+    # ------------------------------------------------------------------
+    try:
+        tmp11 = tempfile.mkdtemp(prefix="tw_test11_")
+        cog_docs11 = Path(tmp11) / "cog-docs"
+        feat_dir11 = cog_docs11 / "docs" / "features" / "my-slug"
+        bug_dir11 = cog_docs11 / "docs" / "bugs" / "99-other"
+        feat_dir11.mkdir(parents=True, exist_ok=True)
+        bug_dir11.mkdir(parents=True, exist_ok=True)
+        (cog_docs11 / "docs" / "work").mkdir(parents=True, exist_ok=True)
+
+        materialized11 = [
+            {"wi_id": "99", "feature_id": "my-slug", "materialized_changedDate": "z"}
+        ]
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc11 = run(
+                "open",
+                repo_root_arg=str(cog_docs11),
+                slug=None,
+                wi_id_arg="99",
+                branch=None,
+                env={},
+                sibling_base=Path(tmp11),
+                host="h",
+                now="2026-06-04T12:00:00Z",
+                materialized=materialized11,
+            )
+        assert rc11 == 0, f"expected 0, got {rc11}"
+        assert (feat_dir11 / "WIP.md").exists(), "expected WIP.md in features/my-slug (materialized wins)"
+        assert not (bug_dir11 / "WIP.md").exists(), "bugs/99-other must be untouched (scan must not preempt materialized)"
+
+        print("PASS fixture_11_materialized_wins_over_scan")
+    except Exception as exc:
+        print(f"FAIL fixture_11_materialized_wins_over_scan: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture 12 — slug-only open backfills wi_id from the dir name, and a
+    # degraded refresh (no wi_id, non-work branch) preserves wi_id/branch.
+    # ------------------------------------------------------------------
+    try:
+        tmp12 = tempfile.mkdtemp(prefix="tw_test12_")
+        cog_docs12 = Path(tmp12) / "cog-docs"
+        bug_dir12 = cog_docs12 / "docs" / "bugs" / "56650-save-crash"
+        bug_dir12.mkdir(parents=True, exist_ok=True)
+        (cog_docs12 / "docs" / "work").mkdir(parents=True, exist_ok=True)
+
+        # First open: branch carries the work branch, no --wi-id.
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc12a = run(
+                "open",
+                repo_root_arg=str(cog_docs12),
+                slug="56650-save-crash",
+                wi_id_arg=None,
+                branch="p/56650-save-crash",
+                env={},
+                sibling_base=Path(tmp12),
+                host="h",
+                now="2026-06-04T12:00:00Z",
+                materialized=[],
+            )
+        assert rc12a == 0, f"expected 0, got {rc12a}"
+        fm12 = lazy_core.parse_sentinel(bug_dir12 / "WIP.md")
+        assert str(fm12.get("wi_id")) == "56650", \
+            f"slug-only open must backfill wi_id from dir name, got {fm12.get('wi_id')!r}"
+
+        # Refresh from a session with no id and a non-work branch: nothing degrades.
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc12b = run(
+                "open",
+                repo_root_arg=str(cog_docs12),
+                slug="56650-save-crash",
+                wi_id_arg=None,
+                branch="main",
+                env={},
+                sibling_base=Path(tmp12),
+                host="h",
+                now="2026-06-04T13:00:00Z",
+                materialized=[],
+            )
+        assert rc12b == 0, f"expected 0, got {rc12b}"
+        fm12b = lazy_core.parse_sentinel(bug_dir12 / "WIP.md")
+        assert str(fm12b.get("wi_id")) == "56650", \
+            f"refresh must preserve wi_id, got {fm12b.get('wi_id')!r}"
+        assert fm12b.get("branch") == "p/56650-save-crash", \
+            f"refresh must preserve work branch over 'main', got {fm12b.get('branch')!r}"
+        assert fm12b.get("last_touched") == "2026-06-04T13:00:00Z", \
+            f"refresh must advance last_touched, got {fm12b.get('last_touched')!r}"
+
+        print("PASS fixture_12_slug_open_backfills_and_preserves")
+    except Exception as exc:
+        print(f"FAIL fixture_12_slug_open_backfills_and_preserves: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
-    total = 8
+    total = 12
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed, {failures} failed.")
     return failures

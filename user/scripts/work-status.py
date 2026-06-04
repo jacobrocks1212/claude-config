@@ -180,10 +180,22 @@ def _is_mine(assigned_to: str | None) -> bool:
     return assigned_to.strip().lower() in _MY_IDENTITIES
 
 
+def _mirror_titles(sources: dict) -> dict:
+    """Map wi_id (string) -> title from the mirror's workItems list."""
+    items = (sources.get("mirror") or {}).get("workItems") or []
+    return {
+        str(wi.get("id")): wi.get("title")
+        for wi in items
+        if wi.get("id") is not None and wi.get("title")
+    }
+
+
 def _inflight_wip_rows(sources: dict) -> list[dict]:
     """Return normalized WIP rows for the In Flight union that are not covered by leases.
 
-    Each returned dict has keys: wi_id, branch, stage, stale, source="wip".
+    Each returned dict has keys: wi_id, title, branch, stage, stale, source="wip".
+    Title resolves from the mirror by wi_id, falling back to the item dir name
+    with the id prefix stripped (dashes -> spaces).
 
     Rules:
     - Only runs when lazy_core is importable.
@@ -214,6 +226,7 @@ def _inflight_wip_rows(sources: dict) -> list[dict]:
             lease_branches.add(str(branch_val))
 
     synced_at: str | None = (sources.get("mirror") or {}).get("syncedAt")
+    titles = _mirror_titles(sources)
 
     rows: list[dict] = []
     seen_wi_ids: set[str] = set()
@@ -249,8 +262,19 @@ def _inflight_wip_rows(sources: dict) -> list[dict]:
         stage = lazy_core.derive_stage(parent)
         stale = _wip_is_stale(last_touched, synced_at)
 
+        title = titles.get(wi_id_str)
+        if not title:
+            name = parent.name
+            if wi_id_str and name.startswith(wi_id_str + "-"):
+                title = name[len(wi_id_str) + 1:].replace("-", " ")
+            elif name and name != wi_id_str:
+                title = name.replace("-", " ")
+            else:
+                title = "(no title)"
+
         rows.append({
             "wi_id": wi_id_str or "?",
+            "title": title,
             "branch": branch_str or "?",
             "stage": stage,
             "stale": stale,
@@ -890,12 +914,12 @@ def render_markdown(
     if leases is None:
         # No leases file — show WIP rows if any, else degradation text
         if wip_rows_md:
-            lines.append("| WI | Branch | Stage | Source |")
+            lines.append("| WI | Title | Stage | Source |")
             lines.append("| --- | --- | --- | --- |")
             for wrow in wip_rows_md:
                 stale_flag = " **STALE**" if wrow["stale"] else ""
                 lines.append(
-                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['branch'])} | {_escape_md_pipe(wrow['stage'])}{stale_flag} | source=wip |"
+                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['title'])} | {_escape_md_pipe(wrow['stage'])}{stale_flag} | source=wip |"
                 )
         else:
             lines.append("_No leases yet (leases.json not found)_")
@@ -905,22 +929,25 @@ def render_markdown(
         if not any_rows_md:
             lines.append("_No active leases_")
         else:
-            lines.append("| WI | Branch | Started | Worker | Stage |")
+            lines.append("| WI | Title | Started | Worker | Stage |")
             lines.append("| --- | --- | --- | --- | --- |")
+            lease_titles = _mirror_titles(sources)
             for lease in lease_list:
                 wi_id = lease.get("wi_id", "?")
-                branch = _escape_md_pipe(lease.get("branch") or "?")
+                title = _escape_md_pipe(
+                    lease_titles.get(str(wi_id)) or lease.get("branch") or "?"
+                )
                 started = lease.get("startedAt", "?")
                 worker = lease.get("worker_pid", lease.get("slot", ""))
                 stage = _escape_md_pipe(lease.get("stage") or "")
                 stale_flag = " **[STALE]**" if lease.get("stale") else ""
                 lines.append(
-                    f"| {_wi_link(wi_id, lease.get('url'))} | {branch} | {started} | {worker} | {stage}{stale_flag} |"
+                    f"| {_wi_link(wi_id, lease.get('url'))} | {title} | {started} | {worker} | {stage}{stale_flag} |"
                 )
             for wrow in wip_rows_md:
                 stale_flag = " **STALE**" if wrow["stale"] else ""
                 lines.append(
-                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['branch'])} | | | {_escape_md_pipe(wrow['stage'])}{stale_flag} source=wip |"
+                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['title'])} | | | {_escape_md_pipe(wrow['stage'])}{stale_flag} source=wip |"
                 )
     lines.append("")
 
@@ -2011,6 +2038,8 @@ def run_self_tests() -> int:
             flight_s = _flight_region_markdown(md_s)
             assert "900" in flight_s, \
                 f"fixture_s: wi_id '900' missing from markdown In Flight region: {flight_s!r}"
+            assert "| foo |" in flight_s, \
+                f"fixture_s: slug-derived title 'foo' missing from markdown In Flight region: {flight_s!r}"
             assert "source=wip" in flight_s, \
                 f"fixture_s: 'source=wip' missing from markdown In Flight region: {flight_s!r}"
 

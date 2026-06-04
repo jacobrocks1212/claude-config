@@ -432,14 +432,20 @@ def derive_stage(item_dir) -> str:
 # ---------------------------------------------------------------------------
 
 def _write_wip(item_dir: Path, fields: dict) -> None:
-    """Serialize WIP frontmatter and atomically write <item_dir>/WIP.md."""
+    """Serialize WIP frontmatter and atomically write <item_dir>/WIP.md.
+
+    Unknown values serialize as empty (never the literal "None").
+    """
+    def _fmt(value):
+        return "" if value is None or value == "None" else value
+
     lines = [
         "---",
         f"kind: {fields['kind']}",
-        f"wi_id: {fields['wi_id']}",
-        f"slug: {fields['slug']}",
-        f"branch: {fields['branch']}",
-        f"host: {fields['host']}",
+        f"wi_id: {_fmt(fields['wi_id'])}",
+        f"slug: {_fmt(fields['slug'])}",
+        f"branch: {_fmt(fields['branch'])}",
+        f"host: {_fmt(fields['host'])}",
         f"started_at: \"{fields['started_at']}\"",
         f"last_touched: \"{fields['last_touched']}\"",
         "---",
@@ -453,19 +459,24 @@ def track_open(item_dir, wi_id, slug, branch, host, now: str) -> None:
     """Create or refresh <item_dir>/WIP.md as the liveness sentinel for an active work item.
 
     Idempotent: if WIP.md already exists, ``started_at`` is preserved from the
-    existing file and only ``last_touched`` is advanced to ``now``.  Time is
-    injected via ``now`` (ISO-8601 string) for determinism — no ``datetime.now()``
-    call occurs here.
+    existing file and only ``last_touched`` is advanced to ``now``.  A refresh
+    never degrades known fields: when ``wi_id``/``branch``/``host`` are missing
+    (None/empty, or a stale literal "None" from a prior bad write), the existing
+    values are kept.  Time is injected via ``now`` (ISO-8601 string) for
+    determinism — no ``datetime.now()`` call occurs here.
     """
     item_dir = Path(item_dir)
     item_dir.mkdir(parents=True, exist_ok=True)
 
+    def _keep(new, old):
+        return new if new not in (None, "", "None") else old
+
     wip_path = item_dir / _WIP_FILENAME
-    existing = parse_sentinel(wip_path)
-    if existing and existing.get("started_at"):
-        started_at = existing["started_at"]
-    else:
-        started_at = now
+    existing = parse_sentinel(wip_path) or {}
+    started_at = existing.get("started_at") or now
+    wi_id = _keep(wi_id, _keep(existing.get("wi_id"), None))
+    branch = _keep(branch, _keep(existing.get("branch"), None))
+    host = _keep(host, _keep(existing.get("host"), None))
 
     _write_wip(item_dir, {
         "kind": "wip",
