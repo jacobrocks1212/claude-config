@@ -31,8 +31,14 @@
     - Never reference personal/planning documentation (SPEC, PHASES, WU, work-item docs, etc.) in
       code, test names, comments, commit messages, or anything checked into the repo. These are
       local artifacts that mean nothing to other contributors.
-    - Write comments only for non-obvious behavior — intent, invariants, contracts, or subtle edge
-      cases. Do not narrate straightforward code.
+    - Use comments sparingly — only for non-obvious behavior (intent, invariants, contracts, or
+      subtle edge cases). When a comment is warranted, keep it short and to the point: one line is
+      the norm, multi-line is the rare exception. Do not narrate straightforward code.
+    - Never reference the implementation process in comments, doc comments, or assert messages —
+      no TDD state ("RED before fix", "PASS before and after fix"), no "currently fails because...",
+      no "this fails before the fix...", no test-ordering labels like "(a)/(b)/(c)". Describe only
+      the required behavior; these artifacts go stale the moment the fix lands.
+    - Do not duplicate an assert message in an adjacent comment — keep one or the other.
   </coding-conventions>
 
   <claude-config>
