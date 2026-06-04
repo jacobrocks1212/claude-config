@@ -16,11 +16,21 @@ This addresses an observed failure mode where subagents pushed off-protocol comm
 
 ---
 
+### Build Concurrency — Serialize Slow Backend Builds (MANDATORY)
+
+Subagents each run their own build to verify their work. When multiple agents in a batch build the **same slow, shared-output backend** concurrently (e.g. C#/.NET writing to a shared `bin\Debug`), they contend for CPU — slowing the whole machine — and for the output DLLs, producing spurious lock failures (MSB3027/MSB3021 "used by another process") that masquerade as logic regressions.
+
+**Rule:** if two or more work units in this batch modify the same heavyweight compiled backend (C#/.NET in particular), dispatch those agents **sequentially (one at a time), not in parallel** — wait for each to finish before launching the next. This applies to BOTH Phase A and Phase B below. Work units that touch only fast, independently-built targets (e.g. separate frontend packages, or a frontend WU running alongside a backend WU) may still run in parallel — the constraint is specifically "don't run two concurrent builds against the same slow shared backend output."
+
+When in doubt for C# batches, serialize. The wall-clock cost of sequential backend builds is far lower than the cost of lock-contention reruns plus the machine slowdown.
+
+---
+
 ### Phase A — Test Agents (TDD Work Units Only)
 
 Skip this phase entirely if no work units in this batch have TDD=yes.
 
-Launch Sonnet subagents **in parallel** (model: "sonnet", NO worktree isolation) — one per TDD work unit.
+Launch Sonnet subagents in parallel (model: "sonnet", NO worktree isolation) — one per TDD work unit — **except** where the Build Concurrency rule above requires serializing same-backend builds.
 
 #### Test Agent Prompt Template
 
@@ -47,7 +57,7 @@ After all test agents complete:
 
 ### Phase B — Implementation Agents (ALL Work Units)
 
-Launch Sonnet subagents **in parallel** (model: "sonnet", NO worktree isolation) — one per work unit.
+Launch Sonnet subagents in parallel (model: "sonnet", NO worktree isolation) — one per work unit — **except** where the Build Concurrency rule above requires serializing same-backend builds.
 
 #### Implementation Agent Prompt Template (TDD Work Units)
 
