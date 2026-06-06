@@ -24,7 +24,7 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 3. **The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files.** State inference is exclusively via `lazy-state.py`. Sentinel files MAY be read by the orchestrator to confirm a write or to drive a pseudo-skill action.
 4. **One cycle = one subagent dispatch FOR REAL WORK SKILLS.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles. Pseudo-skill cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator actions that count as one cycle each.
 5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY for the orchestrator itself.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. (The legacy halt-on-needs-input behavior is gone; the user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.) **This constraint scopes the orchestrator, not subagents it dispatches.** A `/spec` subagent dispatched at state-machine Step 4.5 (stub-spec detected) is allowed and expected to call `AskUserQuestion` during Phase 1 brainstorming — that's the legitimate design-conversation channel for a SPEC whose baseline doesn't exist yet. The orchestrator dispatches `/spec` exactly the same way it dispatches `/execute-plan` (one Agent call per cycle); whatever the dispatched skill does internally is its own contract. See "Stub specs vs structured-research-pending specs" below for the disambiguation rule.
-6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the malformation as a quality issue and halt instead (see Step 1g.1).
+6. **The orchestrator MUST print a Zero-Context Operator Briefing AND re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** The operator may have been away for hours and retains NO session context. The briefing (Step 1g step 2a) catches them up from zero — what's being worked, why we halted, every option with pros/cons and fit against the original requirements, and a recommendation. The verbatim re-print (step 2b) preserves the full sentinel context. `AskUserQuestion` truncates option descriptions in its UI (especially on mobile); the chat text is the load-bearing context, and the `AskUserQuestion` option set MUST exactly match the options presented in chat (same labels, 1:1 — no option may appear in the UI that wasn't explained in chat first). Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the malformation as a quality issue and halt instead (see Step 1g.1).
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 8. **The `cycle` counter is session-global and monotonic across feature transitions.** It is initialized to 0 in Step 0 *once per `/lazy-batch` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e step 5, Step 1g step 7). It MUST NOT be reset when `lazy-state.py` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next via `__mark_complete__` (or because the prior feature hit a terminal state and a later queue entry became current). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch; the orchestrator runs ONE cycle log across every feature it touches. The per-cycle status line's `{feature_name}` segment changes across the boundary; the `N` does not.
 
@@ -745,7 +745,30 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
 
      PushNotification with the same message, append `{cycle+1, feature_name, "🛑 needs-input (malformed)", "<writer> wrote NEEDS_INPUT.md without rich body"}` to `cycle_log`, print the final batch report, STOP. Do NOT call `AskUserQuestion` against a malformed file (HARD CONSTRAINT 6).
 
-2. **Re-print the rich body to chat VERBATIM.** This is the load-bearing context the user needs BEFORE the truncated `AskUserQuestion` UI fires:
+2. **Print the Zero-Context Operator Briefing, then re-print the rich body VERBATIM.** Assume the operator has been away for hours and retains NO session context (and may be reading on mobile, where `AskUserQuestion` truncates). Emit BOTH, in order:
+
+   **2a — Zero-Context Operator Briefing** (synthesized by the orchestrator; succinct — the operator should be fully caught up in under a minute):
+
+   ```
+   🛑 Decision needed — Operator Briefing
+
+   **Where we are:** {2-4 sentences: which feature, what it is in plain terms, what pipeline
+   stage we're at, what has already been done on it this session}
+   **Why we halted:** {1-2 sentences per decision: the concrete issue that forced the halt,
+   explained assuming zero prior context}
+   **Original requirement at stake:** {1-2 sentences: the SPEC requirement / prior operator
+   decision this choice affects}
+
+   **Your options:**
+   {For EACH decision, list EVERY option that will appear in AskUserQuestion, using the
+   EXACT labels that will be used there. Per option: what it means in plain terms, pros,
+   cons, and one line on fit — which is architecturally strongest, which best satisfies the
+   original requirements. Close with the recommendation and WHY in 1-2 sentences.}
+   ```
+
+   The briefing explains the sentinel; it never replaces it. No analysis may appear only in the `AskUserQuestion` UI — everything the operator needs to decide must be in the briefing.
+
+   **2b — Verbatim re-print.** This preserves the full sentinel context BEFORE the truncated `AskUserQuestion` UI fires:
 
    ```
    ❓ /lazy-batch — Decision required (loop will resume after your answer)
@@ -776,6 +799,8 @@ Triggered when `lazy-state.py` reports `needs-input`. A batch-mode sub-skill (po
      - `label`: the bold `<name>`.
      - `description`: the first sentence of `<description>`. AskUserQuestion will truncate longer descriptions — the full text is already above in chat (step 2), so the truncation is non-fatal.
    - `multiSelect`: `false` unless the H3 explicitly says "select all that apply" or similar (rare — most decisions are mutually exclusive). When in doubt, default to `false`.
+
+   **The option set MUST exactly match the options presented in the step-2a briefing** — same labels, same count, recommendation marked `(Recommended)` and listed first. If the briefing and the sentinel's `**Options:**` list diverged, fix the briefing and re-print before calling `AskUserQuestion` — never introduce an option in the UI that wasn't explained in chat.
 
    Call `AskUserQuestion` once with all N questions in a single `questions` array (the tool supports up to 4 questions per call). Capture the response.
 

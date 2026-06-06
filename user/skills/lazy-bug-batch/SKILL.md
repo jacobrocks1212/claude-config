@@ -62,9 +62,15 @@ dispatches whatever `bug-state.py` returns.
    `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop**.
    This constraint scopes the orchestrator, not subagents it dispatches.
 
-6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling
-   `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat
-   re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed
+6. **The orchestrator MUST print a Zero-Context Operator Briefing AND re-print the rich
+   `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** The operator may have been
+   away for hours and retains NO session context. The briefing (Step 1g step 2a) catches them up
+   from zero — what's being worked, why we halted, every option with pros/cons and fit against
+   the original requirements, and a recommendation. The verbatim re-print (step 2b) preserves the
+   full sentinel context. `AskUserQuestion` truncates option descriptions in its UI (especially
+   on mobile); the chat text is the load-bearing context, and the `AskUserQuestion` option set
+   MUST exactly match the options presented in chat (same labels, 1:1 — no option may appear in
+   the UI that wasn't explained in chat first). Never call `AskUserQuestion` against a malformed
    `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching
    `decisions:` 1:1) — surface the malformation as a quality issue and halt instead.
 
@@ -488,11 +494,43 @@ choice to SPEC.md / PHASES.md, and then **continues the loop** — there is no h
    per `decisions[i]` (1:1). If malformed, surface the malformation, push notification, append to
    `cycle_log`, print final batch report, STOP.
 
-2. **Re-print the rich body to chat VERBATIM** (the `## Decision Context` section).
+2. **Print the Zero-Context Operator Briefing, then re-print the rich body VERBATIM.** Assume
+   the operator has been away for hours and retains NO session context (and may be reading on
+   mobile, where `AskUserQuestion` truncates). Emit BOTH, in order:
+
+   **2a — Zero-Context Operator Briefing** (synthesized by the orchestrator; succinct — the
+   operator should be fully caught up in under a minute):
+
+   ```
+   🛑 Decision needed — Operator Briefing
+
+   **Where we are:** {2-4 sentences: which bug, what it is in plain terms, what pipeline
+   stage we're at, what has already been done on it this session}
+   **Why we halted:** {1-2 sentences per decision: the concrete issue that forced the halt,
+   explained assuming zero prior context}
+   **Original requirement at stake:** {1-2 sentences: the SPEC requirement / prior operator
+   decision this choice affects}
+
+   **Your options:**
+   {For EACH decision, list EVERY option that will appear in AskUserQuestion, using the
+   EXACT labels that will be used there. Per option: what it means in plain terms, pros,
+   cons, and one line on fit — which is architecturally strongest, which best satisfies the
+   original requirements. Close with the recommendation and WHY in 1-2 sentences.}
+   ```
+
+   The briefing explains the sentinel; it never replaces it. No analysis may appear only in
+   the `AskUserQuestion` UI — everything the operator needs to decide must be in the briefing.
+
+   **2b — Verbatim re-print** of the `## Decision Context` section from NEEDS_INPUT.md
+   (copy/paste as-is, no summarization).
 
 3. **Call `AskUserQuestion` per decision** (capped at 4 per call). Build one entry in `questions`
    for each `decisions[i]`: question title, header chip, parsed options from the H3's
-   `**Options:**` list, `multiSelect: false`.
+   `**Options:**` list, `multiSelect: false`. **The option set MUST exactly match the options
+   presented in the step-2a briefing** — same labels, same count, recommendation marked
+   `(Recommended)` and listed first. If the briefing and the sentinel's `**Options:**` list
+   diverged, fix the briefing and re-print before calling `AskUserQuestion` — never introduce
+   an option in the UI that wasn't explained in chat.
 
 4. **Append `## Resolution` to NEEDS_INPUT.md.** Record chosen option labels per decision.
 
