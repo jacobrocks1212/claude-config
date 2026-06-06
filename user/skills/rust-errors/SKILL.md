@@ -162,6 +162,17 @@ The Rust enum serializes to this TypeScript-friendly format:
 > `docs/bugs/tauri-commands-string-errors/SPEC.md`. This convention was ratified 2026-06-05
 > to align with the four existing `agent/` error enums and avoid re-deriving the conflict on
 > future migrations.
+>
+> **Derive caveat (discovered 2026-06-05 — load-bearing).** The `#[serde(tag = "kind",
+> content = "message")]` *derive* CANNOT produce the locked wire shape when an enum MIXES
+> message-bearing variants (`{ kind, message }`) with struct variants whose fields must be
+> FLATTENED alongside the tag (`{ kind: "sample_not_found", pack, index }`, no `message`
+> wrapper). Adjacent tagging nests struct fields under `content` (`{ kind, message: { pack } }`)
+> and internal tagging (`tag` only) can't serialize a newtype variant holding a plain `String`.
+> When you need BOTH shapes from one enum, hand-write `impl serde::Serialize` (a `match` that
+> emits `{ kind, message }` for message variants and a flattened map for struct variants) and
+> keep `#[derive(thiserror::Error)]` for `Display`/`#[from]`. See
+> `src-tauri/src/commands/error.rs` for the reference implementation.
 
 ### Anti-Patterns to Avoid
 
