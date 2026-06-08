@@ -496,110 +496,17 @@ After the subagent returns:
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-Triggered when `bug-state.py` reports `needs-input`. A batch-mode sub-skill wrote `NEEDS_INPUT.md`
-with a genuine design choice. The orchestrator surfaces the choice to the user via
-`AskUserQuestion`, captures the answer, persists it, dispatches a Sonnet subagent to apply the
-choice to SPEC.md / PHASES.md, and then **continues the loop** — there is no halt.
+**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{PUSH_RULE}` = workstation (standard push). Then follow the shared decision-resume handler (single source across the batch orchestrators):
 
-**Algorithm:**
-
-1. **Read and validate the sentinel.** Parse `{spec_path}/NEEDS_INPUT.md` frontmatter (kind,
-   feature_id, written_by, decisions, date). Check for the `## Decision Context` H2 with one H3
-   per `decisions[i]` (1:1). If malformed, surface the malformation, push notification, append to
-   `cycle_log`, print final batch report, STOP.
-
-2. **Re-print the rich body to chat VERBATIM** (the `## Decision Context` section).
-
-3. **Call `AskUserQuestion` per decision** (capped at 4 per call). Build one entry in `questions`
-   for each `decisions[i]`: question title, header chip, parsed options from the H3's
-   `**Options:**` list, `multiSelect: false`.
-
-4. **Append `## Resolution` to NEEDS_INPUT.md.** Record chosen option labels per decision.
-
-5. **Commit the resolved sentinel.** Commit message: `docs({bug_id}): record decision resolution`.
-
-6. **Dispatch the Sonnet apply-resolution subagent.** Prompt instructs it to: read NEEDS_INPUT.md,
-   propagate choices into SPEC.md / PHASES.md surgically, neutralize the sentinel **by RENAME**
-   (`git mv` → `NEEDS_INPUT_RESOLVED.md`, decision-specific suffix if taken — NOT a `kind:` flip,
-   which leaves the halt firing since bug-state.py keys on the filename), commit per policy, report a
-   one-paragraph summary.
-
-7. **Record and continue the loop.** Append to `cycle_log`, emit the per-cycle block, update
-   `prev_cycle_signature`, increment `cycle`, return to Step 1a. DO NOT halt.
-
-**Step 1g neutralization (HARD).** The apply-resolution subagent MUST neutralize
-`NEEDS_INPUT.md` by RENAME (`git mv` → `NEEDS_INPUT_RESOLVED.md`, or a
-decision-specific suffix if that name is taken), NOT by editing the `kind:`
-frontmatter field — `bug-state.py` keys the needs-input halt on the FILENAME
-`NEEDS_INPUT.md`, so a `kind:` flip leaves the halt firing next cycle (and trips
-`sentinel-kind-matches-filename`). Preserve the Decision Context + Resolution body
-verbatim under the new name.
+!`cat ~/.claude/skills/_components/decision-resume.md`
 
 ---
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-Triggered when `bug-state.py` reports `blocked` — a cycle subagent (or a hand edit) wrote
-`BLOCKED.md` because it hit a genuine blocker it could not resolve autonomously. **`blocked` is no
-longer a terminal halt.** Modeled on Step 1g: the orchestrator re-prints the blocker context, asks
-the operator for a resolution path via `AskUserQuestion`, dispatches an Opus apply-resolution
-subagent to ENACT it (neutralizing `BLOCKED.md`), and **continues the loop**. Only the operator's
-explicit "Halt for manual fix" choice stops the run. This replaces the old zero-context halt (a bare
-`PushNotification` + STOP).
+**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{SPEC_ROOT}` = `docs/bugs`, `{ADD_PHASE}` = `/add-phase` (or `/plan-bug` if `PHASES.md` is absent), `{PUSH_RULE}` = workstation (standard push). Then follow the shared blocked-resolution handler (single source across the batch orchestrators):
 
-**Algorithm:**
-
-1. **Read the sentinel** `{spec_path}/BLOCKED.md` (frontmatter `kind`, `feature_id`/`bug_id`,
-   `phase`, `blocked_at`, `retry_count`, optional `blocker_kind`; + body). A thin body is NOT a
-   malformation halt — proceed, noting if context is sparse.
-
-2. **Re-print the `BLOCKED.md` body to chat VERBATIM** (HARD CONSTRAINT 6 applies — the load-bearing
-   context before the truncated `AskUserQuestion` UI):
-
-   ```
-   🚧 /lazy-bug-batch — Blocked (loop resumes after you choose a resolution path)
-
-   Bug:   {feature_name} ({bug_id})   ·   phase {phase}   ·   retry_count {retry_count}
-   File:  {spec_path}/BLOCKED.md
-
-   ─── BLOCKED.md body (verbatim) ───
-   {entire body — blocker description, evidence, any recovery the cycle subagent suggested}
-   ───
-   ```
-
-3. **`AskUserQuestion` with ONE question — the resolution path** (`header`: "Resolution";
-   `multiSelect: false`; adapt option `description`s to the specific blocker when the body names a
-   concrete recovery):
-
-   - **Add a phase to resolve the blocker** — dispatch `/add-phase` (or `/plan-bug` if `PHASES.md`
-     is absent) with the blocker as the new phase's motivation, then neutralize `BLOCKED.md`. The
-     pipeline re-plans → fixes → re-validates. *Recommended when the blocker is missing work.*
-   - **Defer this bug; continue the rest of the queue** — move this bug's `queue.json` entry to the
-     END of the queue (keep `BLOCKED.md`) so the next actionable bug becomes current.
-   - **Halt for manual fix** — keep `BLOCKED.md` untouched, `PushNotification`, print the final
-     batch report, STOP. The legacy escape hatch. (Auto-provided **Other** = custom directive.)
-
-4. **If "Halt for manual fix":** do NOT modify `BLOCKED.md`. Append a `cycle_log` halt entry,
-   `PushNotification` with `notify_message`, print the final batch report, STOP. The ONLY Step 1h
-   path that halts.
-
-5. **Otherwise, append a `## Resolution` block** (chosen path + notes + timestamp) to `BLOCKED.md`
-   and commit (`docs({bug_id}): record blocker resolution path`; do NOT push).
-
-6. **Dispatch the Opus apply-resolution subagent to ENACT the path.** It: for "Add a phase" invokes
-   `/add-phase` (Skill tool; bugs live in `docs/bugs/`) authoring a phase scoped to the blocker, then
-   neutralizes `BLOCKED.md`; for "Defer" reorders `queue.json` (entry → tail), keeps `BLOCKED.md`;
-   for "Other" enacts the operator's notes. **NEUTRALIZE BY RENAME** (`git mv BLOCKED.md
-   BLOCKED_RESOLVED_<YYYY-MM-DD>.md`) — `bug-state.py` keys the halt on the FILENAME, so a
-   frontmatter flip does NOT clear it. Commit + push the work branch; report a one-paragraph summary.
-   Dispatch `Agent({ description: "lazy-bug-batch blocked-resolve: {feature_name}", subagent_type:
-   "general-purpose", model: "opus", prompt: <above> })`.
-
-7. **Record and continue the loop.** Append `{cycle+1, feature_name, "▶ blocked (resolved: <path>)",
-   "<summary>"}` to `cycle_log`; emit the per-cycle block (`### Cycle {cycle+1}/{max_cycles} ·
-   {feature_name} · blocked`); update `prev_cycle_signature = (feature_id, "__resolve_blocked__",
-   sub_skill_args, current_step)`; increment `cycle`; return to Step 1a. **DO NOT halt** (except the
-   Halt path at step 4).
+!`cat ~/.claude/skills/_components/blocked-resolution.md`
 
 ---
 
