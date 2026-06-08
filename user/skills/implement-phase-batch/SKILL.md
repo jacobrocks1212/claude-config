@@ -184,6 +184,7 @@ The plan MUST contain all of the following sections. Everything below is plan te
 > 10. Cross-feature phases may run in parallel when dependencies are satisfied and no file conflicts exist
 > 11. This plan is self-contained — follow it exactly as written without relying on external context
 > 12. **Before each step, `Read` the component files listed for that step from disk** — do NOT rely on memory
+> 13. **A phase is NOT Complete on unit-green alone when it crosses a runtime boundary.** A phase whose components are built and unit-green but whose cross-boundary behavior has not been driven through the real production path is **Code Complete / Runtime Unverified** — NOT Complete. It reaches Complete only when its Minimum Verifiable Behavior / runtime receipt is satisfied, OR its deferral explicitly names the exact remaining call site(s). Authored-but-unrun MCP scenarios parked in `DEFERRED_NON_CLOUD.md` map to this state, never to Complete. Evidence: `enhanced-logging` shipped 35 emitters / zero subscribers (all green); `hardware-override-protocol` left `TODO(WU-7D)` in `output.rs` unwritten.
 
 ---
 
@@ -291,6 +292,13 @@ Include a batch overview table per phase:
 > Read `~/.claude/skills/_components/phases-update.md` and follow its instructions.
 > Check off completed deliverables, add Implementation Notes block with date, work completed, integration notes, pitfalls, and files modified.
 >
+> **Status assignment rule (P2):** Use exactly one of three statuses:
+> - **In-progress** — deliverables not yet built
+> - **Code Complete / Runtime Unverified** — deliverables built + unit-green, but cross-boundary behavior NOT driven through the real production path (no runtime/MCP receipt, and no named-call-site deferral)
+> - **Complete** — Minimum Verifiable Behavior / runtime receipt satisfied, OR deferral explicitly names exact remaining call site(s)
+>
+> Do NOT mark a boundary-crossing phase Complete on unit-green alone.
+>
 > #### Step B.4: Run Quality Gates (MANDATORY — DO NOT SKIP)
 >
 > Read `~/.claude/skills/_components/quality-gates.md` and follow its instructions.
@@ -312,6 +320,7 @@ Include a batch overview table per phase:
 > - [ ] PHASES.md updated with completed deliverables and implementation notes
 > - [ ] All quality gates pass
 > - [ ] Step B.5 completed (commit per project policy, or skip if policy says so)
+> - [ ] **[S4 — WIRING + RECEIPT]** If this phase crosses a runtime boundary: (a) the exact `context.rs` / `main.rs` / `callback/*` (or equivalent production-context) edit that wires the new component into the live path is cited in Implementation Notes, AND (b) a runtime/MCP receipt exists OR a narrowly-scoped deferral that names the exact remaining call site(s) is documented. If neither (a) nor (b) is satisfied, mark the phase **Code Complete / Runtime Unverified** — NOT Complete — in PHASES.md. Contrast: `per-voice-pm-modulation` named its three deferred call sites → 0 corrective phases; `sidecar-watchdog` wrote a vague "not yet wired" → became a separate production bug.
 >
 > If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 >

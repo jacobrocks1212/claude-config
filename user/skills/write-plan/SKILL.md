@@ -308,6 +308,14 @@ For each work unit, document:
 - **Spec requirements:** Quote or reference the specific SPEC.md sections
 - **Batch:** Which parallel batch within this phase (1, 2, etc.)
 
+**Anchor discipline (MANDATORY — every dependency that names an existing symbol or file):**
+Every phrase in a work unit's Implementation goal or Scope that uses "uses", "extends", "delegates to", "calls existing", "refactors", or "integrates with" an existing file/type/function MUST carry a `[VERIFY: <grep-or-path>]` annotation immediately after the cited name. The annotation is the exact shell command (or absolute path) that proves the symbol/file exists in the tree **today**. Examples:
+- `delegates to PatternStore.setPattern() [VERIFY: grep -r "fn setPattern" src/stores/]`
+- `extends SampleSource enum [VERIFY: grep -r "enum SampleSource" src-tauri/src/]`
+- `uses TrackCommandQueue [VERIFY: grep -rn "TrackCommandQueue" src-tauri/src/]`
+
+If a dependency cannot be verified (zero-hit grep), it is NOT an "existing" dependency — convert it to an explicit "must be BUILT in this plan" deliverable instead. Phantom citations (`SampleSource::TrackLoop`, `TrackCommandQueue`, `Arc<Pattern>` per-channel fields, `chainParam` IPC — all zero-result greps in their respective plans) are the primary cause of plan rot; do not perpetuate them.
+
 Include a batch overview table per phase:
 
 > | Batch | Work Units | Parallel? | File Conflicts? |
@@ -492,6 +500,20 @@ Include a batch overview table per phase:
 >
 > Read `~/.claude/skills/_components/work-log.md` and follow its instructions.
 > Call interview_work_log_append MCP tool with skill, project, title, summary, files_modified, and technical_context.
+
+---
+
+## Step 3.5: Anchor-Existence Check (MANDATORY — BEFORE WRITING PLAN FILES)
+
+Before writing any plan file to disk, verify every `[VERIFY: …]` annotation you authored in Step 3:
+
+1. **Run each grep** (or confirm each path exists). A `[VERIFY: …]` that returns zero hits is a **phantom anchor** — it blocks finalization.
+2. For each phantom anchor, either:
+   - **Correct the anchor** (find the real symbol name and re-verify), or
+   - **Convert the dependency** to an explicit "must be BUILT in this plan" deliverable (remove the `[VERIFY: …]`, add the file/type to the work unit's Files-to-create list, and mark TDD: yes).
+3. A plan with unresolved phantom anchors MUST NOT be written with `status: Ready`. If you cannot resolve an anchor and cannot scope the build into this plan, write `NEEDS_INPUT.md` per the halt protocol above and stop.
+
+**Mechanical backstop:** where the repo provides a `qg:plan-anchors` gate (e.g. AlgoBooth), it enforces this check automatically at QG time — but the manual `[VERIFY: …]` discipline above is required regardless, because not every repo has the gate and the gate runs at execution time, not at authoring time.
 
 ---
 

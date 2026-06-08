@@ -26,6 +26,9 @@ Each phase's **Testing Strategy** section must specify coverage across the testi
 
 A phase whose deliverables cross **any** boundary — process (sidecar ↔ Rust), serialization (capnp encode/decode, N-API), IPC (Tauri commands), or thread (audio-callback handoff) — MUST include at least one **integration test that drives the real production path end-to-end across that boundary** and asserts the far-side observable. The phase's **Testing Strategy** section must name that test explicitly. Unit-green at each isolated layer is **necessary but NOT sufficient** evidence that a cross-boundary feature works — never let a phase claim a cross-boundary behavior "done" on unit tests alone.
 
+> Consolidated planning-antipattern checklist (grep-before-cite + these smells + the
+> bug-vs-feature scoring gap): `docs/development/PLANNING_ANTIPATTERNS.md`.
+
 ### The five false-green smells (reject any phase test plan that exhibits these)
 
 1. **Self-referential assertion.** `expect(x).toBe(computeX())` — both sides call the function under test, so `A === A` passes even when `A` is wrong. **Fix:** assert against a concrete ground-truth literal (`expect(parameterId).toBe(0)`, the actual engine constant), never against the resolver/computation being tested.

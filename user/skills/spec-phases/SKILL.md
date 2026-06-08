@@ -99,6 +99,14 @@ Update each task to `in_progress` when starting it, `completed` when done. After
    - Existing related code
    - Any referenced dependencies
 
+**DSP / audio / quality features — Baseline Health (REQUIRED before Step 2):**
+If the spec is audio, DSP, or quality-related (reverb, EQ, gain, mix, pipeline routing, quality gates), run the relevant baseline before authoring any phases and record results in a `## Baseline Health` block in `RESEARCH_SUMMARY.md`:
+- `npm run qg:golden` — perceptual quality (Zimtohrli distance per contract)
+- `npm run qg:realtime` — real-time factor / xrun rate
+- `npm run qg:multichannel` — multichannel isolation / crosstalk
+
+Record actual numbers (e.g. `Zimtohrli: 0.158–0.259, target 0.010`). Never plan remediation against a quality state that hasn't been measured. (`analysis-informed-dsp-updates` and `audio-quality-analysis` both expanded 2–3× because Phase 1 targeted a baseline nobody had measured.)
+
 ### Step 1.5: Read Upstream PHASES.md (per hard dep)
 
 The spec carries a `**Depends on:**` block. Use it to load phase-level decisions from upstream features so the new phase plan integrates against what was actually built, not what the upstream's SPEC originally claimed.
@@ -137,6 +145,20 @@ Consider these factors when identifying phase boundaries:
 **Risk Areas:**
 - Which phases have highest uncertainty?
 - What should be prototyped early?
+
+**HARD RULE — Phase 1 must cross the boundary (applies to any pipeline feature):**
+If the feature crosses any boundary in the taxonomy in `phases-testing-strategy.md` (process: sidecar ↔ Rust; serialization: capnp/N-API; IPC: Tauri commands; thread: audio-callback handoff), **Phase 1 MUST include a minimal full-stack integration test** — one real input driven through the real production path → one far-side observable asserted. Do NOT defer this to a terminal phase. `d7-macros-scenes` absorbed 10 corrective fixes in Phase 4 because no prior phase drove the full `pattern → sidecar → IPC → engine → output` path; that failure mode is prevented only if Phase 1 closes the loop.
+
+**Verification is distributed per-phase — NOT terminal-only:**
+Do NOT design a plan where all MCP/runtime verification is collected into a single trailing "MCP Test Phase N+1". Each phase must carry its own verifiable slice. A dedicated terminal-only MCP phase is a red flag for poor verification distribution; restructure the phase boundaries instead. (`d7-multi-timbral`, `hard-state-reload`, `vst3-au-wrapper-export` all show the corrective-tail pattern that results from terminal-only MCP phases.)
+
+**Sentinel triage at authoring time (REQUIRED for any phase with MCP assertions):**
+When authoring a phase's MCP test assertions, classify each assertion NOW — at authoring time, not at completion:
+- `permanently-non-observable` — the behavior is structurally inaccessible via MCP (e.g., raw PCM callback timing)
+- `device-deferred` — requires hardware not present in the cloud session (MIDI, audio interface)
+- `cloud-deferred` — technically observable but the cloud environment lacks the prerequisite (build artifact, specific hardware config)
+
+Record the classification and the sentinel it maps to (`SKIP_MCP_TEST.md`, `DEFERRED_NON_CLOUD.md`, etc.) inline in the phase, not retroactively. `learn-system-v2` Phase 6 was reopened because a single `SKIP_MCP_TEST.md` bundled testable and untestable items that hadn't been classified when the phase was authored.
 
 **Collect candidate touchpoints (REQUIRED before the audit gate below):**
 
@@ -233,6 +255,8 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 - [ ] {Concrete code output 2}
 - [ ] Tests: {What tests verify this phase}
 
+**Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired — expressed as a runnable command, MCP assertion, or observable UI state. If the behavior does not exist yet, replace with a `- [ ]` Runtime Verification checklist row. This is NOT optional; "unit tests pass" is not a valid entry here.}
+
 !`cat .claude/skill-config/phases-runtime-verification.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-verification.md`
 
 **Prerequisites:** None (first phase) OR {specific prior phase work}
@@ -256,6 +280,8 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 **Deliverables:**
 - [ ] {Concrete code output 1}
+
+**Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired. Same rule as Phase 1 — runnable command, MCP assertion, or `- [ ]` row if the behavior doesn't yet exist. "Unit tests pass" is not valid.}
 
 **Runtime Verification** *(checked by integration test or manual testing):*
 - [ ] {Observable runtime behavior if applicable — omit section if none}
@@ -321,6 +347,7 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 2. **Unclear scope** - Spec is vague, phases can't be bounded
 3. **Integration explosion** - Every phase touches every file
 4. **Testing impossible** - Can't test without full system
+5. **Platform/variant expansion without a gate phase** - If the plan includes per-platform, per-variant, or per-target phases (e.g. macOS / Windows / Linux export formats, multiple WebView targets, multiple plugin formats), these are NOT authored until a prototype "gate phase" closes with an explicit go decision confirming the approach is sound. `clap-target-export` authored four detailed per-platform WebView phases then superseded all four — roughly half the plan was write-off churn. Author only the gate phase; defer expansion phases until the gate closes.
 
 !`cat .claude/skill-config/phases-example-output.md 2>/dev/null || cat ~/.claude/skills/_components/phases-example-output.md`
 

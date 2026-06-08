@@ -54,6 +54,13 @@ From each input spec's `**Depends on:**` block (the source of truth for cross-fe
 
    **Still produce the PHASES.md** — speculative breakdowns are valuable as a planning scaffold even if they change. But they must be honest about their confidence level.
 
+6. **Cross-feature contract verification (HARD REQUIREMENT):** When a phase in input spec A plans against an API, IPC command, capnp field, or symbol that belongs to a sibling feature B, you MUST verify that B has **actually shipped** that contract — not merely specced it. Grep the repo for the real symbol before including it in the plan:
+   - If the grep resolves: proceed, cite the file:line in the PHASES.md cross-feature integration notes.
+   - If the grep returns zero hits: the API does not exist yet. The phase must be marked **Speculative / Blocked on B** and must NOT be planned as if the API is available. Raise this as a cross-feature dependency gap in the plan and surface it to the orchestrating agent.
+   - "B's SPEC.md describes this API" is NOT sufficient — specs are plans, not deliverables. Only a live symbol in the tree confirms B shipped it.
+
+   `d8-track-pattern-interaction` built an entire integration phase against `d8-effect-chains`'s `chainParam` IPC before it existed. A single grep would have caught it.
+
 ---
 
 ### 1d. Collect Candidate Touchpoints Across All Input Specs (REQUIRED before the audit gate below)
