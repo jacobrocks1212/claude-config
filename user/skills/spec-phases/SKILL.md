@@ -303,6 +303,10 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 !`cat .claude/skill-config/phases-testing-strategy.md 2>/dev/null || cat ~/.claude/skills/_components/phases-testing-strategy.md`
 
+**Review Guardrails (per phase):** the drafting subagent must front-load the review pitfalls most likely to recur on each phase's files, so implementation gets them right the first time instead of fielding them in review. Apply the protocol below when present and include its output per phase. This is a no-op outside repos that configure a guardrail source:
+
+!`cat .claude/skill-config/phases-review-guardrails.md 2>/dev/null || cat ~/.claude/skills/_components/phases-review-guardrails.md`
+
 ### Step 6: Review Subagent Output (MANDATORY GATE — DO NOT SKIP OR SHORTCUT)
 
 **This is a blocking gate.** You CANNOT proceed until the review protocol below is fully executed and produces a structured review report with a verdict.

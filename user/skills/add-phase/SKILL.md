@@ -211,6 +211,10 @@ Write the phase using the established PHASES.md format:
 - {Key patterns, pitfalls, or integration details extracted from Implementation Notes that inform this phase's implementation}
 ```
 
+**Review Guardrails (this phase):** front-load the review pitfalls likely to recur on this phase's files — and, because corrective phases recur on the work they replace, on any superseded phase's files too (Step 3c). Apply the protocol below when present and embed its output in the drafted phase. This is a no-op outside repos that configure a guardrail source:
+
+!`cat .claude/skill-config/phases-review-guardrails.md 2>/dev/null || cat ~/.claude/skills/_components/phases-review-guardrails.md`
+
 ---
 
 ## Step 5: Mark Superseded Phases
