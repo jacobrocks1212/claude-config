@@ -20,6 +20,17 @@ THIS component handles the REMAINING problem-terminals that previously bare-`STO
 `completion-unverified`, `needs-spec-input`, and (where the skill has them)
 `needs-research` / `queue-blocked-on-research`.
 
+**Consumers — batch loop vs single-dispatch (post-enact behavior differs).** The
+batch orchestrators (`/lazy-batch`, `/lazy-bug-batch`) run a loop, so after enacting
+they **continue the loop** (step 5c). The single-dispatch wrappers (`/lazy`,
+`/lazy-bug`, `/lazy-cloud`) do exactly ONE meaningful action per invocation, so after
+enacting they **STOP** — the enactment was this invocation's action and the NEXT
+invocation continues from the enacted state. Everything before that (re-print →
+`AskUserQuestion` → enact → neutralize-by-rename) is identical. Additionally, the
+batch skills keep their richer bespoke `needs-input` (decision-resume) and `blocked`
+(blocked-resolution) handlers; the **single-dispatch wrappers route `needs-input` and
+`blocked` HERE too** (matrix rows below) since they have no bespoke handler.
+
 **Explicitly NOT routed here (these remain their existing terminal behavior):**
 
 - `max-cycles` — the cost bound. A hard stop by design; never converted (the cap
@@ -66,7 +77,8 @@ THIS component handles the REMAINING problem-terminals that previously bare-`STO
    ─────────────────────────────────────────────────────────────────────────
 
    Choose how the pipeline should proceed. After you answer, I enact your choice
-   and resume the loop — unless you choose "Halt for manual fix".
+   and proceed (batch: resume the loop; single-dispatch: this invocation's action
+   is done and the next run continues) — unless you choose "Halt for manual fix".
    ```
 
 2. **Call `AskUserQuestion` with ONE question — the resolution path.** `header`:
@@ -79,6 +91,8 @@ THIS component handles the REMAINING problem-terminals that previously bare-`STO
    | `completion-unverified` | **Reopen & re-validate** — set `**Status:** In-progress` and let the pipeline re-run retro + MCP so a *gated* receipt is earned. · **Grandfather the receipt** — only if the work was genuinely validated before the gate existed: write a `provenance: backfilled-unverified` receipt (honest debt). | Defer & continue queue · Halt for manual fix |
    | `needs-spec-input` | **Provide spec direction** — operator's notes seed the SPEC baseline (the apply subagent dispatches `/spec` / `/spec-bug` with the direction, or writes an `ADHOC_BRIEF.md`-style seed). | Defer & continue queue · Halt for manual fix |
    | `needs-research` / `queue-blocked-on-research` | **Upload research now** — operator pastes/attaches the Gemini result in their NEXT message; the in-session resume protocol ingests it. · **Defer this research-pending feature & continue** — work the rest of the queue first. | Halt for manual fix |
+   | `blocked` (single-dispatch wrappers only — batch skills use bespoke Step 1h) | **Add a phase to resolve the blocker** — `/add-phase` (or `/plan-bug`) scoped to the blocker, then neutralize `BLOCKED.md`. · **Other** custom directive. | Defer & continue queue · Halt for manual fix |
+   | `needs-input` (single-dispatch wrappers only — batch skills use bespoke Step 1g) | **Resolve the decision(s)** — re-print the `## Decision Context` and `AskUserQuestion` the listed `decisions[i]` (one per decision, ≤ 4); the apply subagent propagates the choices into SPEC/PHASES and neutralizes `NEEDS_INPUT.md`. | Defer & continue queue · Halt for manual fix |
 
    **Universal options (definitions):**
    - **Defer & continue queue** — move this feature's `queue.json` entry to the END
@@ -87,10 +101,11 @@ THIS component handles the REMAINING problem-terminals that previously bare-`STO
    - **Halt for manual fix** — keep all state untouched, `PushNotification` with
      `notify_message`, print the final batch report, STOP. The legacy escape hatch.
 
-3. **If the choice is "Halt for manual fix":** do NOT mutate any state. Append
-   `{cycle+1, feature_name, "🛑 {terminal_reason} (operator chose manual halt)", "<one line>"}`
-   to `cycle_log`, `PushNotification` with `notify_message`, print the final batch
-   report, and **STOP**. This is the ONLY path here that halts.
+3. **If the choice is "Halt for manual fix":** do NOT mutate any state.
+   `PushNotification` with `notify_message`, then STOP per the wrapper's terminal
+   output (batch: append the `cycle_log` halt entry + print the final batch report;
+   single-dispatch: print the after-status bookend "halted on {terminal_reason}").
+   This is the ONLY path here that halts.
 
 4. **If the choice is "Upload research now"** (research terminals only): do NOT
    dispatch an apply subagent. Print one line — "▶ Waiting for your research upload in
@@ -155,14 +170,21 @@ THIS component handles the REMAINING problem-terminals that previously bare-`STO
       Dispatch `Agent({ description: "lazy-batch halt-resolve: {feature_name}",
       subagent_type: "general-purpose", model: "opus", prompt: <above> })`.
 
-   c. **Record and continue the loop.** Append to `cycle_log`
-      `{cycle+1, feature_name, "▶ {terminal_reason} (resolved: <path>)", "<subagent summary>"}`;
-      emit the canonical per-cycle update block (`### Cycle {cycle+1}/{max_cycles} ·
-      {feature_name} · {terminal_reason}`, `**Result:**` = "<path> enacted — <first
-      line of summary>"); update `prev_cycle_signature = (feature_id,
-      "__resolve_halt__", sub_skill_args, current_step)`; increment `cycle`; return to
-      Step 1a. **DO NOT halt, DO NOT print the final batch report** (except the Halt
-      path in step 3).
+   c. **Record, then continue (batch) or stop (single-dispatch).**
+      - **Batch orchestrators (`/lazy-batch`, `/lazy-bug-batch`):** append to
+        `cycle_log` `{cycle+1, feature_name, "▶ {terminal_reason} (resolved: <path>)",
+        "<subagent summary>"}`; emit the canonical per-cycle update block
+        (`### Cycle {cycle+1}/{max_cycles} · {feature_name} · {terminal_reason}`,
+        `**Result:**` = "<path> enacted — <first line of summary>"); update
+        `prev_cycle_signature = (feature_id, "__resolve_halt__", sub_skill_args,
+        current_step)`; increment `cycle`; **return to Step 1a** (DO NOT halt, DO NOT
+        print the final batch report — except the Halt path in step 3).
+      - **Single-dispatch wrappers (`/lazy`, `/lazy-bug`, `/lazy-cloud`):** the
+        enactment was this invocation's ONE meaningful action. Print the after-status
+        bookend (Completed: "{terminal_reason} resolved — <path> enacted"; Next `/lazy`
+        will: "continue from the enacted state"), log the work per the wrapper's
+        work-log step, and **STOP**. The next invocation re-runs the state script and
+        proceeds from the now-neutralized state.
 
 ### Re-prompt note
 

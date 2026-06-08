@@ -101,25 +101,27 @@ Parse the JSON. You now have:
 
 ## Step 2: Handle Terminal States
 
-If `terminal_reason` is set:
+If `terminal_reason` is set, branch on whether it is **operator-resolvable** (ask the operator how to proceed, then enact it as this invocation's one action) or a **clean stop** (report + STOP). The guiding rule: `/lazy` does not dead-end on a recoverable obstacle — it asks for a resolution path instead.
 
-1. PushNotification with `notify_message`.
-2. Print the **before** status bookend (use `current_step` as State, `"halt — {terminal_reason}"` as Action).
-3. Print the **after** status bookend (Completed: "halted on {terminal_reason}"; Next `/lazy` will: "Wait for the underlying condition to be resolved before re-running.")
-4. STOP. Skip the work-log step (terminal halts without dispatch are not meaningful work).
+### 2a. Operator-resolvable terminals → ask for a resolution path (do NOT bare-STOP)
 
-Special handling per terminal reason:
+For `blocked`, `needs-input`, `completion-unverified`, and `needs-spec-input`, follow the shared operator-directed halt-resolution component — re-print the obstacle context, `AskUserQuestion` the resolution path, dispatch the Opus apply-resolution subagent to enact it (neutralizing any sentinel by RENAME, never a `kind:` flip — `lazy-state.py` keys halts on the filename), then STOP per the **single-dispatch** post-enact rule (the enactment is this invocation's ONE meaningful action; the next `/lazy` continues from the enacted state). Read and apply exactly:
 
-| `terminal_reason` | Operator action implied |
+`~/.claude/skills/_components/halt-resolution.md`
+
+Use the matrix's `blocked` and `needs-input` rows (single-dispatch wrappers route those here — `/lazy` has no bespoke Step 1g/1h). Log the resolution as the invocation's work via the Work Log step (below). Only the operator-chosen "Halt for manual fix" reverts to a report + STOP.
+
+### 2b. Clean-stop terminals → report + STOP
+
+For these there is nothing to resolve in-session: PushNotification with `notify_message`, print the **before** bookend (State `current_step`, Action `"halt — {terminal_reason}"`) and the **after** bookend (Completed "halted on {terminal_reason}"; Next `/lazy` will: per the row below), STOP, and skip the work-log step.
+
+| `terminal_reason` | After-bookend / operator action |
 |------|---|
-| `blocked` | Read `{spec_path}/BLOCKED.md`, present details + recovery suggestion |
-| `needs-research` | Surface the RESEARCH_PROMPT.md path so the user runs Gemini |
-| `needs-input` | Read `{spec_path}/NEEDS_INPUT.md`, list the decisions a `--batch` skill halted on |
-| `needs-spec-input` | Tell the user to run `/spec` directly — no inputs to dispatch on |
+| `needs-research` | Surface the RESEARCH_PROMPT.md path so the user runs Gemini — or upload it in your next message (in-session ingest picks it up). Not dead-ended: re-running `/lazy` after the upload continues. |
 | `all-features-complete` | Roadmap done; nothing else to do |
 | `cloud-queue-exhausted` | Workstation-only path — does not occur for plain `/lazy` |
 | `device-queue-exhausted` | Only on a NO-real-device host: the remaining feature(s) carry real-device-only assertions deferred via `DEFERRED_REQUIRES_DEVICE.md`. Tell the user to re-run `/lazy` on a real-device host (set `ALGOBOOTH_REAL_AUDIO_DEVICE=1` or run on native hardware) to certify them. |
-| `queue-missing` | queue.json missing — surface the expected path |
+| `queue-missing` | queue.json missing — surface the expected path (no queue to continue) |
 
 ---
 

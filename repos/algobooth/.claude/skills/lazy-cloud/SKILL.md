@@ -102,14 +102,19 @@ Parse the JSON. You now have the same fields as plain `/lazy`:
 
 ## Step 2: Handle Terminal States
 
-If `terminal_reason` is set, PushNotify and STOP exactly as `/lazy` does. Cloud-specific reasons:
+If `terminal_reason` is set, branch exactly as `/lazy` does (Step 2a operator-resolvable vs Step 2b clean stop) — `/lazy-cloud` does not dead-end on a recoverable obstacle either.
+
+### 2a. Operator-resolvable terminals → ask for a resolution path (do NOT bare-STOP)
+
+For `blocked`, `needs-input`, `completion-unverified`, and `needs-spec-input`, follow the shared operator-directed halt-resolution component (`~/.claude/skills/_components/halt-resolution.md`) exactly as `/lazy` Step 2a does: re-print the obstacle context, `AskUserQuestion` the resolution path, dispatch the Opus apply-resolution subagent to enact it (neutralize sentinels by RENAME), then STOP per the single-dispatch post-enact rule (the next `/lazy-cloud` continues). Use the matrix's `blocked` / `needs-input` rows. Cloud caveat: the apply subagent's enactment is docs-only here (no Tauri/MCP); for `needs-spec-input` it dispatches `/spec` via the Skill tool. **In a NON-interactive / headless cloud run where `AskUserQuestion` is unavailable, fall back to the legacy report + STOP** for these terminals (surface the sentinel + recovery, STOP) — the operator resolves on their next interactive run.
+
+### 2b. Clean-stop terminals → report + STOP
+
+PushNotify with `notify_message` and STOP, with cloud-specific after-bookends:
 
 | `terminal_reason` | Cloud behavior |
 |------|---|
-| `blocked` | Same as workstation — read BLOCKED.md, present details, STOP |
-| `needs-research` | Surface RESEARCH_PROMPT.md path; cloud cannot run Gemini either |
-| `needs-input` | Surface NEEDS_INPUT.md decisions |
-| `needs-spec-input` | Tell the user to run `/spec`; cloud cannot start from nothing |
+| `needs-research` | Surface RESEARCH_PROMPT.md path; cloud cannot run Gemini either (re-run after upload continues) |
 | `all-features-complete` | Roadmap done |
 | `cloud-queue-exhausted` | Every remaining feature is cloud-saturated; workstation /lazy is needed to finalize |
 | `device-queue-exhausted` | A remaining feature carries `DEFERRED_REQUIRES_DEVICE.md` (real-device-only assertions) but no `DEFERRED_NON_CLOUD.md`. Cloud has no device either — surface it and tell the user a **real-device** /lazy host is needed to certify the deferred scenarios. (Rare in cloud: cloud-saturated features normally carry `DEFERRED_NON_CLOUD.md` and hit `cloud-queue-exhausted` first.) |
