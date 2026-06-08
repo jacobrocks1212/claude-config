@@ -29,7 +29,7 @@ Output schema (stdout JSON):
                             | "queue-blocked-on-research"
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing"
-                            | "completion-unverified",
+                            | "completion-unverified" | "stale_upstream",
   "notify_message":    "<string>"      | null,
   "diagnostics":       []                                  # always present; non-empty
                                                            # surfaces backlog warnings

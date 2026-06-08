@@ -39,7 +39,8 @@ Output schema (stdout JSON) — same keys as lazy-state.py:
   "terminal_reason":   null | "all-bugs-fixed" | "cloud-queue-exhausted"
                             | "device-queue-exhausted" | "blocked"
                             | "needs-input" | "completion-unverified"
-                            | "queue-missing" | "all-remaining-deferred",
+                            | "queue-missing" | "all-remaining-deferred"
+                            | "stale_upstream",
   "notify_message":    "<string>"      | null,
   "diagnostics":       [],
   "device_deferred_features": [],
