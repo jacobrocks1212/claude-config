@@ -112,7 +112,7 @@ If `terminal_reason` is set, branch on whether it is **operator-resolvable** (as
 
 ### 2a. Operator-resolvable terminals → ask for a resolution path (do NOT bare-STOP)
 
-For `blocked`, `needs-input`, and `completion-unverified`, follow the shared operator-directed halt-resolution component — re-print the obstacle context, `AskUserQuestion` the resolution path, dispatch the Opus apply-resolution subagent to enact it (neutralizing any sentinel by RENAME, never a `kind:` flip — `bug-state.py` keys halts on the filename), then STOP per the **single-dispatch** post-enact rule (the enactment is this invocation's ONE meaningful action; the next `/lazy-bug` continues from the enacted state). Read and apply exactly:
+For `blocked`, `needs-input`, `completion-unverified`, and `stale_upstream`, follow the shared operator-directed halt-resolution component — re-print the obstacle context, `AskUserQuestion` the resolution path, dispatch the Opus apply-resolution subagent to enact it (neutralizing any sentinel by RENAME, never a `kind:` flip — `bug-state.py` keys halts on the filename), then STOP per the **single-dispatch** post-enact rule (the enactment is this invocation's ONE meaningful action; the next `/lazy-bug` continues from the enacted state). Read and apply exactly:
 
 `~/.claude/skills/_components/halt-resolution.md`
 
@@ -125,6 +125,7 @@ For these there is nothing to resolve in-session: PushNotification with `notify_
 | `terminal_reason` | After-bookend / operator action |
 |------|---|
 | `all-bugs-fixed` | All bugs fixed or retired; nothing else to do |
+| `all-remaining-deferred` | Every open bug is operator-parked via `DEFERRED.md` (a deliberate park, not an obstacle). Re-include a bug by deleting its `DEFERRED.md`, then re-run. |
 | `cloud-queue-exhausted` | Workstation-only path — does not occur for plain `/lazy-bug` |
 | `device-queue-exhausted` | Only on a NO-real-device host: the remaining bug(s) carry real-device-only assertions deferred via `DEFERRED_REQUIRES_DEVICE.md`. Tell the user to re-run `/lazy-bug` on a real-device host (set `ALGOBOOTH_REAL_AUDIO_DEVICE=1` or run on native hardware) to certify them. |
 | `queue-missing` | `docs/bugs/queue.json` missing — surface the expected path; the queue is optional (on-disk bugs are auto-discovered), so this is informational |

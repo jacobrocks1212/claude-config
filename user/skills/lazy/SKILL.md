@@ -105,7 +105,7 @@ If `terminal_reason` is set, branch on whether it is **operator-resolvable** (as
 
 ### 2a. Operator-resolvable terminals → ask for a resolution path (do NOT bare-STOP)
 
-For `blocked`, `needs-input`, `completion-unverified`, and `needs-spec-input`, follow the shared operator-directed halt-resolution component — re-print the obstacle context, `AskUserQuestion` the resolution path, dispatch the Opus apply-resolution subagent to enact it (neutralizing any sentinel by RENAME, never a `kind:` flip — `lazy-state.py` keys halts on the filename), then STOP per the **single-dispatch** post-enact rule (the enactment is this invocation's ONE meaningful action; the next `/lazy` continues from the enacted state). Read and apply exactly:
+For `blocked`, `needs-input`, `completion-unverified`, `needs-spec-input`, and `stale_upstream`, follow the shared operator-directed halt-resolution component — re-print the obstacle context, `AskUserQuestion` the resolution path, dispatch the Opus apply-resolution subagent to enact it (neutralizing any sentinel by RENAME, never a `kind:` flip — `lazy-state.py` keys halts on the filename), then STOP per the **single-dispatch** post-enact rule (the enactment is this invocation's ONE meaningful action; the next `/lazy` continues from the enacted state). Read and apply exactly:
 
 `~/.claude/skills/_components/halt-resolution.md`
 

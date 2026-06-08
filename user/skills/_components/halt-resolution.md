@@ -17,8 +17,9 @@ ask-then-continue shape:
   add-a-phase / defer / halt resolution paths).
 
 THIS component handles the REMAINING problem-terminals that previously bare-`STOP`ed:
-`completion-unverified`, `needs-spec-input`, and (where the skill has them)
-`needs-research` / `queue-blocked-on-research`.
+`completion-unverified`, `stale_upstream`, `needs-spec-input` (**feature pipeline only**
+— `bug-state.py` never emits it), and (feature pipeline only, and only under
+`--allow-research-skip`) `needs-research` / `queue-blocked-on-research`.
 
 **Consumers — batch loop vs single-dispatch (post-enact behavior differs).** The
 batch orchestrators (`/lazy-batch`, `/lazy-bug-batch`) run a loop, so after enacting
@@ -44,6 +45,9 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 - `queue-missing` — there is no queue to continue; nothing to ask about. Keep the
   existing stop (the operator must create `queue.json` / point the orchestrator at a
   directory first).
+- `all-remaining-deferred` (bug pipeline only — `bug-state.py`) — every open bug is
+  operator-parked via `DEFERRED.md`. A deliberate park, not an obstacle: keep the
+  informative stop (re-include a bug by deleting its `DEFERRED.md`).
 
 ### Inputs
 
@@ -89,8 +93,9 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
    | terminal | terminal-specific fix option(s) (first) | universal options (always appended) |
    |----------|------------------------------------------|--------------------------------------|
    | `completion-unverified` | **Reopen & re-validate** — set `**Status:** In-progress` and let the pipeline re-run retro + MCP so a *gated* receipt is earned. · **Grandfather the receipt** — only if the work was genuinely validated before the gate existed: write a `provenance: backfilled-unverified` receipt (honest debt). | Defer & continue queue · Halt for manual fix |
-   | `needs-spec-input` | **Provide spec direction** — operator's notes seed the SPEC baseline (the apply subagent dispatches `/spec` / `/spec-bug` with the direction, or writes an `ADHOC_BRIEF.md`-style seed). | Defer & continue queue · Halt for manual fix |
-   | `needs-research` / `queue-blocked-on-research` | **Upload research now** — operator pastes/attaches the Gemini result in their NEXT message; the in-session resume protocol ingests it. · **Defer this research-pending feature & continue** — work the rest of the queue first. | Halt for manual fix |
+   | `stale_upstream` (both pipelines — `STALE_UPSTREAM.md`) | **Re-materialize / absorb** — accept the changed upstream and re-run the materialize/realign step (the apply subagent dispatches `/realign-spec` or re-materializes), then neutralize `STALE_UPSTREAM.md` by rename. · **Reject** — the upstream change does not affect this item; neutralize the sentinel and proceed unchanged. | Defer & continue queue · Halt for manual fix |
+   | `needs-spec-input` (**feature pipeline only**) | **Provide spec direction** — operator's notes seed the SPEC baseline (the apply subagent dispatches `/spec` with the direction, or writes an `ADHOC_BRIEF.md`-style seed). | Defer & continue queue · Halt for manual fix |
+   | `needs-research` / `queue-blocked-on-research` (**feature pipeline only**, reachable here only under `--allow-research-skip`; the default strict-halt path stops at Step 4 before routing here) | **Upload research now** — operator pastes/attaches the Gemini result in their NEXT message; the in-session resume protocol ingests it. · **Defer this research-pending feature & continue** — work the rest of the queue first. | Halt for manual fix |
    | `blocked` (single-dispatch wrappers only — batch skills use bespoke Step 1h) | **Add a phase to resolve the blocker** — `/add-phase` (or `/plan-bug`) scoped to the blocker, then neutralize `BLOCKED.md`. · **Other** custom directive. | Defer & continue queue · Halt for manual fix |
    | `needs-input` (single-dispatch wrappers only — batch skills use bespoke Step 1g) | **Resolve the decision(s)** — re-print the `## Decision Context` and `AskUserQuestion` the listed `decisions[i]` (one per decision, ≤ 4); the apply subagent propagates the choices into SPEC/PHASES and neutralizes `NEEDS_INPUT.md`. | Defer & continue queue · Halt for manual fix |
 
@@ -195,10 +200,17 @@ by choosing the fix option, Other, or Halt. `max_cycles` bounds it regardless.
 
 ### Coupling note
 
-Consumed by the batch orchestrators' Step 1b for the routed problem-terminals:
-- `user/skills/lazy-batch/SKILL.md`
-- `user/skills/lazy-bug-batch/SKILL.md`
-- (cloud variants `lazy-batch-cloud` / `lazy-cloud` when propagated)
+Consumed by, for the routed problem-terminals:
+- **Batch orchestrators** (Step 1i): `user/skills/lazy-batch/SKILL.md`,
+  `user/skills/lazy-bug-batch/SKILL.md`, and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`.
+- **Single-dispatch wrappers** (Step 2a): `user/skills/lazy/SKILL.md`,
+  `user/skills/lazy-bug/SKILL.md`, and `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md`.
 
-`needs-input` (decision-resume) and `blocked` (blocked-resolution) keep their own
-bespoke handlers; this component is the catch-all for the rest.
+In the **batch** consumers, `needs-input` (decision-resume) and `blocked`
+(blocked-resolution) keep their own bespoke Step 1g/1h handlers; this component is the
+catch-all for the rest. In the **single-dispatch** consumers, `needs-input` and `blocked`
+ALSO route here (matrix rows above) — they have no bespoke handler.
+
+Pipeline scoping: `needs-spec-input` and the research terminals are **feature pipeline
+only** (`bug-state.py` does not emit them); `all-remaining-deferred` is **bug pipeline
+only**. `stale_upstream` and the rest apply to both.

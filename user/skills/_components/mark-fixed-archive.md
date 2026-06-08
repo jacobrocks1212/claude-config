@@ -74,8 +74,13 @@ Keep these permanently (audit trail):
 - `SKIP_MCP_TEST.md` (permanent waiver record)
 - `MCP_TEST_RESULTS.md` (permanent test evidence)
 - `plans/` directory and all plan files
-- `NEEDS_INPUT.md` (if resolved — keep as audit trail; the `kind:` should already be
-  `needs-input-resolved`)
+- `NEEDS_INPUT_RESOLVED.md` (if a decision was resolved — keep as audit trail). NOTE:
+  a resolved decision is neutralized by RENAME (`git mv NEEDS_INPUT.md
+  NEEDS_INPUT_RESOLVED.md`), NOT a `kind:` frontmatter flip — `bug-state.py` keys the
+  `needs-input` halt on the FILENAME `NEEDS_INPUT.md` (file existence), so a file still
+  named `NEEDS_INPUT.md` re-fires the halt every probe regardless of its `kind:`. By the
+  time `__mark_fixed__` runs, the Step 1g decision-resume should already have renamed it;
+  if a stray `NEEDS_INPUT.md` remains, rename it before archiving.
 
 #### Step 3: `git mv` the bug directory to `_archive/`
 

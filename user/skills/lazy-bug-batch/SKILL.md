@@ -1,6 +1,6 @@
 ---
 name: lazy-bug-batch
-description: Autonomous orchestrator for the bug pipeline. Loops on bug-state.py and spawns Opus subagents per cycle (one /lazy-bug-equivalent cycle each). Drives docs/bugs/ (NOT docs/features/). No research/stub/needs-research handling — N/A to bugs. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt (kind: fixed, gated by the completion-integrity gate) → Status Fixed + git mv → _archive/ → repoint inbound refs → commit. Receipt is FIXED.md; Won't-fix is receipt-EXEMPT. Does NOT dead-end on recoverable obstacles: a halt for ANY reason other than max-cycles (and the genuine all-bugs-fixed success terminal) presents the operator an AskUserQuestion resolution path and continues the loop. needs-input → Step 1g (decision-resume); blocked → Step 1h (blocked-resolution: add a phase / defer to queue tail / halt-for-manual / custom); completion-unverified, needs-spec-input, and other obstacle terminals → Step 1i (operator-directed halt-resolution per ~/.claude/skills/_components/halt-resolution.md). Each re-prints the load-bearing context, AskUserQuestions the resolution, dispatches an apply-resolution subagent to enact it (neutralizing any blocking sentinel by rename — bug-state.py keys halts on the filename), and resumes. Only max-cycles, all-bugs-fixed, and environment-exhaustion (device/cloud-queue-exhausted) remain clean stops. After every /spec-bug or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES.
+description: Autonomous orchestrator for the bug pipeline. Loops on bug-state.py and spawns Opus subagents per cycle (one /lazy-bug-equivalent cycle each). Drives docs/bugs/ (NOT docs/features/). No research/stub/needs-research handling — N/A to bugs. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt (kind: fixed, gated by the completion-integrity gate) → Status Fixed + git mv → _archive/ → repoint inbound refs → commit. Receipt is FIXED.md; Won't-fix is receipt-EXEMPT. Does NOT dead-end on recoverable obstacles: a halt for ANY reason other than max-cycles (and the genuine all-bugs-fixed success terminal) presents the operator an AskUserQuestion resolution path and continues the loop. needs-input → Step 1g (decision-resume); blocked → Step 1h (blocked-resolution: add a phase / defer to queue tail / halt-for-manual / custom); completion-unverified and stale_upstream → Step 1i (operator-directed halt-resolution per ~/.claude/skills/_components/halt-resolution.md; bug-state.py does NOT emit needs-spec-input). Each re-prints the load-bearing context, AskUserQuestions the resolution, dispatches an apply-resolution subagent to enact it (neutralizing any blocking sentinel by rename — bug-state.py keys halts on the filename), and resumes. Only max-cycles, all-bugs-fixed, all-remaining-deferred, queue-missing, and environment-exhaustion (device/cloud-queue-exhausted) remain clean stops. After every /spec-bug or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES.
 argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue]
 plan-mode: never
 model: opus
@@ -210,15 +210,18 @@ If `terminal_reason` is set:
   flipped OUTSIDE the validation gate. See Step 1i (operator-directed halt-resolution): the
   orchestrator re-prints the gap and `AskUserQuestion`s the path (reopen & re-validate / grandfather
   the receipt / defer & continue / halt). Do NOT auto-flip or auto-backfill — the operator chooses.
-- **`needs-spec-input`** / any other obstacle terminal: see Step 1i (operator-directed
-  halt-resolution) — ask the operator for direction and continue, rather than bare-STOP.
+- **`stale_upstream`**: an upstream item this bug was materialized from changed since materialize. See Step 1i (operator-directed halt-resolution) — re-print the gap and `AskUserQuestion` the path (re-materialize/absorb / reject / defer / halt). (`bug-state.py` emits this; do NOT auto-resolve.)
 - **`all-bugs-fixed`**: PushNotification `"ALL BUGS FIXED — queue cleared after {cycle}
   /lazy-bug-batch cycle(s)."`, print final batch report, STOP. (Genuine success — not routed to
   Step 1i.)
+- **`all-remaining-deferred`**: every open bug is operator-parked via `DEFERRED.md`. PushNotification with `notify_message`, print final batch report, STOP. (A deliberate park, not an obstacle — re-include a bug by deleting its `DEFERRED.md`. Not routed to Step 1i, per the halt-resolution exclusion list.)
+- **`queue-missing`**: `docs/bugs/queue.json` missing (the queue is optional — on-disk bugs are auto-discovered, so this is informational). PushNotification with `notify_message`, print final batch report, STOP. (No queue to continue — not routed to Step 1i.)
 - **`cloud-queue-exhausted`**: Unreachable for `/lazy-bug-batch` (workstation variant); treat as
   `all-bugs-fixed` defensively.
 - **`device-queue-exhausted`**: Reachable only on a no-real-device workstation. PushNotification
   with `notify_message`, print final batch report, STOP. Resume on a real-device host.
+
+> **Note — no `needs-spec-input` in the bug pipeline.** `bug-state.py` never emits `needs-spec-input` (the bug pipeline dispatches `/spec-bug` as a `sub_skill`, not a terminal). Step 1i's matrix scopes that row to the feature pipeline; the bug-batch routes only `completion-unverified` and `stale_upstream` to Step 1i.
 
 ### 1c. Check the max-cycles cap
 
@@ -602,11 +605,12 @@ explicit "Halt for manual fix" choice stops the run. This replaces the old zero-
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
-For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified`,
-`needs-spec-input` (and any future obstacle terminal) — the orchestrator routes to the shared
-operator-directed halt-resolution handler instead of halting. It re-prints the obstacle context,
-`AskUserQuestion`s a resolution path (reopen & re-validate / provide direction / defer & continue /
-halt), enacts the choice via an Opus subagent, and continues the loop. Follow the shared component:
+For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified` and
+`stale_upstream` (the bug pipeline's two Step 1i terminals; `bug-state.py` does NOT emit
+`needs-spec-input`) — the orchestrator routes to the shared operator-directed halt-resolution handler
+instead of halting. It re-prints the obstacle context, `AskUserQuestion`s a resolution path (reopen &
+re-validate / re-materialize / defer & continue / halt), enacts the choice via an Opus subagent, and
+continues the loop. Follow the shared component:
 
 !`cat ~/.claude/skills/_components/halt-resolution.md`
 

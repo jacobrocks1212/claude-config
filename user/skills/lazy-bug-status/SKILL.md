@@ -61,8 +61,13 @@ These are presentation-only enrichments — they do NOT influence state. Run in 
 4. If `feature_name` is set AND `{spec_path}/BLOCKED.md` exists: parse its YAML frontmatter per
    `~/.claude/skills/_components/sentinel-frontmatter.md` and grab the `phase` and
    `recovery_suggestion` fields.
-5. From `docs/bugs/queue.json` (if it exists): total queue length and how many bugs have been
-   archived (have `FIXED.md` in `docs/bugs/_archive/`).
+5. Open / archived bug counts. `docs/bugs/queue.json` is OPTIONAL (on-disk bugs are
+   auto-discovered), so:
+   - If `docs/bugs/queue.json` exists: total queue length from it.
+   - Otherwise (the common case): enumerate on-disk bug directories — count open bugs as
+     immediate subdirectories of `docs/bugs/` that contain a `SPEC.md` and are NOT under
+     `_archive/`.
+   - Archived count either way: count `FIXED.md` files under `docs/bugs/_archive/`.
 
 If any of these reads fail (file missing, parse error), continue with the field set to `"—"`.
 Do not error out — this skill is a dashboard.
@@ -95,7 +100,9 @@ Terminal-reason mapping:
 | `blocked` | "BLOCKED — see {spec_path}/BLOCKED.md" |
 | `needs-input` | "Awaiting human decision — see {spec_path}/NEEDS_INPUT.md" |
 | `completion-unverified` | "⚠ {bug} marks Fixed with no FIXED.md receipt — flipped outside the gate. Reconcile: reopen to In-progress, or `bug-state.py --backfill-receipts` to grandfather." |
+| `stale_upstream` | "STALE UPSTREAM — an upstream item changed since materialize (see {spec_path}/STALE_UPSTREAM.md). Re-materialize / realign, or reject." |
 | `all-bugs-fixed` | "ALL BUGS FIXED — nothing left in queue" |
+| `all-remaining-deferred` | "ALL REMAINING DEFERRED — every open bug is operator-parked via DEFERRED.md. Delete a bug's DEFERRED.md to re-include it." |
 | `cloud-queue-exhausted` | "Cloud queue exhausted — run /lazy-bug on workstation for MCP testing" |
 | `device-queue-exhausted` | "Device queue exhausted — remaining bug(s) have real-device-only assertions deferred via DEFERRED_REQUIRES_DEVICE.md. Re-run /lazy-bug on a real-device host (ALGOBOOTH_REAL_AUDIO_DEVICE=1 or native hardware) to certify them." |
 | `queue-missing` | "docs/bugs/queue.json not found (optional — on-disk bugs auto-discovered; create it for explicit ordering)" |

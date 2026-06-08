@@ -82,6 +82,8 @@ Terminal-reason mapping:
 | `needs-input` | "Awaiting human decision — see {spec_path}/NEEDS_INPUT.md" |
 | `needs-spec-input` | "No SPEC/research yet — run /spec interactively" |
 | `completion-unverified` | "⚠ {feature} marks Complete with no COMPLETED.md receipt — flipped outside the gate. Reconcile: reopen to In-progress, or `lazy-state.py --backfill-receipts` to grandfather." |
+| `stale_upstream` | "STALE UPSTREAM — an upstream item changed since materialize (see {spec_path}/STALE_UPSTREAM.md). Re-materialize / realign, or reject." |
+| `queue-blocked-on-research` | "Queue blocked on research — every remaining feature is research-pending (only reachable under --skip-needs-research)" |
 | `all-features-complete` | "ALL FEATURES COMPLETE — nothing left in queue" |
 | `cloud-queue-exhausted` | "Cloud queue exhausted — run /lazy on workstation for MCP testing" |
 | `device-queue-exhausted` | "Device queue exhausted — remaining feature(s) have real-device-only assertions deferred via DEFERRED_REQUIRES_DEVICE.md. Re-run /lazy on a real-device host (ALGOBOOTH_REAL_AUDIO_DEVICE=1 or native hardware) to certify them." |
