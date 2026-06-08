@@ -288,6 +288,8 @@ Every `NEEDS_INPUT.md` MUST carry — under the closing `---` of the frontmatter
 
 This body is the **source of truth** for what the orchestrator displays to the user. The orchestrator (`/lazy-batch` / `/lazy-batch-cloud`) re-prints the entire `## Decision Context` section verbatim to chat BEFORE calling `AskUserQuestion`, whose option descriptions are truncated by the UI. Without the rich body, the user sees only the truncated picker — uninformed choice. With it, the chat carries the full tradeoff context the writer would have surfaced interactively.
 
+**Write for a zero-context reader.** The operator answering may have been away for hours and remembers nothing about the session. Each H3 must be self-contained: gloss jargon and internal names on first use, state which original requirement (SPEC section / prior operator decision) the choice affects, and make each option's tradeoffs explicit enough that the operator can decide from this text alone — including which option is architecturally strongest and which best satisfies the original requirements when those differ.
+
 A `NEEDS_INPUT.md` that lacks the `## Decision Context` section is **malformed**. The orchestrator MUST refuse to call `AskUserQuestion` against a malformed file (see "Consumer rules" below).
 
 ##### Halting rule (HARD REQUIREMENT)

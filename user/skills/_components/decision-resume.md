@@ -41,7 +41,30 @@ Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (p
 
      PushNotification with the same message, append `{cycle+1, feature_name, "🛑 needs-input (malformed)", "<writer> wrote NEEDS_INPUT.md without rich body"}` to `cycle_log`, print the final batch report, STOP. Do NOT call `AskUserQuestion` against a malformed file (HARD CONSTRAINT 6).
 
-2. **Re-print the rich body to chat VERBATIM.** This is the load-bearing context the user needs BEFORE the truncated `AskUserQuestion` UI fires:
+2. **Print the Zero-Context Operator Briefing (2a), then re-print the rich body VERBATIM (2b).** Assume the operator has been away for hours and retains NO session context (and may be reading on mobile, where `AskUserQuestion` truncates). Emit BOTH, in order:
+
+   **2a — Zero-Context Operator Briefing** (synthesized by the orchestrator; succinct — the operator should be fully caught up in under a minute):
+
+   ```
+   🛑 Decision needed — Operator Briefing
+
+   **Where we are:** {2-4 sentences: which {ITEM}, what it is in plain terms, what pipeline
+   stage we're at, what has already been done on it this session}
+   **Why we halted:** {1-2 sentences per decision: the concrete issue that forced the halt,
+   explained assuming zero prior context}
+   **Original requirement at stake:** {1-2 sentences: the SPEC requirement / prior operator
+   decision this choice affects}
+
+   **Your options:**
+   {For EACH decision, list EVERY option that will appear in AskUserQuestion, using the
+   EXACT labels that will be used there. Per option: what it means in plain terms, pros,
+   cons, and one line on fit — which is architecturally strongest, which best satisfies the
+   original requirements. Close with the recommendation and WHY in 1-2 sentences.}
+   ```
+
+   The briefing explains the sentinel; it never replaces it. No analysis may appear only in the `AskUserQuestion` UI — everything the operator needs to decide must be in the briefing.
+
+   **2b — Verbatim re-print.** This preserves the full sentinel context BEFORE the truncated `AskUserQuestion` UI fires:
 
    ```
    ❓ {SKILL} — Decision required (loop will resume after your answer)
@@ -72,6 +95,8 @@ Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (p
      - `label`: the bold `<name>`.
      - `description`: the first sentence of `<description>`. AskUserQuestion will truncate longer descriptions — the full text is already above in chat (step 2), so the truncation is non-fatal.
    - `multiSelect`: `false` unless the H3 explicitly says "select all that apply" or similar (rare — most decisions are mutually exclusive). When in doubt, default to `false`.
+
+   **The option set MUST exactly match the options presented in the step-2a briefing** — same labels, same count, recommendation marked `(Recommended)` and listed first. If the briefing and the sentinel's `**Options:**` list diverged, fix the briefing and re-print before calling `AskUserQuestion` — never introduce an option in the UI that wasn't explained in chat.
 
    Call `AskUserQuestion` once with all N questions in a single `questions` array (the tool supports up to 4 questions per call). Capture the response.
 

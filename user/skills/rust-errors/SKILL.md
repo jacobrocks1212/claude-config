@@ -124,6 +124,56 @@ The Rust enum serializes to this TypeScript-friendly format:
 4. **Don't use `content` attribute**: Avoid `#[serde(tag = "name", content = "data")]` as it creates nested structures
 5. **Keep enums private when possible**: Only make public if used across modules
 
+---
+
+### AlgoBooth House Convention (project-specific — do NOT use `tag = "name"` there)
+
+> **AlgoBooth (`~/repos/AlgoBooth`) uses `tag = "kind"`, not `tag = "name"`.** The generic
+> examples above use `tag = "name"` which is the generic skill default, but the AlgoBooth
+> codebase has established `tag = "kind"` as its discriminant — used consistently in
+> `agent/keychain.rs`, `agent/provider.rs`, `agent/mcp_client.rs`, and `agent/streaming.rs`.
+>
+> In AlgoBooth, use this shape instead:
+>
+> ```rust
+> #[derive(Debug, thiserror::Error, serde::Serialize)]
+> #[serde(tag = "kind", content = "message", rename_all = "snake_case")]
+> pub enum CommandError {
+>     // Tuple/unit variants (with content = "message"):
+>     #[error("IO error: {0}")]
+>     Io(String),
+>
+>     // Struct variants with real fields (omit content=):
+>     #[error("Sample not found: pack={pack}, index={index}")]
+>     SampleNotFound { pack: String, index: u32 },
+> }
+> ```
+>
+> TypeScript discriminates on `kind` (snake_case), not `name`:
+>
+> ```typescript
+> switch (error.kind) {
+>     case 'io': /* ... */ break;
+>     case 'sample_not_found': /* error.pack, error.index */ break;
+> }
+> ```
+>
+> The `CommandError` enum migration is documented in
+> `docs/bugs/tauri-commands-string-errors/SPEC.md`. This convention was ratified 2026-06-05
+> to align with the four existing `agent/` error enums and avoid re-deriving the conflict on
+> future migrations.
+>
+> **Derive caveat (discovered 2026-06-05 — load-bearing).** The `#[serde(tag = "kind",
+> content = "message")]` *derive* CANNOT produce the locked wire shape when an enum MIXES
+> message-bearing variants (`{ kind, message }`) with struct variants whose fields must be
+> FLATTENED alongside the tag (`{ kind: "sample_not_found", pack, index }`, no `message`
+> wrapper). Adjacent tagging nests struct fields under `content` (`{ kind, message: { pack } }`)
+> and internal tagging (`tag` only) can't serialize a newtype variant holding a plain `String`.
+> When you need BOTH shapes from one enum, hand-write `impl serde::Serialize` (a `match` that
+> emits `{ kind, message }` for message variants and a flattened map for struct variants) and
+> keep `#[derive(thiserror::Error)]` for `Display`/`#[from]`. See
+> `src-tauri/src/commands/error.rs` for the reference implementation.
+
 ### Anti-Patterns to Avoid
 
 ```rust

@@ -66,6 +66,82 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
 
 ---
 
+## Step 2.5: Phase-Count Circuit Breaker (BEFORE ANY DRAFTING)
+
+**Motivation:** Retro evidence shows two features expanding 9→19 and 18→30 phases via repeated `/add-phase` corrective tails (`analysis-informed-dsp-updates`, `audio-quality-analysis`; `hardware-override-protocol` scored 24/F under the same dynamic). A >+50% expansion is not "a few follow-ups" — it is a signal the original decomposition is invalid and must be rebuilt, not patched.
+
+### Compute the added-phase ratio
+
+1. **Determine the original phase count.** Inspect the PHASES.md for the highest phase number that was authored in the *initial* spec-phases run. Heuristics (apply in order):
+   - A frontmatter or header line of the form `<!-- original-phase-count: N -->` or `**Original phase count:** N` — use N directly.
+   - Failing that, count phases whose phase number is ≤ the lowest phase number that carries a `SUPERSEDED` or `(corrective)` annotation, minus 1.
+   - Failing that, treat every phase that existed before the first `/add-phase` corrective entry in the Implementation Notes history as original.
+   - Failing that, count all phases currently in the file and treat that as the original count (conservative — prevents a false-positive block when the file has no history).
+   - Call this value **O**.
+
+2. **Count phases that would exist after this append.** Let **T** = (current total phases in the file) + 1.
+
+3. **Compute the added-phase ratio:** `(T − O) / O`.
+
+### Decision
+
+| Ratio | Action |
+|-------|--------|
+| `≤ 0.50` | Proceed normally to Step 3. |
+| `> 0.50` | **STOP — circuit breaker fires.** Do not draft or append the phase. |
+
+### Breaker action (when fired)
+
+**Interactive mode:**
+
+Surface the violation to the operator:
+
+> **Phase-count circuit breaker triggered.**
+> Original phase count: **O**. Current total: **T−1**. Adding this phase would bring the expansion to **{(T−O)/O * 100:.0f}%** over original — exceeding the +50% threshold.
+>
+> This expansion signal means the original decomposition is likely invalid and should be **rebuilt**, not patched with more corrective phases. Recommended path:
+> 1. Run `/realign-spec` on the SPEC.md to reconcile the spec with what was actually built.
+> 2. Re-run `/spec-phases` to produce a fresh phase breakdown from the aligned spec.
+>
+> If you have a compelling reason to override the breaker, re-invoke `/add-phase` with `--override-circuit-breaker` in the arguments.
+
+Do NOT proceed to Step 3. Stop here.
+
+**Batch mode (`--batch`):**
+
+Write `{phases-md-dir}/NEEDS_INPUT.md` using the sentinel frontmatter schema:
+
+```markdown
+---
+kind: needs-input
+feature_id: {feature-slug derived from phases-md-dir}
+written_by: add-phase
+decisions:
+  - "Phase-count circuit breaker: adding this phase would push expansion to {ratio*100:.0f}% over the original O-phase count (threshold: +50%). Original: O, current: T-1, proposed: T."
+  - "Recommended path: /realign-spec then /spec-phases. Override with --override-circuit-breaker if intentional."
+date: {today}
+next_skill: add-phase
+---
+
+# /add-phase --batch — Circuit Breaker Fired
+
+Adding this phase would bring total added phases to **{T−O}** above the original **O**-phase plan ({ratio*100:.0f}% expansion; threshold +50%).
+
+A >+50% corrective tail is a signal the original decomposition is invalid.
+Re-run `/realign-spec` + `/spec-phases` to rebuild from the current SPEC.md,
+or re-invoke `/add-phase --batch --override-circuit-breaker` to override.
+```
+
+STOP without writing PHASES.md.
+
+### Override
+
+If `$ARGUMENTS` contains `--override-circuit-breaker`, skip the breaker check and proceed to Step 3. Log a warning in the drafted phase's **Context from prior phases** block:
+
+> ⚠ Phase-count circuit breaker overridden by operator. Expansion is {ratio*100:.0f}% over original count.
+
+---
+
 ## Step 3: Analyze Existing Phases
 
 ### 3a. Extract State
@@ -134,6 +210,10 @@ Write the phase using the established PHASES.md format:
 **Context from prior phases:**
 - {Key patterns, pitfalls, or integration details extracted from Implementation Notes that inform this phase's implementation}
 ```
+
+**Review Guardrails (this phase):** front-load the review pitfalls likely to recur on this phase's files — and, because corrective phases recur on the work they replace, on any superseded phase's files too (Step 3c). Apply the protocol below when present and embed its output in the drafted phase. This is a no-op outside repos that configure a guardrail source:
+
+!`cat .claude/skill-config/phases-review-guardrails.md 2>/dev/null || cat ~/.claude/skills/_components/phases-review-guardrails.md`
 
 ---
 

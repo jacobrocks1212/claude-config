@@ -68,13 +68,19 @@ dispatches whatever `bug-state.py` returns.
    the operator how to proceed rather than dead-ending. This constraint scopes the orchestrator, not
    subagents it dispatches.
 
-6. **The orchestrator MUST re-print the load-bearing context to chat BEFORE calling
-   `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print
-   is the load-bearing context. In Step 1g this is the rich `## Decision Context` (never
-   `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation and halt). In
-   Step 1h it is the `BLOCKED.md` body verbatim (no rich-body schema; a thin body is not a
-   malformation halt). In Step 1i it is the obstacle context (notify_message + diagnostics + any
-   relevant sentinel/dir state) per the halt-resolution component.
+6. **The orchestrator MUST print a Zero-Context Operator Briefing AND re-print the load-bearing
+   context to chat BEFORE calling `AskUserQuestion`.** The operator may have been away for hours and
+   retains NO session context (and may be reading on mobile, where `AskUserQuestion` truncates). In
+   **Step 1g** the briefing (step 2a of the decision-resume component) catches them up from zero —
+   what's being worked, why we halted, every option with pros/cons and fit against the original
+   requirements, and a recommendation — followed by the verbatim `## Decision Context` re-print
+   (step 2b); the `AskUserQuestion` option set MUST exactly match the options in the briefing (same
+   labels, 1:1 — no UI-only options). Never `AskUserQuestion` against a malformed `NEEDS_INPUT.md`
+   (missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the
+   malformation and halt. In **Step 1h** the load-bearing context is the `BLOCKED.md` body verbatim
+   (no rich-body schema; a thin body is not a malformation halt); in **Step 1i** it is the obstacle
+   context per the halt-resolution component. The same zero-context briefing discipline applies to
+   Step 1h/1i.
 
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`,
    `wait`, polling loops, or any other mechanism to block. A terminal either resolves via an
@@ -336,6 +342,14 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       in an /execute-plan cycle is the EXPECTED state.
       STILL preserve test-first discipline: write failing tests first, confirm
       they fail for the right reason, THEN implement.
+      ATOMIC GATE+COMMIT (HARD): per /execute-plan's "Atomic gate+commit"
+      rule, the FINAL action of each batch AND of plan-part completion MUST be
+      ONE chained Bash command — `<gate> && git add -A && git commit -m "..."
+      && git push` — so the auto-backgrounded gate job commits + pushes itself.
+      This closes the turn-loss gap (the recurring failure where the cycle ends
+      between "gates passed" and "commit", leaving the tree dirty or the dual
+      ledger half-flipped). Before reporting, tick EVERY PHASES.md verification
+      box for the completed phase(s) and confirm `git status --short` is empty.
     • /retro-feature — perform all internal work inline: read each input serially,
       synthesize, write the retro plan + RETRO_DONE.md directly.
     • /mcp-test — perform the test work INLINE (read the MCP usage guide, run the
@@ -491,6 +505,29 @@ After the subagent returns:
 4. **Post-cycle push backstop.** Verify the work branch is pushed — `git push origin
    $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff; WORK BRANCH
    only, never main, never force).
+4a. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard (codifies the
+   previously-ad-hoc operator check).** When the cycle that just returned was `/execute-plan`
+   or `/mcp-test`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a).
+   This is one git/grep check fired on the cycle's completion notification — NOT polling, so
+   the no-active-wait constraint holds; these are `Bash` reads, so the sentinel-only
+   Write/Edit constraint holds too. The cycle subagent is supposed to leave a clean, consistent
+   ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically
+   loses its turn between gates and commit — this guard catches the residue deterministically
+   instead of relying on operator memory. Checks:
+   - `git status --short` is empty (clean tree).
+   - `HEAD == origin/<branch>` (`git rev-parse HEAD` == `git rev-parse origin/<branch>`; run
+     `git fetch origin <branch>` first).
+   - **(`/execute-plan` only)** the plan part's frontmatter is `status: Complete` AND
+     `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0` (zero unchecked boxes — the dual
+     ledger is consistent, not half-flipped).
+
+   If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches
+   a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT
+   increment `cycle`) to reconcile: stage + commit + push any residue, tick the remaining
+   PHASES.md verification boxes, re-flip the plan status if needed, then re-run this guard.
+   The recovery prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a
+   `**Recovery:**` bullet to the per-cycle output block. Do NOT advance to Step 1a until the
+   guard passes.
 5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across bug transitions
    (HARD CONSTRAINT 8).**
 

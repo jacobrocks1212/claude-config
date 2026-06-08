@@ -327,6 +327,8 @@ For **every** finding from 4a–4d and 4i, classify it into exactly one bucket:
 
 **Key distinction:** If the finding describes something that was simply missed or done wrong in this specific implementation, it's a defect — fix it in code. Only escalate to systematic improvements when the root cause is a recurring gap in process, tooling, or documentation. A one-off mistake is not a systematic issue.
 
+**Propagation rule — shared-source phantoms (MANDATORY):** When a systematic finding traces back to a **RESEARCH template, a shared research artifact, or any reused source** (not a mistake local to this feature), a local fix is insufficient. The retro plan MUST include a **propagation edit to that shared source** as a separate work unit — so sibling features that inherited the same artifact cannot inherit the same phantom. Concretely: the `Arc<dyn Trait>` "use a `Guard` for zero-copy reads" NO-OP appeared in both `d7-wavetable-generation` and `d8-tempo-sync` because `d7`'s retro fixed it locally without updating the RESEARCH content; `d8` re-inherited it on the next cycle. Identify the upstream source (RESEARCH_SUMMARY.md, a shared component, a template) and schedule its correction as a plan work unit in Step 6b — do not leave it for the affected sibling's own retro to re-discover.
+
 ### 4f. What Went Well
 
 - Patterns that worked efficiently
