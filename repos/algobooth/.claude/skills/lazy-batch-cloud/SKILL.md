@@ -1,6 +1,6 @@
 ---
 name: lazy-batch-cloud
-description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches /spec as a normal cycle subagent that calls AskUserQuestion freely to shape the baseline) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload). HARD CONSTRAINT 5's no-AskUserQuestion-outside-Step-1g rule binds the orchestrator only, not subagents it dispatches. Halts on BLOCKED.md, needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), cloud-queue-exhausted, or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. After every /spec or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES — Step 1g then resolves them inline on the next cycle. Mirrored with /lazy-batch. Research uploaded mid-session via chat triggers in-session resume: /ingest-research is dispatched immediately (writing the tracked RESEARCH.md + RESEARCH_SUMMARY.md — critical because docs/gemini-sprint/results/ is gitignored and bare .txt stages do not survive cloud-container reclaim) and the loop is re-invoked — no manual re-run required. --adhoc "<task>" enqueues an ad-hoc task at the TOP of the queue before the loop starts (Step 0.45, then an immediate push so it survives container reclaim) so the next cycle picks it up first; a brand-new ad-hoc feature begins at /spec Phase 1 and advances autonomously, pausing only for baseline-gating product-behavior decisions via Step 1g.
+description: Cloud-environment variant of /lazy-batch. Loops on lazy-state.py --cloud and spawns Opus subagents per cycle, deferring any step that requires the Tauri desktop or MCP HTTP server. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches /spec as a normal cycle subagent that calls AskUserQuestion freely to shape the baseline) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload). HARD CONSTRAINT 5's no-AskUserQuestion-outside-the-resolution-modes rule binds the orchestrator only, not subagents it dispatches. A halt for ANY reason other than max-cycles (and genuine all-features-complete / cloud-queue-exhausted / device-queue-exhausted / queue-missing stops) no longer dead-ends — it asks the operator for a resolution path via AskUserQuestion and resumes. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. BLOCKED.md ALSO does NOT halt by default: Step 1h re-prints the blocker context, calls AskUserQuestion for the resolution path (add a phase / defer to the queue tail / halt-for-manual / custom), dispatches an Opus apply-resolution subagent to enact it (neutralizing BLOCKED.md by rename, docs-only — no Tauri/MCP needed), and resumes — only the operator-chosen "Halt for manual fix" path stops the run. More broadly, completion-unverified / needs-spec-input / stale_upstream route to Step 1i (operator-directed halt-resolution, shared _components/halt-resolution.md). Only max-cycles, genuine completion (all-features-complete), environment-exhaustion (cloud/device-queue-exhausted), and a missing queue remain clean stops; the research-pending halts keep their existing chat-upload / re-invoke resume. After every /spec or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES — Step 1g then resolves them inline on the next cycle. Mirrored with /lazy-batch (the blocked/needs-input/completion-unverified handling is now SAME; only Tauri/MCP deferral, DEFERRED_NON_CLOUD, cloud reclaim recovery, the 3-gate __mark_complete__, and __flip_plan_complete_cloud_saturated__ are cloud-specific). Research uploaded mid-session via chat triggers in-session resume: /ingest-research is dispatched immediately (writing the tracked RESEARCH.md + RESEARCH_SUMMARY.md — critical because docs/gemini-sprint/results/ is gitignored and bare .txt stages do not survive cloud-container reclaim) and the loop is re-invoked — no manual re-run required. --adhoc "<task>" enqueues an ad-hoc task at the TOP of the queue before the loop starts (Step 0.45, then an immediate push so it survives container reclaim) so the next cycle picks it up first; a brand-new ad-hoc feature begins at /spec Phase 1 and advances autonomously, pausing only for baseline-gating product-behavior decisions via Step 1g.
 argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue]
 plan-mode: never
 model: opus
@@ -26,14 +26,14 @@ This skill is coupled to `/lazy-batch` per CLAUDE.md — their only intended div
 
 Constraints 1-8 are identical to `/lazy-batch`; constraint 9 is cloud-only:
 
-1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `COMPLETED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` / `PHASES.md` status lines when performing the `__mark_complete__` action. `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. All other `Write`/`Edit` operations require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
+1. The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `COMPLETED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` / `PHASES.md` status lines when performing the `__mark_complete__` action. `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. **`BLOCKED.md` may likewise be appended to** (not overwritten) with a `## Resolution` section by Step 1h (blocked-resolution mode) after `AskUserQuestion` returns; the orchestrator then dispatches an Opus subagent to enact the chosen resolution path (e.g. `/add-phase`, queue reorder) and neutralize the sentinel by **rename** (lazy-state.py keys the halt on the `BLOCKED.md` filename). All other `Write`/`Edit` operations require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
 2. The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool. Every sub-skill goes through a spawned `Agent` subagent. Pseudo-skills (`__*__`) are not real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
 3. The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files. State inference is exclusively via `lazy-state.py --cloud`. Sentinel files MAY be read by the orchestrator to confirm a write or drive a pseudo-skill action.
 4. One cycle = one subagent dispatch FOR REAL WORK SKILLS. Pseudo-skill cycles (sentinel writes) are inline orchestrator actions that count as one cycle each.
-5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY for the orchestrator itself.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. The user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation. **This constraint scopes the orchestrator, not subagents it dispatches.** A `/spec` subagent dispatched at state-machine Step 4.5 (stub-spec detected — see "Stub specs vs structured-research-pending specs" near Step 4) is allowed and expected to call `AskUserQuestion` during Phase 1 brainstorming; the orchestrator dispatches that cycle exactly the same way it dispatches any other real-skill cycle (one `Agent` call). Whatever the dispatched skill does internally is its own contract.
-6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation as a quality issue and halt instead (see Step 1g.1).
+5. **Interactive prompts are scoped to the resolution modes — decision-resume (Step 1g), blocked-resolution (Step 1h), and operator-directed halt-resolution (Step 1i) — ONLY for the orchestrator itself.** The guiding rule: a halt for ANY reason other than `max-cycles` (and the genuine all-done success / environment-exhaustion / no-queue stops listed in Step 1i) presents the operator an `AskUserQuestion` resolution path and continues the loop, rather than dead-ending. Outside Step 1g / 1h / 1i, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. Inside Step 1h, the orchestrator MUST `AskUserQuestion` for the resolution path against a `BLOCKED.md` (re-printing its body first), record the choice, dispatch the apply-resolution subagent to enact it, and **continue the loop** — `blocked` no longer halts the orchestrator either (except the operator-chosen "Halt for manual fix" path). The user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation. **This constraint scopes the orchestrator, not subagents it dispatches.** A `/spec` subagent dispatched at state-machine Step 4.5 (stub-spec detected — see "Stub specs vs structured-research-pending specs" near Step 4) is allowed and expected to call `AskUserQuestion` during Phase 1 brainstorming; the orchestrator dispatches that cycle exactly the same way it dispatches any other real-skill cycle (one `Agent` call). Whatever the dispatched skill does internally is its own contract.
+6. **The orchestrator MUST re-print the load-bearing context to chat BEFORE calling `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print is the load-bearing context. In Step 1g this is the rich `## Decision Context` — never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1); surface the malformation as a quality issue and halt instead (see Step 1g.1). In Step 1h this is the `BLOCKED.md` body verbatim (which has no mandated rich-body schema — a thin body is NOT a malformation halt; re-print whatever is there and note in chat if it is sparse). In Step 1i this is the obstacle context the shared `_components/halt-resolution.md` mandates.
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch-cloud` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
-8. **The `cycle` counter is session-global and monotonic across feature transitions.** Identical to `/lazy-batch` HARD CONSTRAINT 8: `cycle` is initialized to 0 in Step 0 *once per `/lazy-batch-cloud` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e, Step 1g step 7). It MUST NOT be reset when `lazy-state.py --cloud` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next (via `__mark_complete__`, or because the prior feature hit `cloud-queue-exhausted`'s precondition and a later queue entry became current, or because the prior feature's `__write_deferred_non_cloud__` finished and the script rolled forward). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch-cloud` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch.
+8. **The `cycle` counter is session-global and monotonic across feature transitions.** Identical to `/lazy-batch` HARD CONSTRAINT 8: `cycle` is initialized to 0 in Step 0 *once per `/lazy-batch-cloud` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e, Step 1g step 7, Step 1h step 7, Step 1i per the halt-resolution component). It MUST NOT be reset when `lazy-state.py --cloud` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next (via `__mark_complete__`, or because the prior feature hit `cloud-queue-exhausted`'s precondition and a later queue entry became current, or because the prior feature's `__write_deferred_non_cloud__` finished and the script rolled forward). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch-cloud` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch.
 
 9. **Dispatch ONLY against the feature `lazy-state.py --cloud` returned THIS cycle; never fabricate a feature.** Identical to `/lazy-batch` HARD CONSTRAINT 9: dispatch against exactly the `feature_id` + `spec_path` from the current cycle's state-script output, verbatim. NEVER invent/infer/hand-edit a slug the script didn't emit. The state script already skips queue entries whose `spec_dir` doesn't resolve on disk (`dangling queue entry` diagnostic), so a real feature always has an on-disk `spec_path`. The cycle subagent prompt MUST forbid CREATING a feature's `SPEC.md`/`RESEARCH.md`/`queue.json`/`ROADMAP.md` from a bare slug (only `--enqueue-adhoc` and a `/spec` dispatch against an already-seeded dir may create dirs). A `feature_id` with no on-disk `spec_path` is a bug to surface, never a cue to manufacture the feature.
 
@@ -198,14 +198,21 @@ Pass `--skip-needs-research` **only when `allow_research_skip == true` AND `skip
 
 ### 1b. Handle terminal states
 
-Same handling as `/lazy-batch` for `blocked`, `needs-input`, `needs-spec-input`, `queue-missing`, `all-features-complete`, `completion-unverified`. Cloud-specific:
+Same handling as `/lazy-batch` for `blocked`, `needs-input`, `needs-spec-input`, `queue-missing`, `all-features-complete`, `completion-unverified`, `stale_upstream` — the resolution-mode routing below is the SAME as `/lazy-batch` (it is docs-only: `AskUserQuestion` + docs edits + `/add-phase` + queue reorder, none of which need Tauri/MCP, so it runs identically in cloud). Cloud-specific terminals are called out separately.
 
+If `terminal_reason` is set:
+
+- **`blocked`**: see Step 1h (blocked-resolution mode). **Not a terminal halt anymore.** Step 1h re-prints the `BLOCKED.md` body verbatim, runs `AskUserQuestion` for the resolution path (add a phase / defer to queue tail / halt-for-manual / custom), records the choice, dispatches the Opus apply-resolution subagent to enact it (neutralizing `BLOCKED.md` via rename), and returns to Step 1a. The loop continues; do NOT print the final batch report — UNLESS the operator chooses "Halt for manual fix", which keeps `BLOCKED.md` untouched and STOPs (the legacy behavior, now one option among several).
 - **`needs-input`**: see Step 1g (decision-resume mode — identical to `/lazy-batch` Step 1g). **Not a terminal state for the orchestrator anymore** — Step 1g resolves the decision via `AskUserQuestion`, dispatches the Sonnet apply-resolution subagent, and returns to Step 1a. Do NOT print the final batch report.
-- **`completion-unverified`**: identical to `/lazy-batch` — a feature claims `Complete` with no `COMPLETED.md` receipt (flipped outside the validation gate). Halt for human reconciliation: PushNotification with `notify_message`, print final batch report, STOP. Do NOT auto-reopen or auto-backfill; that judgment is the operator's (`lazy-state.py --backfill-receipts` to grandfather, or reopen to `In-progress` to re-validate).
-- **`cloud-queue-exhausted`**: PushNotification `"Cloud queue exhausted after {cycle} cycle(s) — N feature(s) awaiting workstation /lazy for MCP test."` Print final batch report, STOP.
+- **`needs-spec-input`**: see Step 1i (operator-directed halt-resolution) — the orchestrator re-prints what the dir contains and `AskUserQuestion`s the path (provide spec direction → seed the baseline / defer & continue queue / halt). It no longer bare-STOPs "cannot start from nothing".
+- **`completion-unverified`**: a feature claims `Complete` with no `COMPLETED.md` receipt (flipped outside the validation gate). See Step 1i (operator-directed halt-resolution): re-print the gap and `AskUserQuestion` the path — reopen & re-validate (`**Status:** In-progress` → let the pipeline re-run retro + MCP) / grandfather the receipt (`lazy-state.py --backfill-receipts`, only if genuinely validated before the gate) / defer & continue / halt. Do NOT auto-flip, auto-reopen, or auto-backfill — that judgment is the operator's, now surfaced as a choice rather than a bare halt.
+- **`stale_upstream`**: an upstream feature/work-item this feature was materialized from changed since materialize. See Step 1i (operator-directed halt-resolution): re-print the gap and `AskUserQuestion` the path (re-materialize/absorb → re-run materialize or `/realign-spec` / reject the change / defer & continue / halt). Do NOT auto-resolve.
+- **`cloud-queue-exhausted`**: PushNotification `"Cloud queue exhausted after {cycle} cycle(s) — N feature(s) awaiting workstation /lazy for MCP test."` Print final batch report, STOP. (Environment exhaustion — per the halt-resolution component's exclusion list, NOT routed to Step 1i; the resolution is environmental, not an in-session operator choice.)
 - **`device-queue-exhausted`**: A remaining feature carries `DEFERRED_REQUIRES_DEVICE.md` (real-device-only assertions) but no `DEFERRED_NON_CLOUD.md`, so the cloud-saturated skip didn't catch it. Cloud has no audio device either, so cloud cannot certify it. PushNotification with `notify_message`, print final batch report, STOP — surface that a **real-device** /lazy host (`ALGOBOOTH_REAL_AUDIO_DEVICE=1` or native hardware) is needed to re-open and certify the deferred scenarios. Rare in cloud: cloud-saturated features normally carry `DEFERRED_NON_CLOUD.md` and hit `cloud-queue-exhausted` first.
 - **`needs-research`**: see Step 4 (research halt — same dual-path shape as `/lazy-batch`, but the sentinel's `written_by` is `lazy-batch-cloud`). Default (strict halt) writes the sentinel, prints the inline-prompt halt announcement, PushNotifies, prints the final batch report, and STOPs. Opt-in (`--allow-research-skip`) drops the sentinel, flips `skip_needs_research = true`, returns to Step 1a.
 - **`queue-blocked-on-research`**: see Step 1f (research-wait mode — identical to `/lazy-batch` Step 1f). **Only reachable when `allow_research_skip == true`.**
+- **`queue-missing`**: PushNotification with `notify_message`, print final batch report, STOP. (There is no queue to continue — the operator must create `queue.json` first; NOT routed to Step 1i per the halt-resolution component's exclusion list.)
+- **`all-features-complete`**: PushNotification `"ALL FEATURES COMPLETE — roadmap finished after {cycle} /lazy-batch-cloud cycle(s)."`, print final batch report, STOP. (Genuine success — NOT routed to Step 1i; the queue is done, there is nothing to resolve.)
 
 ### 1c. Check the max-cycles cap
 
@@ -520,10 +527,164 @@ The user can mix environments: drop `RESEARCH.md` directly from workstation, the
 3. `AskUserQuestion` per decision (label, header, options).
 4. Append `## Resolution` to NEEDS_INPUT.md.
 5. Commit the resolved sentinel per project policy.
-6. Dispatch the **Sonnet apply-resolution subagent** to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel (rename to `NEEDS_INPUT_RESOLVED.md` OR change frontmatter `kind:` to `needs-input-resolved`).
-7. Append to `cycle_log`, update `prev_cycle_signature = (feature_id, "__apply_needs_input__", current_step)`, increment `cycle`. **Return to Step 1a — do NOT halt.**
+6. Dispatch the **Sonnet apply-resolution subagent** to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. The subagent MUST neutralize by **RENAME** (`git mv {spec_path}/NEEDS_INPUT.md {spec_path}/NEEDS_INPUT_RESOLVED.md`), NOT by flipping the frontmatter `kind:` — `lazy-state.py` keys the `needs-input` halt on the FILENAME `NEEDS_INPUT.md`, so a `kind:` flip leaves the file named `NEEDS_INPUT.md` and the halt FIRES AGAIN next cycle (a real bug hit in practice). If `NEEDS_INPUT_RESOLVED.md` already exists, use a decision-specific suffix.
+7. Append to `cycle_log`, update `prev_cycle_signature = (feature_id, "__apply_needs_input__", sub_skill_args, current_step)` (the full 4-tuple the Step 1d loop-guard compares against — `sub_skill_args` is part of every signature in the family), increment `cycle`. **Return to Step 1a — do NOT halt.**
 
 Cloud has no special handling here — decision resolution is filesystem-level and runs identically in cloud and workstation. The Sonnet subagent's SPEC/PHASES edits are docs-only (no source code, no Tauri runtime, no MCP), so cloud limitations do not apply. **Replace `/lazy-batch` with `/lazy-batch-cloud` in the chat heading and any re-invoke references** when reproducing the announcement in a cloud session.
+
+---
+
+### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
+
+Triggered when `lazy-state.py --cloud` reports `blocked` — a cycle subagent (or a hand edit) wrote `BLOCKED.md` because it hit a genuine blocker it could not resolve autonomously (a missing upstream surface, an ambiguous failure, a real bug needing a planning decision). **`blocked` is no longer a terminal halt.** Modeled on Step 1g: the orchestrator surfaces the blocker to the operator via `AskUserQuestion`, captures the chosen resolution path, records it, dispatches an Opus apply-resolution subagent to ENACT that path (neutralizing `BLOCKED.md`), and **continues the loop**. The sole exception is the explicit **Halt for manual fix** choice, which preserves the legacy stop-for-human behavior.
+
+This replaces the old **zero-context halt** (a bare `PushNotification` + STOP that handed the operator a one-line `notify_message` and nothing actionable). The operator now sees the full blocker context in chat and directs how the pipeline proceeds.
+
+**Cloud parity note.** This mode is docs-only — `AskUserQuestion`, an `Edit`-append of `## Resolution`, a `/add-phase` or `queue.json` reorder, and a `git mv` rename of `BLOCKED.md` need no Tauri runtime, no MCP HTTP server, and no audio device. It therefore runs **identically to `/lazy-batch` Step 1h** in cloud; the only cloud nuances are (a) the apply subagent's enactment is docs-only (no Tauri/MCP), and (b) it pushes immediately for container-reclaim durability (folds into guardrail B).
+
+**Algorithm:**
+
+1. **Read the sentinel.** `{spec_path}/BLOCKED.md`. Parse the YAML frontmatter (`kind`, `feature_id`, `phase`, `blocked_at`, `retry_count`, and `blocker_kind` if present) and read the markdown body. Unlike `NEEDS_INPUT.md`, `BLOCKED.md` has no mandated rich-body schema — a thin body is NOT a malformation halt; proceed, noting in chat if the blocker context is sparse.
+
+2. **Re-print the blocker context to chat VERBATIM** (HARD CONSTRAINT 6 applies to Step 1h too — the load-bearing context BEFORE the truncated `AskUserQuestion` UI; this is the antidote to the old zero-context halt):
+
+   ```
+   🚧 /lazy-batch-cloud — Blocked (loop resumes after you choose a resolution path)
+
+   Feature: {feature_name} ({feature_id})
+   Phase:   {phase}   ·   retry_count: {retry_count}   ·   blocker_kind: {blocker_kind or "—"}
+   File:    {spec_path}/BLOCKED.md
+
+   ─── BLOCKED.md body (verbatim) ──────────────────────────────────────────
+
+   {entire markdown body — blocker description, evidence, and any recovery
+   suggestion the cycle subagent recorded — copy/paste as-is, no summarization.}
+
+   ─────────────────────────────────────────────────────────────────────────
+
+   Choose how the pipeline should proceed. After you answer, I dispatch an Opus
+   subagent to enact your choice (and neutralize BLOCKED.md), then resume the
+   loop — unless you choose "Halt for manual fix".
+   ```
+
+3. **Call `AskUserQuestion` with ONE question — the resolution path.** `header`: "Resolution". Where the `BLOCKED.md` body names a concrete recovery (e.g. "add an `/add-phase` Phase N for X"), adapt the matching option's `description` to reference it so the recommended path is specific to this blocker. The archetype options:
+
+   - **Add a phase to resolve the blocker** — dispatch `/add-phase` against this feature with the blocker as the new phase's motivation, then neutralize `BLOCKED.md`. The pipeline re-plans → implements → re-validates the feature. *Recommended when the blocker is missing / under-scoped work (the common case — e.g. a missing MCP surface a validation step needs).*
+   - **Defer this feature; continue the rest of the queue** — move this feature's `queue.json` entry to the END of the queue (`BLOCKED.md` kept in place) so the next actionable feature becomes current. The blocked feature resurfaces only after the rest of the queue is worked.
+   - **Halt for manual fix** — keep `BLOCKED.md` untouched, `PushNotification`, print the final batch report, STOP. The legacy escape hatch for blockers you want to handle by hand.
+
+   The auto-provided **Other** lets the operator type a custom directive, enacted verbatim by the apply subagent. Capture the choice + any free-text note. (`multiSelect: false` — the paths are mutually exclusive.)
+
+4. **If the choice is "Halt for manual fix":** do NOT modify `BLOCKED.md`. Append `{cycle+1, feature_name, "🛑 blocked (operator chose manual halt)", "{phase}"}` to `cycle_log`, `PushNotification` with `notify_message`, print the final batch report (Step 2), and **STOP**. This is the ONLY Step 1h path that halts.
+
+5. **Otherwise, append a `## Resolution` section to `BLOCKED.md`** recording the chosen path, the operator's note (if any), and a timestamp — same `Edit`-append pattern as Step 1g step 4 (HARD CONSTRAINT 1 permits appending `## Resolution` to `BLOCKED.md`):
+
+   ```markdown
+
+   ## Resolution
+
+   *Recorded on <YYYY-MM-DD HH:MM:SS UTC>.*
+
+   **Chosen path:** <option label>
+   **Notes:** <operator's free-text note, or empty>
+   ```
+
+   Commit `BLOCKED.md` with message `docs({feature_id}): record blocker resolution path`. Do NOT push here (consistent with other orchestrator-inline commits; the apply subagent pushes).
+
+6. **Dispatch the Opus apply-resolution subagent to ENACT the chosen path.** Prompt:
+
+   ```
+   You are enacting an operator-chosen resolution for a BLOCKED feature in the
+   autonomous pipeline (CLOUD Linux session — no Tauri, no MCP, no audio device;
+   every enactment below is docs-only and needs none of those), then neutralizing
+   the blocker so the loop can resume.
+
+   Feature: {feature_name} ({feature_id})
+   Working directory: {cwd}
+   Sentinel:          {spec_path}/BLOCKED.md  (read its body + the appended
+                      `## Resolution` for the chosen path + operator notes)
+
+   CHOSEN PATH: {option label}   NOTES: {operator note or "—"}
+
+   Enact EXACTLY the chosen path:
+
+   • "Add a phase to resolve the blocker":
+       Invoke the /add-phase skill (via the Skill tool — you MAY use it; you may
+       NOT use Agent) against {feature_id}, authoring a new phase whose scope is
+       the blocker described in BLOCKED.md (and any recovery the cycle subagent
+       suggested). /add-phase appends the phase to PHASES.md (In-progress, with
+       unchecked deliverables) per its own contract. Then NEUTRALIZE BLOCKED.md
+       (see below). The next loop cycle's lazy-state.py --cloud routes the feature
+       to plan/implement the new phase.
+
+   • "Defer this feature; continue the rest of the queue":
+       Edit docs/features/queue.json: move this feature's entry to the END of the
+       `queue` array (preserve valid JSON; the queue.topo-order rule may emit an
+       advisory warning for a deferred hard-upstream — acceptable for an
+       operator-chosen defer). LEAVE BLOCKED.md IN PLACE (the feature stays
+       blocked; it simply no longer heads the queue). Do NOT neutralize.
+
+   • "Other" (custom directive): enact the operator's NOTES as faithfully as you
+     can with Edit/Write/Read/Bash and (if a skill fits) the Skill tool. If the
+     directive resolves the blocker, neutralize BLOCKED.md; if it only changes
+     course, follow the note's intent and say so in your summary.
+
+   NEUTRALIZING BLOCKED.md (for every path EXCEPT "Defer"): lazy-state.py keys the
+   `blocked` halt on the FILENAME `BLOCKED.md` (NOT a frontmatter field), so a
+   `kind:` edit does NOT clear the halt. RENAME the file:
+   `git mv {spec_path}/BLOCKED.md {spec_path}/BLOCKED_RESOLVED_<YYYY-MM-DD>.md`
+   (preserves the audit trail including the `## Resolution`). If that name already
+   exists, add a short disambiguating suffix. NEVER just flip a frontmatter field
+   (this is a real bug that was hit in practice — the rename is mandatory).
+
+   Then commit per .claude/skill-config/commit-policy.md (or the standard
+   pattern); message `docs({feature_id}): enact blocker resolution (<path>)`.
+   Push the work branch IMMEDIATELY (never main, never force) — the cloud
+   container can be reclaimed, so an unpushed enactment is lost.
+
+   Report a one-paragraph summary (≤ 8 lines): what you enacted (the new phase
+   title / the queue move / the custom edits), whether BLOCKED.md was neutralized
+   (and to what filename) or deliberately kept, files touched, and the commit hash.
+
+   You may NOT spawn further subagents (no Agent). You MAY use the Skill tool for
+   /add-phase, and Edit/Write/Read/Bash for everything else.
+   ```
+
+   Dispatch:
+
+   ```
+   Agent({
+     description: "lazy-batch-cloud blocked-resolve: {feature_name}",
+     subagent_type: "general-purpose",
+     model: "opus",
+     prompt: <the prompt above>
+   })
+   ```
+
+7. **Record and continue the loop.**
+   - Append to `cycle_log`: `{cycle+1, feature_name, "▶ blocked (resolved + enacted: <path>)", "<one-line subagent summary>"}`.
+   - Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · blocked`, `**Result:**` = "<path> enacted — {first line of subagent summary}". No other prose.
+   - Update `prev_cycle_signature = (feature_id, "__resolve_blocked__", sub_skill_args, current_step)`. The synthetic sub_skill token distinguishes a blocked-resolution cycle from any real-skill cycle for the Step 1d loop-guard.
+   - **Push backstop (cloud reclaim safety).** Verify the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (4× exponential backoff on network error; WORK BRANCH only, never main, never force). The apply subagent already pushed, so this normally reports "up to date".
+   - Increment `cycle`. Return to Step 1a. **DO NOT halt, DO NOT print the final batch report** (except the "Halt for manual fix" path at step 4). The next state-script call sees `BLOCKED.md` neutralized (Add-a-phase / Other) and routes the feature onward, or — for "Defer" — selects the next actionable feature now that the blocked one sits at the queue tail.
+
+**Re-prompt note (Defer path).** If "Defer" is chosen and the blocked feature is the ONLY remaining actionable entry, the next probe returns `blocked` for it again and Step 1h re-prompts immediately — that is correct (there is nothing else to work). The operator breaks the cycle by choosing Add-a-phase, Other, or Halt. `max_cycles` bounds it regardless.
+
+This eliminates the legacy zero-context blocked halt: the operator gets the full blocker context in chat and directs the pipeline (add a phase / defer / hand off), and the orchestrator enacts the choice and keeps going.
+
+---
+
+### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
+
+For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified`, `needs-spec-input`, `stale_upstream` (and any future obstacle terminal) — the orchestrator routes here instead of halting. Rather than dead-ending, it re-prints the obstacle context, `AskUserQuestion`s a resolution path (reopen & re-validate / provide direction / defer & continue / halt-for-manual / custom), enacts the choice via an Opus apply-resolution subagent, and continues the loop. Follow the shared component (read and apply it exactly):
+
+`~/.claude/skills/_components/halt-resolution.md`
+
+Per that component's exclusion list, these terminals are NOT routed here and keep their existing behavior: `max-cycles` (cost bound — hard stop), `all-features-complete` (genuine success), `cloud-queue-exhausted` / `device-queue-exhausted` (environment — re-run on the right host), and `queue-missing` (no queue to continue). The research-pending terminals (`needs-research` / `queue-blocked-on-research`) keep their specialized Step 4 / Step 1f handling, which already lets the operator continue (in-session chat upload or re-invoke) rather than dead-ending; the component's "defer this research-pending feature & continue" option is available there as an enhancement when the queue has independent downstream work.
+
+**Cloud parity note.** Every enactment the component lists (re-print → `AskUserQuestion` → SPEC/ROADMAP status edit / `/realign-spec` / `/spec` seed / queue reorder → neutralize-by-rename → commit) is docs-only — no Tauri runtime, no MCP HTTP server, no audio device. Step 1i therefore runs **identically to `/lazy-batch` Step 1i** in cloud; the only cloud nuance is that the apply subagent pushes immediately for container-reclaim durability.
+
+The Step 1i cycle records like any other (cycle_log entry, per-cycle block, `prev_cycle_signature = (feature_id, "__resolve_halt__", sub_skill_args, current_step)`, increment `cycle`), and only the operator-chosen "Halt for manual fix" path stops the run.
 
 ---
 
@@ -531,7 +692,7 @@ Cloud has no special handling here — decision resolution is filesystem-level a
 
 **Identical algorithm to `/lazy-batch` Step 1.5** — see `~/.claude/skills/lazy-batch/SKILL.md` Step 1.5 for the full protocol. Cloud variant uses `python3 ~/.claude/scripts/lazy-state.py --cloud [--skip-needs-research]` for the probe, identical to Step 1a.
 
-Skip the probe entirely when `terminal_reason in {"blocked", "needs-input", "queue-missing"}`. For every other exit — including `all-features-complete`, `cloud-queue-exhausted`, `needs-research`, `queue-blocked-on-research`, and max-cycles — run the probe, compare its `(feature_id, sub_skill, sub_skill_args, current_step)` tuple against `prev_cycle_signature`, and prepend ONE of these blocks to the Step 2 final batch report:
+Skip the probe entirely when `terminal_reason in {"blocked", "needs-input", "queue-missing"}`. (Note: a `blocked` loop-exit now occurs ONLY when the operator chose "Halt for manual fix" in Step 1h — every other Step 1h path resumes the loop, so it never reaches loop-exit as `blocked`.) For every other exit — including `all-features-complete`, `cloud-queue-exhausted`, `needs-research`, `queue-blocked-on-research`, and max-cycles — run the probe, compare its `(feature_id, sub_skill, sub_skill_args, current_step)` tuple against `prev_cycle_signature`, and prepend ONE of these blocks to the Step 2 final batch report:
 
 - **Forward-progress confirmed** (probe differs from prev_cycle_signature OR probe terminal):
 
@@ -574,10 +735,10 @@ Same as `/lazy-batch`. Header is `## /lazy-batch-cloud — Done`. Cloud-specific
 
 ```
 **Next step:**
-  - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
+  - If terminal_reason is "blocked": this is reached ONLY when the operator chose "Halt for manual fix" in Step 1h (every other Step 1h path resumes the loop). Resolve {spec_path}/BLOCKED.md by hand, then re-run `/lazy-batch-cloud {max_cycles}` — the next run re-enters Step 1h if BLOCKED.md is still present.
   - If terminal_reason is "needs-research" (DEFAULT path, strict halt): the fastest (and only fully-durable cloud) resume path is to upload Gemini research in your NEXT MESSAGE in this conversation — the in-session resume protocol (Step 5) will dispatch /ingest-research and re-invoke /lazy-batch-cloud automatically, writing the tracked RESEARCH.md before container reclaim. Otherwise, drop RESEARCH.md directly (path ②) and re-run `/lazy-batch-cloud {max_cycles}` from a fresh session.
   - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): same as needs-research — upload research in chat for fastest resume, or use path ② and re-run `/lazy-batch-cloud {max_cycles} [--allow-research-skip]`.
-  - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch-cloud invocation.)
+  - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch-cloud invocation. blocked, completion-unverified, needs-spec-input, and stale_upstream are likewise no longer dead-ends — Step 1h / Step 1i ask for a resolution path and resume; only the operator-chosen "Halt for manual fix" reaches this report.)
   - If terminal_reason is "cloud-queue-exhausted": run /lazy on workstation to run MCP tests
   - If max-cycles: re-run `/lazy-batch-cloud {max_cycles}` from a fresh session
 ```
@@ -586,7 +747,7 @@ Same as `/lazy-batch`. Header is `## /lazy-batch-cloud — Done`. Cloud-specific
 
 ## Step 3: Cycle Output Discipline (lean · consistent · scannable)
 
-**Identical to `/lazy-batch` Step 3** — every cycle emits EXACTLY ONE update block (`### Cycle {N}/{max_cycles} · {feature_name} · {sub_skill}` heading + `**Result:**` / `**Commit:**` bullets) and nothing else. All suppression rules carry over verbatim: no dispatch narration, no commit-strategy narration, ignore between-cycle commit prompts silently, at most 2–3 one-line bullets, halt/terminal announcements exempt. See `~/.claude/skills/lazy-batch/SKILL.md` Step 3 for the full template and rules.
+**Identical to `/lazy-batch` Step 3** — every cycle (real-skill Step 1e, inline pseudo-skill Step 1c.5, decision-resume Step 1g, blocked-resolution Step 1h, or halt-resolution Step 1i) emits EXACTLY ONE update block (`### Cycle {N}/{max_cycles} · {feature_name} · {sub_skill}` heading + `**Result:**` / `**Commit:**` bullets) and nothing else. All suppression rules carry over verbatim: no dispatch narration, no commit-strategy narration, ignore between-cycle commit prompts silently, at most 2–3 one-line bullets, halt/terminal announcements exempt (including the Step 1h blocked-resolution prompt + its "Halt for manual fix" stop, and the Step 1i halt-resolution prompt + its Halt stop). See `~/.claude/skills/lazy-batch/SKILL.md` Step 3 for the full template and rules.
 
 **Cloud nuance (background dispatch).** A cloud cycle subagent may be dispatched to run in the background (HARD CONSTRAINT 9 references in-flight background cycle agents). When it is, the ONLY output permitted before the result block is a SINGLE terse line — `▶ Cycle {N}/{max_cycles} · {feature_name} · {sub_skill} (dispatched)` — with no following prose. Specifically do NOT narrate "running in the background", "waiting on the completion notification", or any commit-race reasoning while it runs (this is exactly the noise the discipline removes). When the cycle completes, emit the canonical result block.
 
@@ -667,7 +828,9 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Step 4 — default path (strict halt) | reads RESEARCH_PROMPT.md, prints fenced ```text inline halt announcement, PushNotifications, halts. **Same shape** in both. | same as workstation, but the announcement says `/lazy-batch-cloud` and upload path ③ is labeled `(workstation only)`. |
 | Step 4 — opt-in path (`--allow-research-skip`) | drops sentinel, flips `skip_needs_research = true`, returns to loop. **Same shape** in both. | same as workstation; sentinel `written_by: lazy-batch-cloud`. |
 | Research-wait mode (Step 1f) | passive halt — `terminal_reason: queue-blocked-on-research`. Reachable only under `--allow-research-skip`. Prints inline RESEARCH_PROMPT.md content for every pending feature, announces upload paths including in-session resume, PushNotification, STOP. Resume on next chat message (Step 5) OR next `/lazy-batch` invocation. **Same shape** in both. | passive halt — same as workstation, with cloud-specific path reordering: in-session resume primary, ② durable fallback, ① gitignored/non-durable, ③ workstation-only. |
-| Decision-resume mode (Step 1g) | `terminal_reason: needs-input` — **NOT a halt** in either variant. AskUserQuestion → append Resolution → commit → dispatch Sonnet apply-resolution subagent (edits SPEC/PHASES, neutralizes sentinel) → return to Step 1a. **Same shape** in both. | same shape as workstation. SPEC/PHASES edits are docs-only, no cloud limitations apply. |
+| Decision-resume mode (Step 1g) | `terminal_reason: needs-input` — **NOT a halt** in either variant. AskUserQuestion → append Resolution → commit → dispatch Sonnet apply-resolution subagent (edits SPEC/PHASES, neutralizes sentinel **by RENAME** to `NEEDS_INPUT_RESOLVED.md` — a `kind:` flip leaves the halt firing) → return to Step 1a. **Same shape** in both. | same shape as workstation. SPEC/PHASES edits are docs-only, no cloud limitations apply. |
+| Blocked-resolution mode (Step 1h) | `terminal_reason: blocked` — **NOT a halt by default** in either variant (was a divergence; now mirrored). Re-print BLOCKED.md body → AskUserQuestion the path (add a phase / defer to queue tail / halt-for-manual / custom) → append `## Resolution` → commit → dispatch Opus apply-resolution subagent (enacts via `/add-phase` or queue reorder, neutralizes BLOCKED.md **by RENAME**) → return to Step 1a. Only "Halt for manual fix" STOPs. **Same shape** in both. | same shape as workstation — the mode is docs-only (no Tauri/MCP), so it runs identically in cloud; the only nuance is the apply subagent pushes immediately for container-reclaim durability. |
+| Operator-directed halt-resolution (Step 1i) | `completion-unverified` / `needs-spec-input` / `stale_upstream` — **NOT bare-STOPs anymore** in either variant (was a divergence; now mirrored). Routed through the shared `_components/halt-resolution.md`: re-print obstacle → AskUserQuestion (reopen & re-validate / provide direction / defer & continue / halt-for-manual / custom) → enact via Opus subagent → continue. Only "Halt for manual fix" STOPs. **Same shape** in both. | same shape as workstation — docs-only enactment, no cloud limitations; apply subagent pushes immediately for reclaim durability. |
 | Post-cycle input audit (Step 1d.5) | **MIRRORED** — after every `/spec` or `plan-feature` cycle, dispatch a dedicated Opus input-audit subagent that reads SPEC.md / RESEARCH.md / cycle diff, independently re-classifies every decision against the product-behavior smells checklist (aggressive bias), verifies the cycle subagent's Decision-Classification Ledger, and writes `{spec_path}/NEEDS_INPUT.md` if any product-behavior calls were baked in silently. The auditor is scope-restricted to writing the sentinel — no source/test edits, no recursive dispatch. Surfaced decisions resolve inline on the next cycle via Step 1g (no loop halt). **Same shape** in both. | same as workstation — auditor is docs-only and dispatched by the orchestrator (which retains `Agent` even though the cycle subagent's cloud-override removes it). Sentinel commit + push folds into guardrail B / C. |
 | In-Session Resume Protocol (Step 5) | chat-driven resume path for research uploads. User uploads research in next message → assistant materializes into staging dir → dispatches `/ingest-research` Sonnet subagent in-session → re-invokes `/lazy-batch` automatically. **Same shape** in both. | same shape as workstation, with the cloud-durability framing: in-session ingestion is the only path that writes tracked files (RESEARCH.md + RESEARCH_SUMMARY.md) before cloud-container reclaim. Re-invocation uses `/lazy-batch-cloud`. |
 | Pre-loop ingest check (Step 0.5) | probes `docs/gemini-sprint/results/` at session start; dispatches `/ingest-research` as cycle 1 if staged `.txt` exists. **Same shape** in both. | same as workstation — `/ingest-research`'s hard constraints make it docs-only and cloud-safe. |
@@ -679,7 +842,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Resume-reconciliation step (Step 0.6) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** A killed/interrupted workstation session keeps its local commits and dirty tree on persistent disk, and Step 0.4's ff-sync covers the remote-advanced case; there is no reclaim residue to reconcile. | new Step 0.6, mandatory every invocation and after any `SessionStart:resume`: (a) push unpushed commits; (b) read-only `lazy-state.py --cloud` probe; (c) detect "finished-but-not-finalized" (WUs committed/pushed but frontmatter still Ready/In-progress) and handle with a SHORT finalize dispatch instead of full re-execution; (d) reconcile a killed agent's dirty working tree (keep + finish correct partial work, never wholesale-discard). |
 | No waiting on dead notifications (HARD CONSTRAINT 9) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** No container-reclaim boundary exists on workstation, so a background cycle agent's completion notification is never lost; the concept does not apply. | new HARD CONSTRAINT 9: after any `SessionStart:resume` the orchestrator MUST treat an in-flight background cycle agent as "unknown — reconcile from git + lazy-state" (Step 0.6), never "still running, awaiting notification." A completion notification cannot cross a reclaim boundary. This is the OPPOSITE of HARD CONSTRAINT 7 (forbids passively blocking on a dead signal), not a violation of it. |
 
-All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f and Step 1g are also shared shape; both orchestrators reach them via the same state-script terminal reasons.
+All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f, Step 1g, Step 1h, and Step 1i are also shared shape; both orchestrators reach them via the same state-script terminal reasons. The blocked / needs-input / completion-unverified / needs-spec-input / stale_upstream handling is now the SAME in both (docs-only resolution modes); the only legitimate cloud divergences are the Tauri/MCP deferral, `DEFERRED_NON_CLOUD.md` + `__write_deferred_non_cloud__`, the 3-gate `__mark_complete__`, `__flip_plan_complete_cloud_saturated__`, cloud reclaim recovery (Steps 0.4 / 0.6, guardrails B/C, HARD CONSTRAINTs 9/10), and per-batch/per-WU immediate pushes.
 
 ---
 
