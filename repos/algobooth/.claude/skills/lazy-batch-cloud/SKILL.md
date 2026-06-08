@@ -292,6 +292,14 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
       plan-file checkbox flips, sentinel emissions). Zero sub-subagent
       dispatches in a cloud /execute-plan cycle is the EXPECTED state —
       NOT a contract violation.
+      ATOMIC GATE+COMMIT (HARD): per /execute-plan's "Atomic gate+commit"
+      rule, the FINAL action of each batch AND of plan-part completion MUST be
+      ONE chained Bash command — `<gate> && git add -A && git commit -m "..."
+      && git push` — so the auto-backgrounded gate job commits + pushes itself.
+      This closes the turn-loss gap (the recurring failure where the cycle ends
+      between "gates passed" and "commit", leaving the tree dirty or the dual
+      ledger half-flipped). Before reporting, tick EVERY PHASES.md verification
+      box for the completed phase(s) and confirm `git status --short` is empty.
       SKIP THE GROUND-TRUTH RE-RUN: subagent-review.md Step 1.5 exists to
       detect a *separate* untrusted subagent falsifying its report by re-running
       every command (git status / wc -l / grep / test runner) from the
@@ -497,6 +505,8 @@ Agent({
 ### 1e. Record cycle outcome and loop
 
 Same as `/lazy-batch`. Append to `cycle_log`, emit the canonical per-cycle update block (Step 3 — heading + `**Result:**` / `**Commit:**` bullets, no other prose; add the `**Sub-agents:**` audit bullet on `/execute-plan` cycles, and the `**Audit:**` bullet on `/spec` / `plan-feature` cycles whose Step 1d.5 surfaced product-behavior decisions), update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)`, increment cycle, loop. **Post-cycle push backstop (HARD REQUIREMENT — cloud reclaim safety):** after the cycle subagent returns, the orchestrator verifies the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). Under guardrail B the cycle subagent already pushed every batch commit, so this normally reports "up to date" — it is the backstop for any cycle (or future skill) that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles. **The cycle-counter increment is also a uniform post-cycle action that NEVER resets on feature transitions (HARD CONSTRAINT 8) — when the next `lazy-state.py --cloud` call returns a different `feature_id` (e.g. after `__mark_complete__`, after `__write_deferred_non_cloud__` rolls the queue to the next ready feature, or any other queue-advance), `cycle` continues incrementing from where it was.**
+
+**Post-`/execute-plan` ledger-consistency guard (guardrail D — mirrored from `/lazy-batch` Step 1e item 4a).** When the cycle that just returned was `/execute-plan`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a). This is one git/grep check fired on the cycle's completion notification — NOT polling, so HARD CONSTRAINT 7 (no active waiting) holds; these are `Bash` reads, so HARD CONSTRAINT 1 (sentinel-only Write/Edit) holds too. The cycle subagent is supposed to leave a clean, consistent ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically loses its turn between gates and commit — and under cloud reclaim that residue is doubly dangerous. This guard catches it deterministically instead of relying on operator memory. Checks: (a) `git status --short` is empty; (b) `HEAD == origin/<branch>` (`git rev-parse HEAD` == `git rev-parse origin/<branch>` after `git fetch origin <branch>`); (c) the plan part's frontmatter is `status: Complete` AND `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0` (zero unchecked boxes — the dual ledger is consistent, not half-flipped). `/mcp-test` defers in cloud, so the plan-status arm of this guard is `/execute-plan`-only here. If ALL checks pass, proceed to the cycle increment. If ANY check FAILS, auto-dispatch a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT increment `cycle`) to reconcile (stage + commit + push residue, tick remaining PHASES.md verification boxes, re-flip plan status if needed), naming the failed check(s) and `{spec_path}` in the prompt, then re-run the guard. Append a `**Recovery:**` bullet to the per-cycle output block. Do NOT advance to Step 1a until the guard passes.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 

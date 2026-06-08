@@ -207,7 +207,8 @@ For each step/batch defined in the plan:
 5. **Update PHASES.md (BLOCKING GATE)** — Read `~/.claude/skills/_components/phases-update.md` and follow it. Check off completed deliverables, write Implementation Notes, then re-read PHASES.md to verify the write landed. Do NOT proceed until verified.
 6. **Update task status** — Mark completed task(s) as `completed`
 7. **Satisfy checklist** — Must include: "PHASES.md updated and verified for this batch"
-8. **Proceed** — Move to the next step/batch
+8. **Commit the batch atomically** — After the PHASES.md ticks land (item 5), make the batch commit the FINAL link of the SAME chained Bash command as the batch's quality gate: `<batch QG> && git add -A && git commit -m "..." && git push`. This closes the turn-loss gap between "gate passed" and "commit" — the auto-backgrounded gate job commits + pushes itself, so ending the turn cannot leave the batch's code uncommitted. A failing gate (`&&`) aborts before the commit. See "Atomic gate+commit" under Step 4 for the full rationale and definition-of-done.
+9. **Proceed** — Move to the next step/batch
 
 #### Batch Review Gate (MANDATORY — injected, BLOCKING)
 
@@ -245,6 +246,27 @@ When all work units are complete (all tasks marked `completed`):
 3. Follow the plan's **Work Log** section if it has one
 
 The plan file STAYS in `plans/` after Complete — the frontmatter is the audit trail, not a deletion signal. Do NOT delete the plan file.
+
+#### Atomic gate+commit — close the dual-ledger/commit gap (HARD REQUIREMENT)
+
+**The single most expensive recurring failure in this pipeline:** the agent finishes the verification gates, then ENDS ITS TURN in the gap between "gates passed" and "commit" — because the harness auto-backgrounds the long gate run, and the task-completion notification reads as "done." The tree is left dirty (code written, never committed/pushed) and/or the dual ledger is left half-flipped (plan frontmatter says `Complete` but PHASES.md still has unchecked `- [ ]` verification boxes). Either state forces a costly recovery dispatch. Louder warnings have proven empirically insufficient — the structural fix is to make the commit ride the SAME backgrounded job as the gates, so ending the turn cannot leave the tree dirty.
+
+Sequence at plan-part / plan completion:
+
+1. **First, do the file Edits** that are not cleanly shell-doable — these MUST land BEFORE the compound command below:
+   - Tick EVERY completed deliverable AND verification checkbox in PHASES.md (`- [ ]` → `- [x]`), including the per-phase VERIFICATION boxes — leaving these unticked while flipping the plan to `Complete` is the inconsistent state that routes `lazy-state.py` BACKWARD to `write-plan`.
+   - Flip the plan frontmatter `status:` line to `Complete`.
+   - Write Implementation Notes.
+
+2. **Then make the FINAL action ONE compound Bash command** that chains the verification gates AND the ledger commit AND the push, so the auto-backgrounded job performs the commit itself:
+
+   ```bash
+   <gate1> && <gate2> && ... && git add -A && git commit -m "<message>" && git push
+   ```
+
+   Concretely (AlgoBooth, substitute the project's gate command): `npm run qg && git add -A && git commit -m "feat(<feature>): <summary>" && git push`. The `&&` chaining gives BOTH required properties: (a) a FAILING gate aborts the chain BEFORE `git commit`, so a red tree is never committed; and (b) a PASSING run commits + pushes WITHIN the same job the harness backgrounds, so even if your turn ends the instant the job is dispatched, the commit + push still happen. The dual ledger is "done" only once THIS command's job reports success — not when the Edits in step 1 land.
+
+3. **Definition of done (verify before reporting):** ALL verification boxes in PHASES.md ticked, plan frontmatter `status: Complete`, working tree clean, and HEAD == origin. Confirm with a final `git status --short` — it MUST print nothing (empty output). If it prints anything, the ledger/commit is NOT done: stage and commit the remainder (re-running the gate chain) before you report completion. Do NOT end your turn while the gate+commit job is still backgrounded — a task-completion notification mid-job is your cue to CONTINUE and verify, not to stop.
 
 ### Step 4a: Append to Work Log (MANDATORY — DO NOT SKIP)
 

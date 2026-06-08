@@ -308,6 +308,14 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       plan-file checkbox flips, sentinel emissions). Zero sub-subagent
       dispatches in an /execute-plan cycle is the EXPECTED state — NOT a
       contract violation.
+      ATOMIC GATE+COMMIT (HARD): per /execute-plan's "Atomic gate+commit"
+      rule, the FINAL action of each batch AND of plan-part completion MUST be
+      ONE chained Bash command — `<gate> && git add -A && git commit -m "..."
+      && git push` — so the auto-backgrounded gate job commits + pushes itself.
+      This closes the turn-loss gap (the recurring failure where the cycle ends
+      between "gates passed" and "commit", leaving the tree dirty or the dual
+      ledger half-flipped). Before reporting, tick EVERY PHASES.md verification
+      box for the completed phase(s) and confirm `git status --short` is empty.
       SKIP THE GROUND-TRUTH RE-RUN: subagent-review.md Step 1.5 exists to
       detect a *separate* untrusted subagent falsifying its report by
       re-running every command (git status / wc -l / grep / test runner) and
@@ -615,6 +623,12 @@ After the subagent returns:
 2. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the first line of the subagent summary, `**Commit:**` = the cycle's commit sha (or `—`). For an `/execute-plan` cycle, add the `**Inline:**` bullet confirming the subagent performed the edits inline (zero Agent() calls) with test-first discipline per batch — the inline-override audit signal. No other prose.
 3. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
 4. **Post-cycle push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** Verify the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). The cycle subagent's Step 1d already commits and pushes to the current branch at end-of-cycle, so this normally reports "up to date" — it is the backstop for any cycle that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds.
+4a. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard (guardrail D — codifies the previously-ad-hoc operator check).** When the cycle that just returned was `/execute-plan` or `/mcp-test`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a). This is one git/grep check fired on the cycle's completion notification — NOT polling, so HARD CONSTRAINT 7 (no active waiting) holds; these are `Bash` reads, so HARD CONSTRAINT 1 holds too. The cycle subagent is supposed to leave a clean, consistent ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically loses its turn between gates and commit — this guard catches the residue deterministically instead of relying on operator memory. Checks:
+   - `git status --short` is empty (clean tree — nothing written-but-uncommitted).
+   - `HEAD == origin/<branch>` (`git rev-parse HEAD` == `git rev-parse origin/<branch>` — nothing committed-but-unpushed; run `git fetch origin <branch>` first).
+   - **(`/execute-plan` only)** the plan part's frontmatter is `status: Complete` AND `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0` (zero unchecked boxes — the dual ledger is consistent, not half-flipped).
+
+   If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT increment `cycle`) whose sole job is to reconcile: stage + commit + push any residue, tick the remaining PHASES.md verification boxes, and re-flip the plan status if needed, then re-run this guard. Recovery dispatch prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a `**Recovery:**` bullet to the per-cycle output block noting which check failed. Do NOT advance to Step 1a until the guard passes.
 5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the cycle counter continues counting from the value just produced here. Do NOT reset to 0 or 1 on the boundary; cycle N+1 is always the next cycle regardless of which feature it lands on.
 
 **Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, sub_skill_args, current_step)` tuple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the cycle-counter increment: it is a uniform post-cycle action that happens once per cycle (real, pseudo, or decision-resume) and never resets.

@@ -218,10 +218,20 @@ Sub-skill routing table (from `bug-state.py`'s `SKILL_*` constants):
 | `mcp-test` | `/mcp-test` — MCP / runtime validation |
 
 After the skill returns:
-1. Print the after-status bookend (Completed: "ran /<sub_skill>", Next `/lazy-bug` will:
+1. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard.** If `sub_skill` was
+   `/execute-plan` or `/mcp-test`, run a single-turn consistency check before reporting (one
+   git/grep check, not polling): (a) `git status --short` is empty; (b) `HEAD == origin/<branch>`
+   (after `git fetch origin <branch>`); (c) **(`/execute-plan` only)** the plan part's frontmatter
+   is `status: Complete` AND `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0`. The dispatched
+   skill's atomic gate+commit should leave this clean, but it empirically loses its turn between
+   gates and commit; this guard catches the residue. If any check fails, reconcile inline (stage +
+   commit + push residue, tick the remaining PHASES.md verification boxes, re-flip the plan status
+   if needed) and re-check before reporting — do NOT report a clean run while the tree is dirty or
+   the dual ledger is half-flipped.
+2. Print the after-status bookend (Completed: "ran /<sub_skill>", Next `/lazy-bug` will:
    "Re-run bug-state.py to determine.").
-2. Call the work-log step below.
-3. STOP.
+3. Call the work-log step below.
+4. STOP.
 
 The sub-skill is responsible for its own internal status bookends and work-log entry. /lazy-bug's
 work-log entry captures the dispatch-level view only.
