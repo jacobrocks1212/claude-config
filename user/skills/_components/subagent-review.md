@@ -172,3 +172,7 @@ If ANY of these are present, the review must additionally verify:
 - Dispatch Sonnet subagent(s) with specific fix instructions from the review report's actionable items. Include file paths, the issue description, and the expected correct behavior.
 - After fix subagents complete, **re-run this entire review protocol** on the fixed code.
 - Do NOT proceed to the next batch until the re-review returns `PASS` or `PASS-WITH-FIXES` (with fixes applied).
+
+---
+
+**Audit-trail requirement:** After completing the review for a batch, write a single line to that batch's PHASES.md `#### Implementation Notes` block in the form `**Review verdict:** PASS | PASS-WITH-FIXES | NEEDS-REWORK` (with a one-line rationale for non-PASS verdicts). The verdict is part of the deliverable — if it is not persisted, the batch is not complete.
