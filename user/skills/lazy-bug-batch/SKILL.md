@@ -1,6 +1,6 @@
 ---
 name: lazy-bug-batch
-description: Autonomous orchestrator for the bug pipeline. Loops on bug-state.py and spawns Opus subagents per cycle (one /lazy-bug-equivalent cycle each). Drives docs/bugs/ (NOT docs/features/). No research/stub/needs-research handling — N/A to bugs. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt (kind: fixed, gated by the completion-integrity gate) → Status Fixed + git mv → _archive/ → repoint inbound refs → commit. Receipt is FIXED.md; Won't-fix is receipt-EXEMPT. Halts on BLOCKED.md, needs-input (resolved inline via Step 1g AskUserQuestion + apply-resolution Sonnet subagent), all-bugs-fixed, completion-unverified, device-queue-exhausted, cloud-queue-exhausted, or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. After every /spec-bug or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES.
+description: Autonomous orchestrator for the bug pipeline. Loops on bug-state.py and spawns Opus subagents per cycle (one /lazy-bug-equivalent cycle each). Drives docs/bugs/ (NOT docs/features/). No research/stub/needs-research handling — N/A to bugs. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt (kind: fixed, gated by the completion-integrity gate) → Status Fixed + git mv → _archive/ → repoint inbound refs → commit. Receipt is FIXED.md; Won't-fix is receipt-EXEMPT. Does NOT dead-end on recoverable obstacles: a halt for ANY reason other than max-cycles (and the genuine all-bugs-fixed success terminal) presents the operator an AskUserQuestion resolution path and continues the loop. needs-input → Step 1g (decision-resume); blocked → Step 1h (blocked-resolution: add a phase / defer to queue tail / halt-for-manual / custom); completion-unverified, needs-spec-input, and other obstacle terminals → Step 1i (operator-directed halt-resolution per ~/.claude/skills/_components/halt-resolution.md). Each re-prints the load-bearing context, AskUserQuestions the resolution, dispatches an apply-resolution subagent to enact it (neutralizing any blocking sentinel by rename — bug-state.py keys halts on the filename), and resumes. Only max-cycles, all-bugs-fixed, and environment-exhaustion (device/cloud-queue-exhausted) remain clean stops. After every /spec-bug or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES.
 argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue]
 plan-mode: never
 model: opus
@@ -39,8 +39,11 @@ dispatches whatever `bug-state.py` returns.
    edit). `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a
    `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the
    orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md
-   and neutralize the sentinel. All other `Write`/`Edit` operations — source code, test files, plan
-   files, PHASES.md — require subagent dispatch.
+   and neutralize the sentinel **by rename**. `BLOCKED.md` (Step 1h) and any obstacle sentinel
+   handled by Step 1i may likewise be appended with a `## Resolution` section before the orchestrator
+   dispatches an Opus subagent to enact the chosen path and neutralize the sentinel by rename
+   (`bug-state.py` keys halts on the sentinel filename). All other `Write`/`Edit` operations — source
+   code, test files, plan files, PHASES.md — require subagent dispatch.
 
 2. **The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool.** Every sub-skill
    invocation goes through a spawned `Agent` subagent. This keeps the orchestrator's context lean
@@ -56,21 +59,28 @@ dispatches whatever `bug-state.py` returns.
    cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator
    actions that count as one cycle each.
 
-5. **Interactive prompts are scoped to decision-resume mode (Step 1g) ONLY for the orchestrator
-   itself.** Outside Step 1g, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the
-   orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md`, append a
-   `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop**.
-   This constraint scopes the orchestrator, not subagents it dispatches.
+5. **Interactive prompts are scoped to the resolution modes — decision-resume (Step 1g),
+   blocked-resolution (Step 1h), and operator-directed halt-resolution (Step 1i) — ONLY for the
+   orchestrator itself.** Outside those modes the orchestrator MUST NOT call `AskUserQuestion`.
+   Inside each, the orchestrator MUST re-print the load-bearing context, `AskUserQuestion` the
+   resolution, dispatch the apply-resolution subagent to enact it, and then **continue the loop** —
+   so a halt for any reason other than `max-cycles` (and the genuine all-done success terminal) asks
+   the operator how to proceed rather than dead-ending. This constraint scopes the orchestrator, not
+   subagents it dispatches.
 
-6. **The orchestrator MUST re-print the rich `## Decision Context` to chat BEFORE calling
-   `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat
-   re-print is the load-bearing context. Never call `AskUserQuestion` against a malformed
-   `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching
-   `decisions:` 1:1) — surface the malformation as a quality issue and halt instead.
+6. **The orchestrator MUST re-print the load-bearing context to chat BEFORE calling
+   `AskUserQuestion`.** `AskUserQuestion` truncates option descriptions in its UI; the chat re-print
+   is the load-bearing context. In Step 1g this is the rich `## Decision Context` (never
+   `AskUserQuestion` against a malformed `NEEDS_INPUT.md` — surface the malformation and halt). In
+   Step 1h it is the `BLOCKED.md` body verbatim (no rich-body schema; a thin body is not a
+   malformation halt). In Step 1i it is the obstacle context (notify_message + diagnostics + any
+   relevant sentinel/dir state) per the halt-resolution component.
 
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`,
-   `wait`, polling loops, or any other mechanism to block. When a terminal fires, halt cleanly.
-   Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
+   `wait`, polling loops, or any other mechanism to block. A terminal either resolves via an
+   `AskUserQuestion` resolution mode (Step 1g/1h/1i — a single-turn operator interaction, then the
+   loop continues) or, when the operator chooses Halt / for a genuine stop terminal, halts cleanly —
+   never an active wait. Responding to a chat message is NOT polling — it is a single-turn event.
 
 8. **The `cycle` counter is session-global and monotonic across bug transitions.** It is initialized
    to 0 in Step 0 *once per `/lazy-bug-batch` invocation* and incremented at the end of every
@@ -190,14 +200,21 @@ Parse the JSON output. Extract: `feature_id`, `feature_name`, `spec_path`, `curr
 
 If `terminal_reason` is set:
 
-- **`blocked`**: PushNotification with `notify_message`, print final batch report, STOP.
+- **`blocked`**: see Step 1h (blocked-resolution mode). **Not a terminal halt anymore.** Step 1h
+  re-prints the `BLOCKED.md` body, `AskUserQuestion`s the resolution path (add a phase / defer to
+  queue tail / halt-for-manual / custom), enacts it (neutralizing `BLOCKED.md` via rename), and
+  resumes — UNLESS the operator chooses "Halt for manual fix".
 - **`needs-input`**: see Step 1g (decision-resume mode). **Not a terminal state for the
   orchestrator.** Step 1g resolves and resumes within the same invocation.
 - **`completion-unverified`**: a bug's SPEC claims Fixed but no FIXED.md receipt exists — it was
-  flipped OUTSIDE the validation gate. **Halt for human reconciliation** — PushNotification with
-  `notify_message`, print final batch report, STOP. Do NOT auto-flip or auto-backfill.
+  flipped OUTSIDE the validation gate. See Step 1i (operator-directed halt-resolution): the
+  orchestrator re-prints the gap and `AskUserQuestion`s the path (reopen & re-validate / grandfather
+  the receipt / defer & continue / halt). Do NOT auto-flip or auto-backfill — the operator chooses.
+- **`needs-spec-input`** / any other obstacle terminal: see Step 1i (operator-directed
+  halt-resolution) — ask the operator for direction and continue, rather than bare-STOP.
 - **`all-bugs-fixed`**: PushNotification `"ALL BUGS FIXED — queue cleared after {cycle}
-  /lazy-bug-batch cycle(s)."`, print final batch report, STOP.
+  /lazy-bug-batch cycle(s)."`, print final batch report, STOP. (Genuine success — not routed to
+  Step 1i.)
 - **`cloud-queue-exhausted`**: Unreachable for `/lazy-bug-batch` (workstation variant); treat as
   `all-bugs-fixed` defensively.
 - **`device-queue-exhausted`**: Reachable only on a no-real-device workstation. PushNotification
@@ -499,19 +516,111 @@ choice to SPEC.md / PHASES.md, and then **continues the loop** — there is no h
 5. **Commit the resolved sentinel.** Commit message: `docs({bug_id}): record decision resolution`.
 
 6. **Dispatch the Sonnet apply-resolution subagent.** Prompt instructs it to: read NEEDS_INPUT.md,
-   propagate choices into SPEC.md / PHASES.md surgically, neutralize the sentinel (rename to
-   `NEEDS_INPUT_RESOLVED.md` or change `kind:` to `needs-input-resolved`), commit per policy,
-   report a one-paragraph summary.
+   propagate choices into SPEC.md / PHASES.md surgically, neutralize the sentinel **by RENAME**
+   (`git mv` → `NEEDS_INPUT_RESOLVED.md`, decision-specific suffix if taken — NOT a `kind:` flip,
+   which leaves the halt firing since bug-state.py keys on the filename), commit per policy, report a
+   one-paragraph summary.
 
 7. **Record and continue the loop.** Append to `cycle_log`, emit the per-cycle block, update
    `prev_cycle_signature`, increment `cycle`, return to Step 1a. DO NOT halt.
+
+**Step 1g neutralization (HARD).** The apply-resolution subagent MUST neutralize
+`NEEDS_INPUT.md` by RENAME (`git mv` → `NEEDS_INPUT_RESOLVED.md`, or a
+decision-specific suffix if that name is taken), NOT by editing the `kind:`
+frontmatter field — `bug-state.py` keys the needs-input halt on the FILENAME
+`NEEDS_INPUT.md`, so a `kind:` flip leaves the halt firing next cycle (and trips
+`sentinel-kind-matches-filename`). Preserve the Decision Context + Resolution body
+verbatim under the new name.
+
+---
+
+### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
+
+Triggered when `bug-state.py` reports `blocked` — a cycle subagent (or a hand edit) wrote
+`BLOCKED.md` because it hit a genuine blocker it could not resolve autonomously. **`blocked` is no
+longer a terminal halt.** Modeled on Step 1g: the orchestrator re-prints the blocker context, asks
+the operator for a resolution path via `AskUserQuestion`, dispatches an Opus apply-resolution
+subagent to ENACT it (neutralizing `BLOCKED.md`), and **continues the loop**. Only the operator's
+explicit "Halt for manual fix" choice stops the run. This replaces the old zero-context halt (a bare
+`PushNotification` + STOP).
+
+**Algorithm:**
+
+1. **Read the sentinel** `{spec_path}/BLOCKED.md` (frontmatter `kind`, `feature_id`/`bug_id`,
+   `phase`, `blocked_at`, `retry_count`, optional `blocker_kind`; + body). A thin body is NOT a
+   malformation halt — proceed, noting if context is sparse.
+
+2. **Re-print the `BLOCKED.md` body to chat VERBATIM** (HARD CONSTRAINT 6 applies — the load-bearing
+   context before the truncated `AskUserQuestion` UI):
+
+   ```
+   🚧 /lazy-bug-batch — Blocked (loop resumes after you choose a resolution path)
+
+   Bug:   {feature_name} ({bug_id})   ·   phase {phase}   ·   retry_count {retry_count}
+   File:  {spec_path}/BLOCKED.md
+
+   ─── BLOCKED.md body (verbatim) ───
+   {entire body — blocker description, evidence, any recovery the cycle subagent suggested}
+   ───
+   ```
+
+3. **`AskUserQuestion` with ONE question — the resolution path** (`header`: "Resolution";
+   `multiSelect: false`; adapt option `description`s to the specific blocker when the body names a
+   concrete recovery):
+
+   - **Add a phase to resolve the blocker** — dispatch `/add-phase` (or `/plan-bug` if `PHASES.md`
+     is absent) with the blocker as the new phase's motivation, then neutralize `BLOCKED.md`. The
+     pipeline re-plans → fixes → re-validates. *Recommended when the blocker is missing work.*
+   - **Defer this bug; continue the rest of the queue** — move this bug's `queue.json` entry to the
+     END of the queue (keep `BLOCKED.md`) so the next actionable bug becomes current.
+   - **Halt for manual fix** — keep `BLOCKED.md` untouched, `PushNotification`, print the final
+     batch report, STOP. The legacy escape hatch. (Auto-provided **Other** = custom directive.)
+
+4. **If "Halt for manual fix":** do NOT modify `BLOCKED.md`. Append a `cycle_log` halt entry,
+   `PushNotification` with `notify_message`, print the final batch report, STOP. The ONLY Step 1h
+   path that halts.
+
+5. **Otherwise, append a `## Resolution` block** (chosen path + notes + timestamp) to `BLOCKED.md`
+   and commit (`docs({bug_id}): record blocker resolution path`; do NOT push).
+
+6. **Dispatch the Opus apply-resolution subagent to ENACT the path.** It: for "Add a phase" invokes
+   `/add-phase` (Skill tool; bugs live in `docs/bugs/`) authoring a phase scoped to the blocker, then
+   neutralizes `BLOCKED.md`; for "Defer" reorders `queue.json` (entry → tail), keeps `BLOCKED.md`;
+   for "Other" enacts the operator's notes. **NEUTRALIZE BY RENAME** (`git mv BLOCKED.md
+   BLOCKED_RESOLVED_<YYYY-MM-DD>.md`) — `bug-state.py` keys the halt on the FILENAME, so a
+   frontmatter flip does NOT clear it. Commit + push the work branch; report a one-paragraph summary.
+   Dispatch `Agent({ description: "lazy-bug-batch blocked-resolve: {feature_name}", subagent_type:
+   "general-purpose", model: "opus", prompt: <above> })`.
+
+7. **Record and continue the loop.** Append `{cycle+1, feature_name, "▶ blocked (resolved: <path>)",
+   "<summary>"}` to `cycle_log`; emit the per-cycle block (`### Cycle {cycle+1}/{max_cycles} ·
+   {feature_name} · blocked`); update `prev_cycle_signature = (feature_id, "__resolve_blocked__",
+   sub_skill_args, current_step)`; increment `cycle`; return to Step 1a. **DO NOT halt** (except the
+   Halt path at step 4).
+
+---
+
+### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
+
+For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified`,
+`needs-spec-input` (and any future obstacle terminal) — the orchestrator routes to the shared
+operator-directed halt-resolution handler instead of halting. It re-prints the obstacle context,
+`AskUserQuestion`s a resolution path (reopen & re-validate / provide direction / defer & continue /
+halt), enacts the choice via an Opus subagent, and continues the loop. Follow the shared component:
+
+!`cat ~/.claude/skills/_components/halt-resolution.md`
+
+`max-cycles` (cost bound), `all-bugs-fixed` (success), and `device-queue-exhausted` /
+`cloud-queue-exhausted` (environment — re-run on the right host) keep their existing clean stops per
+that component's exclusion list.
 
 ---
 
 ## Step 1.5: Forward-Progress Verification
 
 After the cycle loop exits with any terminal reason **other than** `blocked`, `needs-input`, run a
-final read-only state probe:
+final read-only state probe (a `blocked` loop-exit now occurs ONLY when the operator chose "Halt for
+manual fix" in Step 1h; every other Step 1h/1i path resumes the loop):
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py
@@ -549,7 +658,7 @@ When the loop exits (terminal state or max-cycles), print:
 | ... |
 
 **Next step:**
-  - If terminal_reason is "blocked": resolve {spec_path}/BLOCKED.md
+  - If terminal_reason is "blocked": reached ONLY when the operator chose "Halt for manual fix" in Step 1h (every other path resumes). Resolve {spec_path}/BLOCKED.md by hand, then re-run `/lazy-bug-batch {max_cycles}`.
   - If terminal_reason is "all-bugs-fixed": all bugs fixed or retired
   - If terminal_reason is "completion-unverified": reconcile the receipt gap
   - If max-cycles: re-run `/lazy-bug-batch {max_cycles}` from a fresh session
@@ -562,7 +671,7 @@ STOP.
 
 ## Step 3: Cycle Output Discipline (lean · consistent · scannable)
 
-Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), or decision-resume (Step 1g)
+Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), decision-resume (Step 1g), blocked-resolution (Step 1h), or halt-resolution (Step 1i)
 — emits **EXACTLY ONE update block** in this shape:
 
 ```
