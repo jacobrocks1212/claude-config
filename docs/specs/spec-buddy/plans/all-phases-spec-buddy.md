@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: spec-buddy
-status: Ready
+status: Complete
 created: 2026-06-08
 phases: [1, 2, 3]
 ---

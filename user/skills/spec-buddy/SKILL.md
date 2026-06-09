@@ -378,6 +378,27 @@ Mark task 4 `completed`.
 
 ---
 
+## Usage
+
+**Invocation:** `/spec-buddy <feature description>`
+
+- Kicks off Phase 0 (autonomous groundwork: codebase recon, evidence gathering), then presents the user with a tiered partition list for approval (Phase 1), then walks partition-by-partition co-design (Phase 2).
+- Reuses `/spec`'s machinery (`_components/`, SPEC.md template) and emits a downstream-compatible `SPEC.md` consumed unchanged by `/spec-phases`, `/write-plan`, and `/lazy`.
+
+**Session recovery:**
+
+- The walk is compaction-safe. `buddy-session.json` (inside `{spec-dir}/{feature-slug}/spec-buddy/`) records the approved partition list, per-partition `status`/`decision`/`confidence`, and `current_index`.
+- Re-invoking `/spec-buddy` after a compaction or interruption resumes at the right partition via `decision-resume` conventions — read `buddy-session.json` and the task list before any other work.
+- Task tools track the high-level phases (0–4) for coarse compaction recovery.
+
+**Gemini research opt-in:**
+
+- spec-buddy does NOT proactively offer external research.
+- To run a Gemini deep-research pass (Phase 3), the user must explicitly request it (e.g., "do a Gemini research pass", "research external prior art").
+- Without an explicit request the walk proceeds through Phases 0 → 1 → 2 → 4 with no Phase 3.
+
+---
+
 ## Notes
 
 - The feature slug is kebab-case derived from $ARGUMENTS (e.g., `user-notifications`).

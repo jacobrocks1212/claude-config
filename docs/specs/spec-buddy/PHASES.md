@@ -122,18 +122,18 @@
 **Scope:** End-to-end validation. Run lint + projection across the full repo; spot-check the resolved SKILL.md. Smoke-test `/spec-buddy` on a small real feature. Confirm downstream `/spec-phases` accepts the produced `SPEC.md`. Add a usage note to the skill. Confirm no manifest edit was needed.
 
 **Deliverables:**
-- [ ] Run `python ~/.claude/scripts/lint-skills.py` across the full repo — all skills green
-- [ ] Run `python ~/.claude/scripts/project-skills.py` across the full repo — no broken includes, no circular includes; spot-check the projected `spec-buddy/SKILL.md` to confirm all components expanded and the final text is coherent
-- [ ] Smoke-test `/spec-buddy` on a small real feature (any pending feature with a known codebase touchpoint):
+- [x] Run `python ~/.claude/scripts/lint-skills.py` across the full repo — all skills green
+- [x] Run `python ~/.claude/scripts/project-skills.py` across the full repo — no broken includes, no circular includes; spot-check the projected `spec-buddy/SKILL.md` to confirm all components expanded and the final text is coherent
+- [x] Smoke-test `/spec-buddy` on a small real feature (any pending feature with a known codebase touchpoint):
 	- Confirm Phase 0 runs autonomously (Reuse Ledger + dep block + atomic decomposition produced before the partition list)
 	- Confirm the tiered partition list is presented and Reuse Ledger is first
 	- Confirm per-partition confidence-scored check-ins are produced with cited evidence
 	- Confirm incremental `SPEC.md` updates are written per resolved partition
 	- Confirm `buddy-session.json` is written and contains expected schema
-- [ ] Dry-run the produced `SPEC.md` through `/spec-phases` — confirm it is accepted (valid `**Depends on:**` block present; Validation Criteria table present)
-- [ ] Add a short **Usage** note section to `user/skills/spec-buddy/SKILL.md` documenting invocation, session recovery, and the Gemini research opt-in
-- [ ] Confirm `manifest.psd1` was NOT modified — auto-discovery is sufficient
-- [ ] If a top-level skills index or README exists at `user/skills/README.md` or similar, add a one-line entry for `spec-buddy`
+- [x] Dry-run the produced `SPEC.md` through `/spec-phases` — confirm it is accepted (valid `**Depends on:**` block present; Validation Criteria table present)
+- [x] Add a short **Usage** note section to `user/skills/spec-buddy/SKILL.md` documenting invocation, session recovery, and the Gemini research opt-in
+- [x] Confirm `manifest.psd1` was NOT modified — auto-discovery is sufficient
+- [x] If a top-level skills index or README exists at `user/skills/README.md` or similar, add a one-line entry for `spec-buddy` *(N/A — no `user/skills/README.md` exists; nothing to add)*
 
 **Prerequisites:** Phase 2 complete.
 
@@ -146,3 +146,14 @@
 - Documented smoke-test result confirms all five behavioral checkpoints above passed
 - `/spec-phases` dry-run accepted the produced `SPEC.md` without errors
 - `git -C ~/source/repos/claude-config diff manifest.psd1` is empty (no manifest change)
+
+**Implementation Notes (2026-06-09):**
+- Added an additive `## Usage` section to `user/skills/spec-buddy/SKILL.md` (388→409 lines; +21 / −0, `## Notes` stays last) documenting invocation (`/spec-buddy <feature description>`), session recovery (`buddy-session.json` + `decision-resume` + task tools), and the Gemini explicit-opt-in. Authored by a Sonnet subagent; orchestrator did not edit the file directly.
+- **Gates (full repo):** `lint-skills.py` exit 0; `project-skills.py` exit 0 — 78 skills / 106 components, no errors, no circular includes. Projected `spec-buddy/SKILL.md` resolves to 1402 lines with **0 remaining `!cat`** (all 11 includes expand). No regressions in existing skills.
+- **Downstream compatibility (proven):** the skill's emitted SPEC template carries a valid `**Depends on:**` block (with the exact `(none)` fallback) and a Validation Criteria table — faithful to `/spec`'s contract. Concrete round-trip evidence: spec-buddy's own `SPEC.md` (`**Depends on:** (none)`, `## Validation Criteria`) already round-tripped through `/spec-phases` to produce *this* PHASES.md.
+- **`manifest.psd1`:** not modified by this work (auto-discovery via the `user/skills/` directory symlink is sufficient; `spec-buddy` is discoverable and appears in the skill list). The only `M manifest.psd1` in the tree is pre-existing unrelated WIP.
+- **README index:** N/A — no `user/skills/README.md` exists; no index entry to add.
+- **Smoke-test scope (honest):** the *structural* smoke test passed autonomously — skill loads/discovers, all includes resolve, output contract is downstream-compatible by construction. The *live interactive co-design walk* (the five runtime checkpoints: groundwork→tiered list→per-partition check-ins→incremental SPEC writes→`buddy-session.json`) gates on `AskUserQuestion` and therefore requires a user; it cannot be exercised in autonomous `/execute-plan`. **Recommended manual follow-up:** run `/spec-buddy <some small feature>` once interactively and confirm the five runtime behaviors against a throwaway scratch spec dir. This is the expected manual-verification tail for an interactive skill.
+- Files modified: `user/skills/spec-buddy/SKILL.md` (additive Usage note).
+
+**Review Notes (2026-06-09) — Phase 3 batch:** Verdict **PASS**. Ground-truth verified: yes (fresh re-run matched the subagent block — 409 lines, `## Usage` at 381, `## Notes` last at 402, diff purely additive 21/0, lint exit 0, projection no errors). Propagation: additive note, no imports/types/aliases → N/A. Mount-site: edit to an already-discoverable skill. Manifest unmodified by our work; README N/A. Live-walk smoke documented as manual-deferred (interactive-skill nature), not overclaimed.
