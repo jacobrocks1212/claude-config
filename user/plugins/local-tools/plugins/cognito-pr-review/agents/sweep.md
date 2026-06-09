@@ -1967,6 +1967,16 @@ A new DTO, view-model, or plain TypeScript interface may overlap with an existin
 
 A new controller action or API endpoint may duplicate an existing route in the codebase. Sweep cannot verify local-codebase facts, so: FLAG this file as a reuse-duplication candidate whenever a new controller method is added that targets a resource path already implied by the controller name or existing action names in the same file (e.g. a second GET for the same resource, or a new controller whose route prefix matches a sibling controller), then ESCALATE to the reuse-candidacy stage for a human reviewer with local-codebase access to confirm whether an existing endpoint already services this route.
 
+#### Intrafile Block Duplication (`intrafile-block-duplication`)
+**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+
+An added or modified block may duplicate logic that already exists ELSEWHERE IN THE SAME FILE. Sweep cannot verify in-file structural facts across the whole file, so: FLAG this file as an intra-file duplication candidate whenever an added block (function, branch, query, or repeated statement sequence) closely mirrors another block already present in the same file, then ESCALATE to the intra-file consistency stage for an agent with structural (tree-sitter) access to confirm whether the change should have reused or refactored the existing in-file member.
+
+#### Intrafile Convention Divergence (`intrafile-convention-divergence`)
+**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+
+An added or modified block may diverge from the conventions established by the surrounding code in the same file (naming, error handling, logging, or the structural shape of sibling members). Sweep cannot verify whole-file conventions, so: FLAG this file as an intra-file consistency candidate when a change appears to introduce a naming or structural pattern inconsistent with its siblings, then ESCALATE to the intra-file consistency stage for an agent with structural access to confirm the divergence.
+
 ---
 
 ### Security Rules

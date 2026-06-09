@@ -12,7 +12,7 @@ Run a PR review using Cognito-specific patterns derived from senior reviewer fee
 
 ## Architecture Overview
 
-This command uses a hierarchical planner pipeline: deterministic prep → planning → triage → parallel investigation/sweep/reuse-candidacy → deterministic post-processing → synthesis.
+This command uses a hierarchical planner pipeline: deterministic prep → planning → triage → parallel investigation/sweep/reuse-candidacy/intra-file-consistency → deterministic post-processing → synthesis.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -47,8 +47,11 @@ This command uses a hierarchical planner pipeline: deterministic prep → planni
 │  - 1 Investigation Agent per critical group (Opus) │ concurrent  │
 │  - 1 Sweep Agent for important+skim files (Sonnet) │             │
 │  Step 5b: Reuse-Candidacy Stage (parallel)         │             │
-│  - 1 Reuse Agent per cluster (Opus)                ┘             │
-│    (cognito-consistency-checker, ≤6 clusters)                    │
+│  - 1 Reuse Agent per cluster (Opus)                │             │
+│    (cognito-consistency-checker, ≤6 clusters)      │             │
+│  Step 5b: Intra-File Consistency Stage (parallel)  │             │
+│  - 1 Intra-File Agent per cluster (Opus)           ┘             │
+│    (cognito-intra-file-consistency, ≤6 clusters)                 │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
@@ -323,6 +326,52 @@ Agent (for each cluster — up to 6):
 - Reuse agents: `{cacheDir}/agent-output/reuse-{cluster-slug}.json`
 
 The cluster slug is the cluster name lowercased with spaces replaced by hyphens (e.g., "Workflow Services" → "workflow-services") — the same convention as investigation group slugs. Step 7's aggregate script already picks up `reuse-*.json` files from `{cacheDir}/agent-output/`, and Step 8's post-process routes their findings through the investigation lane with verdict→severity mapping (`refactor`/`reuse` → `important`, `extend`/`wrap` → `nit`, `acceptable-new` → dropped).
+
+**Intra-file consistency pass — also part of Step 5b, concurrent with the reuse pass above:**
+
+**prep (`prep-pr.ts`) is NOT modified** for this pass — eligibility is derived entirely from manifest file status and path heuristics. The agent reads the `main` version of each file directly via its local-codebase access; the host file's `main` version is the implicit baseline.
+
+**Cluster the files for intra-file analysis:**
+
+Select all substantively-modified substantive files from the manifest: services, types, components, helpers — any triage tier. Exclude pure test files, config files, and generated types. Unlike the reuse pass, `manifest.baselines[]` is NOT required; any modified substantive file is eligible. Group them into at most 6 clusters by domain area or shared concern (1–6 files each).
+
+If no substantive modified files are present, skip this pass.
+
+**For each cluster**, launch one intra-file consistency agent:
+
+```
+Agent (for each cluster — up to 6):
+  subagent_type: cognito-pr-review:cognito-intra-file-consistency
+  prompt: |
+    ## Your Assignment
+    Cluster: {cluster name}
+    Files in cluster: {list of file paths for this cluster's files}
+
+    ## PR Context
+    {Condensed from journey file overview + objectives}
+
+    ## Cache
+    Cache directory: {cacheDir}
+    Manifest: {cacheDir}/manifest.json
+
+    ## Task
+    Perform intra-file consistency analysis on each file in this cluster.
+    Compare the PR diff for each file against the current `main` version of that file.
+    Identify inconsistencies in naming, style, error handling, patterns, or structure
+    introduced by the PR changes that are inconsistent with the rest of the file.
+    Write your output to: {cacheDir}/agent-output/intrafile-{cluster-slug}.json
+
+    ## Access Model
+    You have investigation-level access: you may read ANY file in the local
+    codebase on `main` and use tree-sitter MCP tools (get_file_structure,
+    find_symbol_usages, get_callers, get_callees, get_dependencies).
+    You do NOT have sweep's cache-only restriction.
+```
+
+**After each intra-file agent completes**, confirm it wrote its output file:
+- Intra-file agents: `{cacheDir}/agent-output/intrafile-{cluster-slug}.json`
+
+The cluster slug is the cluster name lowercased with spaces replaced by hyphens — the same convention as the reuse pass. Step 7's aggregate script already discovers `intrafile-*.json` files from `{cacheDir}/agent-output/`, and Step 8's post-process routes their findings through the investigation lane with verdict→severity mapping (`refactor`/`reuse` → `important`, `inconsistent` → `nit`, `consistent`/`acceptable-new` → dropped).
 
 ### Step 6: Planner Evaluates Sweep Escalations
 

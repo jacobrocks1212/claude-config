@@ -182,6 +182,12 @@ rule_weights:
   reuse-endpoint-duplication:
     weight: 0.7
     data_points: 0
+  intrafile-block-duplication:
+    weight: 0.7
+    data_points: 0
+  intrafile-convention-divergence:
+    weight: 0.7
+    data_points: 0
 
   # frontend-vue rules
   no-redundant-props:

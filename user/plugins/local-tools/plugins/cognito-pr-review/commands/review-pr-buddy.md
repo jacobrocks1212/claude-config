@@ -86,6 +86,7 @@ From `processed-findings.json`, collect findings whose `file` is in this chunk's
 - **Investigation findings** (`source:"investigation"`) — bugs, edge cases, correctness issues
 - **Sweep rule hits** (`source:"sweep"`) — pattern violations, rule matches
 - **Reuse & duplication flags** (`source:"reuse"`) — verdict (e.g. `refactor`, `extend`, `wrap`, `acceptable-new`), existing-system candidate, suggested action
+- **Intra-file reuse & consistency** (`source:"intrafile"`) — verdict (`refactor`/`reuse` for in-file duplication, `inconsistent` for surrounding-code divergence), in-file `file:line`/symbol candidate, suggested action
 
 Highlight important and blocking findings. Do not bury them in a flat list.
 
@@ -191,7 +192,7 @@ Do NOT invoke the `synthesizer-v2` agent. The interactive session IS the synthes
 
 ### Review Document Format
 
-Produce the review document following the exact synthesizer-v2 output format defined in `agents/synthesizer-v2.md` — same header, same section names. The `## Reuse & Duplication` section uses that exact name and lists kept `source:"reuse"` findings. Omit sections that have no content (e.g. omit `## Re-Review Status` for initial reviews, omit `## Reuse & Duplication` if no reuse findings were kept).
+Produce the review document following the exact synthesizer-v2 output format defined in `agents/synthesizer-v2.md` — same header, same section names. The `## Reuse & Duplication` section uses that exact name and lists kept `source:"reuse"` findings. The `## Intra-File Consistency` section uses that exact name and lists kept `source:"intrafile"` findings. Omit sections that have no content (e.g. omit `## Re-Review Status` for initial reviews, omit `## Reuse & Duplication` if no reuse findings were kept, omit `## Intra-File Consistency` if no intra-file findings were kept).
 
 Header:
 
@@ -204,7 +205,7 @@ Header:
 **Review type:** {Initial | Re-review (iteration {n})}
 ```
 
-Sections: Summary, Requirements Coverage, Critical Findings, Rule-Based Findings, Reuse & Duplication, Re-Review Status (re-review only), Strengths.
+Sections: Summary, Requirements Coverage, Critical Findings, Rule-Based Findings, Reuse & Duplication, Intra-File Consistency, Re-Review Status (re-review only), Strengths.
 
 The Summary section should reflect the reviewer's overall assessment as shaped by the interactive session — note what was kept, what was dismissed, and the reviewer's own observations.
 

@@ -339,3 +339,29 @@ rules:
       - "\\[HttpGet\\]"
       - "\\[HttpPost\\]"
       - "\\[Route\\("
+
+  - id: intrafile-block-duplication
+    severity: important
+    description: >
+      An added or modified block may duplicate logic that already exists
+      ELSEWHERE IN THE SAME FILE. Sweep cannot verify in-file structural facts
+      across the whole file, so: FLAG this file as an intra-file duplication
+      candidate whenever an added block (function, branch, query, or repeated
+      statement sequence) closely mirrors another block already present in the
+      same file, then ESCALATE to the intra-file consistency stage for an agent
+      with structural (tree-sitter) access to confirm whether the change should
+      have reused or refactored the existing in-file member.
+    trigger_patterns:
+      - "(function|def|private|public|protected)\\s+\\w+"
+  - id: intrafile-convention-divergence
+    severity: minor
+    description: >
+      An added or modified block may diverge from the conventions established by
+      the surrounding code in the same file (naming, error handling, logging, or
+      the structural shape of sibling members). Sweep cannot verify whole-file
+      conventions, so: FLAG this file as an intra-file consistency candidate when
+      a change appears to introduce a naming or structural pattern inconsistent
+      with its siblings, then ESCALATE to the intra-file consistency stage for an
+      agent with structural access to confirm the divergence.
+    trigger_patterns:
+      - "(let|const|var|private|public)\\s+\\w+"

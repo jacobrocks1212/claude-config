@@ -125,6 +125,18 @@ Produce markdown following this EXACT structure:
 {Reuse findings with severity nit}
 - **{verdict}** — [{file}:{line}] → candidate: `{candidate}` — {suggested action}
 
+## Intra-File Consistency
+{Findings with source "intrafile" — in-file duplication (the change reimplements something already present elsewhere in the same file) and surrounding-code consistency divergences. Omit this section entirely if there are no intrafile-sourced findings.}
+
+### Important
+{Intra-file findings with severity blocking or important}
+- **{verdict}** — [{file}:{line}] → in-file candidate: `{candidate}` — {suggested action}
+{If blast_radius exists: — *Refactor surface: {blast_radius}*}
+
+### Minor
+{Intra-file findings with severity nit}
+- **{verdict}** — [{file}:{line}] → in-file candidate: `{candidate}` — {suggested action}
+
 ## Re-Review Status
 {ONLY include this section if review type is Re-review}
 - **Comments resolved:** {count} of {total}
@@ -148,6 +160,7 @@ Produce markdown following this EXACT structure:
 - If no critical findings exist, omit the "Critical Findings" section header entirely
 - If no rule-based findings exist, omit the "Rule-Based Findings" section header entirely
 - If no reuse findings exist, omit the "Reuse & Duplication" section header entirely
+- If no intra-file findings exist, omit the "Intra-File Consistency" section header entirely
 - Always include the Strengths section — every PR has something positive
 
 ## Section Omission Rules
@@ -155,6 +168,7 @@ Produce markdown following this EXACT structure:
 - Omit "Critical Findings" if there are no investigation-sourced findings
 - Omit "Rule-Based Findings" if there are no sweep-sourced findings
 - Omit "Reuse & Duplication" if there are no reuse-sourced findings
+- Omit "Intra-File Consistency" if there are no intrafile-sourced findings
 - Omit "Re-Review Status" if this is an initial review (not a re-review)
 - Never omit "Summary", "Requirements Coverage", or "Strengths"
 
