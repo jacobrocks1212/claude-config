@@ -1,0 +1,5 @@
+# Reproducible from package.json / package-lock.json
+scripts/node_modules/
+
+# Runtime PR-review cache (machine state)
+.claude/pr-cache/

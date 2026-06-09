@@ -1,0 +1,160 @@
+# API Design Rules
+# Patterns for ASP.NET MVC controllers
+
+category: api-design
+file_patterns:
+  - "*Controller.cs"
+  - "**/Controllers/**/*.cs"
+
+rules:
+  - id: appropriate-http-methods
+    severity: important
+    description: >
+      Use appropriate HTTP methods for operations. GET for retrieving resources,
+      POST for creating or triggering actions, PUT for updating, DELETE for removing.
+    examples:
+      bad:
+        - "[HttpPost] GetSession()" # Should be GET
+        - "[HttpGet] CreateUser()" # Should be POST
+      good:
+        - "[HttpGet] GetSession()"
+        - "[HttpPost] CreateSession()"
+        - "[HttpDelete] DeleteAccount()"
+
+  - id: singular-resource-endpoints
+    severity: minor
+    description: >
+      Use singular nouns for single-resource endpoints.
+    anti_pattern: |
+      [Route("{id}/sessions")]  // Plural for single resource
+      public Task<ActionResult> GetSession(string id) { }
+    correct_pattern: |
+      [Route("{id}/session")]  // Singular
+      public Task<ActionResult> GetSession(string id) { }
+
+  - id: produces-response-type
+    severity: important
+    description: >
+      Decorate controller actions with [ProducesResponseType] to enable
+      auto-generated TypeScript types for the client.
+    trigger_patterns:
+      - "return Ok(new"
+      - "return Json(new"
+    anti_pattern: |
+      [HttpPost]
+      [Route("{id}/session")]
+      public async Task<ActionResult> CreateSession(string id)
+      {
+          return Ok(new CreateSessionResponse { ClientSecret = "..." });
+      }
+    correct_pattern: |
+      [HttpPost]
+      [Route("{id}/session")]
+      [ProducesResponseType(typeof(CreateSessionResponse), (int)HttpStatusCode.OK)]
+      public async Task<ActionResult> CreateSession(string id)
+      {
+          return Ok(new CreateSessionResponse { ClientSecret = "..." });
+      }
+
+  - id: split-large-controllers
+    severity: important
+    description: >
+      Break up controllers that handle multiple unrelated concerns.
+      This reduces merge conflicts and improves maintainability.
+    rationale: >
+      "With the goal of avoiding one single, giant CognitoPayController
+      (that generates merge conflicts between the two teams primarily working
+      on this feature), could we consider breaking this up?"
+    examples:
+      split_suggestions:
+        - CognitoPayController -> CognitoPayAccountController + CognitoPayWebhookController
+        - FormsController -> FormsReadController + FormsWriteController
+
+  - id: unique-idempotency-keys
+    severity: critical
+    description: >
+      Ensure idempotency keys are unique for each API call.
+      Reusing RequestOptions with the same key causes unintended behavior.
+    trigger_patterns:
+      - "IdempotencyKey"
+      - "idempotency_key"
+    anti_pattern: |
+      var options = GetRequestOptions(account, token, Guid.NewGuid().ToString());
+
+      await customerService.CreateAsync(customerOptions, options);
+      await subscriptionService.CreateAsync(subOptions, options);  // Same key!
+    correct_pattern: |
+      await customerService.CreateAsync(customerOptions,
+          GetRequestOptions(account, token, Guid.NewGuid().ToString()));
+      await subscriptionService.CreateAsync(subOptions,
+          GetRequestOptions(account, token, Guid.NewGuid().ToString()));
+
+  - id: async-suffix
+    severity: minor
+    description: >
+      All async methods should have the Async suffix.
+    anti_pattern: |
+      public async Task<File> UploadFile(Stream stream) { }
+    correct_pattern: |
+      public async Task<File> UploadFileAsync(Stream stream) { }
+
+  - id: defensive-null-checks
+    severity: important
+    description: >
+      Add null guards even when the type specifies non-null.
+      Callers may not respect the contract.
+    anti_pattern: |
+      public async Task UploadAsync(FileInfo file)
+      {
+          var stream = file.OpenRead();  // Crashes if file is null
+      }
+    correct_pattern: |
+      public async Task UploadAsync(FileInfo file)
+      {
+          if (file?.Size == null) return;
+          var stream = file.OpenRead();
+      }
+
+  - id: cache-service-instances
+    severity: important
+    description: >
+      Don't create new service instances on every request. Cache them as fields.
+    anti_pattern: |
+      public async Task<ActionResult> GetData()
+      {
+          var service = new MyService();  // Created every request!
+          return Ok(await service.GetDataAsync());
+      }
+    correct_pattern: |
+      private MyService _service;
+      private MyService Service => _service ??= new MyService();
+
+  - id: view-model-includes-all-ui-consumed-fields
+    severity: important
+    description: >
+      Controller view-model payloads must include every field the UI
+      consumes. If a TypeScript type extension exists on the client purely to
+      tack on fields the backend doesn't return, the payload is incomplete.
+      Anonymous-object controller returns are especially prone to this — audit
+      against the Vue components that consume the endpoint before merging.
+    anti_pattern: |
+      // FormBuilderController.cs — IsGuestList omitted from payload
+      return Json(forms.Select(f => new
+      {
+          f.Id,
+          f.Name,
+          HasPhone = f.PeopleFormSettings?.HasPhone ?? false,
+          HasAddress = f.PeopleFormSettings?.HasAddress ?? false
+          // IsGuestList missing — UI workaround: local type extension
+      }));
+    correct_pattern: |
+      // FormBuilderController.cs — all UI-consumed fields included
+      return Json(forms.Select(f => new
+      {
+          f.Id,
+          f.Name,
+          HasPhone = f.PeopleFormSettings?.HasPhone ?? false,
+          HasAddress = f.PeopleFormSettings?.HasAddress ?? false,
+          IsGuestList = f.PeopleFormSettings?.IsGuestList ?? false
+          // UI reads IsGuestList directly from the shared type — no extension needed
+      }));

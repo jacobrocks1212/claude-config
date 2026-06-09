@@ -1,0 +1,16 @@
+{
+  "name": "cognito-pr-review-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "diff": "^7.0.0",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
+  }
+}

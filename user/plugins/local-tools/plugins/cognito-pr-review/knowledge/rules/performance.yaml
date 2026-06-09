@@ -1,0 +1,153 @@
+# Performance Rules
+# Optimization patterns for both C# and TypeScript
+
+category: performance
+file_patterns:
+  - "*.cs"
+  - "*.ts"
+  - "*.tsx"
+  - "*.vue"
+  - "!*Tests.cs"
+  - "!**/__tests__/**"
+
+rules:
+  - id: validate-size-before-allocating
+    severity: important
+    description: >
+      When accepting file uploads or large data, enforce size limits
+      before reading into memory.
+    anti_pattern: |
+      var content = await stream.ReadAllBytesAsync();
+      if (content.Length > MaxSize) throw new Exception("Too large");
+    correct_pattern: |
+      if (stream.Length > MaxSize) throw new Exception("Too large");
+      var content = await stream.ReadAllBytesAsync();
+
+  - id: reuse-httpclient
+    severity: critical
+    description: >
+      Don't create new HttpClient per request - it causes socket exhaustion.
+      Use a shared instance or IHttpClientFactory.
+    trigger_patterns:
+      - "new HttpClient()"
+    anti_pattern: |
+      public async Task<string> FetchDataAsync(string url)
+      {
+          using var client = new HttpClient();  // Socket exhaustion!
+          return await client.GetStringAsync(url);
+      }
+    correct_pattern: |
+      public async Task<string> FetchDataAsync(string url)
+      {
+          return await WebApplication.HttpClient.GetStringAsync(url);
+      }
+
+  - id: use-fast-has-flag
+    severity: minor
+    description: >
+      Use behavior.FastHasFlag instead of HasFlag for better performance.
+    trigger_patterns:
+      - ".HasFlag("
+    anti_pattern: |
+      if (behavior.HasFlag(FieldBehavior.Required)) { }
+    correct_pattern: |
+      if (behavior.FastHasFlag(FieldBehavior.Required)) { }
+
+  - id: move-loop-invariants-outside
+    severity: important
+    description: >
+      Don't compute the same value repeatedly inside a loop if it doesn't change.
+    anti_pattern: |
+      foreach (var item in items)
+      {
+          var config = GetConfiguration();  // Same result every iteration!
+          Process(item, config);
+      }
+    correct_pattern: |
+      var config = GetConfiguration();
+      foreach (var item in items)
+      {
+          Process(item, config);
+      }
+
+  - id: lazy-list-resolution
+    severity: important
+    description: >
+      When a list will be filtered or limited, delay resolution until after
+      filtering to avoid loading data you'll discard.
+    rationale: >
+      "Resolving the list should be done as late as possible, since it will
+      load all the selected source entries."
+    anti_pattern: |
+      var allEntries = await GetEntriesAsync().ToListAsync();  // Loads all!
+      var filtered = allEntries.Where(e => e.IsActive).Take(10);
+    correct_pattern: |
+      var filtered = GetEntriesAsync()
+          .Where(e => e.IsActive)
+          .Take(10);
+      await foreach (var entry in filtered) { }
+
+  - id: lazy-evaluation-for-memory
+    severity: important
+    description: >
+      Don't eagerly materialize collections when lazy evaluation works.
+      Return IEnumerable instead of List for large datasets.
+    anti_pattern: |
+      public List<Image> GetPageImages(Document doc)
+      {
+          return doc.Pages.Select(p => p.RenderImage()).ToList();
+      }
+    correct_pattern: |
+      public IEnumerable<Image> GetPageImages(Document doc)
+      {
+          foreach (var page in doc.Pages)
+              yield return page.RenderImage();
+      }
+
+  - id: dont-load-to-discard
+    severity: important
+    description: >
+      When you can determine the final shape of a result early, truncate
+      before expensive operations, not after.
+    anti_pattern: |
+      var allUsers = await db.GetAllUsersAsync();
+      return allUsers.FirstOrDefault();  // Loaded all just to get one!
+    correct_pattern: |
+      return await db.GetFirstUserAsync();  // Or .Take(1).FirstOrDefault()
+
+  - id: avoid-string-allocations
+    severity: minor
+    description: >
+      Use alternatives to methods like string.Split that allocate arrays
+      when simpler approaches exist.
+    example: |
+      // Consider alternatives like:
+      entry.Form.Id  // Instead of parsing from a composite string
+
+  - id: check-after-await-not-before
+    severity: important
+    description: >
+      For race condition safety, check conditions after the await completes,
+      not before.
+    anti_pattern: |
+      if (!isLoading) {
+        await loadData();  // Another call could start here
+      }
+    correct_pattern: |
+      await loadData();
+      if (isLoading) return;  // Check state after async operation
+
+  - id: avoid-unnecessary-tolist
+    severity: minor
+    description: >
+      Don't call .ToList() when the result is consumed as IEnumerable, passed
+      to further LINQ operations, or iterated with foreach. Unnecessary
+      materialization wastes memory and hides deferred execution intent.
+    trigger_patterns:
+      - ".ToList()"
+    anti_pattern: |
+      var items = source.Where(x => x.IsActive).ToList();
+      foreach (var item in items) { Process(item); }
+    correct_pattern: |
+      var items = source.Where(x => x.IsActive);
+      foreach (var item in items) { Process(item); }

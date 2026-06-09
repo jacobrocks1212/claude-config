@@ -1,0 +1,48 @@
+# Template & Binding Rules
+# Patterns for build.js/build.htm template bindings
+
+category: template-binding
+file_patterns:
+  - "build.js"
+  - "build.htm"
+  - "*.htm"
+
+rules:
+  - id: use-convert-not-extra-property
+    severity: important
+    description: >
+      Use inline convert in bindings instead of creating calculated model
+      properties for simple transformations.
+    anti_pattern: |
+      <input vue:disabled="{binding canChangeSubType}" />
+      <!-- Where canChangeSubType is a calculated property that just negates another -->
+    correct_pattern: |
+      <input vue:disabled="{ binding canChange, convert={{ canChange => !canChange }} }" />
+
+  - id: omit-default-binding-source
+    severity: minor
+    description: >
+      The default binding source is $dataItem, so specifying it is unnecessary.
+    anti_pattern: |
+      <element vue:prop="{ binding myProp, source={{ $dataItem }} }" />
+    correct_pattern: |
+      <element vue:prop="{ binding myProp }" />
+
+  - id: boolean-props-no-true
+    severity: minor
+    description: >
+      Boolean properties in templates don't need explicit ='true'.
+    anti_pattern: |
+      <choice show-choice-images='true' />
+    correct_pattern: |
+      <choice show-choice-images />
+
+  - id: extract-large-additions
+    severity: minor
+    description: >
+      When adding significant amounts of code, consider pulling it into
+      a separate file for organization.
+    rationale: >
+      "There is a good bit of code being added here. What do you think about
+      pulling it out into a separate module, if for no other reason than
+      just organization?"

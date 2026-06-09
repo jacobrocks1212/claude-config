@@ -13,6 +13,12 @@ $ARGUMENTS
 
 ---
 
+## Collaboration Stance (MANDATORY)
+
+!`cat .claude/skill-config/team-architect-stance.md 2>/dev/null || cat ~/.claude/skills/_components/team-architect-stance.md`
+
+---
+
 ## Global Rule: Chat-Presented Options MUST Match the Picker 1:1 (HARD REQUIREMENT)
 
 This skill repeatedly uses a "surface full context in chat, THEN call `AskUserQuestion`" pattern (Step 1b.4/1b.5, Step 1c brainstorming, Phase 3 Step 4/5). Whenever you do this, the chat block is the **expanded explanation OF the picker** — never a different or larger set of choices.
@@ -331,6 +337,12 @@ Write the confirmed dep block into the in-progress SPEC.md draft using the schem
 
 If you find yourself wanting to defer this ("we'll figure out deps later"), STOP. Deferral is how the look-back mechanism breaks. Lock in the best-evidence block now; revise as brainstorming surfaces new dependencies.
 
+### Step 1b.7: Reuse-First Discovery (BLOCKING — before architecture brainstorm)
+
+Dependencies are resolved; now inventory what already exists *inside* the boundary before designing anything new. This is the load-bearing planning step — exhaust reuse candidates before proposing new code.
+
+!`cat .claude/skill-config/reuse-first-discovery.md 2>/dev/null || cat ~/.claude/skills/_components/reuse-first-discovery.md`
+
 ### Step 1c: Brainstorm Architecture & Scope
 
 **Atomic Decomposition Gate (one-shot — run once, before iterative brainstorming begins):**
@@ -370,7 +382,15 @@ After the decomposition, proceed with iterative brainstorming below.
 **Goal:** Draft a comprehensive research prompt for Gemini Deep Research to validate ideas, explore prior art, and surface pitfalls.
 
 1. Create the feature directory: `{spec-dir}/{feature-slug}/`
-2. **Check for a project identity file.** Before composing the prompt, probe for `docs/product/PRODUCT_IDENTITY.md` relative to the project root (the working directory `/spec` was invoked from, NOT the claude-config repo). If it exists, read its contents — they will be prepended to the prompt as a `## Project context` section so Gemini knows what kind of project it's researching for. If the file does NOT exist, skip the prepend silently — no warning, no error. Not every project has an identity file, and the prompt is still valid without it.
+2. **Resolve the project identity prepend (`IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars).** The prepend gives Gemini baseline product context. It must be small — a full identity doc can be tens of KB and would blow the textarea cap and waste tokens if pasted verbatim. Probe relative to the **project root** (the working directory `/spec` was invoked from, NOT the claude-config repo), in this priority order:
+
+   1. **`docs/product/PRODUCT_IDENTITY_SUMMARY.md`** — the dedicated, pre-sized "ready-to-go" Gemini prepend. **If it exists, read it and use it verbatim.** This is the fast path: no condensing, no token burn. Done.
+   2. **`docs/product/PRODUCT_IDENTITY.md`** — the full identity doc, used only if the summary above does not exist:
+      - **If it is ≤ `IDENTITY_PREPEND_CHAR_BUDGET`**, use it verbatim.
+      - **If it is over budget**, do NOT silently truncate and do NOT re-condense from scratch every run. Instead **self-heal once**: condense it to a ~1-page summary at or under the budget (if the doc contains a section explicitly labelled as a paste-ready / "Gemini-Ready" / TL;DR summary, base the condensation on that section rather than re-summarizing the whole doc), **write that condensation to `docs/product/PRODUCT_IDENTITY_SUMMARY.md`**, then use it as the prepend. Every later `/spec` run finds the summary in step 1 and skips condensing entirely. Note in the Phase 2 summary (step 7) that a summary file was generated.
+   3. **Neither file exists** — skip the prepend silently. No warning, no error. Not every project has an identity doc, and the prompt is still valid without one.
+
+   Whichever file is used, treat its contents as the identity prepend below.
 3. **Compose the prompt body** per the structure below. Aim to keep the final file (identity prepend + your prompt body) **under `GEMINI_PROMPT_CHAR_CAP = 24,000` characters**.
 
    <!-- Cap source: Gemini Apps' web UI textarea has a practical per-message limit of ~30,000 characters per Google support docs and community reports
@@ -378,14 +398,14 @@ After the decomposition, proceed with iterative brainstorming below.
         millions of tokens, but Deep Research's prompt-input *field* uses the same bounded textarea. 24,000 leaves ~6,000 chars of headroom for paste-buffer
         quirks, mobile browser variability, and prompts that get edited up at copy time. Revisit when Google publishes an authoritative number. -->
 
-   Budget realistically: identity prepends are typically 1,000–3,000 chars (a one-page product summary), leaving 21K+ for the prompt body. If you can't keep it under cap, write the file anyway and surface a warning in the Phase 2 summary (see step 6) — the operator can decide whether to truncate manually. Never silently truncate.
+   Budget realistically: the resolved identity prepend (step 2) is capped at `IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars, leaving 18K+ for the prompt body. If you can't keep the *body* under cap, write the file anyway and surface a warning in the Phase 2 summary (see step 6) — the operator can decide whether to truncate manually. Never silently truncate.
 
 4. **Write the file** to `{spec-dir}/{feature-slug}/RESEARCH_PROMPT.md` with the identity prepend (if any) followed by the prompt body:
 
    ```markdown
    ## Project context
 
-   <verbatim contents of docs/product/PRODUCT_IDENTITY.md — only if the file exists>
+   <verbatim contents of the identity prepend resolved in step 2 — only if one was resolved>
 
    ---
 
@@ -394,7 +414,7 @@ After the decomposition, proceed with iterative brainstorming below.
    <prompt body — sections below>
    ```
 
-   If no identity file exists, skip the `## Project context` block AND the `---` separator entirely; start directly with the Research Question heading.
+   If no identity prepend was resolved (step 2 case 3), skip the `## Project context` block AND the `---` separator entirely; start directly with the Research Question heading.
 
 **Research prompt structure (the body after the optional identity prepend):**
 - **Research Question** — Clear, specific main question
@@ -415,7 +435,7 @@ After the decomposition, proceed with iterative brainstorming below.
 
 7. **Phase 2 summary to chat.** Report:
    - The file path written.
-   - Whether the identity prepend was applied (and the source path, if so) or skipped (with the conventional path that was probed).
+   - Which identity prepend was applied and its source path — `PRODUCT_IDENTITY_SUMMARY.md` (fast path), the full `PRODUCT_IDENTITY.md` (under budget), or skipped (neither file present). If the full doc was over budget and you self-healed, state explicitly that you generated `docs/product/PRODUCT_IDENTITY_SUMMARY.md` so future runs are ready-to-go.
    - The actual character count and whether it's under / over the 24,000 cap. If over, state explicitly that the operator may need to trim before pasting into Gemini Deep Research, and suggest which sections (Context / Research Areas / Specific Questions) are most condensable.
    - Confirmation that the full prompt was echoed to chat in a quadruple-backtick fenced code block (per step 6) for direct copy-paste.
 

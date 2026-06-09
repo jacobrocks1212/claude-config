@@ -171,6 +171,12 @@ Hold this list in working memory (or jot it in your reasoning) — the gate belo
 
 !`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
 
+### Step 2.6: Honor the Reuse Ledger (where present — BEFORE DRAFTING PHASES)
+
+Phases build on the existing systems the SPEC's Reuse Ledger identified; they do not silently re-create them. Each phase cites which ledger rows it extends/refactors/wraps.
+
+!`cat .claude/skill-config/phases-reuse-ledger.md 2>/dev/null || cat ~/.claude/skills/_components/phases-reuse-ledger.md`
+
 ### Step 2.7: Runtime Assumption Validation (where appropriate — BEFORE DRAFTING PHASES)
 
 Some phase plans rest on assumptions about how the *running* system behaves — the actual shape of data crossing a boundary, whether an existing code path fires, the live output of a separate process, the rendered result of an audio/effect path. These are NOT provable from source: reading the types or the function body can mislead (a value's runtime shape, a stale build, a module-singleton split, timing). Where the plan rests on a load-bearing **runtime-coupled** assumption, validate it against the running system BEFORE committing the phases — or schedule an explicit early validation spike. Do not plan (and then implement) against a code-read assumption the runtime might contradict.

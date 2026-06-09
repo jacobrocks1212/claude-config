@@ -1,0 +1,351 @@
+# Testing Rules
+# Patterns for unit and integration tests
+
+category: testing
+file_patterns:
+  - "*Tests.cs"
+  - "*Test.cs"
+  - "*.test.ts"
+  - "*.spec.ts"
+  - "**/__tests__/**"
+
+rules:
+  # =============================================================================
+  # Existing Rules - Test Quality
+  # =============================================================================
+
+  - id: verify-assertions-match-behavior
+    severity: important
+    description: >
+      Double-check that assertions actually test what they claim to test.
+    rationale: >
+      "Is this assert right?"
+
+  - id: consistent-assertion-style
+    severity: minor
+    description: >
+      Don't mix Throws and ThrowsExactly without reason. Be consistent.
+
+  - id: assert-true-needs-message
+    severity: minor
+    description: >
+      Always provide a message to improve clarity in test results on failure.
+    anti_pattern: |
+      Assert.IsTrue(result.IsValid);
+    correct_pattern: |
+      Assert.IsTrue(result.IsValid, "Expected result to be valid");
+
+  - id: outer-class-not-testclass
+    severity: important
+    description: >
+      If using nested test classes, the outer class shouldn't have [TestClass]
+      or tests will be duplicated.
+
+  - id: no-test-only-service-params
+    severity: important
+    description: >
+      Don't pollute service methods with parameters only used by tests.
+      Work around in the test instead.
+    anti_pattern: |
+      public Form GetFormByInternalName(string name, bool bypassCache = false) { }
+    correct_pattern: |
+      // In test:
+      var formId = formsService.GetFormByInternalName(formInternalName).Id;
+      var form = StorageContext.Get<Form>(formId, bypassCache: true);
+
+  - id: no-public-for-tests
+    severity: important
+    description: >
+      If a method is only called from tests, don't make it public.
+      Consider test-specific alternatives or internal access.
+
+  - id: validate-ai-generated-content
+    severity: important
+    description: >
+      AI-generated expressions, code, or content needs validation before use.
+    rationale: >
+      "Should we do anything to check if the expressions are actually valid?"
+
+  # =============================================================================
+  # Coverage Gap Rules
+  # =============================================================================
+
+  - id: missing-test-for-public-method
+    severity: important
+    description: >
+      New public methods in services, repositories, or controllers should have
+      test coverage for both success and error paths.
+    rationale: >
+      Public APIs are contracts. Untested methods are unverified contracts.
+    anti_pattern: |
+      // New service method without corresponding test
+      public async Task<Result> ProcessDataAsync(Input input) { ... }
+    correct_pattern: |
+      // In test file:
+      [TestMethod]
+      public async Task ProcessDataAsync_WithValidInput_ReturnsSuccess() { ... }
+      [TestMethod]
+      public async Task ProcessDataAsync_WithInvalidInput_ThrowsValidationException() { ... }
+
+  - id: missing-test-for-complex-method
+    severity: important
+    description: >
+      Methods with high cyclomatic complexity (multiple branches, error handling)
+      need more thorough test coverage.
+    rationale: >
+      Complex methods have more failure modes. Each branch should be tested.
+
+  # =============================================================================
+  # Fluff Test Rules
+  # =============================================================================
+
+  - id: fluff-test-constructor-only
+    severity: minor
+    description: >
+      Tests that only verify an object can be constructed provide little value.
+      Test behavior, not instantiation.
+    anti_pattern: |
+      [TestMethod]
+      public void Constructor_Works()
+      {
+          var service = new FooService(mockDep.Object);
+          Assert.IsNotNull(service);
+      }
+    correct_pattern: |
+      [TestMethod]
+      public void Constructor_WithNullDependency_ThrowsArgumentNullException()
+      {
+          Assert.ThrowsException<ArgumentNullException>(() => new FooService(null));
+      }
+
+  - id: fluff-test-mock-only
+    severity: minor
+    description: >
+      Tests that only verify mock interactions without asserting outcomes
+      test implementation details, not behavior.
+    anti_pattern: |
+      [TestMethod]
+      public void Process_CallsRepository()
+      {
+          service.Process(input);
+          mockRepo.Verify(x => x.Save(It.IsAny<Entity>()), Times.Once);
+          // No Assert on the actual result
+      }
+    correct_pattern: |
+      [TestMethod]
+      public void Process_SavesEntityWithCorrectValues()
+      {
+          service.Process(input);
+          mockRepo.Verify(x => x.Save(It.Is<Entity>(e =>
+              e.Name == "Expected" && e.Status == Status.Active)));
+      }
+
+  - id: fluff-test-tautological
+    severity: minor
+    description: >
+      Tests that assert a mock returns exactly what you told it to return
+      only verify the mock framework works.
+    anti_pattern: |
+      mockRepo.Setup(x => x.Get(id)).Returns(entity);
+      var result = service.Get(id);
+      Assert.AreEqual(entity, result);  // Tautology
+    correct_pattern: |
+      mockRepo.Setup(x => x.Get(id)).Returns(entity);
+      var result = service.GetWithValidation(id);
+      Assert.IsTrue(result.IsValid);  // Testing actual logic
+
+  - id: fluff-test-notnull-only
+    severity: minor
+    description: >
+      Tests that only assert a result is not null don't verify correctness.
+      Assert on specific expected values or properties.
+    anti_pattern: |
+      var result = service.Process(input);
+      Assert.IsNotNull(result);
+    correct_pattern: |
+      var result = service.Process(input);
+      Assert.IsNotNull(result);
+      Assert.AreEqual("ExpectedValue", result.Name);
+      Assert.AreEqual(Status.Complete, result.Status);
+
+  - id: fluff-test-doesnt-throw
+    severity: minor
+    description: >
+      Tests that just execute code without assertions only verify it doesn't throw.
+      This is insufficient unless exception behavior is the explicit test goal.
+    anti_pattern: |
+      [TestMethod]
+      public void Process_ValidInput_DoesNotThrow()
+      {
+          service.Process(validInput);  // No assertion
+      }
+    correct_pattern: |
+      [TestMethod]
+      public void Process_ValidInput_ReturnsExpectedResult()
+      {
+          var result = service.Process(validInput);
+          Assert.AreEqual(ExpectedResult, result);
+      }
+
+  # =============================================================================
+  # Entity ID Validation Rules
+  # =============================================================================
+
+  - id: invalid-hardcoded-entity-id
+    severity: important
+    description: >
+      Hardcoded entity IDs in tests should match the actual schema format.
+      Using arbitrary strings like "abc" or "test-id" may hide validation bugs.
+    rationale: >
+      Real entity IDs have specific formats. Tests should use realistic data
+      to catch validation issues that would occur in production.
+    anti_pattern: |
+      // Entry IDs are "formId-entryNumber" format
+      var entryId = "test123";
+      var entryId = "abc";
+
+      // Form IDs are numeric
+      var formId = "form-1";
+    correct_pattern: |
+      // Entry IDs: "formId-entryNumber"
+      var entryId = "2-1";
+      var entryId = "15-42";
+
+      // Form IDs: numeric
+      var formId = "1";
+      var formId = "42";
+
+  # =============================================================================
+  # Test File Organization Rules
+  # =============================================================================
+
+  - id: test-file-should-not-exist
+    severity: important
+    description: >
+      Tests for a class should be co-located in the existing test file for
+      that class, not scattered across multiple files.
+    rationale: >
+      Co-location makes it easier to find all tests for a class and ensures
+      consistent test patterns within a test file.
+    anti_pattern: |
+      // Existing: FooServiceTests.cs (tests FooService)
+      // New:      FooServiceHelperTests.cs (also tests FooService methods)
+    correct_pattern: |
+      // Add new tests to FooServiceTests.cs
+      // Use nested classes or regions if needed for organization
+
+  - id: tests-should-be-colocated
+    severity: minor
+    description: >
+      Related tests (same class, same feature) should be in the same test file.
+      Scattering tests makes maintenance harder.
+    rationale: >
+      When fixing a class, developers should find all its tests in one place.
+    exceptions:
+      - Splitting a large (>1000 line) test file by feature area
+      - Separating unit tests from integration tests
+      - Tests for genuinely different classes
+
+  - id: test-file-missing-for-new-service
+    severity: important
+    description: >
+      New service, repository, or controller classes should have a corresponding
+      test file created.
+    anti_pattern: |
+      // New: Cognito/Services/NewService.cs
+      // Missing: Cognito.UnitTests/.../NewServiceTests.cs
+    correct_pattern: |
+      // New: Cognito/Services/NewService.cs
+      // Also new: Cognito.UnitTests/ServiceTests/NewServiceTests.cs
+
+  # =============================================================================
+  # Frontend Test Quality Rules
+  # =============================================================================
+
+  - id: no-dom-coupled-assertions
+    severity: important
+    description: >
+      Don't write test assertions coupled to DOM structure or CSS classes.
+      Use user-centric queries (getByRole, getByText, getByLabelText) and
+      assert on visible behavior, not implementation details. Tests coupled
+      to DOM structure break when markup changes even if behavior is unchanged.
+      See also: frontend-vue.yaml#prefer-vue-testing-library.
+    trigger_patterns:
+      - ".find('.'"
+      - ".findAll('.'"
+      - ".find('[class"
+      - "wrapper.find"
+      - "querySelector('.'"
+    anti_pattern: |
+      expect(wrapper.find('.dialog__title').text())
+        .toBe('Create Form');
+      expect(wrapper.findAll('.list-item').length)
+        .toBe(3);
+      expect(wrapper.find('.btn--primary').exists())
+        .toBe(true);
+    correct_pattern: |
+      expect(screen.getByRole('heading'))
+        .toHaveTextContent('Create Form');
+      expect(screen.getAllByRole('listitem'))
+        .toHaveLength(3);
+      expect(screen.getByRole('button', { name: /submit/i }))
+        .toBeTruthy();
+
+  # =============================================================================
+  # Field-Path / Nested-Model Coverage Rules
+  # =============================================================================
+
+  - id: test-nested-field-paths
+    severity: important
+    description: >
+      Tests for features driven by form field paths (field mapping, submitter
+      person settings, auto-create, indexing, etc.) must include a data model
+      with at least one nested field — a field contained in a Section — not
+      only root-level fields. Field paths can be dotted (e.g. "Section.Email"),
+      and code that resolves them via ModelInstance.GetValue/GetReference works
+      for root fields but breaks for nested ones. A test suite using only
+      top-level fields will pass while the nested-path bug ships. See
+      csharp-architecture.yaml#resolve-field-path-via-modelsource.
+    rationale: >
+      Root-only test data models give false confidence: the most common
+      field-path resolution bug only manifests when the field lives inside a
+      Section.
+    anti_pattern: |
+      // Test data model: all fields at the form root, so a path like
+      // "Email" always resolves via GetValue and the nested-path bug hides.
+      var form = TestForm.With(
+          Field.Text("Name"),
+          Field.Text("Email"));
+    correct_pattern: |
+      // Include a Section-contained field so dotted paths
+      // (e.g. "ContactInfo.Email") exercise ModelSource.TryGetSource.
+      var form = TestForm.With(
+          Field.Text("Name"),
+          Section.Named("ContactInfo").With(
+              Field.Text("Email")));
+
+  - id: consolidate-parameterized-tests
+    severity: minor
+    description: >
+      When several tests share one Arrange/Act/Assert shape and differ only in
+      inputs and expected output, collapse them into a single [DataTestMethod]
+      with [DataRow] cases (xUnit: [Theory]/[InlineData]). A wall of
+      near-identical single-case tests is noise — it inflates the diff and
+      buries the few cases that carry unique setup. Preserve every distinct
+      assertion as a row; keep genuinely unique-setup, soundness-regression, or
+      differently-shaped cases as their own methods. Distinct from the
+      fluff-test-* rules (which target individually low-value tests) — this
+      targets redundant repetition across many otherwise-valid tests.
+    anti_pattern: |
+      [TestMethod] public void Eval_A() { /* arrange */ Assert.AreEqual(true, Run("a")); }
+      [TestMethod] public void Eval_B() { /* arrange */ Assert.AreEqual(false, Run("b")); }
+      [TestMethod] public void Eval_C() { /* arrange */ Assert.AreEqual(null, Run("c")); }
+    correct_pattern: |
+      [DataTestMethod]
+      [DataRow("a", true)]
+      [DataRow("b", false)]
+      [DataRow("c", null)]
+      public void Eval_ReturnsExpected(string input, bool? expected)
+      {
+          Assert.AreEqual<bool?>(expected, Run(input));
+      }

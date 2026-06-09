@@ -1,0 +1,319 @@
+# Frontend Vue/TypeScript Rules
+# Patterns for Vue 2.7 Composition API and TypeScript
+
+category: frontend-vue
+file_patterns:
+  - "*.vue"
+  - "*.ts"
+  - "*.tsx"
+  - "!*.d.ts"
+  - "!**/node_modules/**"
+
+rules:
+  - id: no-redundant-props
+    severity: important
+    description: >
+      Don't add props that duplicate data already available through injection
+      or context (e.g., session).
+    anti_pattern: |
+      defineProps<{
+        accountId: string;  // Redundant if session is injected and has accountId
+      }>();
+    correct_pattern: |
+      const { session } = inject('session');
+      // Use session.accountId directly
+
+  - id: verify-props-exist
+    severity: critical
+    description: >
+      Don't reference props in templates that aren't defined in defineProps.
+    anti_pattern: |
+      <template>
+        <div>{{ accountId }}</div>  <!-- accountId not in defineProps! -->
+      </template>
+      <script setup>
+      defineProps<{ userId: string }>();  // No accountId here
+      </script>
+    correct_pattern: |
+      <template>
+        <div>{{ userId }}</div>
+      </template>
+      <script setup>
+      defineProps<{ userId: string }>();
+      </script>
+
+  - id: no-unnecessary-wrapper-properties
+    severity: important
+    description: >
+      Don't create wrapper properties, computed values, or indirection when
+      direct property access works. If a property is already reactive/tracked,
+      bind to it directly.
+    rationale: >
+      "Why is this needed? selectionType is already a string, so this
+      calculated property does nothing?"
+    anti_pattern: |
+      field.meta.addProperty({ name: "selectionTypeDisplayValue", type: String }).calculated({
+          calculate: function () { return this.get_selectionType(); },
+          onChangeOf: ["selectionType"]
+      });
+      // Template: {binding selectionTypeDisplayValue}
+    correct_pattern: |
+      // Template: {binding selectionType}
+
+  - id: dialog-dismissal-consistency
+    severity: important
+    description: >
+      Handle all dialog dismissal paths consistently. Cancel/revert logic
+      must trigger for Cancel button, X button, Escape key, and backdrop click.
+    rationale: >
+      "Can the dialog be dismissed without clicking cancel?"
+    anti_pattern: |
+      $.fn.dialog({
+          buttons: [{
+              label: "Cancel",
+              isCancel: true,
+              click: function () { revertChanges(); }  // X button bypasses this!
+          }]
+      });
+    correct_pattern: |
+      $.fn.dialog({
+          cancel: function () {
+              revertChanges();  // Called for ALL dismissal paths
+          },
+          buttons: [
+              { label: "Cancel", isCancel: true },
+              { label: "Confirm", autoClose: true }
+          ]
+      });
+
+  - id: loading-state-finally
+    severity: important
+    description: >
+      Always use finally block to reset loading state.
+    anti_pattern: |
+      try {
+        loading.value = true;
+        const result = await fetchData();
+      } catch (e) {
+        error.value = e.message;
+      }
+      // loading never set to false on error!
+    correct_pattern: |
+      try {
+        loading.value = true;
+        const result = await fetchData();
+      } catch (e) {
+        error.value = e.message;
+      } finally {
+        loading.value = false;
+      }
+
+  - id: use-prop-type-for-functions
+    severity: minor
+    description: >
+      When defining function props, use PropType for proper TypeScript typing.
+    anti_pattern: |
+      props: {
+        openExpressionBuilder: Function  // TS complains
+      }
+    correct_pattern: |
+      import { PropType } from 'vue';
+      props: {
+        openExpressionBuilder: {
+          type: Function as PropType<(field: Field) => void>
+        }
+      }
+
+  - id: use-toref-for-composables
+    severity: minor
+    description: >
+      When passing props to composables, use toRef so the composable
+      receives a ref instead of a function.
+    anti_pattern: |
+      const result = useMyComposable(() => props.value);
+    correct_pattern: |
+      import { toRef } from 'vue';
+      const result = useMyComposable(toRef(props, 'value'));
+
+  - id: composables-called-synchronously
+    severity: important
+    description: >
+      Composables (useXyz functions) must be called synchronously in the
+      component setup function or composable body — never from inside async
+      callbacks, promise .then() handlers, or event handlers. Composables may
+      hook into the current component lifecycle, which is only available
+      during synchronous setup. Store the composable result in a top-level
+      variable and reference it from callbacks.
+    rationale: >
+      "useXyz is typically reserved for functions intended to be called from a
+      component setup function. They shouldn't be used to represent
+      otherwise-shared code. Composables should always be 'used' (called)
+      synchronously, since they may idiomatically hook into the current
+      component lifecycle."
+    anti_pattern: |
+      export function useMyFeature() {
+        const handleAction = async () => {
+          await someAsyncWork();
+          // BAD: composable called inside async callback
+          const state = useSomeState();
+          state.onComplete?.();
+        };
+      }
+    correct_pattern: |
+      export function useMyFeature() {
+        // GOOD: composable called synchronously at top level
+        const state = useSomeState();
+
+        const handleAction = async () => {
+          await someAsyncWork();
+          state.onComplete?.();
+        };
+      }
+
+  - id: no-any-in-union-types
+    severity: important
+    description: >
+      Adding | any to a union pollutes the entire type to become any.
+    anti_pattern: |
+      type Config = string | number | any;  // Entire type becomes any
+    correct_pattern: |
+      type Config = string | number | null;  // Be specific
+
+  - id: client-server-edge-case-parity
+    severity: important
+    description: >
+      When implementing equivalent logic on client and server, ensure edge cases
+      are handled identically. Test both paths with the same inputs.
+    example: |
+      // Server (C#):
+      if (string.IsNullOrEmpty(value)) continue;
+
+      // Client must match:
+      if (!value || value === '') continue;
+
+  - id: type-safe-filter-keys
+    severity: important
+    description: >
+      Use keyof constraints for filter config keys to ensure they match the
+      criteria type. This catches mismatches like 'FormId' vs 'FormIds' at
+      compile time.
+    anti_pattern: |
+      // Key is a plain string - no type checking
+      createDropdownFilter({
+        key: 'FormId',  // Oops! Backend expects 'FormIds'
+        label: 'Form',
+        options: formOptions
+      })
+    correct_pattern: |
+      // Generic constraint ensures key matches criteria type
+      createDropdownFilter<PersonSubmissionFilterCriteria>({
+        key: 'FormIds',  // TypeScript error if this doesn't exist on criteria
+        label: 'Form',
+        options: formOptions
+      })
+
+      // Or use keyof directly
+      interface FilterConfig<T> {
+        key: keyof T;
+        label: string;
+        options: FilterOption[];
+      }
+
+  - id: prefer-vue-testing-library
+    severity: important
+    description: >
+      Use Vue Testing Library (@testing-library/vue) for component tests that
+      check behavior (element visibility, button clicks, user interactions).
+      Use @vue/test-utils only when testing prop changes, data flow, or internal
+      component mechanics that have no DOM representation.
+      See also: testing.yaml#no-dom-coupled-assertions for assertion-level guidance.
+    rationale: >
+      VTL encourages testing from the user's perspective, making tests more
+      resilient to refactoring. It's already installed in the spa project.
+    anti_pattern: |
+      import { mount } from '@vue/test-utils';
+      const wrapper = mount(MyComponent, { propsData: { show: true } });
+      expect(wrapper.find('.my-class').exists()).toBe(true);
+      wrapper.find('button').trigger('click');
+    correct_pattern: |
+      import { render, screen, fireEvent } from '@testing-library/vue';
+      render(MyComponent, { props: { show: true } });
+      expect(screen.getByText('My Content')).toBeTruthy();
+      await fireEvent.click(screen.getByRole('button'));
+
+  - id: use-typed-emits
+    severity: important
+    description: >
+      Use typed emits via defineEmits<T>() for type-safe event emission.
+      This catches misspelled event names and wrong payload types at compile
+      time.
+    trigger_patterns:
+      - "defineEmits("
+      - "emit("
+    anti_pattern: |
+      const emit = defineEmits(['update', 'close']);
+      emit('update', payload); // No type checking
+    correct_pattern: |
+      const emit = defineEmits<{
+        (e: 'update', value: FormConfig): void;
+        (e: 'close'): void;
+      }>();
+      emit('update', payload); // Type-checked
+
+  - id: no-consumer-local-type-extension
+    severity: important
+    description: >
+      Don't extend a shared server-generated type (from
+      @cognitoforms/types/server-types) or a shared config type with a
+      consumer-local interface just to tack on fields the UI needs. If the UI
+      reads a field, the backend payload should supply it flat — add the field
+      to the controller's anonymous object and to the shared type. Local
+      extensions hide the real contract and drift independently from the
+      backend over time.
+    trigger_patterns:
+      - "interface \\w+ extends PersonFormInfo"
+      - "interface \\w+ extends \\w+Info"
+      - "interface \\w+ extends \\w+Settings"
+    anti_pattern: |
+      // IdentifySubmitterSettings.vue <script setup>
+      // BAD: local extension adds a field the backend doesn't return flat
+      interface PersonFormOption extends PersonFormInfo {
+        PeopleFormSettings?: {
+          IsGuestList?: boolean;
+        };
+      }
+
+      const forms = ref<PersonFormOption[]>([]);
+      // template reads form.PeopleFormSettings?.IsGuestList
+    correct_pattern: |
+      // 1. Backend returns IsGuestList flat on the payload:
+      //    FormBuilderController.cs → new { f.Id, f.Name, IsGuestList = ... }
+      // 2. Shared type updated:
+      //    PersonFormInfo (server-types) gains IsGuestList?: boolean
+      // 3. Vue component uses PersonFormInfo directly — no local extension:
+      const forms = ref<PersonFormInfo[]>([]);
+      // template reads form.IsGuestList directly
+
+  - id: no-overwide-type-unions
+    severity: minor
+    description: >
+      Type unions should match the values the data actually produces. Don't add
+      members (e.g. number, string) that no code path can emit. If a third-party
+      prop forces a wider type, narrow at the boundary or add a comment
+      explaining the extra arm is defensive.
+    anti_pattern: |
+      // ActionInfo.Id is always number
+      const selected = ref<number | string | null>(null);
+    correct_pattern: |
+      const selected = ref<number | null>(null);
+
+  - id: no-inline-styles
+    severity: minor
+    description: >
+      Avoid inline style="..." attributes in Vue templates. Use a Tailwind
+      utility class or move the rule into the component's <style> block so
+      styling stays consistent and themeable.
+    anti_pattern: |
+      <div class="mt-4" style="width: 50%;">
+    correct_pattern: |
+      <div class="mt-4 w-1/2">

@@ -1,0 +1,61 @@
+# Security Rules
+# Critical security patterns - lower confidence threshold (50%)
+
+category: security
+file_patterns:
+  - "*.cs"
+  - "*.ts"
+  - "*.tsx"
+  - "*.vue"
+
+rules:
+  - id: sanitize-imported-html
+    severity: critical
+    description: >
+      Any HTML content imported from external sources must go through
+      the HTML sanitation filter server-side.
+    trigger_patterns:
+      - "innerHTML"
+      - "dangerouslySetInnerHTML"
+      - "v-html"
+    anti_pattern: |
+      element.innerHTML = importedContent;  // XSS risk!
+    correct_pattern: |
+      var sanitizedHtml = HtmlSanitizer.Sanitize(importedHtml);
+      element.innerHTML = sanitizedHtml;
+
+  - id: validate-input-ranges
+    severity: important
+    description: >
+      When accepting user input that has a valid range, clamp to that range
+      on the server to handle invalid input gracefully.
+    anti_pattern: |
+      var size = inputSize;  // Could be negative or huge!
+    correct_pattern: |
+      var size = Math.Max(0, Math.Min(6, inputSize));
+
+  - id: feature-flags-for-changes
+    severity: minor
+    description: >
+      Behavioral changes should be behind feature flags to enable rollback
+      and gradual rollout.
+    rationale: >
+      "It's good to keep things behind a flag to the extent possible."
+
+  - id: log-telemetry-at-limits
+    severity: minor
+    description: >
+      When implementing throttling or limits, log telemetry so you can
+      monitor and adjust.
+    rationale: >
+      "Should we log telemetry when this happens so we know we're hitting
+      the limit and can adjust things if needed?"
+
+  - id: sensible-defaults-not-unlimited
+    severity: important
+    description: >
+      When adding new configuration, start with reasonable limits
+      rather than unlimited.
+    rationale: >
+      "Start without throttling or start with max concurrency 1
+      (or some reasonable amount, like 5)?"

@@ -1,0 +1,596 @@
+# C# Architecture Rules
+# Patterns specific to Cognito Forms backend
+
+category: csharp-architecture
+file_patterns:
+  - "*.cs"
+  - "!*Tests.cs"
+  - "!*Test.cs"
+  - "!**/TestFiles/**"
+
+rules:
+  - id: prefer-abstract-over-lambda
+    severity: important
+    description: >
+      Use abstract classes with sealed private implementations rather than
+      lambda-based patterns for strategy/provider patterns.
+    trigger_patterns:
+      - "public Func<"
+      - "public Action<"
+      - "{ get; set; } = "
+    anti_pattern: |
+      public class ProviderContext
+      {
+          public Func<PaymentAccount, bool, string> GetApiKey { get; set; }
+      }
+    correct_pattern: |
+      public abstract class StripeEventContext
+      {
+          public abstract string GetApiKey(PaymentAccount account, bool isLiveMode);
+
+          public static readonly StripeEventContext Stripe = new StripeContext();
+          private sealed class StripeContext : StripeEventContext { }
+      }
+
+  - id: no-di-default-values
+    severity: important
+    description: >
+      Never use default values for service constructor parameters.
+      Register all dependencies in the DI container instead.
+    trigger_patterns:
+      - "= null)"
+      - "= default)"
+    anti_pattern: |
+      public CognitoPayService(
+          IFeatureFlagService featureFlagService,
+          IStripeServiceFactory stripeServiceFactory = null) { }
+    correct_pattern: |
+      public CognitoPayService(
+          IFeatureFlagService featureFlagService,
+          IStripeServiceFactory stripeServiceFactory) { }
+
+  - id: no-unused-di-injection
+    severity: important
+    description: >
+      Don't inject dependencies you don't use. Remove constructor parameters
+      and backing fields for services no method in the class actually calls.
+      Separately, when a controller needs IStorageContext, inject
+      IOrganizationContext through the constructor and read
+      orgContext.StorageContext — don't inject an unrelated service (e.g.
+      IFormsService) solely to dereference IOrganizationContext off it via a
+      cast. The cast pattern is acceptable only inside non-controller service
+      code where IOrganizationContext isn't already available in the DI graph.
+    anti_pattern: |
+      public class MyController : ServiceController
+      {
+          readonly Module<IFormsService> formsModule;  // Never used!
+
+          public MyController(Module<IFormsService> formsModule)
+          {
+              this.formsModule = formsModule;
+          }
+
+          public Task<ActionResult> GetData()
+          {
+              // Reaching through FormsService only to land on IOrganizationContext
+              var storageContext = ((IOrganizationContext)FormsService).StorageContext;
+              // ...
+          }
+      }
+    correct_pattern: |
+      public class MyController : ServiceController
+      {
+          readonly IOrganizationContext orgContext;
+
+          public MyController(IOrganizationContext orgContext)
+          {
+              this.orgContext = orgContext;
+          }
+
+          public Task<ActionResult> GetData()
+          {
+              var storageContext = orgContext.StorageContext;
+              // ...
+          }
+      }
+
+  - id: no-storage-context-query
+    severity: critical
+    description: >
+      StorageContext.Query<T>() is obsolete. Use Get<T>(id) for ID lookups,
+      GetRange<T>(prefix) for prefix-based scans, or GetAll<T>() for full scans.
+    trigger_patterns:
+      - ".Query<"
+      - "StorageContext.Query"
+    anti_pattern: |
+      var results = StorageContext.Query<Form>()
+          .Where(f => f.IsActive)
+          .ToList();
+    correct_pattern: |
+      await foreach (var form in StorageContext.GetAll<Form>().ConfigureAwait(false))
+      {
+          if (form.IsActive) yield return form;
+      }
+
+  - id: colocate-interfaces
+    severity: minor
+    description: >
+      Place interfaces in the same file as their primary implementation
+      when there's a 1:1 relationship.
+    anti_pattern: |
+      // ICognitoPayService.cs
+      public interface ICognitoPayService { }
+
+      // CognitoPayService.cs
+      public class CognitoPayService : ICognitoPayService { }
+    correct_pattern: |
+      // CognitoPayService.cs
+      public interface ICognitoPayService
+      {
+          Task<PaymentAccount> CreateAccountAsync(string email);
+      }
+
+      public class CognitoPayService : ICognitoPayService { }
+
+  - id: specific-class-names
+    severity: minor
+    description: >
+      Class names should indicate their purpose and scope. Avoid vague names
+      like ProviderContext, ServiceHelper, DataManager.
+    examples:
+      bad:
+        - ProviderContext
+        - ServiceHelper
+        - DataManager
+        - Utility
+      good:
+        - StripeEventContext
+        - PaymentProviderContext
+        - EntryIndexBuildMetrics
+
+  - id: model-namespace-entities-only
+    severity: minor
+    description: >
+      The .Model namespace should only contain actual entities, not DTOs,
+      filter criteria, or other classes.
+    anti_pattern: |
+      namespace Cognito.Core.Model.Payment
+      {
+          public class PaymentFilterCriteria { }  // Not an entity!
+      }
+    correct_pattern: |
+      namespace Cognito.Core.CognitoPay
+      {
+          public class PaymentFilterCriteria { }
+      }
+
+  - id: sync-over-async-conventions
+    severity: critical
+    description: >
+      Prefer async/await. Sync-over-async (.Result) is allowed when necessary,
+      but every async operation in the call chain MUST use ConfigureAwait(false).
+      Task.Run should NOT be used. See CompileEntryIndexesSync for a reference
+      example of acceptable sync-over-async.
+    trigger_patterns:
+      - ".Result"
+      - ".Wait()"
+      - "Task.Run("
+    anti_pattern: |
+      // BAD: Task.Run to avoid deadlock — not allowed
+      var result = Task.Run(() => GetDataAsync()).Result;
+
+      // BAD: .Result without ConfigureAwait(false) downstream — risks deadlock
+      var result = GetDataAsync().Result;
+      // where GetDataAsync internally does:
+      //   await SomeOp();  // Missing ConfigureAwait(false)!
+    correct_pattern: |
+      // BEST: Use async/await when possible
+      var result = await GetDataAsync().ConfigureAwait(false);
+
+      // ACCEPTABLE: Sync-over-async when async is not feasible,
+      // but ALL downstream async ops MUST use ConfigureAwait(false)
+      var result = GetDataAsync().Result;
+      // where GetDataAsync internally does:
+      //   await SomeOp().ConfigureAwait(false);  // Every await has ConfigureAwait(false)
+
+  - id: isolate-non-critical-operations
+    severity: important
+    description: >
+      When adding non-critical operations (logging, index updates, telemetry,
+      customer resolution, etc.) inside a shared try/catch block, wrap them in
+      their own try/catch if a failure should not prevent the remaining logic
+      from executing. Ask: "If this new code throws, should the outer operation
+      still succeed?" If yes, isolate it.
+    trigger_patterns:
+      - ".GetAwaiter().GetResult()"
+      - ".Result"
+      - "await "
+    anti_pattern: |
+      try
+      {
+          StoreEntry(entry);
+          // New non-critical operation added inside shared try/catch
+          var customerId = ResolveCustomerAsync(form, entry).GetAwaiter().GetResult();
+          entry.Order.CustomerId = customerId;
+          ScheduleIndexUpdate(entry);
+      }
+      catch (Exception e)
+      {
+          // If ResolveCustomerAsync throws, ScheduleIndexUpdate is skipped!
+          LogError(e);
+      }
+    correct_pattern: |
+      try
+      {
+          StoreEntry(entry);
+          // Isolated: failure here doesn't block index updates
+          try
+          {
+              var customerId = ResolveCustomerAsync(form, entry).GetAwaiter().GetResult();
+              entry.Order.CustomerId = customerId;
+          }
+          catch (Exception e)
+          {
+              LogError(e);
+          }
+          ScheduleIndexUpdate(entry);
+      }
+      catch (Exception e)
+      {
+          LogError(e);
+      }
+
+  - id: always-pass-cancellation-token
+    severity: important
+    description: >
+      Enable graceful cancellation by accepting and passing CancellationToken.
+    anti_pattern: |
+      public async Task<Order?> GetByIdAsync(string id)
+      {
+          return await _context.Orders.FirstOrDefaultAsync(o => o.Id == id);
+      }
+    correct_pattern: |
+      public async Task<Order?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+      {
+          return await _context.Orders.FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+      }
+
+  - id: configure-await-in-library-code
+    severity: important
+    description: >
+      In library/service code (not ASP.NET controllers), use ConfigureAwait(false)
+      to avoid deadlocks.
+    anti_pattern: |
+      // In library code
+      var response = await _httpClient.GetAsync(url);
+    correct_pattern: |
+      // In library code
+      var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+
+  - id: method-name-reflects-behavior
+    severity: important
+    description: >
+      Method names should reflect whether they read or write. Names like
+      Resolve, Get, Find, Query suggest read-only operations and should not
+      mutate state. Use Update, Set, Create, Save for methods that write.
+    anti_pattern: |
+      // "Resolve" suggests read-only but method updates the index
+      public async Task<bool> ResolveFieldMappingAsync(Form form, FormEntry entry)
+      {
+          // ... finds person entry ...
+          await indexRepository.Update(index.Id, ...);  // Writes!
+      }
+    correct_pattern: |
+      // "Update" clearly indicates write operation
+      public async Task<bool> UpdateFieldMappingAsync(Form form, FormEntry entry)
+      {
+          // ... finds person entry ...
+          await indexRepository.Update(index.Id, ...);
+      }
+
+  - id: reuse-existing-enums
+    severity: important
+    description: >
+      Before creating new enums, check if an equivalent enum already exists
+      in the codebase. Reuse existing types for consistency.
+    anti_pattern: |
+      // Creating new enum when PaymentProcessor already exists
+      public enum ProcessorType
+      {
+          Stripe,
+          Square
+      }
+    correct_pattern: |
+      // Reuse existing enum
+      using Cognito.Payment;  // Where PaymentProcessor is defined
+
+      public PaymentProcessor Processor { get; set; }
+
+  - id: composite-id-separator
+    severity: minor
+    description: >
+      Use pipe `|` as the separator for composite IDs, not dash or underscore.
+      This is the established convention in the codebase.
+    anti_pattern: |
+      [Id("[PersonEntryId]-[PaymentAccountId]")]  // Wrong separator
+      public class ProcessorCustomerMap { }
+    correct_pattern: |
+      [Id("[PersonEntryId]|[PaymentAccountId]")]  // Correct: pipe separator
+      public class ProcessorCustomerMap { }
+
+  - id: prefer-async-storage-over-sync-service
+    severity: important
+    description: >
+      In async methods, use async StorageContext methods instead of sync
+      FormsService wrappers. FormsService.GetEntry() and GetForm() are sync
+      and block the thread.
+    anti_pattern: |
+      private async Task VerifyAccessAsync(string entryId)
+      {
+          var entry = FormsService.GetEntry(entryId);  // Sync - blocks thread!
+          var form = FormsService.GetForm(entry.Form.Id);  // Sync - blocks thread!
+      }
+    correct_pattern: |
+      private async Task VerifyAccessAsync(string entryId)
+      {
+          var storageContext = ((IOrganizationContext)FormsService).StorageContext;
+          var entry = await storageContext.GetAsync<FormEntry>(entryId);
+          var form = await storageContext.GetAsync<Form>(entry.Form.Id);
+      }
+
+  - id: dotnetonly-for-computed-properties
+    severity: important
+    description: >
+      Mark computed/derived properties with [DotnetOnly] to exclude them from
+      the dynamic model (ExoWeb) and generated TypeScript type definitions.
+      This applies to properties that derive their value from other properties
+      and are only needed on the server side.
+    trigger_patterns:
+      - "public bool Is"
+      - "=> "
+    anti_pattern: |
+      // Missing [DotnetOnly] - will be included in TS types unnecessarily
+      public bool IsPersonForm =>
+          PeopleFormSettings != null
+          && PeopleFormSettings.Enabled
+          && !PeopleFormSettings.Name.IsNullOrEmpty();
+    correct_pattern: |
+      // Excluded from dynamic model and TS type generation
+      [DotnetOnly]
+      public bool IsPersonForm =>
+          PeopleFormSettings != null
+          && PeopleFormSettings.Enabled
+          && !PeopleFormSettings.Name.IsNullOrEmpty();
+
+  - id: lazy-loaded-module-services
+    severity: minor
+    description: >
+      When a service needs to resolve another service via Module<T>, use a
+      lazy-loaded property pattern instead of inline resolution. This avoids
+      repeated GetService() calls and follows the established pattern in
+      LinkedLookupSyncActionService, LinkedLookupExecutionService, etc.
+    trigger_patterns:
+      - "formsModule.GetService("
+      - "(FormsService)formsModule"
+    anti_pattern: |
+      public class MyService
+      {
+          readonly Module<IFormsService> formsModule;
+
+          public void DoWork()
+          {
+              // Inline resolution - repeated in multiple methods
+              var formsService = (FormsService)formsModule.GetService(orgContext.Organization);
+              var form = formsService.GetForm(formId);
+          }
+      }
+    correct_pattern: |
+      public class MyService
+      {
+          readonly Module<IFormsService> formsModule;
+
+          // Lazy-loaded property - resolved once, cached for reuse
+          FormsService formsService;
+          FormsService FormsService => formsService ?? (formsService = (FormsService)formsModule.GetService(orgContext.Organization));
+
+          public void DoWork()
+          {
+              var form = FormsService.GetForm(formId);
+          }
+      }
+
+  - id: no-cross-controller-duplication
+    severity: important
+    description: >
+      Don't duplicate logic across controllers. If two controllers need the
+      same behavior, extract it into a shared service method or base
+      controller method. Watch for equivalent LINQ queries, mapping logic,
+      or business rules appearing in multiple controller files.
+    anti_pattern: |
+      // FormBuilderController.cs
+      var result = entries.Where(e => e.IsActive)
+          .Select(e => new { e.Id, e.Name });
+
+      // FormsAdminController.cs (same logic copy-pasted)
+      var result = entries.Where(e => e.IsActive)
+          .Select(e => new { e.Id, e.Name });
+    correct_pattern: |
+      // FormsService.cs (shared)
+      public IEnumerable<T> GetActiveEntries() { ... }
+
+      // Both controllers call the service
+
+  - id: avoid-org-get-storage-context
+    severity: important
+    description: >
+      Avoid Organization.GetStorageContext() — treat it as deprecated. Obtain
+      IStorageContext through dependency injection. Preferred patterns in
+      order: 1) Constructor-inject IOrganizationContext and read
+      orgContext.StorageContext (the default for controllers and services in
+      the DI graph); 2) Constructor-inject IStorageContext directly when the
+      consumer only needs storage and no other org context; 3) As a last
+      resort in non-controller code where IOrganizationContext isn't
+      available, cast an existing service via
+      ((IOrganizationContext)Service).StorageContext. Controllers should not
+      rely on the cast pattern — register IOrganizationContext in the
+      constructor instead.
+    trigger_patterns:
+      - "Organization.GetStorageContext()"
+      - "org.GetStorageContext()"
+      - "((IOrganizationContext)"
+    anti_pattern: |
+      // BAD: Uses deprecated ambient accessor
+      var ctx = Organization.GetStorageContext();
+      var form = await ctx.GetAsync<Form>(id);
+
+      // BAD (in a controller): casting an unrelated service instead of
+      // injecting IOrganizationContext
+      public class FormBuilderController : ServiceController
+      {
+          public async Task<ActionResult> GetScript(...)
+          {
+              var storageContext = ((IOrganizationContext)FormsService).StorageContext;
+              // ...
+          }
+      }
+    correct_pattern: |
+      // BEST: Controller injects IOrganizationContext directly
+      public class FormBuilderController : ServiceController
+      {
+          readonly IOrganizationContext orgContext;
+
+          public FormBuilderController(IOrganizationContext orgContext, /* ... */)
+          {
+              this.orgContext = orgContext;
+          }
+
+          public async Task<ActionResult> GetScript(...)
+          {
+              var storageContext = orgContext.StorageContext;
+              // ...
+          }
+      }
+
+      // ALSO GOOD: Pass IStorageContext via constructor to a narrow consumer
+      public PageScript(..., IStorageContext storageContext)
+      {
+          StorageContext = storageContext;
+      }
+
+      // ACCEPTABLE (non-controller, IOrganizationContext not in DI graph):
+      // Fall back to casting a service that already implements it.
+      var ctx = ((IOrganizationContext)FormsService).StorageContext;
+
+  - id: prefer-bool-equality-over-coalesce
+    severity: minor
+    description: >
+      When testing a nullable bool produced by a null-conditional chain, prefer
+      `x?.Prop == true` over `(x?.Prop ?? false)`. Both are equivalent, but
+      `== true` is the clearer, team-preferred idiom.
+    anti_pattern: |
+      if ((storeFormResult.oldForm?.IsPersonForm ?? false) && !form.IsPersonForm)
+    correct_pattern: |
+      if (storeFormResult.oldForm?.IsPersonForm == true && !form.IsPersonForm)
+
+  - id: resolve-field-path-via-modelsource
+    severity: critical
+    description: >
+      When resolving a form field path and reading its value from a
+      ModelInstance, never pass the path to ModelInstance.GetValue(string) or
+      call GetReference(leafProperty) against the root instance directly. Field
+      paths (from form.GetFieldPath(...), SubmitterPersonSettings.*FieldPath, or
+      any dotted index/name path) can be nested — e.g. a field inside a Section
+      such as "Section.Email". ModelInstance.GetValue(string) only accepts a
+      direct property name (a Type.Values[name] lookup) and silently
+      fails/throws for dotted paths; GetReference(leafProp) against the root is
+      wrong when the leaf property lives on a nested child type. Use
+      ModelSource.TryGetSource to walk the path, then read off the resolved
+      source. Canonical examples: EntryIndexService.ResolveCustomerEntryIdAsync
+      (PersonField case), IndexBuilder.cs, AutoCreateEntriesService.cs.
+    trigger_patterns:
+      - "GetFieldPath"
+      - "FieldPath"
+      - ".GetValue("
+      - ".GetReference("
+    anti_pattern: |
+      // Path may be nested (e.g. "Section.Email"); GetValue takes a property
+      // NAME, not a path — this silently fails / throws for nested fields.
+      var emailPath = form.GetFieldPath(settings.EmailFieldPath);
+      var email = (string)entryInstance.GetValue(emailPath);
+
+      // Equally wrong: GetReference of a leaf property against the root
+      // instance when the property belongs to a nested child type.
+      var nameRef = entryInstance.GetReference(nameLeafProperty);
+    correct_pattern: |
+      // Walk the (possibly nested) path with ModelSource.TryGetSource,
+      // then read the value/reference off the resolved source.
+      if (ModelSource.TryGetSource(entryType, settings.EmailFieldPath, out var source))
+      {
+          var email = (string)source.GetValue(entryInstance);
+      }
+
+      if (ModelSource.TryGetSource(entryType, settings.NameFieldPath, out var nameSource))
+      {
+          var nameRef = nameSource.GetReference(entryInstance);
+      }
+
+  - id: visitor-use-base-dispatch
+    severity: important
+    description: >
+      When subclassing an ExpressionVisitor-style base (e.g.
+      ModelExpression.ExpressionVisitor), drive traversal through the base Visit
+      dispatch and override the typed Visit* methods. Do not hand-roll your own
+      recursive walk — the base dispatch carries shared protections
+      (EnsureSufficientExecutionStack guards against stack overflow on deep
+      trees) that a custom recursion silently loses. Follow existing precedent:
+      ModelPath.PathBuilder, JavaScriptExpressionTranslator.ExpressionBuilder.
+    trigger_patterns:
+      - "ExpressionVisitor"
+      - "NodeType =="
+      - "private.*Evaluate(Expression"
+    anti_pattern: |
+      // Custom recursion bypasses the base stack-overflow guard
+      private bool? Fold(Expression expr) =>
+          expr switch {
+              BinaryExpression b => FoldBinary(b),
+              UnaryExpression u => FoldUnary(u),
+              _ => null
+          };
+    correct_pattern: |
+      // Route every node through base.Visit so EnsureSufficientExecutionStack applies
+      protected override Expression Visit(Expression exp) { /* per-node boundary */ return base.Visit(exp); }
+      protected override Expression VisitBinary(BinaryExpression b) { /* ... */ }
+
+  - id: prefer-bool-nullable-for-tristate
+    severity: minor
+    description: >
+      For true/false/unknown logic, prefer the language-native nullable bool
+      (bool?) over a hand-rolled three-valued enum. C#'s lifted &, |, and !
+      operators already implement three-valued (Kleene) logic on bool?, so a
+      custom enum only adds a type, its own truth tables, and a mapping layer
+      for no gain. Introduce a dedicated enum only when the states carry domain
+      meaning beyond truth values.
+    anti_pattern: |
+      enum Kleene { True, False, Unknown }
+      Kleene And(Kleene a, Kleene b) => /* reimplements the lifted & operator */;
+    correct_pattern: |
+      bool? result = left & right;   // null = unknown; lifted & is three-valued AND
+
+  - id: qualify-generic-type-names
+    severity: minor
+    description: >
+      Give enums and domain types a qualifier that situates them in their
+      feature rather than a bare generic noun. In a large shared codebase a type
+      named `Viability` or `Mode` is ambiguous at the use site, where
+      `WorkflowActionViability` reads correctly. Also avoid obscure/academic
+      names a reader must look up (e.g. `Kleene`) — name for the concept, not
+      the theory behind it. Complements specific-class-names (which targets
+      vague helper class names) by covering enums and obscure-jargon names.
+    examples:
+      bad:
+        - Viability
+        - Kleene
+        - Mode
+      good:
+        - WorkflowActionViability
+        - PaymentRetryMode

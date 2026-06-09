@@ -19,6 +19,12 @@ $ARGUMENTS
 
 ---
 
+## Collaboration Stance (MANDATORY)
+
+!`cat .claude/skill-config/team-architect-stance.md 2>/dev/null || cat ~/.claude/skills/_components/team-architect-stance.md`
+
+---
+
 ## Step 1: Context Gathering (Parallel Subagents)
 
 !`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
@@ -101,6 +107,14 @@ Based on the evidence, form 1-3 hypotheses about root cause. For each:
 ### 2c. Open Questions
 
 List anything that can't be determined from the evidence alone — these become AskUserQuestion items in Step 3.
+
+---
+
+## Step 2.5: Reuse & Convergence Analysis (BLOCKING)
+
+Before verifying symptoms or shaping a fix, inventory the existing systems the fix should build on or converge toward. For a bug, the highest-value finding is often an existing *correct* implementation the buggy code should be refactored to match — not new code.
+
+!`cat .claude/skill-config/reuse-first-discovery.md 2>/dev/null || cat ~/.claude/skills/_components/reuse-first-discovery.md`
 
 ---
 
