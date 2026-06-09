@@ -100,6 +100,27 @@ Each scenario name corresponds to the file `docs/testing/mcp-tests/{scenario-nam
 
 ## Step 2: Server Lifecycle — Kill, Start, and Verify
 
+> **Orchestrator-managed runtime (lazy-pipeline / `--batch` runs):** when `/mcp-test`
+> is driven by `/lazy-batch` (or `/lazy`), the **orchestrator** pre-boots the dev
+> runtime in its own long-lived session and BLOCKS on `GET
+> http://localhost:3333/health` == 200 BEFORE dispatching this cycle. In that case
+> the server is ALREADY running and MCP-ready: **do NOT kill/restart it, do NOT
+> `npx kill-port`, and do NOT start a background `tauri:dev`.** Treat
+> `server_was_running = true` and skip straight to the Step 4 *readiness* check.
+> The reason the orchestrator owns the boot: this skill runs INLINE inside a cycle
+> subagent that has no `Agent` tool, and a background process it starts does NOT
+> survive the subagent's turn boundary — so a subagent that backgrounded the build
+> and ended its turn produced a resultless, sentinel-less return (a contract
+> violation). The orchestrator's session persists across the subagent's turn; the
+> subagent's does not.
+>
+> **NO FIRE-AND-FORGET (applies to ALL invocations, human or pipeline):** never
+> start a long build/process as a background task and then end the turn waiting on
+> background events. Either drive the validation to a definitive pass/fail + a
+> written sentinel within the turn, or use a BLOCKING foreground readiness wait
+> (a `curl`/`sleep` `until`-loop, or a Monitor you await). A return with no result
+> and no sentinel wastes the run.
+
 **CRITICAL: Test isolation requires a fresh server.** The Strudel sidecar maintains internal state (cycle counter, pattern scheduling, PLL clock) that persists across `reset_state` calls. A sidecar that connected in a prior session may report `is_connected: true` but have a stuck `current_cycle: 0.0`, producing zero voices. The ONLY reliable fix is a full app restart.
 
 ### When to restart (ALWAYS do this)

@@ -265,6 +265,47 @@ This saves one Opus dispatch per pseudo-skill action. On a typical feature lifec
 
 If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else.
 
+#### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY — runs BEFORE prompt composition)
+
+**Applies ONLY when `sub_skill == "mcp-test"`.** Skip this sub-step entirely for every other `sub_skill`. (This sub-step does not exist in `/lazy-batch-cloud` — cloud's Step 9 returns `__write_deferred_non_cloud__`, never `mcp-test`, so the cloud orchestrator never reaches it.)
+
+**Why this exists (the failure it fixes).** The cycle subagent has NO `Agent` tool (HARD CONSTRAINT block above) and runs `/mcp-test` INLINE. The mcp-test SKILL.md Step 2 boots `npm run tauri:dev` as a **background** task, then Step 4 waits for readiness. Empirically, an inline cycle subagent that started a background build and then ENDED ITS TURN waiting on it produced a premature, resultless return: the background build process did NOT survive the subagent's turn boundary, and the orchestrator (SendMessage unavailable in this workstation environment) could not resume the dead subagent. Net: a validation cycle that wrote no result and no sentinel, burning the whole cycle. The structural fix is for the **orchestrator's own session** — which is long-lived and persists across subagent turns — to OWN the dev-runtime background process, so the runtime is already up and MCP-ready when the mcp-test subagent connects to it.
+
+**Procedure (orchestrator session, all `Bash` — NOT file edits):**
+
+1. **Probe whether the dev runtime + MCP HTTP server are already up.** Per the AlgoBooth canonical reference (`docs/development/CLAUDE.md`, referenced from the root CLAUDE.md), the MCP HTTP server listens on **TCP 3333** and `GET http://localhost:3333/health` returns 200 when ready:
+
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health
+   ```
+
+   If this prints `200`, the runtime is already up — skip to step 4 (amend the prompt only).
+
+2. **If not up, start it (orchestrator-owned background process).** Use the canonical full-restart command (handles all three process types — Vite :1420, MCP :3333, sidecar named-pipe — per `docs/development/CLAUDE.md`):
+
+   ```bash
+   npm run dev:restart
+   ```
+
+   Start this with `Bash` `run_in_background: true`. The process is now owned by the **orchestrator** session, so it survives the upcoming subagent's turn boundary.
+
+3. **BLOCK on an MCP-readiness probe (foreground `until`-loop — NOT a forbidden active wait).** This is a single bounded readiness gate the orchestrator runs synchronously before dispatch, not a poll for filesystem/research events — HARD CONSTRAINT 7 (never actively wait for *filesystem/research* events) is about waiting on the user's research upload, which is a different thing. A bounded readiness gate on a process the orchestrator just started is the same shape as the Step 0.4 single-turn git reconciliation: permitted, mechanical, bounded.
+
+   ```bash
+   for i in $(seq 1 90); do
+     code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health 2>/dev/null)
+     if [ "$code" = "200" ]; then echo "MCP-READY"; break; fi
+     sleep 5
+   done
+   curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health
+   ```
+
+   (`tauri dev` takes ~3–5 min to compile + boot; 90 × 5s ≈ 7.5 min ceiling.) Health-200 is the readiness signal AlgoBooth's reference defines. Do NOT cache or reuse any `logs/session-{ts}/` path here — re-resolve the session dir from the live server if you ever need it (HARD REQUIREMENT in `docs/development/CLAUDE.md`); the readiness gate above is keyed on the stable health endpoint, not on any session-log path. If health never reaches 200 within the ceiling, surface a `BLOCKED.md` (blocker_kind: mcp-runtime-unready) rather than dispatching a subagent against a dead runtime — a subagent cannot recover a runtime the orchestrator failed to boot.
+
+4. **Amend the mcp-test subagent prompt** (the dispatch in Step 1e) to state that the runtime is already orchestrator-managed — see the `/mcp-test` per-skill inline override below for the exact prompt language.
+
+**HARD CONSTRAINT 1 is NOT relaxed by this.** Step 1d.0 is `Bash` only — a `run_in_background` process plus a `curl`/`sleep` readiness loop. It performs ZERO `Write`/`Edit` on any file (the orchestrator's sentinel-only edit scope is untouched). Owning a background process and polling a health endpoint are not file edits, exactly as Step 0.4's git reconciliation (also `Bash`-only) does not expand the edit scope.
+
 **Loop-guard check (BEFORE composing the prompt):** Compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, the state script has returned the same tuple two cycles in a row — almost always a sign that a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing or that a plan/sentinel write the previous cycle was supposed to perform did not actually land. **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3, same `feature_id`/`sub_skill`/`current_step` but a different plan-part path in `sub_skill_args`) false-triggers the guard on every part despite genuine forward progress. The orchestrator MUST append the **LOOP DETECTED** block below to the subagent prompt so the subagent diagnoses the missing sentinel rather than producing yet another plan / running the same skill against unchanged state.
 
 Base prompt template:
@@ -342,6 +383,33 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       than dispatching a Sonnet test subagent. Workstation retains the Tauri
       runtime + MCP HTTP server, so the runtime work itself is unchanged — only
       the sub-subagent dispatch is replaced with inline execution.
+      RUNTIME IS ALREADY UP (orchestrator-managed): the orchestrator pre-booted
+      `npm run dev:restart` and BLOCKED on `GET http://localhost:3333/health`
+      == 200 in its own long-lived session BEFORE dispatching you (Step 1d.0).
+      The dev runtime + MCP HTTP server on :3333 are therefore ALREADY RUNNING
+      and MCP-ready. Do NOT run `npm run tauri:dev` / `npm run dev:restart` and
+      do NOT `npx kill-port`/restart the server. SKIP mcp-test SKILL.md Step 2
+      (Server Lifecycle) and the Step 4 health-poll: treat `server_was_running`
+      as true and connect directly to the already-running server — start at the
+      Step 4 *readiness* check (session-events / sidecar / smoke test), which is
+      a fast in-turn verification against the live server, not a boot wait.
+      Re-resolve any session-log dir from the live server (GET
+      /tools/get_session_meta → log_dir); NEVER reuse a cached `logs/session-*`
+      path (HARD REQUIREMENT, docs/development/CLAUDE.md).
+      NO FIRE-AND-FORGET (CONTRACT — a resultless return is a violation): you
+      MUST NOT start any long build/process as a background task and then end
+      your turn waiting on background events. You either (a) connect to the
+      orchestrator-managed running runtime and drive the validation to a
+      DEFINITIVE pass/fail WITH a written sentinel within THIS turn, or (b) if
+      you must wait on anything (e.g. readiness re-check, sidecar connect), use
+      a BLOCKING foreground wait (a `curl`/`sleep` `until`-loop, or a Monitor
+      you await) — never end the turn on a pending background `run_in_background`
+      job. Before returning you MUST have written the contract result sentinel
+      (`VALIDATED.md` on full pass / `MCP_TEST_RESULTS.md` on partial /
+      `DEFERRED_REQUIRES_DEVICE.md` per Step 4.5 / `SKIP_MCP_TEST.md` per the
+      mcp-testing SPEC) OR a `BLOCKED.md` naming a CONCRETE blocker. Returning
+      with no sentinel and no result is a contract violation that wastes the
+      whole cycle — do not do it.
     • retro-feature — composed orchestrator; same override — perform all
       internal work inline rather than dispatching nested sub-subagents.
     • plan-feature — composed orchestrator; runs /spec-phases THEN /write-plan
