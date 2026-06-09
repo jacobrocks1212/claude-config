@@ -53,22 +53,22 @@
 **Scope:** Author `user/skills/spec-buddy/SKILL.md` — the full partition-walk orchestration skill from frontmatter through finalize. Consumes the Phase 1 component via `!cat`. This is the complete behavioral contract of `/spec-buddy`; no new components are added in this phase.
 
 **Deliverables:**
-- [ ] Create `user/skills/spec-buddy/SKILL.md` with valid frontmatter:
+- [x] Create `user/skills/spec-buddy/SKILL.md` with valid frontmatter:
 	- `name: spec-buddy`
 	- `description`: concise one-liner capturing the partition-walk / confidence-scored co-design framing
 	- `allowed-tools`: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, Agent, WebSearch
-- [ ] **Phase 0 — autonomous groundwork section** (no user interaction):
+- [x] **Phase 0 — autonomous groundwork section** (no user interaction):
 	- Project-context discovery
 	- Dep-block search using `!cat` of `dep-block-schema.md`
 	- Reuse-first discovery / Reuse Ledger using `!cat` with override path: `` !`cat .claude/skill-config/reuse-first-discovery.md 2>/dev/null || cat ~/.claude/skills/_components/reuse-first-discovery.md` ``
 	- One-shot atomic decomposition using `!cat` with override path for `atomic-thinking.md`
 	- Task tracking open using `!cat` with override path for `cog-doc-track-open.md`
 	- Team-architect stance using `!cat` with override path for `team-architect-stance.md`
-- [ ] **Phase 1 — partition planning section** (one approval gate):
+- [x] **Phase 1 — partition planning section** (one approval gate):
 	- A planner step proposing a tiered partition list (Reuse Ledger as the FIRST partition; each subsequent partition tagged `important` or `minor`)
 	- Single `AskUserQuestion` gate: user approves / edits / reorders the list and adjusts tiers
 	- Approved list checkpointed to `buddy-session.json`
-- [ ] **Phase 2 — the walk loop section** (the core loop, one partition at a time):
+- [x] **Phase 2 — the walk loop section** (the core loop, one partition at a time):
 	- For each partition in order:
 		1. Just-in-time subagent recon dispatch — codebase (tree-sitter MCP + Grep/Glob) + `../cog-docs` PHASES.md librarian; dispatch shape via `` !`cat ~/.claude/skills/_components/subagent-launch.md` `` and `` !`cat ~/.claude/skills/_components/subagent-partitioning.md` ``; minor partitions lighten or skip recon
 		2. Per-partition check-in using `` !`cat ~/.claude/skills/_components/spec-buddy-checkin-format.md` `` — depth proportional to tier
@@ -76,17 +76,17 @@
 		4. Persist resolved partition to `SPEC.md` incrementally; low-confidence items go to Open Questions; checkpoint partition status to `buddy-session.json`
 		5. Advance to next partition; user may revisit any prior partition at any time
 	- Session state schema note in the SKILL.md: `buddy-session.json` tracks `{ partitions: [{ name, tier, status, decision, confidence }], current_index }` — reuse `decision-resume.md` conventions for resume logic (`` !`cat ~/.claude/skills/_components/decision-resume.md` ``)
-- [ ] **Phase 3 — Gemini research section** (user-only invocation):
+- [x] **Phase 3 — Gemini research section** (user-only invocation):
 	- Spec-buddy does NOT proactively offer research
 	- On explicit user request only: run a Gemini deep-research prompt (minimal replication of `/spec`'s Gemini prompt structure — replicate inline, do not edit `/spec`) and integrate results
-- [ ] **Phase 4 — finalize section**:
+- [x] **Phase 4 — finalize section**:
 	- Write standard downstream-compatible `SPEC.md` (minimal replication of `/spec`'s SPEC.md structure template — replicate inline, do not edit `/spec`)
 	- Dep-block finalization checkpoint via `!cat dep-block-schema.md`
 	- Validation Criteria table via `!cat` with override path for `spec-testing-guidance.md`
 	- Write `RESEARCH_SUMMARY.md` if research ran
 	- Cross-boundary validation
 	- Work-log append via `` !`cat ~/.claude/skills/_components/work-log.md` ``
-- [ ] No edit to `manifest.psd1` (auto-discovery via directory-level symlink)
+- [x] No edit to `manifest.psd1` (auto-discovery via directory-level symlink)
 
 **Prerequisites:** Phase 1 complete (`spec-buddy-checkin-format.md` must exist).
 
@@ -102,6 +102,18 @@
 - `/spec-buddy` appears as an available skill in Claude Code (visible via `/help` or tab-complete)
 
 **Integration Notes for Next Phase:** Phase 3 adds a usage note and smoke-test findings back into this file. Keep the SKILL.md structurally stable — Phase 3 edits are additive (usage note only).
+
+**Implementation Notes (2026-06-09):**
+- Built `user/skills/spec-buddy/SKILL.md` (388 source lines; projects to 1381 lines fully resolved). Frontmatter: `name: spec-buddy`, partition-walk/confidence-scored description, `allowed-tools: [Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, Agent, WebSearch]`.
+- All five sections present: Phase 0 groundwork, Phase 1 tiered partition planning + single approval gate (Reuse Ledger is Partition 0, always first/important), Phase 2 walk loop (recon → tier-proportional check-in → decide loop → incremental SPEC persist → advance/revisit), Phase 3 Gemini (user-only, never proactively offered), Phase 4 finalize.
+- 11 unique components wired via `!cat` (override form for `team-architect-stance`/`cog-doc-track-open`/`reuse-first-discovery`/`spec-testing-guidance`; simple form for `dep-block-schema` ×2/`atomic-thinking`/`decision-resume`/`subagent-launch`/`subagent-partitioning`/`spec-buddy-checkin-format`/`work-log`).
+- `buddy-session.json` schema documented: `{ partitions: [{ name, tier, status, decision, confidence }], current_index }` with `pending`/`in_progress`/`resolved` enum and `decision-resume.md` compaction-recovery conventions.
+- **Minimal-replication seam:** the SPEC.md structure template (Phase 4) and the Gemini deep-research prompt (Phase 3) are faithful inline replications of the corresponding blocks in `user/skills/spec/SKILL.md` (same `IDENTITY_PREPEND_CHAR_BUDGET=6,000` / `GEMINI_PROMPT_CHAR_CAP=24,000`, same prompt body + RESEARCH_PROMPT.md→echo→STOP flow; same SPEC template sections/dep-block/Validation-Criteria table). Both blocks carry the "intentionally duplicated at a seam — keep in step" note. `/spec` and `manifest.psd1` were NOT edited.
+- Authored by a Sonnet subagent; orchestrator did not edit the file directly.
+- **Gates:** `lint-skills.py` exit 0; `project-skills.py` exit 0 — 78 skills / 106 components, no errors, spec-buddy resolves with no unresolved or circular includes. `/spec-buddy` is discoverable (appears in the skill list).
+- Files modified: `user/skills/spec-buddy/SKILL.md` (net-new); `spec-buddy/` directory net-new.
+
+**Review Notes (2026-06-09) — Phase 2 batch:** Verdict **PASS** (Opus review subagent). Ground-truth verified: yes (fresh re-run matched the subagent block — 388 lines, frontmatter, 12 include lines/11 components, lint exit 0, projection 1381 lines no unresolved/circular; `/spec` + `manifest.psd1` untouched). All five sections + buddy-session schema + six brainstorm decisions confirmed. Minimal-replication seam verified faithful against current `/spec` (Gemini block + SPEC template). One optional cosmetic note (line 285 "must match this template exactly" wording vs the intentional `## Reuse Ledger` addition) — non-blocking, the addition is correct behavior and the seam note documents the duplication intent. Propagation: SKILL.md consumes the Phase 1 component cleanly. Mount-site: skill auto-discovered (dir under `user/skills/`, no manifest entry).
 
 ---
 
