@@ -477,3 +477,34 @@ def test_project_all_summary_structure(tmp_path, ps):
     for repo_name, repo_summary in summary["repos"].items():
         for key in ("skills_projected", "components_resolved", "errors"):
             assert key in repo_summary, f"repo '{repo_name}' summary missing key '{key}'"
+
+
+def test_fallback_cat_recurses_into_override(tmp_path, ps):
+    """When a project-override file exists and itself contains a nested !cat include,
+    the nested include must be recursively expanded (not left as a raw directive)."""
+    skills_dir = tmp_path / "skills"
+    components_dir = skills_dir / "_components"
+    components_dir.mkdir(parents=True)
+    (components_dir / "shared-core.md").write_text(
+        "SHARED_CORE_BODY_SENTINEL\n"
+    )
+
+    project_dir = tmp_path / "project"
+    skill_config = project_dir / ".claude" / "skill-config"
+    skill_config.mkdir(parents=True)
+    (skill_config / "wrapper.md").write_text(
+        "WRAPPER_SENTINEL\n"
+        "!`cat ~/.claude/skills/_components/shared-core.md`\n"
+        "End of wrapper.\n"
+    )
+
+    line = (
+        "!`cat .claude/skill-config/wrapper.md 2>/dev/null"
+        " || cat ~/.claude/skills/_components/wrapper.md`"
+    )
+    result = ps.resolve_cat_line(line, skills_dir=skills_dir, project_dir=project_dir)
+
+    assert "WRAPPER_SENTINEL" in result
+    assert "SHARED_CORE_BODY_SENTINEL" in result
+    assert "<!-- BEGIN component: shared-core.md -->" in result
+    assert "!`cat" not in result

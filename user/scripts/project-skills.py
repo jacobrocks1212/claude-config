@@ -114,7 +114,11 @@ def resolve_cat_line(
         comp_name = m.group(2)
         proj_file = project_dir / ".claude" / "skill-config" / proj_name
         if proj_file.exists():
-            content = proj_file.read_text(encoding="utf-8")
+            abs_proj = str(proj_file.resolve())
+            if abs_proj in resolved_stack:
+                return f"<!-- CIRCULAR INCLUDE DETECTED: {proj_name} -->"
+            resolved_stack = resolved_stack | {abs_proj}
+            content = _resolve_file_content(proj_file, skills_dir, project_dir, resolved_stack, capabilities)
             return _wrap(proj_name, content)
         else:
             ns = _extract_namespace(comp_name)

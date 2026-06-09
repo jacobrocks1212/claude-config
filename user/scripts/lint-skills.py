@@ -113,7 +113,7 @@ def lint_projected(projected_dir: Path) -> list[dict]:
     for md_file in sorted(projected_dir.rglob("*.md")):
         text = md_file.read_text(encoding="utf-8")
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if "!cat" in line:
+            if _RUNTIME_TRIGGER.search(line):
                 issues.append({
                     "file": str(md_file),
                     "line": lineno,
