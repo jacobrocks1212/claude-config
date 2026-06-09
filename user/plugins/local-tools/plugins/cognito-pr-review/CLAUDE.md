@@ -15,6 +15,7 @@ Claude Code plugin for reviewing Cognito Forms PRs using a hierarchical investig
 | Command | Purpose |
 |---------|---------|
 | `/cognito-pr-review:review-pr [PR#]` | Full v2 review pipeline |
+| `/cognito-pr-review:review-pr-buddy [PR#]` | Interactive senior-architect pair-review (walks the PR chunk-by-chunk over the same pipeline) |
 | `/cognito-pr-review:learn-from-pr PR#` | Extract rules + EMA calibration |
 | `/cognito-pr-review:calibrate` | Bulk weight calibration |
 | `/cognito-pr-review:weights` | View/adjust rule weights |
@@ -32,6 +33,8 @@ prep-pr.ts (GitHub API) → journey-planner (Opus) → triage (Opus)
 ```
 
 The **reuse-candidacy stage** (`review-pr.md` Step 5b) runs in parallel with investigation+sweep: it clusters net-new/substantive files (seeded from `manifest.baselines[]`) and fans out one `cognito-consistency-checker` (Opus) per cluster. Each agent reads the shared reuse-discovery protocol (`~/.claude/skills/_components/reuse-discovery-protocol.md`), inherits investigation's access model (local-codebase-on-`main` + tree-sitter, NOT sweep's cache-only), and emits `{cacheDir}/agent-output/reuse-{cluster}.json` with a verdict (`reuse`/`extend`/`refactor`/`wrap`/`acceptable-new`). post-process routes reuse findings through the investigation lane (fixed weight 1.0) and maps **verdict→severity** — `refactor`/`reuse` → important, `extend`/`wrap` → nit, `acceptable-new` → dropped. **This verdict→severity boundary is a tunable** for future `/cognito-pr-review:learn-from-pr` calibration. The cache-only `sweep` agent can only FLAG reuse heuristics and ESCALATE (its 4 `reuse-*` rules in `code-consistency.yaml`); it never asserts a local-codebase fact.
+
+**`review-pr-buddy`** (`commands/review-pr-buddy.md`) is an interactive front-end over the SAME pipeline: Phase 0 delegates entirely to `review-pr.md` (the single source of pipeline truth — steps are not duplicated); Phase 1 walks the journey's Manual Review Guide chunk-by-chunk, capturing per-finding verdicts to `{cacheDir}/buddy-session.json` (compaction-safe); Phase 2 emits a human-curated `PR-{id}.md` in synthesizer-v2 format. `review-pr.md` remains the main pipeline orchestration; `review-pr-buddy.md` is the buddy orchestration.
 
 ### Scripts (deterministic TypeScript, no LLM)
 - `scripts/prep-pr.ts` — Gathers PR data from GitHub API, populates `.claude/pr-cache/{id}/`
@@ -73,6 +76,7 @@ The **reuse-candidacy stage** (`review-pr.md` Step 5b) runs in parallel with inv
 ### When editing commands (*.md)
 - YAML frontmatter: `description`, `argument-hint`, `allowed-tools`
 - `review-pr.md` is the main orchestration — 12-step pipeline
+- `review-pr-buddy.md` delegates Phase 0 to `review-pr.md`; do NOT copy or duplicate its step bodies
 - `learn-from-pr.md` uses hybrid matching (proximity + Haiku semantic judge) for calibration
 
 ## Cache & Artifacts

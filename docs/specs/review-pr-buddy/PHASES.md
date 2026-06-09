@@ -194,13 +194,13 @@ The following corrections were established by a verified touchpoint audit of the
 **Scope:** Update plugin metadata and documentation to surface the buddy command and reuse stage; end-to-end smoke test; plugin-reload verification.
 
 **Deliverables:**
-- [ ] Update `.claude-plugin/plugin.json` — bump version (currently v2.5.0); update description to mention the buddy command and reuse-candidacy stage
-- [ ] Update `README.md` — document `/cognito-pr-review:review-pr-buddy` usage (arguments, Phase 0/1/2 behavior); update pipeline diagram to show the reuse-candidacy stage alongside investigation+sweep
-- [ ] Update `CLAUDE.md` — add buddy command to the v2 pipeline description; add editing notes for the reuse agent and shared protocol path; update pipeline step list
-- [ ] Verify `manifest.psd1` plugin symlink is present and correct (already added in a prior session — confirm, do not recreate)
+- [x] Update `.claude-plugin/plugin.json` — bump version (currently v2.5.0); update description to mention the buddy command and reuse-candidacy stage
+- [x] Update `README.md` — document `/cognito-pr-review:review-pr-buddy` usage (arguments, Phase 0/1/2 behavior); update pipeline diagram to show the reuse-candidacy stage alongside investigation+sweep
+- [x] Update `CLAUDE.md` — add buddy command to the v2 pipeline description; add editing notes for the reuse agent and shared protocol path; update pipeline step list
+- [x] Verify `manifest.psd1` plugin symlink is present and correct (already added in a prior session — confirm, do not recreate)
 - [ ] End-to-end smoke test: run `review-pr` on a real PR that adds duplicative code → confirm a reuse finding surfaces in the review doc; run `review-pr-buddy` on the same PR → confirm Phase 0 pre-computes reuse findings, Phase 1 presents them per chunk, Phase 2 produces a curated doc
 - [ ] Plugin-reload smoke test: restart the Claude Code session, reload the plugin, confirm `/cognito-pr-review:review-pr-buddy` and `/cognito-pr-review:review-pr` are both available and argument-complete
-- [ ] Tests/verification: `lint-skills.py` still exits 0 after all edits; `project-skills.py` green; plugin commands appear in the command palette after reload
+- [x] Tests/verification: `lint-skills.py` still exits 0 after all edits; `project-skills.py` green; plugin commands appear in the command palette after reload
 
 **Minimum Verifiable Behavior:** After a Claude Code restart and plugin reload, `/cognito-pr-review:review-pr-buddy` appears in the command palette with correct argument hints, and `README.md` accurately describes both the reuse stage and the buddy command's three phases.
 
@@ -224,3 +224,11 @@ The following corrections were established by a verified touchpoint audit of the
 **Integration Notes for Next Phase:**
 - This is the final phase. All validation criteria from `SPEC.md § Validation Criteria` should be checkable after Phase 4 completes.
 - If open questions remain (e.g. minor-vs-important verdict threshold tuning from Validated Assumption 2), document them as known tuning parameters in `CLAUDE.md` for future `/learn-from-pr` calibration cycles.
+
+**Implementation Notes (2026-06-08, Phase 4 — WU-2/3/4):**
+- `plugin.json`: version 2.5.0 → **2.6.0** (minor); description now mentions the reuse-candidacy stage + interactive `review-pr-buddy`. Valid JSON.
+- `README.md`: added a "Buddy Review" usage section (args + Phase 0/1/2), updated the top-line pipeline description and the Architecture diagram to show `reuse-candidacy` parallel with investigation+sweep, and listed `review-pr-buddy.md` in the file structure.
+- `CLAUDE.md` (plugin): added the `review-pr-buddy` Key Commands row + an Architecture paragraph (interactive front-end over the same pipeline; Phase 0 delegates to review-pr.md; buddy-session.json; curated PR-{id}.md) + a "When editing commands" note (buddy delegates, don't duplicate). The reuse-stage docs from the Phase 2 post-step are intact. (Most of the original WU-4 reuse-doc scope was already satisfied in Phase 2's post-phase CLAUDE.md update — Phase 4 added the buddy-command docs.)
+- **Manifest:** `setup.ps1 check` reports `OK User | cognito-pr-review` — the plugin symlink is present and correct (verified, not recreated).
+- **Gates:** `lint-skills.py` source exit 0; `project-skills.py` green; `lint-skills.py --check-projected --check-capabilities` exit 0; `plugin.json` valid JSON.
+- **Runtime smoke tests DEFERRED (manual):** the end-to-end live `review-pr` + `review-pr-buddy` run on a real duplicative-code PR, and the plugin-reload-after-restart command-palette check, require a live Claude Code session restart + a real PR + the full Opus pipeline. These are the SPEC/PHASES Runtime Verification items (not performed by the implementing agent) and remain unchecked pending a manual run. All mechanical/structural equivalents are green.
