@@ -1,0 +1,341 @@
+# Code Consistency Rules
+# General patterns for maintaining consistent code
+
+category: code-consistency
+file_patterns:
+  - "*.cs"
+  - "*.ts"
+  - "*.tsx"
+  - "*.vue"
+
+rules:
+  - id: extract-magic-strings
+    severity: minor
+    description: >
+      Don't use magic strings - extract them to constants and reuse.
+    anti_pattern: |
+      if (type == "Form") { }
+    correct_pattern: |
+      public const string FormType = "Form";
+      if (type == FormType) { }
+
+  - id: consistent-helper-usage
+    severity: important
+    description: >
+      When a helper method exists, use it consistently throughout the file
+      rather than inline implementations in some places.
+
+  - id: keep-comments-accurate
+    severity: minor
+    description: >
+      When a function's scope or behavior changes during development,
+      update its documentation to match. Don't leave stale comments.
+
+  - id: no-todos-in-code
+    severity: minor
+    description: >
+      Don't leave TODO comments in code. Track them as engineering bugs instead.
+    anti_pattern: |
+      // TODO: implement retry logic
+    correct_pattern: |
+      // See bug #12345 for retry logic implementation
+
+  - id: no-commented-code
+    severity: minor
+    description: >
+      Remove commented-out code. Use version control to recover old code.
+
+  - id: consistent-indentation
+    severity: minor
+    description: >
+      Don't mix spaces and tabs within a file. Follow the project's convention.
+
+  - id: event-handler-cleanup
+    severity: important
+    description: >
+      Store event handler references and remove them when no longer needed
+      to prevent memory leaks.
+    anti_pattern: |
+      element.addEventListener('change', (e) => processEvent(e));
+      // No way to remove this handler!
+    correct_pattern: |
+      const handler = (e) => processEvent(e);
+      element.addEventListener('change', handler);
+      // Later:
+      element.removeEventListener('change', handler);
+
+  - id: pair-subscribe-unsubscribe
+    severity: important
+    description: >
+      When subscribing to events, always implement corresponding unsubscribe
+      logic to prevent memory leaks.
+    anti_pattern: |
+      path.SubscribePathChange(handler);
+      // Missing unsubscribe!
+    correct_pattern: |
+      path.SubscribePathChange(handler);
+      // Later...
+      path.UnsubscribePathChange(handler);
+
+  - id: use-instances-actual-type
+    severity: important
+    description: >
+      When unregistering objects from pools/caches, use the instance's actual
+      type to handle inheritance correctly.
+    anti_pattern: |
+      public void Unregister(Type modelType, object instance) {
+          pool[modelType].Remove(instance);  // Wrong if instance is a subtype!
+      }
+    correct_pattern: |
+      public void Unregister(object instance) {
+          pool[instance.GetType()].Remove(instance);
+      }
+
+  - id: no-debug-design-comments
+    severity: minor
+    description: >
+      Remove debug markers, design notes, and AI attribution comments before
+      committing. These include emoji markers, @design annotations, and
+      "copilot added" notes.
+    trigger_patterns:
+      - "// 🚨"
+      - "// @design"
+      - "// copilot"
+      - "<!-- 🚨"
+    anti_pattern: |
+      <!-- 🚨 @design new styles added: paddingLeft, dropdown-filter__expander 🚨 -->
+      <div class="dropdown-filter__option">
+        // 🚨 copilot added this class
+        <span class="min-w-0">{{ label }}</span>
+      </div>
+    correct_pattern: |
+      <div class="dropdown-filter__option">
+        <span class="min-w-0">{{ label }}</span>
+      </div>
+
+  - id: delete-unused-placeholder-files
+    severity: minor
+    description: >
+      Delete files that only contain TODO placeholders with no real
+      implementation. These files add clutter and confusion.
+    anti_pattern: |
+      // person-entry-service.ts
+      // TODO: Replace any types with TypeGen-generated server types
+
+      export function queryOrdersPage(params = {}) {
+        // TODO: replace placeholder endpoint with real path
+        return queryTablePage('endpoint', params);
+      }
+    correct_pattern: |
+      // Delete the file entirely if it's not being used
+      // or implement it properly before committing
+
+  - id: consistent-field-naming
+    severity: minor
+    description: >
+      Private fields within a class must use consistent naming. Don't mix
+      _camelCase and camelCase for private fields in the same class. Prefer
+      non-underscored field names (camelCase) for controller fields.
+    anti_pattern: |
+      public class FormsAdminController
+      {
+          private readonly IService _service;
+          private readonly ILogger logger;  // Inconsistent!
+      }
+    correct_pattern: |
+      public class FormsAdminController
+      {
+          private readonly IService service;
+          private readonly ILogger logger;  // Consistent, no underscore
+      }
+
+  - id: purposeful-utility-placement
+    severity: minor
+    description: >
+      Don't dump feature-specific modules into a generic utilities/ directory.
+      Modules that serve a single feature (e.g., identify-submitter,
+      payment-settings, workflow-diagram) should live in a feature-specific
+      folder or composables/ directory instead. Reserve utilities/ for truly
+      generic, reusable helpers.
+    anti_pattern: |
+      utilities/
+        identify-submitter.ts    # Builder-specific
+        payment-settings.ts      # Builder-specific
+        workflow-diagram-*.ts    # Builder-specific
+        debounce.ts              # Truly generic - OK here
+    correct_pattern: |
+      composables/identify-submitter.ts
+      features/payments/payment-settings.ts
+      features/workflow/workflow-diagram.ts
+      utilities/debounce.ts  # Generic utilities only
+
+  - id: remove-orphaned-ui-bindings
+    severity: important
+    description: >
+      When replacing a provisional or dev-testing UI with a production
+      component, delete the obsolete component and all its wired handlers and
+      bindings together: the .vue file, the HTM binding
+      (vue:component="..."), and any companion global handler in build.js
+      (e.g. Cognito.Forms.XyzChanged). Orphaned handlers and unused Vue
+      components that outlive their replacement become dead code landmines —
+      a future grep for the handler name wastes time and creates false
+      signals during debugging.
+    trigger_patterns:
+      - "Cognito\\.Forms\\.\\w+Changed = function"
+    anti_pattern: |
+      // build.js — handler survives after its HTM binding was deleted
+      Cognito.Forms.OldComponentChanged = function (form, args) {
+          // No HTM binding points to this anymore
+          renderOldComponent(form);
+      };
+
+      // build.htm — binding already removed in a prior PR
+      // <div vue:component="OldComponent"> ← gone
+    correct_pattern: |
+      // Both removed together when the production component replaced them:
+      // - SubmitterPersonSettings.vue  ← deleted
+      // - build.htm vue:component binding  ← deleted
+      // - Cognito.Forms.OldComponentChanged handler  ← deleted
+
+  - id: update-all-callers-on-signature-change
+    severity: important
+    description: >
+      When adding a new parameter to a shared function — even an optional one
+      — update every existing caller to pass the new argument. A caller that
+      still matches the old arity is almost always a bug or an oversight.
+      Either all callers need the new behavior, or the signature change
+      wasn't warranted. If a subset of callers genuinely don't need the new
+      argument, document why explicitly.
+    anti_pattern: |
+      // renderElement updated to accept idScope as 4th parameter
+      function renderElement(element, containingType, children, idScope) { ... }
+
+      // Updated caller — correct
+      renderElement(field, formType, children, idScope);
+
+      // Forgotten callers — still passing 3 args (lines ~11965, ~12306)
+      renderElement(element, sectionType, children);  // idScope missing!
+      renderElement(element, pageType, children);     // idScope missing!
+    correct_pattern: |
+      // All callers updated
+      renderElement(field, formType, children, idScope);
+      renderElement(element, sectionType, children, idScope);
+      renderElement(element, pageType, children, idScope);
+      // If a caller truly doesn't need idScope, pass null and add a comment:
+      renderElement(element, legacyType, children, null /* idScope n/a: legacy path */)
+
+  - id: no-temporal-phased-comments
+    severity: minor
+    description: >
+      Comments should describe the stable, current behavior or invariant —
+      not the development timeline. Avoid "Today / Post-fix", "before the fix",
+      "after this change" framing, which becomes misleading once merged.
+      Especially common in AI-generated test comments; prefer a single
+      sentence on what the test proves.
+    trigger_patterns:
+      - "Today:"
+      - "Post-fix:"
+      - "before the fix"
+      - "after this change"
+    anti_pattern: |
+      // Today: passes vacuously because X is not called.
+      // Post-fix: continues to pass because Y returns null.
+    correct_pattern: |
+      // Contact-typed target: autoConfigureRequireAuthentication
+      // returns null, so no auth change and no toast.
+
+  - id: avoid-pointless-local-wrap
+    severity: minor
+    description: >
+      Avoid introducing a local variable that holds an expression used exactly
+      once on the following line and adds no naming value. Inline it. Keeping a
+      local is fine when it documents intent or preserves symmetry with a
+      sibling method.
+    anti_pattern: |
+      var consumerRefs = ReferenceIndexService.GetReferencedBySync(formId, nameof(Form), nameof(Form));
+      return consumerRefs;
+    correct_pattern: |
+      return ReferenceIndexService.GetReferencedBySync(formId, nameof(Form), nameof(Form));
+
+  - id: comments-add-context-no-jargon
+    severity: minor
+    description: >
+      Keep only comments that add context the code itself can't convey, and
+      write them in plain language. Cut comments that merely restate the code or
+      lean on domain jargon a reader must look up (e.g. "correlated atom") —
+      name the concept plainly instead. When a symbol referenced by a comment is
+      renamed or removed, update or delete the comment in the same change so it
+      never points at a type/name that no longer exists. Complements
+      keep-comments-accurate (stale-on-behavior-change) and
+      no-temporal-phased-comments (timeline framing) with the jargon and
+      dangling-reference angles.
+    trigger_patterns:
+      - "atom"
+      - "Kleene"
+    anti_pattern: |
+      // 15. Correlated atoms (same field referenced twice) -> MayFail
+      // ... folds via Kleene.False
+    correct_pattern: |
+      // Same field compared twice is still unknown -> MayFail
+
+  - id: reuse-service-duplication
+    severity: important
+    description: >
+      A new *Service class may duplicate an existing service in the codebase.
+      Sweep cannot verify local-codebase facts, so: FLAG this file as a
+      reuse-duplication candidate whenever a new service class is introduced
+      (name ending in Service, and it is not an override or extension of an
+      existing base), then ESCALATE to the reuse-candidacy stage for a human
+      reviewer with local-codebase access to confirm whether an existing service
+      already covers this responsibility.
+    trigger_patterns:
+      - "class \\w+Service"
+      - "export class \\w+Service"
+
+  - id: reuse-utility-duplication
+    severity: minor
+    description: >
+      A new helper or utility function may duplicate an existing one in the
+      codebase. Sweep cannot verify local-codebase facts, so: FLAG this file as
+      a reuse-duplication candidate whenever a new standalone helper or utility
+      function is added outside of a class body (free function, exported
+      function, or module-level function with a generic name such as format*,
+      parse*, get*, build*, calculate*, or normalize*), then ESCALATE to the
+      reuse-candidacy stage for a human reviewer with local-codebase access to
+      confirm whether an equivalent utility already exists.
+    trigger_patterns:
+      - "export function (format|parse|get|build|calculate|normalize|map|convert)\\w+"
+      - "public static.*\\b(Format|Parse|Get|Build|Calculate|Normalize|Map|Convert)\\w+"
+
+  - id: reuse-dto-type-overlap
+    severity: minor
+    description: >
+      A new DTO, view-model, or plain TypeScript interface may overlap with an
+      existing domain type in the codebase. Sweep cannot verify local-codebase
+      facts, so: FLAG this file as a reuse-duplication candidate whenever a new
+      type, interface, or DTO is introduced that carries a name closely matching
+      a common domain concept (e.g. Entry, Form, Submission, Person, Field,
+      Response, Result, Settings, Config, Options), then ESCALATE to the
+      reuse-candidacy stage for a human reviewer with local-codebase access to
+      confirm whether an existing domain type or generated server type already
+      covers these fields.
+    trigger_patterns:
+      - "interface \\w+(Dto|ViewModel|Model|Request|Response|Result|Settings|Config|Options)"
+      - "class \\w+(Dto|ViewModel|Model|Request|Response|Result|Settings|Config|Options)"
+
+  - id: reuse-endpoint-duplication
+    severity: important
+    description: >
+      A new controller action or API endpoint may duplicate an existing route in
+      the codebase. Sweep cannot verify local-codebase facts, so: FLAG this file
+      as a reuse-duplication candidate whenever a new controller method is added
+      that targets a resource path already implied by the controller name or
+      existing action names in the same file (e.g. a second GET for the same
+      resource, or a new controller whose route prefix matches a sibling
+      controller), then ESCALATE to the reuse-candidacy stage for a human
+      reviewer with local-codebase access to confirm whether an existing
+      endpoint already services this route.
+    trigger_patterns:
+      - "\\[HttpGet\\]"
+      - "\\[HttpPost\\]"
+      - "\\[Route\\("

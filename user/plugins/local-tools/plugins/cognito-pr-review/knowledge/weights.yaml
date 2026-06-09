@@ -1,0 +1,356 @@
+version: 1
+last_calibrated: 2026-06-01
+calibration_prs: [16496]
+ema_alpha: 0.25
+
+category_multipliers:
+  architecture: 1.0
+  frontend: 1.0
+  api_design: 1.0
+  consistency: 0.8
+  testing: 0.9
+  security: 1.2
+  performance: 0.9
+  template_binding: 0.7
+
+rule_weights:
+
+  # api-design rules
+  appropriate-http-methods:
+    weight: 0.7
+    data_points: 0
+  singular-resource-endpoints:
+    weight: 0.7
+    data_points: 0
+  produces-response-type:
+    weight: 0.7
+    data_points: 0
+  split-large-controllers:
+    weight: 0.7
+    data_points: 0
+  unique-idempotency-keys:
+    weight: 0.7
+    data_points: 0
+  async-suffix:
+    weight: 0.7
+    data_points: 0
+  defensive-null-checks:
+    weight: 0.7
+    data_points: 0
+  cache-service-instances:
+    weight: 0.775
+    data_points: 1
+  view-model-includes-all-ui-consumed-fields:
+    weight: 0.7
+    data_points: 0
+
+  # csharp-architecture rules
+  prefer-abstract-over-lambda:
+    weight: 0.7
+    data_points: 0
+  no-di-default-values:
+    weight: 0.7
+    data_points: 0
+  no-unused-di-injection:
+    weight: 0.7
+    data_points: 0
+  no-storage-context-query:
+    weight: 0.7
+    data_points: 0
+  colocate-interfaces:
+    weight: 0.7
+    data_points: 0
+  specific-class-names:
+    weight: 0.7
+    data_points: 0
+  model-namespace-entities-only:
+    weight: 0.7
+    data_points: 0
+  sync-over-async-conventions:
+    weight: 0.7
+    data_points: 0
+  isolate-non-critical-operations:
+    weight: 0.7
+    data_points: 0
+  always-pass-cancellation-token:
+    weight: 0.7
+    data_points: 0
+  configure-await-in-library-code:
+    weight: 0.7
+    data_points: 0
+  method-name-reflects-behavior:
+    weight: 0.7
+    data_points: 0
+  reuse-existing-enums:
+    weight: 0.7
+    data_points: 0
+  composite-id-separator:
+    weight: 0.7
+    data_points: 0
+  prefer-async-storage-over-sync-service:
+    weight: 0.7
+    data_points: 0
+  dotnetonly-for-computed-properties:
+    weight: 0.7
+    data_points: 0
+  lazy-loaded-module-services:
+    weight: 0.7
+    data_points: 0
+  no-cross-controller-duplication:
+    weight: 0.7
+    data_points: 0
+  avoid-org-get-storage-context:
+    weight: 0.7
+    data_points: 0
+  resolve-field-path-via-modelsource:
+    weight: 0.7
+    data_points: 0
+  visitor-use-base-dispatch:
+    weight: 0.7
+    data_points: 0
+  prefer-bool-nullable-for-tristate:
+    weight: 0.7
+    data_points: 0
+  qualify-generic-type-names:
+    weight: 0.7
+    data_points: 0
+
+  # code-consistency rules
+  extract-magic-strings:
+    weight: 0.7
+    data_points: 0
+  consistent-helper-usage:
+    weight: 0.7
+    data_points: 0
+  keep-comments-accurate:
+    weight: 0.775
+    data_points: 1
+  no-todos-in-code:
+    weight: 0.7
+    data_points: 0
+  no-commented-code:
+    weight: 0.7
+    data_points: 0
+  consistent-indentation:
+    weight: 0.7
+    data_points: 0
+  event-handler-cleanup:
+    weight: 0.7
+    data_points: 0
+  pair-subscribe-unsubscribe:
+    weight: 0.7
+    data_points: 0
+  use-instances-actual-type:
+    weight: 0.7
+    data_points: 0
+  no-debug-design-comments:
+    weight: 0.7
+    data_points: 0
+  delete-unused-placeholder-files:
+    weight: 0.7
+    data_points: 0
+  consistent-field-naming:
+    weight: 0.7
+    data_points: 0
+  purposeful-utility-placement:
+    weight: 0.7
+    data_points: 0
+  remove-orphaned-ui-bindings:
+    weight: 0.7
+    data_points: 0
+  update-all-callers-on-signature-change:
+    weight: 0.7
+    data_points: 0
+  no-temporal-phased-comments:
+    weight: 0.7
+    data_points: 0
+  avoid-pointless-local-wrap:
+    weight: 0.7
+    data_points: 0
+  comments-add-context-no-jargon:
+    weight: 0.7
+    data_points: 0
+  reuse-service-duplication:
+    weight: 0.7
+    data_points: 0
+  reuse-utility-duplication:
+    weight: 0.7
+    data_points: 0
+  reuse-dto-type-overlap:
+    weight: 0.7
+    data_points: 0
+  reuse-endpoint-duplication:
+    weight: 0.7
+    data_points: 0
+
+  # frontend-vue rules
+  no-redundant-props:
+    weight: 0.7
+    data_points: 0
+  verify-props-exist:
+    weight: 0.7
+    data_points: 0
+  no-unnecessary-wrapper-properties:
+    weight: 0.7
+    data_points: 0
+  dialog-dismissal-consistency:
+    weight: 0.7
+    data_points: 0
+  loading-state-finally:
+    weight: 0.7
+    data_points: 0
+  use-prop-type-for-functions:
+    weight: 0.7
+    data_points: 0
+  use-toref-for-composables:
+    weight: 0.7
+    data_points: 0
+  composables-called-synchronously:
+    weight: 0.7
+    data_points: 0
+  no-any-in-union-types:
+    weight: 0.7
+    data_points: 0
+  client-server-edge-case-parity:
+    weight: 0.7
+    data_points: 0
+  type-safe-filter-keys:
+    weight: 0.7
+    data_points: 0
+  prefer-vue-testing-library:
+    weight: 0.7
+    data_points: 0
+  use-typed-emits:
+    weight: 0.7
+    data_points: 0
+  no-consumer-local-type-extension:
+    weight: 0.7
+    data_points: 0
+
+  # performance rules
+  validate-size-before-allocating:
+    weight: 0.7
+    data_points: 0
+  reuse-httpclient:
+    weight: 0.7
+    data_points: 0
+  use-fast-has-flag:
+    weight: 0.7
+    data_points: 0
+  move-loop-invariants-outside:
+    weight: 0.7
+    data_points: 0
+  lazy-list-resolution:
+    weight: 0.7
+    data_points: 0
+  lazy-evaluation-for-memory:
+    weight: 0.7
+    data_points: 0
+  dont-load-to-discard:
+    weight: 0.7
+    data_points: 0
+  avoid-string-allocations:
+    weight: 0.7
+    data_points: 0
+  check-after-await-not-before:
+    weight: 0.7
+    data_points: 0
+  avoid-unnecessary-tolist:
+    weight: 0.7
+    data_points: 0
+
+  # security rules
+  sanitize-imported-html:
+    weight: 0.7
+    data_points: 0
+  validate-input-ranges:
+    weight: 0.7
+    data_points: 0
+  feature-flags-for-changes:
+    weight: 0.7
+    data_points: 0
+  log-telemetry-at-limits:
+    weight: 0.7
+    data_points: 0
+  sensible-defaults-not-unlimited:
+    weight: 0.7
+    data_points: 0
+
+  # template-binding rules
+  use-convert-not-extra-property:
+    weight: 0.7
+    data_points: 0
+  omit-default-binding-source:
+    weight: 0.7
+    data_points: 0
+  boolean-props-no-true:
+    weight: 0.7
+    data_points: 0
+  extract-large-additions:
+    weight: 0.7
+    data_points: 0
+
+  # testing rules
+  verify-assertions-match-behavior:
+    weight: 0.7
+    data_points: 0
+  consistent-assertion-style:
+    weight: 0.7
+    data_points: 0
+  assert-true-needs-message:
+    weight: 0.7
+    data_points: 0
+  outer-class-not-testclass:
+    weight: 0.7
+    data_points: 0
+  no-test-only-service-params:
+    weight: 0.7
+    data_points: 0
+  no-public-for-tests:
+    weight: 0.7
+    data_points: 0
+  validate-ai-generated-content:
+    weight: 0.7
+    data_points: 0
+  missing-test-for-public-method:
+    weight: 0.7
+    data_points: 0
+  missing-test-for-complex-method:
+    weight: 0.7
+    data_points: 0
+  fluff-test-constructor-only:
+    weight: 0.7
+    data_points: 0
+  fluff-test-mock-only:
+    weight: 0.7
+    data_points: 0
+  fluff-test-tautological:
+    weight: 0.7
+    data_points: 0
+  fluff-test-notnull-only:
+    weight: 0.7
+    data_points: 0
+  fluff-test-doesnt-throw:
+    weight: 0.7
+    data_points: 0
+  invalid-hardcoded-entity-id:
+    weight: 0.525
+    data_points: 1
+  test-file-should-not-exist:
+    weight: 0.7
+    data_points: 0
+  tests-should-be-colocated:
+    weight: 0.7
+    data_points: 0
+  test-file-missing-for-new-service:
+    weight: 0.7
+    data_points: 0
+  no-dom-coupled-assertions:
+    weight: 0.775
+    data_points: 1
+  test-nested-field-paths:
+    weight: 0.7
+    data_points: 0
+  consolidate-parameterized-tests:
+    weight: 0.7
+    data_points: 0
