@@ -96,6 +96,11 @@ interface CombinedFindings {
 		escalations: Escalation[];
 		group: string;
 	}>;
+	intrafile?: Array<{
+		findings: ReuseFinding[];
+		escalations: Escalation[];
+		group: string;
+	}>;
 	manifest_path: string;
 	previous_review_path?: string;
 }
@@ -122,7 +127,7 @@ interface Lifespan {
 }
 
 interface ProcessedFinding {
-	source: "investigation" | "reuse" | "sweep";
+	source: "investigation" | "reuse" | "intrafile" | "sweep";
 	group: string | null;
 	effective_weight: number;
 	lifespan?: Lifespan;
@@ -289,8 +294,8 @@ function matchesPreviousFinding(
 		if (ref.file !== file) return false;
 		// Line must be within proximity range
 		if (Math.abs(ref.line - line) > LINE_PROXIMITY_RANGE) return false;
-		// For Opus-lane findings (investigation, reuse), also compare title if available
-		if ((finding.source === "investigation" || finding.source === "reuse") && ref.title && title) {
+		// For Opus-lane findings (investigation, reuse, intrafile), also compare title if available
+		if ((finding.source === "investigation" || finding.source === "reuse" || finding.source === "intrafile") && ref.title && title) {
 			return ref.title.toLowerCase() === title.toLowerCase();
 		}
 		return true;
@@ -337,6 +342,32 @@ function step1_computeWeights(
 				...f,
 				severity,
 				source: "reuse",
+				group: group.group,
+				effective_weight: 1.0,
+			});
+		}
+	}
+
+	// Intrafile findings: verdict→severity mapping; acceptable/consistent verdicts are dropped
+	for (const group of combined.intrafile ?? []) {
+		for (const f of group.findings) {
+			if (f.verdict === "acceptable-new" || f.verdict === "acceptable" || f.verdict === "consistent") {
+				continue;
+			}
+
+			let severity = f.severity;
+			if (f.verdict === "refactor" || f.verdict === "reuse") {
+				severity = "important";
+			} else if (f.verdict === "inconsistent") {
+				severity = "nit";
+			} else if (f.verdict === "extend" || f.verdict === "wrap") {
+				severity = "nit";
+			}
+
+			findings.push({
+				...f,
+				severity,
+				source: "intrafile",
 				group: group.group,
 				effective_weight: 1.0,
 			});
@@ -393,9 +424,9 @@ function step3_deduplicate(findings: ProcessedFinding[]): {
 
 		dedupCount++;
 
-		// Opus-lane sources (investigation, reuse) beat sweep; within Opus-lane keep highest weight
-		const incomingIsOpus = f.source === "investigation" || f.source === "reuse";
-		const existingIsOpus = existing.source === "investigation" || existing.source === "reuse";
+		// Opus-lane sources (investigation, reuse, intrafile) beat sweep; within Opus-lane keep highest weight
+		const incomingIsOpus = f.source === "investigation" || f.source === "reuse" || f.source === "intrafile";
+		const existingIsOpus = existing.source === "investigation" || existing.source === "reuse" || existing.source === "intrafile";
 
 		if (incomingIsOpus && !existingIsOpus) {
 			// Incoming Opus-lane displaces existing sweep
@@ -416,9 +447,9 @@ function step3_deduplicate(findings: ProcessedFinding[]): {
 function step4_rank(findings: ProcessedFinding[]): ProcessedFinding[] {
 	return findings.sort((a, b) => {
 		// Primary: tier (critical > important > skim)
-		// Both Opus-lane sources (investigation, reuse) rank at the top tier
-		const tierA = (a.source === "investigation" || a.source === "reuse") ? "critical" : (a.tier as string) ?? "skim";
-		const tierB = (b.source === "investigation" || b.source === "reuse") ? "critical" : (b.tier as string) ?? "skim";
+		// All Opus-lane sources (investigation, reuse, intrafile) rank at the top tier
+		const tierA = (a.source === "investigation" || a.source === "reuse" || a.source === "intrafile") ? "critical" : (a.tier as string) ?? "skim";
+		const tierB = (b.source === "investigation" || b.source === "reuse" || b.source === "intrafile") ? "critical" : (b.tier as string) ?? "skim";
 		const tierDiff = (TIER_ORDER[tierA] ?? 2) - (TIER_ORDER[tierB] ?? 2);
 		if (tierDiff !== 0) return tierDiff;
 

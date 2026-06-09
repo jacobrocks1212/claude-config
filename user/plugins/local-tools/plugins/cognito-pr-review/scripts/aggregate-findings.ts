@@ -54,6 +54,7 @@ interface SweepData {
 interface CombinedFindings {
   investigation: InvestigationGroup[];
   reuse: InvestigationGroup[];
+  intrafile: InvestigationGroup[];
   sweep: SweepData;
   manifest_path: string;
   previous_review_path?: string;
@@ -243,6 +244,71 @@ function main() {
     });
   }
 
+  // ── Read intrafile files ─────────────────────────────────────────────────
+
+  const intrafileGroups: InvestigationGroup[] = [];
+
+  let intrafileFiles: string[] = [];
+  if (fs.existsSync(agentOutputDir)) {
+    intrafileFiles = fs
+      .readdirSync(agentOutputDir)
+      .filter((f) => f.startsWith("intrafile-") && f.endsWith(".json"))
+      .map((f) => path.join(agentOutputDir, f))
+      .sort();
+  }
+
+  for (const filePath of intrafileFiles) {
+    let data: unknown;
+    try {
+      data = readJson(filePath);
+    } catch (err) {
+      process.stderr.write(
+        `Warning: Failed to parse ${filePath}: ${(err as Error).message}\n`
+      );
+      continue;
+    }
+
+    if (typeof data !== "object" || data === null) {
+      process.stderr.write(
+        `Warning: ${filePath} has invalid structure (not an object), skipping\n`
+      );
+      continue;
+    }
+
+    const record = data as Record<string, unknown>;
+
+    // Validate findings array
+    if (!Array.isArray(record["findings"])) {
+      process.stderr.write(
+        `Warning: ${filePath} missing or invalid "findings" array, skipping\n`
+      );
+      continue;
+    }
+
+    // Validate escalations array
+    const escalations: Escalation[] = Array.isArray(record["escalations"])
+      ? (record["escalations"] as Escalation[])
+      : [];
+
+    // Resolve group name
+    let group: string;
+    if (typeof record["group"] === "string" && record["group"].trim() !== "") {
+      group = record["group"];
+    } else {
+      const slug = filenameSlug(filePath);
+      process.stderr.write(
+        `Warning: ${filePath} missing "group" field — using filename slug "${slug}"\n`
+      );
+      group = slug;
+    }
+
+    intrafileGroups.push({
+      group,
+      findings: record["findings"] as InvestigationFinding[],
+      escalations,
+    });
+  }
+
   // ── Read sweep file ───────────────────────────────────────────────────────
 
   const sweepPath = path.join(agentOutputDir, "sweep.json");
@@ -289,9 +355,9 @@ function main() {
 
   // ── Guard: nothing to aggregate ───────────────────────────────────────────
 
-  if (investigationGroups.length === 0 && reuseGroups.length === 0 && sweep.findings.length === 0) {
+  if (investigationGroups.length === 0 && reuseGroups.length === 0 && intrafileGroups.length === 0 && sweep.findings.length === 0) {
     process.stderr.write(
-      "Error: No investigation files, reuse files, and no sweep findings found — nothing to aggregate\n"
+      "Error: No investigation files, reuse files, intrafile files, and no sweep findings found — nothing to aggregate\n"
     );
     process.exit(1);
   }
@@ -301,6 +367,7 @@ function main() {
   const combined: CombinedFindings = {
     investigation: investigationGroups,
     reuse: reuseGroups,
+    intrafile: intrafileGroups,
     sweep,
     manifest_path: manifestPath,
     ...(previousReviewPath ? { previous_review_path: previousReviewPath } : {}),
