@@ -28,11 +28,14 @@ The v2 pipeline replaces the v1 parallel-specialist model with a hierarchical ap
 ```
 prep-pr.ts (GitHub API) → journey-planner (Opus) → triage (Opus)
   → investigation (Opus, per critical group) + sweep (Sonnet, rules)
-    + reuse-candidacy (Opus, per net-new cluster)        [all three parallel]
+    + reuse-candidacy (Opus, per net-new cluster)
+    + intra-file consistency (Opus, per modified cluster)   [all parallel]
   → post-process.ts (deterministic) → synthesizer-v2 (Sonnet)
 ```
 
 The **reuse-candidacy stage** (`review-pr.md` Step 5b) runs in parallel with investigation+sweep: it clusters net-new/substantive files (seeded from `manifest.baselines[]`) and fans out one `cognito-consistency-checker` (Opus) per cluster. Each agent reads the shared reuse-discovery protocol (`~/.claude/skills/_components/reuse-discovery-protocol.md`), inherits investigation's access model (local-codebase-on-`main` + tree-sitter, NOT sweep's cache-only), and emits `{cacheDir}/agent-output/reuse-{cluster}.json` with a verdict (`reuse`/`extend`/`refactor`/`wrap`/`acceptable-new`). post-process routes reuse findings through the investigation lane (fixed weight 1.0) and maps **verdict→severity** — `refactor`/`reuse` → important, `extend`/`wrap` → nit, `acceptable-new` → dropped. **This verdict→severity boundary is a tunable** for future `/cognito-pr-review:learn-from-pr` calibration. The cache-only `sweep` agent can only FLAG reuse heuristics and ESCALATE (its 4 `reuse-*` rules in `code-consistency.yaml`); it never asserts a local-codebase fact.
+
+The **intra-file consistency stage** (also `review-pr.md` Step 5b, a second clustering pass concurrent with the reuse pass) is the *intra-file* complement to the cross-file reuse stage. Where reuse compares each changed file against *other* similar files (`manifest.baselines[]`, which excludes the file itself), this stage asks whether new code should have reused code already in **that same file**, and whether it is **consistent with the file's surrounding conventions**. It clusters all substantively-modified substantive files (all tiers; excludes test/config/generated; no baseline required) and fans out one `cognito-intra-file-consistency` (Opus) per cluster. Each agent reads BOTH the shared reuse-discovery protocol and `~/.claude/skills/_components/pr-review-reuse-agent-scaffold.md`, uses the host file's own `main` version as the implicit baseline, and emits `{cacheDir}/agent-output/intrafile-{cluster}.json` with `source:"intrafile"`. post-process routes these through the same investigation lane (fixed weight 1.0) and maps **verdict→severity** — intra-file duplication (`refactor`/`reuse`) → important, surrounding-code `inconsistent` → nit, `consistent`/`acceptable`/`acceptable-new` → dropped (with negative-search trail). synthesizer renders them under a distinct `## Intra-File Consistency` section. Sweep's 2 `intrafile-*` rules FLAG+ESCALATE in-file heuristics to this stage. The duplication-vs-consistency severity boundary is a `learn-from-pr` tunable, same as the reuse boundary.
 
 **`review-pr-buddy`** (`commands/review-pr-buddy.md`) is an interactive front-end over the SAME pipeline: Phase 0 delegates entirely to `review-pr.md` (the single source of pipeline truth — steps are not duplicated); Phase 1 walks the journey's Manual Review Guide chunk-by-chunk, capturing per-finding verdicts to `{cacheDir}/buddy-session.json` (compaction-safe); Phase 2 emits a human-curated `PR-{id}.md` in synthesizer-v2 format. `review-pr.md` remains the main pipeline orchestration; `review-pr-buddy.md` is the buddy orchestration.
 
@@ -45,9 +48,10 @@ The **reuse-candidacy stage** (`review-pr.md` Step 5b) runs in parallel with inv
 - `agents/journey-planner.md` — Opus; produces journey file + validates triage
 - `agents/triage.md` — Opus; classifies files into critical/important/skim
 - `agents/investigation.md` — Opus; deep-dive with Solver-Verifier protocol
-- `agents/sweep.md` — Sonnet; embedded YAML rules, weight-aware thresholds (incl. `reuse-*` flag+escalate rules)
-- `agents/cognito-consistency-checker.md` — Opus; per-cluster reuse-candidacy agent (grown from the orphaned checker); reads the shared reuse-discovery protocol; investigation-level access
-- `agents/synthesizer-v2.md` — Sonnet; narrative review synthesis (incl. "Reuse & Duplication" section)
+- `agents/sweep.md` — Sonnet; embedded YAML rules, weight-aware thresholds (incl. `reuse-*` and `intrafile-*` flag+escalate rules)
+- `agents/cognito-consistency-checker.md` — Opus; per-cluster reuse-candidacy agent (grown from the orphaned checker); reads the shared reuse-discovery protocol + agent scaffold; investigation-level access
+- `agents/cognito-intra-file-consistency.md` — Opus; per-cluster intra-file duplication + surrounding-code consistency agent; reads the same protocol + scaffold; investigation-level access; emits `source:"intrafile"`
+- `agents/synthesizer-v2.md` — Sonnet; narrative review synthesis (incl. "Reuse & Duplication" + "Intra-File Consistency" sections)
 
 ### Knowledge
 - `knowledge/rules/*.yaml` — 95 rules across 8 categories
@@ -65,6 +69,7 @@ The **reuse-candidacy stage** (`review-pr.md` Step 5b) runs in parallel with inv
 - YAML frontmatter specifies model, color, and allowed-tools
 - `sweep.md` has embedded rules between `RULES_START`/`RULES_END` markers — use `/cognito-pr-review:rebuild-agents` to re-embed after rule changes
 - `investigation.md` has unrestricted read access (cache + local codebase); `sweep.md` has cache-only access
+- The reuse-class agents (`cognito-consistency-checker.md`, `cognito-intra-file-consistency.md`) share `~/.claude/skills/_components/pr-review-reuse-agent-scaffold.md` (access model + tree-sitter guidance + output schema + verdict/severity reminders) — `Read` at runtime, one source of truth, do not fork. They differ only by the documented per-agent overrides (output prefix, baseline source, extra verdicts)
 - Agent output JSON schema must match what `post-process.ts` expects
 
 ### When editing rules (*.yaml)
