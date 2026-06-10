@@ -398,7 +398,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] `--apply-pseudo <name> <spec_path>` for all deterministic sentinel/receipt writes; receipt-write ownership contradiction resolved (script is single author)
 - [x] `--neutralize-sentinel <path>` with collision handling
 - [x] Persisted probe signature → `repeat_count` in output
-- [ ] Probe payload includes git-guard results + pre-formatted cycle header
+- [x] Probe payload includes git-guard results + pre-formatted cycle header
 - [ ] Both batch skills consume subcommands; superseded prose deleted
 
 **Runtime Verification:**
@@ -467,6 +467,21 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Ground-truth verification:** impl GROUND-TRUTH re-run independently — full suite 137/137, both `--test` gates exit 0 (baselines unchanged), default two-run `--repo-root` BYTE-IDENTICAL (0 `repeat_count` occurrences), only the 4 source files modified (no repo pollution) — all matched. No falsified claims.
 **Integration notes:** added `import hashlib` to lazy_core.py (`tempfile`/`json` already present); CLI additive + flag-gated. WU-5 (next batch) folds git-guard results + a cycle-header block into the probe payload (same flag-gated, byte-identical-default discipline). WU-6 wires the SKILL loop-guard (Step 1d) to consume `repeat_count`.
 **Files modified:** `user/scripts/lazy_core.py` (+`update_repeat_count`, +`import hashlib`), `user/scripts/lazy-state.py` (flag+gated call), `user/scripts/bug-state.py` (flag+gated call), `user/scripts/test_lazy_core.py` (5 tests + registry).
+
+#### Implementation Notes (Phase 5 — Batch 5: WU-5 single probe payload — git guards + cycle header)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fix applied → PASS (dedicated Opus reviewer; orchestrator INDEPENDENTLY re-proved byte-identical default + verified the fix; ground-truth verified: yes; HEAD unchanged d06848a. One Low contract-divergence caught + fixed.)
+**Work completed:**
+- **WU-5** (TDD): two new shared functions in `lazy_core.py` —
+  - `git_guard_status(repo_root) -> {clean_tree, head_matches_origin, unpushed}` (~1806): `clean_tree` = `git status --short` empty AND returncode 0; `head_matches_origin` = HEAD == `@{u}`; `unpushed` = `git rev-list --count @{u}..HEAD` > 0. Best-effort (git failure / no upstream → safe False).
+  - `format_cycle_header(state, *, forward_cycles, max_cycles, meta_cycles) -> str` (~1904): pre-formats the orchestrator's `### Cycle fwd {fwd}/{max} · meta {meta}/{2*max} · {feature} · {sub_skill}` heading line (U+00B7 `·` separators, U+2014 `—` for falsy feature/sub_skill, `?` for None counters incl. `2*max`). Counters use `is not None` (so `forward_cycles=0` renders `0`, not `?`). The orchestrator passes its session counters in; the script pre-formats the ready-to-print line so the happy-path turn is read-payload → dispatch → record.
+- **CRITICAL byte-identical gating** (same discipline as WU-4): both fields are emitted ONLY under a new `--probe` flag (+ `--forward-cycles/--meta-cycles/--max-cycles` int flags), wired into BOTH `lazy-state.py` (~4671/4756) and `bug-state.py` (~2882/2960) inside `if args.probe:` AFTER compute_state, composing with `--repeat-count`. WITHOUT `--probe`: no fields → output byte-for-byte identical (baselines + zero-drift probe preserved; independently re-proved by the orchestrator). NO baseline regeneration.
+- **Tests**: 6 RED→GREEN (`test_git_guard_status_*` ×4 incl. the fix-driven invalid-repo guard, `test_format_cycle_header_*` ×2). git tests reuse the WU-1 `_make_git_repo_with_origin` bare-origin fixture; the unpushed test is discriminating (HEAD ahead → head_matches_origin False AND unpushed True AND clean_tree True); the header tests pin the exact string incl. the `2*max` arithmetic.
+**Ground-truth verification:** impl + fix GROUND-TRUTH re-run independently — full suite 143/143, both `--test` gates exit 0 (baselines unchanged), default two-run `--repo-root` BYTE-IDENTICAL (0 `git_guards`/`cycle_header` occurrences), only the 4 source files modified — all matched.
+**Review fix applied (Sonnet fix-agent, re-verified PASS):** `clean_tree` originally trusted empty stdout alone; an invalid/non-git `repo_root` makes `git status --short` exit 128 with empty stdout → false-positive `clean_tree=True`, contradicting the docstring + inconsistent with checks 2/3. Fixed to require `returncode == 0 AND empty stdout`; added `test_git_guard_status_invalid_repo_is_safe_dirty` (discriminating — fails under the old logic).
+**Carried follow-up (minor, not blocking):** `verify_ledger`'s own `clean_tree` (WU-1, lazy_core.py ~1083) has the same latent stdout-only logic; harmless in production (always called with a real repo_root) but a candidate for the same one-line `returncode==0` hardening in a future consistency pass.
+**Integration notes:** both functions standalone, no new imports (subprocess present); CLI additive + flag-gated. WU-6 wires the SKILL Step-3 cycle-header + git-guard consumption to `--probe`.
+**Files modified:** `user/scripts/lazy_core.py` (+`git_guard_status`, +`format_cycle_header`, clean_tree returncode fix), `user/scripts/lazy-state.py` (flags+gated call), `user/scripts/bug-state.py` (flags+gated call), `user/scripts/test_lazy_core.py` (6 tests + registry).
 
 ---
 

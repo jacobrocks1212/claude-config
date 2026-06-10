@@ -1797,3 +1797,156 @@ def update_repeat_count(
     _atomic_write(signature_path, payload)
 
     return count
+
+
+# ---------------------------------------------------------------------------
+# WU-5: Single-probe payload helpers
+# ---------------------------------------------------------------------------
+
+def git_guard_status(repo_root: Path) -> dict:
+    """Return a three-key git status snapshot for the probe payload.
+
+    Runs three lightweight git commands against ``repo_root`` and returns a
+    dict with the following keys:
+
+    ``clean_tree`` (bool)
+        True when ``git status --short`` produces no output (no staged,
+        unstaged, or untracked changes).
+
+    ``head_matches_origin`` (bool)
+        True when ``git rev-parse HEAD`` equals ``git rev-parse @{u}``.
+        False when the repo has no upstream configured or any git command
+        fails.
+
+    ``unpushed`` (bool)
+        True when ``git rev-list --count @{u}..HEAD`` returns an integer > 0
+        (local commits are ahead of the upstream tracking ref).  False on any
+        git failure or when no upstream is configured.
+
+    Error-handling contract (best-effort, mirrors verify_ledger / _current_head):
+    - Each of the three checks is independent; a failure in one does not
+      prevent the others from running.
+    - Any ``OSError`` or ``subprocess.SubprocessError`` (including timeout)
+      silently produces the safe-default value for that check.
+    - When ``@{u}`` does not resolve (no upstream), both ``head_matches_origin``
+      and ``unpushed`` are False; ``clean_tree`` still reflects the status
+      command result if it succeeded.
+    """
+    # --- check 1: clean working tree -----------------------------------------
+    # Mirror the subprocess style used in verify_ledger: capture_output + text
+    # + explicit timeout + catch OSError/SubprocessError.
+    try:
+        status_result = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # Require a zero returncode in addition to empty stdout.  When
+        # repo_root is not a git repo, `git status --short` exits 128 with
+        # empty stdout — without the returncode guard that would produce a
+        # false-positive clean_tree=True (contradicting the docstring contract
+        # that an invalid repo → safe-dirty False, matching checks 2 and 3).
+        clean_tree = (status_result.returncode == 0 and status_result.stdout.strip() == "")
+    except (OSError, subprocess.SubprocessError):
+        # Git unavailable or repo_root invalid — assume dirty so callers don't
+        # proceed with a false-positive clean signal.
+        clean_tree = False
+
+    # --- check 2: HEAD matches upstream tracking ref -------------------------
+    # Both rev-parse commands must succeed and return identical SHA strings.
+    # @{u} fails with a non-zero returncode when no upstream is configured.
+    try:
+        head_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        upstream_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "@{u}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if head_result.returncode == 0 and upstream_result.returncode == 0:
+            head_sha = head_result.stdout.strip()
+            upstream_sha = upstream_result.stdout.strip()
+            # Require both SHAs to be non-empty before comparing.
+            head_matches_origin = bool(head_sha and upstream_sha and head_sha == upstream_sha)
+        else:
+            # @{u} can fail when no upstream is configured; treat as mismatch.
+            head_matches_origin = False
+    except (OSError, subprocess.SubprocessError):
+        head_matches_origin = False
+
+    # --- check 3: unpushed local commits -------------------------------------
+    # rev-list --count @{u}..HEAD returns the number of commits ahead of the
+    # upstream.  A non-zero integer means at least one local commit is unpushed.
+    try:
+        revlist_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-list", "--count", "@{u}..HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if revlist_result.returncode == 0:
+            unpushed = int(revlist_result.stdout.strip()) > 0
+        else:
+            # No upstream or other git error — cannot determine ahead-count.
+            unpushed = False
+    except (OSError, subprocess.SubprocessError, ValueError):
+        # ValueError covers int() failing on unexpected output.
+        unpushed = False
+
+    return {
+        "clean_tree": clean_tree,
+        "head_matches_origin": head_matches_origin,
+        "unpushed": unpushed,
+    }
+
+
+def format_cycle_header(
+    state: dict,
+    *,
+    forward_cycles: "int | None" = None,
+    max_cycles: "int | None" = None,
+    meta_cycles: "int | None" = None,
+) -> str:
+    """Return a formatted cycle-header line for the orchestrator probe payload.
+
+    Produces a string in EXACTLY this form (separators are U+00B7 MIDDLE DOT
+    ``·``, and the em-dash placeholder is U+2014 ``—``):
+
+        ### Cycle fwd {fwd}/{max} · meta {meta}/{double} · {feature} · {sub_skill}
+
+    Counter rendering:
+    - ``{fwd}``    = ``forward_cycles`` if not None else ``?``
+    - ``{max}``    = ``max_cycles`` if not None else ``?``
+    - ``{meta}``   = ``meta_cycles`` if not None else ``?``
+    - ``{double}`` = ``2 * max_cycles`` if ``max_cycles is not None`` else ``?``
+      (the orchestrator's total meta-cycle budget is double the forward-cycle
+      ceiling — computed here, not supplied by the caller)
+
+    State field rendering:
+    - ``{feature}``   = ``state.get("feature_id")`` if truthy else ``—`` (U+2014)
+    - ``{sub_skill}`` = ``state.get("sub_skill")``  if truthy else ``—`` (U+2014)
+    """
+    # Render each counter: use the value when supplied, else the '?' placeholder.
+    fwd_str = str(forward_cycles) if forward_cycles is not None else "?"
+    max_str = str(max_cycles) if max_cycles is not None else "?"
+    meta_str = str(meta_cycles) if meta_cycles is not None else "?"
+    # double is derived from max_cycles — the meta-cycle budget is 2× the
+    # forward-cycle ceiling.  Fall back to '?' when max is unknown.
+    double_str = str(2 * max_cycles) if max_cycles is not None else "?"
+
+    # Render state fields: use the value when truthy, else the em-dash sentinel.
+    feature_str = state.get("feature_id") or "—"
+    sub_skill_str = state.get("sub_skill") or "—"
+
+    return (
+        f"### Cycle fwd {fwd_str}/{max_str}"
+        f" · meta {meta_str}/{double_str}"
+        f" · {feature_str}"
+        f" · {sub_skill_str}"
+    )

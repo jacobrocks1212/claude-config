@@ -3266,6 +3266,147 @@ def test_update_repeat_count_corrupt_file_resets():
 
 
 # ---------------------------------------------------------------------------
+# Tests: git_guard_status — WU-5 single-probe payload (git guards)
+# ---------------------------------------------------------------------------
+
+def test_git_guard_status_clean_and_pushed():
+    """Fresh repo with one commit pushed → clean_tree=True, head_matches_origin=True, unpushed=False.
+
+    Uses _make_git_repo_with_origin so @{u} resolves.
+    RED: git_guard_status missing → AttributeError after _guard().
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        result = lazy_core.git_guard_status(repo_root)
+    assert result == {"clean_tree": True, "head_matches_origin": True, "unpushed": False}, (
+        f"expected all-green dict for clean pushed repo, got {result!r}"
+    )
+
+
+def test_git_guard_status_dirty_tree():
+    """Untracked file present → clean_tree=False (other fields unconstrained).
+
+    After the push, add an untracked file without staging it.  The tree is now
+    dirty even though HEAD == @{u}.
+    RED: git_guard_status missing → AttributeError after _guard().
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        # Drop an untracked file — do NOT stage or commit.
+        (repo_root / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+        result = lazy_core.git_guard_status(repo_root)
+    assert result["clean_tree"] is False, (
+        f"expected clean_tree=False with an untracked file present, got {result!r}"
+    )
+
+
+def test_git_guard_status_unpushed_commit():
+    """Local commit not yet pushed → head_matches_origin=False, unpushed=True, clean_tree=True.
+
+    After the initial push, make a NEW commit (so the working tree is clean but
+    HEAD is one commit ahead of @{u}).
+    RED: git_guard_status missing → AttributeError after _guard().
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        # Create a new file, commit it — do NOT push.
+        (repo_root / "ahead.txt").write_text("unpushed change\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo_root), "add", "ahead.txt"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo_root), "commit", "-q", "-m", "unpushed"],
+            check=True, capture_output=True,
+        )
+        result = lazy_core.git_guard_status(repo_root)
+    assert result["head_matches_origin"] is False, (
+        f"expected head_matches_origin=False when HEAD is ahead of @{{u}}, got {result!r}"
+    )
+    assert result["unpushed"] is True, (
+        f"expected unpushed=True when HEAD is one commit ahead of @{{u}}, got {result!r}"
+    )
+    assert result["clean_tree"] is True, (
+        f"expected clean_tree=True (change was committed, not left dirty), got {result!r}"
+    )
+
+
+def test_git_guard_status_invalid_repo_is_safe_dirty():
+    """Plain temp dir (not a git repo) → all three fields are False (safe-dirty).
+
+    git status --short exits 128 with EMPTY stdout for a non-git directory.
+    The old code checked only stdout and therefore returned clean_tree=True
+    (false-positive).  The fixed code requires returncode==0 AND empty stdout,
+    so an invalid repo path → clean_tree=False (safe-dirty), consistent with
+    head_matches_origin=False and unpushed=False.
+
+    This test is DISCRIMINATING: it FAILS under the old stdout-only logic and
+    PASSES only after the returncode guard is in place.
+    RED: old code → clean_tree=True (false-positive clean), assertion fails.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # td is a plain directory — NOT a git repo.
+        result = lazy_core.git_guard_status(Path(td))
+    assert result["clean_tree"] is False, (
+        f"expected clean_tree=False for a non-git directory, got {result!r}"
+    )
+    assert result["head_matches_origin"] is False, (
+        f"expected head_matches_origin=False for a non-git directory, got {result!r}"
+    )
+    assert result["unpushed"] is False, (
+        f"expected unpushed=False for a non-git directory, got {result!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: format_cycle_header — WU-5 single-probe payload (cycle header)
+# ---------------------------------------------------------------------------
+
+def test_format_cycle_header_full():
+    """All counters provided, state has feature_id and sub_skill → exact pinned string.
+
+    The 2*max_cycles arithmetic (2*8==16) is part of the contract and must be
+    computed by the function, not hard-coded by the caller.
+    RED: format_cycle_header missing → AttributeError after _guard().
+    """
+    _guard()
+    state = {"feature_id": "audio-engine", "sub_skill": "/execute-plan", "other": "ignored"}
+    result = lazy_core.format_cycle_header(
+        state, forward_cycles=2, max_cycles=8, meta_cycles=3
+    )
+    expected = "### Cycle fwd 2/8 · meta 3/16 · audio-engine · /execute-plan"
+    assert result == expected, (
+        f"format_cycle_header returned wrong string.\n"
+        f"  expected: {expected!r}\n"
+        f"  got:      {result!r}"
+    )
+
+
+def test_format_cycle_header_missing_fields():
+    """state={} and all counters None → feature/sub_skill render as —, counters as ?.
+
+    The exact placeholder contract: counters None → '?', missing feature_id/sub_skill → '—'.
+    Also verifies that 2*max_cycles renders as '?' when max_cycles is None.
+    RED: format_cycle_header missing → AttributeError after _guard().
+    """
+    _guard()
+    state = {}
+    result = lazy_core.format_cycle_header(
+        state, forward_cycles=None, max_cycles=None, meta_cycles=None
+    )
+    expected = "### Cycle fwd ?/? · meta ?/? · — · —"
+    assert result == expected, (
+        f"format_cycle_header returned wrong string for all-None/empty state.\n"
+        f"  expected: {expected!r}\n"
+        f"  got:      {result!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -3435,6 +3576,14 @@ _TESTS = [
     ("test_update_repeat_count_resets_on_signature_change", test_update_repeat_count_resets_on_signature_change),
     ("test_update_repeat_count_args_distinguish_signature", test_update_repeat_count_args_distinguish_signature),
     ("test_update_repeat_count_corrupt_file_resets", test_update_repeat_count_corrupt_file_resets),
+    # git_guard_status — WU-5 single-probe payload (git guards)
+    ("test_git_guard_status_clean_and_pushed", test_git_guard_status_clean_and_pushed),
+    ("test_git_guard_status_dirty_tree", test_git_guard_status_dirty_tree),
+    ("test_git_guard_status_unpushed_commit", test_git_guard_status_unpushed_commit),
+    ("test_git_guard_status_invalid_repo_is_safe_dirty", test_git_guard_status_invalid_repo_is_safe_dirty),
+    # format_cycle_header — WU-5 single-probe payload (cycle header)
+    ("test_format_cycle_header_full", test_format_cycle_header_full),
+    ("test_format_cycle_header_missing_fields", test_format_cycle_header_missing_fields),
 ]
 
 

@@ -4668,6 +4668,16 @@ def main() -> int:
                              "(consecutive identical-probe count) for mechanical loop detection. "
                              "Without this flag, output is byte-identical to the default and no "
                              "state file is written.")
+    parser.add_argument("--probe", action="store_true",
+                        help="Fold git-guard results + a pre-formatted cycle-header line into the "
+                             "probe JSON (orchestrator happy-path payload). Without this flag, output "
+                             "is byte-identical to the default.")
+    parser.add_argument("--forward-cycles", type=int, default=None,
+                        help="Orchestrator forward-cycle count (for --probe cycle header).")
+    parser.add_argument("--meta-cycles", type=int, default=None,
+                        help="Orchestrator meta-cycle count (for --probe cycle header).")
+    parser.add_argument("--max-cycles", type=int, default=None,
+                        help="Orchestrator max-cycles ceiling (for --probe cycle header).")
     args = parser.parse_args()
 
     if args.neutralize_sentinel is not None:
@@ -4740,6 +4750,15 @@ def main() -> int:
     # and no field is injected unless --repeat-count is explicitly passed.
     if args.repeat_count:
         state["repeat_count"] = lazy_core.update_repeat_count(Path(args.repo_root), state)
+    # --probe is strictly additive and flag-gated so that default output remains
+    # byte-identical when the flag is absent.  Composes independently with
+    # --repeat-count (both may be present simultaneously).
+    if args.probe:
+        state["git_guards"] = lazy_core.git_guard_status(Path(args.repo_root))
+        state["cycle_header"] = lazy_core.format_cycle_header(
+            state, forward_cycles=args.forward_cycles,
+            max_cycles=args.max_cycles, meta_cycles=args.meta_cycles,
+        )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 
