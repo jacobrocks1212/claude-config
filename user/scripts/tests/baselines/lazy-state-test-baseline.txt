@@ -42,6 +42,8 @@
   [device-deferred-stale-validated] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
   [device-deferred-with-skip] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
   [stale-mcp-results-reverify] cloud=False skip_nr=False real_device=True: Step 9: stale MCP results — re-verify
+  [skip-pipeline-granted-needs-input] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
+  [skip-operator-granted-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
 {
   "error": "feature_id already queued: adhoc-test",
   "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"

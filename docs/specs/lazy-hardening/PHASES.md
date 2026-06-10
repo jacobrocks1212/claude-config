@@ -110,13 +110,13 @@ cloud gates in bug-state; standing-directive confirmation.
 **Deliverables:**
 - [x] `lazy_core.has_completion_receipt()` validates frontmatter (`kind:`, `provenance:`); malformed → treated missing + diagnostic
 - [x] bug-state cloud Step-2 skip + Step-10 hard-halt (mirror lazy-state); dead terminals resolved
-- [ ] Unqueued Fixed-no-receipt bypass closed (uniform receipt gate or diagnostic)
+- [x] Unqueued Fixed-no-receipt bypass closed (uniform receipt gate or diagnostic)
 - [x] `MCP_TEST_RESULTS.md` commit-sha freshness check before `__write_validated_from_results__`
-- [ ] `SKIP_MCP_TEST.md` `granted_by: operator|pipeline`; coverage-audit + `__write_validated_from_skip__` honor it
+- [x] `SKIP_MCP_TEST.md` `granted_by: operator|pipeline`; coverage-audit + `__write_validated_from_skip__` honor it
 - [x] D6: LOOP-DETECTED block restricted to NEEDS_INPUT/BLOCKED (all 3 orchestrators) + stale anchor fixed
 - [x] Step 1e.4a: no evidence-less verification-box ticking; mismatch → NEEDS_INPUT
-- [ ] Input-audit runs after needs-input/blocked spec cycles; >4-decision overflow → durable follow-up NEEDS_INPUT
-- [ ] Standing-directive echo-back protocol; no early stop with budget+queue remaining; non-integer max_cycles rejected with question
+- [x] Input-audit runs after needs-input/blocked spec cycles; >4-decision overflow → durable follow-up NEEDS_INPUT
+- [x] Standing-directive echo-back protocol; no early stop with budget+queue remaining; non-integer max_cycles rejected with question
 - [ ] D5: mcp-test inline-fix policy (test-first, disclosed, never self-certifies) in prompt overrides
 
 **Runtime Verification:**
@@ -139,6 +139,20 @@ cloud gates in bug-state; standing-directive confirmation.
 - **WU-4 producer gap (follow-up):** the freshness gate is the CONSUMER half. It stays backward-compatibly inert until the `MCP_TEST_RESULTS.md` PRODUCER (the `/mcp-test` results writer / mcp-integration-test path) populates `validated_commit`. Per the plan WU-4 file-list (`lazy-state.py` + `sentinel-frontmatter.md` only) the producer-wiring was deliberately NOT done here — flagged for a follow-up (natural fit for the Phase 6 contradiction sweep). No regression: absent-field path == prior behavior.
 - All three regression gates exit 0 after this batch.
 **Files modified:** `user/scripts/lazy_core.py`, `user/scripts/bug-state.py`, `user/scripts/lazy-state.py`, `user/scripts/test_lazy_core.py`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`, `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, `user/skills/_components/sentinel-frontmatter.md`, `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`
+
+#### Implementation Notes (Phase 2 — Batch 2: WU-3, WU-5, WU-7)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (orchestrator review; all ground-truth blocks independently re-run; gates green; combined-tree coherence confirmed after a concurrent-edit stash maneuver — see process note)
+**Work completed:**
+- **WU-3** (`bug-state.py` unqueued Fixed-no-receipt bypass): `_find_open_bug_dirs` previously dropped EVERY dir whose status ∈ `_BUG_DONE_STATUSES` before any receipt check, so an unqueued on-disk bug flipped to Fixed without a `FIXED.md` receipt bypassed the gate entirely. Now special-cased: `Won't-fix` → skip (receipt-exempt); `Fixed` WITH a valid `FIXED.md` (`has_completion_receipt`) → skip (genuinely done); `Fixed` WITHOUT receipt → surfaced (`_diag` + returned) so the queue-walk gate fires `completion-unverified` — uniform with the queued path. Reuses the now-content-validating `has_completion_receipt` (a `touch FIXED.md` won't satisfy it). New fixture `unqueued-fixed-no-receipt-halt` (RED→GREEN); `bug-state-test-baseline.txt` regenerated. `wont-fix-exempt` + `fixed-no-receipt-halt` unregressed.
+- **WU-5** (`lazy-state.py` SKIP_MCP_TEST provenance): both `__write_validated_from_skip__` emission sites (cloud Step-9 + workstation Step-9) now parse `SKIP_MCP_TEST.md` and refuse `granted_by: pipeline` → route to `needs-input` (a pipeline-self-granted skip can't vacuously validate; needs operator confirmation). Backward-compatible: absent / `operator` / non-`pipeline` → unchanged validate-from-skip. `granted_by: operator|pipeline` added to the `SKIP_MCP_TEST.md` schema in `sentinel-frontmatter.md`; `mcp-coverage-audit.md` step 2 now treats only `operator` (or absent) grants as a legitimate vacuous-pass, a `pipeline` grant as uncovered → surface. New fixtures `skip-pipeline-granted-needs-input` (RED→GREEN) + `skip-operator-granted-validates` (positive guard); `lazy-state-test-baseline.txt` regenerated.
+- **WU-7** (input-audit + standing-directive, prose; FULL on lazy-batch, MINIMAL on lazy-bug-batch): (A) Step 1d.5 now runs after EVERY `/spec`|`plan-feature` cycle before the next state probe — a subsequent `needs-input`/`blocked` routing no longer exempts the cycle's audit (double-fire guard preserved). (B) >4-decision audit overflow now persists as durable follow-up `NEEDS_INPUT.md` sentinels (re-surface via Step 1g) instead of a buried `## Open Questions` body. (C) Standing-directive echo-back: a mid-run operator message implying a budget change / standing resolution mode / early stop must be confirmed via ONE `AskUserQuestion` before the mode takes effect; the orchestrator must never end a run with budget AND queue both remaining without asking. (D) Ambiguous/non-integer `max_cycles` (e.g. "infinity") → ONE clarifying `AskUserQuestion`, never a silent coerce. HARD CONSTRAINT 5 updated to enumerate the two new permitted orchestrator-level `AskUserQuestion` uses. lazy-batch-cloud confirmed already by-reference for Step 1d.5 (no edit needed, no follow-up).
+**Ground-truth verification:** All three agents produced GROUND-TRUTH blocks; orchestrator independently re-ran all three regression gates (exit 0), the full `test_lazy_core.py` suite (91/91), `git stash list` (empty — no residue), and read the substantive `_find_open_bug_dirs` and lazy-batch prose edits. No falsified claims.
+**Process note:** the WU-3 agent used a transient `git stash`/`stash pop` to isolate the working tree from WU-5's concurrent lazy-state edits. It left no residue (empty stash list) and the combined tree is coherent (all gates green, all eight expected files present + correct). No harm; flagged so future concurrent batches avoid in-agent stashing.
+**Follow-up notes (carried from Batch 1 + new):**
+- WU-4 producer gap (validated_commit recording by the MCP_TEST_RESULTS.md producer) still open — Phase 6 candidate.
+- bug-state.py has its own `__write_validated_from_skip__` skip paths (Step 9, ~704-720) that do NOT yet honor `granted_by` — WU-5 was scoped to lazy-state.py only per the plan. Flagged for the lazy-bug-batch rebuild / a future parity pass (Phase 6).
+**Files modified:** `user/scripts/bug-state.py`, `user/scripts/lazy-state.py`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`, `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, `user/skills/_components/sentinel-frontmatter.md`, `user/skills/_components/mcp-coverage-audit.md`, `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`
 
 ---
 

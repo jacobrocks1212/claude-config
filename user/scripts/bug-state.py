@@ -357,8 +357,15 @@ def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
     """Return on-disk open bug dirs NOT already in queued_ids.
 
     Searches bugs_dir (one level deep), skips _archive/, and skips any dir
-    whose SPEC.md **Status:** is Fixed or Won't-fix.  Returns dirs sorted by
-    severity rank then Discovered date ascending.
+    whose SPEC.md **Status:** is a genuinely-done terminal state.  Returns
+    dirs sorted by severity rank then Discovered date ascending.
+
+    Done-status semantics:
+      - Won't-fix → always skipped (receipt-exempt, retired without fix).
+      - Fixed WITH a valid FIXED.md receipt → skipped (genuinely done).
+      - Fixed WITHOUT a valid FIXED.md receipt → NOT skipped; returned so
+        compute_state's queue-walk receipt gate can fire TR_COMPLETION_UNVERIFIED.
+        A diagnostic is emitted to surface the bypass to the operator.
 
     Note: the first parameter is the bugs_dir (docs/bugs/), NOT the repo root.
     """
@@ -378,10 +385,24 @@ def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
         spec_md = child / "SPEC.md"
         if not spec_md.exists():
             continue
-        # Read status — skip if the bug is already done
+        # Read status and apply done-status filtering with receipt awareness.
         status = spec_status(child)
-        if status in _BUG_DONE_STATUSES:
+        if status == BUG_STATUS_WONT_FIX:
+            # Receipt-exempt: retired without fix — always skip.
             continue
+        if status == BUG_STATUS_FIXED:
+            if has_completion_receipt(child, filename="FIXED.md"):
+                # Genuinely done: Fixed with a valid FIXED.md receipt — skip.
+                continue
+            # Fixed WITHOUT receipt: do NOT silently skip.  Surface this dir so
+            # the queue-walk receipt gate in compute_state fires
+            # TR_COMPLETION_UNVERIFIED — same as the queued-bug path.
+            _diag(
+                f"unqueued Fixed-without-receipt dir surfaced for receipt gate: "
+                f"'{child.name}' — SPEC marks Fixed but no valid FIXED.md receipt found. "
+                "Routing to completion gate (completion-unverified)."
+            )
+            # Fall through to append into candidates below.
         # Sort key: severity rank (ascending priority) + discovered date string (ascending)
         sev = bug_severity(spec_md)
         sev_rank = _SEVERITY_RANK.get(sev, _SEVERITY_DEFAULT) if sev else _SEVERITY_DEFAULT
@@ -975,6 +996,9 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
                                 the actionable bug must be selected (DEFERRED.md skipped)
       all-operator-deferred   — only bug has DEFERRED.md → all-remaining-deferred terminal
       queue-json-missing      — docs/bugs/ exists but queue.json absent → queue-missing terminal
+      unqueued-fixed-no-receipt-halt — on-disk Fixed bug NOT in queue.json, no FIXED.md
+                                       → must halt with completion-unverified (not silently
+                                         skip to all-bugs-fixed via _find_open_bug_dirs)
     """
     root = tmpdir / name
     bugs_dir = root / "docs" / "bugs"
@@ -1719,6 +1743,40 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         bugs_dir.mkdir(parents=True, exist_ok=True)
         # Intentionally NO queue.json — the trigger for TR_QUEUE_MISSING.
 
+    elif name == "unqueued-fixed-no-receipt-halt":
+        # Pin the bypass: an on-disk bug dir marked **Status:** Fixed but with NO
+        # FIXED.md receipt and NOT listed in queue.json must NOT be silently skipped
+        # by _find_open_bug_dirs.  It must surface through the completion gate and
+        # halt with terminal_reason == TR_COMPLETION_UNVERIFIED.
+        #
+        # Current behavior (RED): _find_open_bug_dirs pre-filters every dir whose
+        # status ∈ _BUG_DONE_STATUSES (which includes "Fixed"), so the bug never
+        # reaches the queue-walk receipt gate.  The pipeline sees no open bugs and
+        # returns TR_ALL_BUGS_FIXED, silently treating the Fixed-without-receipt bug
+        # as done.
+        #
+        # Expected behavior (GREEN after impl-agent fix): _find_open_bug_dirs only
+        # pre-filters Fixed dirs that HAVE a FIXED.md receipt (genuinely done) and
+        # Won't-fix dirs (receipt-exempt).  Fixed-WITHOUT-receipt dirs are returned
+        # so the queue-walk receipt gate at line ~457-475 can halt with
+        # TR_COMPLETION_UNVERIFIED.
+        #
+        # The queue.json is present but does NOT list this bug dir — forcing the
+        # _find_open_bug_dirs code path (not the queued-bug path).
+        (bugs_dir / "queue.json").write_text(json.dumps({"queue": []}),
+                                             encoding="utf-8")
+        bdir = bugs_dir / "bug-unqueued-fnr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Unqueued Fixed No Receipt Bug\n\n"
+            "**Status:** Fixed\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n\n"
+            "## Description\n\nFixed outside validation gate — no FIXED.md receipt.\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO FIXED.md receipt — the absence triggers the bypass being pinned.
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1959,6 +2017,18 @@ def run_smoke_tests() -> int:
             "queue-json-missing", False, True,
             {
                 "terminal_reason": TR_QUEUE_MISSING,
+            },
+        ),
+        # 23. Unqueued Fixed-no-receipt bypass pin (WU-3).
+        #     An on-disk bug marked Fixed but lacking FIXED.md, NOT in queue.json,
+        #     must be surfaced by _find_open_bug_dirs and halted by the receipt gate
+        #     with terminal_reason == TR_COMPLETION_UNVERIFIED.
+        #     RED against current code (_find_open_bug_dirs pre-filters all Fixed dirs,
+        #     so it returns [] → pipeline sees no open bugs → TR_ALL_BUGS_FIXED).
+        (
+            "unqueued-fixed-no-receipt-halt", False, True,
+            {
+                "terminal_reason": TR_COMPLETION_UNVERIFIED,
             },
         ),
     ]

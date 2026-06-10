@@ -61,7 +61,11 @@ dispatches whatever `bug-state.py` returns.
 
 5. **Interactive prompts are scoped to the resolution modes — decision-resume (Step 1g),
    blocked-resolution (Step 1h), and operator-directed halt-resolution (Step 1i) — ONLY for the
-   orchestrator itself.** Outside those modes the orchestrator MUST NOT call `AskUserQuestion`.
+   orchestrator itself.** Outside those modes the orchestrator MUST NOT call `AskUserQuestion`
+   — with two additional permitted uses added by the Step 0 standing-directive protocol: (i) the
+   echo-back confirmation when a mid-run operator message implies a budget change, standing
+   resolution mode, or early stop; and (ii) the budget-and-queue guard question when the run would
+   otherwise end with budget and queue both remaining.
    Inside each, the orchestrator MUST re-print the load-bearing context, `AskUserQuestion` the
    resolution, dispatch the apply-resolution subagent to enact it, and then **continue the loop** —
    so a halt for any reason other than `max-cycles` (and the genuine all-done success terminal) asks
@@ -113,6 +117,11 @@ the cycle-subagent level** — the orchestrator still dispatches exactly one `Ag
 
   > `/lazy-bug-batch` requires a positive integer max-cycles. Usage: `/lazy-bug-batch <N> [--adhoc "<task>"]`. Default: 10.
 
+  **Ambiguous max-cycles:** if the token is non-integer but implies a quantity (e.g. `"infinity"`,
+  `"lots"`, `"max"`, `"all"`), ask ONE clarifying `AskUserQuestion` before proceeding:
+
+  > You passed `'{token}'` for max-cycles — how many cycles should I run? (e.g. `10` / `30` / `100`)
+
 - **`--adhoc`** (optional flag) → sets `adhoc_task` to the remainder of `$ARGUMENTS` after the
   `--adhoc` token. If `--adhoc` is the last token with no trailing text, `adhoc_task` is empty
   and the task is inferred from the conversation. When set, the orchestrator runs **Step 0.45
@@ -121,6 +130,8 @@ the cycle-subagent level** — the orchestrator still dispatches exactly one `Ag
 Unknown tokens are an error:
 
 > `/lazy-bug-batch`: unrecognized argument `{token}`. Usage: `/lazy-bug-batch <N> [--adhoc "<task>"]`.
+
+**Standing-directive echo-back protocol:** mid-run operator messages implying (a) a budget change, (b) a standing resolution mode (e.g. "auto-resolve all blockers as add-phase-and-fix"), or (c) an early stop MUST trigger ONE `AskUserQuestion` echo-back — "Extend to N cycles / auto-resolve blockers as add-phase-and-fix until X — confirm?" — BEFORE entering that mode. **Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`cycle < max_cycles`) AND active queue items remaining without first asking (one `AskUserQuestion`) whether to continue. These are permitted `AskUserQuestion` uses alongside HARD CONSTRAINT 5's resolution modes.
 
 Initialize counters and per-session state:
 - `cycle = 0` — monotonic across bug transitions (HARD CONSTRAINT 8).
@@ -429,10 +440,12 @@ Agent({
 
 ### 1d.5. Post-cycle input audit (Opus — runs only on `/spec-bug` and `spec-phases` cycles)
 
+**Ordering:** Step 1d.5 runs IMMEDIATELY after the cycle subagent returns, BEFORE the next state probe (Step 1a). A subsequent `needs-input` or `blocked` routing on the next probe does NOT exempt this cycle's audit — the audit fires first. (The existing double-fire guard below is preserved; this ordering note closes the routing-order gap.)
+
 **Skip when ANY of:**
 - `sub_skill` is NOT in {`spec-bug` (the bug analog of the feature pipeline's `/spec`), `spec-phases` (PHASES authoring — where product-behavior decisions can also be baked)}. bug-state.py emits no `plan-feature`/`plan-bug`; `spec-bug` + `spec-phases` are the SPEC/PHASES-authoring cycles.
 - The cycle was a pseudo-skill (Step 1c.5 already ran inline).
-- The cycle subagent already wrote `NEEDS_INPUT.md` for this bug this cycle.
+- The cycle subagent already wrote `NEEDS_INPUT.md` for this bug this cycle (double-fire guard — preserved).
 - The cycle subagent returned a hard failure with no SPEC/PHASES delta.
 
 **Why:** The dispatched cycle subagent self-classifies its own decisions. An independent Opus

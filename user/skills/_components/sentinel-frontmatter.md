@@ -201,7 +201,11 @@ date: <YYYY-MM-DD>
 ```
 
 Optional:
-- `skipped_by: <"lazy" | "lazy-cloud">` — who wrote the skip.
+- `skipped_by: <"lazy" | "lazy-cloud" | "operator" | "pipeline">` — who wrote the skip.
+- `granted_by: <"operator" | "pipeline">` — **provenance of the waiver decision**.
+  - `operator` — a human reviewed the feature and approved the MCP skip. `lazy-state.py` Step 9 accepts this as a legitimate vacuous-pass and emits `__write_validated_from_skip__`.
+  - `pipeline` — the automated pipeline self-granted the skip. Step 9 **refuses** this: a pipeline-self-granted skip cannot vacuously validate its own MCP requirement. The state machine routes to `terminal_reason="needs-input"` so an operator can confirm the waiver before the pipeline proceeds. Update `granted_by` to `operator` (after human review) to unblock.
+  - Absent (legacy files without this field) — treated as `operator` for backward compatibility; the existing vacuous-pass behavior is preserved.
 
 #### `MCP_TEST_RESULTS.md` — `kind: mcp-test-results`
 

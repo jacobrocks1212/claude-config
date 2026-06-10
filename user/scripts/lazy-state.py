@@ -1401,6 +1401,23 @@ def compute_state(
             )
         # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
+            # Provenance gate: a pipeline-self-granted skip must NOT vacuously
+            # validate — the pipeline cannot waive its own MCP requirement.
+            # Only operator-granted (or legacy absent) granted_by values are
+            # accepted as a legitimate skip waiver.
+            _skip_meta = parse_sentinel(skip_mcp_file) or {}
+            if _skip_meta.get("granted_by") == "pipeline":
+                return _state(
+                    **common,
+                    current_step="Step 9: pipeline-granted skip needs operator confirmation",
+                    terminal_reason="needs-input",
+                    notify_message=(
+                        f"{feature_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
+                        "(self-granted) — a pipeline-granted MCP skip needs operator "
+                        "confirmation before it can vacuously validate. Reconcile via "
+                        "NEEDS_INPUT or update granted_by to 'operator'."
+                    ),
+                )
             return _state(
                 **common,
                 current_step="Step 9: skip-mcp-test → validated",
@@ -1411,6 +1428,23 @@ def compute_state(
         # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
+                # Provenance gate: a pipeline-self-granted skip must NOT vacuously
+                # validate — the pipeline cannot waive its own MCP requirement.
+                # Only operator-granted (or legacy absent) granted_by values are
+                # accepted as a legitimate skip waiver.
+                _skip_meta = parse_sentinel(skip_mcp_file) or {}
+                if _skip_meta.get("granted_by") == "pipeline":
+                    return _state(
+                        **common,
+                        current_step="Step 9: pipeline-granted skip needs operator confirmation",
+                        terminal_reason="needs-input",
+                        notify_message=(
+                            f"{feature_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
+                            "(self-granted) — a pipeline-granted MCP skip needs operator "
+                            "confirmation before it can vacuously validate. Reconcile via "
+                            "NEEDS_INPUT or update granted_by to 'operator'."
+                        ),
+                    )
                 return _state(
                     **common,
                     current_step="Step 9: skip-mcp-test → validated",
@@ -2436,6 +2470,94 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
                     f"stale-mcp-results-reverify git setup failed "
                     f"(cmd={cmd!r}): {result.stderr.strip()}"
                 )
+    elif name == "skip-pipeline-granted-needs-input":
+        # WU-5 Phase-2 contract (RED fixture): SKIP_MCP_TEST.md carrying
+        # `granted_by: pipeline` must NOT be accepted as a waiver by the
+        # pipeline itself — a model could self-grant the skip to defeat MCP
+        # validation. When `granted_by == "pipeline"`, compute_state must
+        # refuse and route to terminal_reason="needs-input" rather than
+        # emitting __write_validated_from_skip__.
+        # This fixture is RED against current code: current Step 9 ignores
+        # `granted_by` and always emits __write_validated_from_skip__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spg", "name": "Feature SPG",
+                 "spec_dir": "feat-spg", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        spg = features / "feat-spg"
+        spg.mkdir()
+        (spg / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (spg / "RESEARCH.md").write_text("# R\n")
+        (spg / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # All phases checked — retro + MCP gate reached.
+        (spg / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            spg / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-spg", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-spg.md"],
+            mcp_validation_status="pending",
+        )
+        # SKIP_MCP_TEST.md with granted_by: pipeline — self-grant the waiver.
+        # Phase-2 contract: this must be refused (needs-input), not validated.
+        _write_yaml_sentinel(
+            spg / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-spg",
+            reason="pipeline self-asserted skip to avoid MCP test",
+            alternative_validation="none",
+            date="2026-06-10", skipped_by="pipeline",
+            granted_by="pipeline",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
+
+    elif name == "skip-operator-granted-validates":
+        # WU-5 Phase-2 positive guard (GREEN fixture): SKIP_MCP_TEST.md
+        # carrying `granted_by: operator` is a legitimate human-authored waiver.
+        # compute_state must continue to emit __write_validated_from_skip__ for
+        # operator grants — the existing vacuous-pass behavior is intentional
+        # here and must not regress.
+        # This fixture is expected GREEN even against current code (current
+        # always validates-from-skip, regardless of granted_by).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sog", "name": "Feature SOG",
+                 "spec_dir": "feat-sog", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sog = features / "feat-sog"
+        sog.mkdir()
+        (sog / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (sog / "RESEARCH.md").write_text("# R\n")
+        (sog / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # All phases checked — retro + MCP gate reached.
+        (sog / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            sog / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-sog", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-sog.md"],
+            mcp_validation_status="pending",
+        )
+        # SKIP_MCP_TEST.md with granted_by: operator — legitimate human waiver.
+        # Phase-2 contract: operator grant → __write_validated_from_skip__
+        # (same as the pre-Phase-2 vacuous-pass behavior).
+        _write_yaml_sentinel(
+            sog / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-sog",
+            reason="feature is a pure docs/config change — no runtime MCP path",
+            alternative_validation="manual smoke test by operator",
+            date="2026-06-10", skipped_by="operator",
+            granted_by="operator",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
+
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2674,6 +2796,27 @@ def run_smoke_tests() -> int:
                 "sub_skill": "mcp-test",
                 "feature_id": "feat-smrr",
                 "current_step": "Step 9: stale MCP results — re-verify",
+            }),
+            # WU-5: pipeline-self-granted SKIP_MCP_TEST.md must NOT vacuously
+            # validate. When `granted_by: pipeline`, the pipeline is trying to
+            # self-waive its own validation requirement — refuse this and route
+            # to needs-input so an operator can review.
+            # RED against current code: current Step 9 ignores `granted_by` and
+            # emits sub_skill="__write_validated_from_skip__" instead of
+            # terminal_reason="needs-input".
+            ("skip-pipeline-granted-needs-input", False, False, {
+                "terminal_reason": "needs-input",
+                "feature_id": "feat-spg",
+            }),
+            # WU-5 positive guard: operator-granted SKIP_MCP_TEST.md must still
+            # produce __write_validated_from_skip__ (legitimate human waiver).
+            # GREEN even against current code — kept as a non-regression guard.
+            # If this fixture ever turns RED, it means the Phase-2 impl broke
+            # the backward-compat path for operator grants.
+            ("skip-operator-granted-validates", False, False, {
+                "sub_skill": "__write_validated_from_skip__",
+                "feature_id": "feat-sog",
+                "current_step": "Step 9: skip-mcp-test → validated",
             }),
         ]
         for case in cases:
