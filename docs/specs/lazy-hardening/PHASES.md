@@ -592,7 +592,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Deliverables:**
 - [x] Step 0 preflight (symlink, python3, scripts, node) before banner in batch skills + wrappers; failure prints setup recipe, zero cycles consumed
 - [x] Windows node path (`/c/nvm4w/nodejs`) baked into preflight/skill-config
-- [ ] Compaction protocol: on-disk canonical dispatch template re-read after compact; Read-before-Edit rule
+- [x] Compaction protocol: on-disk canonical dispatch template re-read after compact; Read-before-Edit rule
 - [ ] Long-build ownership rule (orchestrator-owned harness-tracked) + `cargo check --release` pre-flight
 - [ ] `interview_work_log_append` purged from all dispatch templates; canonical-sentinel-filename + work-branch clauses added to base dispatch prompt
 
@@ -619,3 +619,16 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - `repos/algobooth/.claude/skill-config/lazy-preflight.md` — NEW skill-config node-path note + pointer
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 0.0 wiring (batch skills)
 - `user/skills/lazy/SKILL.md`, `user/skills/lazy-bug/SKILL.md`, `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` — Step 0.0 wiring (wrappers)
+
+#### Implementation Notes (Phase 7 — Batch 2: WU-2)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (orchestrator review; subagent GROUND-TRUTH block independently re-run + diffed — git status / wc -l 43 / both greps matched; ground-truth verified: yes; placement confirmed by direct read — the discipline paragraph sits immediately after each `### 1d.` heading in all 3 batch SKILLs)
+**Work completed:**
+- **WU-2** (compaction protocol, prose): new component `user/skills/_components/lazy-dispatch-template.md` (43 lines) — the on-disk, compaction-survivable canonical dispatch **envelope**: (1) the cycle dispatch skeleton (`description`, `subagent_type`, the REQUIRED-and-never-omit `model:` field — "opus" normal / "sonnet" only on the LOOP-DETECTED branch, prompt envelope), explicitly NOT a re-inline of the prompt body (which stays in `_components/lazy-batch-prompts/cycle-base-prompt.md`); (2) the **Read-before-Edit rule** (compaction resets read-state → re-`Read` any file before `Edit`/`Write`); (3) the **manual-compact-during-dispatch cadence** documented as the SANCTIONED operator pattern (compact at a cycle boundary, not mid-dispatch) with the post-compact recovery sequence. Wired a "Compaction discipline — re-read the dispatch template first" paragraph into the `### 1d. Compose and dispatch the cycle subagent` section of all 3 batch SKILLs (`lazy-batch`, `lazy-bug-batch`, `lazy-batch-cloud`), placed as the first body paragraph under the heading.
+**Integration notes:**
+- The template is the *envelope* and `cycle-base-prompt.md` (Phase 6 WU-2) is the *contents* — a clean separation: future edits to the dispatch shape (fields/model) go in the template; edits to the prompt text go in the prompt component.
+- Directly addresses the audit's two post-compaction failure modes (41% dropped `model:`, 13 Edit-without-Read errors) by giving the orchestrator an on-disk artifact to re-read at every dispatch and after every compact boundary.
+- Scripts untouched → three `--test` gates byte-identical pass (run at batch commit).
+**Files modified:**
+- `user/skills/_components/lazy-dispatch-template.md` — NEW canonical dispatch envelope + Read-before-Edit + manual-compact cadence
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 1d compaction-discipline paragraph

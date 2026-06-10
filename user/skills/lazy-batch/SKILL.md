@@ -325,6 +325,8 @@ This saves one Opus dispatch per pseudo-skill action. On a typical feature lifec
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
+**Compaction discipline — re-read the dispatch template first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`. It is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
+
 If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else.
 
 #### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY — runs BEFORE prompt composition)
