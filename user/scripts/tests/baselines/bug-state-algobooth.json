@@ -1,0 +1,19 @@
+{
+  "feature_id": "track-path-filestream-source-silent",
+  "feature_name": "track(path) FileStream source produces no audio (rms=0.0 on both sync and Bypass; track Playing, Main-routed, file decoded) \u2014 Investigation Spec",
+  "spec_path": "C:\\Users\\Jacob\\repos\\AlgoBooth\\docs\\bugs\\track-path-filestream-source-silent",
+  "current_step": "Step 4: investigate bug",
+  "sub_skill": "spec-bug",
+  "sub_skill_args": "C:\\Users\\Jacob\\repos\\AlgoBooth\\docs\\bugs\\track-path-filestream-source-silent/SPEC.md",
+  "terminal_reason": null,
+  "notify_message": null,
+  "diagnostics": [
+    "operator-deferred skipped: Bug: golden snapshot gate silently tolerated failures + ~40 manifest entries lack baselines \u2014 DEFERRED.md (reason: Phase 2's `verified` golden baselines are human-audition-gated by design \u2014 a human must audition each of the 40 renders before they become golden. The autonomous /lazy-bug-batch pipeline cannot self-certify audio perceptual correctness, so this bug cannot be completed without operator involvement. Operator chose (2026-06-02, via /lazy-bug-batch Step 1g) to defer the entire bug rather than resolve the de-scope-vs-generate and delete-vs-repair decisions now.); re-include by deleting DEFERRED.md.",
+    "operator-deferred skipped: Non-Windows (Linux/macOS) audio output paths are unvalidated \u2014 Investigation Spec \u2014 DEFERRED.md (reason: The only remaining work is real-device Linux/macOS MCP audio validation (the 3 scenarios in DEFERRED_REQUIRES_DEVICE.md). This Windows host (cpal WASAPI) cannot certify ALSA/PipeWire/CoreAudio, yet bug-state.py Step 9 treats any non-headless workstation as the real-device host and keeps re-opening the deferral every probe \u2014 a structural loop. Operator chose (2026-06-09, via /lazy-bug-batch Step 1h) to park the bug so the Windows pipeline stops cycling; no Linux/macOS host was available this session.); re-include by deleting DEFERRED.md."
+  ],
+  "device_deferred_features": [],
+  "operator_deferred": [
+    "Bug: golden snapshot gate silently tolerated failures + ~40 manifest entries lack baselines",
+    "Non-Windows (Linux/macOS) audio output paths are unvalidated \u2014 Investigation Spec"
+  ]
+}

@@ -1,0 +1,20 @@
+  PASS [fresh-open-bug] cloud=False real_device=True: Step 4: investigate bug
+  PASS [blocked] cloud=False real_device=True: Step 3: blocked
+  PASS [mid-fix] cloud=False real_device=True: Step 7a: execute plan
+  PASS [phases-complete-no-retro] cloud=False real_device=True: Step 8: retro phase
+  PASS [retro-done-needs-mcp] cloud=False real_device=True: Step 9: run MCP tests
+  PASS [ready-to-mark-fixed] cloud=False real_device=True: Step 10: mark fixed
+  PASS [device-deferred] cloud=False real_device=False: device-queue-exhausted
+  PASS [hybrid-ordering] cloud=False real_device=True: Step 4: investigate bug
+  PASS [wont-fix-exempt] cloud=False real_device=True: all-bugs-fixed
+  PASS [fixed-no-receipt-halt] cloud=False real_device=True: Step 2: completion claimed without receipt
+  PASS [all-bugs-fixed] cloud=False real_device=True: all-bugs-fixed
+  PASS [stale-upstream-halt] cloud=False real_device=True: Step 2.9: stale-upstream
+  PASS [operator-deferred-skip] cloud=False real_device=True: Step 4: investigate bug
+  PASS [all-operator-deferred] cloud=False real_device=True: All remaining bugs are operator-deferred
+  PASS [enqueue-adhoc-writes-entry] entry written with correct fields
+  PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
+  PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'
+  PASS [baseline-regression-default] default picks alpha: feature_id='bug-scope-alpha' step='Step 4: investigate bug'
+
+All smoke tests passed.

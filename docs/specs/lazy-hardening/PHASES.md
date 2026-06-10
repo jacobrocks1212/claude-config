@@ -26,13 +26,13 @@ behavior changes land.
 **Entry criteria:** None — first phase.
 
 **Deliverables:**
-- [ ] `user/scripts/tests/baselines/bug-state-test-baseline.txt` + durable matching test
+- [x] `user/scripts/tests/baselines/bug-state-test-baseline.txt` + durable matching test
 - [ ] Cloud-mode fixtures (currently zero `cloud=True` coverage)
 - [ ] Device re-open fixture (`STEP_DEVICE_REOPEN`)
 - [ ] Step-9 `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` fixtures
 - [ ] `backfill_receipts` fixture; severity-ordering fixture (multiple unlisted bugs)
 - [ ] Stale harness docstrings cleaned (both scripts)
-- [ ] AlgoBooth `--repo-root` JSON baseline for bug-state.py
+- [x] AlgoBooth `--repo-root` JSON baseline for bug-state.py
 
 **Runtime Verification:**
 - [ ] `python3 ~/.claude/scripts/lazy-state.py --test` exits 0
@@ -40,6 +40,27 @@ behavior changes land.
 - [ ] `python3 ~/.claude/scripts/test_lazy_core.py` exits 0
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 1 — Batch 1: WU-1, WU-2)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (independent Opus reviewer; ground-truth verified clean, zero-drift byte-identical both scripts)
+**Work completed:**
+- WU-1 (`bug-state-test-baseline.txt` + durable matching test): bug-state.py already had a `--test`/`run_smoke_tests` mode (the plan's "add/confirm" — confirmed present). Added `test_bug_state_test_output_matches_baseline` to `test_lazy_core.py` and captured the golden baseline. bug-state `--test` output is naturally platform-neutral (no temp paths emitted).
+- WU-1 (folded-in preexisting defect): the existing `test_lazy_state_test_output_matches_baseline` was RED on this Windows host — the committed baseline was Linux-captured + stale (missing newer fixtures), and the normalization only handled the random tempdir suffix, not the OS temp-root prefix or `\`-vs-`/` separators. Added a shared `_normalize_smoke_output()` helper (3-step, idempotent, canonicalizes suffix + temp-root → `<TMP>/` + separators), refactored the lazy-state test to use it, regenerated `lazy-state-test-baseline.txt` in canonical form, and added `test_normalize_smoke_output_is_platform_neutral` (proves Windows/POSIX forms canonicalize identically — cross-platform is now a TESTED contract, not a design claim).
+- WU-2 (`bug-state-algobooth.json`): captured the `bug-state.py --repo-root <AlgoBooth>` reference snapshot + README section. Per the lazy-state-algobooth.json precedent (README: drift-tolerant same-session reference, deliberately NOT value-asserted), the durable test `test_bug_state_algobooth_baseline_wellformed` asserts only structural well-formedness (parses + 6 core keys), and the byte-identical *value* check is the orchestrator's phase-time zero-drift probe — not a rotting pytest. This reconciles the plan's "a test asserting current output matches it" against the precedent it told us to mirror.
+**Integration notes:**
+- `_normalize_smoke_output` is the shared canonicalizer for BOTH scripts' baselines — WU-3 (Batch 2) regenerates `bug-state-test-baseline.txt` through it after adding fixtures.
+- Full suite is 82/82; the 3 new tests are registered in `_TESTS` (lines ~1480/1482/1484).
+- Zero-behavior-change confirmed: `lazy-state.py`/`bug-state.py` unmodified in the working tree; `--repo-root` output byte-identical to phase-start for both.
+**Pitfalls & guidance:**
+- The lazy-state baseline can only be regenerated correctly by piping live `--test` output through `_normalize_smoke_output` (never hand-edit) — otherwise byte-identity breaks subtly on the temp-path line.
+- Two new test docstrings still carry stale "intentionally RED until baseline created" narrative (now GREEN). Deferred to WU-4 (Batch 3 — "stale harness docstrings cleaned") rather than an extra dispatch.
+**Files modified:**
+- `user/scripts/test_lazy_core.py` — `_normalize_smoke_output` helper + lazy-state test refactor + 3 new tests + registry entries
+- `user/scripts/tests/baselines/lazy-state-test-baseline.txt` — regenerated (canonical, platform-neutral)
+- `user/scripts/tests/baselines/bug-state-test-baseline.txt` — new golden capture
+- `user/scripts/tests/baselines/bug-state-algobooth.json` — new reference snapshot
+- `user/scripts/tests/baselines/README.md` — new `bug-state-algobooth.json` section
 
 ---
 
