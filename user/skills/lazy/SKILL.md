@@ -43,9 +43,9 @@ Designed for fresh sessions. Run `/lazy` repeatedly to progress through the enti
 
 ## Sentinel File Format
 
-All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema:
+All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema.
 
-!`cat ~/.claude/skills/_components/sentinel-frontmatter.md`
+**Sentinel frontmatter schema:** when you write or validate any sentinel file (NEEDS_INPUT.md / BLOCKED.md / VALIDATED.md / COMPLETED.md / FIXED.md / etc.), **Read `~/.claude/skills/_components/sentinel-frontmatter.md`** for the required `kind:`/`provenance:`/field schema. (Read on demand — do not assume it is already in context.)
 
 When this skill writes a sentinel (Step 4 special actions), emit the YAML frontmatter first, then a blank line, then a human-readable markdown body. When this skill reads a sentinel, parse the frontmatter per the protocol above; the markdown body is for humans only.
 

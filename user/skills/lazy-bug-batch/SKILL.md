@@ -1,6 +1,6 @@
 ---
 name: lazy-bug-batch
-description: Autonomous orchestrator for the bug pipeline. Mirrors /lazy-batch shape but operates on docs/bugs/ via bug-state.py. Loops on bug-state.py and spawns Opus subagents per cycle (one sub-skill per cycle). Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt (kind: fixed, gated by the completion-integrity gate) → Status Fixed + git mv → _archive/ → repoint inbound refs → commit. Receipt is FIXED.md; Won't-fix is receipt-EXEMPT. No research/stub/needs-research handling — N/A to bugs. Does NOT dead-end on recoverable obstacles: a halt for ANY reason other than max-cycles (and the genuine all-bugs-fixed success terminal) presents the operator an AskUserQuestion resolution path and continues the loop. needs-input → Step 1g (decision-resume); blocked → Step 1h (blocked-resolution: add a phase / defer to queue tail / halt-for-manual / custom); completion-unverified and stale_upstream → Step 1i (operator-directed halt-resolution per ~/.claude/skills/_components/halt-resolution.md; bug-state.py does NOT emit needs-spec-input). After every /spec-bug or spec-phases cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent. Step 1d.0 pre-boots the dev runtime for /mcp-test cycles. See ~/.claude/skills/lazy-batch/SKILL.md for the full algorithm; this skill inherits all shared mechanics and documents only bug-pipeline differences.
+description: Autonomous orchestrator for the bug pipeline — mirrors /lazy-batch shape but operates on docs/bugs/ via bug-state.py. Loops on bug-state.py, spawns one Opus subagent per cycle, and drives /spec-bug → /spec-phases → /write-plan → /execute-plan → /retro-feature → /mcp-test → __mark_fixed__. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt gated by MCP-coverage audit + completion-integrity gate, then git mv to _archive/. See ~/.claude/skills/lazy-batch/SKILL.md for the full algorithm; this skill documents only bug-pipeline differences.
 argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park]
 plan-mode: never
 model: opus
@@ -56,7 +56,7 @@ bug-state.py).
 | Start bookend | `## /lazy-batch — Starting` | `## /lazy-bug-batch — Starting` |
 | HARD CONSTRAINT 1 sentinel allowlist | `docs/features/` sentinels | `docs/bugs/` sentinels (same filenames; FIXED.md replaces COMPLETED.md) |
 | HARD CONSTRAINT 9 | dispatch against `feature_id` the script returned | dispatch against `bug_id` / `feature_id` the script returned |
-| `__mark_fixed__` (vs `__mark_complete__`) gate parity | `__mark_complete__` runs TWO gates (MCP-coverage audit + completion-integrity gate), then `--apply-pseudo __mark_complete__` | `__mark_fixed__` runs the SAME TWO gates, then writes FIXED.md + `mark-fixed-archive` procedure. **The gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both run the same two gates.** (WU-3 note: verify `/lazy-bug/SKILL.md`'s `__mark_fixed__` gate includes the MCP-coverage audit as Gate 1 to match this batch gate.) |
+| `__mark_fixed__` (vs `__mark_complete__`) gate parity | `__mark_complete__` runs TWO gates (MCP-coverage audit + completion-integrity gate), then `--apply-pseudo __mark_complete__` | `__mark_fixed__` runs the SAME TWO gates, then writes FIXED.md + `mark-fixed-archive` procedure. **The gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both run the same two gates.** |
 
 All other behavior is identical to `/lazy-batch` — the shared algorithm, hard constraints, counter
 semantics, resolution modes, cycle output discipline, park mode, and pseudo-skill post-actions are
@@ -215,7 +215,7 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
 
 - **`__mark_fixed__`** — **gated by TWO inline docs-only gates, in order, BEFORE the archive
   runs.** Gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both
-  run the same two gates (this parity is intentional; WU-3 should verify the wrapper carries both).
+  run the same two gates (parity intentional and verified — the wrapper runs Gate 1 MCP-coverage audit + Gate 2 completion-integrity).
 
   **Gate 1 — MCP-coverage audit** per
   `~/.claude/skills/_components/mcp-coverage-audit.md`.

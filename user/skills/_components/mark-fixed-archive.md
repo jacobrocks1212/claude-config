@@ -14,9 +14,9 @@ It does NOT touch source code, test files, or the feature pipeline.
 
 ### Precondition: Completion-Integrity Gate (MANDATORY — runs BEFORE this component)
 
-The `__mark_fixed__` pseudo-action MUST be gated by the completion-integrity gate FIRST:
+The `__mark_fixed__` pseudo-action MUST be gated by the completion-integrity gate FIRST.
 
-!`cat ~/.claude/skills/_components/completion-integrity-gate.md`
+Run the completion-integrity gate documented in `~/.claude/skills/_components/completion-integrity-gate.md` (Read it now) with `kind: fixed`, `filename: FIXED.md`.
 
 Run the gate (adapted for bugs) with `{spec_path}`, `{bug_id}`, and `{cloud}=false` (workstation)
 or `{cloud}=true` (cloud). The gate verifies:

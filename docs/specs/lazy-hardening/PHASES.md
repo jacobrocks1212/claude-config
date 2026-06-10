@@ -515,7 +515,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Deliverables:**
 - [x] D4: lazy-bug-batch rebuilt by-reference (cloud pattern) — ports Step 1d.0 pre-boot + NO-FIRE-AND-FORGET, `__mark_fixed__` gate parity (wrapper too), Step 1.5 exclusion parity, 1d.5 dual-trigger wording; six `!cat`s → path references
 - [x] lazy-batch prompt templates + announcement templates extracted to `_components/lazy-batch-prompts/` (read on demand); Step 1f/Step 4 announcement deduped
-- [ ] sentinel-frontmatter.md no longer `!cat` in thin wrappers; mark-fixed-archive nested-`!cat` fixed; batch-skill frontmatter descriptions trimmed
+- [x] sentinel-frontmatter.md no longer `!cat` in thin wrappers; mark-fixed-archive nested-`!cat` fixed; batch-skill frontmatter descriptions trimmed
 - [ ] Contradiction sweep: cloud constraint renumbering + Step 8/9 drift + lazy-status rows; lazy-batch stale Notes/refs + HARD CONSTRAINT 5 exceptions; sentinel lifecycle table rename-not-delete; component coupling notes include bug consumers; plan-feature artifact; lazy step-label collision
 - [x] lazy-batch-retro: workstation inline-override branch; R-O-3 exceptions; R-O-6 fix; Step 3 scan list; Notes path; Phase-4 park/auto-accept checks
 
@@ -546,6 +546,23 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - `user/skills/lazy-batch/SKILL.md` — prompt-template extraction → on-demand pointers (WU-2)
 - `user/skills/_components/lazy-batch-prompts/{cycle-base-prompt,loop-block,input-audit-prompt,research-halt-announcement}.md` — NEW components (WU-2)
 - `repos/algobooth/.claude/skills/lazy-batch-retro/SKILL.md` — 6 grading fixes (WU-5)
+
+#### Implementation Notes (Phase 6 — Batch 2: WU-3)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (inline review — 7 files but only 26 lines changed, all mechanical; orchestrator independently re-ran WU-3's GROUND-TRUTH block + read the full EOL-normalized diff; ground-truth verified: yes)
+**Work completed:**
+- **WU-3** (stop sentinel `!cat` in thin wrappers + nested-`!cat` fix + frontmatter trims):
+  - **Fix A** — the 22KB `sentinel-frontmatter.md` `!cat` include in the 3 thin wrappers (`user/skills/lazy/SKILL.md:48`, `user/skills/lazy-bug/SKILL.md:51`, `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md:50`) → tailored **read-on-demand** path pointers (lazy-cloud's correctly lists `DEFERRED_NON_CLOUD.md`). `grep -rn "cat ~/.claude/skills/_components/sentinel-frontmatter"` across the 3 wrappers is now EMPTY.
+  - **Fix B** — the nested-`!cat` hazard in `user/skills/_components/mark-fixed-archive.md:19` (it `!cat`'d `completion-integrity-gate.md` while itself being `!cat`'d by the `/lazy-bug` wrapper — single-pass = silently never inlined) → path reference "Run the completion-integrity gate documented in `…/completion-integrity-gate.md` (Read it now) with `kind: fixed`, `filename: FIXED.md`." `grep -c "cat ~/.claude"` → 0.
+  - **Fix C** — frontmatter `description:` trimmed to 2–3 sentences: lazy-batch 2772→581 chars, lazy-bug-batch 1388→585, lazy-batch-cloud 3191→712 (verified accurate, no invented capabilities).
+  - **Fix D** (folded-in cleanup) — the two now-satisfied "WU-3 should verify the wrapper carries both gates" parentheticals in lazy-bug-batch (the wrapper carries both gates after Batch-1's review-fix) restated as facts; zero `WU-3` strings remain.
+**Integration notes:**
+- The Batch-1 `/lazy-bug` `__mark_fixed__` Gate-1/Gate-2 parity edit was confirmed PRESERVED through WU-3's edits to the same file (grep confirms both gate headers still at lines 164/174).
+- All three regression gates still exit 0 (scripts untouched — prose-only batch).
+**Files modified:**
+- `user/skills/lazy/SKILL.md`, `user/skills/lazy-bug/SKILL.md`, `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` — Fix A
+- `user/skills/_components/mark-fixed-archive.md` — Fix B
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Fix C (+ Fix D on lazy-bug-batch)
 
 ---
 

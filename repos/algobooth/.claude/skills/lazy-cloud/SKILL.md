@@ -45,9 +45,9 @@ State-machine differences from `/lazy` (all encoded in `lazy-state.py --cloud`):
 
 ## Sentinel File Format
 
-All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema:
+All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema.
 
-!`cat ~/.claude/skills/_components/sentinel-frontmatter.md`
+**Sentinel frontmatter schema:** when you write or validate any sentinel file (NEEDS_INPUT.md / BLOCKED.md / VALIDATED.md / COMPLETED.md / DEFERRED_NON_CLOUD.md / etc.), **Read `~/.claude/skills/_components/sentinel-frontmatter.md`** for the required `kind:`/`provenance:`/field schema. (Read on demand — do not assume it is already in context.)
 
 When this skill writes a sentinel (Step 3 special actions), emit the YAML frontmatter first, then a blank line, then a human-readable markdown body. When this skill reads a sentinel, parse the frontmatter per the protocol above; the markdown body is for humans only.
 
