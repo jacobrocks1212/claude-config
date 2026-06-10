@@ -293,7 +293,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Deliverables:**
 - [x] `--park` skill invocation flag parsed in all 3 batch orchestrators; recorded in start banner + final report; no flag → existing Step 1g halt behavior unchanged
 - [x] Script `--park-needs-input` mode + `parked[]` output array, passed only when skill got `--park` (wrappers keep halt behavior; probe output unchanged without the flag)
-- [ ] PushNotification at every park / halt / flush / run end (both modes)
+- [x] PushNotification at every park / halt / flush / run end (both modes)
 - [ ] D1 flush protocol (`--park` only): batched AskUserQuestion (≤4/call, Zero-Context Briefing preserved) at first opportunity (operator message / out of unparked work / run end); decision-apply per answer
 - [ ] D2 two-key auto-accept (`--park` only): `class: mechanical` + input-audit concurrence → recommended option auto-accepted, `resolved_by: auto-two-key`, receipt log + run-end digest; any disagreement → product → park; no auto-accept ever without `--park`
 - [ ] Cache-boundary note documented in both batch skills
@@ -325,6 +325,16 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - `user/scripts/test_lazy_core.py` — 4 `build_parked_entry` unit tests + symbol-importability assertion (104/104)
 - `user/scripts/tests/baselines/{lazy-state,bug-state}-test-baseline.txt` — regenerated (additive)
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — `--park` flag parse + banner + final-report `Park mode:` line
+
+#### Implementation Notes (Phase 4 — Batch 2: WU-3)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (dedicated Opus reviewer; orchestrator ground-truth verified — diff purely additive +33/-0 across 3 files, HEAD unchanged 35945f4, existing per-terminal PushNotification lines preserved)
+**Work completed:**
+- **WU-3** (prose, all 3 batch SKILLs): added a consolidating `### 1c.6. PushNotification policy (park / halt / flush / run-end)` subsection enumerating the four orchestrator-fired notification points with correct mode-gating — **park** (`--park` only, per newly-parked item, carries running parked-count), **halt** (BOTH modes), **flush** (`--park` only, forward-ref to WU-4), **run-end** (BOTH modes) — and stating PushNotification is orchestrator-fired (scripts never call it). Also added a "Park mode — processing `parked[]` output" instruction at Step 1g: when `park_mode==true` and the probe returns a non-empty `parked[]`, the orchestrator fires the park notification per newly-parked item (incrementing `parked_count`) and continues the queue walk without halting. Existing per-terminal PushNotification lines preserved (not rewritten). lazy-bug-batch uses `bug_name`; feature variants use `feature_name`; cloud's halt list includes `cloud-queue-exhausted` — per-variant accuracy, gating phrases identical across all three.
+**Integration notes:**
+- The park-notification point consumes WU-1's `parked[]` script output. The flush point is a forward reference to WU-4 (next batch) — documented now so the four-point policy reads coherently.
+**Files modified:**
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — §1c.6 policy + Step 1g parked[] processing
 
 ---
 

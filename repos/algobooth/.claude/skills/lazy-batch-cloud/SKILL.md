@@ -233,6 +233,15 @@ PushNotification({ message: "lazy-batch-cloud hit max-cycles ({max_cycles}). Res
 
 Print final batch report, STOP.
 
+### 1c.6. PushNotification policy (park / halt / flush / run-end)
+
+The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
+
+1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the Step 1g queue-walk park path, new in Phase 4). Message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`. For each item in `parked[]`, fire the notification before continuing the queue walk.
+2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `cloud-queue-exhausted`, `device-queue-exhausted`, `queue-missing`, `all-features-complete`, `max-cycles`, `meta-cap`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
+3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-batch-cloud flush — {N} parked decision(s) ready for your input"`.
+4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
+
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
 If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** — a small sentinel-file write + commit, NOT a real skill that performs implementation work. Perform the action inline (orchestrator session) instead of dispatching a subagent. Same rationale as `/lazy-batch` Step 1c.5: sentinel files are documentation, and dispatching an Opus subagent for a 10-line YAML write + commit wastes a full subagent's worth of context. On the cloud path this is especially costly because `__write_deferred_non_cloud__` fires once per feature in the normal flow.
@@ -552,6 +561,8 @@ The user can mix environments: drop `RESEARCH.md` directly from workstation, the
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch-cloud`, `{STATE_SCRIPT}` = `lazy-state.py` (run with `--cloud`), `{ITEM}` = feature, `{PUSH_RULE}` = **cloud: the apply subagent MUST push the work branch IMMEDIATELY after each commit (container-reclaim durability — a local-only commit is lost if the container is reclaimed)**. The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then read and apply the shared decision-resume handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
 `~/.claude/skills/_components/decision-resume.md`
+
+**Park mode — processing `parked[]` output (Phase 4, `--park` only):** When `park_mode == true` and the probe returns a non-empty `parked[]` array, the orchestrator skips the `AskUserQuestion` resolution flow for each item in that array and instead parks it: for each newly-parked `feature_name`, increment `parked_count` and fire `PushNotification({ message: "parked {feature_name} — {parked_count} decision(s) parked so far this run" })` (per the §1c.6 park policy). Continue the queue walk without halting. The batched flush of all parked decisions occurs later via the WU-4 flush protocol (see §1c.6 flush point).
 
 ---
 

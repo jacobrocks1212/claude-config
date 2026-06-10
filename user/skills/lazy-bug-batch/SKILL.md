@@ -273,6 +273,15 @@ PushNotification({ message: "lazy-bug-batch hit max-cycles ({max_cycles}). Resta
 
 Print final batch report, STOP.
 
+### 1c.6. PushNotification policy (park / halt / flush / run-end)
+
+The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
+
+1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the Step 1g queue-walk park path, new in Phase 4). Message carries the **running parked-count**: `"parked {bug_name} — {N} decision(s) parked so far this run"`. For each item in `parked[]`, fire the notification before continuing the queue walk.
+2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `all-bugs-fixed`, `all-remaining-deferred`, `queue-missing`, `max-cycles`, `meta-cap`, `device-queue-exhausted`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
+3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-bug-batch flush — {N} parked decision(s) ready for your input"`.
+4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
+
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
 If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** — a small
@@ -610,6 +619,8 @@ After the subagent returns:
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{PUSH_RULE}` = workstation (standard push). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then follow the shared decision-resume handler (single source across the batch orchestrators):
 
 !`cat ~/.claude/skills/_components/decision-resume.md`
+
+**Park mode — processing `parked[]` output (Phase 4, `--park` only):** When `park_mode == true` and the probe returns a non-empty `parked[]` array, the orchestrator skips the `AskUserQuestion` resolution flow for each item in that array and instead parks it: for each newly-parked `bug_name`, increment `parked_count` and fire `PushNotification({ message: "parked {bug_name} — {parked_count} decision(s) parked so far this run" })` (per the §1c.6 park policy). Continue the queue walk without halting. The batched flush of all parked decisions occurs later via the WU-4 flush protocol (see §1c.6 flush point).
 
 ---
 
