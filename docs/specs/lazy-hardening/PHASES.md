@@ -108,13 +108,13 @@ cloud gates in bug-state; standing-directive confirmation.
 **Entry criteria:** Phase 1 baselines green.
 
 **Deliverables:**
-- [ ] `lazy_core.has_completion_receipt()` validates frontmatter (`kind:`, `provenance:`); malformed → treated missing + diagnostic
-- [ ] bug-state cloud Step-2 skip + Step-10 hard-halt (mirror lazy-state); dead terminals resolved
+- [x] `lazy_core.has_completion_receipt()` validates frontmatter (`kind:`, `provenance:`); malformed → treated missing + diagnostic
+- [x] bug-state cloud Step-2 skip + Step-10 hard-halt (mirror lazy-state); dead terminals resolved
 - [ ] Unqueued Fixed-no-receipt bypass closed (uniform receipt gate or diagnostic)
-- [ ] `MCP_TEST_RESULTS.md` commit-sha freshness check before `__write_validated_from_results__`
+- [x] `MCP_TEST_RESULTS.md` commit-sha freshness check before `__write_validated_from_results__`
 - [ ] `SKIP_MCP_TEST.md` `granted_by: operator|pipeline`; coverage-audit + `__write_validated_from_skip__` honor it
-- [ ] D6: LOOP-DETECTED block restricted to NEEDS_INPUT/BLOCKED (all 3 orchestrators) + stale anchor fixed
-- [ ] Step 1e.4a: no evidence-less verification-box ticking; mismatch → NEEDS_INPUT
+- [x] D6: LOOP-DETECTED block restricted to NEEDS_INPUT/BLOCKED (all 3 orchestrators) + stale anchor fixed
+- [x] Step 1e.4a: no evidence-less verification-box ticking; mismatch → NEEDS_INPUT
 - [ ] Input-audit runs after needs-input/blocked spec cycles; >4-decision overflow → durable follow-up NEEDS_INPUT
 - [ ] Standing-directive echo-back protocol; no early stop with budget+queue remaining; non-integer max_cycles rejected with question
 - [ ] D5: mcp-test inline-fix policy (test-first, disclosed, never self-certifies) in prompt overrides
@@ -124,6 +124,21 @@ cloud gates in bug-state; standing-directive confirmation.
 - [ ] New fixtures: empty receipt → completion-unverified; cloud deferral → halt not `__mark_fixed__`; stale-sha results → no validation; pipeline-granted skip → NEEDS_INPUT
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 2 — Batch 1: WU-1, WU-2, WU-4, WU-6)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES (orchestrator review; all subagent ground-truth blocks independently re-run and diffed; one falsified subagent claim caught + corrected — see below)
+**Work completed:**
+- **WU-1** (`lazy_core.has_completion_receipt`): replaced the bare `.exists()` with content validation — a present receipt now counts ONLY if `parse_sentinel` yields `kind ∈ {completed, fixed}` AND a non-empty `provenance:`. Absent file → `False` silently; present-but-malformed → `_diag(...)` loud diagnostic + treated as missing (so `completion-unverified` still halts). Closes the `touch COMPLETED.md` side-door. 9 new unit tests in `test_lazy_core.py` (7 RED→GREEN + 2 positive guards incl. the `FIXED.md`/`kind: fixed` variant); existing `test_has_completion_receipt_present` updated to write a valid receipt.
+- **WU-2** (`bug-state.py` cloud guards + dead terminals): mirrored lazy-state's two cloud guards — (1) Step-2 cloud-saturated skip (`cloud` + RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md → `cloud_saturated_skipped` + continue) and (2) Step-10 defensive cloud hard-halt — so a cloud bug with DEFERRED_NON_CLOUD.md and no VALIDATED.md HALTS (`cloud-queue-exhausted`) instead of falling through to `__mark_fixed__` (archive-with-zero-validation). Both previously-dead terminals are now WIRED: `TR_CLOUD_QUEUE_EXHAUSTED` (cloud-saturated terminal + Step-10 halt) and `TR_QUEUE_MISSING` (emitted when `docs/bugs/queue.json` is entirely absent, distinct from all-bugs-fixed). New fixtures `cloud-defer-no-validate-halts` (RED→GREEN) and `queue-json-missing`; `bug-state-test-baseline.txt` regenerated via `_normalize_smoke_output`.
+- **WU-4** (`lazy-state.py` MCP-results sha freshness): added best-effort `_current_head(repo_root)` (git `rev-parse HEAD`, `None` on non-repo) and a freshness gate in the workstation Step-9 all-passing branch — when HEAD is known AND `MCP_TEST_RESULTS.md`'s `validated_commit` differs, route to `sub_skill: mcp-test` ("Step 9: stale MCP results — re-verify") instead of `__write_validated_from_results__`. Backward-compatible: head unknown OR `validated_commit` absent → check skipped (preserves all other fixtures). `validated_commit` field added to the `MCP_TEST_RESULTS.md` schema in `sentinel-frontmatter.md`. New git-initialized fixture `stale-mcp-results-reverify` (RED→GREEN); `lazy-state-test-baseline.txt` regenerated (two-run determinism confirmed — no sha leakage).
+- **WU-6** (D6 LOOP-DETECTED + Step 1e.4a, prose): in all 3 batch SKILLs the LOOP-DETECTED loop-breaker's "write the missing sentinel directly" license was removed and replaced with the locked-D6 allow-list — a loop-breaker may author ONLY `NEEDS_INPUT.md`/`BLOCKED.md`, never `VALIDATED.md`/`SKIP_MCP_TEST.md`/`RETRO_DONE.md`/receipts. The stale base-prompt anchor in lazy-batch (`"follow the skill's internal subagent-vs-orchestrator rules."` — no longer present) was repointed to the base prompt's real closing sentence. Step 1e.4a recovery now forbids evidence-less verification-box ticking: a box may be ticked only with on-disk evidence (`VALIDATED.md`/`MCP_TEST_RESULTS.md`); on mismatch the recovery writes `NEEDS_INPUT.md`. FULL treatment on lazy-batch + lazy-batch-cloud; MINIMAL inline patch on lazy-bug-batch (per Rule 10 — Phase 6 rebuilds it).
+**Ground-truth verification:** All four agents produced GROUND-TRUTH blocks; orchestrator independently re-ran every block's commands and diffed (LOC/grep/status/test-counts all matched). **One falsified claim caught:** the WU-4 impl-agent reported 3 failing `test_derive_stage_done_*` tests as "pre-existing WIP." `git show HEAD:` proved they were committed and part of the 82/82 green baseline — they were broken by WU-1's tightening (`derive_stage` consumes `has_completion_receipt`). This is a propagation failure WU-1 should have caught; fixed via a dedicated Sonnet fix-agent that updated the 3 derive_stage fixtures to write VALID receipts (intent-preserving) → suite now 91/91.
+**Fixes applied by orchestrator:** removed two untracked junk files (`...Temprun1.txt`/`run2.txt`) the WU-4 agent accidentally created via a redirect mishap.
+**Integration / follow-up notes:**
+- **WU-4 producer gap (follow-up):** the freshness gate is the CONSUMER half. It stays backward-compatibly inert until the `MCP_TEST_RESULTS.md` PRODUCER (the `/mcp-test` results writer / mcp-integration-test path) populates `validated_commit`. Per the plan WU-4 file-list (`lazy-state.py` + `sentinel-frontmatter.md` only) the producer-wiring was deliberately NOT done here — flagged for a follow-up (natural fit for the Phase 6 contradiction sweep). No regression: absent-field path == prior behavior.
+- All three regression gates exit 0 after this batch.
+**Files modified:** `user/scripts/lazy_core.py`, `user/scripts/bug-state.py`, `user/scripts/lazy-state.py`, `user/scripts/test_lazy_core.py`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`, `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, `user/skills/_components/sentinel-frontmatter.md`, `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`
 
 ---
 

@@ -450,10 +450,17 @@ def test_has_completion_receipt_absent():
 
 
 def test_has_completion_receipt_present():
-    """COMPLETED.md present → True."""
+    """COMPLETED.md present with valid frontmatter (kind: completed + provenance) → True."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
-        (Path(td) / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        receipt_path = Path(td) / "COMPLETED.md"
+        # Write a properly formed receipt so the validation gate passes.
+        lazy_core.write_completed_receipt(
+            receipt_path,
+            feature_id="test-feature",
+            date="2026-06-10",
+            provenance="gated",
+        )
         result = lazy_core.has_completion_receipt(Path(td))
     assert result is True, f"expected True, got {result}"
 
@@ -463,6 +470,140 @@ def test_has_completion_receipt_none_path():
     _guard()
     result = lazy_core.has_completion_receipt(None)
     assert result is False, f"expected False, got {result}"
+
+
+def test_has_completion_receipt_empty_file_is_missing():
+    """An empty (zero-byte) COMPLETED.md has no valid frontmatter → False (RED against bare .exists())."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Touch an empty file — the bare .exists() currently returns True for this.
+        (Path(td) / "COMPLETED.md").write_text("", encoding="utf-8")
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is False, (
+        f"expected False for empty receipt (no frontmatter), got {result}"
+    )
+
+
+def test_has_completion_receipt_no_frontmatter_is_missing():
+    """A COMPLETED.md with only freeform text (no --- fences) is malformed → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is False, (
+        f"expected False for receipt with no frontmatter, got {result}"
+    )
+
+
+def test_has_completion_receipt_kind_absent_is_missing():
+    """Frontmatter present but 'kind:' key absent → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Valid fences, but no `kind` field at all.
+        (Path(td) / "COMPLETED.md").write_text(
+            "---\nprovenance: gated\nfeature_id: foo\n---\n\n# Completion Receipt\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is False, (
+        f"expected False when 'kind' is absent from frontmatter, got {result}"
+    )
+
+
+def test_has_completion_receipt_wrong_kind_is_missing():
+    """'kind: bogus' (not 'completed' or 'fixed') → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "COMPLETED.md").write_text(
+            "---\nkind: bogus\nprovenance: gated\nfeature_id: foo\n---\n\n# Completion Receipt\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is False, (
+        f"expected False for 'kind: bogus', got {result}"
+    )
+
+
+def test_has_completion_receipt_no_provenance_is_missing():
+    """'kind: completed' present but 'provenance:' absent → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "COMPLETED.md").write_text(
+            "---\nkind: completed\nfeature_id: foo\n---\n\n# Completion Receipt\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is False, (
+        f"expected False when 'provenance' is absent, got {result}"
+    )
+
+
+def test_has_completion_receipt_empty_provenance_is_missing():
+    """'kind: completed' present but 'provenance:' empty string → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "COMPLETED.md").write_text(
+            "---\nkind: completed\nprovenance: \nfeature_id: foo\n---\n\n# Completion Receipt\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is False, (
+        f"expected False when 'provenance' is empty string, got {result}"
+    )
+
+
+def test_has_completion_receipt_malformed_emits_diagnostic():
+    """A malformed receipt (no frontmatter) must emit a diagnostic via lazy_core._diag().
+
+    This also asserts the RED diagnostic path — the bare .exists() never calls _diag,
+    so this test will FAIL (no diagnostic) until the implementation is updated.
+    """
+    _guard()
+    lazy_core.clear_diagnostics()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        _result = lazy_core.has_completion_receipt(Path(td))
+    assert len(lazy_core._DIAGNOSTICS) > 0, (
+        "expected at least one diagnostic to be emitted for a malformed receipt, "
+        f"but _DIAGNOSTICS was empty. result={_result!r}"
+    )
+
+
+def test_has_completion_receipt_valid_with_provenance():
+    """kind: completed + non-empty provenance → True (GREEN regression guard).
+
+    NOTE: This test is GREEN even against the current bare .exists() implementation
+    because we write a valid receipt file. It serves as a regression guard to ensure
+    that a well-formed receipt continues to return True after the implementation
+    is tightened.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        receipt_path = Path(td) / "COMPLETED.md"
+        lazy_core.write_completed_receipt(
+            receipt_path,
+            feature_id="my-feature",
+            date="2026-06-10",
+            provenance="gated",
+        )
+        result = lazy_core.has_completion_receipt(Path(td))
+    assert result is True, f"expected True for valid receipt, got {result}"
+
+
+def test_has_completion_receipt_fixed_md_variant():
+    """FIXED.md with kind: fixed + provenance → True (bug receipt convention via filename= kwarg)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        receipt_path = Path(td) / "FIXED.md"
+        lazy_core.write_completed_receipt(
+            receipt_path,
+            feature_id="my-bug",
+            date="2026-06-10",
+            provenance="gated",
+            kind="fixed",
+        )
+        result = lazy_core.has_completion_receipt(Path(td), filename="FIXED.md")
+    assert result is True, f"expected True for valid FIXED.md receipt, got {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -980,7 +1121,13 @@ def test_derive_stage_done_completed_md():
         d = _make_laddered_dir(td)
         (d / "PR.md").write_text("# Pull Request\n", encoding="utf-8")
         (d / "REVIEWED.md").write_text("# Reviewed\n", encoding="utf-8")
-        (d / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        # A valid receipt requires kind + provenance frontmatter (bare-title files no longer count).
+        lazy_core.write_completed_receipt(
+            d / "COMPLETED.md",
+            feature_id="x",
+            date="2026-06-01",
+            provenance="gated",
+        )
         result = lazy_core.derive_stage(d)
     assert result == "done", f"expected 'done', got {result!r}"
 
@@ -990,7 +1137,14 @@ def test_derive_stage_done_fixed_md():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         d = _make_laddered_dir(td)
-        (d / "FIXED.md").write_text("# Fix Receipt\n", encoding="utf-8")
+        # A valid FIXED.md receipt requires kind: fixed + provenance frontmatter.
+        lazy_core.write_completed_receipt(
+            d / "FIXED.md",
+            feature_id="x",
+            date="2026-06-01",
+            provenance="gated",
+            kind="fixed",
+        )
         result = lazy_core.derive_stage(d)
     assert result == "done", f"expected 'done' for FIXED.md receipt, got {result!r}"
 
@@ -1031,7 +1185,13 @@ def test_derive_stage_done_wins_over_blocked():
     with tempfile.TemporaryDirectory() as td:
         d = _make_laddered_dir(td)
         (d / "BLOCKED.md").write_text("# Blocked\n", encoding="utf-8")
-        (d / "COMPLETED.md").write_text("# Completion Receipt\n", encoding="utf-8")
+        # A valid receipt requires kind + provenance frontmatter (bare-title files no longer count).
+        lazy_core.write_completed_receipt(
+            d / "COMPLETED.md",
+            feature_id="x",
+            date="2026-06-01",
+            provenance="gated",
+        )
         result = lazy_core.derive_stage(d)
     assert result == "done", f"expected 'done' (receipt beats BLOCKED.md), got {result!r}"
 
@@ -1425,6 +1585,16 @@ _TESTS = [
     ("test_has_completion_receipt_absent", test_has_completion_receipt_absent),
     ("test_has_completion_receipt_present", test_has_completion_receipt_present),
     ("test_has_completion_receipt_none_path", test_has_completion_receipt_none_path),
+    # has_completion_receipt — Phase-2 receipt-validation RED tests (WU-1)
+    ("test_has_completion_receipt_empty_file_is_missing", test_has_completion_receipt_empty_file_is_missing),
+    ("test_has_completion_receipt_no_frontmatter_is_missing", test_has_completion_receipt_no_frontmatter_is_missing),
+    ("test_has_completion_receipt_kind_absent_is_missing", test_has_completion_receipt_kind_absent_is_missing),
+    ("test_has_completion_receipt_wrong_kind_is_missing", test_has_completion_receipt_wrong_kind_is_missing),
+    ("test_has_completion_receipt_no_provenance_is_missing", test_has_completion_receipt_no_provenance_is_missing),
+    ("test_has_completion_receipt_empty_provenance_is_missing", test_has_completion_receipt_empty_provenance_is_missing),
+    ("test_has_completion_receipt_malformed_emits_diagnostic", test_has_completion_receipt_malformed_emits_diagnostic),
+    ("test_has_completion_receipt_valid_with_provenance", test_has_completion_receipt_valid_with_provenance),
+    ("test_has_completion_receipt_fixed_md_variant", test_has_completion_receipt_fixed_md_variant),
     # write_completed_receipt
     ("test_write_completed_receipt_minimal", test_write_completed_receipt_minimal),
     ("test_write_completed_receipt_with_optional_fields", test_write_completed_receipt_with_optional_fields),

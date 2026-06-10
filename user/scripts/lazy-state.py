@@ -195,6 +195,22 @@ def resolve_real_device(flag_value: str) -> bool:
 # parse_sentinel — imported from lazy_core
 
 
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a
+    git repo / git is unavailable. Best-effort — the freshness check is
+    SKIPPED (behavior unchanged) when this returns None."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 # ---------------------------------------------------------------------------
 # queue.json + ROADMAP.md
 # ---------------------------------------------------------------------------
@@ -1405,6 +1421,27 @@ def compute_state(
             if mcp_results_file.exists():
                 meta = parse_sentinel(mcp_results_file) or {}
                 if meta.get("result") == "all-passing":
+                    # Freshness gate: ensure the results were validated against the
+                    # CURRENT HEAD commit, not a stale one. If validated_commit is
+                    # present and doesn't match HEAD, the results are stale and we
+                    # must re-run MCP tests against the current code before writing
+                    # VALIDATED.md. When _current_head returns None (not a git repo)
+                    # or validated_commit is absent (legacy results), skip the check
+                    # and fall through to the existing write-validated path.
+                    head = _current_head(repo_root)
+                    validated_commit = meta.get("validated_commit")
+                    if head and validated_commit and str(validated_commit) != head:
+                        # Stale results validated an older commit — must NOT validate
+                        # current code. Re-verify by re-running MCP tests against HEAD.
+                        return _state(
+                            **common,
+                            current_step="Step 9: stale MCP results — re-verify",
+                            sub_skill="mcp-test",
+                            sub_skill_args=(
+                                f"re-validate {feature_name} — MCP_TEST_RESULTS.md was "
+                                f"validated against a stale commit; see {spec_path_str}/SPEC.md"
+                            ),
+                        )
                     return _state(
                         **common,
                         current_step="Step 9b: write validated",
@@ -2345,6 +2382,60 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             reason="audio item blocked by no-device ALSA failure under HeadlessPumpDriver",
             deferred_by="lazy", date="2026-05-30",
         )
+    elif name == "stale-mcp-results-reverify":
+        # Workstation Step 9 path: on-disk MCP_TEST_RESULTS.md claims all-passing
+        # but carries a stale validated_commit (all-zeros sha) that does NOT match
+        # the fixture's actual HEAD. The fixture root is a real git repo so the
+        # implementation's `git rev-parse HEAD` resolves to a non-zero sha.
+        # Expected: compute_state detects staleness and re-verifies (sub_skill=
+        # "mcp-test"), NOT __write_validated_from_results__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-smrr", "name": "Feature SMRR",
+                 "spec_dir": "feat-smrr", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        smrr = features / "feat-smrr"
+        smrr.mkdir()
+        (smrr / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (smrr / "RESEARCH.md").write_text("# R\n")
+        (smrr / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # All phases checked — no remaining unchecked rows.
+        (smrr / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            smrr / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-smrr", date="2026-06-01",
+            rounds=1, retro_plans=["retro-1-feat-smrr.md"],
+            mcp_validation_status="pending",
+        )
+        # Stale on-disk results: all-passing but validated against the all-zeros sha
+        # (a sha that cannot equal any real git HEAD). The implementation's freshness
+        # check should catch this and route to re-verify rather than auto-validate.
+        _write_yaml_sentinel(
+            smrr / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            result="all-passing",
+            validated_commit="0000000000000000000000000000000000000000",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO SKIP_MCP_TEST.md — waiver not present.
+
+        # Make the fixture root a real git repo so `git rev-parse HEAD` resolves
+        # to a genuine (non-zero) sha. The implementation compares that sha against
+        # the stale validated_commit above and must detect the mismatch.
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"stale-mcp-results-reverify git setup failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2572,6 +2663,18 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-dws",
                 "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
             }, True),
+            # Stale MCP results freshness gate (WU-4). The on-disk
+            # MCP_TEST_RESULTS.md carries validated_commit=all-zeros, which cannot
+            # equal the fixture's actual git HEAD. The implementation must detect
+            # the mismatch and re-verify (sub_skill=mcp-test) rather than silently
+            # accepting the stale results as proof of the current commit.
+            # RED against current code: compute_state ignores validated_commit and
+            # returns sub_skill="__write_validated_from_results__" instead.
+            ("stale-mcp-results-reverify", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-smrr",
+                "current_step": "Step 9: stale MCP results — re-verify",
+            }),
         ]
         for case in cases:
             # Cases are 4-tuples (real_device defaults to True — behavior

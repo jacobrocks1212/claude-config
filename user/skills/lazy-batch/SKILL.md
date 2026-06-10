@@ -513,13 +513,20 @@ Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
      (e.g. all phases complete + validated + retro plan present with no
      significant divergences → RETRO_DONE.md should already exist; if it
      doesn't, the previous retro round failed to write it).
-  4. If you can write the missing sentinel directly (its preconditions are
-     unambiguously met), DO SO instead of re-running {sub_skill}. Then commit
-     the sentinel and report the loop-break in your summary.
-  5. If the preconditions are NOT unambiguously met, run {sub_skill} as
-     instructed but explicitly emit the appropriate terminal sentinel as part
-     of its completion (e.g. /retro Step 6c writes RETRO_DONE.md when no
-     significant divergences). Report which sentinel you emitted.
+  4. The only sentinels a loop-breaker may author are `NEEDS_INPUT.md` and
+     `BLOCKED.md`. Do NOT directly write `VALIDATED.md`, `SKIP_MCP_TEST.md`,
+     `RETRO_DONE.md`, `COMPLETED.md`, `FIXED.md`, or any other completion or
+     validation receipt — those sentinels must be earned through their proper
+     gate (the skill that owns them). If you diagnose that such a sentinel is
+     missing, your permitted moves are: (a) re-run {sub_skill} so the sentinel
+     is earned through its proper gate (item 5), or (b) if genuinely stuck or
+     ambiguous, write `BLOCKED.md` (item 6) or `NEEDS_INPUT.md` describing the
+     gap. Then commit the sentinel you DID write and report the loop-break.
+  5. If the preconditions for the correct terminal sentinel are NOT unambiguously
+     met via a direct write, run {sub_skill} as instructed but explicitly emit
+     the appropriate terminal sentinel as part of its completion (e.g. /retro
+     Step 6c writes RETRO_DONE.md when no significant divergences). Report
+     which sentinel you emitted.
   6. If no sentinel applies (genuine ambiguity), write BLOCKED.md with
      blocker_kind: loop-detected and a clear description so the next cycle
      surfaces it as a terminal halt.
@@ -528,7 +535,7 @@ The orchestrator will halt on the next cycle's max-cycles cap if this loop
 persists — your job here is to break it.
 ```
 
-Append the LOOP DETECTED block after the base prompt's final paragraph (after "follow the skill's internal subagent-vs-orchestrator rules.") when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle.
+Append the LOOP DETECTED block after the base prompt's final paragraph (after "that you wrote the failing tests before implementing (test-first discipline).") when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle.
 
 Dispatch:
 
@@ -698,7 +705,7 @@ After the subagent returns:
    - `HEAD == origin/<branch>` (`git rev-parse HEAD` == `git rev-parse origin/<branch>` — nothing committed-but-unpushed; run `git fetch origin <branch>` first).
    - **(`/execute-plan` only)** the plan part's frontmatter is `status: Complete` AND `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0` (zero unchecked boxes — the dual ledger is consistent, not half-flipped).
 
-   If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT increment `cycle`) whose sole job is to reconcile: stage + commit + push any residue, tick the remaining PHASES.md verification boxes, and re-flip the plan status if needed, then re-run this guard. Recovery dispatch prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a `**Recovery:**` bullet to the per-cycle output block noting which check failed. Do NOT advance to Step 1a until the guard passes.
+   If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT increment `cycle`) whose sole job is to reconcile: stage + commit + push any residue, re-flip the plan status if needed, then re-run this guard. For PHASES.md verification boxes specifically: the recovery subagent may tick a verification box ONLY when there is on-disk evidence that verification actually ran for that row (e.g. `VALIDATED.md` or `MCP_TEST_RESULTS.md` present in `{spec_path}/` and covering that row). If verification boxes are unticked AND no such evidence exists on disk, the recovery subagent MUST NOT tick them; instead it writes `{spec_path}/NEEDS_INPUT.md` describing the gap (which boxes are unticked, which evidence is missing) and surfaces it — do not silently tick unverified boxes. Recovery dispatch prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a `**Recovery:**` bullet to the per-cycle output block noting which check failed. Do NOT advance to Step 1a until the guard passes.
 5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the cycle counter continues counting from the value just produced here. Do NOT reset to 0 or 1 on the boundary; cycle N+1 is always the next cycle regardless of which feature it lands on.
 
 **Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, sub_skill_args, current_step)` tuple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the cycle-counter increment: it is a uniform post-cycle action that happens once per cycle (real, pseudo, or decision-resume) and never resets.

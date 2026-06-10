@@ -424,11 +424,20 @@ def compute_state(
     repo_root = repo_root.resolve()
 
     # Load the hybrid-ordered bug queue.
+    # Track whether queue.json is entirely absent (distinct from "present but empty"),
+    # so we can emit TR_QUEUE_MISSING instead of TR_ALL_BUGS_FIXED.
+    _queue_path = repo_root / "docs" / "bugs" / "queue.json"
+    _queue_json_absent = not _queue_path.exists()
     queue = load_bug_queue(repo_root)
 
     # Walk the queue to find the current (first actionable) bug.
     current = None
     device_saturated_skipped: list[str] = []
+    # cloud_saturated_skipped: bugs that have RETRO_DONE.md + DEFERRED_NON_CLOUD.md
+    # but no VALIDATED.md.  Cloud cannot run MCP tests, so we skip them here and
+    # emit TR_CLOUD_QUEUE_EXHAUSTED if nothing else is actionable (mirrors
+    # lazy-state.py lines ~848, ~912-919, ~975-982).
+    cloud_saturated_skipped: list[str] = []
 
     for entry in queue:
         bug_id = entry.get("id")
@@ -473,6 +482,25 @@ def compute_state(
                     "bug-state.py --backfill-receipts to grandfather it."
                 ),
             )
+
+        # -----------------------------------------------------------------------
+        # Cloud-saturated skip (mirrors lazy-state.py lines ~912-919).
+        # A bug that has RETRO_DONE.md + DEFERRED_NON_CLOUD.md but no VALIDATED.md
+        # cannot be certified on a cloud host (cloud cannot run MCP tests).  Skip it
+        # so the queue advances; TR_CLOUD_QUEUE_EXHAUSTED is emitted if no other bug
+        # is actionable.
+        # -----------------------------------------------------------------------
+        if cloud:
+            retro_done = (spec_dir / "RETRO_DONE.md").exists()
+            deferred = (spec_dir / "DEFERRED_NON_CLOUD.md").exists()
+            validated = (spec_dir / "VALIDATED.md").exists()
+            if retro_done and deferred and not validated:
+                cloud_saturated_skipped.append(bug_name)
+                _diag(
+                    f"cloud-saturated skipped: {bug_name} — DEFERRED_NON_CLOUD.md "
+                    "present, no VALIDATED.md; awaiting workstation /lazy-bug."
+                )
+                continue
 
         # -----------------------------------------------------------------------
         # Device-saturated skip (mirrors lazy-state.py's device-axis logic).
@@ -522,6 +550,18 @@ def compute_state(
     # No actionable bug found.
     # -----------------------------------------------------------------------
     if current is None:
+        # Cloud-saturated: cloud host has DEFERRED_NON_CLOUD bugs awaiting workstation
+        # MCP validation.  Emit TR_CLOUD_QUEUE_EXHAUSTED so the orchestrator knows to
+        # pause until a workstation /lazy-bug run validates and writes VALIDATED.md.
+        # Mirrors lazy-state.py lines ~975-982.
+        if cloud and cloud_saturated_skipped:
+            return _bug_state(
+                terminal_reason=TR_CLOUD_QUEUE_EXHAUSTED,
+                notify_message=(
+                    f"Cloud queue exhausted — {len(cloud_saturated_skipped)} bug(s) "
+                    "carry DEFERRED_NON_CLOUD.md awaiting workstation /lazy-bug validation."
+                ),
+            )
         if (not real_device) and device_saturated_skipped:
             return _bug_state(
                 terminal_reason=TR_DEVICE_QUEUE_EXHAUSTED,
@@ -542,6 +582,19 @@ def compute_state(
                     f"All remaining bugs are operator-deferred — "
                     f"{len(_OPERATOR_DEFERRED)} bug(s) parked via DEFERRED.md. "
                     "Re-include by deleting DEFERRED.md in each bug dir."
+                ),
+            )
+        # queue.json is entirely absent (no bugs dir or no queue file) — this is
+        # distinct from "queue present but all bugs done" (which is all-bugs-fixed).
+        # TR_QUEUE_MISSING signals that the queue file was never created, so the
+        # operator should run --enqueue-adhoc or create docs/bugs/queue.json manually.
+        if _queue_json_absent:
+            return _bug_state(
+                terminal_reason=TR_QUEUE_MISSING,
+                notify_message=(
+                    "docs/bugs/queue.json is absent — no bug queue exists yet. "
+                    "Run bug-state.py --enqueue-adhoc to create it, or create "
+                    "docs/bugs/queue.json manually."
                 ),
             )
         return _bug_state(
@@ -748,6 +801,23 @@ def compute_state(
 
     # Step 10: Mark fixed.
     # Entry: RETRO_DONE.md + VALIDATED.md (+ Status not yet Fixed).
+    #
+    # Cloud defensive backstop (mirrors lazy-state.py lines ~1441-1453).
+    # The Step-2 cloud-saturated skip normally prevents a cloud host from ever
+    # reaching this point without VALIDATED.md (RETRO_DONE.md + DEFERRED_NON_CLOUD.md
+    # → skip in queue walk → TR_CLOUD_QUEUE_EXHAUSTED at exhaustion).  But if somehow
+    # a bug arrives here on a cloud host without VALIDATED.md, halt rather than
+    # silently archiving with zero validation.
+    if cloud and not validated_file.exists():
+        return _bug_state(
+            **common,
+            current_step="Step 10a: cloud halt",
+            terminal_reason=TR_CLOUD_QUEUE_EXHAUSTED,
+            notify_message=(
+                f"{bug_name}: cloud work complete (phases + retro). "
+                "Awaiting workstation /lazy-bug for deferred MCP validation."
+            ),
+        )
     return _bug_state(
         **common,
         current_step=STEP_MARK_FIXED,
@@ -904,6 +974,7 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
       operator-deferred-skip  — 2 bugs: one with DEFERRED.md (parked), one actionable;
                                 the actionable bug must be selected (DEFERRED.md skipped)
       all-operator-deferred   — only bug has DEFERRED.md → all-remaining-deferred terminal
+      queue-json-missing      — docs/bugs/ exists but queue.json absent → queue-missing terminal
     """
     root = tmpdir / name
     bugs_dir = root / "docs" / "bugs"
@@ -1589,6 +1660,65 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             encoding="utf-8",
         )
 
+    elif name == "cloud-defer-no-validate-halts":
+        # cloud=True; RETRO_DONE.md + DEFERRED_NON_CLOUD.md present; no VALIDATED.md,
+        # no SKIP_MCP_TEST.md, no DEFERRED_REQUIRES_DEVICE.md.
+        #
+        # BUG being pinned (WU-2): the first cloud if-branch in Step 9 is False
+        # (deferred_file.exists() makes it skip), the second is also False (no
+        # skip_mcp_file), so control FALLS THROUGH to Step 10 __mark_fixed__ —
+        # archiving without validation.
+        #
+        # NEW (post-fix) behavior: cloud MUST halt with
+        #   terminal_reason == TR_CLOUD_QUEUE_EXHAUSTED ("cloud-queue-exhausted")
+        # mirroring lazy-state.py's Step-10 hard-halt for cloud hosts that have no
+        # VALIDATED.md.  sub_skill MUST NOT be SKILL_MARK_FIXED.
+        #
+        # This fixture is RED against current code (current code routes to
+        # __mark_fixed__); GREEN only after the WU-2.2 impl-agent adds the guard.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-cdnv", "name": "Cloud Defer No Validate Bug",
+                 "spec_dir": "bug-cdnv"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-cdnv"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Cloud Defer No Validate Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-15\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-cdnv", date="2026-05-30", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            bug_id="bug-cdnv",
+            reason="MCP validation requires workstation audio stack",
+            deferred_at="2026-05-30",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md,
+        # no DEFERRED_REQUIRES_DEVICE.md.
+
+    elif name == "queue-json-missing":
+        # docs/bugs/ directory exists but queue.json is absent entirely.
+        # No on-disk open bug dirs either — only missing queue file.
+        # Expected: terminal_reason == TR_QUEUE_MISSING ("queue-missing").
+        # Characterization test for the newly-wired TR_QUEUE_MISSING terminal.
+        bugs_dir.mkdir(parents=True, exist_ok=True)
+        # Intentionally NO queue.json — the trigger for TR_QUEUE_MISSING.
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1802,6 +1932,33 @@ def run_smoke_tests() -> int:
             {
                 "feature_id": "bug-sev-p0",
                 "current_step": STEP_INVESTIGATE,
+            },
+        ),
+        # 21. Cloud + DEFERRED_NON_CLOUD.md present + no VALIDATED.md → must HALT
+        #     (cloud-queue-exhausted), NOT silently __mark_fixed__.
+        #     RED against current code; GREEN after WU-2.2 impl-agent adds the guard.
+        (
+            "cloud-defer-no-validate-halts", True, False,
+            {
+                "terminal_reason": TR_CLOUD_QUEUE_EXHAUSTED,
+            },
+            # Extra assertion: must NOT route to __mark_fixed__ regardless of what
+            # current_step says.  Catches the silent fall-through bug.
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be SKILL_MARK_FIXED "
+                    f"({SKILL_MARK_FIXED!r}); got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == SKILL_MARK_FIXED
+                else None
+            ),
+        ),
+        # 22. queue.json entirely absent → queue-missing terminal (not all-bugs-fixed).
+        #     Characterization test for the newly-wired TR_QUEUE_MISSING terminal.
+        (
+            "queue-json-missing", False, True,
+            {
+                "terminal_reason": TR_QUEUE_MISSING,
             },
         ),
     ]

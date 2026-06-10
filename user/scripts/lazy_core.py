@@ -190,19 +190,81 @@ def spec_status(spec_path: Path | None) -> str | None:
 
 
 def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md") -> bool:
-    """True iff a durable completion receipt exists in the feature/bug dir.
+    """True iff a durable, content-valid completion receipt exists in the feature/bug dir.
 
     The receipt is written ONLY by ``__mark_complete__``'s completion-integrity
     gate (or backfilled with ``provenance: backfilled-unverified``). Its presence
-    is the structural proof that a feature reached ``Complete`` THROUGH the
-    pipeline gate rather than via an out-of-band SPEC/ROADMAP edit. See
-    _components/completion-integrity-gate.md.
+    AND content validity are the structural proof that a feature reached
+    ``Complete`` THROUGH the pipeline gate rather than via an out-of-band
+    SPEC/ROADMAP edit. See _components/completion-integrity-gate.md.
+
+    Content-validation contract:
+    - ``spec_path is None`` → ``False`` (silently; no directory to check).
+    - Receipt file absent → ``False`` (silently; normal not-yet-complete case).
+    - Receipt file present but MALFORMED → ``False`` + emit a ``_diag()``
+      diagnostic naming the path and the specific defect. Malformed means any of:
+        * empty file / no YAML frontmatter (``parse_sentinel`` returns ``{}``)
+        * ``kind`` key absent from frontmatter
+        * ``kind`` value not in ``{"completed", "fixed"}``
+        * ``provenance`` key absent or its value is empty/whitespace
+      These cases count as "completion-unverified" and halt the gate just as if
+      the file were absent, while producing a loud diagnostic so the issue can
+      be investigated.
+    - Receipt file present and valid → ``True``.
 
     Generalized from lazy-state.py for reuse in bug-state.py (Phase 2).
     Default receipt filename is ``COMPLETED.md`` — matches current behavior.
     Bug-state.py passes ``filename="FIXED.md"`` for the bug receipt convention.
     """
-    return spec_path is not None and (spec_path / filename).exists()
+    if spec_path is None:
+        return False
+
+    receipt_path = spec_path / filename
+    if not receipt_path.exists():
+        # Normal not-yet-complete case — absence is silent, not a diagnostic.
+        return False
+
+    # Receipt file exists — validate its content before trusting it.
+    meta = parse_sentinel(receipt_path)
+
+    if meta is None:
+        # parse_sentinel calls _die() internally for fatal parse errors; this
+        # branch is a safety net in case it ever returns None without dying.
+        _diag(
+            f"completion receipt at {receipt_path} could not be parsed"
+            " (parse_sentinel returned None) — treating as missing"
+        )
+        return False
+
+    # Empty dict means the file existed but had no YAML frontmatter fence at all.
+    if not meta:
+        _diag(
+            f"completion receipt at {receipt_path} has no YAML frontmatter"
+            " — treating as missing (expected '---' fence with kind + provenance)"
+        )
+        return False
+
+    # Validate 'kind' field.
+    kind = meta.get("kind")
+    if kind not in {"completed", "fixed"}:
+        _diag(
+            f"completion receipt at {receipt_path} has invalid or missing 'kind'"
+            f" (got {kind!r}; expected 'completed' or 'fixed')"
+            " — treating as missing"
+        )
+        return False
+
+    # Validate 'provenance' field — must be present and non-empty.
+    provenance = meta.get("provenance")
+    if not provenance or not str(provenance).strip():
+        _diag(
+            f"completion receipt at {receipt_path} is missing or has empty 'provenance'"
+            f" (got {provenance!r})"
+            " — treating as missing (provenance is required to trust the receipt)"
+        )
+        return False
+
+    return True
 
 
 def write_completed_receipt(

@@ -216,6 +216,7 @@ scenarios: [<scenario-name>, ...]
 result: all-passing  # one of: all-passing | partial
 pass_count: <int>
 total_count: <int>
+validated_commit: <git-sha>  # HEAD sha at the time the MCP run completed; consumed by lazy-state Step-9 freshness gate
 ---
 ```
 

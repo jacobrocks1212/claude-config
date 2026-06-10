@@ -401,8 +401,13 @@ Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
   1. Read the canonical schemas in ~/.claude/skills/_components/sentinel-frontmatter.md.
   2. Inspect {spec_path}/ for existing sentinels and plan files.
   3. Determine which sentinel SHOULD exist given the bug's current state.
-  4. If you can write the missing sentinel directly (preconditions unambiguously
-     met), DO SO instead of re-running {sub_skill}. Commit and report.
+  4. The only sentinels a loop-breaker may author are `NEEDS_INPUT.md` and
+     `BLOCKED.md` — never `VALIDATED.md`, `SKIP_MCP_TEST.md`, `RETRO_DONE.md`,
+     `FIXED.md`, or any other completion/validation receipt. If you diagnose
+     that such a sentinel is missing, re-run {sub_skill} so it is earned
+     through its proper gate (item 5), or write `NEEDS_INPUT.md` / `BLOCKED.md`
+     if genuinely ambiguous (item 6). Commit the sentinel you DID write and
+     report the loop-break.
   5. If preconditions are NOT met, run {sub_skill} and explicitly emit the
      appropriate terminal sentinel as part of its completion.
   6. If no sentinel applies, write BLOCKED.md with blocker_kind: loop-detected.
@@ -523,8 +528,11 @@ After the subagent returns:
 
    If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches
    a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT
-   increment `cycle`) to reconcile: stage + commit + push any residue, tick the remaining
-   PHASES.md verification boxes, re-flip the plan status if needed, then re-run this guard.
+   increment `cycle`) to reconcile: stage + commit + push any residue, re-flip the plan status
+   if needed, then re-run this guard. The recovery subagent may tick a PHASES.md verification
+   box ONLY when on-disk evidence exists that verification ran for that row (e.g. `VALIDATED.md`
+   or `MCP_TEST_RESULTS.md` in `{spec_path}/`); if no such evidence exists, it MUST write
+   `{spec_path}/NEEDS_INPUT.md` describing the gap instead of silently ticking the box.
    The recovery prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a
    `**Recovery:**` bullet to the per-cycle output block. Do NOT advance to Step 1a until the
    guard passes.

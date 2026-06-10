@@ -18,6 +18,8 @@
   PASS [step9-skip-mcp] cloud=False real_device=True: Step 9: skip-mcp-test → validated
   PASS [step9-mcp-results] cloud=False real_device=True: Step 9b: write validated
   PASS [severity-ordering] cloud=False real_device=True: Step 4: investigate bug
+  PASS [cloud-defer-no-validate-halts] cloud=True real_device=False: cloud-queue-exhausted
+  PASS [queue-json-missing] cloud=False real_device=True: queue-missing
   PASS [enqueue-adhoc-writes-entry] entry written with correct fields
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'
