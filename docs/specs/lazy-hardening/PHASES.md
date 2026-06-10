@@ -188,11 +188,11 @@ cloud gates in bug-state; standing-directive confirmation.
 - [x] Stale already-applied plan → inline flip pseudo-action (not execute-plan)
 - [x] D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed
 - [x] `scoped-id-not-found` terminal; diagnostics for malformed queue entries
-- [ ] Realign mtime gate → recorded upstream-PHASES hash; `check_stale_upstream` wired to CLI/probe; Step-10 unexpected-state writes its NEEDS_INPUT.md
+- [x] Realign mtime gate → recorded upstream-PHASES hash; `check_stale_upstream` wired to CLI/probe; Step-10 unexpected-state writes its NEEDS_INPUT.md
 
 **Runtime Verification:**
-- [ ] Regression gates green
-- [ ] Fixtures: concluded investigation → plan-bug; fenced checkboxes ignored; substring-collision row → no false halt; stale plan → flip; typo'd scope id → scoped-id-not-found
+- [x] Regression gates green
+- [x] Fixtures: concluded investigation → plan-bug; fenced checkboxes ignored; substring-collision row → no false halt; stale plan → flip; typo'd scope id → scoped-id-not-found
 
 **Implementation Notes:**
 
@@ -259,6 +259,26 @@ cloud gates in bug-state; standing-directive confirmation.
 - `user/scripts/lazy-state.py` — scope_id_seen flag + scoped-id-not-found terminal + malformed-entry _diag + 1 fixture
 - `user/scripts/bug-state.py` — TR_SCOPED_ID_NOT_FOUND + flag + terminal + malformed-entry _diag + 1 fixture
 - `user/scripts/tests/baselines/{lazy-state,bug-state}-test-baseline.txt` — regenerated (additive)
+
+#### Implementation Notes (Phase 3 — Batch 4: WU-8 + Post-Phase)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fixes applied → PASS (dedicated Opus reviewer; manually reconstructed + `yaml.safe_load`-parsed the realign-spec template to prove the hash round-trip, verified the mtime fallback byte-for-byte, caught a real YAML-coercion bug)
+**Work completed:**
+- **WU-8a** (realign mtime → hash gate, TDD): `realign_is_fresh` now reads `upstream_phases_hashes` (a YAML map dir-name→sha256 hex) from the newest realign plan's frontmatter (parsed via `parse_sentinel`→`yaml.safe_load`, a real YAML parser) and is fresh iff every hard-complete upstream's current `_phases_sha(ud)` matches its recorded hash — replacing the unreliable mtime comparison (mtimes reset on git checkout/clone). **Legacy plans without the field fall back to the original mtime logic byte-for-byte** (backward-compat preserved). Companion writer: `realign-spec/SKILL.md` Step 4 now records `upstream_phases_hashes:` in the realign plan frontmatter (the reviewer confirmed the writer's YAML shape + key convention round-trip exactly to what the gate reads). Fixture `realign-hash-gate-detects-changed-upstream` (RED→GREEN: a hash mismatch under a newer-mtime plan now correctly routes to Step 4.6, where the old mtime gate said "fresh").
+- **WU-8b** (`check_stale_upstream` wired, TDD): `compute_state` now auto-runs `check_stale_upstream(repo_root)` at probe start (after `clear_diagnostics()`, before the queue walk / Step 2.9), guarded by `docs/work/materialized.json` existence — the production trigger the stale-upstream halt previously lacked (it was only called from a smoke test). The common queue-only workflow (no materialized.json) is a byte-for-byte no-op. Fixture `stale-upstream-auto-wired-at-probe` (RED→GREEN end-to-end: seed materialized.json + newer mirror changedDate → auto-run writes STALE_UPSTREAM.md → Step 2.9 halts `stale_upstream`).
+- **WU-8c** (Step-10 NEEDS_INPUT writer, TDD): new helper `_write_step10_needs_input(spec_dir, feature_name)` writes a well-formed `NEEDS_INPUT.md` (kind: needs-input, written_by, `## Decision Context` H2 with a 1:1 decisions↔H3 pairing) into the spec dir; the defensive Step-10 `if not entry_ok:` branch now calls it before returning needs-input. (The branch is provably UNREACHABLE via normal compute_state inputs — every workstation Step-9 sub-path returns when `validated_file` is absent — so it is a pure defensive guard; the helper is the honest testable unit, exercised directly by the fixture.) Review fix: the `decisions:` title contained a colon-space → unquoted YAML coerced it to a dict (schema violation breaking Step 1g's decisions↔H3 contract); quoted the value so it parses as a string, and tightened the fixture to assert `all(isinstance(x, str))` so the class can't regress.
+**Integration verification (Post-Phase):** the Phase-3 routing fixes cohere as one system — the new terminals/pseudo-actions land at distinct compute_state steps (bug-state Step 4 plan-bug, lazy-state Step 7 stale-flip, queue-walk scoped-id-not-found, Step 2.9 stale-upstream auto-trigger, Step 10 helper) with no conflicts; the full fixture suite passes together (no false halts). Cross-WU wiring verified: WU-5's `__flip_plan_complete_stale__` emit ↔ WU-6 handler use the identical string; WU-2's fence-aware parser feeds WU-5's stale detection + WU-8's nothing; the smoke fixtures are full-stack (compute_state end-to-end → observable routing + sentinel writes). No new untested user-facing surface. CLAUDE.md review: `user/scripts/CLAUDE.md` references the terminal table abstractly (authoritative table = the `compute_state()` docstring/body, which the impl agents updated via the `terminal_reason` doc-enums) — no structural CLAUDE.md update warranted.
+**Pitfalls & guidance:**
+- The realign hash round-trip is a cross-file contract (`realign-spec/SKILL.md` writer ↔ `realign_is_fresh` reader): the frontmatter KEY must be the upstream DIR NAME and the VALUE `sha256(PHASES.md bytes).hexdigest()`. `parse_sentinel` uses `yaml.safe_load`, so the writer's YAML map must be valid (correct indent). A change to either side must preserve the shape.
+- The defensive Step-10 branch is unreachable by design — do not attempt to make it reachable by re-routing the normal "RETRO_DONE + needs MCP test" state (that correctly dispatches /mcp-test); the deliverable is only that IF the guard ever fires it leaves a durable NEEDS_INPUT.md.
+**Carried follow-ups (out of Phase 3 scope, future-phase candidates):**
+- bug-state.py has the same stale-plan vulnerability (no `__flip_plan_complete_stale__` emit) — WU-5 was lazy-state-scoped (Phase 6 lazy-bug-batch rebuild candidate).
+- lazy/lazy-bug single-dispatch skills lack an explicit terminal-table row for `scoped-id-not-found` (degrades gracefully via the generic clean-stop; explicit row is a nice-to-have).
+**Part-end full quality gate (MANDATORY — all exit 0):** `python3 ~/.claude/scripts/lazy-state.py --test` (0), `python3 ~/.claude/scripts/bug-state.py --test` (0), `python3 ~/.claude/scripts/test_lazy_core.py` (100/100, 0) — run + passed fresh by the orchestrator post-fixes, immediately before the part-close commit.
+**Files modified:**
+- `user/scripts/lazy-state.py` — `_phases_sha` + hash-based `realign_is_fresh` (mtime fallback) + `import hashlib` + check_stale auto-wire + `_write_step10_needs_input` + branch call + 3 fixtures
+- `user/skills/realign-spec/SKILL.md` — record `upstream_phases_hashes` in realign plan frontmatter
+- `user/scripts/tests/baselines/lazy-state-test-baseline.txt` — regenerated (additive)
 
 ---
 

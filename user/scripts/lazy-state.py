@@ -46,6 +46,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -800,11 +801,64 @@ def newest_realign_plan(spec_dir: Path) -> Path | None:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+def _phases_sha(upstream_dir: Path) -> str | None:
+    """Return the sha256 hex digest of <upstream_dir>/PHASES.md, or None if absent.
+
+    Used by realign_is_fresh to compare recorded upstream hashes in a realign
+    plan's frontmatter against the current on-disk state. Git checkout/clone
+    resets mtimes, making them unreliable; content hashes are stable.
+    """
+    phases_path = upstream_dir / "PHASES.md"
+    if not phases_path.exists():
+        return None
+    return hashlib.sha256(phases_path.read_bytes()).hexdigest()
+
+
 def realign_is_fresh(spec_dir: Path, hard_complete_upstream_dirs: list[Path]) -> bool:
-    """Skip-if-fresh gate per /lazy Step 4.6a."""
+    """Skip-if-fresh gate per /lazy Step 4.6a.
+
+    Hash path (new): if the newest realign plan's frontmatter carries an
+    ``upstream_phases_hashes`` dict (dir-name → sha256 hex), compare each
+    recorded hash against the current PHASES.md on disk. Any mismatch or
+    missing recorded entry means stale → realign needed → return False.
+    All hashes match → return True (fresh, no realign needed).
+
+    Legacy/mtime path (preserved): if the plan has no ``upstream_phases_hashes``
+    field (older plan written before WU-8), fall back to the original mtime
+    comparison so pre-existing realign plans are not invalidated.
+    """
     plan = newest_realign_plan(spec_dir)
     if plan is None:
         return False
+
+    # Try the hash path first: parse the plan's frontmatter and look for the
+    # recorded upstream hashes dict.
+    meta = _parse_plan_frontmatter(plan) or {}
+    recorded_hashes = meta.get("upstream_phases_hashes")
+
+    if recorded_hashes is not None:
+        # Hash path: compare recorded sha256 against current PHASES.md content.
+        # Any upstream whose hash is absent from the recorded dict OR whose
+        # current sha256 differs from the recorded value triggers a re-realign.
+        for ud in hard_complete_upstream_dirs:
+            dir_name = ud.name
+            if dir_name not in recorded_hashes:
+                # Upstream not recorded — treat as stale (plan was written
+                # before this dependency was added, or for a different set).
+                return False
+            current_sha = _phases_sha(ud)
+            if current_sha is None:
+                # Upstream has no PHASES.md — skip (same as before; can't
+                # compare a hash for a file that doesn't exist).
+                continue
+            if current_sha != recorded_hashes[dir_name]:
+                # Hash mismatch: upstream PHASES.md changed since the realign
+                # plan was written → stale → re-realign needed.
+                return False
+        return True
+
+    # Legacy/mtime fallback: no upstream_phases_hashes in the plan frontmatter
+    # (old plan). Preserve exact original behaviour so pre-WU-8 plans still work.
     plan_mtime = plan.stat().st_mtime
     for ud in hard_complete_upstream_dirs:
         upstream_phases = ud / "PHASES.md"
@@ -873,6 +927,77 @@ def _plan_cloud_saturated(plan_path: Path, phases_text: str, spec_path: Path) ->
 
 
 # ---------------------------------------------------------------------------
+# Step 10 helpers
+# ---------------------------------------------------------------------------
+
+def _write_step10_needs_input(spec_dir: Path, feature_name: str) -> None:
+    """Write a well-formed NEEDS_INPUT.md sentinel into spec_dir for the Step 10
+    unexpected-state defensive branch.
+
+    The Step 10 branch fires when RETRO_DONE.md is present but none of the
+    expected validation sentinels (VALIDATED.md, SKIP_MCP_TEST.md, or
+    DEFERRED_NON_CLOUD.md) exists — a state that should be unreachable via the
+    normal pipeline but may arise from manual sentinel manipulation. Writing
+    NEEDS_INPUT.md here ensures the orchestrator's Step 1g decision-resume can
+    surface the issue to the operator rather than silently cycling.
+
+    Follows the NEEDS_INPUT.md schema in
+    ~/.claude/skills/_components/sentinel-frontmatter.md:
+      - YAML frontmatter: kind, feature_id, written_by, decisions list, date
+      - Body: ## Decision Context H2 with one H3 per decision
+
+    Idempotent: overwrites an existing NEEDS_INPUT.md without error.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    # Derive feature_id from the last component of spec_dir (standard convention:
+    # docs/features/<feature-id>/). Used in both the frontmatter and body.
+    feature_id = spec_dir.name
+
+    decision_title = (
+        "Resolve unexpected Step 10 state: RETRO_DONE without a validation sentinel"
+    )
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        f"feature_id: {feature_id}\n"
+        "written_by: lazy-state-step10\n"
+        "decisions:\n"
+        f'  - "{decision_title}"\n'
+        f"date: {today}\n"
+        "---\n"
+        "\n"
+        "## Decision Context\n"
+        "\n"
+        f"### 1. {decision_title}\n"
+        "\n"
+        "**Problem:** `RETRO_DONE.md` is present (signalling the retro cycle is "
+        "complete) but none of the expected post-retro validation sentinels exist: "
+        "no `VALIDATED.md`, no `SKIP_MCP_TEST.md`, and no `DEFERRED_NON_CLOUD.md`. "
+        "This state is defensively unreachable via the normal pipeline — it most "
+        f"likely means sentinels were deleted or renamed manually for `{feature_name}`. "
+        "The pipeline cannot proceed to Step 10 (mark complete) without knowing "
+        "whether MCP validation was performed.\n"
+        "\n"
+        "**Options:**\n"
+        "- **Re-open for MCP validation** — delete `RETRO_DONE.md` and re-run "
+        "`/lazy` so the pipeline re-dispatches `/mcp-test`. Use this when the "
+        "feature was never actually validated.\n"
+        "- **Restore a missing sentinel** — if `VALIDATED.md` or `SKIP_MCP_TEST.md` "
+        "was accidentally deleted, recreate it (check git history for the original "
+        "content) and re-run `/lazy`. Use this when validation DID happen but the "
+        "file was lost.\n"
+        "- **Investigate and reset** — if the root cause is unclear, check "
+        "`git log -- docs/features/ ` and `git log --diff-filter=D` to find when "
+        "the sentinels were removed, then decide which of the above options applies.\n"
+        "\n"
+        "**Recommendation:** Re-open for MCP validation — this is the safest option "
+        "because it forces a confirmed validation pass before `Complete` is written.\n"
+    )
+    needs_input_path = spec_dir / "NEEDS_INPUT.md"
+    needs_input_path.write_text(content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Main state machine
 # ---------------------------------------------------------------------------
 
@@ -902,6 +1027,15 @@ def compute_state(
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
     repo_root = repo_root.resolve()
+
+    # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
+    # materialization mirror exists. check_stale_upstream writes STALE_UPSTREAM.md
+    # into any item dir whose upstream WI changed since materialize; Step 2.9 then
+    # halts on it. This is the production writer the stale-upstream halt previously
+    # lacked. Guarded by materialized.json so the common queue-only workflow is a no-op.
+    if (repo_root / "docs" / "work" / "materialized.json").exists():
+        check_stale_upstream(repo_root)
+
     queue = load_queue(repo_root)
     if not queue:
         return _state(
@@ -1604,6 +1738,9 @@ def compute_state(
     if not entry_ok:
         # No entry — should be unreachable: Step 9 either wrote validated /
         # deferred or dispatched mcp-test. Defensive.
+        # Write a durable NEEDS_INPUT.md so the orchestrator's Step 1g
+        # decision-resume can surface the issue to the operator.
+        _write_step10_needs_input(spec_path, feature_name)
         return _state(
             **common,
             current_step="Step 10: unexpected state",
@@ -2891,6 +3028,130 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
 
+    elif name == "realign-hash-gate-detects-changed-upstream":
+        # WU-8 Fixture 1: realign freshness gate hash comparison.
+        #
+        # Scenario: downstream feat-rhg has a hard dep on upstream feat-rhg-up
+        # (Complete). The downstream has a realign plan whose frontmatter records
+        # upstream_phases_hashes: with a BOGUS hash (64 zeros) that does NOT match
+        # the upstream PHASES.md actual content. The plan file's mtime is NEWER
+        # than the upstream PHASES.md (simulating: upstream changed AFTER the plan
+        # was written, but the plan mtime ordering is reversed by os.utime trickery
+        # — actually here we write PHASES.md first so plan is naturally newer).
+        #
+        # RED today (mtime gate): plan mtime > upstream PHASES.md mtime → mtime
+        # gate says "fresh" → no realign needed → routes onward (Step 5/6).
+        # GREEN after fix (hash gate): recorded hash ≠ actual PHASES.md sha256 →
+        # hash gate says "stale" → routes to Step 4.6 realign-spec.
+        #
+        # We write upstream PHASES.md FIRST so its mtime is older, then write the
+        # realign plan so its mtime is newer — satisfying the "plan is newer"
+        # condition the old mtime gate would declare as fresh.
+        import time as _time_mod
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-rhg", "name": "Feature RHG", "spec_dir": "feat-rhg", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n- ~~Upstream RHG Up — done~~ **COMPLETE**\n"
+        )
+        # Complete upstream feature directory
+        up_dir = features / "feat-rhg-up"
+        up_dir.mkdir(parents=True, exist_ok=True)
+        (up_dir / "SPEC.md").write_text("# Upstream\n\n**Status:** Complete\n")
+        upstream_phases = up_dir / "PHASES.md"
+        upstream_phases.write_text("# Phases\n\n- [x] Upstream done\n")
+        # Force the upstream PHASES.md mtime to be clearly OLDER (10 seconds ago)
+        # so the plan file written next is naturally NEWER.
+        old_mtime = _time_mod.time() - 10.0
+        os.utime(str(upstream_phases), (old_mtime, old_mtime))
+
+        # Downstream feature with hard dep on the upstream
+        down_dir = features / "feat-rhg"
+        down_dir.mkdir(parents=True, exist_ok=True)
+        (down_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n"
+            "**Depends on:**\n\n"
+            "- feat-rhg-up — hard — downstream relies on upstream contract\n"
+        )
+        (down_dir / "RESEARCH.md").write_text("# R\n")
+        (down_dir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Realign plan with a BOGUS recorded hash (64 zeros) that will never match
+        # the real upstream PHASES.md sha256. The impl agent's hash gate must detect
+        # the mismatch and require a new realign even though plan mtime > PHASES mtime.
+        plans_dir = down_dir / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        bogus_hash = "0" * 64
+        realign_plan_path = plans_dir / "realign-2026-01-01.md"
+        realign_plan_path.write_text(
+            "---\n"
+            "kind: realign\n"
+            "upstream_phases_hashes:\n"
+            # Use the upstream dir NAME as the key (per task description: dir-name → sha256)
+            f"  feat-rhg-up: {bogus_hash}\n"
+            "---\n\n"
+            "# Realign plan (with stale recorded hash)\n"
+        )
+        # The plan is written AFTER upstream PHASES.md (so plan mtime > PHASES mtime).
+        # The old mtime gate reads plan mtime > PHASES mtime → declares fresh → no realign.
+        # The new hash gate reads recorded hash ≠ real sha256 → declares stale → realign.
+
+    elif name == "stale-upstream-auto-wired-at-probe":
+        # WU-8 Fixture 2: check_stale_upstream auto-runs at probe start.
+        #
+        # Scenario: docs/work/materialized.json records wi_id=201, feature_id=
+        # "feat-sau" with materialized_changedDate "2026-01-01T00:00:00Z".
+        # docs/work/ado-mirror.json has the same WI with changedDate
+        # "2026-06-01T00:00:00Z" (STRICTLY NEWER). The feature dir exists with
+        # a minimal queue entry so compute_state would otherwise process it.
+        # STALE_UPSTREAM.md is NOT pre-written.
+        #
+        # RED today: nothing auto-calls check_stale_upstream → STALE_UPSTREAM.md
+        # is never written → Step 2.9 stale check finds nothing → feature routes
+        # through its normal early pipeline (no stale halt).
+        # GREEN after fix: compute_state auto-calls check_stale_upstream at probe
+        # start → writes STALE_UPSTREAM.md → Step 2.9 reads it and halts with
+        # terminal_reason="stale_upstream".
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sau", "name": "Feature SAU", "spec_dir": "feat-sau", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sau_dir = features / "feat-sau"
+        sau_dir.mkdir(parents=True, exist_ok=True)
+        (sau_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        # Seed materialized.json with an OLDER changedDate for this WI
+        work_dir = root / "docs" / "work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        lazy_core.append_materialized(
+            work_dir, 201, "feat-sau", "2026-01-01T00:00:00Z"
+        )
+        # Mirror has a STRICTLY NEWER changedDate for the same WI
+        (work_dir / "ado-mirror.json").write_text(
+            json.dumps({
+                "syncedAt": "2026-06-10T12:00:00Z",
+                "watermark": "2026-06-10",
+                "query": "SELECT ...",
+                "workItems": [
+                    {
+                        "id": 201,
+                        "type": "User Story",
+                        "title": "Feature SAU upstream",
+                        "description": "Updated upstream.",
+                        "acceptanceCriteria": "AC.",
+                        "url": "https://dev.azure.com/org/proj/_workitems/edit/201",
+                        "changedDate": "2026-06-01T00:00:00Z",
+                    }
+                ],
+            }, indent=2),
+            encoding="utf-8",
+        )
+        # Do NOT pre-write STALE_UPSTREAM.md — the auto-wiring at probe start must create it.
+
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -3204,6 +3465,49 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-live",
                 "current_step": "Step 7a: execute plan",
             }),
+
+            # WU-8 Fixture 1: realign hash gate detects changed upstream.
+            # Downstream has a hard dep on a complete upstream. The realign plan
+            # frontmatter records upstream_phases_hashes: with a BOGUS hash (64
+            # zeros). The plan mtime is NEWER than the upstream PHASES.md mtime
+            # (so the old mtime gate declares fresh). The hash gate must detect the
+            # mismatch and require a new realign.
+            # RED today: realign_is_fresh() compares mtimes → plan is newer →
+            # declares fresh → no realign → routes onward (Step 5/6, not Step 4.6).
+            # GREEN after fix: hash gate fires → sub_skill="realign-spec".
+            ("realign-hash-gate-detects-changed-upstream", False, False, {
+                "sub_skill": "realign-spec",
+                "feature_id": "feat-rhg",
+                "current_step": "Step 4.6: upstream realign needed",
+            }),
+
+            # WU-8 Fixture 2: check_stale_upstream auto-wired at probe start.
+            # materialized.json + ado-mirror.json show upstream WI changed.
+            # STALE_UPSTREAM.md NOT pre-written. compute_state must auto-call
+            # check_stale_upstream and then halt at Step 2.9.
+            # RED today: nothing auto-runs check_stale_upstream → no STALE_UPSTREAM.md
+            # written → feature routes through normal early pipeline (e.g. Step 4/5).
+            # GREEN after fix: auto-call writes STALE_UPSTREAM.md → Step 2.9 halts
+            # with terminal_reason="stale_upstream".
+            ("stale-upstream-auto-wired-at-probe", False, False, {
+                "terminal_reason": "stale_upstream",
+                "feature_id": "feat-sau",
+            }),
+
+            # NOTE: WU-8 Fixture 3 (step10-unexpected-writes-needs-input) is NOT a
+            # compute_state routing case. The Step 10 "unexpected state" branch is
+            # GENUINELY UNREACHABLE through compute_state's inputs (workstation Step 9
+            # is fully guarded by `if not validated_file.exists():` and every sub-path
+            # returns, so Step 10 is only reached when validated_file exists →
+            # entry_ok is always True there). Forcing a RETRO_DONE + no-validation
+            # state to write NEEDS_INPUT would break normal MCP-test dispatch.
+            #
+            # The honest, testable unit for this defensive branch is the sentinel
+            # WRITE itself, which the impl agent extracts into the module-level helper
+            # _write_step10_needs_input(spec_dir, feature_name). That helper is
+            # exercised directly in an inline functional check AFTER this loop (search
+            # for "Fixture WU-8.3" below), mirroring how enqueue_adhoc / materialize_wi
+            # are tested directly rather than through compute_state.
         ]
         for case in cases:
             # Cases are 4-tuples (real_device defaults to True — behavior
@@ -3293,11 +3597,142 @@ def run_smoke_tests() -> int:
                         f"[{name}] expected sub_skill_args to reference the stale "
                         f"plan file; got {args!r}"
                     )
+            if name == "stale-upstream-auto-wired-at-probe":
+                # Post-call disk check (WU-8 Fixture 2): the auto-wiring at probe
+                # start must have WRITTEN STALE_UPSTREAM.md into the feature dir.
+                # RED today: check_stale_upstream is never auto-called → the file
+                # doesn't exist → this assertion fails regardless of terminal_reason.
+                sau_stale_sentinel = (
+                    root / "docs" / "features" / "feat-sau" / "STALE_UPSTREAM.md"
+                )
+                if not sau_stale_sentinel.exists():
+                    failures.append(
+                        f"[{name}] STALE_UPSTREAM.md was NOT written to "
+                        f"{sau_stale_sentinel} — check_stale_upstream not auto-wired "
+                        "at probe start"
+                    )
             print(
                 f"  [{name}] cloud={cloud} skip_nr={skip_nr} "
                 f"real_device={real_device}: "
                 f"{got['current_step'] or got['terminal_reason']}"
             )
+
+        # -------------------------------------------------------------------
+        # Fixture WU-8.3: _write_step10_needs_input writes a well-formed
+        # NEEDS_INPUT.md sentinel (direct helper unit test).
+        # -------------------------------------------------------------------
+        # The Step 10 "unexpected state" defensive branch (compute_state, the
+        # `if not entry_ok:` arm) is GENUINELY UNREACHABLE through compute_state's
+        # inputs — workstation Step 9 is fully guarded by
+        # `if not validated_file.exists():` and every sub-path returns, so Step 10
+        # is reached only when validated_file exists, where entry_ok is always
+        # True. We therefore can't drive this branch via a routing fixture without
+        # breaking normal MCP-test dispatch. The honest, testable unit is the
+        # sentinel WRITE the branch performs, which the impl agent extracts into
+        # the module-level helper _write_step10_needs_input(spec_dir, feature_name)
+        # and calls from the defensive arm. We exercise that helper directly here,
+        # exactly the way enqueue_adhoc / materialize_wi are tested directly below.
+        #
+        # RED today: _write_step10_needs_input does not exist yet → calling it
+        # raises NameError ("missing symbol" RED — the standard TDD red for a new
+        # function). GREEN after the impl lands the helper: NEEDS_INPUT.md exists
+        # on disk, parses as kind="needs-input" with a written_by field, and its
+        # body carries the `## Decision Context` H2 that the orchestrator's
+        # decision-resume (Step 1g) consumes.
+        fix_name_s10 = "step10-unexpected-writes-needs-input"
+        s10_spec_dir = td_path / fix_name_s10 / "docs" / "features" / "feat-s10u"
+        s10_spec_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            # Reference the helper as a module-level name (mirrors how the inline
+            # checks below call enqueue_adhoc / materialize_wi directly). When the
+            # symbol does not yet exist this raises NameError — the intended RED.
+            _write_step10_needs_input(s10_spec_dir, "Some Feature")
+            s10_ok = True
+            # Assertion 1: the sentinel now EXISTS on disk.
+            s10_sentinel = s10_spec_dir / "NEEDS_INPUT.md"
+            if not s10_sentinel.exists():
+                failures.append(
+                    f"[{fix_name_s10}] NEEDS_INPUT.md was NOT written to "
+                    f"{s10_sentinel} — _write_step10_needs_input must create the "
+                    "sentinel the defensive branch tells the orchestrator to resolve"
+                )
+                s10_ok = False
+            else:
+                # Assertion 2a: well-formed frontmatter — parse_sentinel yields the
+                # required schema fields (kind: needs-input + written_by) so the
+                # orchestrator's Step 1g decision-resume can consume it.
+                s10_meta = parse_sentinel(s10_sentinel) or {}
+                if s10_meta.get("kind") != "needs-input":
+                    failures.append(
+                        f"[{fix_name_s10}] NEEDS_INPUT.md frontmatter kind must be "
+                        f"'needs-input'; got {s10_meta.get('kind')!r}"
+                    )
+                    s10_ok = False
+                if not s10_meta.get("written_by"):
+                    failures.append(
+                        f"[{fix_name_s10}] NEEDS_INPUT.md frontmatter must carry a "
+                        f"'written_by' field; got {s10_meta.get('written_by')!r}"
+                    )
+                    s10_ok = False
+                # Assertion 2b: well-formed body — the `## Decision Context` H2 the
+                # orchestrator re-prints verbatim before AskUserQuestion, plus at
+                # least one decision described under it. Kept specific (the H2 must
+                # be a real heading line) but not brittle (no exact wording pinned).
+                s10_text = s10_sentinel.read_text(encoding="utf-8")
+                s10_body_lines = s10_text.splitlines()
+                has_decision_h2 = any(
+                    ln.strip() == "## Decision Context" for ln in s10_body_lines
+                )
+                if not has_decision_h2:
+                    failures.append(
+                        f"[{fix_name_s10}] NEEDS_INPUT.md body must contain a "
+                        "'## Decision Context' H2 heading (the structure Step 1g "
+                        "requires)"
+                    )
+                    s10_ok = False
+                else:
+                    # At least one decision must be described under the H2: either a
+                    # frontmatter decisions[] entry or an H3 subsection in the body.
+                    has_decision_h3 = any(
+                        ln.lstrip().startswith("### ") for ln in s10_body_lines
+                    )
+                    decisions_fm = s10_meta.get("decisions")
+                    has_decision_fm = bool(
+                        isinstance(decisions_fm, list) and decisions_fm
+                    )
+                    # Regression guard: every entry must be a plain string, not a
+                    # dict. An unquoted "key: value" YAML list item (e.g. a title
+                    # containing a colon-space) parses as a nested mapping — a dict —
+                    # which breaks the orchestrator's Step 1g decision-resume that
+                    # expects string descriptions.
+                    if has_decision_fm and not all(
+                        isinstance(x, str) for x in decisions_fm
+                    ):
+                        failures.append(
+                            f"[{fix_name_s10}] NEEDS_INPUT.md decisions[] entries must "
+                            "all be strings (not dicts); got "
+                            f"{[type(x).__name__ for x in decisions_fm]!r} — "
+                            "ensure decision_title is quoted in the YAML list item"
+                        )
+                        s10_ok = False
+                        has_decision_fm = False  # don't double-count as passing
+                    if not (has_decision_h3 or has_decision_fm):
+                        failures.append(
+                            f"[{fix_name_s10}] NEEDS_INPUT.md must describe at least "
+                            "one decision (an H3 subsection under '## Decision "
+                            "Context' or a non-empty decisions[] frontmatter list)"
+                        )
+                        s10_ok = False
+            print(f"  {'PASS' if s10_ok else 'FAIL'} [{fix_name_s10}] "
+                  "_write_step10_needs_input writes well-formed NEEDS_INPUT.md")
+        except (NameError, AttributeError) as exc:
+            # Missing-symbol RED: the helper genuinely does not exist yet. The impl
+            # agent will create _write_step10_needs_input and this flips to GREEN.
+            failures.append(
+                f"[{fix_name_s10}] _write_step10_needs_input is not defined yet "
+                f"(missing-helper RED — impl must extract it): {exc}"
+            )
+            print(f"  FAIL [{fix_name_s10}]: helper not defined — {exc}")
 
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.

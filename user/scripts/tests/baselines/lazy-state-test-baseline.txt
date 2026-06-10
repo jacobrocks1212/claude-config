@@ -49,6 +49,9 @@
   [upstream-substring-collision] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [stale-plan-all-refs-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced deliverables already checked)
   [ready-plan-unchecked-in-scope-still-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
+  [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
+  PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
 {
   "error": "feature_id already queued: adhoc-test",
   "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
