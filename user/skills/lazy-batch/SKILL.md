@@ -414,6 +414,24 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       Re-resolve any session-log dir from the live server (GET
       /tools/get_session_meta → log_dir); NEVER reuse a cached `logs/session-*`
       path (HARD REQUIREMENT, docs/development/CLAUDE.md).
+      INLINE-FIX POLICY (D5 — LOCKED): while validating you MAY fix a
+      production-code bug inline, but ONLY test-first and fully disclosed:
+        1. Write the failing test FIRST — confirm it reproduces the bug and
+           fails for the right reason — THEN apply the fix.
+        2. Disclose the production-code change explicitly in your cycle summary:
+           which files changed, what changed, and which test pins it.
+        3. A cycle that modified production code MUST NOT write `VALIDATED.md`.
+           Even if the MCP run now passes, end the cycle WITHOUT `VALIDATED.md`:
+           write `MCP_TEST_RESULTS.md` (recording the run and flagging that
+           production code changed this cycle, so it needs re-verification) or
+           `BLOCKED.md` if the fix is incomplete. This puts the cycle in a
+           needs-re-verify state.
+        4. Only a subsequent CLEAN `/mcp-test` cycle — one that made NO
+           production-code edits — may write `VALIDATED.md`. That cycle re-runs
+           MCP against the now-unchanged code and, if it passes cleanly,
+           certifies via `VALIDATED.md`. Rationale: a cycle that both changed
+           the code AND self-certified it has validated its own un-reviewed
+           change — the exact self-certification side-door this policy closes.
       NO FIRE-AND-FORGET (CONTRACT — a resultless return is a violation): you
       MUST NOT start any long build/process as a background task and then end
       your turn waiting on background events. You either (a) connect to the
@@ -423,7 +441,9 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       a BLOCKING foreground wait (a `curl`/`sleep` `until`-loop, or a Monitor
       you await) — never end the turn on a pending background `run_in_background`
       job. Before returning you MUST have written the contract result sentinel
-      (`VALIDATED.md` on full pass / `MCP_TEST_RESULTS.md` on partial /
+      (`VALIDATED.md` on full pass — UNLESS you modified production code this
+      cycle, in which case write `MCP_TEST_RESULTS.md` / `BLOCKED.md` and let a
+      subsequent clean cycle certify / `MCP_TEST_RESULTS.md` on partial /
       `DEFERRED_REQUIRES_DEVICE.md` per Step 4.5 / `SKIP_MCP_TEST.md` per the
       mcp-testing SPEC) OR a `BLOCKED.md` naming a CONCRETE blocker. Returning
       with no sentinel and no result is a contract violation that wastes the

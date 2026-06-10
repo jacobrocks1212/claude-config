@@ -364,7 +364,15 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
     • /retro-feature — perform all internal work inline: read each input serially,
       synthesize, write the retro plan + RETRO_DONE.md directly.
     • /mcp-test — perform the test work INLINE (read the MCP usage guide, run the
-      MCP HTTP tools yourself, analyze session logs).
+      MCP HTTP tools yourself, analyze session logs). INLINE-FIX POLICY (D5):
+      you MAY fix a production-code bug inline, but only test-first (write the
+      failing test first, confirm it reproduces the bug, then fix) and fully
+      disclosed (state which files changed and which test pins it). A cycle that
+      modified production code MUST NOT write `VALIDATED.md` — write
+      `MCP_TEST_RESULTS.md` (flagging that production code changed, needs
+      re-verification) or `BLOCKED.md` instead, leaving the cycle in a
+      needs-re-verify state. Only a subsequent clean `/mcp-test` cycle (no
+      production-code edits) may certify via `VALIDATED.md`.
     • /spec-bug — already orchestrator-only docs pass; no sub-subagents needed.
     • /spec-phases, /write-plan — already orchestrator-only; no change.
 

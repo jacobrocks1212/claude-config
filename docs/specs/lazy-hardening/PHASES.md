@@ -117,11 +117,11 @@ cloud gates in bug-state; standing-directive confirmation.
 - [x] Step 1e.4a: no evidence-less verification-box ticking; mismatch → NEEDS_INPUT
 - [x] Input-audit runs after needs-input/blocked spec cycles; >4-decision overflow → durable follow-up NEEDS_INPUT
 - [x] Standing-directive echo-back protocol; no early stop with budget+queue remaining; non-integer max_cycles rejected with question
-- [ ] D5: mcp-test inline-fix policy (test-first, disclosed, never self-certifies) in prompt overrides
+- [x] D5: mcp-test inline-fix policy (test-first, disclosed, never self-certifies) in prompt overrides
 
 **Runtime Verification:**
-- [ ] All three regression gates green
-- [ ] New fixtures: empty receipt → completion-unverified; cloud deferral → halt not `__mark_fixed__`; stale-sha results → no validation; pipeline-granted skip → NEEDS_INPUT
+- [x] All three regression gates green
+- [x] New fixtures: empty receipt → completion-unverified; cloud deferral → halt not `__mark_fixed__`; stale-sha results → no validation; pipeline-granted skip → NEEDS_INPUT
 
 **Implementation Notes:**
 
@@ -153,6 +153,23 @@ cloud gates in bug-state; standing-directive confirmation.
 - WU-4 producer gap (validated_commit recording by the MCP_TEST_RESULTS.md producer) still open — Phase 6 candidate.
 - bug-state.py has its own `__write_validated_from_skip__` skip paths (Step 9, ~704-720) that do NOT yet honor `granted_by` — WU-5 was scoped to lazy-state.py only per the plan. Flagged for the lazy-bug-batch rebuild / a future parity pass (Phase 6).
 **Files modified:** `user/scripts/bug-state.py`, `user/scripts/lazy-state.py`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`, `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, `user/skills/_components/sentinel-frontmatter.md`, `user/skills/_components/mcp-coverage-audit.md`, `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`
+
+#### Implementation Notes (Phase 2 — Batch 3: WU-8 + Post-Phase)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (inline review — 2 files, 30 insertions, ≤150 lines; prose-only, ground-truth verified by grep + reading the inserted D5 block)
+**Work completed:**
+- **WU-8** (D5 mcp-test inline-fix policy, prose): added the locked-D5 inline-fix policy to the `/mcp-test` per-skill override in both batch SKILLs. A mcp-test cycle MAY fix production code inline ONLY (1) test-first (failing test written + confirmed RED first) and (2) fully disclosed (files/change/pinning-test named in the cycle summary); (3) a cycle that modified production code MUST NOT write `VALIDATED.md` — it ends in a needs-re-verify state (`MCP_TEST_RESULTS.md` flagging the production change, or `BLOCKED.md`); (4) only a SUBSEQUENT clean `/mcp-test` cycle (no production edits) certifies via `VALIDATED.md`. The existing NO-FIRE-AND-FORGET sentinel-contract clause was updated with the matching "VALIDATED.md on full pass UNLESS you modified production code this cycle" exception so it reads coherently. FULL on lazy-batch (numbered 1–4 block); MINIMAL terse suffix on lazy-bug-batch (per Rule 10). Closes the self-certification side-door where one cycle both changes and validates its own un-reviewed code.
+**Ground-truth verification:** prose WU (TDD:no) — no test runner applies; verified by independent grep (D5 language present in both files at the expected sites) + reading the inserted block for coherence with the surrounding sentinel contract.
+
+#### Post-Phase (Phase 2 — Integration Verification + part close)
+**Integration verification:** the five integrity gates cohere as one system —
+(1) content-validated receipts (`has_completion_receipt`, WU-1) feed both the lazy-state Step-2 and bug-state Fixed-receipt completion gates AND `derive_stage`; (2) the bug-state cloud guards (WU-2) + the unqueued-Fixed gate (WU-3) make bug-state's completion enforcement uniform with lazy-state's; (3) the MCP-results sha-freshness gate (WU-4) + SKIP_MCP_TEST `granted_by` provenance (WU-5) close the two "validate from stale/self-granted evidence" side-doors; (4) the loop-breaker sentinel restriction + 1e.4a evidence gate (WU-6) prevent recovery subagents from authoring validation sentinels; (5) the mcp-test inline-fix policy (WU-8) prevents a cycle self-certifying its own code change. The orchestrator-facing WU-6/WU-7/WU-8 skill edits are FULL on lazy-batch + lazy-batch-cloud (cloud's Step 1d.5 is by-reference) and MINIMAL on lazy-bug-batch — Phase 6 rebuilds lazy-bug-batch by-reference and inherits the canonical lazy-batch text (per the plan's accepted "Phase 2 edits text Phase 6 later replaces" risk note).
+**Part-end full quality gate (MANDATORY, all exit 0):** `python3 ~/.claude/scripts/lazy-state.py --test` (0), `python3 ~/.claude/scripts/bug-state.py --test` (0), `python3 ~/.claude/scripts/test_lazy_core.py` (91/91, 0). Run + passed as the final chained command before the part-close commit.
+**Carried follow-ups (Phase 6 candidates, NOT blocking part close):**
+- WU-4 producer gap: the `MCP_TEST_RESULTS.md` producer (`/mcp-test` results writer) must populate `validated_commit` for the freshness gate to be active in production (gate is backward-compatibly inert until then; no regression).
+- bug-state.py `__write_validated_from_skip__` paths (Step 9) do not yet honor `granted_by` (WU-5 was lazy-state-scoped per the plan).
+- CLAUDE.md review: `user/scripts/CLAUDE.md` testing section already documents the baseline mechanism (Phase 1); no new doc wiring warranted by Phase 2's guard/validation additions (no new public surface).
+**Files modified:** `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`
 
 ---
 
