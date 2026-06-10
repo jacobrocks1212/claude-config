@@ -889,7 +889,36 @@ No special resume detection is needed in `/lazy-batch`'s main loop — every upl
 
 `~/.claude/skills/_components/decision-resume.md`
 
-**Park mode — processing `parked[]` output (Phase 4, `--park` only):** When `park_mode == true` and the probe returns a non-empty `parked[]` array, the orchestrator skips the `AskUserQuestion` resolution flow for each item in that array and instead parks it: for each newly-parked `feature_name`, increment `parked_count` and fire `PushNotification({ message: "parked {feature_name} — {parked_count} decision(s) parked so far this run" })` (per the §1c.6 park policy). Continue the queue walk without halting. The batched flush of all parked decisions occurs later via the WU-4 flush protocol (see §1c.6 flush point).
+**Park mode — processing `parked[]` output (Phase 4, `--park` only):** When `park_mode == true` and the probe returns a non-empty `parked[]` array, the orchestrator skips the `AskUserQuestion` resolution flow for each item in that array and instead parks it: for each newly-parked `feature_name`, increment `parked_count` and fire `PushNotification({ message: "parked {feature_name} — {parked_count} decision(s) parked so far this run" })` (per the §1c.6 park policy). Continue the queue walk without halting. The batched flush of all parked decisions occurs later via the WU-4 flush protocol (see §1g-flush below).
+
+---
+
+### 1g-flush. Parked-decision flush (`--park` only)
+
+**Guard:** runs only when `park_mode == true`. When `park_mode == false` this step is entirely
+skipped — behavior is byte-for-byte the existing one.
+
+**Pipeline binding for the shared flush component below** — `{SKILL}` = `/lazy-batch`,
+`{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{PUSH_RULE}` = workstation (standard
+end-of-work push; the apply subagent's standard push suffices). The meta-cycle accounting
+translates to **increment `meta_cycles`** per applied decision, matching every other resolution
+mode.
+
+**Three flush triggers (fire at the FIRST of):**
+
+- **(a) Operator message mid-run:** any mid-run operator message while `park_mode == true` and
+  unresolved parked items exist triggers an immediate flush before processing the message further
+  (after echo-back if the message implies a standing-directive change).
+- **(b) No unparked work remains:** when `lazy-state.py` returns `all-features-complete` (or any
+  queue-exhausted terminal) and unresolved parked items still exist, flush FIRST — do NOT treat
+  all-complete as a real STOP while unresolved parked items remain.
+- **(c) Run end:** flush before printing the final batch report whenever `parked_count > 0` with
+  unresolved sentinels still present.
+
+Then read and apply the shared parked-flush handler exactly (single source across all three batch
+orchestrators):
+
+`~/.claude/skills/_components/parked-flush.md`
 
 ---
 

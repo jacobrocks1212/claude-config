@@ -294,7 +294,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] `--park` skill invocation flag parsed in all 3 batch orchestrators; recorded in start banner + final report; no flag → existing Step 1g halt behavior unchanged
 - [x] Script `--park-needs-input` mode + `parked[]` output array, passed only when skill got `--park` (wrappers keep halt behavior; probe output unchanged without the flag)
 - [x] PushNotification at every park / halt / flush / run end (both modes)
-- [ ] D1 flush protocol (`--park` only): batched AskUserQuestion (≤4/call, Zero-Context Briefing preserved) at first opportunity (operator message / out of unparked work / run end); decision-apply per answer
+- [x] D1 flush protocol (`--park` only): batched AskUserQuestion (≤4/call, Zero-Context Briefing preserved) at first opportunity (operator message / out of unparked work / run end); decision-apply per answer
 - [ ] D2 two-key auto-accept (`--park` only): `class: mechanical` + input-audit concurrence → recommended option auto-accepted, `resolved_by: auto-two-key`, receipt log + run-end digest; any disagreement → product → park; no auto-accept ever without `--park`
 - [ ] Cache-boundary note documented in both batch skills
 
@@ -335,6 +335,19 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - The park-notification point consumes WU-1's `parked[]` script output. The flush point is a forward reference to WU-4 (next batch) — documented now so the four-point policy reads coherently.
 **Files modified:**
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — §1c.6 policy + Step 1g parked[] processing
+
+#### Implementation Notes (Phase 4 — Batch 3: WU-4)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (dedicated Opus reviewer verified all 8 locked requirements present+correct; orchestrator ground-truth verified — new component 201 lines, 3 SKILLs +91/-3, HEAD unchanged a22c526, mount-site satisfied)
+**Work completed:**
+- **WU-4** (D1 flush protocol, `--park` only): created the shared component `user/skills/_components/parked-flush.md` (the batched, park-mode-only sibling of `decision-resume.md`), referenced by all 3 batch SKILLs via a new `### 1g-flush. Parked-decision flush (--park only)` section with pipeline-binding paragraph (same pattern as the Step 1g `decision-resume.md` include). The component specifies: hard `park_mode==true` gate (never fires without `--park`); the three flush triggers at the FIRST of (a) operator message mid-run, (b) **no-unparked-work guard** — the orchestrator MUST NOT treat an all-complete/queue-exhausted terminal as a real STOP while unresolved parked items remain (flush first — this is the load-bearing anti-abandonment point), (c) run end; meta-cap check FIRST (2× max_cycles); per-item schema validation with malformed-skip-not-abort (surfaces the named writer, continues on well-formed items); **Zero-Context Operator Briefing preserved as a HARD REQUIREMENT** (2a briefing + 2b verbatim `## Decision Context` re-print before each call, options 1:1); batched AskUserQuestion with **≤4 TOTAL questions/call** (greedy pack, sequential follow-up calls, never split one item across calls); apply via REFERENCE to `decision-resume.md` steps 4–6 (no duplication) including the FILENAME rename neutralization (`git mv` → `NEEDS_INPUT_RESOLVED*.md`, never a `kind:` flip); per-applied-decision `meta_cycles++`; continuation returns to Step 1a for (a)/(b) (renamed sentinels re-enter on next probe) and prints the final report for (c).
+- The Batch-2 §1c.6 "flush point" forward-references now resolve to the real `§1g-flush` (no dangling reference).
+**Integration notes:**
+- Architecture matches the existing shared-handler pattern (`decision-resume.md`/`blocked-resolution.md`/`halt-resolution.md`) — flush logic lives once in the component; the 3 SKILLs only bind tokens + reference it, avoiding the triple-drift Phase 6 otherwise has to fix. Per-pipeline vocabulary correct (lazy-bug-batch: bug-state.py/all-bugs-fixed; lazy-batch-cloud: cloud push-after-commit + cloud-queue-exhausted).
+- WU-5 (next batch) layers two-key auto-accept ON TOP of this flush (auto-accepted decisions bypass the AskUserQuestion; the rest flush here).
+**Files modified:**
+- `user/skills/_components/parked-flush.md` — NEW shared flush-protocol component
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — §1g-flush reference + binding; §1c.6 forward-ref fix
 
 ---
 
