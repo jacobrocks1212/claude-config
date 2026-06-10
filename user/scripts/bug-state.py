@@ -2871,6 +2871,13 @@ def main() -> int:
         "--neutralize-sentinel", default=None, metavar="PATH",
         help="Rename a resolved sentinel to the canonical *_RESOLVED_<date> form (collision-safe).",
     )
+    parser.add_argument(
+        "--repeat-count", action="store_true",
+        help="Persist the probe signature and emit a 'repeat_count' field "
+             "(consecutive identical-probe count) for mechanical loop detection. "
+             "Without this flag, output is byte-identical to the default and no "
+             "state file is written.",
+    )
     args = parser.parse_args()
 
     if args.neutralize_sentinel is not None:
@@ -2924,6 +2931,11 @@ def main() -> int:
         scope_bug_id=args.bug_id,
         park_needs_input=args.park_needs_input,
     )
+    # --repeat-count is strictly additive and flag-gated so that default output
+    # remains byte-identical when the flag is absent. No state file is written
+    # and no field is injected unless --repeat-count is explicitly passed.
+    if args.repeat_count:
+        state["repeat_count"] = lazy_core.update_repeat_count(Path(args.repo_root), state)
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

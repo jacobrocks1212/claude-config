@@ -397,7 +397,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] `--verify-ledger <spec_path>` (replaces 5 prose blocks)
 - [x] `--apply-pseudo <name> <spec_path>` for all deterministic sentinel/receipt writes; receipt-write ownership contradiction resolved (script is single author)
 - [x] `--neutralize-sentinel <path>` with collision handling
-- [ ] Persisted probe signature → `repeat_count` in output
+- [x] Persisted probe signature → `repeat_count` in output
 - [ ] Probe payload includes git-guard results + pre-formatted cycle header
 - [ ] Both batch skills consume subcommands; superseded prose deleted
 
@@ -455,6 +455,18 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Ground-truth verification:** impl GROUND-TRUTH block re-run independently — `git status --short` (4 files M), `wc -l` (lazy_core 1710), grep anchors, full suite 132/132, both `--test` gates exit 0 — all matched. No falsified claims.
 **Integration notes:** new function adds no imports beyond already-present `subprocess`/`datetime`; CLI additive + gated behind `is not None`. WU-6 routes the SKILL neutralization prose (`git mv … _RESOLVED*`) to call this subcommand.
 **Files modified:** `user/scripts/lazy_core.py` (+`neutralize_sentinel`), `user/scripts/lazy-state.py` (CLI), `user/scripts/bug-state.py` (CLI), `user/scripts/test_lazy_core.py` (6 tests + registry).
+
+#### Implementation Notes (Phase 5 — Batch 4: WU-4 persisted probe signature → `repeat_count`)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (dedicated Opus reviewer; orchestrator INDEPENDENTLY re-proved the load-bearing byte-identical-default guarantee — two `--repo-root <AlgoBooth>` runs byte-identical with zero `repeat_count` occurrences, no repo-tree pollution; ground-truth verified: yes. HEAD unchanged c65aa5c. No issues.)
+**Work completed:**
+- **WU-4** (TDD): new shared `lazy_core.update_repeat_count(repo_root, state, *, signature_path=None) -> int` (~line 1718) persists the probe's dispatch signature `(feature_id, sub_skill, sub_skill_args, current_step)` and returns the CONSECUTIVE-identical-probe count (increments on identical signature, resets to 1 on change/corrupt/absent) — making loop detection mechanical instead of prose. `sub_skill_args` is part of the signature (a multi-part `/execute-plan` part-1→part-2 correctly resets, NOT a false loop). Read is guarded against missing/corrupt/wrong-shape JSON (resets to 1, never raises); persists `{signature, count}` atomically via `_atomic_write`.
+- **Signature-file location (design choice):** stored under the OS temp dir keyed by `sha1(repo_root.resolve())[:16]` — deliberately OUTSIDE the repo tree (the design's "e.g. logs/docs dir" is a suggestion; keeping it out of the tree is the stronger constraint — the orchestrator's `git add -A` can never commit it, and no `.gitignore` entry is required). `signature_path` is injectable for test isolation.
+- **CRITICAL byte-identical gating:** `repeat_count` is emitted ONLY under a new `--repeat-count` flag (added to BOTH `lazy-state.py` ~4666/4741 and `bug-state.py` ~2875/2937); `update_repeat_count` is called only inside `if args.repeat_count:` in `main()`, AFTER `compute_state` and BEFORE `json.dumps`. WITHOUT the flag: NO field, NO state-file write → output byte-for-byte identical to today. This preserves the Phase-1 byte-pinned `--test` baselines AND the zero-drift `--repo-root` two-run probe (a stateful always-on counter would have broken the second run). Mirrors the Phase-4 `--park-needs-input` opt-in pattern. NO baseline regeneration was needed (baselines unchanged in the diff).
+- **Tests**: 5 RED→GREEN `test_update_repeat_count_*` (inject `signature_path` for isolation) — first-call=1; increments 1→2→3 on identical; resets on signature change; **args-distinguish** (part-1→1, part-2→1-not-2 — the non-tautological core proving args is in the signature); corrupt-file → 1 (no raise).
+**Ground-truth verification:** impl GROUND-TRUTH re-run independently — full suite 137/137, both `--test` gates exit 0 (baselines unchanged), default two-run `--repo-root` BYTE-IDENTICAL (0 `repeat_count` occurrences), only the 4 source files modified (no repo pollution) — all matched. No falsified claims.
+**Integration notes:** added `import hashlib` to lazy_core.py (`tempfile`/`json` already present); CLI additive + flag-gated. WU-5 (next batch) folds git-guard results + a cycle-header block into the probe payload (same flag-gated, byte-identical-default discipline). WU-6 wires the SKILL loop-guard (Step 1d) to consume `repeat_count`.
+**Files modified:** `user/scripts/lazy_core.py` (+`update_repeat_count`, +`import hashlib`), `user/scripts/lazy-state.py` (flag+gated call), `user/scripts/bug-state.py` (flag+gated call), `user/scripts/test_lazy_core.py` (5 tests + registry).
 
 ---
 

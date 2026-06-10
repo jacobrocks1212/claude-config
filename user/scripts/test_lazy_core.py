@@ -3137,6 +3137,135 @@ def test_neutralize_sentinel_blocked_form():
 
 
 # ---------------------------------------------------------------------------
+# Tests: update_repeat_count — WU-4 persisted probe signature / loop detection
+# ---------------------------------------------------------------------------
+
+# Representative state used across several tests.
+_STATE_A = {
+    "feature_id": "feat-a",
+    "sub_skill": "/execute-plan",
+    "sub_skill_args": "plan-part-1.md",
+    "current_step": "Step 7a: execute plan",
+}
+_STATE_B_DIFF_SKILL = {
+    "feature_id": "feat-a",
+    "sub_skill": "/implement-phase",       # differs from _STATE_A
+    "sub_skill_args": "plan-part-1.md",
+    "current_step": "Step 7a: execute plan",
+}
+_STATE_A_PART2 = {
+    "feature_id": "feat-a",
+    "sub_skill": "/execute-plan",
+    "sub_skill_args": "plan-part-2.md",   # differs from _STATE_A (args variant)
+    "current_step": "Step 7a: execute plan",
+}
+
+
+def test_update_repeat_count_first_call_is_one():
+    """Fresh signature_path (file does not exist) → returns 1 AND the file is created.
+
+    RED: update_repeat_count missing on lazy_core → AttributeError caught by _run_test.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        assert not sig_path.exists(), "pre-condition: sig.json must not exist before first call"
+        result = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        file_created = sig_path.exists()
+    assert result == 1, f"expected 1 on first call, got {result!r}"
+    assert file_created, "signature file was not created on first call"
+
+
+def test_update_repeat_count_increments_on_identical():
+    """Same state passed 3 times → returns 1, then 2, then 3 in order.
+
+    RED: update_repeat_count missing → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        r2 = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        r3 = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+    assert r1 == 1, f"expected 1 on first call, got {r1!r}"
+    assert r2 == 2, f"expected 2 on second (identical) call, got {r2!r}"
+    assert r3 == 3, f"expected 3 on third (identical) call, got {r3!r}"
+
+
+def test_update_repeat_count_resets_on_signature_change():
+    """State A → 1; State A → 2; State B (different sub_skill) → 1; State B → 2.
+
+    Proves that changing any signature field resets the counter to 1.
+    RED: update_repeat_count missing → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        r2 = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        # Switch to a state with a different sub_skill — must reset.
+        r3 = lazy_core.update_repeat_count(Path(td), _STATE_B_DIFF_SKILL, signature_path=sig_path)
+        r4 = lazy_core.update_repeat_count(Path(td), _STATE_B_DIFF_SKILL, signature_path=sig_path)
+    assert r1 == 1, f"expected 1 (state A first), got {r1!r}"
+    assert r2 == 2, f"expected 2 (state A second), got {r2!r}"
+    assert r3 == 1, f"expected 1 (reset on state B), got {r3!r} — signature change must reset count"
+    assert r4 == 2, f"expected 2 (state B second), got {r4!r}"
+
+
+def test_update_repeat_count_args_distinguish_signature():
+    """sub_skill_args is part of the signature: part-1 vs part-2 are DIFFERENT signatures.
+
+    Sequence: stateA(part-1)→1; stateA_part2(part-2)→1 (NOT 2 — the critical assertion);
+    stateA_part2 again→2.
+
+    This test is the load-bearing non-tautological core: it proves that args is
+    included in the signature.  A naïve impl that ignores args would return 2
+    for the second call, not 1.
+
+    RED: update_repeat_count missing → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        # First call with plan-part-1.md args.
+        r1 = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        # Second call with plan-part-2.md args — different signature, must reset to 1.
+        r2 = lazy_core.update_repeat_count(Path(td), _STATE_A_PART2, signature_path=sig_path)
+        # Third call with plan-part-2.md args again — now increments to 2.
+        r3 = lazy_core.update_repeat_count(Path(td), _STATE_A_PART2, signature_path=sig_path)
+    assert r1 == 1, f"expected 1 for plan-part-1.md (first call), got {r1!r}"
+    assert r2 == 1, (
+        f"expected 1 for plan-part-2.md (args changed → reset), got {r2!r}. "
+        "sub_skill_args must be part of the signature — a different args value is a NEW signature."
+    )
+    assert r3 == 2, f"expected 2 for plan-part-2.md (second call), got {r3!r}"
+
+
+def test_update_repeat_count_corrupt_file_resets():
+    """A pre-existing corrupt (invalid JSON) signature file → treated as no prior → returns 1.
+
+    No exception should be raised; the corrupt file is silently replaced.
+    RED: update_repeat_count missing → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        # Write invalid JSON to simulate a corrupt signature file.
+        sig_path.write_text("{ this is not json", encoding="utf-8")
+        assert sig_path.exists(), "pre-condition: corrupt sig.json must exist"
+        # Must not raise; must return 1 (treat corrupt as absent/reset).
+        try:
+            result = lazy_core.update_repeat_count(Path(td), _STATE_A, signature_path=sig_path)
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(
+                f"update_repeat_count raised on corrupt signature file: {type(exc).__name__}: {exc}"
+            ) from exc
+    assert result == 1, (
+        f"expected 1 when prior signature file is corrupt (reset), got {result!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -3300,6 +3429,12 @@ _TESTS = [
     ("test_neutralize_sentinel_double_collision_increments", test_neutralize_sentinel_double_collision_increments),
     ("test_neutralize_sentinel_refuses_already_resolved", test_neutralize_sentinel_refuses_already_resolved),
     ("test_neutralize_sentinel_blocked_form", test_neutralize_sentinel_blocked_form),
+    # update_repeat_count — WU-4 persisted probe signature / loop detection
+    ("test_update_repeat_count_first_call_is_one", test_update_repeat_count_first_call_is_one),
+    ("test_update_repeat_count_increments_on_identical", test_update_repeat_count_increments_on_identical),
+    ("test_update_repeat_count_resets_on_signature_change", test_update_repeat_count_resets_on_signature_change),
+    ("test_update_repeat_count_args_distinguish_signature", test_update_repeat_count_args_distinguish_signature),
+    ("test_update_repeat_count_corrupt_file_resets", test_update_repeat_count_corrupt_file_resets),
 ]
 
 

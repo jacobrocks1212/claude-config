@@ -45,6 +45,7 @@ Public API (stable for Phase 2 reuse):
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -1708,3 +1709,91 @@ def neutralize_sentinel(path: Path, date: str | None = None) -> dict:
         "refused": None,
         "collision_suffix": collision_suffix,
     }
+
+
+# ---------------------------------------------------------------------------
+# Persisted probe signature / loop detection — WU-4
+# ---------------------------------------------------------------------------
+
+def update_repeat_count(
+    repo_root: Path,
+    state: dict,
+    *,
+    signature_path: Path | None = None,
+) -> int:
+    """Persist the current probe signature and return the consecutive-repeat count.
+
+    The «signature» is the 4-tuple
+        (feature_id, sub_skill, sub_skill_args, current_step)
+    extracted with ``.get()`` so that missing keys produce ``None`` components
+    (an all-None signature is stable and valid).
+
+    Each call:
+    1. Derives or accepts a ``signature_path`` for the persisted JSON file.
+    2. Reads the existing JSON (shape ``{"signature": [...], "count": int}``).
+       Any missing file, OS error, or corrupt/invalid JSON is silently treated
+       as «no prior» — the function never raises on a bad state file.
+    3. Compares the stored signature (a list) to the new signature (a tuple).
+       JSON has no tuple type, so comparison is list-vs-list after converting
+       the new tuple to a list.
+    4. If the signatures match → increments count; otherwise resets to 1.
+    5. Atomically persists the new ``{"signature": ..., "count": count}`` JSON
+       back to ``signature_path`` so the next call can read it.
+    6. Returns the (int >= 1) count.
+
+    Default ``signature_path`` (when None):
+        ``<tempdir>/lazy-state-last-<sha1_of_repo_root[:16]>.json``
+    This keeps the state file outside the repo tree — it is never committed
+    and never triggers gitignore concerns.
+    """
+    # --- Derive default path from a stable hash of the resolved repo root ----
+    # The hash keeps per-repo state separate even when multiple repos live on
+    # the same machine, while keeping the filename deterministic across runs.
+    if signature_path is None:
+        repo_hash = hashlib.sha1(
+            str(repo_root.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
+        signature_path = Path(tempfile.gettempdir()) / f"lazy-state-last-{repo_hash}.json"
+
+    # --- Build the new signature from the current state ----------------------
+    new_sig = (
+        state.get("feature_id"),
+        state.get("sub_skill"),
+        state.get("sub_skill_args"),
+        state.get("current_step"),
+    )
+
+    # --- Read the persisted prior signature (fail-safe) ----------------------
+    prior_count = 0
+    prior_sig_list: list | None = None
+    try:
+        raw = signature_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        # Validate expected shape: {"signature": [4 items], "count": int}
+        if (
+            isinstance(data, dict)
+            and isinstance(data.get("signature"), list)
+            and len(data["signature"]) == 4
+            and isinstance(data.get("count"), int)
+        ):
+            prior_sig_list = data["signature"]
+            prior_count = data["count"]
+        # If shape is wrong, treat as no-prior (prior_count stays 0, prior_sig_list stays None).
+    except (OSError, ValueError, json.JSONDecodeError):
+        # File absent, unreadable, or corrupt → treat as no prior.
+        pass
+
+    # --- Compute new count ---------------------------------------------------
+    # JSON round-trips tuples as lists, so compare new_sig as a list.
+    if prior_sig_list is not None and list(new_sig) == prior_sig_list:
+        # Same signature as last time — consecutive repeat.
+        count = prior_count + 1
+    else:
+        # Changed signature (or no prior) — reset streak.
+        count = 1
+
+    # --- Persist the updated record ------------------------------------------
+    payload = json.dumps({"signature": list(new_sig), "count": count})
+    _atomic_write(signature_path, payload)
+
+    return count
