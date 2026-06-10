@@ -567,6 +567,13 @@ Do NOT halt the loop. NEEDS_INPUT.md is picked up by bug-state.py on the next
 cycle and resolved via Step 1g (decision-resume mode).
 ```
 
+**`audit_concurs` recording (`--park` two-key — mirrored from `/lazy-batch` Step 1d.5):** When
+the sentinel under audit carries `class: mechanical` in its frontmatter, the audit subagent
+independently re-classifies all decisions against the product-behavior smells checklist and
+records its verdict: `audit_concurs: true` if it concurs ALL are mechanical-internal, else
+`audit_concurs: false`. Absent ⇒ no-concurrence (park). See `/lazy-batch` Step 1d.5 step 7
+for the full recording protocol (edit frontmatter, stage, commit, push).
+
 **After the audit subagent returns:**
 1. If it wrote `NEEDS_INPUT.md`, append a `**Audit:**` bullet to the per-cycle output block.
 2. If clean, append no audit bullet.
@@ -732,6 +739,19 @@ When the loop exits (terminal state or max-cycles), print:
   - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
   - (needs-input is no longer a terminal state — Step 1g resolves inline.)
 ```
+
+*(Print the following table ONLY when `park_mode == true` AND `auto_accepted[]` is non-empty. Omit entirely otherwise — no change to default reports.)*
+
+```
+### Auto-accepted decisions (`--park` two-key)
+
+| Bug | Decision | Chosen option | Resolved sentinel |
+|-----|----------|---------------|-------------------|
+| {bug_name} ({bug_id}) | {decision title} | {chosen option label} | `{resolved_sentinel_path}` |
+| ... | ... | ... | ... |
+```
+
+*(One row per auto-accepted decision across all bugs. If a single sentinel carried multiple decisions, emit one row per decision with the same bug column repeated. This table is the run-end audit trail for all D2 two-key auto-accepted choices.)*
 
 STOP.
 

@@ -740,7 +740,36 @@ Audit algorithm:
         decision(s) for user confirmation"
       Push the work branch (`git push origin $(git rev-parse --abbrev-ref
       HEAD)`, 4× backoff retry on network error; never main, never force).
-7. Return a one-paragraph summary (≤ 8 lines) covering:
+7. **Record `audit_concurs` in the sentinel's frontmatter** — `--park`-mode two-key signal.
+   This applies to the NEEDS_INPUT.md currently on disk for this feature (whether you just
+   wrote it in step 6, or it pre-existed from the cycle subagent).
+
+   If the sentinel's frontmatter carries `class: mechanical` (set by the cycle subagent or
+   from a prior audit):
+     - Re-classify ALL decisions in this file independently against the product-behavior
+       smells checklist (the same checklist you applied in steps 3–4 above).
+     - If you concur that EVERY decision is mechanical-internal (no product-behavior smells),
+       set `audit_concurs: true` in the frontmatter.
+     - If ANY decision is product-behavior by your independent classification,
+       set `audit_concurs: false` and surface that decision (it should already be in
+       NEEDS_INPUT.md from step 6 if it was baked in; if the sentinel already existed and the
+       product-behavior decision was the cycle subagent's own `class: mechanical` claim, update
+       the sentinel to reflect the disagreement).
+     - In EITHER case: edit the NEEDS_INPUT.md frontmatter to add or update `audit_concurs`
+       using `Edit`, stage the updated sentinel, and amend or add a commit:
+       `git add {spec_path}/NEEDS_INPUT.md && git commit -m "{feature_id}: input-audit records audit_concurs={true|false}"`.
+       Push per the post-cycle push rule.
+   If the sentinel does NOT carry `class: mechanical` (it is `product` or absent): skip this
+   sub-step entirely — `audit_concurs` is only meaningful when the cycle subagent claimed
+   `mechanical`, so writing `audit_concurs: false` on a `product` sentinel would be redundant
+   noise. The absence of `audit_concurs` is itself the no-concurrence signal.
+
+   **Effect in `--park` mode:** when the orchestrator's parked-flush runs, it checks both
+   `class: mechanical` AND `audit_concurs: true` to decide if a parked sentinel qualifies for
+   auto-accept (D2 two-key). This audit step is Key 2. Without `audit_concurs: true` from
+   THIS step, no auto-accept fires — the decision is always flushed to the operator.
+
+8. Return a one-paragraph summary (≤ 8 lines) covering:
    - Decisions reviewed (count) and how many you classified as
      product-behavior.
    - Whether the cycle subagent's Decision-Classification Ledger was present
@@ -748,6 +777,7 @@ Audit algorithm:
      skill name.
    - The one-line titles of the surfaced decisions.
    - Whether you wrote NEEDS_INPUT.md (and the commit sha if so).
+   - Whether you recorded `audit_concurs` and its value (or why you skipped it).
 
 Do NOT halt the loop. The NEEDS_INPUT.md sentinel you write is picked up by
 lazy-state.py on the next cycle and resolved via Step 1g (decision-resume
@@ -1035,6 +1065,19 @@ When the loop exits (terminal state or max-cycles), print:
   - If forward-cycles-cap: re-run `/lazy-batch {max_cycles}` from a fresh session
   - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
 ```
+
+*(Print the following table ONLY when `park_mode == true` AND `auto_accepted[]` is non-empty. Omit entirely otherwise — no change to default reports.)*
+
+```
+### Auto-accepted decisions (`--park` two-key)
+
+| Feature | Decision | Chosen option | Resolved sentinel |
+|---------|----------|---------------|-------------------|
+| {feature_name} ({feature_id}) | {decision title} | {chosen option label} | `{resolved_sentinel_path}` |
+| ... | ... | ... | ... |
+```
+
+*(One row per auto-accepted decision across all features. If a single sentinel carried multiple decisions, emit one row per decision with the same feature column repeated. This table is the run-end audit trail for all D2 two-key auto-accepted choices.)*
 
 STOP.
 

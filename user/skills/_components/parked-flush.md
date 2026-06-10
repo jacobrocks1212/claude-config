@@ -100,6 +100,94 @@ the flush is a no-op (proceed to run-end report or resume loop).
 After step 2, `pending_flush` contains only well-formed sentinels. If `pending_flush` is now
 empty (all were malformed), skip to the post-flush cycle accounting step.
 
+**Step 2.5 — Two-key auto-accept partition (`--park` mode only — this step runs only here).**
+
+**No auto-accept path exists outside this park-only component.** The auto-accept logic below is
+structurally gated inside this `--park`-only flush component; it cannot fire in the standard
+decision-resume path (Step 1g without `--park`). The structural guarantee: `class: mechanical`
+and `audit_concurs: true` in a sentinel are inert outside `--park` — they are read and acted on
+ONLY here.
+
+Partition `pending_flush` into two sets:
+
+**`auto_acceptable[]` — auto-accept iff ALL of the following hold for a given sentinel:**
+1. `park_mode == true` (always true here — this step is park-only).
+2. The sentinel's frontmatter carries `class: mechanical`.
+3. The sentinel's frontmatter carries `audit_concurs: true`.
+4. Every decision in the file (every H3 under `## Decision Context`) carries a `**Recommendation:**` block.
+
+A single-key classification (`class: mechanical` without `audit_concurs: true`, or vice versa)
+is NOT sufficient. On ANY disagreement, missing key, or missing recommendation — the sentinel
+falls into `must_ask` regardless of any other field values.
+
+**`must_ask[]` (product/park) — everything else:** any sentinel where `class` is `product` or
+absent, `audit_concurs` is `false` or absent, or any decision lacks a `**Recommendation:**`.
+These are processed by the existing batched `AskUserQuestion` flow in Step 3.
+
+**Auto-accept processing — for each item in `auto_acceptable[]`:**
+
+  1. **For EACH decision in the sentinel's `## Decision Context`:** read the `**Recommendation:**`
+     line, extract the recommended option label (the bold `<option>` name at the start of the
+     recommendation sentence).
+
+  2. **Append `## Resolution` block** to `NEEDS_INPUT.md` using `Edit` (or `Write` as fallback):
+
+     ```markdown
+
+     ## Resolution
+
+     *Recorded on <YYYY-MM-DD HH:MM:SS UTC>. Auto-accepted via two-key mechanical classification (`--park` mode).*
+
+     resolved_by: auto-two-key
+
+     ### 1. <decision[0] title>
+
+     **Choice:** <recommended option label>
+     **Notes:** Auto-accepted — both keys (cycle-subagent `class: mechanical` + audit `audit_concurs: true`) agreed this decision is mechanical-internal with a single defensible answer.
+
+     ### 2. <decision[1] title>
+
+     **Choice:** ...
+     ```
+
+     One `### N.` subsection per decision, in the same order as the `decisions:` frontmatter list.
+
+  3. **Commit** the resolved sentinel: stage `NEEDS_INPUT.md` and commit with message
+     `docs({feature_id}): auto-accept mechanical decision(s) [two-key, --park]`. Apply
+     `{PUSH_RULE}` (for the cloud pipeline: push immediately after this commit for
+     container-reclaim durability).
+
+  4. **Dispatch the Sonnet apply-resolution subagent** — SAME machinery as `decision-resume.md`
+     steps 4–6. The subagent propagates each auto-accepted choice into SPEC.md / PHASES.md and
+     renames `NEEDS_INPUT.md` → `NEEDS_INPUT_RESOLVED*.md` via `git mv` (FILENAME rename, NOT a
+     `kind:` flip — see `decision-resume.md` step 6 for the exact rename rule and the
+     "kind-flip is a real bug" note). The subagent prompt is the same shape as
+     `decision-resume.md` step 6, with the additional note that the choices were auto-accepted
+     via the two-key mechanical path and the operator was not asked. Use:
+
+     ```
+     Agent({
+       description: "{SKILL} auto-accept-apply: {feature_name}",
+       subagent_type: "general-purpose",
+       model: "sonnet",
+       prompt: <decision-resume.md step 6 prompt, with `resolved_by: auto-two-key` noted>
+     })
+     ```
+
+  5. **Record in `auto_accepted[]`** (in-memory list for the run-end digest):
+     `{ feature_id, feature_name, decision_titles: [<one-line titles>], chosen_options: [<labels>], resolved_sentinel_path: <new NEEDS_INPUT_RESOLVED*.md path> }`
+
+  6. **Cycle accounting** — same as Step 6 of the flush (one `meta_cycles` increment per
+     dispatched apply, one `cycle_log` entry, one per-cycle update block with heading
+     `### Cycle {meta_cycles}/{2*max_cycles} (meta) · {feature_name} · auto-accept [two-key]`).
+     Each auto-accepted item counts as a meta cycle, matching the standard flush accounting.
+
+After processing all `auto_acceptable[]` items, assign `pending_flush = must_ask[]` and continue
+to Step 3 (the batched `AskUserQuestion` flow for the remaining `must_ask` items). If `must_ask`
+is empty after the partition, Steps 3–5 are no-ops (no `AskUserQuestion` calls are issued) —
+proceed directly to Step 6 cycle accounting (already done above for auto-accepted items) then
+Step 7 post-flush continuation.
+
 **Step 3 — Print the Zero-Context Operator Briefing, then flush via batched `AskUserQuestion`
 calls.** This is a HARD REQUIREMENT: assume the operator has been away for hours and has zero
 session context. Before issuing any `AskUserQuestion` call, print to chat:

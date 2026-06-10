@@ -535,6 +535,8 @@ Agent({
 
 **Skip conditions, dispatch, audit prompt, post-return bullet rules:** verbatim from `/lazy-batch` Step 1d.5. The product-behavior smells checklist the auditor applies lives in `~/.claude/skills/spec/SKILL.md` ("Product-behavior smells — concrete checklist"); the Decision-Classification Ledger contract the auditor verifies against also lives there.
 
+**`audit_concurs` recording is INCLUDED in this mirrored contract.** `/lazy-batch` Step 1d.5 step 7 specifies that when the sentinel under audit carries `class: mechanical`, the audit subagent independently re-classifies all decisions and records `audit_concurs: true | false` in the frontmatter. That step is part of the "verbatim" contract above — the cloud audit subagent performs the same recording. Cloud-reclaim safety: the `audit_concurs` frontmatter edit is committed and pushed immediately (same commit as the sentinel write, or a follow-on commit if the sentinel pre-existed), so the field survives container reclaim. Effect: if the cloud audit concurs (`audit_concurs: true`) and the cycle subagent classified `class: mechanical`, the parked-flush (when the cloud run ends or a flush trigger fires) may auto-accept the decision via D2 two-key — the same path as workstation `/lazy-batch`.
+
 ### 1e. Record cycle outcome and loop
 
 Append to `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, sub_skill, subagent's one-paragraph summary}`, emit the canonical per-cycle update block (Step 3 — heading `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill}` + `**Result:**` / `**Commit:**` bullets, no other prose; add the `**Audit:**` bullet on `/spec` / `plan-feature` cycles whose Step 1d.5 surfaced product-behavior decisions), update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)`, increment `forward_cycles`, loop. **Post-cycle push backstop (HARD REQUIREMENT — cloud reclaim safety):** after the cycle subagent returns, the orchestrator verifies the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). Under guardrail B the cycle subagent already pushed every batch commit, so this normally reports "up to date" — it is the backstop for any cycle (or future skill) that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles. **The `forward_cycles` increment is also a uniform post-cycle action that NEVER resets on feature transitions (HARD CONSTRAINT 8) — when the next `lazy-state.py --cloud` call returns a different `feature_id` (e.g. after `__mark_complete__`, after `__write_deferred_non_cloud__` rolls the queue to the next ready feature, or any other queue-advance), `forward_cycles` continues incrementing from where it was.**
@@ -696,6 +698,19 @@ Header is `## /lazy-batch-cloud — Done`. Cloud-specific "Next step" guidance:
   - If forward-cycles-cap: re-run `/lazy-batch-cloud {max_cycles}` from a fresh session
   - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
 ```
+
+*(Print the following table ONLY when `park_mode == true` AND `auto_accepted[]` is non-empty. Omit entirely otherwise — no change to default reports.)*
+
+```
+### Auto-accepted decisions (`--park` two-key)
+
+| Feature | Decision | Chosen option | Resolved sentinel |
+|---------|----------|---------------|-------------------|
+| {feature_name} ({feature_id}) | {decision title} | {chosen option label} | `{resolved_sentinel_path}` |
+| ... | ... | ... | ... |
+```
+
+*(One row per auto-accepted decision across all features. If a single sentinel carried multiple decisions, emit one row per decision with the same feature column repeated. This table is the run-end audit trail for all D2 two-key auto-accepted choices.)*
 
 STOP.
 

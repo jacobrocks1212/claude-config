@@ -295,7 +295,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] Script `--park-needs-input` mode + `parked[]` output array, passed only when skill got `--park` (wrappers keep halt behavior; probe output unchanged without the flag)
 - [x] PushNotification at every park / halt / flush / run end (both modes)
 - [x] D1 flush protocol (`--park` only): batched AskUserQuestion (≤4/call, Zero-Context Briefing preserved) at first opportunity (operator message / out of unparked work / run end); decision-apply per answer
-- [ ] D2 two-key auto-accept (`--park` only): `class: mechanical` + input-audit concurrence → recommended option auto-accepted, `resolved_by: auto-two-key`, receipt log + run-end digest; any disagreement → product → park; no auto-accept ever without `--park`
+- [x] D2 two-key auto-accept (`--park` only): `class: mechanical` + input-audit concurrence → recommended option auto-accepted, `resolved_by: auto-two-key`, receipt log + run-end digest; any disagreement → product → park; no auto-accept ever without `--park`
 - [ ] Cache-boundary note documented in both batch skills
 
 **Runtime Verification:**
@@ -348,6 +348,25 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Files modified:**
 - `user/skills/_components/parked-flush.md` — NEW shared flush-protocol component
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — §1g-flush reference + binding; §1c.6 forward-ref fix
+
+#### Implementation Notes (Phase 4 — Batch 4: WU-5)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (dedicated Opus reviewer confirmed all three auto-accept leak paths structurally closed; orchestrator ground-truth verified — +173/-1 across 5 files, HEAD unchanged 2a2665a, --test suites still green since no .py touched)
+**Work completed:**
+- **WU-5** (D2 two-key auto-accept, `--park` only):
+  - `sentinel-frontmatter.md`: extended the NEEDS_INPUT schema with two OPTIONAL fields — `class: mechanical|product` (**Key 1**, file-level, authored by the cycle subagent; absent ⇒ `product` conservative default) and `audit_concurs: true|false` (**Key 2**, written by Step 1d.5 input-audit; absent ⇒ no-concurrence). Both documented as **`--park`-mode auto-accept signals ONLY** (the non-park decision-resume path ignores them → zero behavior change without `--park`). Documented the `resolved_by: auto-two-key` resolution marker. Existing halting-rule prose preserved intact.
+  - `parked-flush.md`: added Step 2.5 two-key auto-accept partition — `auto_acceptable[]` requires ALL THREE (`class==mechanical` AND `audit_concurs==true` AND every decision has a `**Recommendation:**`); single-key explicitly insufficient; everything else → `must_ask[]` (operator AskUserQuestion). Auto-accept takes the recommended option, appends `## Resolution` with `resolved_by: auto-two-key`, applies via decision-resume.md steps 4–6 (incl. `git mv` rename, NOT a `kind:` flip), records to `auto_accepted[]` for the digest, counts each as a meta cycle. Structural `--park`-only guarantee (auto-accept lives only in this park-gated component).
+  - Step 1d.5 (`audit_concurs` recording): lazy-batch canonical step 7 instructs the audit subagent to independently re-classify a `class: mechanical` sentinel and write `audit_concurs: true|false` (committed/pushed); AGGRESSIVE bias preserved (when in doubt → false/product). lazy-bug-batch mirror note + lazy-batch-cloud explicit inclusion in the mirrored contract (with cloud-reclaim commit/push safety).
+  - Run-end digest: all 3 SKILLs' Step 2 final report gained an "Auto-accepted decisions (`--park` two-key)" table (feature/bug, decision, chosen option, resolved-sentinel link), printed ONLY when `park_mode` AND `auto_accepted[]` non-empty (no change to default reports).
+**Integration notes:**
+- Load-bearing property verified by review: a decision CANNOT be auto-accepted (a) without `--park` (structural — park-only component), (b) with only one key (AND-gated), or (c) with a product classification (`must_ask` catches product/absent).
+- This completes the D1+D2 park machinery: WU-1 script `parked[]`, WU-2 `--park` flag, WU-3 notifications, WU-4 flush, WU-5 auto-accept. WU-6 (next, final batch) adds the cache-boundary note.
+**Files modified:**
+- `user/skills/_components/sentinel-frontmatter.md` — `class`/`audit_concurs`/`resolved_by: auto-two-key` schema
+- `user/skills/_components/parked-flush.md` — Step 2.5 two-key auto-accept partition
+- `user/skills/lazy-batch/SKILL.md` — Step 1d.5 step 7 audit_concurs recording + run-end digest table
+- `user/skills/lazy-bug-batch/SKILL.md` — Step 1d.5 mirror note + run-end digest table
+- `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 1d.5 mirror inclusion + run-end digest table
 
 ---
 
