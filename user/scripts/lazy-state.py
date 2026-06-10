@@ -1316,6 +1316,32 @@ def compute_state(
             # Use the lowest-ordered plan (sorted-name preference); if part-N
             # exists, this returns part-1 first which is what we want.
             plan = plans[0]
+            # Stale-plan gate (all modes). When every work-unit referenced by
+            # this plan's phases: scope is already checked ([x]) in PHASES.md,
+            # the plan is stale — its work was completed in a prior session but
+            # the plan's frontmatter was never flipped to Complete. Dispatching
+            # /execute-plan in this state wastes an Opus cycle re-verifying work
+            # that is already done (observed twice in production). Instead, flip
+            # the plan Complete inline via the __flip_plan_complete_stale__
+            # pseudo-action. The non-empty plan_phase_set guard is required: a
+            # plan with no phases: field has an empty scope and must fall through
+            # to execute-plan (its full scope is unknown so we cannot declare it
+            # stale). This check runs before the cloud-saturation gate so a
+            # fully-checked scope always flips stale regardless of cloud mode.
+            plan_phase_set = _plan_phase_set(plan)
+            if plan_phase_set and not _unchecked_wus_in_plan_scope(phases_text, plan_phase_set):
+                # Stale already-applied plan: every WU this plan references (scoped to its
+                # phases: field) is already [x], yet its frontmatter is still Ready/In-progress
+                # and PHASES.md still has unchecked rows elsewhere so we reached this branch.
+                # Dispatching /execute-plan would burn an Opus cycle re-verifying a plan whose
+                # work is already done (observed twice in production). Flip it Complete inline
+                # via the __flip_plan_complete_stale__ pseudo-action instead.
+                return _state(
+                    **common,
+                    current_step="Step 7a: flip plan Complete (stale — all referenced deliverables already checked)",
+                    sub_skill="__flip_plan_complete_stale__",
+                    sub_skill_args=str(plan),
+                )
             # Cloud-saturation gate (cloud mode only). When a plan is
             # In-progress because the only unchecked WUs in its phase scope
             # are explicitly documented in DEFERRED_NON_CLOUD.md as
@@ -2740,6 +2766,102 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # No research files → if Step 4.6 correctly does NOT fire, the feature
         # falls through to Step 5 and dispatches /spec (research prompt generation).
 
+    elif name == "stale-plan-all-refs-checked-flips":
+        # Fixture A — stale-plan detection.
+        # Plan's phases: [1] scope is fully checked (all Phase 1 deliverables
+        # are [x]). Phase 2 still has an unchecked row, so unchecked > 0 overall
+        # and Step 7 is entered. The plan is STALE: every WU it references is
+        # done, yet its frontmatter still says status: Ready (never flipped to
+        # Complete by a prior session).
+        #
+        # Pre-fix (RED): compute_state dispatches execute-plan — it burns an
+        # Opus cycle re-verifying a plan whose work is already done.
+        #
+        # Post-fix (GREEN): the stale-plan guard detects that
+        # _unchecked_wus_in_plan_scope(phases_text, {1}) is empty → emits
+        # sub_skill="__flip_plan_complete_stale__" with sub_skill_args=plan path.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-stale", "name": "Feature Stale",
+                 "spec_dir": "feat-stale", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        st = features / "feat-stale"
+        st.mkdir()
+        (st / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (st / "RESEARCH.md").write_text("# R\n")
+        (st / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Phase 1: ALL deliverables checked (the plan's scope is fully done).
+        # Phase 2: one unchecked deliverable → unchecked > 0 overall so Step 7
+        # is entered and plan selection runs.
+        (st / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] WU1 implement core logic\n"
+            "- [x] WU2 write unit tests\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = st / "plans"
+        plans.mkdir()
+        # Plan scoped to phases: [1] only — the fully-checked phase.
+        # status: Ready (never updated after phase 1 completed) → STALE.
+        (plans / "all-phases-stale.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-stale\n"
+            "status: Ready\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan for Phase 1\n"
+        )
+        # No RETRO_DONE.md → stays in Step 7 (not past Step 8).
+        # No DEFERRED_NON_CLOUD.md → cloud-saturation gate does not interfere.
+
+    elif name == "ready-plan-unchecked-in-scope-still-executes":
+        # Fixture B — discriminating guard: plan scope has genuine remaining work.
+        # Phase 1 still has an unchecked deliverable inside the plan's phases: [1]
+        # scope. The stale-plan guard must NOT fire — _unchecked_wus_in_plan_scope
+        # returns a non-empty list so the plan is live work.
+        #
+        # Expected (GREEN today and must stay GREEN): sub_skill="execute-plan".
+        # This fixture proves the flip fires ONLY when the scope is fully checked.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-live", "name": "Feature Live",
+                 "spec_dir": "feat-live", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        lv = features / "feat-live"
+        lv.mkdir()
+        (lv / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (lv / "RESEARCH.md").write_text("# R\n")
+        (lv / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Phase 1: UNCHECKED deliverable still in scope → plan is NOT stale.
+        # Phase 2: also unchecked, but the plan only declares phases: [1].
+        (lv / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] WU1 implement core logic\n"
+            "- [ ] WU2 write unit tests\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = lv / "plans"
+        plans.mkdir()
+        # Plan scoped to phases: [1] — phase 1 has WU2 unchecked → live work
+        # remains → execute-plan must be dispatched as normal.
+        (plans / "all-phases-live.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-live\n"
+            "status: Ready\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan for Phase 1\n"
+        )
+        # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
+
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -3034,6 +3156,25 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-downstream",
                 "current_step": "Step 5: generate research prompt",
             }),
+            # Fixture A — stale-plan: plan's phases: [1] scope is fully checked
+            # but Phase 2 has an unchecked row so unchecked > 0 overall → Step 7
+            # is entered. The plan should be recognised as stale and the pseudo-
+            # skill __flip_plan_complete_stale__ emitted (not execute-plan).
+            # RED today: current code emits sub_skill="execute-plan".
+            # current_step is asserted via a post-loop substring check below
+            # (impl agent sets the exact string; we require "stale" appear in it).
+            ("stale-plan-all-refs-checked-flips", False, False, {
+                "sub_skill": "__flip_plan_complete_stale__",
+                "feature_id": "feat-stale",
+            }),
+            # Fixture B — discriminating guard: plan still has real unchecked work
+            # inside its phases: [1] scope → stale-plan guard must NOT fire.
+            # GREEN today and must stay GREEN after the fix lands.
+            ("ready-plan-unchecked-in-scope-still-executes", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-live",
+                "current_step": "Step 7a: execute plan",
+            }),
         ]
         for case in cases:
             # Cases are 4-tuples (real_device defaults to True — behavior
@@ -3104,6 +3245,24 @@ def run_smoke_tests() -> int:
                     failures.append(
                         f"[{name}] expected device-saturated diagnostics; "
                         f"got diagnostics={diag!r}"
+                    )
+            if name == "stale-plan-all-refs-checked-flips":
+                # current_step substring check: after the fix the impl agent will
+                # emit something containing "stale". We do NOT assert the exact
+                # string so small wording changes don't break this fixture.
+                # (The primary behavioral signal is sub_skill above.)
+                cs = got.get("current_step") or ""
+                if cs and "stale" not in cs.lower():
+                    failures.append(
+                        f"[{name}] expected current_step to contain 'stale'; "
+                        f"got {cs!r}"
+                    )
+                # sub_skill_args must reference the plan file path.
+                args = got.get("sub_skill_args") or ""
+                if args and "all-phases-stale.md" not in args:
+                    failures.append(
+                        f"[{name}] expected sub_skill_args to reference the stale "
+                        f"plan file; got {args!r}"
                     )
             print(
                 f"  [{name}] cloud={cloud} skip_nr={skip_nr} "

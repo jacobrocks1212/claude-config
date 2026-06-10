@@ -185,8 +185,8 @@ cloud gates in bug-state; standing-directive confirmation.
 - [x] Verification-only heuristic anchored to `## Runtime Verification` heading (no bold-marker clash)
 - [x] Verification-row placement convention pinned in write-plan component / PHASES template
 - [x] `roadmap_marks_complete` / `upstream_is_complete` / `is_stub_spec` anchored (no substring collisions)
-- [ ] Stale already-applied plan → inline flip pseudo-action (not execute-plan)
-- [ ] D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed
+- [x] Stale already-applied plan → inline flip pseudo-action (not execute-plan)
+- [x] D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed
 - [ ] `scoped-id-not-found` terminal; diagnostics for malformed queue entries
 - [ ] Realign mtime gate → recorded upstream-PHASES hash; `check_stale_upstream` wired to CLI/probe; Step-10 unexpected-state writes its NEEDS_INPUT.md
 
@@ -223,6 +223,26 @@ cloud gates in bug-state; standing-directive confirmation.
 - `user/skills/plan-bug/SKILL.md` — Concluded added to Status gate
 - `user/skills/lazy-bug-batch/SKILL.md` — description: bug-state now emits plan-bug
 - `user/skills/_components/phases-runtime-verification.md`, `user/skills/write-plan/SKILL.md` — placement convention
+
+#### Implementation Notes (Phase 3 — Batch 2: WU-5, WU-6)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fixes applied → PASS (dedicated Opus reviewer; reviewer md5-matched the live `~/.claude/scripts/*.py` to the repo and read all 3 SKILL diffs in full; the D3 model independently confirmed COMPLETE + CONSISTENT across all 3 SKILLs + halt-resolution; 5 minor text stragglers fixed)
+**Work completed:**
+- **WU-5** (stale already-applied plan → inline flip, TDD): `lazy-state.py` `compute_state()` Step 7 — before the cloud-saturated flip and the execute-plan dispatch — now emits `sub_skill="__flip_plan_complete_stale__"` (current_step `Step 7a: flip plan Complete (stale — all referenced deliverables already checked)`) when `_plan_phase_set(plan)` is NON-EMPTY and `_unchecked_wus_in_plan_scope(phases_text, phase_set)` is EMPTY (every WU the Ready/In-progress plan references is already `[x]`). The non-empty phase-set guard is required (a no-`phases:` plan has unknown scope → falls through to execute-plan, never falsely flips). Prevents the `Step 7a: execute plan` no-op loop that burned two Opus dispatches re-verifying already-applied plans. 2 smoke fixtures (`stale-plan-all-refs-checked-flips` RED→GREEN; `ready-plan-unchecked-in-scope-still-executes` non-tautological guard). Baseline regen confirmed purely additive.
+- **WU-6** (D3 split counters + cap reachability + halt-resolution fix, prose; LOCKED D3): the single session-global `cycle` counter is replaced in ALL 3 batch orchestrators (`lazy-batch`, `lazy-bug-batch`, `lazy-batch-cloud`) + the shared `halt-resolution.md` by TWO monotonic counters — `forward_cycles` (pipeline work; ceiling `max_cycles`; capped at Step 1c) and `meta_cycles` (resolution/recovery/cleanup; ceiling `2 * max_cycles`; capped at the TOP of every resolution mode 1g/1h/1i + the top of the halt-resolution algorithm). The meta-cap-at-top is the load-bearing fix for the unreachable-cap bug (the `1a→1b→1g/1h/1i→1a` resolution loop previously bypassed the Step 1c cap, so resolution/re-prompt loops were unbounded). Increment classification: real-skill (1e) + pipeline-advancing pseudo-skills (`__mark_complete__`/`__mark_fixed__`, `__write_*__`, `__flip_plan_complete_cloud_saturated__`) → forward; resolution modes + `__flip_plan_complete_stale__` → meta; input-audits increment neither (bounded by the surrounding cycle). Both counters reported in the per-cycle heading (Step 3, uniform `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · …`) and the final batch report (Step 2). HARD CONSTRAINT 8 rewritten for the two-counter model. `halt-resolution.md` line-199 "max_cycles bounds it regardless" claim corrected to reference the meta-cycle cap (now the true bound).
+- **WU-5 orchestrator wiring (folded into WU-6 to keep SKILLs single-writer):** `__flip_plan_complete_stale__` added to the Step 1c.5 inline-handler list in all 3 SKILLs (flip plan frontmatter `status:` → `Complete`, commit `chore(<id>): mark plan part N Complete (stale — already applied)`), classified META, and distinguished from `__flip_plan_complete_cloud_saturated__` (forward + cloud-only). Verified NOT a dead-end: lazy-state emits the exact same string the handlers consume.
+**Integration notes:**
+- Reviewer flagged the WU-6 impl agent's "already complete from a previous session" claim as FALSE (HEAD had 0 `forward_cycles`; the work was uncommitted current-session). Orchestrator independently re-verified every D3 structural element on disk (inits, forward cap @1c, meta-cap @ top of 1g/1h/1i ×3 SKILLs, stale handler ×3, final-report lines, no leftover bare `cycle`) before accepting — the deliverable was present and correct, only the narrative was mislabeled.
+- **Follow-up (Phase 6 candidate, NOT a Batch-2 defect):** `bug-state.py` (~L731 `else: plan = plans[0]` → execute-plan) has the SAME stale-plan vulnerability but WU-5 was scoped to `lazy-state.py` only. `lazy-bug-batch/SKILL.md` now documents the `__flip_plan_complete_stale__` handler (consistent with the pre-existing convention where it also documents `__flip_plan_complete_cloud_saturated__` that bug-state.py never emits) — the bug-pipeline stale gate is a documented-but-unimplemented forward reference until a future phase adds it to `bug-state.py`.
+**Pitfalls & guidance:**
+- D3 counter consistency across the 3 large SKILLs is the #1 correctness requirement — the heading + final-report formats are byte-identical by design; any future edit to one orchestrator's counter text must mirror the other two (until Phase 6 makes lazy-bug-batch by-reference).
+- The shared `halt-resolution.md` meta-cap message was made skill-agnostic (no hardcoded "lazy-batch") since all 3 orchestrators consume it.
+**Part-end gate status:** all 3 gates exit 0 (lazy-state --test, bug-state --test, test_lazy_core.py 100/100) — confirmed fresh post-fixes. (NOT the final part gate — Batches 3-4 remain.)
+**Files modified:**
+- `user/scripts/lazy-state.py` — Step 7 stale-flip branch + 2 fixtures
+- `user/scripts/tests/baselines/lazy-state-test-baseline.txt` — regenerated
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — D3 two-counter model + `__flip_plan_complete_stale__` handler
+- `user/skills/_components/halt-resolution.md` — meta-cap check + meta_cycles increment + line-199 fix
 
 ---
 

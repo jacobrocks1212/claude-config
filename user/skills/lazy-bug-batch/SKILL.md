@@ -92,11 +92,25 @@ dispatches whatever `bug-state.py` returns.
    loop continues) or, when the operator chooses Halt / for a genuine stop terminal, halts cleanly —
    never an active wait. Responding to a chat message is NOT polling — it is a single-turn event.
 
-8. **The `cycle` counter is session-global and monotonic across bug transitions.** It is initialized
-   to 0 in Step 0 *once per `/lazy-bug-batch` invocation* and incremented at the end of every
-   cycle. It MUST NOT be reset when `bug-state.py` returns a different `feature_id` from one cycle
-   to the next. A bug transition is **not** a fresh batch; the orchestrator runs ONE cycle log
-   across every bug it touches.
+8. **TWO session-global monotonic counters replace the single `cycle` counter.** Both are
+   initialized once in Step 0 and NEITHER is ever reset on bug transitions.
+   - **`forward_cycles`** — counts pipeline-advancing work. Ceiling: `max_cycles`. Incremented by:
+     real-skill dispatch cycles (Step 1e) and pipeline-advancing pseudo-skills at Step 1c.5
+     (`__mark_fixed__`, `__write_deferred_non_cloud__`, `__write_validated_from_results__`,
+     `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`).
+     **Capped at Step 1c** (`if forward_cycles >= max_cycles` → the existing max-cycles halt).
+   - **`meta_cycles`** — counts resolution/recovery/cleanup work. Ceiling: `2 * max_cycles`.
+     Incremented by: Step 1g (decision-resume), Step 1h (blocked-resolution), Step 1i
+     (operator-directed halt-resolution), LOOP-DETECTED / recovery dispatches, and the stale-plan
+     flip pseudo-skill `__flip_plan_complete_stale__`. **Capped at the TOP of every resolution
+     mode** — `if meta_cycles >= 2 * max_cycles:` inserted at the START of Step 1g, Step 1h,
+     and Step 1i, which halts with a clear "meta-cycle cap (2× max_cycles) reached" message +
+     PushNotification + final report.
+   - **Input-audit (Step 1d.5):** audits share the cycle's slot in `cycle_log` and do NOT
+     increment either counter.
+   - **Running total for cycle_log index:** use `forward_cycles + meta_cycles` as the monotonic N.
+     A bug transition is NOT a fresh batch; the orchestrator runs ONE log across every bug it
+     touches.
 
 9. **Dispatch ONLY against the bug `bug-state.py` returned THIS cycle; never fabricate a bug.** The
    orchestrator dispatches a cycle subagent against exactly the `feature_id` + `spec_path` from the
@@ -131,12 +145,13 @@ Unknown tokens are an error:
 
 > `/lazy-bug-batch`: unrecognized argument `{token}`. Usage: `/lazy-bug-batch <N> [--adhoc "<task>"]`.
 
-**Standing-directive echo-back protocol:** mid-run operator messages implying (a) a budget change, (b) a standing resolution mode (e.g. "auto-resolve all blockers as add-phase-and-fix"), or (c) an early stop MUST trigger ONE `AskUserQuestion` echo-back — "Extend to N cycles / auto-resolve blockers as add-phase-and-fix until X — confirm?" — BEFORE entering that mode. **Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`cycle < max_cycles`) AND active queue items remaining without first asking (one `AskUserQuestion`) whether to continue. These are permitted `AskUserQuestion` uses alongside HARD CONSTRAINT 5's resolution modes.
+**Standing-directive echo-back protocol:** mid-run operator messages implying (a) a budget change, (b) a standing resolution mode (e.g. "auto-resolve all blockers as add-phase-and-fix"), or (c) an early stop MUST trigger ONE `AskUserQuestion` echo-back — "Extend to N cycles / auto-resolve blockers as add-phase-and-fix until X — confirm?" — BEFORE entering that mode. **Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`forward_cycles < max_cycles`) AND active queue items remaining without first asking (one `AskUserQuestion`) whether to continue. These are permitted `AskUserQuestion` uses alongside HARD CONSTRAINT 5's resolution modes.
 
 Initialize counters and per-session state:
-- `cycle = 0` — monotonic across bug transitions (HARD CONSTRAINT 8).
+- `forward_cycles = 0` — monotonic across bug transitions (HARD CONSTRAINT 8 — never reset). Counts pipeline-advancing work; ceiling is `max_cycles`.
+- `meta_cycles = 0` — monotonic across bug transitions (HARD CONSTRAINT 8 — never reset). Counts resolution/recovery/cleanup work; ceiling is `2 * max_cycles`.
 - `max_cycles = <parsed>`
-- `cycle_log = []` — each entry: `{cycle, bug, action, subagent_summary}`
+- `cycle_log = []` — each entry: `{forward_cycles + meta_cycles, bug, action, subagent_summary}` (running total = monotonic N-th action this invocation).
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)`.
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (unset if flag absent).
 
@@ -228,9 +243,7 @@ If `terminal_reason` is set:
   orchestrator re-prints the gap and `AskUserQuestion`s the path (reopen & re-validate / grandfather
   the receipt / defer & continue / halt). Do NOT auto-flip or auto-backfill — the operator chooses.
 - **`stale_upstream`**: an upstream item this bug was materialized from changed since materialize. See Step 1i (operator-directed halt-resolution) — re-print the gap and `AskUserQuestion` the path (re-materialize/absorb / reject / defer / halt). (`bug-state.py` emits this; do NOT auto-resolve.)
-- **`all-bugs-fixed`**: PushNotification `"ALL BUGS FIXED — queue cleared after {cycle}
-  /lazy-bug-batch cycle(s)."`, print final batch report, STOP. (Genuine success — not routed to
-  Step 1i.)
+- **`all-bugs-fixed`**: PushNotification `"ALL BUGS FIXED — queue cleared after {forward_cycles} forward + {meta_cycles} meta /lazy-bug-batch cycle(s)."`, print final batch report, STOP. (Genuine success — not routed to Step 1i.)
 - **`all-remaining-deferred`**: every open bug is operator-parked via `DEFERRED.md`. PushNotification with `notify_message`, print final batch report, STOP. (A deliberate park, not an obstacle — re-include a bug by deleting its `DEFERRED.md`. Not routed to Step 1i, per the halt-resolution exclusion list.)
 - **`queue-missing`**: `docs/bugs/queue.json` missing (the queue is optional — on-disk bugs are auto-discovered, so this is informational). PushNotification with `notify_message`, print final batch report, STOP. (No queue to continue — not routed to Step 1i.)
 - **`cloud-queue-exhausted`**: Unreachable for `/lazy-bug-batch` (workstation variant); treat as
@@ -242,7 +255,7 @@ If `terminal_reason` is set:
 
 ### 1c. Check the max-cycles cap
 
-If `cycle >= max_cycles`:
+If `forward_cycles >= max_cycles`:
 
 ```
 PushNotification({ message: "lazy-bug-batch hit max-cycles ({max_cycles}). Restart from a fresh session to continue." })
@@ -268,9 +281,11 @@ dispatching a subagent.
 
   Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns `uncovered:N` — the audit
   just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the archive steps. Append to `cycle_log`
-  (gate halted), increment `cycle`, return to Step 1a — the next state-script call returns
-  `terminal_reason: needs-input`, Step 1g surfaces it, and the apply-resolution Sonnet subagent
-  reconciles before the next `__mark_fixed__` attempt.
+  `{forward_cycles + meta_cycles + 1, bug_name, "__mark_fixed__ (gate halted)", "<reason> → NEEDS_INPUT.md"}`,
+  increment `forward_cycles` (gate-halted mark-fixed is still a forward-advancing attempt),
+  return to Step 1a — the next state-script call returns `terminal_reason: needs-input`, Step 1g
+  surfaces it, and the apply-resolution Sonnet subagent reconciles before the next `__mark_fixed__`
+  attempt.
 
   **Gate 2 — completion-integrity gate** per the shared component below (runs ONLY after gate 1
   returns `clean`):
@@ -296,17 +311,35 @@ dispatching a subagent.
   `In-progress` plan's only unchecked WUs are documented in `{spec_path}/DEFERRED_NON_CLOUD.md`
   as workstation-only. Read the plan's YAML frontmatter, edit ONLY the `status:` line in place
   (`In-progress` → `Complete`). Stage and commit per project policy. Do NOT touch SPEC.md or any
-  sentinel.
+  sentinel. This is a **forward cycle** — increment `forward_cycles`.
+
+- **`__flip_plan_complete_stale__`** — emitted by `bug-state.py` at Step 7a (in both cloud and
+  workstation mode) when EVERY work-unit a Ready/In-progress plan references is already `[x]` —
+  the plan is stale/already-applied but the frontmatter `status:` was never flipped. `sub_skill_args`
+  is the absolute plan-file path. **Action:** read the plan's YAML frontmatter, edit ONLY the
+  `status:` line in place (`Ready` or `In-progress` → `Complete`) — leave every other field and
+  the markdown body untouched. Derive the plan part number from the plan's `phases:` field; fall
+  back to the plan filename's leading `part-N` / `phase-N` token if `phases:` is missing. Stage
+  the plan file and commit per project policy with message
+  `chore(<bug_id>): mark plan part N Complete (stale — already applied)`. Do NOT touch SPEC.md or
+  any sentinel. **Distinction from `__flip_plan_complete_cloud_saturated__`:** stale fires in BOTH
+  cloud and workstation and means every WU was already `[x]` — not deferred to workstation,
+  genuinely done. Without this flip the `Step 7a: execute plan` probe would return an In-progress
+  plan with all WUs done, loop on `/execute-plan`, and make no progress. This is a **meta cycle**
+  — increment `meta_cycles` (flipping a stale plan is cleanup, not forward fix work).
 
 After each inline action:
 
-1. Append to `cycle_log`: `{cycle+1, bug_name, sub_skill, "inline: <one-line summary>"}`.
+1. Append to `cycle_log`: `{forward_cycles + meta_cycles, bug_name, sub_skill, "inline: <one-line summary>"}` (use the UPDATED total after the increment in step 5 below).
 2. **Push backstop (guardrail).** Push the inline commit — `git push origin $(git rev-parse
    --abbrev-ref HEAD)` (retry up to 4× with exponential backoff; WORK BRANCH only, never main,
    never force).
-3. Emit the canonical per-cycle update block (Step 3).
+3. Emit the canonical per-cycle update block (Step 3): heading `### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {bug_name} · {sub_skill}`.
 4. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)`.
-5. Increment `cycle`. Return to Step 1a.
+5. Increment the appropriate counter: `forward_cycles` for pipeline-advancing pseudo-skills
+   (`__mark_fixed__`, `__write_deferred_non_cloud__`, `__write_validated_from_results__`,
+   `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`); `meta_cycles`
+   for cleanup pseudo-skills (`__flip_plan_complete_stale__`). Return to Step 1a.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
@@ -436,7 +469,7 @@ Dispatch:
 
 ```
 Agent({
-  description: "lazy-bug-batch cycle {cycle+1}: {sub_skill} for {bug_name}",
+  description: "lazy-bug-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {bug_name}",
   subagent_type: "general-purpose",
   model: <"sonnet" if LOOP DETECTED else "opus">,
   prompt: <the prompt above>
@@ -463,7 +496,7 @@ second-opinion catches product-behavior calls silently baked into SPEC.md / PHAS
 
 ```
 Agent({
-  description: "lazy-bug-batch cycle {cycle+1}: input-audit for {bug_name}",
+  description: "lazy-bug-batch input-audit (cycle {forward_cycles + meta_cycles}): {bug_name}",
   subagent_type: "general-purpose",
   model: "opus",
   prompt: <audit prompt>
@@ -525,8 +558,8 @@ cycle and resolved via Step 1g (decision-resume mode).
 
 After the subagent returns:
 
-1. Append to `cycle_log`: `{cycle+1, bug_name, sub_skill, subagent's one-paragraph summary}`.
-2. Emit the canonical per-cycle update block (Step 3).
+1. Append to `cycle_log`: `{forward_cycles + meta_cycles + 1, bug_name, sub_skill, subagent's one-paragraph summary}` (use the total BEFORE the increment below).
+2. Emit the canonical per-cycle update block (Step 3): heading `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {bug_name} · {sub_skill}`.
 3. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)`.
 4. **Post-cycle push backstop.** Verify the work branch is pushed — `git push origin
    $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff; WORK BRANCH
@@ -549,20 +582,22 @@ After the subagent returns:
 
    If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches
    a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT
-   increment `cycle`) to reconcile: stage + commit + push any residue, re-flip the plan status
-   if needed, then re-run this guard. The recovery subagent may tick a PHASES.md verification
-   box ONLY when on-disk evidence exists that verification ran for that row (e.g. `VALIDATED.md`
-   or `MCP_TEST_RESULTS.md` in `{spec_path}/`); if no such evidence exists, it MUST write
-   `{spec_path}/NEEDS_INPUT.md` describing the gap instead of silently ticking the box.
-   The recovery prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a
-   `**Recovery:**` bullet to the per-cycle output block. Do NOT advance to Step 1a until the
+   increment `forward_cycles`) to reconcile: stage + commit + push any residue, re-flip the plan
+   status if needed, then re-run this guard. The recovery subagent may tick a PHASES.md
+   verification box ONLY when on-disk evidence exists that verification ran for that row (e.g.
+   `VALIDATED.md` or `MCP_TEST_RESULTS.md` in `{spec_path}/`); if no such evidence exists, it
+   MUST write `{spec_path}/NEEDS_INPUT.md` describing the gap instead of silently ticking the
+   box. The recovery prompt MUST name the specific failed check(s) and the `{spec_path}`. Append
+   a `**Recovery:**` bullet to the per-cycle output block. Do NOT advance to Step 1a until the
    guard passes.
-5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across bug transitions
-   (HARD CONSTRAINT 8).**
+5. Increment `forward_cycles`. Return to Step 1a. **Both counters are monotonic across bug
+   transitions (HARD CONSTRAINT 8) — never reset either counter on a bug transition.**
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{PUSH_RULE}` = workstation (standard push). Then follow the shared decision-resume handler (single source across the batch orchestrators):
+**Meta-cap check (FIRST — before any other action in Step 1g):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"lazy-bug-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+
+**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{PUSH_RULE}` = workstation (standard push). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then follow the shared decision-resume handler (single source across the batch orchestrators):
 
 !`cat ~/.claude/skills/_components/decision-resume.md`
 
@@ -570,7 +605,9 @@ After the subagent returns:
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{SPEC_ROOT}` = `docs/bugs`, `{ADD_PHASE}` = `/add-phase` (or `/plan-bug` if `PHASES.md` is absent), `{PUSH_RULE}` = workstation (standard push). Then follow the shared blocked-resolution handler (single source across the batch orchestrators):
+**Meta-cap check (FIRST — before any other action in Step 1h):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"lazy-bug-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+
+**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{SPEC_ROOT}` = `docs/bugs`, `{ADD_PHASE}` = `/add-phase` (or `/plan-bug` if `PHASES.md` is absent), `{PUSH_RULE}` = workstation (standard push). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (blocked-resolution is a meta cycle). Then follow the shared blocked-resolution handler (single source across the batch orchestrators):
 
 !`cat ~/.claude/skills/_components/blocked-resolution.md`
 
@@ -578,12 +615,15 @@ After the subagent returns:
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
+**Meta-cap check (FIRST — before any other action in Step 1i):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"lazy-bug-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+
 For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified` and
 `stale_upstream` (the bug pipeline's two Step 1i terminals; `bug-state.py` does NOT emit
 `needs-spec-input`) — the orchestrator routes to the shared operator-directed halt-resolution handler
 instead of halting. It re-prints the obstacle context, `AskUserQuestion`s a resolution path (reopen &
 re-validate / re-materialize / defer & continue / halt), enacts the choice via an Opus subagent, and
-continues the loop. Follow the shared component:
+continues the loop. The shared handler's "increment `cycle`" step translates to **increment
+`meta_cycles`** (halt-resolution is a meta cycle). Follow the shared component:
 
 !`cat ~/.claude/skills/_components/halt-resolution.md`
 
@@ -623,8 +663,9 @@ When the loop exits (terminal state or max-cycles), print:
 ```
 ## /lazy-bug-batch — Done
 
-**Cycles completed:** {cycle}/{max_cycles}
-**Terminal reason:** {terminal_reason or "max-cycles"}
+**Forward cycles used:** {forward_cycles}/{max_cycles}
+**Meta cycles used:** {meta_cycles}/{2*max_cycles}
+**Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
 
 ### Cycle log
@@ -638,7 +679,8 @@ When the loop exits (terminal state or max-cycles), print:
   - If terminal_reason is "blocked": reached ONLY when the operator chose "Halt for manual fix" in Step 1h (every other path resumes). Resolve {spec_path}/BLOCKED.md by hand, then re-run `/lazy-bug-batch {max_cycles}`.
   - If terminal_reason is "all-bugs-fixed": all bugs fixed or retired
   - If terminal_reason is "completion-unverified": reconcile the receipt gap
-  - If max-cycles: re-run `/lazy-bug-batch {max_cycles}` from a fresh session
+  - If forward-cycles-cap: re-run `/lazy-bug-batch {max_cycles}` from a fresh session
+  - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
   - (needs-input is no longer a terminal state — Step 1g resolves inline.)
 ```
 
@@ -652,10 +694,12 @@ Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), decision-
 — emits **EXACTLY ONE update block** in this shape:
 
 ```
-### Cycle {N}/{max_cycles} · {bug_name} · {sub_skill}
+### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {bug_name} · {sub_skill}
 - **Result:** {one-line outcome}
 - **Commit:** {short-sha | "—"}
 ```
+
+For a forward cycle, `forward_cycles` is the post-increment value. For a meta cycle, `meta_cycles` is the post-increment value.
 
 **Rules:**
 - **ONE block per cycle.** The heading + bullets ARE the cycle's entire chat footprint.
