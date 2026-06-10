@@ -301,7 +301,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Runtime Verification:**
 - [x] Default-mode regression: without `--park-needs-input`, a NEEDS_INPUT fixture still emits the `needs-input` halt (probe output byte-identical to Phase 1 baseline) — verified by the `park-needs-input-default-halt` / `bug-park-needs-input-default-halt` smoke sub-fixtures (assert `terminal_reason=="needs-input"` AND `parked` key absent) + the byte-pinned `--test` baseline-match tests + the zero-drift `--repo-root <AlgoBooth>` probe (no `parked` key in default output for either script)
 - [x] Fixtures: with the flag, `parked[]` populated, parked item skipped not halted, resolved sentinel re-enters — verified by the `park-needs-input-mode-skip` (parked count=1, next entry dispatched) and `park-needs-input-resolved-reenter` (resolved sentinel → item re-dispatched, parked=[]) smoke sub-fixtures in both scripts (all green in `--test`)
-- [ ] lazy-batch-retro checklist additions: parks fire notifications; flush count matches parked count; every auto-accept carries two keys + digest entry; zero parks/auto-accepts in no-flag runs — **deferred to Phase 6** (the design plan places the lazy-batch-retro Phase-4 grading-check additions in Phase 6 "lazy-batch-retro grading fixes"; this row is the cross-check that Phase 6 will satisfy, not a Phase-4 WU)
+- [x] lazy-batch-retro checklist additions: parks fire notifications; flush count matches parked count; every auto-accept carries two keys + digest entry; zero parks/auto-accepts in no-flag runs — **satisfied by Phase 6 Batch 1 WU-5 fix 6** (lazy-batch-retro §4a-P4 checks P4-1..P4-4, `repos/algobooth/.claude/skills/lazy-batch-retro/SKILL.md` lines 300-306)
 
 **Implementation Notes:**
 
@@ -513,11 +513,11 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Entry criteria:** Phases 2, 4, 5 (rebuild inherits their canonical lazy-batch text).
 
 **Deliverables:**
-- [ ] D4: lazy-bug-batch rebuilt by-reference (cloud pattern) — ports Step 1d.0 pre-boot + NO-FIRE-AND-FORGET, `__mark_fixed__` gate parity (wrapper too), Step 1.5 exclusion parity, 1d.5 dual-trigger wording; six `!cat`s → path references
-- [ ] lazy-batch prompt templates + announcement templates extracted to `_components/lazy-batch-prompts/` (read on demand); Step 1f/Step 4 announcement deduped
+- [x] D4: lazy-bug-batch rebuilt by-reference (cloud pattern) — ports Step 1d.0 pre-boot + NO-FIRE-AND-FORGET, `__mark_fixed__` gate parity (wrapper too), Step 1.5 exclusion parity, 1d.5 dual-trigger wording; six `!cat`s → path references
+- [x] lazy-batch prompt templates + announcement templates extracted to `_components/lazy-batch-prompts/` (read on demand); Step 1f/Step 4 announcement deduped
 - [ ] sentinel-frontmatter.md no longer `!cat` in thin wrappers; mark-fixed-archive nested-`!cat` fixed; batch-skill frontmatter descriptions trimmed
 - [ ] Contradiction sweep: cloud constraint renumbering + Step 8/9 drift + lazy-status rows; lazy-batch stale Notes/refs + HARD CONSTRAINT 5 exceptions; sentinel lifecycle table rename-not-delete; component coupling notes include bug consumers; plan-feature artifact; lazy step-label collision
-- [ ] lazy-batch-retro: workstation inline-override branch; R-O-3 exceptions; R-O-6 fix; Step 3 scan list; Notes path; Phase-4 park/auto-accept checks
+- [x] lazy-batch-retro: workstation inline-override branch; R-O-3 exceptions; R-O-6 fix; Step 3 scan list; Notes path; Phase-4 park/auto-accept checks
 
 **Runtime Verification:**
 - [ ] Regression gates green
@@ -525,6 +525,27 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [ ] Compliance read of rebuilt lazy-bug-batch against a dry-run (retro-style checklist)
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 6 — Batch 1: WU-1, WU-2, WU-5)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fix applied → PASS (dedicated Opus reviewer; orchestrator independently re-ran every subagent GROUND-TRUTH block + diffed — all LOC/grep/anchor counts matched; git log confirmed no rogue commits, most-recent commit on each file predates session; ground-truth verified: yes for all 3 WUs)
+**Work completed:**
+- **WU-1** (D4 lazy-bug-batch by-reference rebuild, own commit): `user/skills/lazy-bug-batch/SKILL.md` rebuilt from a 794-line drifted hand-fork into a 522-line by-reference skill mirroring the `lazy-batch-cloud/SKILL.md` pattern — a "Differences from /lazy-batch" table (line 26, ~30 rows) + `See ~/.claude/skills/lazy-batch/SKILL.md Step X` references (17 of them) for shared mechanics. All 7 inline `!cat` includes → path references (`grep -c "cat ~/.claude"` → 0). **Cross-reference integrity verified** (reviewer + orchestrator): every referenced lazy-batch Step anchor (0, 0.4, 1c, 1c.5, 1c.6, 1d, 1d.0, 1d.5, 1e/4a, 1.5, 3) still resolves on the WU-2-edited lazy-batch; all 8 referenced `_components/*.md` resolve. **Behavior preservation verified** against `git show HEAD:` (old fork): both `__mark_fixed__` gates + FIXED.md receipt + Won't-fix exempt + all-bugs-fixed + plan-bug emit + 1g/1h/1i + 1d.5 dual-trigger + Phase-4 park/auto-accept all preserved; Step 1d.0 pre-boot + "RUNTIME IS ALREADY UP" + NO-FIRE-AND-FORGET correctly PORTED (new — old fork lacked them). **Review fix applied:** the plan's "wrapper too" `__mark_fixed__` parity was deferred by the rebuild agent; orchestrator dispatched a Sonnet fix-agent that added **Gate 1 (MCP-coverage audit)** to the `/lazy-bug` wrapper's `__mark_fixed__` handler (`user/skills/lazy-bug/SKILL.md` ~164-186) so the wrapper now runs BOTH gates, matching the batch — the parity assertion is now true on disk.
+- **WU-2** (lazy-batch componentization): extracted ~496 lines (~45KB) of inlined prompt templates from `user/skills/lazy-batch/SKILL.md` (1378→882 lines) into 4 read-on-demand components under `user/skills/_components/lazy-batch-prompts/`: `cycle-base-prompt.md` (cycle dispatch prompt + per-skill overrides), `loop-block.md` (LOOP DETECTED append), `input-audit-prompt.md` (Step 1d.5 audit prompt), `research-halt-announcement.md` (Step 1f Variant B + Step 4 Variant A research-halt, **deduped** into one file). **Byte-fidelity verified** by the reviewer (each extracted block byte-diffed against `git show HEAD:` — all 4 verbatim-identical; both research-halt variants preserved with no per-site drift). 5 on-demand pointers in SKILL.md, all resolving, with token-binding instructions intact at each site.
+- **WU-5** (lazy-batch-retro grading fixes): 6 surgical fixes to `repos/algobooth/.claude/skills/lazy-batch-retro/SKILL.md` (522→630 lines) — (1) explicit workstation inline-override branch keyed on `"INLINE OVERRIDE — LOAD-BEARING"` (line 349) replacing the brittle "does NOT have the Agent tool" mode-detection heuristic; (2) R-O-3 exception list adds LOOP-DETECTED + Step 1e.4a Sonnet dispatches (line 288); (3) R-O-6 drops the wrong `-u` push-flag expectation (line 291); (4) Step 3 scan list adds `__flip_plan_complete_cloud_saturated__`/`__flip_plan_complete_stale__`/`__mark_fixed__` (line 265); (5) sentinel-frontmatter path corrected to `~/.claude/skills/_components/sentinel-frontmatter.md` (line 629); (6) Phase-4 park/auto-accept grading checks P4-1..P4-4 (lines 300-306) — **this satisfies the Phase-4 PHASES.md "Runtime Verification row 3" that was deferred to Phase 6.**
+**Integration notes:**
+- The Phase-4 deferred row (lazy-batch-retro Phase-4 grading checks) is now satisfied by WU-5 fix 6 — see Phase 4 Runtime Verification row 3.
+- WU-2's `lazy-batch-prompts/` components are read-on-demand by the orchestrator at the dispatch sites; `lazy-batch-cloud/SKILL.md` inlines its OWN cloud-variant cycle base prompt (~200 lines) which was intentionally left untouched (cloud-specific deltas) — flagged as a future extraction candidate, NOT a defect.
+- WU-3 (Batch 2) edits `lazy-bug/SKILL.md` (sentinel `!cat` + frontmatter trim); the `__mark_fixed__` Gate-1 added by the WU-1 review-fix must be preserved there. Two stale "WU-3 should verify the wrapper carries both" parentheticals in lazy-bug-batch (lines ~59, ~218) are now satisfied — WU-3 should drop/soften them.
+**Pitfalls & guidance:**
+- The WU-1 cross-reference integrity is a standing cross-file contract: any future renumbering of lazy-batch Step anchors silently breaks lazy-bug-batch's `See ... Step X` references. Grep lazy-bug-batch for `Step ` references before renumbering lazy-batch.
+- WU-2 byte-fidelity: future edits to a prompt template must edit the COMPONENT file, not re-inline it into SKILL.md.
+**Files modified:**
+- `user/skills/lazy-bug-batch/SKILL.md` — full by-reference rebuild (WU-1)
+- `user/skills/lazy-bug/SKILL.md` — wrapper `__mark_fixed__` Gate-1 parity (WU-1 review-fix)
+- `user/skills/lazy-batch/SKILL.md` — prompt-template extraction → on-demand pointers (WU-2)
+- `user/skills/_components/lazy-batch-prompts/{cycle-base-prompt,loop-block,input-audit-prompt,research-halt-announcement}.md` — NEW components (WU-2)
+- `repos/algobooth/.claude/skills/lazy-batch-retro/SKILL.md` — 6 grading fixes (WU-5)
 
 ---
 

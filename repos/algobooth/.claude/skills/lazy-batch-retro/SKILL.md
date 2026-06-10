@@ -262,7 +262,7 @@ Reconstruct the run as an ordered ledger. Each row is one cycle (one subagent di
 - Sentinel writes attributed to this cycle (by commit attribution or by timestamp window).
 - The final summary block in the subagent transcript (look for "BLOCKED", "DEFERRED", "needs input", "max cycles" in the last assistant message).
 
-Also reconstruct pseudo-skill cycles (`__write_validated_from_skip__`, `__write_validated_from_results__`, `__mark_complete__`, `__write_deferred_non_cloud__`) by scanning the parent session for sentinel-file Edit/Write tool_uses by the orchestrator itself (not a subagent). These are inline orchestrator actions — record them with `subagent_type: "(inline)"`, `model: "(orchestrator)"`, `task_id: null`, `transcript_available: false`.
+Also reconstruct pseudo-skill cycles (`__write_validated_from_skip__`, `__write_validated_from_results__`, `__mark_complete__`, `__mark_fixed__`, `__write_deferred_non_cloud__`, `__flip_plan_complete_cloud_saturated__`, `__flip_plan_complete_stale__`) by scanning the parent session for sentinel-file Edit/Write tool_uses by the orchestrator itself (not a subagent). These are inline orchestrator actions — record them with `subagent_type: "(inline)"`, `model: "(orchestrator)"`, `task_id: null`, `transcript_available: false`.
 
 Print a compact summary to chat:
 
@@ -285,11 +285,25 @@ For each cycle, walk the relevant skill's instructions verbatim and grade compli
 |------|---------------|
 | **R-O-1** Cycle cadence | The orchestrator called `lazy-state.py` before each cycle. Check the parent jsonl for Bash tool_uses matching `python3.*lazy-state.py` immediately preceding each cycle's Agent dispatch. |
 | **R-O-2** Cycle count | `cycle_count ≤ --max-cycles` (default 10 unless `$ARGUMENTS` overrode). Read the orchestrator's start-bookend from the first assistant message in the parent jsonl to recover `max_cycles`. |
-| **R-O-3** Subagent model | Every real-skill cycle dispatched with `model: "opus"` per the skill's HARD CONSTRAINTS. Exceptions explicitly permitted: `/ingest-research` (Sonnet), Step 1g apply-resolution (Sonnet), Step 0.5 pre-loop ingest (Sonnet). |
+| **R-O-3** Subagent model | Every real-skill cycle dispatched with `model: "opus"` per the skill's HARD CONSTRAINTS. Exceptions explicitly permitted: `/ingest-research` (Sonnet), Step 1g apply-resolution (Sonnet), Step 0.5 pre-loop ingest (Sonnet), LOOP-DETECTED recovery dispatch (Sonnet — lazy-batch Step 1e LOOP DETECTED branch explicitly selects `model: "sonnet"` for mechanical sentinel-recovery cycles), Step 1e.4a recovery dispatch (Sonnet — the post-`/execute-plan` ledger-consistency guard recovery subagent is a mechanical backstop, not a novel-decision cycle). |
 | **R-O-4** Prompt template compliance | Compare each cycle's dispatched `prompt` against the lazy-batch skill's base template (capture verbatim). Produce a unified diff. Flag missing load-bearing clauses: "Operating mode: batch", the "Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING)" block including "This subagent does NOT have the `Agent` tool", and the per-skill inline overrides. (The legacy "follow the skill's internal subagent-vs-orchestrator rules" wording was replaced by the inline-override block — grade against the CURRENT template, captured verbatim, not a remembered older phrasing.) |
 | **R-O-5** Resolution-on-sentinel honored | Look for cycles whose state script returned a problem terminal (`blocked` / `needs-input` / `completion-unverified` / `needs-spec-input` / `stale_upstream` / `needs-research`). Verify the orchestrator did NOT bare-STOP but instead ran the appropriate resolution path and resumed: Step 1g (needs-input decision-resume), Step 1h (blocked-resolution), or Step 1i (operator-directed halt-resolution per the shared component) — each `AskUserQuestion` → enact → continue. A clean STOP is correct ONLY for `max-cycles`, genuine success (`all-features-complete`), environment-exhaustion, `queue-missing`, or the operator-chosen "Halt for manual fix". A bare halt on a resolvable terminal is a FAIL. |
-| **R-O-6** Push cadence | Every cycle ended with a `git push -u origin <branch>` visible in either the subagent transcript Bash calls or the parent session Bash calls (within the cycle's timestamp window). |
+| **R-O-6** Push cadence | Every cycle ended with a `git push` visible in either the subagent transcript Bash calls or the parent session Bash calls (within the cycle's timestamp window). The exact form used by the orchestrator backstop (Step 1e guardrail C) is `git push origin $(git rev-parse --abbrev-ref HEAD)` (no `-u` flag); `/execute-plan` cycles use `git push` (no `-u` either, chained via `&&` in the atomic gate+commit). Do NOT require the `-u` flag — it is only needed once to set the upstream tracking reference (typically on first push of the branch) and the skills omit it on subsequent pushes. Accept any push form (`git push`, `git push origin <branch>`, `git push origin $(git rev-parse --abbrev-ref HEAD)`) as satisfying this rule. |
 | **R-O-7** Stop-hook signals addressed | No "uncommitted changes" warning carried across cycle boundaries. Cross-reference the `stop_hook_feedback` events from 2a against the next cycle's first user message. |
+
+### 4a-P4. PHASE-4 PARK/AUTO-ACCEPT PROTOCOL (`--park` mode only)
+
+These checks are N/A for runs that did NOT pass `--park`. Detect `--park` from the start-bookend ("Park mode: on") or from the presence of any `parked_count` increment in the parent session. Grade all four as `n/a` when `park_mode == false`.
+
+When `park_mode == true`, grade the following checklist:
+
+- [ ] **P4-1 Park → PushNotification** Every park event (each item in a `parked[]` probe output) fired a `PushNotification` call visible in the parent session. Match each increment of `parked_count` against a `PushNotification` tool_use carrying the message `"parked {feature_name} — {N} decision(s) parked so far this run"` (per §1c.6 park policy). **Fail** if any park fired without a corresponding notification, or if the notification message does not carry the running parked-count.
+
+- [ ] **P4-2 Flush count matches parked count** The total count of items flushed (sent to the operator via `AskUserQuestion` or auto-accepted) at run end equals `parked_count`. Count the flushed items from the parked-flush component's output in the parent session (the `AskUserQuestion` multi-decision block + `auto_accepted[]` rows). If `flushed_count != parked_count` → `fail` (orphaned parked items that were neither flushed nor auto-accepted represent unresolved decisions silently dropped at run end).
+
+- [ ] **P4-3 Auto-accept two-key contract** Every auto-accepted decision carried BOTH required keys in its sentinel frontmatter: `class: mechanical` AND `audit_concurs: true`. Verify by checking the `auto_accepted[]` entries recorded in the parent session against the sentinel file on disk (from 2d artifact snapshot). A sentinel auto-accepted with only ONE key (e.g. `class: mechanical` but `audit_concurs` absent or `false`) is a **fail** — the two-key gate was bypassed. Additionally, the run-end batch report MUST include the auto-accept digest table (`### Auto-accepted decisions (--park two-key)`) listing every auto-accepted decision. **Fail** if the digest table is absent and `auto_accepted[]` is non-empty.
+
+- [ ] **P4-4 Zero parks without `--park`** When `park_mode == false`, the parent session MUST contain zero `PushNotification` calls with a park-style message (`"parked ... decision(s) parked so far"`), zero `parked_count` increments, and zero auto-accept digest table entries. Any park/auto-accept activity in a non-`--park` run is a **fail** — it means the park code-path fired outside its guard.
 
 ### 4b. DOWNSTREAM-SKILL RULES
 
@@ -326,10 +340,17 @@ For each cycle whose `description` or prompt resolves to a downstream skill, gra
 
 **CLOUD BRANCH — `/execute-plan` under the `/lazy-batch-cloud` cloud-override.** The rows above describe the WORKSTATION contract, where `/execute-plan` MUST dispatch Sonnet test-agent + impl-agent sub-subagents and the orchestrator subagent must NOT touch source files itself. `/lazy-batch-cloud` documents a load-bearing override: the cloud cycle subagent has **no `Agent` tool**, so it performs ALL source/test edits INLINE with zero sub-subagents (see `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` HARD CONSTRAINTS "Cloud-specific" paragraph + the Step 1d cycle-prompt "Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING)" block). When this override is in effect, the workstation R-EP-1/2/3/4 grades INVERT or become n/a — grading them as `fail` would force-cap every cloud feature for correctly following its own contract.
 
-**Detecting cloud-mode for a given cycle.** A cycle is graded under the cloud branch iff EITHER:
-  - the parent jsonl's `/lazy-batch[-cloud]` invocation (from 2a `user_typed` / `command_names`) was `/lazy-batch-cloud`, OR
-  - the dispatched cycle prompt text (`agent_dispatch.prompt` from 2a) contains the cloud-override block — match on the marker phrases `"does NOT have the `Agent` tool"`, `"CLOUD OVERRIDE — LOAD-BEARING"`, or `"perform ... INLINE"` / `"Zero sub-subagent dispatches in a cloud /execute-plan cycle is the EXPECTED state"`.
-Prefer the per-cycle prompt text when present (it is authoritative for that specific dispatch); fall back to the parent invocation otherwise. Record the detected mode in the cycle ledger so the compliance matrix citation can state which branch was applied.
+**Detecting execution mode for a given cycle.** Three mutually-exclusive branches apply: **cloud**, **workstation-inline-override**, and **workstation-standard**. Classify in priority order:
+
+1. **Cloud branch** — iff EITHER:
+   - the parent jsonl's `/lazy-batch[-cloud]` invocation (from 2a `user_typed` / `command_names`) was `/lazy-batch-cloud`, OR
+   - the dispatched cycle prompt text (`agent_dispatch.prompt` from 2a) contains the cloud-override block — match on the marker phrases `"CLOUD OVERRIDE — LOAD-BEARING"`, `"perform ... INLINE"`, or `"Zero sub-subagent dispatches in a cloud /execute-plan cycle is the EXPECTED state"`.
+
+2. **Workstation inline-override branch** — iff the dispatched cycle prompt contains the phrase `"INLINE OVERRIDE — LOAD-BEARING"` (the workstation runtime emits this block when it inline-implements a workstation-gated work unit instead of dispatching a nested Agent). This is DISTINCT from the cloud branch: the subagent in this case DID have the `Agent` tool available but the orchestrator made a deliberate inline-override decision (e.g. a mechanical pseudo-skill or a recovery dispatch). Grade these cycles against the inline-override contract: inline Edit/Write is EXPECTED (not a violation of R-EP-1), and zero sub-subagents is EXPECTED (R-EP-2 → `n/a (workstation-inline-override)`). Do NOT falsely flag them as "missing sub-subagent dispatches" — that would penalize the orchestrator for following its own contract.
+
+3. **Workstation standard** — all other workstation cycles. Full R-EP-1 through R-EP-8 workstation contract applies.
+
+Prefer the per-cycle prompt text when present (it is authoritative for that specific dispatch); fall back to the parent invocation otherwise. Record the detected mode (`cloud` / `workstation-inline-override` / `workstation-standard`) in the cycle ledger so the compliance matrix citation can state which branch was applied.
 
 When the cloud branch is in effect, grade the load-bearing rows as:
 
@@ -605,5 +626,5 @@ STOP. Do not call work-log (review skills are themselves the work log).
 - This skill is **read-only** against source. The ONLY writes are the review markdown files + their commit.
 - **No subagent dispatch.** The audit is bounded; keep it auditable in the orchestrator session.
 - **Transcript availability is degraded** — `/tmp/claude-0/...` is reclaimed on container restart. Run the audit promptly after the batch run, OR accept downgraded confidence (every `R-EP-*` and `R-O-3/4` grade against a missing transcript is `unverifiable`, NEVER silently `pass`).
-- The new sentinel kind `lazy-batch-review` is documented in `.claude/skill-config/sentinel-frontmatter.md` so the existing sentinel-frontmatter lint catches malformed artifacts.
+- The new sentinel kind `lazy-batch-review` is documented in `~/.claude/skills/_components/sentinel-frontmatter.md` so the existing sentinel-frontmatter lint catches malformed artifacts.
 - Coupling: this skill is NOT paired with another skill — there is no `/lazy-batch-retro-cloud`. Cloud-vs-workstation differences are handled by inspecting the parent jsonl's invocation (look for `/lazy-batch-cloud` vs `/lazy-batch` in `command_names`).
