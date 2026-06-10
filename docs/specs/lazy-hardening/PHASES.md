@@ -180,11 +180,11 @@ cloud gates in bug-state; standing-directive confirmation.
 **Entry criteria:** Phase 1 baselines green (Phase 2 independent).
 
 **Deliverables:**
-- [ ] bug-state emits `plan-bug` on concluded investigation (conclusion marker documented in SPEC template); lazy-bug-batch description updated
-- [ ] Fence-aware `- [ ]` parsing in `count_deliverables` / `remaining_unchecked_are_verification_only` / `_unchecked_wus_in_plan_scope` (+ fixture fix)
-- [ ] Verification-only heuristic anchored to `## Runtime Verification` heading (no bold-marker clash)
-- [ ] Verification-row placement convention pinned in write-plan component / PHASES template
-- [ ] `roadmap_marks_complete` / `upstream_is_complete` / `is_stub_spec` anchored (no substring collisions)
+- [x] bug-state emits `plan-bug` on concluded investigation (conclusion marker documented in SPEC template); lazy-bug-batch description updated
+- [x] Fence-aware `- [ ]` parsing in `count_deliverables` / `remaining_unchecked_are_verification_only` / `_unchecked_wus_in_plan_scope` (+ fixture fix)
+- [x] Verification-only heuristic anchored to `## Runtime Verification` heading (no bold-marker clash)
+- [x] Verification-row placement convention pinned in write-plan component / PHASES template
+- [x] `roadmap_marks_complete` / `upstream_is_complete` / `is_stub_spec` anchored (no substring collisions)
 - [ ] Stale already-applied plan → inline flip pseudo-action (not execute-plan)
 - [ ] D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed
 - [ ] `scoped-id-not-found` terminal; diagnostics for malformed queue entries
@@ -195,6 +195,34 @@ cloud gates in bug-state; standing-directive confirmation.
 - [ ] Fixtures: concluded investigation → plan-bug; fenced checkboxes ignored; substring-collision row → no false halt; stale plan → flip; typo'd scope id → scoped-id-not-found
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 3 — Batch 1: WU-1, WU-2, WU-3, WU-4)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fixes applied → PASS (dedicated Opus reviewer; orchestrator independently re-ran all 3 gates + diffed every subagent GROUND-TRUTH block — all matched, no falsified reports, HEAD unchanged so no rogue commits)
+**Work completed:**
+- **WU-1** (plan-bug wiring, TDD): `bug-state.py` `compute_state()` Step 4 now reads `spec_status(spec_dir)` (already imported from `lazy_core`, line-anchored `^**Status:**` match) and emits `sub_skill="plan-bug"` (new constant `SKILL_PLAN_BUG`, line 114; emit at ~692) when SPEC `**Status:** Concluded` AND no PHASES.md — instead of looping `spec-bug`. Any other status (e.g. `Investigating`) → unchanged `spec-bug`. Two smoke fixtures (`concluded-investigation-plan-bug` RED→GREEN; `concluded-investigation-guard-still-spec-bug` discriminating guard). `lazy-bug-batch/SKILL.md` frontmatter + body (~454) updated: bug-state now emits `plan-bug` (still never `plan-feature`). **Loop closed end-to-end (review fix):** `spec-bug/SKILL.md` Step 6 now WRITES `**Status:** Concluded` at a proven conclusion (interactive + `--batch` paths); unconcluded batch runs leave `Investigating` + write `NEEDS_INPUT.md` (never falsely Concluded). `plan-bug/SKILL.md` Status gate now lists `Concluded` as a proceed-state. Verified wiring is NOT a dead-end: `lazy-bug-batch` dispatches `{sub_skill}` generically and `/plan-bug` exists.
+- **WU-2** (fence-aware + bold-clash parsing, TDD): `lazy_core.py` `count_deliverables`, `remaining_unchecked_are_verification_only`, `_unchecked_wus_in_plan_scope` now track an `in_fence` flag (toggle on `stripped.startswith("```")`, handles ```` ```lang ````) and skip `- [ ]`/`- [x]` lines inside code fences. The verification-only heuristic no longer treats a NON-verification bold (`**Assessment:**`) as a scope boundary — only verification-pattern bolds/headings enter scope; `**Runtime Verification**`/`**MCP Integration Test Assertions:**` bold markers still recognized (backward-compat). 9 unit tests in `test_lazy_core.py` (6 RED→GREEN + 3 backward-compat guards incl. the non-tautological "real task outside → False" discriminator).
+- **WU-3** (placement convention, docs): `_components/phases-runtime-verification.md` + `write-plan/SKILL.md` pin the rule that runtime-verification `- [ ]` checkboxes live ONLY under `## Runtime Verification` (or the `**Runtime Verification**`/`**MCP...**` bold subsection), NEVER under a phase's `### Deliverables`; fenced rows are illustrative. This is the convention WU-2's heuristic depends on.
+- **WU-4** (substring anchoring, TDD): `lazy-state.py` `roadmap_marks_complete` + `upstream_is_complete` now extract the `~~...~~` strikethrough name (pre-` — ` token, trimmed) and compare for case-insensitive EQUALITY — a feature name that is a substring/prefix of a different completed feature no longer false-matches (`Audio` ≠ `Audio Engine`). `is_stub_spec` anchors the `Draft (pre-Gemini)` match to the `**Status:**` line / `>` blockquote trailer (prose mention no longer false-flags a stub). 3 smoke fixtures (RED→GREEN). Baseline regenerated via `_normalize_smoke_output`; **pre-regen diff confirmed purely additive** — zero pre-existing fixture routing changed (no over-reach; reviewer independently confirmed `all-complete`/`needs-realign` positive-detection fixtures still pass).
+**Integration notes:**
+- File-ownership reconciliation: the `workstation-verification-only-bold-marker` fixture (WU-2's "fix the fixture") lives INSIDE `lazy-state.py`, which WU-4 also edits → assigned ALL `lazy-state.py` edits to the WU-4 owner; ran WU-4 impl after WU-2 impl so the lazy-state baseline reflects the new `lazy_core` behavior. Confirmed WU-2's fence change does NOT alter any existing lazy-state/bug-state fixture routing (the bold-marker fixture's fenced row is now skipped but its non-fenced verification row keeps it verification-only → Step 8 retro unchanged).
+- `plan-bug` is now a live `bug-state.py` emit; Phase 6's lazy-bug-batch by-reference rebuild inherits the description update.
+- Byte-pinned baselines pinned to LF via new `tests/baselines/.gitattributes` (`*.txt text eol=lf`) — protects the verbatim-comparison contract (incl. Phase 1/2 baselines) under `core.autocrlf` on Windows.
+**Pitfalls & guidance:**
+- The marker is `**Status:** Concluded` — a NEW status value (not the plan's alternate `In-progress` suggestion, which is overloaded by plan frontmatter). spec-bug must WRITE it at conclusion; bug-state only READS it. A premature `Concluded` would make `/plan-bug` fabricate phases from incomplete findings — spec-bug's batch guard explicitly prevents this (unconcluded → `NEEDS_INPUT.md`).
+- `roadmap_marks_complete`'s equality match assumes ROADMAP grammar `~~<Name> — <desc>~~ … **COMPLETE**` (documented in the function's docstring). A non-`Name — desc` strikethrough shape would require an exact-name match — a latent edge case to watch, not a current regression.
+**Part-end gate status:** all three gates exit 0 (lazy-state --test, bug-state --test, test_lazy_core.py 100/100) — confirmed fresh by the orchestrator post-fixes. (NOT the final part gate — Batches 2-4 remain.)
+**Files modified:**
+- `user/scripts/bug-state.py` — Step 4 plan-bug branch + `SKILL_PLAN_BUG` + 2 fixtures
+- `user/scripts/lazy_core.py` — fence tracking (3 fns) + bold-clash fix + comment correction
+- `user/scripts/lazy-state.py` — 3 anchored fns + 3 fixtures + ROADMAP-grammar docstring
+- `user/scripts/test_lazy_core.py` — 9 new lazy_core unit tests
+- `user/scripts/tests/baselines/{bug-state,lazy-state}-test-baseline.txt` — regenerated (normalizer)
+- `user/scripts/tests/baselines/.gitattributes` — NEW (LF pin)
+- `user/skills/spec-bug/SKILL.md` — Concluded-status writer (Step 5/6) + template doc
+- `user/skills/plan-bug/SKILL.md` — Concluded added to Status gate
+- `user/skills/lazy-bug-batch/SKILL.md` — description: bug-state now emits plan-bug
+- `user/skills/_components/phases-runtime-verification.md`, `user/skills/write-plan/SKILL.md` — placement convention
 
 ---
 

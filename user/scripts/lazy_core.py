@@ -677,7 +677,16 @@ def _unchecked_wus_in_plan_scope(phases_text: str, phase_set: set[int]) -> list[
     """
     current_phase: int | None = None
     out: list[str] = []
+    in_fence = False
     for line in phases_text.splitlines():
+        stripped = line.strip()
+        # Toggle fence state; fence markers are not headings or deliverables.
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            # Lines inside a code fence are illustrative examples — not real WUs.
+            continue
         h = re.match(r"^###\s+Phase\s+(\d+)", line)
         if h:
             current_phase = int(h.group(1))
@@ -844,10 +853,22 @@ def retro_plan_has_significant_divergences(plan_path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def count_deliverables(phases_text: str) -> tuple[int, int]:
-    """Return (unchecked, checked) counts of '- [ ]' / '- [x]' lines."""
+    """Return (unchecked, checked) counts of '- [ ]' / '- [x]' lines.
+
+    Lines that appear inside a triple-backtick code fence are skipped — they
+    are illustrative examples, not real deliverables.
+    """
     unchecked = 0
     checked = 0
+    in_fence = False
     for line in phases_text.splitlines():
+        # Toggle fence state when a line's stripped content starts with ```.
+        # Handles both opening (```lang) and closing (```) fence markers.
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if re.match(r"^\s*-\s*\[\s*\]", line):
             unchecked += 1
         elif re.match(r"^\s*-\s*\[[xX]\]", line):
@@ -893,8 +914,16 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     in_verification = False
     in_superseded_phase = False
     saw_unchecked = False
+    in_fence = False
     for line in phases_text.splitlines():
         stripped = line.strip()
+        # Toggle fence state; fence markers are not section headers or deliverables.
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            # Lines inside a code fence are illustrative examples — skip entirely.
+            continue
         heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
         if heading:
             heading_text = heading.group(1)
@@ -920,7 +949,13 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
                 if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
                     in_superseded_phase = True
                     continue
-                in_verification = bool(_VERIFICATION_SECTION_RE.search(bold_text))
+                # A bold marker ONLY enters/stays in verification scope when its
+                # title matches the verification pattern.  A non-matching bold
+                # (e.g. **Assessment:** or **Status:**) must NOT alter
+                # in_verification — it is prose structure, not a section boundary.
+                if _VERIFICATION_SECTION_RE.search(bold_text):
+                    in_verification = True
+                # Non-matching bold: do nothing (preserve current in_verification).
                 continue
         if re.match(r"^-\s*\[\s*\]", stripped):
             # Unchecked boxes inside a Superseded phase are out of scope —

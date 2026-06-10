@@ -21,6 +21,8 @@
   PASS [cloud-defer-no-validate-halts] cloud=True real_device=False: cloud-queue-exhausted
   PASS [queue-json-missing] cloud=False real_device=True: queue-missing
   PASS [unqueued-fixed-no-receipt-halt] cloud=False real_device=True: Step 2: completion claimed without receipt
+  PASS [concluded-investigation-plan-bug] cloud=False real_device=True: Step 4: investigate bug
+  PASS [concluded-investigation-guard-still-spec-bug] cloud=False real_device=True: Step 4: investigate bug
   PASS [enqueue-adhoc-writes-entry] entry written with correct fields
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'

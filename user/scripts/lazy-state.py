@@ -515,12 +515,39 @@ def check_stale_upstream(repo_root: Path, mirror: dict | None = None) -> list:
 def roadmap_marks_complete(roadmap_text: str, feature_name: str) -> bool:
     """Fallback completion signal: a ROADMAP.md row mentioning the feature with
     both `~~` strikethrough AND the `COMPLETE` token. Retained for repos that
-    don't follow the SPEC.md status convention."""
+    don't follow the SPEC.md status convention.
+
+    Anchoring: we extract the text inside the first `~~...~~` pair on the line,
+    take the portion before any ` — ` (space–em-dash–space) separator (which
+    separates the feature name from its description), trim whitespace, and compare
+    case-insensitively for EQUALITY with feature_name. This prevents a strict
+    substring like "Audio" from matching an unrelated completed row whose name is
+    "Audio Engine". Word-boundary anchors are insufficient here because `\bAudio\b`
+    still matches within "Audio Engine".
+
+    ROADMAP row grammar this match relies on:
+      ~~<Feature Name> — <description>~~ ... **COMPLETE**
+      ~~<Feature Name>~~ ... **COMPLETE**   (no description variant)
+    The extracted token is the text before the first ` — ` (or the full strikethrough
+    text if no separator is present), trimmed of surrounding whitespace.  Comparison
+    is case-insensitive EQUALITY against feature_name — so a feature whose name is a
+    prefix or substring of a different completed row (e.g. "Audio" vs "Audio Engine")
+    does NOT produce a false match.
+    """
     if not roadmap_text:
         return False
-    needle = re.escape(feature_name)
+    # Matches the content inside the first ~~...~~ on a line.
+    strikethrough_re = re.compile(r"~~([^~]+)~~")
     for line in roadmap_text.splitlines():
-        if re.search(needle, line) and "~~" in line and "COMPLETE" in line:
+        if "~~" not in line or "COMPLETE" not in line:
+            continue
+        m = strikethrough_re.search(line)
+        if not m:
+            continue
+        # The strikethrough text is "Name — description"; take the name portion.
+        struck_text = m.group(1)
+        struck_name = struck_text.split(" — ")[0].strip()
+        if struck_name.lower() == feature_name.lower():
             return True
     return False
 
@@ -636,7 +663,20 @@ def is_stub_spec(spec_text: str, queue_entry: dict[str, Any] | None = None) -> b
         return True
     if "> Stub generated from advanced feature research" in spec_text:
         return True
-    if "Draft (pre-Gemini)" in spec_text:
+    # Anchor the pre-Gemini stub check so it does NOT fire on arbitrary prose
+    # mentions of the phrase "Draft (pre-Gemini)". We match two structural forms:
+    #   (a) The **Status:** line's value contains "Draft (pre-Gemini)" — e.g.
+    #       `**Status:** Draft (pre-Gemini)` as a first-class status value.
+    #   (b) A blockquote line beginning with `>` contains "Draft (pre-Gemini)" —
+    #       e.g. `> Draft (pre-Gemini). Open questions ...` which is the canonical
+    #       stub trailer format used in older SPECs (kept for back-compat).
+    # Normal inline prose ("Unlike a Draft (pre-Gemini) stub, this spec ...") does
+    # NOT start with `>` and does NOT appear on the **Status:** line, so it is
+    # excluded. This prevents a false-positive stub classification for researched
+    # specs that merely discuss the concept.
+    if re.search(r"^\s*\*\*Status:\*\*\s*.*Draft \(pre-Gemini\)", spec_text, re.MULTILINE):
+        return True
+    if re.search(r"^\s*>.*Draft \(pre-Gemini\)", spec_text, re.MULTILINE):
         return True
     if queue_entry is not None and queue_entry.get("stub") is True:
         return True
@@ -722,9 +762,21 @@ def upstream_is_complete(repo_root: Path, upstream_dir: Path) -> bool:
     if roadmap.exists():
         text = roadmap.read_text(encoding="utf-8")
         upstream_name = upstream_dir.name
-        # ROADMAP rows usually mention the directory name or human name; check both
+        # ROADMAP rows usually mention the directory name or human name; check both.
+        # We apply whole-token anchoring: extract the text inside ~~...~~, take the
+        # portion before any " — " separator, trim, and compare case-insensitively
+        # for EQUALITY. This prevents "audio" from matching "~~audio-engine — ...~~".
+        # The bare `upstream_name in line` check would produce a false positive
+        # whenever upstream_name is a prefix/substring of a different completed name.
+        strikethrough_re = re.compile(r"~~([^~]+)~~")
         for line in text.splitlines():
-            if "~~" in line and "COMPLETE" in line and upstream_name in line:
+            if "~~" not in line or "COMPLETE" not in line:
+                continue
+            m = strikethrough_re.search(line)
+            if not m:
+                continue
+            struck_name = m.group(1).split(" — ")[0].strip()
+            if struck_name.lower() == upstream_name.lower():
                 return True
     spec = upstream_dir / "SPEC.md"
     if spec.exists():
@@ -2558,6 +2610,136 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # NO VALIDATED.md — not yet validated.
         # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
 
+    elif name == "roadmap-substring-collision-no-false-halt":
+        # Fixture A — substring-collision bug in roadmap_marks_complete.
+        # completion_claimed() passes the queue entry's `name` (not id) to
+        # roadmap_marks_complete. The feature name "Audio" is a STRICT SUBSTRING
+        # of the unrelated completed ROADMAP row text "Audio Engine". "Audio"
+        # itself is NOT marked complete anywhere.
+        #
+        # Pre-fix (RED): roadmap_marks_complete does a bare re.search(re.escape("Audio"), line)
+        # which matches the "Audio Engine" row → completion_claimed() returns True
+        # → no COMPLETED.md receipt → hard-halt with terminal_reason="completion-unverified".
+        #
+        # Post-fix (GREEN): the match is anchored to whole-word / word-boundary so
+        # "Audio" does NOT match the "Audio Engine" row → completion_claimed()
+        # returns False → feature proceeds normally → Step 5 dispatches /spec to
+        # generate a research prompt (no research files present).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-audio", "name": "Audio",
+                 "spec_dir": "feat-audio", "tier": 1}
+            ]
+        }))
+        # ROADMAP has a completed row for the UNRELATED "Audio Engine" feature.
+        # "Audio" appears as a substring inside "Audio Engine" — this is the
+        # exact collision the fix must prevent. Note the feature name searched by
+        # roadmap_marks_complete is the queue entry name "Audio", not the id.
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n"
+            "- ~~Audio Engine — deep audio processing~~ **COMPLETE**\n"
+        )
+        a_dir = features / "feat-audio"
+        a_dir.mkdir()
+        # SPEC.md Status: Draft — not complete. No receipt, no research files.
+        (a_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # No RESEARCH.md, no RESEARCH_SUMMARY.md, no RESEARCH_PROMPT.md →
+        # Step 5 will dispatch /spec (generate research prompt).
+
+    elif name == "is-stub-prose-mention-not-stub":
+        # Fixture B — substring-collision bug in is_stub_spec.
+        # The SPEC.md has a non-stub **Status:** (just "Draft", no "(pre-Gemini)"
+        # qualifier) but the body PROSE contains the literal phrase
+        # "Draft (pre-Gemini)" in a sentence discussing the concept.
+        #
+        # Pre-fix (RED): is_stub_spec does `"Draft (pre-Gemini)" in spec_text`
+        # which is a bare substring match against the ENTIRE spec body. It matches
+        # the prose mention → the feature is falsely routed to Step 4.5 stub-spec
+        # → sub_skill="spec" at the stub branch instead of the normal pipeline.
+        #
+        # Post-fix (GREEN): the check is anchored to the **Status:** line, so the
+        # prose mention does NOT trigger is_stub_spec → the feature falls through
+        # to the normal pipeline. With RESEARCH.md + RESEARCH_SUMMARY.md present
+        # but no PHASES.md yet → Step 6 dispatches /plan-feature.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-prose-stub", "name": "Prose Stub Feature",
+                 "spec_dir": "feat-prose-stub", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        ps = features / "feat-prose-stub"
+        ps.mkdir()
+        # **Status:** is a clean "Draft" — NOT a stub marker. The body prose
+        # mentions "Draft (pre-Gemini)" as an illustrative example, which is
+        # the text that the buggy bare-substring check incorrectly matches.
+        (ps / "SPEC.md").write_text(
+            "# Spec\n\n"
+            "**Status:** Draft\n\n"
+            "**Depends on:** (none)\n\n"
+            "## Background\n\n"
+            "Unlike a Draft (pre-Gemini) stub, this spec is fully researched "
+            "and does not require a Gemini deep-research sprint before phases "
+            "can be written.\n"
+        )
+        # Research files present → passes Step 5 gate, reaches Step 6.
+        (ps / "RESEARCH.md").write_text("# Research\n\nResearch complete.\n")
+        (ps / "RESEARCH_SUMMARY.md").write_text("# Summary\n\nKey findings.\n")
+        # No PHASES.md → Step 6 dispatches /plan-feature.
+
+    elif name == "upstream-substring-collision":
+        # Fixture C — substring-collision bug in upstream_is_complete.
+        # The upstream feature directory is named "audio". The ROADMAP contains
+        # a strikethrough+COMPLETE row for the UNRELATED "audio-engine" feature.
+        # upstream_is_complete checks `upstream_name in line` (bare substring) which
+        # matches the "audio-engine" row when upstream_name="audio".
+        #
+        # Pre-fix (RED): upstream_is_complete("audio") returns True (false positive)
+        # → hard_complete_upstream_dirs is non-empty → realign_is_fresh returns False
+        # (no realign plan exists) → compute_state emits sub_skill="realign-spec"
+        # at Step 4.6, even though "audio" upstream is NOT actually complete.
+        #
+        # Post-fix (GREEN): the match is anchored to word boundary / whole directory
+        # name so "audio" does NOT match "audio-engine" → upstream_is_complete returns
+        # False → hard_complete_upstream_dirs stays empty → Step 4.6 does not fire
+        # → feature proceeds to Step 5 (no research) → sub_skill="spec".
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-downstream", "name": "Downstream Feature",
+                 "spec_dir": "feat-downstream", "tier": 1}
+            ]
+        }))
+        # ROADMAP has a completed row for "audio-engine" — NOT for "audio" (the
+        # upstream the downstream feature depends on). Bare substring "audio" in
+        # "audio-engine" is the collision.
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n"
+            "- ~~audio-engine — deep audio processing~~ **COMPLETE**\n"
+        )
+        # Create the upstream "audio" feature directory. Its SPEC.md status is
+        # Draft (NOT Complete), so the SPEC-based check in upstream_is_complete
+        # also returns False. Only the buggy ROADMAP substring check fires.
+        aud = features / "audio"
+        aud.mkdir()
+        (aud / "SPEC.md").write_text(
+            "# Upstream Audio\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # Create the downstream feature with a hard dep on "audio" (the upstream).
+        ds = features / "feat-downstream"
+        ds.mkdir()
+        # The dep block references "audio" by feature_id. resolve_upstream_dir
+        # finds the sibling "audio" dir (has SPEC.md).
+        (ds / "SPEC.md").write_text(
+            "# Downstream Spec\n\n"
+            "**Status:** Draft\n\n"
+            "**Depends on:**\n\n"
+            "- audio — hard — this feature builds on the audio foundation\n"
+        )
+        # No research files → if Step 4.6 correctly does NOT fire, the feature
+        # falls through to Step 5 and dispatches /spec (research prompt generation).
+
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2817,6 +2999,40 @@ def run_smoke_tests() -> int:
                 "sub_skill": "__write_validated_from_skip__",
                 "feature_id": "feat-sog",
                 "current_step": "Step 9: skip-mcp-test → validated",
+            }),
+            # Fixture A — roadmap_marks_complete substring collision.
+            # Feature name "Audio" is a strict substring of the completed ROADMAP
+            # text "Audio Engine". Pre-fix: falsely halts with completion-unverified.
+            # Post-fix: normal Draft routing → Step 5 /spec (no research files).
+            # RED today: roadmap_marks_complete substring-matches the Audio Engine
+            # row → completion_claimed returns True → no receipt → halt.
+            ("roadmap-substring-collision-no-false-halt", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-audio",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # Fixture B — is_stub_spec prose-mention false-positive.
+            # SPEC.md Status is plain "Draft" (not a stub), but the body prose
+            # contains the literal phrase "Draft (pre-Gemini)" as illustrative text.
+            # Pre-fix: bare substring match triggers stub route → Step 4.5 /spec.
+            # Post-fix: only the **Status:** line is checked → not a stub →
+            # proceeds to Step 6 /plan-feature (research present, no PHASES.md).
+            # RED today: "Draft (pre-Gemini)" in spec_text matches the prose.
+            ("is-stub-prose-mention-not-stub", False, False, {
+                "sub_skill": "plan-feature",
+                "feature_id": "feat-prose-stub",
+                "current_step": "Step 6: plan feature (phases + plan)",
+            }),
+            # Fixture C — upstream_is_complete substring collision.
+            # Upstream feature dir "audio" is a strict substring of the completed
+            # ROADMAP entry "audio-engine". Pre-fix: upstream_is_complete falsely
+            # returns True → triggers realign-spec at Step 4.6. Post-fix: word-
+            # boundary anchor prevents the collision → no realign → Step 5 /spec.
+            # RED today: upstream_name in line matches "audio-engine" for "audio".
+            ("upstream-substring-collision", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-downstream",
+                "current_step": "Step 5: generate research prompt",
             }),
         ]
         for case in cases:

@@ -177,6 +177,14 @@ Write the SPEC.md with this structure:
 **Placement:** {docs/bugs or docs/features path}
 **Related:** {links to related specs, bugs, or phases}
 
+<!-- Status lifecycle:
+  - Investigating → active investigation in progress; bug-state.py routes to /spec-bug.
+  - Concluded     → root cause identified, investigation done; bug-state.py routes to /plan-bug
+                    (which authors PHASES.md from this concluded spec) instead of re-running
+                    /spec-bug.  Set this when the investigation is complete and ready for
+                    implementation planning.
+-->
+
 ---
 
 ## Verified Symptoms
@@ -255,10 +263,20 @@ After writing the spec, present a summary to the user:
 >
 > Ready to create a fix plan?
 
-Use **AskUserQuestion:**
-- **"Create fix plan now"** — Invoke the `fix` skill, passing the SPEC path and a synthesized bug description derived from the verified symptoms and strongest theory
-- **"Not yet"** — Stop here. The spec is the deliverable.
-- **"Need more investigation"** — Return to Step 3 for additional symptom verification or Step 1 to gather more evidence
+**Concluding the investigation — status transition (MANDATORY):**
+
+When the investigation reaches a proven conclusion — root cause identified, affected area understood, theories confirmed or ruled out — you MUST update the SPEC's `**Status:**` line from `Investigating` to `Concluded` before stopping or transitioning. This is the signal that `bug-state.py` uses to route to `/plan-bug` (which authors `PHASES.md`) rather than re-dispatching `/spec-bug`. Leaving it as `Investigating` causes `bug-state.py` to loop `/spec-bug` indefinitely.
+
+**Interactive path:** When the user chooses "Create fix plan now" or "Not yet" and the investigation has reached a clear conclusion, flip `**Status:** Investigating` to `**Status:** Concluded` in the SPEC before proceeding.
+
+**Batch/non-interactive path** (`--batch`, as dispatched by `/lazy-bug-batch`): Use this rule:
+- If the investigation reached a **proven conclusion** (root cause identified, sufficient findings for fix planning): write the SPEC with `**Status:** Concluded`. The pipeline will advance to `/plan-bug` on its next cycle.
+- If the investigation did **NOT** conclude (needs more evidence, an ambiguous root cause, or a human decision required): leave `**Status:** Investigating` and write `NEEDS_INPUT.md` explaining what is still unresolved. Do NOT falsely mark `Concluded` — a premature `Concluded` causes `/plan-bug` to fabricate phases from incomplete findings, which is worse than pausing.
+
+Use **AskUserQuestion** (interactive only):
+- **"Create fix plan now"** — Flip SPEC to `**Status:** Concluded`, then invoke the `fix` skill, passing the SPEC path and a synthesized bug description derived from the verified symptoms and strongest theory
+- **"Not yet"** — Flip SPEC to `**Status:** Concluded` (investigation is done), then stop. The spec is the deliverable.
+- **"Need more investigation"** — Do NOT flip status; return to Step 3 for additional symptom verification or Step 1 to gather more evidence
 
 When transitioning to `/fix`, pass the investigation spec path so `/fix` can read verified symptoms and proven findings instead of re-investigating from scratch.
 

@@ -111,6 +111,7 @@ TR_ALL_DEFERRED = "all-remaining-deferred"
 
 # sub_skill tokens for bug-specific actions
 SKILL_INVESTIGATE = "spec-bug"             # root-cause investigation / spec-bug skill
+SKILL_PLAN_BUG = "plan-bug"               # implementation planning for a concluded investigation (SPEC **Status:** Concluded, no PHASES.md)
 SKILL_SPEC_PHASES = "spec-phases"          # break bug SPEC into PHASES
 SKILL_WRITE_PLAN = "write-plan"            # write an implementation plan
 SKILL_EXECUTE_PLAN = "execute-plan"        # execute a Ready plan
@@ -673,11 +674,24 @@ def compute_state(
             ),
         )
 
-    # Step 4: SPEC.md present but no PHASES.md → investigation dispatch.
+    # Step 4: SPEC.md present but no PHASES.md → investigation or planning dispatch.
     # (SPEC.md is guaranteed to exist at this point: load_bug_queue only returns
-    # dirs that have one.  Status is Open or Investigating → spec-bug.)
+    # dirs that have one.)
+    # If the SPEC status is "Concluded", the investigation is done and PHASES.md has not
+    # been authored yet — route to plan-bug so it can create PHASES.md from the concluded
+    # spec.  Any other status (e.g. "Investigating", "Open") → spec-bug to continue the
+    # investigation.  This avoids an infinite spec-bug loop after a concluded investigation.
     phases_file = spec_dir / "PHASES.md"
     if not phases_file.exists():
+        _status = spec_status(spec_dir)
+        if _status == "Concluded":
+            # Investigation concluded; hand off to plan-bug to author PHASES.md.
+            return _bug_state(
+                **common,
+                current_step=STEP_INVESTIGATE,
+                sub_skill=SKILL_PLAN_BUG,
+                sub_skill_args=f"{spec_dir_str}/SPEC.md",
+            )
         return _bug_state(
             **common,
             current_step=STEP_INVESTIGATE,
@@ -1777,6 +1791,67 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         )
         # Intentionally NO FIXED.md receipt — the absence triggers the bypass being pinned.
 
+    elif name == "concluded-investigation-plan-bug":
+        # SPEC.md has **Status:** Concluded; no PHASES.md.
+        # Pinning the infinite-loop bug: after a /spec-bug investigation concludes, the
+        # SPEC is marked Concluded but PHASES.md is absent.  The next cycle must dispatch
+        # plan-bug (which authors PHASES.md from the concluded spec) NOT spec-bug again.
+        #
+        # Current behavior (RED): Step 4 always dispatches SKILL_INVESTIGATE ("spec-bug")
+        # when PHASES.md is absent, regardless of the SPEC status.
+        #
+        # Expected behavior (GREEN after impl-agent fix):
+        #   sub_skill == "plan-bug"
+        #   current_step == STEP_INVESTIGATE (reused step label)
+        #   sub_skill_args ends with "SPEC.md"  (points at concluded spec)
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-concluded", "name": "Concluded Investigation Bug",
+                 "spec_dir": "bug-concluded"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-concluded"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Concluded Investigation Bug\n\n"
+            "**Status:** Concluded\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n\n"
+            "## Description\n\n"
+            "Investigation has concluded; root cause identified. "
+            "Awaiting plan-bug to produce PHASES.md.\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO PHASES.md — triggers the discriminating guard being pinned.
+
+    elif name == "concluded-investigation-guard-still-spec-bug":
+        # SPEC.md has **Status:** Investigating; no PHASES.md.
+        # Guard fixture: the discriminating marker must NOT change behavior when the
+        # investigation is still in progress.  Proves the "Concluded" marker is the
+        # exclusive trigger — an Investigating SPEC still routes to spec-bug.
+        #
+        # Expected behavior (GREEN today AND after impl-agent fix):
+        #   sub_skill == "spec-bug"   (SKILL_INVESTIGATE — unchanged)
+        #   current_step == STEP_INVESTIGATE
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-still-investigating", "name": "Still Investigating Bug",
+                 "spec_dir": "bug-still-investigating"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-still-investigating"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Still Investigating Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-02\n\n"
+            "## Description\n\n"
+            "Investigation still in progress — must remain on spec-bug, not plan-bug.\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO PHASES.md.
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -2029,6 +2104,40 @@ def run_smoke_tests() -> int:
             "unqueued-fixed-no-receipt-halt", False, True,
             {
                 "terminal_reason": TR_COMPLETION_UNVERIFIED,
+            },
+        ),
+        # 24. concluded-investigation-plan-bug (RED — pin the infinite-loop bug).
+        #     SPEC.md marked **Status:** Concluded + no PHASES.md → must dispatch
+        #     plan-bug (not spec-bug again) so the pipeline can author PHASES.md.
+        #     Current code always routes to SKILL_INVESTIGATE ("spec-bug") at Step 4
+        #     regardless of SPEC status → this fixture is RED until impl-agent fixes it.
+        (
+            "concluded-investigation-plan-bug", False, True,
+            {
+                "feature_id": "bug-concluded",
+                "sub_skill": "plan-bug",
+                "current_step": STEP_INVESTIGATE,
+            },
+            # Extra: sub_skill_args must point at the SPEC.md (path ends with SPEC.md).
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill_args must end with 'SPEC.md'; "
+                    f"got sub_skill_args={got.get('sub_skill_args')!r}"
+                )
+                if not str(got.get("sub_skill_args") or "").endswith("SPEC.md")
+                else None
+            ),
+        ),
+        # 25. concluded-investigation-guard-still-spec-bug (GREEN — discriminating guard).
+        #     SPEC.md marked **Status:** Investigating + no PHASES.md → must still dispatch
+        #     spec-bug.  Proves the "Concluded" marker is the exclusive trigger; an
+        #     Investigating SPEC must remain on spec-bug both before AND after the fix.
+        (
+            "concluded-investigation-guard-still-spec-bug", False, True,
+            {
+                "feature_id": "bug-still-investigating",
+                "sub_skill": SKILL_INVESTIGATE,
+                "current_step": STEP_INVESTIGATE,
             },
         ),
     ]

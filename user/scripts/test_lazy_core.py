@@ -309,6 +309,238 @@ def test_ruvonly_mcp_integration_test_heading():
 
 
 # ---------------------------------------------------------------------------
+# Tests: fence-awareness — count_deliverables
+# ---------------------------------------------------------------------------
+
+def test_count_deliverables_skips_fenced_checkboxes():
+    """Fenced - [ ] / - [x] lines inside ```...``` blocks must NOT be counted.
+
+    Real deliverables outside the fence are still counted correctly.
+    RED today: the current implementation matches all lines — including those
+    inside fences — so it would return unchecked=3, checked=2 instead of
+    unchecked=1, checked=1.
+    """
+    _guard()
+    # One real unchecked, one real checked — these are the only real deliverables.
+    # Three fenced lines (two unchecked, one checked) — illustrative examples only.
+    text = (
+        "- [ ] real deliverable\n"
+        "- [x] real done\n"
+        "```\n"
+        "- [ ] fenced unchecked A\n"
+        "- [ ] fenced unchecked B\n"
+        "- [x] fenced checked\n"
+        "```\n"
+    )
+    result = lazy_core.count_deliverables(text)
+    assert result == (1, 1), (
+        f"expected (unchecked=1, checked=1) with fenced lines excluded, got {result}. "
+        "Fenced checkbox lines should not be counted as deliverables."
+    )
+
+
+def test_count_deliverables_multiple_fences():
+    """Multiple code fences are each skipped; lines outside fences are counted."""
+    _guard()
+    text = (
+        "- [ ] outside A\n"
+        "```bash\n"
+        "- [ ] inside fence 1\n"
+        "```\n"
+        "- [ ] outside B\n"
+        "```\n"
+        "- [ ] inside fence 2\n"
+        "- [x] inside fence 3\n"
+        "```\n"
+        "- [x] outside done\n"
+    )
+    # Expecting: unchecked=2 (outside A, outside B), checked=1 (outside done)
+    result = lazy_core.count_deliverables(text)
+    assert result == (2, 1), (
+        f"expected (unchecked=2, checked=1) with both fences excluded, got {result}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: fence-awareness — remaining_unchecked_are_verification_only
+# ---------------------------------------------------------------------------
+
+def test_verification_only_ignores_fenced_rows():
+    """A fenced - [ ] inside a code example must not count as a real deliverable.
+
+    If ALL non-fenced unchecked rows are under verification sections, the
+    function must return True — even when a fenced block appearing BEFORE the
+    verification section contains a - [ ] outside verification scope.
+
+    RED today: the current parser walks every line including fenced ones, so the
+    fenced - [ ] is treated as a non-verification deliverable (in_verification
+    is False at the fenced line's position) → returns False.
+    """
+    _guard()
+    # The fenced - [ ] appears in the Phase 1 body BEFORE the verification
+    # section — at that point in_verification is False.  Without fence tracking,
+    # the parser hits the fenced row while in_verification=False and returns
+    # False immediately.  With fence tracking the fenced row is skipped and the
+    # only real unchecked row (under **Runtime Verification**) is in scope.
+    text = (
+        "### Phase 1\n"
+        "- [x] implementation done\n"
+        "```\n"
+        "- [ ] fenced example outside verification — not a real deliverable\n"
+        "```\n"
+        "**Runtime Verification**\n"
+        "- [ ] run MCP smoke test\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (fenced row outside verification must be ignored), got {result}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: bold-marker clash fix — remaining_unchecked_are_verification_only
+# ---------------------------------------------------------------------------
+
+def test_verification_only_non_verification_bold_not_a_boundary():
+    """A non-verification bold marker (e.g. **Assessment:**) inside a Runtime
+    Verification section must NOT exit verification scope.
+
+    Current bug: the walker treats ANY bold-lead line as a subsection boundary
+    and clears in_verification when the bold text doesn't match the verification
+    pattern.  A **Assessment:** line before a - [ ] row inside a verification
+    section therefore produces a False return even though the row IS verification.
+
+    RED today (bold-marker clash): the current code will return False because
+    **Assessment:** is not a verification pattern, so in_verification becomes
+    False before the - [ ] is evaluated.
+    """
+    _guard()
+    text = (
+        "## Runtime Verification\n"
+        "**Assessment:** this feature meets acceptance criteria\n"
+        "- [ ] verify output level is non-zero\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (non-verification bold must not exit verification scope), "
+        f"got {result}."
+    )
+
+
+def test_verification_only_bold_marker_format_preserved():
+    """BACKWARD-COMPAT: **Runtime Verification** bold marker + - [ ] → True.
+
+    The real AlgoBooth PHASES.md format uses bold markers, NOT ## headings.
+    This test must remain GREEN after any fix.
+    """
+    _guard()
+    text = (
+        "**Runtime Verification**\n"
+        "- [ ] Verify audio output\n"
+        "- [ ] Check MCP assertion\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (bold Runtime Verification marker must be respected), got {result}."
+    )
+
+
+def test_verification_only_heading_form_with_assessment_bold():
+    """## Runtime Verification heading + **Assessment:** bold + - [ ] → True.
+
+    The anchored form (heading) with a non-verification bold inside should
+    also return True, same as the bold-marker form above.
+
+    RED today: same bold-marker-clash bug causes False return.
+    """
+    _guard()
+    text = (
+        "### Phase 1\n"
+        "- [x] write code\n"
+        "### Runtime Verification\n"
+        "**MCP Integration Test Assertions:**\n"
+        "- [ ] assert rms > 1e-4\n"
+        "**Assessment:**\n"
+        "- [ ] confirm no DC offset\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (Assessment bold inside verification heading must not "
+        f"exit scope), got {result}."
+    )
+
+
+def test_verification_only_real_task_outside_still_false():
+    """BACKWARD-COMPAT: a - [ ] outside any verification section → False.
+
+    Discrimination must be preserved — a real implementation task should never
+    be mistaken for a verification-only row.
+    """
+    _guard()
+    text = (
+        "### Phase 1\n"
+        "- [ ] implement the feature\n"
+        "### Runtime Verification\n"
+        "- [ ] verify output\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is False, (
+        f"expected False (real implementation task outside verification must "
+        f"produce False), got {result}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: fence-awareness — _unchecked_wus_in_plan_scope
+# ---------------------------------------------------------------------------
+
+def test_unchecked_wus_in_scope_skips_fenced():
+    """A fenced - [ ] line inside a scoped phase must NOT appear in the output.
+
+    RED today: the current walker has no fence tracking, so the fenced label
+    is included in the returned list.
+    """
+    _guard()
+    text = (
+        "### Phase 1\n"
+        "- [ ] real WU label\n"
+        "```\n"
+        "- [ ] fenced example label\n"
+        "```\n"
+        "- [ ] another real WU\n"
+    )
+    result = lazy_core._unchecked_wus_in_plan_scope(text, {1})
+    assert "fenced example label" not in result, (
+        f"fenced label must not appear in scope output; got {result}."
+    )
+    # Real labels must still be returned.
+    assert "real WU label" in result, (
+        f"'real WU label' must be in scope output; got {result}."
+    )
+    assert "another real WU" in result, (
+        f"'another real WU' must be in scope output; got {result}."
+    )
+
+
+def test_unchecked_wus_in_scope_real_labels_returned():
+    """Non-fenced - [ ] lines in the scoped phase ARE collected (baseline sanity)."""
+    _guard()
+    text = (
+        "### Phase 2\n"
+        "- [ ] alpha task\n"
+        "- [x] done task\n"
+        "- [ ] beta task\n"
+    )
+    result = lazy_core._unchecked_wus_in_plan_scope(text, {2})
+    assert "alpha task" in result, f"'alpha task' must be returned; got {result}."
+    assert "beta task" in result, f"'beta task' must be returned; got {result}."
+    # Checked items are never returned.
+    assert "done task" not in result, (
+        f"'done task' (checked) must not be returned; got {result}."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: parse_sentinel
 # ---------------------------------------------------------------------------
 
@@ -1569,6 +1801,19 @@ _TESTS = [
     ("test_ruvonly_mixed_outside", test_ruvonly_mixed_outside),
     ("test_ruvonly_bold_marker_format", test_ruvonly_bold_marker_format),
     ("test_ruvonly_mcp_integration_test_heading", test_ruvonly_mcp_integration_test_heading),
+    # fence-awareness: count_deliverables
+    ("test_count_deliverables_skips_fenced_checkboxes", test_count_deliverables_skips_fenced_checkboxes),
+    ("test_count_deliverables_multiple_fences", test_count_deliverables_multiple_fences),
+    # fence-awareness: remaining_unchecked_are_verification_only
+    ("test_verification_only_ignores_fenced_rows", test_verification_only_ignores_fenced_rows),
+    # bold-marker clash fix: remaining_unchecked_are_verification_only
+    ("test_verification_only_non_verification_bold_not_a_boundary", test_verification_only_non_verification_bold_not_a_boundary),
+    ("test_verification_only_bold_marker_format_preserved", test_verification_only_bold_marker_format_preserved),
+    ("test_verification_only_heading_form_with_assessment_bold", test_verification_only_heading_form_with_assessment_bold),
+    ("test_verification_only_real_task_outside_still_false", test_verification_only_real_task_outside_still_false),
+    # fence-awareness: _unchecked_wus_in_plan_scope
+    ("test_unchecked_wus_in_scope_skips_fenced", test_unchecked_wus_in_scope_skips_fenced),
+    ("test_unchecked_wus_in_scope_real_labels_returned", test_unchecked_wus_in_scope_real_labels_returned),
     # parse_sentinel
     ("test_parse_sentinel_absent", test_parse_sentinel_absent),
     ("test_parse_sentinel_no_frontmatter", test_parse_sentinel_no_frontmatter),
