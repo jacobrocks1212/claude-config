@@ -161,7 +161,17 @@ machine progresses to retro on the next invocation.
 `sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize the bug
 via the archive-on-fix procedure.
 
-**Step 3.1: Completion-integrity gate and FIXED.md receipt.**
+**Gate 1 — MCP-coverage audit** per
+`~/.claude/skills/_components/mcp-coverage-audit.md`.
+Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns:
+
+- `uncovered:N` — the audit has written `{spec_path}/NEEDS_INPUT.md`. Do NOT run Gate 2 or
+  the archive steps. Print the after-status bookend (Completed: "MCP-coverage gate halted
+  mark-fixed — {N} uncovered locked decision(s)", Next `/lazy-bug` will: "Surface NEEDS_INPUT.md
+  and reconcile the coverage gap"), call work-log, STOP.
+- `clean` — proceed to Gate 2.
+
+**Gate 2 — Completion-integrity gate and FIXED.md receipt.**
 
 The gate and archive procedure are documented in the shared component below:
 
