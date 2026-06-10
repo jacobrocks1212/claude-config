@@ -399,11 +399,11 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] `--neutralize-sentinel <path>` with collision handling
 - [x] Persisted probe signature → `repeat_count` in output
 - [x] Probe payload includes git-guard results + pre-formatted cycle header
-- [ ] Both batch skills consume subcommands; superseded prose deleted
+- [x] Both batch skills consume subcommands; superseded prose deleted
 
 **Runtime Verification:**
-- [ ] Regression gates green
-- [ ] Fixtures per subcommand: each verify-ledger failing check; apply-pseudo idempotency + gate-absent refusal; neutralize collision; repeat_count increments
+- [x] Regression gates green
+- [x] Fixtures per subcommand: each verify-ledger failing check; apply-pseudo idempotency + gate-absent refusal; neutralize collision; repeat_count increments
 
 **Implementation Notes:**
 
@@ -482,6 +482,27 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Carried follow-up (minor, not blocking):** `verify_ledger`'s own `clean_tree` (WU-1, lazy_core.py ~1083) has the same latent stdout-only logic; harmless in production (always called with a real repo_root) but a candidate for the same one-line `returncode==0` hardening in a future consistency pass.
 **Integration notes:** both functions standalone, no new imports (subprocess present); CLI additive + flag-gated. WU-6 wires the SKILL Step-3 cycle-header + git-guard consumption to `--probe`.
 **Files modified:** `user/scripts/lazy_core.py` (+`git_guard_status`, +`format_cycle_header`, clean_tree returncode fix), `user/scripts/lazy-state.py` (flags+gated call), `user/scripts/bug-state.py` (flags+gated call), `user/scripts/test_lazy_core.py` (6 tests + registry).
+
+#### Implementation Notes (Phase 5 — Batch 6: WU-6 skill text consumes subcommands; superseded prose deleted)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (prose WU, TDD:no; inline review — 2 files, ~81 changed lines ≤150 → reviewed the full diff directly. Orchestrator independently re-verified: only the 2 SKILL files modified (scripts untouched → all 3 regression gates exit 0, 143/143), subcommands referenced in both, zero hand-write mechanics remain for supported pseudo-skills, both files mirrored, Rule 10 honored. Ground-truth verified: yes; HEAD unchanged d9c4df1.)
+**Work completed (SEPARATE commit from the script WUs per Rule 9 — script subcommands landed first in WU-1..5, skill-text last so a mid-phase interruption left prose fallbacks intact):**
+- **WU-6** (prose; `lazy-batch/SKILL.md` + `lazy-batch-cloud/SKILL.md` only — single-dispatch lazy/lazy-bug and lazy-bug-batch are Phase 6 scope):
+  - **Step 1c.5 pseudo-skill handlers** now DELEGATE the deterministic WRITES to `--apply-pseudo`: `__write_validated_from_skip__`/`__write_validated_from_results__`/`__write_deferred_non_cloud__` (cloud) → one-line `--apply-pseudo <name> <spec_path>` calls; `__flip_plan_complete_cloud_saturated__` → `--apply-pseudo … --plan <plan>`; `__mark_complete__` keeps ALL gate prose intact (workstation: 2 gates; cloud: hard-guard + MCP-coverage audit + completion-integrity) and replaces ONLY the post-gates WRITE block (COMPLETED.md + SPEC/PHASES status flip + sentinel cleanup) with `--apply-pseudo __mark_complete__ <spec_path>`, followed by the ROADMAP strikethrough (the one remaining orchestrator step) — **Rule 10 honored: gate CHECKS stay, only the WRITES became mechanical.** `__flip_plan_complete_stale__` deliberately KEPT inline (apply-pseudo does not implement stale) with an explicit note.
+  - **Post-`/execute-plan` ledger-consistency guard** (lazy-batch Step 1e §4a; cloud guard) now runs `git fetch` + `--verify-ledger {spec_path}` (cloud adds `--cloud`) instead of the inline (a)/(b)/(c) git+grep, with per-`failing_check` reconciliation (clean_tree/head_matches_origin → commit+push residue; plan_complete → re-flip status; deliverables_done → tick-with-evidence-else-NEEDS_INPUT). Notes verify-ledger's verification-only exemption so it won't false-fail on pending Runtime-Verification boxes.
+  - **Probe enrichment note** added at the probe step: the orchestrator MAY pass `--repeat-count --probe --forward-cycles/--meta-cycles/--max-cycles` to fold `repeat_count` (mechanical loop-detection corroboration of `prev_cycle_signature`), `git_guards`, and a pre-formatted `cycle_header` into ONE probe payload (read payload → dispatch → record). The existing `prev_cycle_signature` machinery is retained.
+  - Net effect: the happy-path cycle is now probe → dispatch (or one-line `--apply-pseudo`) → verify (`--verify-ledger`)/commit — fewer orchestrator messages per pseudo-skill/ledger-guard cycle.
+**Ground-truth verification:** grep confirms `apply-pseudo`/`verify-ledger` referenced in both SKILLs; `grep 'first WRITE | write …VALIDATED.md | WRITE …COMPLETED.md'` returns no orchestrator-hand-writes for supported pseudo-skills; the 3 regression gates exit 0 (scripts untouched by this WU); only the 2 SKILL files in `git status`.
+**Files modified:** `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`.
+
+#### Post-Phase (Phase 5 — Integration Verification + CLAUDE.md review + part close)
+**Integration verification:** the five subcommands behave identically to the prose they replaced, and the prose fallbacks are now fully removed from the two batch orchestrators (WU-6) — but ONLY after the subcommands existed (WU-1..5 committed first; Rule 9 separate-commit sequencing held throughout, so any mid-phase interruption left working prose fallbacks). Cross-WU coherence: `--verify-ledger` (WU-1) reuses the same git-clean/HEAD logic family as `git_guard_status` (WU-5); `--apply-pseudo __mark_complete__` (WU-2) is the single receipt author the consumers (WU-6) + the completion-integrity gate now call; `--neutralize-sentinel` (WU-3) is documented in the CLI surface for the decision-resume/blocked-resolution rename sites (those shared components are Phase-6 scope to rewire); `--repeat-count`/`--probe` (WU-4/WU-5) are flag-gated so default output stays byte-identical (Phase-1 baselines + zero-drift probe preserved — independently re-proved each batch). All five subcommands share the same exit-1-on-not-ok convention so the orchestrator's `&&` chains short-circuit correctly.
+**CLAUDE.md review:** `user/scripts/CLAUDE.md` "## CLI surface" updated with the five new subcommands (+ the exit-1 ledger/pseudo-skill convention). No other CLAUDE.md / structural doc change warranted (no new directory; the signature file lives in OS-temp, deliberately outside the repo tree).
+**Part-end full quality gate (MANDATORY — all exit 0):** `python3 ~/.claude/scripts/lazy-state.py --test` (0), `python3 ~/.claude/scripts/bug-state.py --test` (0), `python3 ~/.claude/scripts/test_lazy_core.py` (143/143, 0) — run + passed fresh as the final chained command before the part-close commit. (`~/.claude/scripts/*.py` resolve to the repo's `user/scripts/*.py` — same inode — so the gate tested the edited code.)
+**Carried follow-ups (Phase 6 candidates, NOT blocking part close):**
+- `__flip_plan_complete_stale__` is not yet scripted by `--apply-pseudo` (stays inline in both batch skills) — a future `apply_pseudo` name addition could fold it in (trivial — same single-line frontmatter flip as cloud_saturated, different commit message).
+- `verify_ledger`'s own `clean_tree` (WU-1) uses stdout-only logic (the `returncode==0` hardening landed only in `git_guard_status`/WU-5) — harmless in production (always real repo_root); a one-line consistency fix candidate.
+- The shared rename components (`decision-resume.md`/`blocked-resolution.md`/`parked-flush.md`) still do `git mv … _RESOLVED*` inline rather than calling `--neutralize-sentinel`; rewiring those is Phase-6 contradiction-sweep scope (they are shared components, out of WU-6's two-batch-skill file scope).
 
 ---
 
