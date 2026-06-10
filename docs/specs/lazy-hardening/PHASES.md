@@ -395,7 +395,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 
 **Deliverables:**
 - [x] `--verify-ledger <spec_path>` (replaces 5 prose blocks)
-- [ ] `--apply-pseudo <name> <spec_path>` for all deterministic sentinel/receipt writes; receipt-write ownership contradiction resolved (script is single author)
+- [x] `--apply-pseudo <name> <spec_path>` for all deterministic sentinel/receipt writes; receipt-write ownership contradiction resolved (script is single author)
 - [ ] `--neutralize-sentinel <path>` with collision handling
 - [ ] Persisted probe signature → `repeat_count` in output
 - [ ] Probe payload includes git-guard results + pre-formatted cycle header
@@ -421,6 +421,26 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Ground-truth verification:** impl-agent GROUND-TRUTH block re-run independently by orchestrator — `git status --short` (4 files M), `wc -l` (lazy_core 1150 / lazy-state 4710 / bug-state 2892), `grep` line numbers, full suite 110/110, both `--test` gates exit 0 — all matched exactly. No falsified claims; no "already complete" claims.
 **Integration notes:** `verify_ledger` is a NEW function (no imports added to mocked modules → no propagation risk); CLI wiring is additive and gated behind `is not None` (default `compute_state` path byte-unchanged). WU-6 (separate commit) will delete the 5 prose blocks this subcommand replaces and route the skills to call it.
 **Files modified:** `user/scripts/lazy_core.py` (+`verify_ledger`, +`import subprocess`), `user/scripts/lazy-state.py` (CLI handler), `user/scripts/bug-state.py` (CLI handler), `user/scripts/test_lazy_core.py` (6 tests + 2 helpers + registry).
+
+#### Implementation Notes (Phase 5 — Batch 2: WU-2 `--apply-pseudo` + receipt-ownership resolution)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fixes applied → PASS (dedicated Opus reviewer; orchestrator independently re-ran impl GROUND-TRUTH block + diffed — wc/grep/status/test-counts matched, HEAD unchanged a5f3d9e so no rogue commits; ground-truth verified: yes. Reviewer caught a Medium plan-flip regex defect + 2 Low items, all fixed by a Sonnet fix-agent and re-verified.)
+**Work completed:**
+- **WU-2** (TDD): new shared `lazy_core.apply_pseudo(repo_root, name, spec_path, *, plan_path, date, feature_id, reason, deferred_step) -> dict` (~line 1158) is now the SINGLE deterministic author of the lazy pseudo-skills' sentinel/receipt writes. Returns `{name, ok, refused:str|None, wrote:[], deleted:[], noop}`. Dispatches on `name`:
+  - `__write_validated_from_skip__` — gate `SKIP_MCP_TEST.md` present (absent→refused); writes `VALIDATED.md` (kind validated, mcp_scenarios:[], result:all-passing); idempotent (existing kind=validated → noop, no overwrite).
+  - `__write_validated_from_results__` — gate `MCP_TEST_RESULTS.md` w/ `scenarios` list (absent→refused); copies scenarios → `VALIDATED.md mcp_scenarios` via `yaml.safe_dump(default_flow_style=True)` (YAML-safe — round-trips colons/commas); idempotent.
+  - `__write_deferred_non_cloud__` — writes `DEFERRED_NON_CLOUD.md` (kind deferred-non-cloud, deferred_step default 8); idempotent; no gate.
+  - `__flip_plan_complete_cloud_saturated__` — flips a plan's frontmatter `status:` In-progress→Complete IN PLACE, **scoped to the `---`…`---` frontmatter fence span** (a body line starting `status:` is never touched); target = `plan_path` or the single non-Complete plan via `find_implementation_plans` (zero/>1/no-frontmatter-status → refused); already-Complete → noop.
+  - `__mark_complete__` — gate = `VALIDATED.md` OR `SKIP_MCP_TEST.md` present (else refused, writes nothing); if `COMPLETED.md` exists → noop (no re-flip/re-delete); else writes `COMPLETED.md` (provenance: gated, folds validated_via + mcp_pass/total from MCP_TEST_RESULTS.md, via reused `write_completed_receipt`), flips SPEC.md + PHASES.md first `**Status:**` line → Complete, deletes VALIDATED.md/RETRO_DONE.md/DEFERRED_NON_CLOUD.md (keeps SKIP/RESULTS/receipt). **ROADMAP strikethrough is NOT scripted — stays orchestrator prose** (fuzzy multi-line edit).
+  - `__mark_fixed__` — bug analog: `FIXED.md` (kind fixed) + SPEC Status→Fixed + same gate/deletes; `git mv` archive NOT scripted.
+  - unknown name → refused (no crash).
+- **CLI**: `--apply-pseudo NAME SPEC_PATH` (nargs=2) + `--plan/--apply-date/--reason/--deferred-step` added to BOTH `lazy-state.py` (~4654/4666) and `bug-state.py` (~2851/2872), among early-return handlers BEFORE `compute_state`; prints JSON, exits 0 iff `ok` else 1. No argparse dest collisions.
+- **Receipt-ownership resolution** (`completion-integrity-gate.md`): the contradiction (gate-says-it-writes-the-receipt vs consumers-say-they-do) is resolved — the gate now VERIFIES preconditions then DELEGATES the receipt write + SPEC/PHASES flip + sentinel cleanup to `--apply-pseudo __mark_complete__` (the single author); the ROADMAP strikethrough is the consumer's only remaining flip step. Stale "gate writes the receipt" sentences (preamble + return-status bullet) reworded for internal consistency. Consumer SKILL.md files deliberately untouched — that is WU-6 (separate commit).
+- **Tests**: 16 RED→GREEN `test_apply_pseudo_*` (14 original + 2 fix-driven: no-frontmatter-status plan refusal proves body byte-unchanged; special-char scenarios prove YAML round-trip). Idempotency tests are non-tautological (assert byte-stable content + that leftover sentinels are NOT deleted on a no-op re-run); refusal test proves no receipt written.
+**Ground-truth verification:** impl + fix GROUND-TRUTH blocks re-run independently — `git status --short` (5 files M), `wc -l` (lazy_core 1594 / test 3110 / gate-doc 131), grep line anchors, full suite 126/126, both `--test` gates exit 0 — all matched. No falsified claims.
+**Review fixes applied (Sonnet fix-agent, re-verified PASS):** (1) plan-flip `status:` rewrite re-scoped from a whole-file `re.MULTILINE` match to the frontmatter fence span (was a latent body-corruption defect on a malformed plan; dead `if m is None: pass` branch removed); (2) `mcp_scenarios` emitted via `yaml.safe_dump` (was hand-rolled `[a, b]`, broke on colon/comma); (3) two stale doc sentences reconciled.
+**Integration notes:** `apply_pseudo` adds only `import datetime` (stdlib, no mock consumers → no propagation risk); CLI additive + gated behind `is not None` (default `compute_state` byte-unchanged). WU-6 (separate commit) routes the SKILL `__mark_complete__`/`__mark_fixed__`/`__write_*__` handler prose to call these subcommands and deletes the now-superseded inline mechanics.
+**Files modified:** `user/scripts/lazy_core.py` (+`apply_pseudo`, +`import datetime`), `user/scripts/lazy-state.py` (CLI), `user/scripts/bug-state.py` (CLI), `user/skills/_components/completion-integrity-gate.md` (ownership resolution), `user/scripts/test_lazy_core.py` (16 tests + helpers + registry).
 
 ---
 

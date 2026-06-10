@@ -44,6 +44,7 @@ Public API (stable for Phase 2 reuse):
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -1148,3 +1149,446 @@ def verify_ledger(repo_root: Path, spec_path: Path) -> dict:
         "failing_check": failing_check,
         "checks": checks,
     }
+
+
+# ---------------------------------------------------------------------------
+# Pseudo-skill dispatcher — deterministic sentinel / receipt writes
+# ---------------------------------------------------------------------------
+
+def apply_pseudo(
+    repo_root: Path,
+    name: str,
+    spec_path: Path,
+    *,
+    plan_path: Path | None = None,
+    date: str | None = None,
+    feature_id: str | None = None,
+    reason: str | None = None,
+    deferred_step: int | None = None,
+) -> dict:
+    """Single-author the deterministic sentinel/receipt write for a lazy pseudo-skill.
+
+    This function is the SOLE AUTHOR of every scripted file write that lazy
+    pseudo-skills previously requested via prose instructions.  Moving authorship
+    here gives us:
+      (1) A machine-verifiable idempotency contract for every named write.
+      (2) A single grep-able call-site instead of duplicated skill prose.
+      (3) An easy way to dry-run or audit the writes before they happen.
+
+    Return shape (always present — callers may JSON-dump unconditionally):
+    ::
+
+        {
+            "name":    str,          # the pseudo-skill name
+            "ok":      bool,         # True iff the action succeeded (or was a noop)
+            "refused": str | None,   # non-None means a precondition was not met
+            "wrote":   [str, ...],   # relative paths written (empty on noop/refused)
+            "deleted": [str, ...],   # relative paths deleted (empty on noop/refused)
+            "noop":    bool,         # True iff the file(s) already existed exactly
+        }
+
+    Parameters
+    ----------
+    repo_root:
+        Root of the repository.  Used only by ``__flip_plan_complete_*`` when
+        building the relative path returned in ``wrote``.
+    name:
+        The pseudo-skill identifier dispatched by the orchestrator.  Recognised
+        values are listed below; anything else returns ``refused``.
+    spec_path:
+        Absolute path to the feature / bug spec directory (contains SPEC.md,
+        PHASES.md, plans/, etc.).
+    plan_path:
+        Override for ``__flip_plan_complete_cloud_saturated__``.  When given, this
+        exact file is flipped rather than auto-discovering via
+        ``find_implementation_plans``.
+    date:
+        ISO-8601 date string (``YYYY-MM-DD``) stamped into every receipt.
+        Defaults to ``datetime.date.today().isoformat()`` when ``None``.
+    feature_id:
+        Frontmatter ``feature_id:`` value.  Defaults to ``spec_path.name``.
+    reason:
+        Human-readable reason for ``__write_deferred_non_cloud__``; defaults to
+        ``"deferred to workstation (no Tauri/MCP in cloud)"``.
+    deferred_step:
+        The step index being deferred; used only by
+        ``__write_deferred_non_cloud__``.  Defaults to ``8``.
+
+    Dispatched pseudo-skills
+    ------------------------
+    ``__write_validated_from_skip__``
+        Gate: ``spec_path/SKIP_MCP_TEST.md`` must exist and parse to a non-None
+        dict.  Writes ``spec_path/VALIDATED.md`` (kind: validated).  Idempotent:
+        if VALIDATED.md already exists and parses kind=="validated" → noop.
+
+    ``__write_validated_from_results__``
+        Gate: ``spec_path/MCP_TEST_RESULTS.md`` must exist and parse a
+        ``scenarios`` list.  Writes VALIDATED.md copying ``mcp_scenarios`` from
+        the results file.  Idempotent on existing VALIDATED.md with
+        kind=="validated".
+
+    ``__write_deferred_non_cloud__``
+        No gate input.  Writes ``spec_path/DEFERRED_NON_CLOUD.md`` (kind:
+        deferred-non-cloud).  Idempotent: file already exists → noop.
+
+    ``__flip_plan_complete_cloud_saturated__``
+        Target plan: ``plan_path`` if given, else the single non-Complete plan
+        returned by ``find_implementation_plans(spec_path)``.  Regex-replaces
+        the first ``status:`` frontmatter line with ``status: Complete``,
+        leaving every other byte intact.  Idempotent on already-Complete plan.
+
+    ``__mark_complete__``
+        Gate: ``spec_path/VALIDATED.md`` OR ``spec_path/SKIP_MCP_TEST.md``
+        must be present.  Writes COMPLETED.md (kind: completed, provenance:
+        gated), flips SPEC.md/PHASES.md ``**Status:**``, deletes VALIDATED.md /
+        RETRO_DONE.md / DEFERRED_NON_CLOUD.md.  Idempotent on existing
+        COMPLETED.md.
+
+    ``__mark_fixed__``
+        Same as ``__mark_complete__`` but receipt file is FIXED.md (kind: fixed)
+        and SPEC.md status is flipped to ``Fixed``.  Idempotent on existing
+        FIXED.md with kind=="fixed".
+    """
+    # Resolve defaults for optional keyword arguments.
+    if date is None:
+        date = datetime.date.today().isoformat()
+    if feature_id is None:
+        feature_id = spec_path.name
+
+    # Helper: build a minimal refused result without writing anything.
+    def _refused(msg: str) -> dict:
+        return {
+            "name": name,
+            "ok": False,
+            "refused": msg,
+            "wrote": [],
+            "deleted": [],
+            "noop": False,
+        }
+
+    # Helper: build a noop result.
+    def _noop() -> dict:
+        return {
+            "name": name,
+            "ok": True,
+            "refused": None,
+            "wrote": [],
+            "deleted": [],
+            "noop": True,
+        }
+
+    # Helper: build an ok result with specific wrote/deleted lists.
+    def _ok(wrote: list[str], deleted: list[str] | None = None) -> dict:
+        return {
+            "name": name,
+            "ok": True,
+            "refused": None,
+            "wrote": wrote,
+            "deleted": deleted or [],
+            "noop": False,
+        }
+
+    # ---------------------------------------------------------------------------
+    # Dispatch
+    # ---------------------------------------------------------------------------
+
+    if name == "__write_validated_from_skip__":
+        # Gate: SKIP_MCP_TEST.md must be present and parseable.
+        skip_path = spec_path / "SKIP_MCP_TEST.md"
+        if not skip_path.exists() or parse_sentinel(skip_path) is None:
+            return _refused("SKIP_MCP_TEST.md absent")
+        # Idempotency: if VALIDATED.md already exists as kind=validated → noop.
+        validated_path = spec_path / "VALIDATED.md"
+        existing = parse_sentinel(validated_path)
+        if existing is not None and existing.get("kind") == "validated":
+            return _noop()
+        # Write VALIDATED.md per sentinel-frontmatter.md schema.
+        content = (
+            "---\n"
+            "kind: validated\n"
+            f"feature_id: {feature_id}\n"
+            f"date: {date}\n"
+            "mcp_scenarios: []\n"
+            "result: all-passing\n"
+            "---\n"
+            "\n"
+            "# Validated\n"
+            "\n"
+            "Validated from SKIP_MCP_TEST.md — MCP test was explicitly skipped "
+            "per the skip sentinel; validation recorded by apply_pseudo.\n"
+        )
+        _atomic_write(validated_path, content)
+        return _ok(["VALIDATED.md"])
+
+    elif name == "__write_validated_from_results__":
+        # Gate: MCP_TEST_RESULTS.md must exist and parse a scenarios list.
+        results_path = spec_path / "MCP_TEST_RESULTS.md"
+        results_meta = parse_sentinel(results_path)
+        if results_meta is None or not isinstance(results_meta.get("scenarios"), list):
+            return _refused("MCP_TEST_RESULTS.md absent or missing scenarios list")
+        scenarios = results_meta["scenarios"]
+        # Idempotency: if VALIDATED.md already exists as kind=validated → noop.
+        validated_path = spec_path / "VALIDATED.md"
+        existing = parse_sentinel(validated_path)
+        if existing is not None and existing.get("kind") == "validated":
+            return _noop()
+        # Emit mcp_scenarios with yaml.safe_dump so that scenario strings
+        # containing ":", ",", or "]" are properly quoted and round-trip
+        # through parse_sentinel back to the original Python list unchanged.
+        # yaml.safe_dump with default_flow_style=True produces a compact
+        # flow-sequence like ['audio: no dropout', 'load, stress'].
+        # .strip() removes the trailing newline that safe_dump appends.
+        scenarios_inline = yaml.safe_dump(scenarios, default_flow_style=True).strip()
+        content = (
+            "---\n"
+            "kind: validated\n"
+            f"feature_id: {feature_id}\n"
+            f"date: {date}\n"
+            f"mcp_scenarios: {scenarios_inline}\n"
+            "result: all-passing\n"
+            "---\n"
+            "\n"
+            "# Validated\n"
+            "\n"
+            "Validated from MCP_TEST_RESULTS.md — scenarios copied from results file "
+            "by apply_pseudo.\n"
+        )
+        _atomic_write(validated_path, content)
+        return _ok(["VALIDATED.md"])
+
+    elif name == "__write_deferred_non_cloud__":
+        # No gate input — this write is always permitted.
+        deferred_path = spec_path / "DEFERRED_NON_CLOUD.md"
+        # Idempotency: file already exists → noop.
+        if deferred_path.exists():
+            return _noop()
+        step = deferred_step if deferred_step is not None else 8
+        resolved_reason = reason if reason is not None else "deferred to workstation (no Tauri/MCP in cloud)"
+        content = (
+            "---\n"
+            "kind: deferred-non-cloud\n"
+            f"feature_id: {feature_id}\n"
+            f"deferred_step: {step}\n"
+            f"reason: {resolved_reason}\n"
+            "deferred_by: lazy-cloud\n"
+            f"date: {date}\n"
+            "---\n"
+            "\n"
+            "# Deferred Non-Cloud\n"
+            "\n"
+            "This feature step requires a local Tauri/MCP environment and has been "
+            "deferred to the workstation for completion.\n"
+        )
+        _atomic_write(deferred_path, content)
+        return _ok(["DEFERRED_NON_CLOUD.md"])
+
+    elif name == "__flip_plan_complete_cloud_saturated__":
+        # Resolve the target plan file.
+        if plan_path is not None:
+            target_plan = plan_path
+        else:
+            # find_implementation_plans returns only non-Complete plans.
+            # We need exactly one; zero or multiple → refused.
+            plans_dir = spec_path / "plans"
+            if not plans_dir.exists():
+                return _refused(
+                    "no plan_path given and plans/ directory not found under spec_path"
+                )
+            non_complete = find_implementation_plans(spec_path)
+            if len(non_complete) == 0:
+                return _refused(
+                    "no plan_path given and no non-Complete implementation plans found"
+                )
+            if len(non_complete) > 1:
+                return _refused(
+                    f"no plan_path given and {len(non_complete)} non-Complete plans found "
+                    f"— provide --plan to disambiguate"
+                )
+            target_plan = non_complete[0]
+        # Use _parse_plan_frontmatter to inspect the status without touching the
+        # body — this lets us decide noop/refuse before doing any textual rewrite.
+        fm = _parse_plan_frontmatter(target_plan)
+        if fm is None:
+            # File could not be read at all.
+            return _refused("plan file could not be read")
+
+        # Locate the YAML frontmatter fence span in the raw text so the textual
+        # rewrite is scoped to the frontmatter block only.  A body line that
+        # happens to start with "status: ..." must not be altered.
+        raw = target_plan.read_text(encoding="utf-8")
+        lines = raw.splitlines(keepends=True)
+
+        # Locate the opening "---" fence (first non-blank line).
+        fence_open: int | None = None
+        for idx, line in enumerate(lines):
+            if line.strip():
+                if line.strip() == "---":
+                    fence_open = idx
+                break
+        if fence_open is None:
+            # File has no valid frontmatter block — refuse; do not touch the body.
+            return _refused("plan file has no valid YAML frontmatter block (no opening ---)")
+
+        # Locate the closing "---" fence.
+        fence_close: int | None = None
+        for idx in range(fence_open + 1, len(lines)):
+            if lines[idx].strip() == "---":
+                fence_close = idx
+                break
+        if fence_close is None:
+            return _refused("plan file has no valid YAML frontmatter block (missing closing ---)")
+
+        # Check for a ``status:`` key inside the frontmatter span.
+        # fm is {} when there is no frontmatter; a dict when frontmatter parsed OK.
+        # _parse_plan_frontmatter returns {} for a no-frontmatter file, but we
+        # already ruled that out above.  If the parsed dict has no "status" key
+        # the plan is malformed — refuse rather than silently inserting one.
+        if "status" not in (fm or {}):
+            return _refused("plan frontmatter has no status: field")
+
+        current_status = (fm or {}).get("status", "")
+        if str(current_status).strip() == "Complete":
+            # Already Complete → noop (idempotent).
+            return _noop()
+
+        # Find the FIRST ``status:`` line within the frontmatter span and rewrite
+        # only that line.  Every other byte — both frontmatter and body — is
+        # left unchanged.
+        status_re = re.compile(r"^(status:\s*\S.*)$")
+        new_lines = list(lines)
+        replaced = False
+        for idx in range(fence_open + 1, fence_close):
+            if status_re.match(lines[idx]):
+                # Preserve the original line ending (splitlines(keepends=True)).
+                original_ending = ""
+                if lines[idx].endswith("\r\n"):
+                    original_ending = "\r\n"
+                elif lines[idx].endswith("\n"):
+                    original_ending = "\n"
+                elif lines[idx].endswith("\r"):
+                    original_ending = "\r"
+                new_lines[idx] = "status: Complete" + original_ending
+                replaced = True
+                break  # only the first occurrence
+
+        if not replaced:
+            # status key was in parsed YAML but no matching line found in the
+            # fence span — this is a parse/text inconsistency; refuse safely.
+            return _refused(
+                "plan frontmatter parsed a status: value but no status: line found "
+                "in the frontmatter text span — refusing to rewrite"
+            )
+
+        new_raw = "".join(new_lines)
+        _atomic_write(target_plan, new_raw)
+        # Report the plan path relative to repo_root when possible, else just name.
+        try:
+            rel = str(target_plan.relative_to(repo_root))
+        except ValueError:
+            rel = target_plan.name
+        return _ok([rel])
+
+    elif name in ("__mark_complete__", "__mark_fixed__"):
+        # Determine whether this is a complete or fixed operation.
+        is_fixed = name == "__mark_fixed__"
+        receipt_filename = "FIXED.md" if is_fixed else "COMPLETED.md"
+        receipt_kind = "fixed" if is_fixed else "completed"
+        status_value = "Fixed" if is_fixed else "Complete"
+
+        # Gate: validation evidence must be present.
+        validated_path = spec_path / "VALIDATED.md"
+        skip_path = spec_path / "SKIP_MCP_TEST.md"
+        has_validated = (
+            validated_path.exists()
+            and parse_sentinel(validated_path) is not None
+        )
+        has_skip = (
+            skip_path.exists()
+            and parse_sentinel(skip_path) is not None
+        )
+        if not has_validated and not has_skip:
+            return _refused(
+                "no validation evidence (VALIDATED.md/SKIP_MCP_TEST.md) present "
+                "to fold into receipt"
+            )
+
+        # Idempotency: if the receipt already exists and parses correct kind → noop.
+        receipt_path = spec_path / receipt_filename
+        existing_receipt = parse_sentinel(receipt_path)
+        if existing_receipt is not None and existing_receipt.get("kind") == receipt_kind:
+            return _noop()
+
+        # --- (a) Fold evidence ---
+        validated_via = "mcp" if has_validated else "skip-mcp-test"
+
+        # Optionally copy pass_count / total_count from MCP_TEST_RESULTS.md.
+        mcp_pass_count: int | None = None
+        mcp_total_count: int | None = None
+        results_path = spec_path / "MCP_TEST_RESULTS.md"
+        results_meta = parse_sentinel(results_path)
+        if results_meta:
+            raw_pass = results_meta.get("pass_count")
+            raw_total = results_meta.get("total_count")
+            if isinstance(raw_pass, int):
+                mcp_pass_count = raw_pass
+            if isinstance(raw_total, int):
+                mcp_total_count = raw_total
+
+        body_note = (
+            f"Feature {feature_id} marked {status_value.lower()} via "
+            f"apply_pseudo on {date}. Validated via: {validated_via}."
+        )
+
+        # Write the receipt using the existing helper.
+        write_completed_receipt(
+            receipt_path,
+            feature_id,
+            date,
+            provenance="gated",
+            kind=receipt_kind,
+            validated_via=validated_via,
+            mcp_pass_count=mcp_pass_count,
+            mcp_total_count=mcp_total_count,
+            body_note=body_note,
+        )
+        wrote = [receipt_filename]
+
+        # --- (b) Flip status lines in SPEC.md and PHASES.md ---
+        status_line_re = re.compile(r"^\*\*Status:\*\*.*$", re.MULTILINE)
+
+        spec_md_path = spec_path / "SPEC.md"
+        if spec_md_path.exists():
+            spec_text = spec_md_path.read_text(encoding="utf-8")
+            # Replace the first **Status:** line only.
+            new_spec_text = status_line_re.sub(
+                f"**Status:** {status_value}", spec_text, count=1
+            )
+            if new_spec_text != spec_text:
+                _atomic_write(spec_md_path, new_spec_text)
+                wrote.append("SPEC.md")
+
+        phases_md_path = spec_path / "PHASES.md"
+        if phases_md_path.exists():
+            phases_text = phases_md_path.read_text(encoding="utf-8")
+            new_phases_text = status_line_re.sub(
+                f"**Status:** {status_value}", phases_text, count=1
+            )
+            if new_phases_text != phases_text:
+                _atomic_write(phases_md_path, new_phases_text)
+                wrote.append("PHASES.md")
+
+        # --- (c) Delete cleanup sentinels ---
+        # Delete VALIDATED.md, RETRO_DONE.md, DEFERRED_NON_CLOUD.md if present.
+        # KEEP: SKIP_MCP_TEST.md, MCP_TEST_RESULTS.md, the receipt file itself.
+        deleted: list[str] = []
+        for cleanup_name in ("VALIDATED.md", "RETRO_DONE.md", "DEFERRED_NON_CLOUD.md"):
+            cleanup_path = spec_path / cleanup_name
+            if cleanup_path.exists():
+                cleanup_path.unlink()
+                deleted.append(cleanup_name)
+
+        return _ok(wrote, deleted)
+
+    else:
+        # Unknown pseudo-skill name — never crash, always refuse gracefully.
+        return _refused(f"unknown pseudo-skill: {name}")

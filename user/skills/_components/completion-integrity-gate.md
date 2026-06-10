@@ -8,13 +8,14 @@ completion was trustworthy only by *convention*, not by *construction*:
 3. After a legitimate completion, `__mark_complete__` *deleted* `VALIDATED.md` / `RETRO_DONE.md`, so a real completion and an un-gated one became indistinguishable on disk.
 
 This gate is the structural fix. It runs INSIDE `__mark_complete__`, AFTER the
-`mcp-coverage-audit` returns `clean`, and BEFORE the ROADMAP/SPEC flip. It does
-two things: (a) **verifies** completion preconditions, refusing the flip if they
-don't hold; and (b) **writes a durable `COMPLETED.md` receipt** that folds in the
-validation evidence, so completion is provable forever after. `lazy-state.py`
-Step 2 keys on that receipt — a `Complete` claim without a receipt is a
-`completion-unverified` hard-halt, which is what makes failure (2) impossible to
-repeat.
+`mcp-coverage-audit` returns `clean`, and BEFORE the ROADMAP strikethrough. It
+does two things: (a) **verifies** completion preconditions, refusing the flip if
+they don't hold; and (b) on pass, **delegates the receipt write, SPEC/PHASES
+status flip, and sentinel cleanup** to the script (`--apply-pseudo __mark_complete__`),
+which is the sole author of those writes — so completion is provable forever after.
+`lazy-state.py` Step 2 keys on that receipt — a `Complete` claim without a receipt
+is a `completion-unverified` hard-halt, which is what makes failure (2) impossible
+to repeat.
 
 The gate is docs-only — it reads `SPEC.md`, `PHASES.md`, and the validation
 sentinels and runs no Tauri / no MCP server / no shell beyond `git`. It runs
@@ -65,26 +66,37 @@ identically in cloud and workstation.
    This is the gate-level enforcement of the same invariant `lazy-state.py`
    routes around (it re-opens rather than completing while the sentinel exists).
 
-3. **All preconditions pass → write the receipt, then flip.** Write
-   `{spec_path}/COMPLETED.md` (`kind: completed`, `provenance: gated`) per
-   `sentinel-frontmatter.md`, FOLDING the validation evidence into it BEFORE the
-   next step deletes those sentinels:
-   - `completed_commit:` — fill in after the flip commit (or omit; the commit
-     that writes the receipt is itself the record).
-   - `validated_via:` — `mcp` if `VALIDATED.md` present, `skip-mcp-test` if only
-     `SKIP_MCP_TEST.md`, `deferred-non-cloud` if cloud-deferred.
-   - `mcp_pass_count` / `mcp_total_count` — copy from `MCP_TEST_RESULTS.md` /
-     `VALIDATED.md` if present.
-   - Body — paste the one-paragraph validation summary from `VALIDATED.md` (or
-     the skip rationale, or the deferral note) so the evidence survives the
-     sentinel deletion in the flip steps.
+3. **All preconditions pass → delegate the receipt write + status flip + sentinel
+   cleanup to the script.** The gate's responsibility here is to VERIFY (steps 1–2a
+   above) and then, on pass, to call the script as the single author:
 
-   Then perform the flip the consumer already documents: ROADMAP
-   strikethrough+`COMPLETE`, set `SPEC.md **Status:** Complete` (and `PHASES.md`
-   to `Complete`), delete `VALIDATED.md` / `RETRO_DONE.md` /
-   `DEFERRED_NON_CLOUD.md` (their content now lives in the receipt), KEEP
-   `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` / `COMPLETED.md` / `plans/`,
-   commit per project policy.
+   ```
+   python3 ~/.claude/scripts/lazy-state.py \
+       --apply-pseudo __mark_complete__ {spec_path}
+   ```
+
+   (For bugs, use `bug-state.py --apply-pseudo __mark_fixed__ {spec_path}`.)
+
+   The script (`apply_pseudo` in `lazy_core.py`) is the **sole author** of the
+   following writes — the gate and the consumer skill prose must NOT duplicate them:
+
+   - **Writes** `{spec_path}/COMPLETED.md` (`kind: completed`, `provenance: gated`),
+     folding validation evidence in before the sentinel deletes:
+     - `validated_via:` — `mcp` if `VALIDATED.md` present, `skip-mcp-test` if only
+       `SKIP_MCP_TEST.md`.
+     - `mcp_pass_count` / `mcp_total_count` — copied from `MCP_TEST_RESULTS.md`
+       if present.
+   - **Flips** `SPEC.md **Status:** Complete` (first occurrence) and
+     `PHASES.md **Status:** Complete` (first occurrence) when those files exist.
+   - **Deletes** `VALIDATED.md`, `RETRO_DONE.md`, and `DEFERRED_NON_CLOUD.md`
+     (content now lives in the receipt). Keeps `SKIP_MCP_TEST.md`,
+     `MCP_TEST_RESULTS.md`, `COMPLETED.md`, and `plans/`.
+
+   The **ROADMAP strikethrough** (multi-line fuzzy edit) remains the orchestrator's
+   responsibility — it is not a deterministic scripted write and stays in skill
+   prose.
+
+   Commit the resulting file changes per project policy after the script exits 0.
 
 4. **Refuse path (any precondition in steps 1–2a fails).** Do NOT flip. Do NOT
    write `COMPLETED.md`. This means the state script emitted `__mark_complete__`
@@ -99,7 +111,11 @@ identically in cloud and workstation.
 
 ### Return status to the consumer
 
-- `gated` — receipt written, preconditions met; consumer proceeds with the flip.
+- `gated` — preconditions met; the script has written `COMPLETED.md`, flipped
+  `SPEC.md`/`PHASES.md` status to `Complete`, and deleted `VALIDATED.md` /
+  `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md`. The consumer's only remaining step
+  is the ROADMAP strikethrough (the single orchestrator-side write that the
+  script does not perform).
 - `refused:<reason>` — `NEEDS_INPUT.md` written; consumer MUST NOT flip this
   cycle. Print a one-line halt note (`🛑 completion-integrity gate: <reason> — NEEDS_INPUT.md written; mark-complete deferred.`) and return.
 

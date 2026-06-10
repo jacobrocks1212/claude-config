@@ -4651,7 +4651,28 @@ def main() -> int:
                             "(4) no real (non-verification) unchecked deliverables in SPEC_PATH/PHASES.md. "
                             "Emits a JSON verdict and exits 0 on pass, 1 on first failing check."
                         ))
+    parser.add_argument("--apply-pseudo", nargs=2, default=None, metavar=("NAME", "SPEC_PATH"),
+                        help="Single-author the deterministic sentinel/receipt write for a lazy pseudo-skill.")
+    parser.add_argument("--plan", default=None,
+                        help="Plan-file path for __flip_plan_complete_*__ pseudo-skills.")
+    parser.add_argument("--apply-date", default=None,
+                        help="Override date (YYYY-MM-DD) for --apply-pseudo writes.")
+    parser.add_argument("--reason", default=None,
+                        help="Reason string for __write_deferred_non_cloud__.")
+    parser.add_argument("--deferred-step", type=int, default=None,
+                        help="deferred_step for __write_deferred_non_cloud__.")
     args = parser.parse_args()
+
+    if args.apply_pseudo is not None:
+        name, spec = args.apply_pseudo
+        result = lazy_core.apply_pseudo(
+            Path(args.repo_root), name, Path(spec),
+            plan_path=Path(args.plan) if args.plan else None,
+            date=args.apply_date, reason=args.reason,
+            deferred_step=args.deferred_step,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
 
     if args.enqueue_adhoc:
         if not args.id or not args.name:

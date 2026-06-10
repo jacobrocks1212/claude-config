@@ -2230,6 +2230,691 @@ def test_verify_ledger_unchecked_verification_only_passes():
 
 
 # ---------------------------------------------------------------------------
+# Tests: apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
+# ---------------------------------------------------------------------------
+
+# ---- Helpers shared across apply_pseudo tests ----
+
+def _write_skip_mcp_test(spec_dir: Path) -> Path:
+    """Write a minimal valid SKIP_MCP_TEST.md (kind: skip-mcp-test) into spec_dir."""
+    p = spec_dir / "SKIP_MCP_TEST.md"
+    p.write_text(
+        "---\n"
+        "kind: skip-mcp-test\n"
+        "feature_id: test-feature\n"
+        "reason: no audio path to test\n"
+        "date: 2026-06-10\n"
+        "---\n\n"
+        "# Skip MCP Test\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def _write_mcp_test_results(spec_dir: Path, scenarios: list) -> Path:
+    """Write a minimal valid MCP_TEST_RESULTS.md (kind: mcp-test-results) with the
+    given scenarios list.  The YAML list is serialised inline for simplicity.
+    """
+    p = spec_dir / "MCP_TEST_RESULTS.md"
+    scenarios_yaml = "".join(f"  - {s}\n" for s in scenarios)
+    p.write_text(
+        "---\n"
+        "kind: mcp-test-results\n"
+        "feature_id: test-feature\n"
+        f"scenarios:\n{scenarios_yaml}"
+        "date: 2026-06-10\n"
+        "---\n\n"
+        "# MCP Test Results\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def _write_in_progress_plan(plans_dir: Path, filename: str = "plan-phase-1.md") -> Path:
+    """Write a minimal implementation plan with status: In-progress.
+
+    Intentionally includes an unrelated frontmatter field (``feature_id``) and a
+    body line so tests can prove the flip only changes the ``status:`` line and
+    leaves everything else byte-unchanged.
+    """
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    p = plans_dir / filename
+    p.write_text(
+        "---\n"
+        "kind: implementation-plan\n"
+        "status: In-progress\n"
+        "feature_id: test-feature\n"
+        "phases:\n"
+        "  - 1\n"
+        "---\n\n"
+        "# Implementation Plan\n\n"
+        "Body line that must survive the flip unchanged.\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def _write_validated_md(spec_dir: Path) -> Path:
+    """Write a minimal valid VALIDATED.md (kind: validated) into spec_dir."""
+    p = spec_dir / "VALIDATED.md"
+    p.write_text(
+        "---\n"
+        "kind: validated\n"
+        "feature_id: test-feature\n"
+        "date: 2026-06-10\n"
+        "mcp_scenarios: []\n"
+        "result: all-passing\n"
+        "---\n\n"
+        "# Validated\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def _write_spec_md(spec_dir: Path, status: str = "In-progress") -> Path:
+    """Write a minimal SPEC.md with the given **Status:** line."""
+    p = spec_dir / "SPEC.md"
+    p.write_text(
+        f"# Feature Spec\n\n"
+        f"**Status:** {status}\n\n"
+        "## Overview\n\n"
+        "Some content.\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+# ---- Test 1 ----
+
+def test_apply_pseudo_validated_from_skip_writes():
+    """SKIP_MCP_TEST.md present, no VALIDATED.md yet → VALIDATED.md written with
+    kind=validated, ok=True, noop=False; parse_sentinel returns kind=='validated'.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_skip_mcp_test(spec_dir)
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec_dir, date="2026-06-10"
+        )
+        validated_path = spec_dir / "VALIDATED.md"
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        assert validated_path.exists(), "VALIDATED.md was not created"
+        # The written file must be parseable and yield kind == "validated".
+        parsed = lazy_core.parse_sentinel(validated_path)
+        assert parsed is not None, "parse_sentinel returned None for the written VALIDATED.md"
+        assert parsed.get("kind") == "validated", (
+            f"expected kind='validated', got {parsed.get('kind')!r} in {parsed}"
+        )
+        # wrote should contain the VALIDATED.md filename or path
+        assert any("VALIDATED.md" in str(w) for w in result["wrote"]), (
+            f"'VALIDATED.md' not in wrote: {result['wrote']}"
+        )
+
+
+# ---- Test 2 ----
+
+def test_apply_pseudo_validated_from_skip_refuses_when_skip_absent():
+    """No SKIP_MCP_TEST.md present → ok=False, refused is a non-None string."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Deliberately do NOT write SKIP_MCP_TEST.md.
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec_dir, date="2026-06-10"
+        )
+    assert result["ok"] is False, f"expected ok=False when SKIP absent, got {result}"
+    assert result["refused"] is not None, (
+        f"expected non-None refused when SKIP absent, got {result!r}"
+    )
+    assert result["wrote"] == [], f"expected wrote=[], got {result['wrote']}"
+
+
+# ---- Test 3 ----
+
+def test_apply_pseudo_validated_from_skip_idempotent():
+    """Running apply_pseudo twice when VALIDATED.md already exists → second call
+    returns noop=True, ok=True, and only ONE VALIDATED.md exists with content
+    byte-identical to what the first call wrote (no overwrite/duplication).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_skip_mcp_test(spec_dir)
+        # First call — should write VALIDATED.md.
+        first = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec_dir, date="2026-06-10"
+        )
+        assert first["noop"] is False, f"first call must NOT be a noop; got {first}"
+        # Capture byte-content after the first call.
+        validated_path = spec_dir / "VALIDATED.md"
+        content_after_first = validated_path.read_text(encoding="utf-8")
+        # Second call — must be idempotent.
+        second = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec_dir, date="2026-06-10"
+        )
+        assert second["ok"] is True, f"expected ok=True on re-run, got {second}"
+        assert second["noop"] is True, f"expected noop=True on re-run, got {second}"
+        assert second["wrote"] == [], f"expected wrote=[] on noop re-run, got {second['wrote']}"
+        # Only one VALIDATED.md must exist (no duplicates).
+        md_files = list(spec_dir.glob("VALIDATED*.md"))
+        assert len(md_files) == 1, f"expected exactly 1 VALIDATED.md, found {md_files}"
+        # Content must be byte-stable (not overwritten).
+        content_after_second = validated_path.read_text(encoding="utf-8")
+        assert content_after_second == content_after_first, (
+            "VALIDATED.md content changed on noop re-run — the file was overwritten"
+        )
+
+
+# ---- Test 4 ----
+
+def test_apply_pseudo_validated_from_results_copies_scenarios():
+    """MCP_TEST_RESULTS.md with scenarios: [a, b] → VALIDATED.md written whose
+    mcp_scenarios equals [a, b] (copied from the results file).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(spec_dir, ["scenario-a", "scenario-b"])
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+        validated_path = spec_dir / "VALIDATED.md"
+        assert validated_path.exists(), "VALIDATED.md was not created"
+        parsed = lazy_core.parse_sentinel(validated_path)
+        assert parsed is not None, "parse_sentinel returned None for VALIDATED.md"
+        assert parsed.get("kind") == "validated", (
+            f"expected kind='validated', got {parsed.get('kind')!r}"
+        )
+        # The critical assertion: mcp_scenarios must equal the scenarios from the results file.
+        mcp_scenarios = parsed.get("mcp_scenarios")
+        assert mcp_scenarios == ["scenario-a", "scenario-b"], (
+            f"mcp_scenarios not copied from MCP_TEST_RESULTS.md; got {mcp_scenarios!r}"
+        )
+
+
+# ---- Test 5 ----
+
+def test_apply_pseudo_validated_from_results_refuses_when_results_absent():
+    """No MCP_TEST_RESULTS.md → ok=False, refused is non-None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Deliberately do NOT write MCP_TEST_RESULTS.md.
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+    assert result["ok"] is False, (
+        f"expected ok=False when MCP_TEST_RESULTS.md absent, got {result}"
+    )
+    assert result["refused"] is not None, (
+        f"expected non-None refused when results absent, got {result!r}"
+    )
+
+
+# ---- Test 6 ----
+
+def test_apply_pseudo_deferred_non_cloud_writes_and_idempotent():
+    """__write_deferred_non_cloud__ writes DEFERRED_NON_CLOUD.md with
+    kind=deferred-non-cloud; re-run returns noop=True.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # First call — should write DEFERRED_NON_CLOUD.md (no gate input required).
+        first = lazy_core.apply_pseudo(
+            Path(td), "__write_deferred_non_cloud__", spec_dir,
+            date="2026-06-10",
+            reason="cloud not available",
+            deferred_step=8,
+        )
+        assert first["ok"] is True, f"expected ok=True, got {first}"
+        assert first["noop"] is False, f"expected noop=False on first call, got {first}"
+        deferred_path = spec_dir / "DEFERRED_NON_CLOUD.md"
+        assert deferred_path.exists(), "DEFERRED_NON_CLOUD.md was not created"
+        # Parse to verify kind.
+        parsed = lazy_core.parse_sentinel(deferred_path)
+        assert parsed is not None, "parse_sentinel returned None for DEFERRED_NON_CLOUD.md"
+        assert parsed.get("kind") == "deferred-non-cloud", (
+            f"expected kind='deferred-non-cloud', got {parsed.get('kind')!r}"
+        )
+        # Second call — must be idempotent.
+        second = lazy_core.apply_pseudo(
+            Path(td), "__write_deferred_non_cloud__", spec_dir,
+            date="2026-06-10",
+            reason="cloud not available",
+            deferred_step=8,
+        )
+        assert second["ok"] is True, f"expected ok=True on re-run, got {second}"
+        assert second["noop"] is True, f"expected noop=True on re-run, got {second}"
+
+
+# ---- Test 7 ----
+
+def test_apply_pseudo_flip_cloud_saturated_flips_in_progress():
+    """plan with status: In-progress passed via plan_path → file becomes
+    status: Complete; an unrelated frontmatter field (feature_id) and a body
+    line are byte-unchanged; ok=True, noop=False.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        plan_path = _write_in_progress_plan(spec_dir / "plans")
+        original_content = plan_path.read_text(encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            Path(td), "__flip_plan_complete_cloud_saturated__", spec_dir,
+            plan_path=plan_path,
+            date="2026-06-10",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        # The plan file must now contain status: Complete.
+        flipped_content = plan_path.read_text(encoding="utf-8")
+        assert "status: Complete" in flipped_content, (
+            f"expected 'status: Complete' in flipped plan, got:\n{flipped_content}"
+        )
+        # The original In-progress line must be gone.
+        assert "status: In-progress" not in flipped_content, (
+            "status: In-progress should have been replaced, but it is still present"
+        )
+        # An unrelated frontmatter field (feature_id) must be byte-unchanged.
+        assert "feature_id: test-feature" in flipped_content, (
+            "unrelated frontmatter field 'feature_id' was altered by the flip"
+        )
+        # A body line must also survive unchanged.
+        assert "Body line that must survive the flip unchanged." in flipped_content, (
+            "body line was altered by the flip"
+        )
+        # wrote should reference the plan path.
+        assert any(str(plan_path.name) in str(w) for w in result["wrote"]), (
+            f"plan filename not in wrote: {result['wrote']}"
+        )
+
+
+# ---- Test 8 ----
+
+def test_apply_pseudo_flip_cloud_saturated_idempotent_on_complete():
+    """plan already has status: Complete (passed via plan_path) → noop=True, ok=True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Write a plan that is already Complete.
+        plans_dir = spec_dir / "plans"
+        plans_dir.mkdir(parents=True)
+        already_complete = plans_dir / "plan-phase-1.md"
+        already_complete.write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "status: Complete\n"
+            "feature_id: test-feature\n"
+            "phases:\n"
+            "  - 1\n"
+            "---\n\n"
+            "# Implementation Plan\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__flip_plan_complete_cloud_saturated__", spec_dir,
+            plan_path=already_complete,
+            date="2026-06-10",
+        )
+    assert result["ok"] is True, f"expected ok=True for already-complete plan, got {result}"
+    assert result["noop"] is True, (
+        f"expected noop=True for already-complete plan, got {result}"
+    )
+
+
+# ---- Test 9 ----
+
+def test_apply_pseudo_flip_cloud_saturated_refuses_no_plan():
+    """No plan_path given and no plans/ directory → ok=False, refused is non-None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # No plans/ dir, no plan_path — nothing to flip.
+        result = lazy_core.apply_pseudo(
+            Path(td), "__flip_plan_complete_cloud_saturated__", spec_dir,
+            date="2026-06-10",
+        )
+    assert result["ok"] is False, (
+        f"expected ok=False when no plan is resolvable, got {result}"
+    )
+    assert result["refused"] is not None, (
+        f"expected non-None refused when no plan present, got {result!r}"
+    )
+
+
+# ---- Test 10 ----
+
+def test_apply_pseudo_mark_complete_writes_receipt_flips_and_cleans():
+    """VALIDATED.md + RETRO_DONE.md + SPEC.md(In-progress) present, no COMPLETED.md →
+    COMPLETED.md written (kind=completed, provenance=gated), SPEC.md Status flipped
+    to Complete, VALIDATED.md + RETRO_DONE.md deleted; ok=True, noop=False.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Set up the fixture.
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Write RETRO_DONE.md (sentinel to be cleaned up).
+        retro_path = spec_dir / "RETRO_DONE.md"
+        retro_path.write_text(
+            "---\nkind: retro-done\nfeature_id: test-feature\ndate: 2026-06-10\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        # COMPLETED.md must exist and parse correctly.
+        completed_path = spec_dir / "COMPLETED.md"
+        assert completed_path.exists(), "COMPLETED.md was not written"
+        parsed = lazy_core.parse_sentinel(completed_path)
+        assert parsed is not None, "parse_sentinel returned None for COMPLETED.md"
+        assert parsed.get("kind") == "completed", (
+            f"expected kind='completed', got {parsed.get('kind')!r}"
+        )
+        assert parsed.get("provenance") == "gated", (
+            f"expected provenance='gated', got {parsed.get('provenance')!r}"
+        )
+        # SPEC.md Status must now be Complete.
+        spec_text = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Status:** Complete" in spec_text, (
+            f"expected SPEC.md Status to be flipped to Complete:\n{spec_text}"
+        )
+        # VALIDATED.md must be deleted.
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was NOT deleted during __mark_complete__"
+        )
+        # RETRO_DONE.md must be deleted.
+        assert not retro_path.exists(), (
+            "RETRO_DONE.md was NOT deleted during __mark_complete__"
+        )
+        # wrote must include COMPLETED.md.
+        assert any("COMPLETED.md" in str(w) for w in result["wrote"]), (
+            f"'COMPLETED.md' not in wrote: {result['wrote']}"
+        )
+
+
+# ---- Test 11 ----
+
+def test_apply_pseudo_mark_complete_refuses_without_validation_evidence():
+    """Neither VALIDATED.md nor SKIP_MCP_TEST.md present →
+    ok=False, refused is non-None; no COMPLETED.md written.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # No VALIDATED.md and no SKIP_MCP_TEST.md.
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+    assert result["ok"] is False, (
+        f"expected ok=False without validation evidence, got {result}"
+    )
+    assert result["refused"] is not None, (
+        f"expected non-None refused without validation evidence, got {result!r}"
+    )
+    # Must NOT have written COMPLETED.md.
+    assert not (spec_dir / "COMPLETED.md").exists(), (
+        "COMPLETED.md was written despite no validation evidence — unsafe!"
+    )
+
+
+# ---- Test 12 ----
+
+def test_apply_pseudo_mark_complete_idempotent():
+    """COMPLETED.md already present → noop=True, ok=True; a still-present
+    VALIDATED.md is NOT deleted on the no-op re-run.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Write a valid COMPLETED.md directly (simulates prior completion).
+        lazy_core.write_completed_receipt(
+            spec_dir / "COMPLETED.md",
+            feature_id="test-feature",
+            date="2026-06-10",
+            provenance="gated",
+        )
+        # Also leave VALIDATED.md present — must NOT be deleted by the noop re-run.
+        _write_validated_md(spec_dir)
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True on noop re-run, got {result}"
+        assert result["noop"] is True, f"expected noop=True when COMPLETED.md exists, got {result}"
+        # The leftover VALIDATED.md must NOT have been deleted.
+        assert (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was deleted on a noop re-run — must NOT be deleted"
+        )
+
+
+# ---- Test 13 ----
+
+def test_apply_pseudo_mark_fixed_writes_fixed_receipt():
+    """VALIDATED.md present, no FIXED.md → FIXED.md written (kind=fixed),
+    SPEC.md **Status:** flipped to Fixed, ok=True.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_fixed__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        # FIXED.md must exist and parse with kind=fixed.
+        fixed_path = spec_dir / "FIXED.md"
+        assert fixed_path.exists(), "FIXED.md was not written"
+        parsed = lazy_core.parse_sentinel(fixed_path)
+        assert parsed is not None, "parse_sentinel returned None for FIXED.md"
+        assert parsed.get("kind") == "fixed", (
+            f"expected kind='fixed', got {parsed.get('kind')!r}"
+        )
+        # SPEC.md Status must now read Fixed.
+        spec_text = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Status:** Fixed" in spec_text, (
+            f"expected SPEC.md Status to be 'Fixed':\n{spec_text}"
+        )
+        # wrote must include FIXED.md.
+        assert any("FIXED.md" in str(w) for w in result["wrote"]), (
+            f"'FIXED.md' not in wrote: {result['wrote']}"
+        )
+
+
+# ---- Test 14 ----
+
+def test_apply_pseudo_unknown_name_refuses():
+    """name='__bogus__' → ok=False, refused is non-None; must not raise an
+    uncaught exception (i.e. AttributeError / KeyError must be caught internally).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        result = lazy_core.apply_pseudo(
+            Path(td), "__bogus__", spec_dir, date="2026-06-10"
+        )
+    assert result["ok"] is False, (
+        f"expected ok=False for unknown pseudo-skill name, got {result}"
+    )
+    assert result["refused"] is not None, (
+        f"expected non-None refused for unknown name, got {result!r}"
+    )
+
+
+# ---- Test 15 ----
+
+def test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status():
+    """A plan whose frontmatter has NO ``status:`` key but whose body contains
+    a line ``status: deployed and running`` must be refused — the body line
+    must remain byte-unchanged and ``status: Complete`` must NOT appear anywhere
+    in the file.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        plans_dir = spec_dir / "plans"
+        plans_dir.mkdir(parents=True)
+        plan_path = plans_dir / "plan-phase-1.md"
+        # Frontmatter has NO ``status:`` key; body contains a line starting
+        # ``status:`` which must NOT be mistaken for a frontmatter status.
+        plan_path.write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "feature_id: test-feature\n"
+            "phases:\n"
+            "  - 1\n"
+            "---\n"
+            "\n"
+            "# Implementation Plan\n"
+            "\n"
+            "status: deployed and running\n",
+            encoding="utf-8",
+        )
+        original_content = plan_path.read_text(encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__flip_plan_complete_cloud_saturated__", spec_dir,
+            plan_path=plan_path,
+            date="2026-06-10",
+        )
+
+        # Must be refused — no status: field in frontmatter.
+        assert result["ok"] is False, (
+            f"expected ok=False (refused) when frontmatter has no status: key, got {result}"
+        )
+        assert result["refused"] is not None, (
+            f"expected non-None refused, got {result!r}"
+        )
+
+        # The file must be byte-unchanged — the body line must not have been altered.
+        current_content = plan_path.read_text(encoding="utf-8")
+        assert current_content == original_content, (
+            "plan file was modified even though the pseudo-skill should have refused:\n"
+            f"original:\n{original_content}\ncurrent:\n{current_content}"
+        )
+        # Specifically: the body line must still be present.
+        assert "status: deployed and running" in current_content, (
+            "body status line was corrupted or removed"
+        )
+        # And status: Complete must NOT have been injected anywhere.
+        assert "status: Complete" not in current_content, (
+            "status: Complete was written into the file despite refusing"
+        )
+
+
+# ---- Test 16 ----
+
+def test_apply_pseudo_validated_from_results_escapes_special_scenarios():
+    """Scenarios containing a colon (``audio: no dropout``) and a comma
+    (``load, stress``) must round-trip through VALIDATED.md without corruption:
+    - The colon element must remain a single string (not parsed as a mapping).
+    - The comma element must not be split into two list items.
+    - parse_sentinel must return exactly the original list.
+
+    We write MCP_TEST_RESULTS.md manually with properly quoted YAML strings so
+    parse_sentinel yields the intended Python list, then verify apply_pseudo
+    re-emits the list in a way that round-trips correctly from VALIDATED.md.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        special_scenarios = ["audio: no dropout", "load, stress"]
+        # Write MCP_TEST_RESULTS.md with YAML-quoted strings so that
+        # parse_sentinel returns the scenarios as a proper Python list of strings
+        # (a bare ``- audio: no dropout`` would be parsed as a mapping by YAML).
+        results_path = spec_dir / "MCP_TEST_RESULTS.md"
+        import yaml as _yaml
+        scenarios_yaml_block = _yaml.safe_dump(
+            special_scenarios, default_flow_style=False
+        )
+        # scenarios_yaml_block is a block-sequence string like:
+        #   - 'audio: no dropout'\n- 'load, stress'\n
+        # Indent each line by 2 spaces so it nests under the ``scenarios:`` key.
+        indented = "".join(f"  {line}\n" if line.strip() else "" for line in scenarios_yaml_block.splitlines())
+        results_path.write_text(
+            "---\n"
+            "kind: mcp-test-results\n"
+            "feature_id: test-feature\n"
+            f"scenarios:\n{indented}"
+            "date: 2026-06-10\n"
+            "---\n\n"
+            "# MCP Test Results\n",
+            encoding="utf-8",
+        )
+        # Confirm parse_sentinel reads them back as the right Python list before
+        # we test apply_pseudo — this guards the test setup itself.
+        parsed_results = lazy_core.parse_sentinel(results_path)
+        assert parsed_results is not None and parsed_results.get("scenarios") == special_scenarios, (
+            f"test setup error: parse_sentinel returned {parsed_results!r} "
+            "for MCP_TEST_RESULTS.md — the scenarios were not serialised correctly"
+        )
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+
+        validated_path = spec_dir / "VALIDATED.md"
+        assert validated_path.exists(), "VALIDATED.md was not created"
+
+        parsed = lazy_core.parse_sentinel(validated_path)
+        assert parsed is not None, "parse_sentinel returned None for VALIDATED.md"
+        assert parsed.get("kind") == "validated", (
+            f"expected kind='validated', got {parsed.get('kind')!r}"
+        )
+
+        mcp_scenarios = parsed.get("mcp_scenarios")
+        # The full list must round-trip unchanged.
+        assert mcp_scenarios == special_scenarios, (
+            f"mcp_scenarios did not round-trip correctly; got {mcp_scenarios!r}, "
+            f"expected {special_scenarios!r}"
+        )
+        # Colon element: must be a plain string, not a dict (yaml colon-split guard).
+        assert isinstance(mcp_scenarios[0], str), (
+            f"colon-containing element was parsed as {type(mcp_scenarios[0]).__name__}, "
+            "expected str (yaml colon must be quoted)"
+        )
+        # Comma element: must be a single string, not split at the comma.
+        assert isinstance(mcp_scenarios[1], str), (
+            f"comma-containing element was parsed as {type(mcp_scenarios[1]).__name__}, "
+            "expected str"
+        )
+        assert len(mcp_scenarios) == 2, (
+            f"expected 2 scenarios but got {len(mcp_scenarios)}: {mcp_scenarios!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -2369,6 +3054,23 @@ _TESTS = [
     ("test_verify_ledger_plan_not_complete_fails", test_verify_ledger_plan_not_complete_fails),
     ("test_verify_ledger_unchecked_nonverification_deliverable_fails", test_verify_ledger_unchecked_nonverification_deliverable_fails),
     ("test_verify_ledger_unchecked_verification_only_passes", test_verify_ledger_unchecked_verification_only_passes),
+    # apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
+    ("test_apply_pseudo_validated_from_skip_writes", test_apply_pseudo_validated_from_skip_writes),
+    ("test_apply_pseudo_validated_from_skip_refuses_when_skip_absent", test_apply_pseudo_validated_from_skip_refuses_when_skip_absent),
+    ("test_apply_pseudo_validated_from_skip_idempotent", test_apply_pseudo_validated_from_skip_idempotent),
+    ("test_apply_pseudo_validated_from_results_copies_scenarios", test_apply_pseudo_validated_from_results_copies_scenarios),
+    ("test_apply_pseudo_validated_from_results_refuses_when_results_absent", test_apply_pseudo_validated_from_results_refuses_when_results_absent),
+    ("test_apply_pseudo_deferred_non_cloud_writes_and_idempotent", test_apply_pseudo_deferred_non_cloud_writes_and_idempotent),
+    ("test_apply_pseudo_flip_cloud_saturated_flips_in_progress", test_apply_pseudo_flip_cloud_saturated_flips_in_progress),
+    ("test_apply_pseudo_flip_cloud_saturated_idempotent_on_complete", test_apply_pseudo_flip_cloud_saturated_idempotent_on_complete),
+    ("test_apply_pseudo_flip_cloud_saturated_refuses_no_plan", test_apply_pseudo_flip_cloud_saturated_refuses_no_plan),
+    ("test_apply_pseudo_mark_complete_writes_receipt_flips_and_cleans", test_apply_pseudo_mark_complete_writes_receipt_flips_and_cleans),
+    ("test_apply_pseudo_mark_complete_refuses_without_validation_evidence", test_apply_pseudo_mark_complete_refuses_without_validation_evidence),
+    ("test_apply_pseudo_mark_complete_idempotent", test_apply_pseudo_mark_complete_idempotent),
+    ("test_apply_pseudo_mark_fixed_writes_fixed_receipt", test_apply_pseudo_mark_fixed_writes_fixed_receipt),
+    ("test_apply_pseudo_unknown_name_refuses", test_apply_pseudo_unknown_name_refuses),
+    ("test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status", test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status),
+    ("test_apply_pseudo_validated_from_results_escapes_special_scenarios", test_apply_pseudo_validated_from_results_escapes_special_scenarios),
 ]
 
 
