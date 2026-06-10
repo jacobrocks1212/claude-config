@@ -590,14 +590,32 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Entry criteria:** None (independent; can run any time after Phase 1).
 
 **Deliverables:**
-- [ ] Step 0 preflight (symlink, python3, scripts, node) before banner in batch skills + wrappers; failure prints setup recipe, zero cycles consumed
-- [ ] Windows node path (`/c/nvm4w/nodejs`) baked into preflight/skill-config
+- [x] Step 0 preflight (symlink, python3, scripts, node) before banner in batch skills + wrappers; failure prints setup recipe, zero cycles consumed
+- [x] Windows node path (`/c/nvm4w/nodejs`) baked into preflight/skill-config
 - [ ] Compaction protocol: on-disk canonical dispatch template re-read after compact; Read-before-Edit rule
 - [ ] Long-build ownership rule (orchestrator-owned harness-tracked) + `cargo check --release` pre-flight
 - [ ] `interview_work_log_append` purged from all dispatch templates; canonical-sentinel-filename + work-branch clauses added to base dispatch prompt
 
 **Runtime Verification:**
-- [ ] Simulated DOA conditions (missing symlink / shadowed python3) caught by preflight with recipe
+- [x] Simulated DOA conditions (missing symlink / shadowed python3) caught by preflight with recipe
 - [ ] `grep -r interview_work_log_append user/skills/` returns nothing
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 7 — Batch 1: WU-1)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (orchestrator review; subagent GROUND-TRUTH block independently re-run + diffed — git status / wc -l / Step-0.0 grep / bug-state.py-vs-lazy-state.py split all matched; ground-truth verified: yes; placement of all 3 structurally-sensitive insertion sites read directly and confirmed before-banner / before-Step-0, no broken prose flow)
+**Work completed:**
+- **WU-1** (Step 0 preflight + Windows node path, prose/config): new canonical component `user/skills/_components/lazy-preflight.md` (71 lines) — read-only 4-check block (skills symlink resolves, state-script exists, `python3` runs, node resolvable with `/c/nvm4w/nodejs` prepended when absent), the verbatim setup recipe printed on failure (`.\setup.ps1 repair` + manual `ln -s` recipe with all three claude-config repo paths + python3/node guidance), and a STOP-zero-cycles contract. The Windows Git-Bash node home `/c/nvm4w/nodejs` is BAKED into check 4 so the per-call `export PATH` boilerplate disappears for the rest of the session. New skill-config note `repos/algobooth/.claude/skill-config/lazy-preflight.md` (14 lines) records the baked node path as discoverable config + points to the component. Wired a `## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)` section into all 6 entry points (the 3 batch SKILLs `lazy-batch`/`lazy-bug-batch`/`lazy-batch-cloud` + the 3 wrappers `lazy`/`lazy-bug`/`lazy-cloud`), placed before each file's banner / `## Step 0`. Bug-pipeline files (`lazy-bug-batch`, `lazy-bug`) reference `bug-state.py`; feature/cloud files reference `lazy-state.py`.
+**Verification:**
+- **Simulated DOA** (Runtime Verification row 1, now ticked): the check block was run in a stripped subshell (`HOME=/tmp/nohome-preflight-test`, `PATH=/usr/bin:/bin`) and correctly emitted `caught missing skills symlink` + `caught missing python3` and set `FAIL=1` — proving the checks fire on the two documented DOA conditions.
+- Grep: all 6 SKILLs carry the `Step 0.0` section + a `lazy-preflight.md` reference; the bug/feature state-script split is correct per file.
+**Integration notes:**
+- The preflight runs BEFORE Step 0.4 remote sync and the first `lazy-state.py`/`bug-state.py` probe in the batch skills, satisfying the "zero cycles consumed on failure" deliverable (the state script is never called when a check fails).
+- The 3 wrappers (`lazy`/`lazy-bug`/`lazy-cloud`) have no `Step 0.4`; the inserted body's "before Step 0.4 remote sync" phrase is harmlessly over-specified there — the dominant "very first action of this invocation" instruction is unambiguous. Left as-is (cosmetic, not a defect).
+- Scripts untouched (prose/config only) → the three `--test` regression gates are byte-identical pass (run at batch commit).
+**Files modified:**
+- `user/skills/_components/lazy-preflight.md` — NEW canonical preflight component
+- `repos/algobooth/.claude/skill-config/lazy-preflight.md` — NEW skill-config node-path note + pointer
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 0.0 wiring (batch skills)
+- `user/skills/lazy/SKILL.md`, `user/skills/lazy-bug/SKILL.md`, `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` — Step 0.0 wiring (wrappers)

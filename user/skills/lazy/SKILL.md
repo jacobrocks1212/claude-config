@@ -51,6 +51,18 @@ When this skill writes a sentinel (Step 4 special actions), emit the YAML frontm
 
 ---
 
+## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)
+
+**Read and follow `~/.claude/skills/_components/lazy-preflight.md` as the very first action of this
+invocation — before the start banner, before Step 0.4 remote sync, before the first state probe.**
+Run its read-only check block (skills symlink resolves, `~/.claude/scripts/lazy-state.py` exists,
+`python3` runs, node resolvable — prepending `/c/nvm4w/nodejs` if needed). If any check fails, print the
+component's setup recipe and **STOP — zero cycles consumed** (do not print the banner, do not call the
+state script, do not enter the loop). On success, node is on PATH for the whole session (no per-call
+`export PATH`), and you continue to the banner / Step 0.4 as normal.
+
+---
+
 ## Step 0: Load Tools and Parse Arguments
 
 1. Load PushNotification: `ToolSearch({ query: "select:PushNotification" })`
