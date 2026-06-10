@@ -344,7 +344,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 
 | File | Written when | Cleared when |
 |------|-------------|--------------|
-| BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or via /add-phase / /lazy skip) |
+| BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or human-manual fix); blocked-resolution mode neutralizes by **rename** → `BLOCKED_RESOLVED_<date>.md` (`--neutralize-sentinel`), preserving audit trail |
 | DEFERRED_NON_CLOUD.md | /lazy-cloud cannot run a step in cloud | /lazy Step 10 (feature completion) |
 | DEFERRED_REQUIRES_DEVICE.md | /mcp-test on a no-real-device host can't certify a real-device-only assertion | A real-device /lazy host re-opens (Step 9), certifies the deferred scenarios, then deletes it + writes VALIDATED.md |
 | VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
@@ -352,8 +352,8 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
 | SKIP_MCP_TEST.md | /lazy assessment: not testable | Persists permanently |
 | MCP_TEST_RESULTS.md | /lazy after mcp-test runs | Persists permanently (audit) |
-| NEEDS_RESEARCH.md | /lazy-batch when RESEARCH.md absent | Human runs research, drops RESEARCH.md, deletes this file |
-| NEEDS_INPUT.md | A `--batch` skill hits an ambiguous decision | Human resolves the decisions, deletes the file, re-runs |
+| NEEDS_RESEARCH.md | `/lazy-batch` Step 5 (needs-research halt) when RESEARCH.md absent | Human drops RESEARCH.md, then next `/lazy-batch` run ingests it and proceeds; file may be left stale or overwritten on ingestion |
+| NEEDS_INPUT.md | A `--batch` skill hits an ambiguous decision | Resolution-mode neutralizes by **rename** → `NEEDS_INPUT_RESOLVED_<date>.md` (`--neutralize-sentinel`), not deleted; resolved sentinel persists as audit trail |
 
 ### Producer rules
 

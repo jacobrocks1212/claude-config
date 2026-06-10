@@ -121,11 +121,12 @@ identically in cloud and workstation.
 
 ### Coupling note
 
-Consumed by `__mark_complete__` in all four /lazy-family skills, ALWAYS as the
-second gate after `mcp-coverage-audit.md`:
+Consumed by `__mark_complete__` in all four /lazy-family skills and by `__mark_fixed__` in the bug pipeline, ALWAYS as the second gate after `mcp-coverage-audit.md`:
 - `user/skills/lazy/SKILL.md` Step 3 `__mark_complete__`
 - `user/skills/lazy-batch/SKILL.md` Step 1c.5 `__mark_complete__`
 - `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` Step 3 `__mark_complete__`
 - `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` Step 1c.5 `__mark_complete__`
+- `user/skills/lazy-bug/SKILL.md` `__mark_fixed__` (Gate 2)
+- `user/skills/lazy-bug-batch/SKILL.md` Step 1c.5 `__mark_fixed__` (Gate 2)
 
-When editing this component, run `grep -rl "completion-integrity-gate.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md"` to confirm the blast radius matches the four files above.
+When editing this component, run `grep -rl "completion-integrity-gate.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md"` to confirm the blast radius matches the six files above.

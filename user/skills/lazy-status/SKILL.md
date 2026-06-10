@@ -19,7 +19,7 @@ State-machine logic lives exclusively in `lazy-state.py`. If the dashboard is wr
 
 If `$ARGUMENTS` contains `--cloud`, pass `--cloud` to the state script. Otherwise run without it.
 
-The cloud variant changes nothing about this skill's behavior beyond which sub-skill the script picks for Step 8 (workstation: `mcp-test`; cloud: `__write_deferred_non_cloud__`) and how it handles cloud-saturated features at Step 2.
+The cloud variant changes nothing about this skill's behavior beyond which sub-skill the script picks for Step 9 (workstation: `mcp-test`; cloud: `__write_deferred_non_cloud__`) and how it handles cloud-saturated features at Step 2.
 
 ---
 
@@ -72,6 +72,8 @@ The state script emits both real sub-skill names and pseudo-skills (prefixed `__
 | `__write_validated_from_skip__` | promote SKIP_MCP_TEST.md → VALIDATED.md |
 | `__write_validated_from_results__` | promote MCP_TEST_RESULTS.md → VALIDATED.md |
 | `__mark_complete__` | mark feature complete on ROADMAP + cleanup sentinels |
+| `__flip_plan_complete_cloud_saturated__` | flip In-progress plan → Complete (cloud-saturated: only unchecked WUs are workstation-only deferred per DEFERRED_NON_CLOUD.md) |
+| `__flip_plan_complete_stale__` | flip In-progress/Ready plan → Complete (stale: all referenced WUs already checked, frontmatter not yet flipped) |
 
 Terminal-reason mapping:
 

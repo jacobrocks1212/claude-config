@@ -516,13 +516,13 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] D4: lazy-bug-batch rebuilt by-reference (cloud pattern) — ports Step 1d.0 pre-boot + NO-FIRE-AND-FORGET, `__mark_fixed__` gate parity (wrapper too), Step 1.5 exclusion parity, 1d.5 dual-trigger wording; six `!cat`s → path references
 - [x] lazy-batch prompt templates + announcement templates extracted to `_components/lazy-batch-prompts/` (read on demand); Step 1f/Step 4 announcement deduped
 - [x] sentinel-frontmatter.md no longer `!cat` in thin wrappers; mark-fixed-archive nested-`!cat` fixed; batch-skill frontmatter descriptions trimmed
-- [ ] Contradiction sweep: cloud constraint renumbering + Step 8/9 drift + lazy-status rows; lazy-batch stale Notes/refs + HARD CONSTRAINT 5 exceptions; sentinel lifecycle table rename-not-delete; component coupling notes include bug consumers; plan-feature artifact; lazy step-label collision
+- [x] Contradiction sweep: cloud constraint renumbering + Step 8/9 drift + lazy-status rows; lazy-batch stale Notes/refs + HARD CONSTRAINT 5 exceptions; sentinel lifecycle table rename-not-delete; component coupling notes include bug consumers; plan-feature artifact; lazy step-label collision
 - [x] lazy-batch-retro: workstation inline-override branch; R-O-3 exceptions; R-O-6 fix; Step 3 scan list; Notes path; Phase-4 park/auto-accept checks
 
 **Runtime Verification:**
-- [ ] Regression gates green
-- [ ] Grep: every path reference resolves; zero sentinel-frontmatter `!cat` in wrappers
-- [ ] Compliance read of rebuilt lazy-bug-batch against a dry-run (retro-style checklist)
+- [x] Regression gates green — `lazy-state.py --test` (0), `bug-state.py --test` (0), `test_lazy_core.py` "All tests passed" — part-end run
+- [x] Grep: every path reference resolves; zero sentinel-frontmatter `!cat` in wrappers — all 8 `_components/*.md` + 4 `lazy-batch-prompts/*.md` referenced by the skills resolve on disk; the 3 thin wrappers contain zero `sentinel-frontmatter` `!cat`
+- [x] Compliance read of rebuilt lazy-bug-batch against a dry-run (retro-style checklist) — every `See ~/.claude/skills/lazy-batch/SKILL.md Step X` reference (Step 0/0.4/1.5/1c/1c.5/1c.6/1d/1d.0/1d.5/1e/3 + HARD CONSTRAINTS) resolves to a real anchor in the WU-2/WU-4-edited lazy-batch; behavior-preservation vs the old fork confirmed by the Batch-1 reviewer
 
 **Implementation Notes:**
 
@@ -563,6 +563,23 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - `user/skills/lazy/SKILL.md`, `user/skills/lazy-bug/SKILL.md`, `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` — Fix A
 - `user/skills/_components/mark-fixed-archive.md` — Fix B
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Fix C (+ Fix D on lazy-bug-batch)
+
+#### Implementation Notes (Phase 6 — Batch 3: WU-4)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fix applied → PASS (orchestrator independently re-ran every item's verifying grep + confirmed the two riskiest claims — HC5 exceptions (iii)/(iv) are REAL call sites: `--adhoc`→Step 0.45 at line 54, and the Step-5 resume disambiguation at line 805 verbatim; ground-truth verified: yes; gates green)
+**Work completed (7-item contradiction sweep):**
+1. **lazy-batch-cloud HARD CONSTRAINT off-by-one + Step 8/9 drift:** the passive-wait/dead-notification rule (HARD CONSTRAINT **10**) was mis-cited as "HARD CONSTRAINT 9" at 4 sites (lines 45, 150, 768, 859) → corrected to 10 (the genuine #9 dispatch-only reference at line 778 left intact). The MCP/deferral step is **Step 9** (retro is Step 8 after the reorder) — fixed 3 "Step 8 action/deferral" stragglers (lines 377, 832, 833).
+2. **lazy-status:** "Step 8" → Step 9 (line 22); added the two missing pseudo-skill rows `__flip_plan_complete_cloud_saturated__` + `__flip_plan_complete_stale__` to the sub_skill table.
+3. **lazy-batch:** (a) the stale "orchestrator does not commit anything itself except NEEDS_RESEARCH.md" Note (line 882) rewritten to enumerate the real direct orchestrator commits (Step 1c.5 pseudo-skill receipts, resolution-mode sentinel renames, gate-written NEEDS_INPUT.md); (b) `__write_deferred_non_cloud__` annotated "(cloud variant only — workstation lazy-state.py never emits this)" at lines 30 + 308; (c) HARD CONSTRAINT 5 expanded from 2 → 4 enumerated permitted `AskUserQuestion` uses, adding (iii) Step 0.45 `--enqueue-adhoc` task prompt + (iv) Step 5 in-session resume disambiguation — **both verified as real call sites**, and the now-contradictory "the only AskUserQuestion call permitted outside Step 1g" claim at line 805 reconciled to point at HC5 use (iv) (review-fix).
+4. **sentinel-frontmatter lifecycle table:** NEEDS_INPUT.md "Cleared when" corrected from delete → **rename** to `NEEDS_INPUT_RESOLVED_<date>.md` (`--neutralize-sentinel`, audit-trail-preserving); BLOCKED.md row likewise notes rename → `BLOCKED_RESOLVED_<date>.md`; NEEDS_RESEARCH.md producer made explicit (`/lazy-batch` Step 5).
+5. **completion-integrity-gate.md + mcp-coverage-audit.md coupling notes:** added the bug-pipeline consumers (`lazy-bug` + `lazy-bug-batch` `__mark_fixed__` Gate 1/Gate 2, passing `{bug_id}`) — now correct after Phase-6 WU-1 brought the bug gates to parity; blast-radius notes updated four→six files.
+6. **plan-feature:** removed the "— wait, that's the sentinel file;" mid-sentence authoring artifact at line 75 → clean "(partitioning lives in /write-plan Step 2.5)".
+7. **lazy `__mark_complete__` step-label collision:** internal gate sub-steps "Step 4.4"/"Step 4.5" (which collided with the top-level "## Step 4: Dispatch the Sub-Skill") relabeled to "Gate 1 — MCP-coverage audit" / "Gate 2 — Completion-integrity gate" (matching the `/lazy-bug` wrapper); description line-3 reference updated; the genuine state-machine Step 4.5 (stub-spec) references left intact.
+**Integration notes:**
+- Item 5's bug-consumer coupling notes close the loop opened by WU-1: the gates now document all six consumers, so a future edit to either gate component knows its full bug+feature blast radius.
+- All three regression gates exit 0 (prose-only batch; scripts untouched).
+**Files modified:**
+- `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (item 1), `user/skills/lazy-status/SKILL.md` (item 2), `user/skills/lazy-batch/SKILL.md` (item 3 + review-fix), `user/skills/_components/sentinel-frontmatter.md` (item 4), `user/skills/_components/completion-integrity-gate.md` + `user/skills/_components/mcp-coverage-audit.md` (item 5), `user/skills/plan-feature/SKILL.md` (item 6), `user/skills/lazy/SKILL.md` (item 7)
 
 ---
 

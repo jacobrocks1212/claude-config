@@ -87,13 +87,17 @@ The audit logic is identical in all three contexts. Only the post-write surfacin
 | `/lazy` interactive | Wrapper prints the halt note + the file path; user inspects `NEEDS_INPUT.md` and chooses. Next `/lazy` invocation calls Step 2's `needs-input` terminal handler which surfaces the decisions; user then resolves via `## Resolution` block in `NEEDS_INPUT.md` (or by editing the appropriate `mcp-tests/*.md` and re-running). |
 | `/lazy-cloud` interactive | Same as `/lazy` — docs-only check works in cloud. |
 | `/lazy-batch` / `/lazy-batch-cloud` Step 1c.5 (`__mark_complete__` pseudo-skill) | Orchestrator at Step 1c.5 calls this audit before the flip; on `uncovered:N`, the orchestrator does NOT increment cycle in the "successfully marked complete" sense — it records the halt note in `cycle_log` and returns to Step 1a. The next state-script call returns `terminal_reason: needs-input`, Step 1g surfaces the decisions via `AskUserQuestion`, the apply-resolution Sonnet subagent edits `mcp-tests/*.md` (or SPEC.md for the exemption case) and removes `NEEDS_INPUT.md`, and the loop continues. |
+| `/lazy-bug` `__mark_fixed__` (Gate 1) | Same pre-flip audit logic; consumers pass `{bug_id}` where feature consumers pass `{feature_id}`. |
+| `/lazy-bug-batch` Step 1c.5 `__mark_fixed__` (Gate 1) | Same as `/lazy-bug`; orchestrator records the halt and routes to needs-input resolution before the next mark-fixed attempt. |
 
 ### Coupling note
 
-This component is consumed by `__mark_complete__` in all four /lazy-family skills:
+This component is consumed by `__mark_complete__` in all four /lazy-family skills and by `__mark_fixed__` in the bug pipeline (consumers pass `{bug_id}` rather than `{feature_id}`):
 - `user/skills/lazy/SKILL.md` Step 3 `__mark_complete__`
 - `user/skills/lazy-batch/SKILL.md` Step 1c.5 `__mark_complete__` pseudo-skill
 - `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` Step 3 `__mark_complete__`
 - `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` Step 1c.5 `__mark_complete__` pseudo-skill
+- `user/skills/lazy-bug/SKILL.md` `__mark_fixed__` (Gate 1)
+- `user/skills/lazy-bug-batch/SKILL.md` Step 1c.5 `__mark_fixed__` (Gate 1)
 
-When editing this component, run `grep -r "mcp-coverage-audit.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md" -l` to confirm the blast radius matches the four files above.
+When editing this component, run `grep -r "mcp-coverage-audit.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md" -l` to confirm the blast radius matches the six files above.

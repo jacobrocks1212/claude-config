@@ -72,7 +72,7 @@ Inspect `<plans-dir>` for existing implementation plans (files matching `all-pha
 Skill({ skill: "write-plan", args: "<phases-md>" })
 ```
 
-`/write-plan` may produce a single file or multiple `-part-K` files per the 8-WU partition cap (see `~/.claude/skills/_components/sentinel-frontmatter.md` — wait, that's the sentinel file; partitioning lives in `/write-plan` Step 2.5). Either way, the script-following orchestrator picks up `plans/<plan>.md` (or `plans/<plan>-part-1.md`) on its next state-machine cycle.
+`/write-plan` may produce a single file or multiple `-part-K` files per the 8-WU partition cap (partitioning lives in `/write-plan` Step 2.5). Either way, the script-following orchestrator picks up `plans/<plan>.md` (or `plans/<plan>-part-1.md`) on its next state-machine cycle.
 
 After `/write-plan` returns:
 
