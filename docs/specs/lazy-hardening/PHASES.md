@@ -187,7 +187,7 @@ cloud gates in bug-state; standing-directive confirmation.
 - [x] `roadmap_marks_complete` / `upstream_is_complete` / `is_stub_spec` anchored (no substring collisions)
 - [x] Stale already-applied plan → inline flip pseudo-action (not execute-plan)
 - [x] D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed
-- [ ] `scoped-id-not-found` terminal; diagnostics for malformed queue entries
+- [x] `scoped-id-not-found` terminal; diagnostics for malformed queue entries
 - [ ] Realign mtime gate → recorded upstream-PHASES hash; `check_stale_upstream` wired to CLI/probe; Step-10 unexpected-state writes its NEEDS_INPUT.md
 
 **Runtime Verification:**
@@ -243,6 +243,22 @@ cloud gates in bug-state; standing-directive confirmation.
 - `user/scripts/tests/baselines/lazy-state-test-baseline.txt` — regenerated
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — D3 two-counter model + `__flip_plan_complete_stale__` handler
 - `user/skills/_components/halt-resolution.md` — meta-cap check + meta_cycles increment + line-199 fix
+
+#### Implementation Notes (Phase 3 — Batch 3: WU-7)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fixes applied → PASS (dedicated Opus reviewer; traced flag-placement + terminal-ordering by hand, ran all 3 suites green; caught a real scoped-deliverable gap)
+**Work completed:**
+- **WU-7** (scoped-id-not-found terminal + queue diagnostics, TDD; BOTH state scripts): a typo'd `--feature-id`/`--bug-id` (scope id matching no queue entry) previously fell through to `all-features-complete`/`all-bugs-fixed` — falsely reporting "all done." Both scripts now track a `scope_id_seen` flag set the instant a queue entry's id EQUALS the scope id (BEFORE any completion/cloud/device/deferred skip can `continue` past it — so a scoped feature that matched but is already complete still routes to its REAL terminal, NOT not-found), and emit a distinct `scoped-id-not-found` terminal (identical literal string in both; `TR_SCOPED_ID_NOT_FOUND` constant in bug-state) immediately before the all-complete fall-through. Added to both `terminal_reason` doc-enums. 2 fixtures RED→GREEN; positive scoping guards (`scoped-feature-id`/`scope-bug-id-two-bugs`) stay green as discriminators.
+- **Queue diagnostics:** both scripts now emit a `_diag` when a queue entry is skipped for missing `id`/`name`/`spec_dir` (bug-state's walk-loop skip ~L478 and lazy-state's ~L930 — both previously silent). The diagnostic names the missing fields using the OPERATOR-FACING queue.json keys (`id`/`name`/`spec_dir`, not internal normalized names) so the operator knows which JSON field to fix.
+**Integration notes:**
+- Reviewer verified terminal ORDERING: when scoping to a not-found id, every skip-list (cloud/device/research/operator-deferred) is provably empty (they populate only post-match), so placing the not-found check right before all-complete cannot shadow `device-queue-exhausted`/`queue-blocked-on-research`/`cloud-queue-exhausted`; conversely when one of those is the real reason `scope_id_seen` is True so the not-found check is bypassed. `queue-missing` intentionally still takes precedence (more specific). Both scripts symmetric.
+- Review fixes applied: lazy-state's malformed-entry `_diag` (the explicitly-scoped half that the impl agent initially did only in bug-state) + bug-state's diagnostic now reports `spec_dir` (operator key) not `spec_path` (internal key).
+- Downstream note (out of scope): the lazy/lazy-bug single-dispatch skills have no explicit terminal-table row for `scoped-id-not-found`, but their generic clean-stop fallback prints `notify_message` and STOPs — degrades gracefully, no crash. An explicit row is a future nice-to-have.
+**Part-end gate status:** all 3 gates exit 0 (lazy-state --test, bug-state --test, test_lazy_core.py 100/100) — confirmed fresh post-fixes. (NOT the final part gate — Batch 4 remains.)
+**Files modified:**
+- `user/scripts/lazy-state.py` — scope_id_seen flag + scoped-id-not-found terminal + malformed-entry _diag + 1 fixture
+- `user/scripts/bug-state.py` — TR_SCOPED_ID_NOT_FOUND + flag + terminal + malformed-entry _diag + 1 fixture
+- `user/scripts/tests/baselines/{lazy-state,bug-state}-test-baseline.txt` — regenerated (additive)
 
 ---
 

@@ -62,5 +62,6 @@
   PASS [stale-halt-reader] stale halt: terminal_reason='stale_upstream'
   PASS [scoped-feature-id] scope_feature_id selected feat-scope-beta
   PASS [baseline-regression-default] default picks feat-scope-alpha at 'Step 6: plan feature (phases + plan)'
+  PASS [scoped-feature-id-not-found] terminal_reason='scoped-id-not-found' (impl landed)
 
 All smoke tests passed.

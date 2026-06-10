@@ -27,6 +27,7 @@
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'
   PASS [baseline-regression-default] default picks alpha: feature_id='bug-scope-alpha' step='Step 4: investigate bug'
+  PASS [scoped-bug-id-not-found] terminal_reason='scoped-id-not-found' (impl landed)
   PASS [backfill-receipts-direct] backfilled=['bug-needs-receipt'] count=1 fixed_md_written=True
 
 All smoke tests passed.

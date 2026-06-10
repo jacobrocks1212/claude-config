@@ -40,7 +40,7 @@ Output schema (stdout JSON) — same keys as lazy-state.py:
                             | "device-queue-exhausted" | "blocked"
                             | "needs-input" | "completion-unverified"
                             | "queue-missing" | "all-remaining-deferred"
-                            | "stale_upstream",
+                            | "stale_upstream" | "scoped-id-not-found",
   "notify_message":    "<string>"      | null,
   "diagnostics":       [],
   "device_deferred_features": [],
@@ -108,6 +108,7 @@ TR_CLOUD_QUEUE_EXHAUSTED = "cloud-queue-exhausted"
 TR_QUEUE_MISSING = "queue-missing"
 TR_STALE_UPSTREAM = "stale_upstream"
 TR_ALL_DEFERRED = "all-remaining-deferred"
+TR_SCOPED_ID_NOT_FOUND = "scoped-id-not-found"
 
 # sub_skill tokens for bug-specific actions
 SKILL_INVESTIGATE = "spec-bug"             # root-cause investigation / spec-bug skill
@@ -460,6 +461,11 @@ def compute_state(
     # emit TR_CLOUD_QUEUE_EXHAUSTED if nothing else is actionable (mirrors
     # lazy-state.py lines ~848, ~912-919, ~975-982).
     cloud_saturated_skipped: list[str] = []
+    # Tracks whether the --bug-id scope arg matched ANY raw entry id in the queue
+    # (set BEFORE any completion/cloud/device skip would continue past a matched entry).
+    # If scope is set but no entry matched, we emit TR_SCOPED_ID_NOT_FOUND instead
+    # of TR_ALL_BUGS_FIXED so callers can distinguish "queue exhausted" from "typo".
+    scope_id_seen: bool = False
 
     for entry in queue:
         bug_id = entry.get("id")
@@ -467,12 +473,23 @@ def compute_state(
         spec_dir: Path = entry.get("spec_path")
 
         if not bug_id or not bug_name or not spec_dir:
+            # Emit a diagnostic naming the missing fields so the operator can
+            # fix the malformed queue entry.  Matches the WU-7 deliverable.
+            missing = [f for f, v in [("id", bug_id), ("name", bug_name), ("spec_dir", spec_dir)] if not v]
+            _diag(
+                f"queue entry skipped — missing {', '.join(missing)} "
+                f"(entry: {str(entry)[:120]!r})"
+            )
             continue
 
         # --bug-id scoping: when set, process ONLY the matching queue entry.
-        # Absent the flag (None) behavior is byte-identical to today.
-        if scope_bug_id is not None and str(bug_id) != str(scope_bug_id):
-            continue
+        # scope_id_seen is set here — BEFORE any completion/cloud/device skip
+        # would continue past a matched entry — so a matched-but-skipped entry
+        # still counts as "seen" (not reported as scoped-id-not-found).
+        if scope_bug_id is not None:
+            if str(bug_id) != str(scope_bug_id):
+                continue
+            scope_id_seen = True
 
         # -----------------------------------------------------------------------
         # Completion gate: Fixed + receipt → genuinely done (skip).
@@ -617,6 +634,17 @@ def compute_state(
                     "docs/bugs/queue.json is absent — no bug queue exists yet. "
                     "Run bug-state.py --enqueue-adhoc to create it, or create "
                     "docs/bugs/queue.json manually."
+                ),
+            )
+        # scoped-id-not-found: --bug-id was given but matched no queue entry.
+        # Placed here (after all other specific terminals) because when the scope
+        # id is a typo none of the skip-lists will have populated.
+        if scope_bug_id is not None and not scope_id_seen:
+            return _bug_state(
+                terminal_reason=TR_SCOPED_ID_NOT_FOUND,
+                notify_message=(
+                    f"--bug-id '{scope_bug_id}' matched no entry in the bug queue — "
+                    "check the id (typo?) or that the bug is queued. No cycle was dispatched."
                 ),
             )
         return _bug_state(
@@ -2362,6 +2390,35 @@ def run_smoke_tests() -> int:
             print(
                 f"  FAIL [baseline-regression-default]: NotImplementedError — {exc}"
             )
+
+        # -------------------------------------------------------------------
+        # scoped-bug-id-not-found  (RED until impl lands)
+        # Same two-bug queue as the scope-bug-id-two-bugs fixture above; but
+        # the scope_bug_id is a typo'd id that matches NO queue entry.
+        # EXPECTED: terminal_reason == "scoped-id-not-found"
+        # CURRENT (pre-fix): falls through to terminal_reason == "all-bugs-fixed"
+        # The impl agent must emit a distinct terminal so callers can distinguish
+        # "queue exhausted" from "id was never in the queue at all".
+        # -------------------------------------------------------------------
+        fix_not_found = "scoped-bug-id-not-found"
+        root_not_found = _build_bug_fixture(td_path, "scope-bug-id-two-bugs")
+        try:
+            got_not_found = compute_state(
+                root_not_found, cloud=False, real_device=True,
+                scope_bug_id="bug-typo-does-not-exist",
+            )
+            actual_tr = got_not_found.get("terminal_reason")
+            if actual_tr == "scoped-id-not-found":
+                print(f"  PASS [{fix_not_found}] terminal_reason='scoped-id-not-found' (impl landed)")
+            else:
+                failures.append(
+                    f"[{fix_not_found}] expected terminal_reason='scoped-id-not-found', "
+                    f"got {actual_tr!r}"
+                )
+                print(f"  FAIL [{fix_not_found}] expected 'scoped-id-not-found', got {actual_tr!r}")
+        except (TypeError, NotImplementedError, SystemExit) as e:
+            failures.append(f"[{fix_not_found}] unexpected exception: {type(e).__name__}: {e}")
+            print(f"  FAIL [{fix_not_found}] {type(e).__name__} — {e}")
 
         # -------------------------------------------------------------------
         # backfill_receipts bespoke block: call backfill_receipts() directly

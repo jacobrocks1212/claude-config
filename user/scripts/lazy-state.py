@@ -29,7 +29,8 @@ Output schema (stdout JSON):
                             | "queue-blocked-on-research"
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing"
-                            | "completion-unverified" | "stale_upstream",
+                            | "completion-unverified" | "stale_upstream"
+                            | "scoped-id-not-found",
   "notify_message":    "<string>"      | null,
   "diagnostics":       []                                  # always present; non-empty
                                                            # surfaces backlog warnings
@@ -917,11 +918,21 @@ def compute_state(
     device_saturated_skipped: list[str] = []
     research_pending_skipped: list[str] = []
     seen_ids: set[str] = set()
+    # Tracks whether the --feature-id scope arg matched ANY entry in the queue
+    # (by raw id, before any dir/duplicate/completion skip).  If scope is set but
+    # no entry matched, we emit "scoped-id-not-found" instead of "all-features-complete"
+    # so callers can distinguish "queue exhausted" from "id typo / not queued".
+    scope_id_seen: bool = False
     for entry in queue:
         name = entry.get("name")
         feature_id = entry.get("id")
         spec_subdir = entry.get("spec_dir")
         if not name or not feature_id or not spec_subdir:
+            missing = [k for k, v in (("id", feature_id), ("name", name), ("spec_dir", spec_subdir)) if not v]
+            _diag(
+                f"queue entry skipped — missing {', '.join(missing)} "
+                f"(entry: {str(entry)[:120]!r})"
+            )
             continue
         # FM3 anti-fabrication guard: a queue entry whose spec_dir does NOT
         # resolve to an on-disk directory is a dangling reference (typo, stale
@@ -949,8 +960,13 @@ def compute_state(
         seen_ids.add(feature_id)
         # --feature-id scoping: when set, process ONLY the matching queue entry.
         # Absent the flag (None) behavior is byte-identical to single-current.
-        if scope_feature_id is not None and feature_id != scope_feature_id:
-            continue
+        # scope_id_seen is set here — BEFORE any completion/cloud/device skip
+        # would continue past the entry — so a matched-but-skipped scoped feature
+        # still counts as "seen" (not reported as scoped-id-not-found).
+        if scope_feature_id is not None:
+            if feature_id != scope_feature_id:
+                continue
+            scope_id_seen = True
         # FM1 receipt-gated completion. A feature is genuinely DONE only when it
         # CLAIMS completion AND carries a durable COMPLETED.md receipt proving it
         # passed through __mark_complete__'s integrity gate. Superseded is exempt
@@ -1071,6 +1087,19 @@ def compute_state(
                 notify_message=(
                     f"Queue blocked — {len(research_pending_skipped)} feature(s) "
                     "awaiting Gemini research uploads."
+                ),
+            )
+        # scoped-id-not-found: --feature-id was given but matched no queue entry.
+        # This is distinct from "queue exhausted" — the id itself is unknown.
+        # Placed here (after all other specific terminals) because when the scope
+        # id is a typo none of the skip-lists will have populated.
+        if scope_feature_id is not None and not scope_id_seen:
+            return _state(
+                terminal_reason="scoped-id-not-found",
+                notify_message=(
+                    f"--feature-id '{scope_feature_id}' matched no entry in "
+                    "docs/features/queue.json — check the id (typo?) or that the "
+                    "feature is queued. No cycle was dispatched."
                 ),
             )
         return _state(
@@ -3830,6 +3859,34 @@ def run_smoke_tests() -> int:
             )
         except SystemExit as exc:
             failures.append(f"[baseline-regression-default] SystemExit: {exc.code}")
+
+        # -------------------------------------------------------------------
+        # Fixture: scoped-feature-id-not-found  (RED until impl lands)
+        # Same two-feature queue as the scoped-feature-id fixture above; but
+        # the scope_feature_id is a typo'd id that matches NO entry.
+        # EXPECTED: terminal_reason == "scoped-id-not-found"
+        # CURRENT (pre-fix): falls through to terminal_reason == "all-features-complete"
+        # The impl agent must emit a distinct terminal so callers can distinguish
+        # "queue exhausted" from "id was never in the queue at all".
+        # -------------------------------------------------------------------
+        fix_not_found = "scoped-feature-id-not-found"
+        try:
+            got_not_found = compute_state(
+                fix_scope_root, cloud=False, real_device=True,
+                scope_feature_id="feat-typo-does-not-exist",
+            )
+            actual_tr = got_not_found.get("terminal_reason")
+            if actual_tr == "scoped-id-not-found":
+                print(f"  PASS [{fix_not_found}] terminal_reason='scoped-id-not-found' (impl landed)")
+            else:
+                failures.append(
+                    f"[{fix_not_found}] expected terminal_reason='scoped-id-not-found', "
+                    f"got {actual_tr!r}"
+                )
+                print(f"  FAIL [{fix_not_found}] expected 'scoped-id-not-found', got {actual_tr!r}")
+        except (TypeError, SystemExit) as e:
+            failures.append(f"[{fix_not_found}] unexpected exception: {type(e).__name__}: {e}")
+            print(f"  FAIL [{fix_not_found}] {type(e).__name__} — {e}")
 
     if failures:
         print("\nFAILURES:")
