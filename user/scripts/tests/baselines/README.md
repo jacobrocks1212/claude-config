@@ -1,21 +1,34 @@
-# Baselines for lazy-state.py characterization tests
+# Baselines for lazy-state.py / bug-state.py characterization tests
+
+## Cross-platform normalization (shared)
+
+Both `*-test-baseline.txt` files are compared via the shared
+`_normalize_smoke_output()` helper in `test_lazy_core.py`. The `--test` harnesses use
+`tempfile.TemporaryDirectory()` (random suffix per run) and emit OS-specific absolute
+temp paths (`/tmp/claude-1000/…` on Linux/WSL, `C:\Users\…\Temp\…` on Windows). The
+helper canonicalizes all three platform-volatile elements — the random `…-fixtures-<suffix>`
+suffix → `…-fixtures-XXXXXXXX`, the temp-root prefix → `<TMP>/`, and `\`-vs-`/` separators →
+`/` — so a single committed baseline is **platform-neutral across Windows and WSL**.
+`test_normalize_smoke_output_is_platform_neutral` pins that property. **Regenerate a baseline
+ONLY by piping live `--test` output through `_normalize_smoke_output` — never hand-edit it**,
+or byte-identity breaks subtly on the temp-path line.
 
 ## Files
 
 ### `lazy-state-test-baseline.txt`
-Verbatim stdout+stderr from `python3 lazy-state.py --test` captured at the time
-the characterization test suite was written (WU-1.1). This is a stable contract:
-the smoke harness tests built-in fixture scenarios, so this output should NOT
-change across refactors — if it does, the refactor introduced a behavior change.
+Normalized stdout+stderr from `python3 lazy-state.py --test`. This is a stable contract:
+the smoke harness tests built-in fixture scenarios, so this output should NOT change across
+refactors — if it does (`test_lazy_state_test_output_matches_baseline` fails with a unified
+diff), the refactor introduced a behavior change. See the cross-platform normalization note
+above.
 
-**Volatile-path normalization:** `lazy-state.py --test` uses
-`tempfile.TemporaryDirectory()` internally, which generates a random suffix on
-every run (e.g. `lazy-state-fixtures-prt8wzde`).  The baseline replaces that
-suffix with the stable placeholder `lazy-state-fixtures-XXXXXXXX`.  The test
-`test_lazy_state_test_output_matches_baseline` in `test_lazy_core.py` applies
-the same substitution (`re.sub(r"lazy-state-fixtures-[A-Za-z0-9_]+", ...)`) to
-the live output before diffing, ensuring the comparison is deterministic across
-runs even though the actual temp-dir name varies.
+### `bug-state-test-baseline.txt`
+Normalized stdout+stderr from `python3 bug-state.py --test` — the bug-pipeline twin of
+`lazy-state-test-baseline.txt`. `test_bug_state_test_output_matches_baseline` pins it
+byte-for-byte (after `_normalize_smoke_output`), so any change to `bug-state.py`'s computed
+state that shifts a fixture outcome is caught as a behavior change. The bug harness emits no
+temp paths in practice, so its normalized output is naturally platform-neutral. Regenerate via
+the shared helper after intentionally adding/changing a smoke fixture.
 
 ### `lazy-state-algobooth.json`
 Stdout JSON from `python3 lazy-state.py --repo-root /home/jacob/repos/AlgoBooth`

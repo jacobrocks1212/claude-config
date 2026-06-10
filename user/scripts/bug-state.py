@@ -1598,9 +1598,10 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
 def run_smoke_tests() -> int:
     """Build fixtures in a temp dir, call compute_state(), assert expected shapes.
 
-    Prints PASS/FAIL per fixture and a summary.  Returns 0 on all pass, 1 if any
-    fixture fails.  All failures stem from NotImplementedError ("WU-2.2") because
-    compute_state() is a stub — that is the expected RED state for WU-2.1.
+    Prints PASS/FAIL per fixture and a summary.  Returns 0 when all fixtures pass,
+    1 otherwise.  Each fixture builds a synthetic repo tree, calls the fully
+    implemented compute_state() (and a few helper functions directly such as
+    enqueue_adhoc), and asserts the returned dict against expected values.
     """
     failures: list[str] = []
 
@@ -1821,7 +1822,7 @@ def run_smoke_tests() -> int:
             try:
                 got = compute_state(root, cloud=cloud, real_device=real_device)
             except NotImplementedError as exc:
-                # Expected RED state: stub raises NotImplementedError("WU-2.2")
+                # Defensive: compute_state is implemented, so this NotImplementedError guard is now dead code retained for harness symmetry.
                 failures.append(
                     f"[{fix_name}] NotImplementedError (stub not yet implemented): {exc}"
                 )
@@ -1861,7 +1862,7 @@ def run_smoke_tests() -> int:
         # -------------------------------------------------------------------
         # Fixture 12: enqueue_adhoc writes a spec_dir-keyed queue entry.
         # Calls enqueue_adhoc directly (not via compute_state).
-        # Expected RED: NotImplementedError until impl.
+        # Defensive: enqueue_adhoc is implemented; the NotImplementedError guard below is dead code retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_name_ea = "enqueue-adhoc-writes-entry"
         root_ea = _build_bug_fixture(td_path, fix_name_ea)
@@ -1906,7 +1907,7 @@ def run_smoke_tests() -> int:
         # -------------------------------------------------------------------
         # Fixture 13: enqueue_adhoc is idempotent — duplicate id is a no-op.
         # Calls enqueue_adhoc twice with the same id; second call MUST NOT raise.
-        # Expected RED: NotImplementedError on both calls until impl.
+        # Defensive: enqueue_adhoc is implemented; the NotImplementedError guard below is dead code retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_name_idem = "enqueue-adhoc-idempotent"
         root_idem = _build_bug_fixture(td_path, fix_name_idem)
@@ -1942,10 +1943,10 @@ def run_smoke_tests() -> int:
             print(f"  FAIL [{fix_name_idem}]: NotImplementedError — {exc}")
 
         # -------------------------------------------------------------------
-        # scoped-bug-id (RED): compute_state() with scope_bug_id="bug-scope-beta"
+        # scoped-bug-id: compute_state() with scope_bug_id="bug-scope-beta"
         # must advance the SECOND bug in the queue, not the default first one.
-        # The kwarg does not exist yet → TypeError: unexpected keyword argument.
-        # Wrapped in try/except TypeError so the harness reports a clean FAIL.
+        # scope_bug_id is now implemented; the TypeError guard below is dead code
+        # retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_name_scope = "scope-bug-id-two-bugs"
         root_scope = _build_bug_fixture(td_path, fix_name_scope)
@@ -1975,7 +1976,7 @@ def run_smoke_tests() -> int:
                 f"scoped-bug-id: feature_id={fid_scope!r}"
             )
         except TypeError as exc:
-            # Expected RED: scope_bug_id kwarg not yet accepted.
+            # Defensive: compute_state is implemented, so this TypeError guard is now dead code retained for harness symmetry.
             failures.append(
                 f"[{fix_name_scope}] scoped-bug-id: TypeError (scope_bug_id param missing): {exc}"
             )

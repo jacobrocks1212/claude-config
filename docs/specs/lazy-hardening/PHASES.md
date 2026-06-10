@@ -31,13 +31,13 @@ behavior changes land.
 - [x] Device re-open fixture (`STEP_DEVICE_REOPEN`)
 - [x] Step-9 `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` fixtures
 - [x] `backfill_receipts` fixture; severity-ordering fixture (multiple unlisted bugs)
-- [ ] Stale harness docstrings cleaned (both scripts)
+- [x] Stale harness docstrings cleaned (both scripts)
 - [x] AlgoBooth `--repo-root` JSON baseline for bug-state.py
 
 **Runtime Verification:**
-- [ ] `python3 ~/.claude/scripts/lazy-state.py --test` exits 0
-- [ ] `python3 ~/.claude/scripts/bug-state.py --test` exits 0 and matches baseline
-- [ ] `python3 ~/.claude/scripts/test_lazy_core.py` exits 0
+- [x] `python3 ~/.claude/scripts/lazy-state.py --test` exits 0
+- [x] `python3 ~/.claude/scripts/bug-state.py --test` exits 0 and matches baseline
+- [x] `python3 ~/.claude/scripts/test_lazy_core.py` exits 0
 
 **Implementation Notes:**
 
@@ -78,6 +78,25 @@ behavior changes land.
 **Files modified:**
 - `user/scripts/bug-state.py` — 7 new smoke fixtures (SMOKE FIXTURES section only)
 - `user/scripts/tests/baselines/bug-state-test-baseline.txt` — regenerated
+
+#### Implementation Notes (Phase 1 — Batch 3: WU-4 + Post-Phase)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (inline review — comment/docstring-only diff fully visible + mechanically verified; zero-drift byte-identical both scripts; baselines still match; suite 82/82)
+**Work completed:**
+- WU-4 (stale harness docstrings cleaned, both scripts): rewrote the `run_smoke_tests()` docstring in `bug-state.py` (dropped the "compute_state() is a stub / expected RED state for WU-2.1" narrative — compute_state is fully implemented) and updated 4 stale `#` comments there + 2 in `lazy-state.py` (scope_feature_id "does not exist yet" / "RED") to describe the now-implemented state and label the surviving `except NotImplementedError`/`except TypeError` clauses as dead defensive guards. Also cleaned the 2 deferred Batch-1 test docstrings + their inline read-comments in `test_lazy_core.py` ("intentionally RED until baseline created" → GREEN steady-state contract).
+- **Comment/docstring-only**: every changed line is a `#` comment or `"""docstring"""`; NO executable line, printed string literal (the `failures.append(... "stub not yet implemented" ...)` f-strings were left verbatim), or `except` branch was touched. Verified mechanically (no `failures.append`/`print`/`def`/`return`/assignment lines in the diff) and by byte-identical zero-drift.
+- **Post-Phase docs**: updated `user/scripts/CLAUDE.md` Testing section and `user/scripts/tests/baselines/README.md` to document the new `bug-state-test-baseline.txt` byte-pin and the shared cross-platform `_normalize_smoke_output` mechanism (temp-suffix + temp-root + separator canonicalization → platform-neutral baselines across Windows/WSL).
+**Integration notes:**
+- Integration verification: no module wiring occurred (this phase adds only test data, a baseline mechanism, and comment cleanup) — nothing previously isolated was connected. The baseline tests ARE full-stack (subprocess → script → observable stdout → byte assertion), so external-output coverage exists for the only "user-facing API" touched (`--test`/`--repo-root`).
+- Final phase gate: all 3 regression gates exit 0; both scripts' `--repo-root` output byte-identical to phase-start (zero behavior change); full `test_lazy_core.py` suite 82/82.
+**Pitfalls & guidance:**
+- The `except NotImplementedError`/`except TypeError` guards in both smoke harnesses are dead code (compute_state/enqueue_adhoc/scope kwargs are implemented) but were RETAINED — WU-4 was scoped to comments only, so removing executable branches was out of scope.
+**Files modified:**
+- `user/scripts/bug-state.py` — docstring + 4 stale comments (comments/docstring only)
+- `user/scripts/lazy-state.py` — 2 stale scope comments (comments only)
+- `user/scripts/test_lazy_core.py` — 3 stale test docstrings + 2 inline comments (docstring/comments only)
+- `user/scripts/CLAUDE.md` — Testing section (bug-state baseline + cross-platform normalization)
+- `user/scripts/tests/baselines/README.md` — bug-state-test-baseline.txt section + shared normalization note
 
 ---
 

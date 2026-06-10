@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-hardening
-status: Ready
+status: Complete
 created: 2026-06-10
 phases: [1]
 ---

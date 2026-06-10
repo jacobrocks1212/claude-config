@@ -3130,11 +3130,11 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_name_halt}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
-        # Fixture WU-4.2-1: scoped-feature-id (RED — param does not exist yet)
+        # Fixture WU-4.2-1: scoped-feature-id
         # Two actionable ad-hoc features; default picks the FIRST (feat-scope-alpha),
         # so scoping to the SECOND (feat-scope-beta) proves the filter took effect.
-        # This call passes `scope_feature_id` which does not exist on compute_state
-        # yet → raises TypeError. Wrapped so the harness records a clean FAIL.
+        # scope_feature_id is now implemented; the TypeError guard below is dead code
+        # retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_scope_root = td_path / "scope-filter"
         scope_features = fix_scope_root / "docs" / "features"
@@ -3156,7 +3156,7 @@ def run_smoke_tests() -> int:
             )
             (fdir / "RESEARCH.md").write_text("# R\n")
             (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
-        # RED: scope_feature_id kwarg does not exist yet — expect TypeError
+        # Defensive: scope_feature_id is implemented; the TypeError guard below is dead code retained for harness symmetry.
         try:
             got_scoped = compute_state(
                 fix_scope_root, cloud=False, real_device=True,

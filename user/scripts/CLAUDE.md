@@ -177,10 +177,15 @@ When the state machine changes:
 `lazy-state.py --test` and `bug-state.py --test` build temp-dir fixtures and assert the
 computed state. They are the only fast, hermetic check for state-machine correctness — **a
 refactor that keeps `--test` green has preserved behavior.** Because both scripts share
-`lazy_core.py`, any change there MUST keep BOTH suites green (and `lazy-state.py --test`
-byte-identical to `tests/baselines/lazy-state-test-baseline.txt`, normalizing the per-run
-`tempfile` suffix); `test_lazy_core.py` characterizes the shared helpers directly. Green
-smoke tests are the acceptance gate before touching anything downstream.
+`lazy_core.py`, any change there MUST keep BOTH suites green. Each `--test` output is
+byte-pinned: `lazy-state.py --test` to `tests/baselines/lazy-state-test-baseline.txt` and
+`bug-state.py --test` to `tests/baselines/bug-state-test-baseline.txt`, compared via the
+shared **cross-platform** `_normalize_smoke_output` helper in `test_lazy_core.py` — it
+canonicalizes the per-run `tempfile` suffix, the OS temp-root, and `\`-vs-`/` separators, so
+the committed baselines are platform-neutral across Windows and WSL (regenerate a baseline ONLY
+by piping live `--test` output through that helper, never by hand). `test_lazy_core.py`
+characterizes the shared helpers directly. Green smoke tests are the acceptance gate before
+touching anything downstream.
 
 ## Related
 

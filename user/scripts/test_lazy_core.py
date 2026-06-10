@@ -1223,9 +1223,10 @@ def test_lazy_state_test_output_matches_baseline():
     that alters observable --test output will cause this test to fail with a
     unified diff.
 
-    NOTE: This test is intentionally RED until the baseline file is regenerated
-    in canonical (cross-platform) form.  The correct RED reason is a mismatch
-    between the stale Linux-captured baseline and the normalized live output.
+    NOTE: The baseline has been regenerated in canonical (cross-platform) form
+    and this test is the GREEN steady-state zero-behavior-change contract.  Any
+    refactor that alters observable --test output will cause this test to fail
+    with a unified diff.
     """
     # No _guard() — this test does not require lazy_core to be importable;
     # it tests lazy-state.py's --test harness in isolation.
@@ -1271,9 +1272,9 @@ def test_bug_state_test_output_matches_baseline():
 
     Mirrors test_lazy_state_test_output_matches_baseline for bug-state.py.
 
-    NOTE: This test is intentionally RED because the baseline file
-    user/scripts/tests/baselines/bug-state-test-baseline.txt does not exist yet.
-    The correct RED reason is FileNotFoundError on the baseline read.
+    NOTE: The baseline file user/scripts/tests/baselines/bug-state-test-baseline.txt
+    now exists and this is the steady-state GREEN contract.  Any refactor that alters
+    observable --test output will cause this test to fail with a unified diff.
     """
     # No _guard() — does not require lazy_core to be importable.
 
@@ -1288,8 +1289,8 @@ def test_bug_state_test_output_matches_baseline():
     # Normalize with the shared cross-platform helper.
     normalized_live = _normalize_smoke_output(live_output)
 
-    # Read the (already-normalized) baseline — this file does NOT exist yet,
-    # so this line will raise FileNotFoundError (the expected RED reason).
+    # Read the (already-normalized) baseline — the file exists; FileNotFoundError
+    # here would indicate the baseline was accidentally deleted.
     baseline_path = (
         _SCRIPTS_DIR / "tests" / "baselines" / "bug-state-test-baseline.txt"
     )
@@ -1356,14 +1357,14 @@ def test_bug_state_algobooth_baseline_wellformed():
     contains the core structural keys expected for a bug-state AlgoBooth snapshot.
 
     This is a drift-tolerant structural contract — exact values are NOT asserted
-    because the AlgoBooth tree evolves.  The test will fail with FileNotFoundError
-    until the implementation agent creates the baseline file (the correct RED state).
+    because the AlgoBooth tree evolves.  The baseline file now exists and this test
+    is a steady-state structural contract.
     """
     # No _guard() — does not require lazy_core to be importable.
     baseline_path = (
         _SCRIPTS_DIR / "tests" / "baselines" / "bug-state-algobooth.json"
     )
-    # FileNotFoundError here is the correct RED reason while the file is absent.
+    # The baseline file exists; FileNotFoundError here would indicate it was accidentally deleted.
     raw = baseline_path.read_text(encoding="utf-8")
 
     try:
