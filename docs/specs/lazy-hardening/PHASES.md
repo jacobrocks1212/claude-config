@@ -296,12 +296,12 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] PushNotification at every park / halt / flush / run end (both modes)
 - [x] D1 flush protocol (`--park` only): batched AskUserQuestion (≤4/call, Zero-Context Briefing preserved) at first opportunity (operator message / out of unparked work / run end); decision-apply per answer
 - [x] D2 two-key auto-accept (`--park` only): `class: mechanical` + input-audit concurrence → recommended option auto-accepted, `resolved_by: auto-two-key`, receipt log + run-end digest; any disagreement → product → park; no auto-accept ever without `--park`
-- [ ] Cache-boundary note documented in both batch skills
+- [x] Cache-boundary note documented in both batch skills
 
 **Runtime Verification:**
-- [ ] Default-mode regression: without `--park-needs-input`, a NEEDS_INPUT fixture still emits the `needs-input` halt (probe output byte-identical to Phase 1 baseline)
-- [ ] Fixtures: with the flag, `parked[]` populated, parked item skipped not halted, resolved sentinel re-enters
-- [ ] lazy-batch-retro checklist additions: parks fire notifications; flush count matches parked count; every auto-accept carries two keys + digest entry; zero parks/auto-accepts in no-flag runs
+- [x] Default-mode regression: without `--park-needs-input`, a NEEDS_INPUT fixture still emits the `needs-input` halt (probe output byte-identical to Phase 1 baseline) — verified by the `park-needs-input-default-halt` / `bug-park-needs-input-default-halt` smoke sub-fixtures (assert `terminal_reason=="needs-input"` AND `parked` key absent) + the byte-pinned `--test` baseline-match tests + the zero-drift `--repo-root <AlgoBooth>` probe (no `parked` key in default output for either script)
+- [x] Fixtures: with the flag, `parked[]` populated, parked item skipped not halted, resolved sentinel re-enters — verified by the `park-needs-input-mode-skip` (parked count=1, next entry dispatched) and `park-needs-input-resolved-reenter` (resolved sentinel → item re-dispatched, parked=[]) smoke sub-fixtures in both scripts (all green in `--test`)
+- [ ] lazy-batch-retro checklist additions: parks fire notifications; flush count matches parked count; every auto-accept carries two keys + digest entry; zero parks/auto-accepts in no-flag runs — **deferred to Phase 6** (the design plan places the lazy-batch-retro Phase-4 grading-check additions in Phase 6 "lazy-batch-retro grading fixes"; this row is the cross-check that Phase 6 will satisfy, not a Phase-4 WU)
 
 **Implementation Notes:**
 
@@ -367,6 +367,23 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - `user/skills/lazy-batch/SKILL.md` — Step 1d.5 step 7 audit_concurs recording + run-end digest table
 - `user/skills/lazy-bug-batch/SKILL.md` — Step 1d.5 mirror note + run-end digest table
 - `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 1d.5 mirror inclusion + run-end digest table
+
+#### Implementation Notes (Phase 4 — Batch 5: WU-6 + Post-Phase)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (inline review — 2 files, 20 insertions ≤150 lines; orchestrator ground-truth verified — wc 1355/842 matches, HEAD unchanged 150c8da, note identical in both files, lazy-bug-batch correctly untouched)
+**Work completed:**
+- **WU-6** (cache-boundary note, docs): added a "Cache-boundary note" paragraph to the two FEATURE batch SKILLs ONLY (`lazy-batch` + `lazy-batch-cloud`; lazy-bug-batch intentionally NOT touched per the plan) near each file's `### 1g-flush` trigger list. The note states that flush triggers (b) "no unparked work remains" and (c) "run end" coincide with the natural Anthropic prompt-cache rebuild boundaries (≈5-min TTL lapses where the orchestrator was already pausing/stopping), so batching parked decisions to flush there adds no extra cache cost; trigger (a) (operator message) is itself an interaction boundary; consequence — do NOT interleave unrelated long waits/blocking halts between a park and its flush (it would force repeated cache rebuilds for no benefit). Wording identical across the two files.
+**Files modified:**
+- `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — cache-boundary note
+
+#### Post-Phase (Phase 4 — Integration Verification + CLAUDE.md review + part close)
+**Integration verification:** the D1/D2 park machinery coheres end-to-end as ONE opt-in system —
+(1) **no-flag path is byte-for-byte unchanged** (the load-bearing invariant): the script `parked`/`class`/`audit_concurs` fields are emitted/read ONLY under `--park` / park-mode; verified by the zero-drift `--repo-root <AlgoBooth>` probe (no `parked` key for either script), the byte-pinned `--test` baseline-match tests (104/104 + both scripts' baselines), and the additive-only baseline diffs. The `--park` SKILL flag (WU-2) defaults off; the `--park-needs-input` script flag (WU-1) is passed by the orchestrator ONLY when `--park` was given; the auto-accept (WU-5) lives exclusively in the park-only `parked-flush.md`. (2) **The flagged path parks + flushes coherently:** a NEEDS_INPUT item is skipped→`parked[]` (WU-1, BLOCKED retains precedence), a park PushNotification fires with running count (WU-3), the batched flush at trigger (a)/(b)/(c) surfaces product decisions via AskUserQuestion with the Zero-Context Briefing preserved (WU-4), two-key-mechanical decisions auto-accept with `resolved_by: auto-two-key` + run-end digest (WU-5), and the cache-boundary discipline (WU-6) keeps flushes at cache/interaction boundaries. The four shared components (`parked-flush.md` new; `decision-resume.md`/`sentinel-frontmatter.md` extended) are referenced by all consuming SKILLs (mount-site verified — no orphans).
+**CLAUDE.md review:** `user/scripts/CLAUDE.md` "## CLI surface" lists the state-script flags → added the new `--park-needs-input` line (with the BLOCKED-still-halts + byte-identical-without-flag caveats). No other CLAUDE.md update warranted (the `--park` SKILL flag + park orchestration are documented in the SKILLs themselves; no new directory/structure).
+**Part-end full quality gate (MANDATORY — all exit 0):** `python3 ~/.claude/scripts/lazy-state.py --test` (0), `python3 ~/.claude/scripts/bug-state.py --test` (0), `python3 ~/.claude/scripts/test_lazy_core.py` (104/104, 0) — run + passed fresh by the orchestrator as the final chained command before the part-close commit. (`~/.claude/scripts/*.py` resolve to the repo's `user/scripts/*.py` — same inode — so the gate tested the edited code.)
+**Carried follow-ups (out of Phase 4 scope):**
+- Runtime Verification row 3 (lazy-batch-retro Phase-4 grading checks) is owned by Phase 6 per the design plan ("lazy-batch-retro grading fixes") — left unchecked; not a Phase-4 WU.
+- Phase 6 (by-reference rebuild of lazy-bug-batch + componentization) inherits the canonical lazy-batch park text added here; the new `parked-flush.md` shared component already follows the by-reference pattern Phase 6 favors.
 
 ---
 

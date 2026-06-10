@@ -945,6 +945,16 @@ mode.
 - **(c) Run end:** flush before printing the final batch report whenever `parked_count > 0` with
   unresolved sentinels still present.
 
+**Cache-boundary note:** Triggers **(b)** and **(c)** are also the natural Anthropic prompt-cache
+rebuild boundaries — the orchestrator was already going to pause or stop, so the ≈5-minute TTL
+lapses anyway. Batching parked decisions to flush at those points adds **no extra cache cost**.
+Trigger **(a)** (operator message mid-run) is itself a natural interaction boundary — flush there
+too rather than accumulating further. Consequence: **do not interleave unrelated long waits (or
+unrelated blocking halts) between a park and its flush.** Parking is for advancing past a decision
+so forward work continues; the flush should land at the next natural cache boundary ((b)/(c)) or
+interaction point ((a)) — inserting idle time in between forces repeated cache rebuilds for no
+benefit.
+
 Then read and apply the shared parked-flush handler exactly (single source across all three batch
 orchestrators):
 

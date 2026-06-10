@@ -115,6 +115,7 @@ python3 lazy-state.py --cloud               # cloud variant
 python3 lazy-state.py --real-device auto    # resolve host audio capability from env
 python3 lazy-state.py --skip-needs-research # batch: skip research-pending items
 python3 lazy-state.py --repo-root <path>    # operate on a specific repo
+python3 lazy-state.py --park-needs-input    # batch --park mode: skip (park) NEEDS_INPUT items into parked[] instead of halting (BLOCKED still halts; output byte-identical without the flag)
 python3 lazy-state.py --enqueue-adhoc …     # prepend an ad-hoc item to the queue
 python3 lazy-state.py --backfill-receipts   # grandfather pre-gate completions
 python3 lazy-state.py --test                # run the in-file fixture smoke tests
