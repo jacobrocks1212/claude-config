@@ -4661,7 +4661,14 @@ def main() -> int:
                         help="Reason string for __write_deferred_non_cloud__.")
     parser.add_argument("--deferred-step", type=int, default=None,
                         help="deferred_step for __write_deferred_non_cloud__.")
+    parser.add_argument("--neutralize-sentinel", default=None, metavar="PATH",
+                        help="Rename a resolved sentinel to the canonical *_RESOLVED_<date> form (collision-safe).")
     args = parser.parse_args()
+
+    if args.neutralize_sentinel is not None:
+        result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
 
     if args.apply_pseudo is not None:
         name, spec = args.apply_pseudo

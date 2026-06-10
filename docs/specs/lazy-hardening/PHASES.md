@@ -396,7 +396,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Deliverables:**
 - [x] `--verify-ledger <spec_path>` (replaces 5 prose blocks)
 - [x] `--apply-pseudo <name> <spec_path>` for all deterministic sentinel/receipt writes; receipt-write ownership contradiction resolved (script is single author)
-- [ ] `--neutralize-sentinel <path>` with collision handling
+- [x] `--neutralize-sentinel <path>` with collision handling
 - [ ] Persisted probe signature → `repeat_count` in output
 - [ ] Probe payload includes git-guard results + pre-formatted cycle header
 - [ ] Both batch skills consume subcommands; superseded prose deleted
@@ -441,6 +441,20 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Review fixes applied (Sonnet fix-agent, re-verified PASS):** (1) plan-flip `status:` rewrite re-scoped from a whole-file `re.MULTILINE` match to the frontmatter fence span (was a latent body-corruption defect on a malformed plan; dead `if m is None: pass` branch removed); (2) `mcp_scenarios` emitted via `yaml.safe_dump` (was hand-rolled `[a, b]`, broke on colon/comma); (3) two stale doc sentences reconciled.
 **Integration notes:** `apply_pseudo` adds only `import datetime` (stdlib, no mock consumers → no propagation risk); CLI additive + gated behind `is not None` (default `compute_state` byte-unchanged). WU-6 (separate commit) routes the SKILL `__mark_complete__`/`__mark_fixed__`/`__write_*__` handler prose to call these subcommands and deletes the now-superseded inline mechanics.
 **Files modified:** `user/scripts/lazy_core.py` (+`apply_pseudo`, +`import datetime`), `user/scripts/lazy-state.py` (CLI), `user/scripts/bug-state.py` (CLI), `user/skills/_components/completion-integrity-gate.md` (ownership resolution), `user/scripts/test_lazy_core.py` (16 tests + helpers + registry).
+
+#### Implementation Notes (Phase 5 — Batch 3: WU-3 `--neutralize-sentinel`)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (dedicated Opus reviewer; orchestrator independently re-ran impl GROUND-TRUTH block + read the full function body — wc/grep/status/test-counts matched, HEAD unchanged 2b61701; ground-truth verified: yes. No issues found.)
+**Work completed:**
+- **WU-3** (TDD): new shared `lazy_core.neutralize_sentinel(path, date=None) -> dict` (~line 1602) renames a resolved sentinel to the canonical `<stem>_RESOLVED_<date><ext>` form (e.g. `NEEDS_INPUT.md` → `NEEDS_INPUT_RESOLVED_2026-06-10.md`, `BLOCKED.md` → `BLOCKED_RESOLVED_2026-06-10.md`), matching the `git mv … _RESOLVED…` prose in `decision-resume.md`/`blocked-resolution.md`. Returns `{ok, renamed_from(basename)|None, renamed_to(basename)|None, refused:str|None, collision_suffix:int|None}`.
+  - **Collision handling** (the load-bearing case — the rename collided once in practice): if the base target already exists, a numeric suffix `_2`, `_3`, … is appended before the extension until a FREE name is found — the pre-existing target is NEVER clobbered (`collision_suffix` records the integer used, else None).
+  - Refusals (no filesystem mutation): absent path → `"sentinel not found"`; basename already contains `_RESOLVED_` → `"already neutralized"` (no double-neutralize).
+  - Rename mechanism: `git mv` (preserves history for tracked files) with a `Path.rename()` fallback when git returns non-zero / raises (untracked file or non-repo — the unit-test path). Fallback cannot raise on collision because the target was proven free first.
+- **CLI**: `--neutralize-sentinel PATH` added to BOTH `lazy-state.py` (~4664/4668) and `bug-state.py` (~2871/2876), among early-return handlers BEFORE `compute_state`; reuses the existing `--apply-date` flag (no duplicate date flag); prints JSON, exits 0 iff `ok` else 1.
+- **Tests**: 6 RED→GREEN `test_neutralize_sentinel_*` — basic rename, absent refusal, single collision (`_2`, pre-existing content preserved), double collision (`_3`, both priors untouched), already-resolved refusal (file NOT renamed), BLOCKED form. The collision tests are non-tautological (assert byte-preservation of the pre-existing target + source content in the new file).
+**Ground-truth verification:** impl GROUND-TRUTH block re-run independently — `git status --short` (4 files M), `wc -l` (lazy_core 1710), grep anchors, full suite 132/132, both `--test` gates exit 0 — all matched. No falsified claims.
+**Integration notes:** new function adds no imports beyond already-present `subprocess`/`datetime`; CLI additive + gated behind `is not None`. WU-6 routes the SKILL neutralization prose (`git mv … _RESOLVED*`) to call this subcommand.
+**Files modified:** `user/scripts/lazy_core.py` (+`neutralize_sentinel`), `user/scripts/lazy-state.py` (CLI), `user/scripts/bug-state.py` (CLI), `user/scripts/test_lazy_core.py` (6 tests + registry).
 
 ---
 

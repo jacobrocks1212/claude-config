@@ -2915,6 +2915,228 @@ def test_apply_pseudo_validated_from_results_escapes_special_scenarios():
 
 
 # ---------------------------------------------------------------------------
+# Tests: neutralize_sentinel — WU-3 rename-to-resolved helper
+# ---------------------------------------------------------------------------
+
+def test_neutralize_sentinel_basic_rename():
+    """NEEDS_INPUT.md present, no collision → renames to NEEDS_INPUT_RESOLVED_2026-06-10.md.
+
+    Asserts:
+    - ok is True
+    - renamed_to == "NEEDS_INPUT_RESOLVED_2026-06-10.md"
+    - renamed_from == "NEEDS_INPUT.md"
+    - collision_suffix is None
+    - new file exists at the resolved path
+    - original NEEDS_INPUT.md is gone
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        src = d / "NEEDS_INPUT.md"
+        src.write_text("needs input content\n", encoding="utf-8")
+
+        result = lazy_core.neutralize_sentinel(src, date="2026-06-10")
+
+        resolved = d / "NEEDS_INPUT_RESOLVED_2026-06-10.md"
+        src_gone = not src.exists()
+        resolved_exists = resolved.exists()
+
+    assert result["ok"] is True, f"expected ok=True, got {result}"
+    assert result["renamed_to"] == "NEEDS_INPUT_RESOLVED_2026-06-10.md", (
+        f"expected renamed_to='NEEDS_INPUT_RESOLVED_2026-06-10.md', got {result['renamed_to']!r}"
+    )
+    assert result["renamed_from"] == "NEEDS_INPUT.md", (
+        f"expected renamed_from='NEEDS_INPUT.md', got {result['renamed_from']!r}"
+    )
+    assert result["collision_suffix"] is None, (
+        f"expected collision_suffix=None, got {result['collision_suffix']!r}"
+    )
+    assert resolved_exists, "NEEDS_INPUT_RESOLVED_2026-06-10.md was not created"
+    assert src_gone, "original NEEDS_INPUT.md still exists after rename"
+
+
+def test_neutralize_sentinel_refuses_when_absent():
+    """Path to a non-existent file → ok=False, refused non-None, no file created.
+
+    The function must NOT create any file when the source path does not exist.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        missing = d / "NEEDS_INPUT.md"
+        # Confirm precondition: file does not exist.
+        assert not missing.exists(), "pre-condition: NEEDS_INPUT.md must not exist"
+
+        result = lazy_core.neutralize_sentinel(missing, date="2026-06-10")
+
+        files_after = list(d.iterdir())
+
+    assert result["ok"] is False, f"expected ok=False for absent path, got {result}"
+    assert result["refused"] is not None, (
+        f"expected refused to be non-None for absent path, got {result['refused']!r}"
+    )
+    assert result["renamed_from"] is None, (
+        f"expected renamed_from=None for absent path, got {result['renamed_from']!r}"
+    )
+    assert result["renamed_to"] is None, (
+        f"expected renamed_to=None for absent path, got {result['renamed_to']!r}"
+    )
+    assert result["collision_suffix"] is None, (
+        f"expected collision_suffix=None for absent path, got {result['collision_suffix']!r}"
+    )
+    assert files_after == [], (
+        f"no files should have been created in temp dir, found: {files_after}"
+    )
+
+
+def test_neutralize_sentinel_collision_appends_suffix():
+    """NEEDS_INPUT.md present AND NEEDS_INPUT_RESOLVED_2026-06-10.md already exists.
+
+    The function MUST NOT clobber the pre-existing resolved file.
+    It must rename to NEEDS_INPUT_RESOLVED_2026-06-10_2.md instead.
+
+    Asserts:
+    - ok is True
+    - renamed_to == "NEEDS_INPUT_RESOLVED_2026-06-10_2.md"
+    - collision_suffix == 2
+    - the _2 file's content is "NEW" (the original NEEDS_INPUT.md content)
+    - NEEDS_INPUT_RESOLVED_2026-06-10.md still contains exactly "OLD-PRESERVE-ME" (not clobbered)
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        src = d / "NEEDS_INPUT.md"
+        src.write_text("NEW", encoding="utf-8")
+        pre_existing = d / "NEEDS_INPUT_RESOLVED_2026-06-10.md"
+        pre_existing.write_text("OLD-PRESERVE-ME", encoding="utf-8")
+
+        result = lazy_core.neutralize_sentinel(src, date="2026-06-10")
+
+        resolved_2 = d / "NEEDS_INPUT_RESOLVED_2026-06-10_2.md"
+        resolved_2_exists = resolved_2.exists()
+        resolved_2_content = resolved_2.read_text(encoding="utf-8") if resolved_2_exists else None
+        pre_existing_content = pre_existing.read_text(encoding="utf-8")
+
+    assert result["ok"] is True, f"expected ok=True, got {result}"
+    assert result["renamed_to"] == "NEEDS_INPUT_RESOLVED_2026-06-10_2.md", (
+        f"expected renamed_to='NEEDS_INPUT_RESOLVED_2026-06-10_2.md', got {result['renamed_to']!r}"
+    )
+    assert result["collision_suffix"] == 2, (
+        f"expected collision_suffix=2, got {result['collision_suffix']!r}"
+    )
+    assert resolved_2_exists, "NEEDS_INPUT_RESOLVED_2026-06-10_2.md was not created"
+    assert resolved_2_content == "NEW", (
+        f"_2 file content should be 'NEW' (original NEEDS_INPUT content), got {resolved_2_content!r}"
+    )
+    assert pre_existing_content == "OLD-PRESERVE-ME", (
+        f"pre-existing NEEDS_INPUT_RESOLVED_2026-06-10.md was clobbered! "
+        f"content is now {pre_existing_content!r}, expected 'OLD-PRESERVE-ME'"
+    )
+
+
+def test_neutralize_sentinel_double_collision_increments():
+    """Both ..._2026-06-10.md AND ..._2026-06-10_2.md already exist → renames to ..._2026-06-10_3.md.
+
+    Asserts:
+    - ok is True
+    - renamed_to == "NEEDS_INPUT_RESOLVED_2026-06-10_3.md"
+    - collision_suffix == 3
+    - both prior files are untouched (content preserved)
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        src = d / "NEEDS_INPUT.md"
+        src.write_text("NEWEST", encoding="utf-8")
+        prior_1 = d / "NEEDS_INPUT_RESOLVED_2026-06-10.md"
+        prior_1.write_text("FIRST-RESOLVED", encoding="utf-8")
+        prior_2 = d / "NEEDS_INPUT_RESOLVED_2026-06-10_2.md"
+        prior_2.write_text("SECOND-RESOLVED", encoding="utf-8")
+
+        result = lazy_core.neutralize_sentinel(src, date="2026-06-10")
+
+        resolved_3 = d / "NEEDS_INPUT_RESOLVED_2026-06-10_3.md"
+        resolved_3_exists = resolved_3.exists()
+        prior_1_content = prior_1.read_text(encoding="utf-8")
+        prior_2_content = prior_2.read_text(encoding="utf-8")
+
+    assert result["ok"] is True, f"expected ok=True, got {result}"
+    assert result["renamed_to"] == "NEEDS_INPUT_RESOLVED_2026-06-10_3.md", (
+        f"expected renamed_to='NEEDS_INPUT_RESOLVED_2026-06-10_3.md', got {result['renamed_to']!r}"
+    )
+    assert result["collision_suffix"] == 3, (
+        f"expected collision_suffix=3, got {result['collision_suffix']!r}"
+    )
+    assert resolved_3_exists, "NEEDS_INPUT_RESOLVED_2026-06-10_3.md was not created"
+    assert prior_1_content == "FIRST-RESOLVED", (
+        f"prior _1 file was mutated; expected 'FIRST-RESOLVED', got {prior_1_content!r}"
+    )
+    assert prior_2_content == "SECOND-RESOLVED", (
+        f"prior _2 file was mutated; expected 'SECOND-RESOLVED', got {prior_2_content!r}"
+    )
+
+
+def test_neutralize_sentinel_refuses_already_resolved():
+    """Calling neutralize_sentinel on an already-resolved file is refused.
+
+    A file whose basename already contains '_RESOLVED_' must not be double-neutralized.
+
+    Asserts:
+    - ok is False
+    - refused is non-None
+    - the file still exists at its original path (not renamed)
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        already_resolved = d / "BLOCKED_RESOLVED_2026-06-09.md"
+        already_resolved.write_text("already resolved content\n", encoding="utf-8")
+
+        result = lazy_core.neutralize_sentinel(already_resolved, date="2026-06-10")
+
+        still_exists = already_resolved.exists()
+
+    assert result["ok"] is False, (
+        f"expected ok=False when path already contains '_RESOLVED_', got {result}"
+    )
+    assert result["refused"] is not None, (
+        f"expected refused to be non-None for already-resolved path, got {result['refused']!r}"
+    )
+    assert still_exists, (
+        "BLOCKED_RESOLVED_2026-06-09.md was renamed/deleted — must stay at its original path"
+    )
+
+
+def test_neutralize_sentinel_blocked_form():
+    """BLOCKED.md → BLOCKED_RESOLVED_2026-06-10.md (canonical stem + extension preserved).
+
+    Asserts:
+    - ok is True
+    - renamed_to == "BLOCKED_RESOLVED_2026-06-10.md"
+    - original BLOCKED.md is gone
+    - new file exists
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        src = d / "BLOCKED.md"
+        src.write_text("blocked content\n", encoding="utf-8")
+
+        result = lazy_core.neutralize_sentinel(src, date="2026-06-10")
+
+        resolved = d / "BLOCKED_RESOLVED_2026-06-10.md"
+        resolved_exists = resolved.exists()
+        src_gone = not src.exists()
+
+    assert result["ok"] is True, f"expected ok=True, got {result}"
+    assert result["renamed_to"] == "BLOCKED_RESOLVED_2026-06-10.md", (
+        f"expected renamed_to='BLOCKED_RESOLVED_2026-06-10.md', got {result['renamed_to']!r}"
+    )
+    assert resolved_exists, "BLOCKED_RESOLVED_2026-06-10.md was not created"
+    assert src_gone, "original BLOCKED.md still exists after rename"
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -3071,6 +3293,13 @@ _TESTS = [
     ("test_apply_pseudo_unknown_name_refuses", test_apply_pseudo_unknown_name_refuses),
     ("test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status", test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status),
     ("test_apply_pseudo_validated_from_results_escapes_special_scenarios", test_apply_pseudo_validated_from_results_escapes_special_scenarios),
+    # neutralize_sentinel — WU-3 rename-to-resolved helper
+    ("test_neutralize_sentinel_basic_rename", test_neutralize_sentinel_basic_rename),
+    ("test_neutralize_sentinel_refuses_when_absent", test_neutralize_sentinel_refuses_when_absent),
+    ("test_neutralize_sentinel_collision_appends_suffix", test_neutralize_sentinel_collision_appends_suffix),
+    ("test_neutralize_sentinel_double_collision_increments", test_neutralize_sentinel_double_collision_increments),
+    ("test_neutralize_sentinel_refuses_already_resolved", test_neutralize_sentinel_refuses_already_resolved),
+    ("test_neutralize_sentinel_blocked_form", test_neutralize_sentinel_blocked_form),
 ]
 
 

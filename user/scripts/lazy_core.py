@@ -1592,3 +1592,119 @@ def apply_pseudo(
     else:
         # Unknown pseudo-skill name — never crash, always refuse gracefully.
         return _refused(f"unknown pseudo-skill: {name}")
+
+
+# ---------------------------------------------------------------------------
+# neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
+#   *_RESOLVED_<date> form (collision-safe, git-mv-aware).
+# ---------------------------------------------------------------------------
+
+def neutralize_sentinel(path: Path, date: str | None = None) -> dict:
+    """Rename a sentinel file to its canonical RESOLVED form.
+
+    Given a sentinel like NEEDS_INPUT.md or BLOCKED.md that has been acted on,
+    this function renames it to ``<stem>_RESOLVED_<date><ext>`` in the same
+    directory. The rename is collision-safe: if the canonical target already
+    exists, a numeric suffix is appended (``_2``, ``_3``, …) until a free name
+    is found. The original file is never clobbered.
+
+    When the file lives inside a git repo and is tracked, ``git mv`` is used to
+    preserve history. If ``git mv`` returns non-zero (plain temp dir, untracked
+    file, or git unavailable) the function falls back to a plain filesystem
+    rename via ``Path.rename()``.
+
+    Args:
+        path: Absolute (or relative) path to the sentinel file to neutralize.
+        date: ISO date string (YYYY-MM-DD) to embed in the resolved name.
+              Defaults to today's date (``datetime.date.today().isoformat()``).
+
+    Returns:
+        A dict with keys:
+          ok              – True on success, False on any refusal/error.
+          renamed_from    – Basename of the source file (str), or None on refusal.
+          renamed_to      – Basename of the target file (str), or None on refusal.
+          refused         – Human-readable refusal reason (str), or None on success.
+          collision_suffix – Integer n (≥2) when a collision suffix was required,
+                             or None when the base target name was free.
+    """
+    # Default to today when no date is provided by the caller.
+    if date is None:
+        date = datetime.date.today().isoformat()
+
+    # Guard 1: source must exist — never create anything for a missing path.
+    if not path.exists():
+        return {
+            "ok": False,
+            "renamed_from": None,
+            "renamed_to": None,
+            "refused": "sentinel not found",
+            "collision_suffix": None,
+        }
+
+    # Guard 2: refuse to double-neutralize a file that already contains _RESOLVED_.
+    # The literal substring check is intentional — it catches any variant like
+    # NEEDS_INPUT_RESOLVED_2026-06-09.md regardless of the date.
+    if "_RESOLVED_" in path.name:
+        return {
+            "ok": False,
+            "renamed_from": None,
+            "renamed_to": None,
+            "refused": "already neutralized",
+            "collision_suffix": None,
+        }
+
+    # Compute the canonical base target name: <stem>_RESOLVED_<date><ext>.
+    # path.stem is the filename without its final extension; path.suffix is the
+    # extension including the leading dot (e.g. ".md").
+    stem = path.stem
+    ext = path.suffix
+    base_target_name = f"{stem}_RESOLVED_{date}{ext}"
+    target = path.parent / base_target_name
+
+    # Collision-safe name selection: if the base target exists, increment a
+    # numeric suffix starting at 2 until a free slot is found. Never clobber.
+    collision_suffix: int | None = None
+    if target.exists():
+        n = 2
+        while True:
+            candidate_name = f"{stem}_RESOLVED_{date}_{n}{ext}"
+            candidate = path.parent / candidate_name
+            if not candidate.exists():
+                target = candidate
+                collision_suffix = n
+                break
+            n += 1
+
+    # Attempt rename via git mv to preserve history when the file is tracked.
+    # ``git -C <dir> mv <src_basename> <dst_basename>`` keeps the operation
+    # within the directory; we pass basenames so git doesn't need absolute paths.
+    # Modelled after _current_head in lazy-state.py (capture_output, text, timeout,
+    # OSError/SubprocessError guard).
+    renamed = False
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(path.parent), "mv", path.name, target.name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.returncode == 0:
+            # git mv succeeded: source is gone, target is present.
+            renamed = True
+    except (OSError, subprocess.SubprocessError):
+        # git unavailable or some other OS-level failure — fall through to
+        # the plain filesystem move below.
+        pass
+
+    if not renamed:
+        # Fallback: plain filesystem rename. Use Path.rename() which is atomic
+        # on POSIX and behaves correctly on Windows for in-directory renames.
+        path.rename(target)
+
+    return {
+        "ok": True,
+        "renamed_from": path.name,
+        "renamed_to": target.name,
+        "refused": None,
+        "collision_suffix": collision_suffix,
+    }
