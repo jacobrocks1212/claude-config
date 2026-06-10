@@ -394,7 +394,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Entry criteria:** Phases 1–2 (receipt validation must precede `--apply-pseudo`).
 
 **Deliverables:**
-- [ ] `--verify-ledger <spec_path>` (replaces 5 prose blocks)
+- [x] `--verify-ledger <spec_path>` (replaces 5 prose blocks)
 - [ ] `--apply-pseudo <name> <spec_path>` for all deterministic sentinel/receipt writes; receipt-write ownership contradiction resolved (script is single author)
 - [ ] `--neutralize-sentinel <path>` with collision handling
 - [ ] Persisted probe signature → `repeat_count` in output
@@ -406,6 +406,21 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [ ] Fixtures per subcommand: each verify-ledger failing check; apply-pseudo idempotency + gate-absent refusal; neutralize collision; repeat_count increments
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 5 — Batch 1: WU-1 `--verify-ledger`)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (dedicated Opus reviewer; orchestrator independently re-ran the impl agent's full GROUND-TRUTH block and diffed — wc/grep/status/test-counts all matched, HEAD unchanged 0c032d0 so no rogue commits; ground-truth verified: yes)
+**Work completed:**
+- **WU-1** (TDD): new shared `lazy_core.verify_ledger(repo_root, spec_path) -> dict` (~line 1019) scripts the "completion ledger" guard previously duplicated as 5 prose blocks (lazy Step 4, lazy-bug Step 4, both batch 1e.4a, cloud 1e — those are DELETED in WU-6). Returns `{ok, failing_check, checks:{clean_tree, head_matches_origin, plan_complete, deliverables_done}}`; checks evaluated in that fixed order, `failing_check`=first False key, `ok`=all True, all four keys always populated (no short-circuit pruning).
+  - `clean_tree`: `git -C repo_root status --short` empty (subprocess, mirrors `_current_head` style — capture_output/text/timeout, OSError/SubprocessError→False).
+  - `head_matches_origin`: `rev-parse HEAD` == `rev-parse @{u}`; no-upstream / mismatch → False.
+  - `plan_complete`: `_has_any_complete_plan(spec) AND len(find_implementation_plans(spec))==0` — reuses existing helpers; equivalent to "≥1 plan exists AND all Complete" (find_implementation_plans filters OUT Complete plans). A lone legacy no-frontmatter (Ready) plan correctly → False.
+  - `deliverables_done`: REFINED "zero NON-verification `- [ ]`" — `count_deliverables` (returns `(unchecked, checked)`) unchecked==0 OR `remaining_unchecked_are_verification_only(phases)`; missing PHASES.md → False. A blunt `grep -c "- [ ]"` would over-fail legit pending Runtime-Verification rows — the refined check passes them.
+- **CLI**: `--verify-ledger SPEC_PATH` added to BOTH `lazy-state.py` (~4646/4686) and `bug-state.py` (~2841/2871), placed among the early-return handlers BEFORE `compute_state`; prints indented JSON and returns exit 0 iff `ok` else 1 (so the orchestrator's `&&` chains short-circuit on a failed ledger). Uses the existing `--repo-root` global for the git checks.
+- **Tests**: 6 RED→GREEN unit tests + 2 fixture helpers (`_make_git_repo_with_origin` builds a real temp git repo with a bare-repo upstream so `@{u}` resolves offline; `_write_complete_plan`/`_write_all_checked_phases`) in `test_lazy_core.py`, registered in `_TESTS`. The verification-only-passes test is a genuine non-tautological discriminator (2 unchecked rows under `### Runtime Verification` → pass; the sibling test's 1 real unchecked row → fail with `failing_check=="deliverables_done"`). Each failing-case test asserts the EXACT `failing_check` key + the boolean + that earlier checks are True (pins the ordering).
+**Ground-truth verification:** impl-agent GROUND-TRUTH block re-run independently by orchestrator — `git status --short` (4 files M), `wc -l` (lazy_core 1150 / lazy-state 4710 / bug-state 2892), `grep` line numbers, full suite 110/110, both `--test` gates exit 0 — all matched exactly. No falsified claims; no "already complete" claims.
+**Integration notes:** `verify_ledger` is a NEW function (no imports added to mocked modules → no propagation risk); CLI wiring is additive and gated behind `is not None` (default `compute_state` path byte-unchanged). WU-6 (separate commit) will delete the 5 prose blocks this subcommand replaces and route the skills to call it.
+**Files modified:** `user/scripts/lazy_core.py` (+`verify_ledger`, +`import subprocess`), `user/scripts/lazy-state.py` (CLI handler), `user/scripts/bug-state.py` (CLI handler), `user/scripts/test_lazy_core.py` (6 tests + 2 helpers + registry).
 
 ---
 

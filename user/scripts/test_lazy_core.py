@@ -1878,6 +1878,358 @@ def test_bug_state_algobooth_baseline_wellformed():
 
 
 # ---------------------------------------------------------------------------
+# Tests: verify_ledger — WU-1 completion-ledger verdict
+# ---------------------------------------------------------------------------
+
+def _make_git_repo_with_origin(td: str) -> tuple:
+    """Helper: create a real git repo with a bare-repo origin so @{u} resolves.
+
+    Returns (repo_root: Path, origin_path: Path).
+
+    Steps:
+      1. git init <repo_root>
+      2. git init --bare <origin_path>
+      3. git remote add origin <origin_path>
+      4. set user.email + user.name in repo config
+      5. create a minimal initial commit
+      6. git push -u origin <branch>  so @{u} is set
+
+    After this call the working tree is clean, HEAD == @{u}.
+    """
+    root = Path(td) / "repo"
+    origin = Path(td) / "origin.git"
+    root.mkdir()
+    origin.mkdir()
+
+    def _run(cmd: list, cwd=None) -> None:
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"git fixture setup failed (cmd={cmd!r}): {result.stderr.strip()}"
+            )
+
+    _run(["git", "init", "-q", str(root)])
+    _run(["git", "init", "--bare", "-q", str(origin)])
+    _run(["git", "-C", str(root), "remote", "add", "origin", str(origin)])
+    _run(["git", "-C", str(root), "config", "user.email", "test@test.local"])
+    _run(["git", "-C", str(root), "config", "user.name", "Test"])
+
+    # Create a minimal initial file and commit so the branch exists.
+    (root / "README.md").write_text("# Repo\n", encoding="utf-8")
+    _run(["git", "-C", str(root), "add", "README.md"])
+    _run(["git", "-C", str(root), "commit", "-q", "-m", "init"])
+
+    # Detect branch name (could be "main" or "master" depending on git config).
+    branch_result = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True,
+    )
+    branch = branch_result.stdout.strip() or "main"
+
+    _run(["git", "-C", str(root), "push", "-u", "origin", branch])
+    return root, origin
+
+
+def _write_complete_plan(plans_dir: Path, filename: str = "plan-phase-1.md") -> Path:
+    """Write a minimal Complete implementation plan into plans_dir."""
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    p = plans_dir / filename
+    p.write_text(
+        "---\n"
+        "kind: implementation-plan\n"
+        "status: Complete\n"
+        "phases:\n"
+        "  - 1\n"
+        "---\n\n"
+        "# Implementation Plan\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def _write_all_checked_phases(spec_dir: Path) -> Path:
+    """Write a PHASES.md where every deliverable row is checked."""
+    p = spec_dir / "PHASES.md"
+    p.write_text(
+        "### Phase 1\n"
+        "- [x] Implement feature\n"
+        "- [x] Wire into production\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_verify_ledger_all_green_passes():
+    """All four checks true → ok=True, failing_check=None, all checks True.
+
+    Fixture: clean tree, HEAD == @{u} (pushed), one plan with status Complete,
+    PHASES.md with every deliverable checked.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        # Commit the feature files so the tree is clean and HEAD == @{u}.
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        # Push so HEAD == upstream.
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+
+    assert result["ok"] is True, f"expected ok=True, got {result}"
+    assert result["failing_check"] is None, (
+        f"expected failing_check=None, got {result['failing_check']!r}"
+    )
+    checks = result["checks"]
+    assert checks["clean_tree"] is True, f"clean_tree should be True: {checks}"
+    assert checks["head_matches_origin"] is True, (
+        f"head_matches_origin should be True: {checks}"
+    )
+    assert checks["plan_complete"] is True, f"plan_complete should be True: {checks}"
+    assert checks["deliverables_done"] is True, (
+        f"deliverables_done should be True: {checks}"
+    )
+
+
+def test_verify_ledger_dirty_tree_fails():
+    """Untracked file in repo → ok=False, failing_check='clean_tree', clean_tree=False.
+
+    All other conditions are green; clean_tree is the first check in order so
+    it must be reported as the first failing check.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        # Commit and push so HEAD == @{u} and plan/phases are in the repo.
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+        # NOW dirty the tree with an untracked file (after the push).
+        (repo_root / "dirty.txt").write_text("untracked\n", encoding="utf-8")
+
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+
+    assert result["ok"] is False, f"expected ok=False with dirty tree, got {result}"
+    assert result["failing_check"] == "clean_tree", (
+        f"expected failing_check='clean_tree', got {result['failing_check']!r}"
+    )
+    assert result["checks"]["clean_tree"] is False, (
+        f"clean_tree check should be False: {result['checks']}"
+    )
+
+
+def test_verify_ledger_behind_origin_fails():
+    """HEAD ahead of @{u} (local commit not pushed) → ok=False, failing_check='head_matches_origin'.
+
+    The tree is clean (the change is committed), so clean_tree passes.
+    head_matches_origin is the second check and must be the failing_check.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        # Commit and push the feature files.
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+        # Make a NEW local commit that is NOT pushed → HEAD ahead of @{u}, tree clean.
+        (repo_root / "extra.txt").write_text("unpushed change\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "extra.txt"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "unpushed commit"], check=True, capture_output=True)
+
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+
+    assert result["ok"] is False, (
+        f"expected ok=False when HEAD is ahead of @{{u}}, got {result}"
+    )
+    assert result["failing_check"] == "head_matches_origin", (
+        f"expected failing_check='head_matches_origin', "
+        f"got {result['failing_check']!r}"
+    )
+    # clean_tree must pass (the change was committed, not left staged/untracked).
+    assert result["checks"]["clean_tree"] is True, (
+        f"clean_tree should be True (committed, not dirty): {result['checks']}"
+    )
+    assert result["checks"]["head_matches_origin"] is False, (
+        f"head_matches_origin should be False: {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_not_complete_fails():
+    """Plan with status: Ready → ok=False, failing_check='plan_complete'.
+
+    Git state is green (clean tree, HEAD == @{u}), deliverables all checked.
+    plan_complete is the third check and must be the first failing check.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        # Write a plan with status: Ready (not Complete).
+        plans_dir = spec_dir / "plans"
+        plans_dir.mkdir(parents=True)
+        ready_plan = plans_dir / "plan-phase-1.md"
+        ready_plan.write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "status: Ready\n"
+            "phases:\n"
+            "  - 1\n"
+            "---\n\n"
+            "# Implementation Plan\n",
+            encoding="utf-8",
+        )
+        _write_all_checked_phases(spec_dir)
+        # Commit and push so git state is clean.
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+
+    assert result["ok"] is False, (
+        f"expected ok=False with plan status Ready, got {result}"
+    )
+    assert result["failing_check"] == "plan_complete", (
+        f"expected failing_check='plan_complete', got {result['failing_check']!r}"
+    )
+    assert result["checks"]["clean_tree"] is True, (
+        f"clean_tree should be True: {result['checks']}"
+    )
+    assert result["checks"]["head_matches_origin"] is True, (
+        f"head_matches_origin should be True: {result['checks']}"
+    )
+    assert result["checks"]["plan_complete"] is False, (
+        f"plan_complete should be False (status=Ready): {result['checks']}"
+    )
+
+
+def test_verify_ledger_unchecked_nonverification_deliverable_fails():
+    """Real unchecked deliverable outside verification → ok=False, failing_check='deliverables_done'.
+
+    Git state green, plan Complete; PHASES.md has a real `- [ ]` item that is
+    NOT under a Runtime Verification heading.
+    deliverables_done is the fourth (last) check and must be the failing check.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        # PHASES.md with a real (non-verification) unchecked deliverable.
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Implement feature\n"
+            "- [ ] Wire into production context\n",  # real unchecked — NOT verification
+            encoding="utf-8",
+        )
+        # Commit and push so git state is clean.
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+
+    assert result["ok"] is False, (
+        f"expected ok=False with unchecked non-verification deliverable, got {result}"
+    )
+    assert result["failing_check"] == "deliverables_done", (
+        f"expected failing_check='deliverables_done', got {result['failing_check']!r}"
+    )
+    assert result["checks"]["clean_tree"] is True, (
+        f"clean_tree should be True: {result['checks']}"
+    )
+    assert result["checks"]["head_matches_origin"] is True, (
+        f"head_matches_origin should be True: {result['checks']}"
+    )
+    assert result["checks"]["plan_complete"] is True, (
+        f"plan_complete should be True: {result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is False, (
+        f"deliverables_done should be False: {result['checks']}"
+    )
+
+
+def test_verify_ledger_unchecked_verification_only_passes():
+    """PHASES.md whose only unchecked rows are under Runtime Verification → ok=True.
+
+    This is the non-tautological discriminator: a blunt `grep -c '- [ ]'` count
+    would wrongly fail this fixture because it ignores the verification heading.
+    The refined deliverables_done check correctly treats these as done.
+
+    Git state green, plan Complete, PHASES.md has checked implementation rows
+    plus unchecked rows only under a ## Runtime Verification heading.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        # PHASES.md: implementation rows all checked; only unchecked rows are
+        # under the Runtime Verification heading.
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Implement feature\n"
+            "- [x] Wire into production context\n"
+            "### Runtime Verification\n"
+            "- [ ] MCP smoke test passes\n"
+            "- [ ] No audio dropout under load\n",
+            encoding="utf-8",
+        )
+        # Commit and push so git state is clean.
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+
+    assert result["ok"] is True, (
+        f"expected ok=True when only unchecked rows are under Runtime Verification, "
+        f"got {result}"
+    )
+    assert result["failing_check"] is None, (
+        f"expected failing_check=None, got {result['failing_check']!r}"
+    )
+    assert result["checks"]["deliverables_done"] is True, (
+        f"deliverables_done should be True (only verification unchecked): {result['checks']}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -2010,6 +2362,13 @@ _TESTS = [
     ("test_build_parked_entry_missing_decisions_is_zero", test_build_parked_entry_missing_decisions_is_zero),
     ("test_build_parked_entry_missing_date_is_none", test_build_parked_entry_missing_date_is_none),
     ("test_build_parked_entry_malformed_decisions_is_zero", test_build_parked_entry_malformed_decisions_is_zero),
+    # verify_ledger — WU-1 completion-ledger verdict (Phase 5)
+    ("test_verify_ledger_all_green_passes", test_verify_ledger_all_green_passes),
+    ("test_verify_ledger_dirty_tree_fails", test_verify_ledger_dirty_tree_fails),
+    ("test_verify_ledger_behind_origin_fails", test_verify_ledger_behind_origin_fails),
+    ("test_verify_ledger_plan_not_complete_fails", test_verify_ledger_plan_not_complete_fails),
+    ("test_verify_ledger_unchecked_nonverification_deliverable_fails", test_verify_ledger_unchecked_nonverification_deliverable_fails),
+    ("test_verify_ledger_unchecked_verification_only_passes", test_verify_ledger_unchecked_verification_only_passes),
 ]
 
 

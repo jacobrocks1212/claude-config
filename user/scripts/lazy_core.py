@@ -47,6 +47,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -1009,3 +1010,141 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
             if not in_verification:
                 return False
     return saw_unchecked
+
+
+# ---------------------------------------------------------------------------
+# Completion ledger verification
+# ---------------------------------------------------------------------------
+
+def verify_ledger(repo_root: Path, spec_path: Path) -> dict:
+    """Verify the four completion-ledger preconditions for a feature.
+
+    Called by lazy-state.py and bug-state.py with ``--verify-ledger <spec_path>``
+    as a scripted replacement for the five duplicated prose "completion ledger"
+    guard blocks across the lazy skills (lazy/SKILL.md Step 4).
+
+    Checks (evaluated in this exact order; ALL four are always computed):
+
+    1. ``clean_tree`` — ``git -C <repo_root> status --short`` produces no output.
+       An untracked, modified, or staged file means the feature's changes have
+       not been fully committed. Any OSError or subprocess failure returns False.
+
+    2. ``head_matches_origin`` — ``git rev-parse HEAD`` equals
+       ``git rev-parse @{u}`` (the upstream tracking ref). A local commit that
+       has not been pushed, or a repo with no upstream configured, returns False.
+
+    3. ``plan_complete`` — at least one non-retro implementation plan exists AND
+       every such plan has ``status: Complete`` in its frontmatter. Uses
+       ``_has_any_complete_plan`` (at least one Complete) combined with
+       ``find_implementation_plans`` (no non-Complete plans remain), which together
+       are equivalent to "all plans exist and all are Complete". False when no
+       plans have been authored at all, or any plan has a non-Complete status.
+
+    4. ``deliverables_done`` — ``spec_path/PHASES.md`` exists and has zero real
+       (non-verification) unchecked deliverables. "Real" is defined by
+       ``remaining_unchecked_are_verification_only``: rows under a
+       "Runtime Verification / MCP Integration Test" subsection heading are
+       exempt workstation-only checks. Uses ``count_deliverables`` to detect
+       zero-unchecked, and falls back to ``remaining_unchecked_are_verification_only``
+       for the exemption. If PHASES.md does not exist, returns False (no evidence
+       that implementation phases were ever completed).
+
+    Return shape:
+    ```
+    {
+        "ok": bool,                  # True iff ALL four checks are True
+        "failing_check": str | None, # First False check key (order above), or None
+        "checks": {
+            "clean_tree": bool,
+            "head_matches_origin": bool,
+            "plan_complete": bool,
+            "deliverables_done": bool,
+        },
+    }
+    ```
+
+    ``ok`` is True only when all four checks are True. ``failing_check`` names
+    the FIRST False check in the defined order; None when ok is True. All four
+    ``checks`` values are always populated and accurate regardless of which check
+    fails first — no short-circuit pruning is applied to the ``checks`` dict.
+    """
+    # --- check 1: clean working tree ---
+    # Mirror the subprocess style used in _current_head in lazy-state.py:
+    # capture_output + text + timeout guard, catch OSError/SubprocessError.
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        clean_tree = result.stdout.strip() == ""
+    except (OSError, subprocess.SubprocessError):
+        clean_tree = False
+
+    # --- check 2: HEAD matches upstream tracking ref ---
+    # Both rev-parse commands must succeed and return identical SHA strings.
+    try:
+        head_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        upstream_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "@{u}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if head_result.returncode == 0 and upstream_result.returncode == 0:
+            head_sha = head_result.stdout.strip()
+            upstream_sha = upstream_result.stdout.strip()
+            head_matches_origin = bool(head_sha and upstream_sha and head_sha == upstream_sha)
+        else:
+            # @{u} can fail when no upstream is configured — treat as mismatch.
+            head_matches_origin = False
+    except (OSError, subprocess.SubprocessError):
+        head_matches_origin = False
+
+    # --- check 3: all implementation plans are Complete ---
+    # _has_any_complete_plan: at least one plan has status: Complete.
+    # find_implementation_plans: returns only non-Complete plans (filters out Complete).
+    # Together: any_complete AND no_incomplete → all plans are Complete (and ≥1 exists).
+    any_complete = _has_any_complete_plan(spec_path)
+    incomplete_plans = find_implementation_plans(spec_path)
+    plan_complete = any_complete and len(incomplete_plans) == 0
+
+    # --- check 4: no real (non-verification) unchecked deliverables ---
+    phases_file = spec_path / "PHASES.md"
+    if not phases_file.exists():
+        # No PHASES.md means we have no evidence of phases being completed.
+        deliverables_done = False
+    else:
+        phases_text = phases_file.read_text(encoding="utf-8")
+        unchecked, _checked = count_deliverables(phases_text)
+        if unchecked == 0:
+            deliverables_done = True
+        else:
+            # Remaining unchecked rows may be exempted if they are all under
+            # a Runtime Verification / MCP Integration Test subsection.
+            deliverables_done = remaining_unchecked_are_verification_only(phases_text)
+
+    # --- assemble result: determine first failing check in defined order ---
+    checks = {
+        "clean_tree": clean_tree,
+        "head_matches_origin": head_matches_origin,
+        "plan_complete": plan_complete,
+        "deliverables_done": deliverables_done,
+    }
+    failing_check: str | None = None
+    for key in ("clean_tree", "head_matches_origin", "plan_complete", "deliverables_done"):
+        if not checks[key]:
+            failing_check = key
+            break
+
+    return {
+        "ok": failing_check is None,
+        "failing_check": failing_check,
+        "checks": checks,
+    }

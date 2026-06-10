@@ -4643,6 +4643,14 @@ def main() -> int:
                             "Without this flag, output is byte-identical to the default behavior "
                             "('parked' key is entirely absent and the needs-input halt fires as today)."
                         ))
+    parser.add_argument("--verify-ledger", default=None, metavar="SPEC_PATH",
+                        help=(
+                            "Scripted completion-ledger guard (replaces the prose guard blocks "
+                            "in the lazy skills). Verifies: (1) clean working tree, "
+                            "(2) HEAD == @{u}, (3) all implementation plans are status: Complete, "
+                            "(4) no real (non-verification) unchecked deliverables in SPEC_PATH/PHASES.md. "
+                            "Emits a JSON verdict and exits 0 on pass, 1 on first failing check."
+                        ))
     args = parser.parse_args()
 
     if args.enqueue_adhoc:
@@ -4674,6 +4682,14 @@ def main() -> int:
         result = backfill_receipts(Path(args.repo_root))
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
+
+    if args.verify_ledger is not None:
+        # Scripted completion-ledger guard: verify the four preconditions for
+        # marking a feature complete. The orchestrator's && chains short-circuit
+        # on non-zero exit when any check fails.
+        result = lazy_core.verify_ledger(Path(args.repo_root), Path(args.verify_ledger))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
 
     if args.test:
         return run_smoke_tests()
