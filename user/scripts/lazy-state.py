@@ -115,7 +115,7 @@ def _state(
     merged_diag = list(lazy_core._DIAGNOSTICS)
     if diagnostics:
         merged_diag.extend(diagnostics)
-    return {
+    out = {
         "feature_id": feature_id,
         "feature_name": feature_name,
         "spec_path": spec_path,
@@ -132,11 +132,23 @@ def _state(
         # not only when the queue exhausts. Mirrors _DIAGNOSTICS.
         "device_deferred_features": list(_DEVICE_DEFERRED),
     }
+    # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
+    # When False the key must be entirely absent so default output (no flag) is
+    # byte-identical to the pre-WU-1 Phase-4 baseline.
+    if _PARK_MODE:
+        out["parked"] = list(_PARKED)
+    return out
 
 
 # Device-deferred features observed this invocation (see _state()). Reset at the
 # start of each compute_state() call alongside lazy_core._DIAGNOSTICS.
 _DEVICE_DEFERRED: list[str] = []
+
+# Park mode: when True (--park-needs-input flag), NEEDS_INPUT.md items are
+# skipped (parked) instead of halting. The parked items accumulate in _PARKED.
+# Reset at the start of each compute_state() call, alongside _DEVICE_DEFERRED.
+_PARKED: list = []
+_PARK_MODE: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -1007,6 +1019,7 @@ def compute_state(
     skip_needs_research: bool = False,
     real_device: bool = True,
     scope_feature_id: str | None = None,
+    park_needs_input: bool = False,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -1026,6 +1039,11 @@ def compute_state(
     # clear_diagnostics() resets lazy_core._DIAGNOSTICS — the canonical list.
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
+    # Park mode: set the module global from the param so _state() can gate
+    # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
+    global _PARK_MODE, _PARKED
+    _PARK_MODE = park_needs_input
+    _PARKED.clear()
     repo_root = repo_root.resolve()
 
     # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
@@ -1180,6 +1198,22 @@ def compute_state(
             if research_pending:
                 research_pending_skipped.append(name)
                 continue
+        # Park-mode: if --park-needs-input is active and this feature has an
+        # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
+        # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
+        # BLOCKED.md retains precedence: a feature carrying BOTH BLOCKED.md and
+        # NEEDS_INPUT.md must still halt as "blocked", not be silently parked.
+        if (
+            park_needs_input
+            and (spec_path / "NEEDS_INPUT.md").exists()
+            and not (spec_path / "BLOCKED.md").exists()
+        ):
+            _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "NEEDS_INPUT.md"))
+            _diag(
+                f"parked: {name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
+                "Re-enters when resolved."
+            )
+            continue
         current = {
             "name": name,
             "id": feature_id,
@@ -4323,6 +4357,228 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_not_found}] unexpected exception: {type(e).__name__}: {e}")
             print(f"  FAIL [{fix_not_found}] {type(e).__name__} — {e}")
 
+        # -------------------------------------------------------------------
+        # Fixture WU-1-park: --park-needs-input mode (Phase 4)
+        #
+        # Two-feature queue:
+        #   feat-parked  — carries NEEDS_INPUT.md (well-formed, 1 decision)
+        #   feat-after   — actionable (Open, SPEC+RESEARCH present)
+        #
+        # Sub-fixture A: WITHOUT park_needs_input → terminal_reason=="needs-input"
+        #                AND "parked" key ABSENT from output.
+        # Sub-fixture B: WITH park_needs_input=True → feat-after is dispatched,
+        #                output has "parked" list with one entry whose id matches
+        #                feat-parked and decision_count==1.
+        # Sub-fixture C: RESOLVED sentinel (NEEDS_INPUT.md removed) → feat-parked
+        #                is dispatched normally, "parked" is empty.
+        # -------------------------------------------------------------------
+        park_root = td_path / "park-needs-input"
+        park_features = park_root / "docs" / "features"
+        park_features.mkdir(parents=True, exist_ok=True)
+        (park_features / "ROADMAP.md").write_text("# Roadmap\n")
+        (park_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-parked", "name": "Parked Feature",
+                 "spec_dir": "feat-parked", "tier": 1},
+                {"id": "feat-after", "name": "After Feature",
+                 "spec_dir": "feat-after", "tier": 1},
+            ]
+        }))
+        # feat-parked: Open spec + RESEARCH + NEEDS_INPUT.md (1 decision, date set)
+        parked_dir = park_features / "feat-parked"
+        parked_dir.mkdir()
+        (parked_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (parked_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (parked_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+        needs_input_content = (
+            "---\n"
+            "kind: needs-input\n"
+            "feature_id: feat-parked\n"
+            "written_by: spec-phases\n"
+            "decisions:\n"
+            "  - Choose auth strategy\n"
+            "date: 2026-06-10\n"
+            "---\n\n"
+            "# Needs Input\n"
+        )
+        park_sentinel = parked_dir / "NEEDS_INPUT.md"
+        park_sentinel.write_text(needs_input_content, encoding="utf-8")
+        # feat-after: actionable (Open, SPEC+RESEARCH, no NEEDS_INPUT.md)
+        after_dir = park_features / "feat-after"
+        after_dir.mkdir()
+        (after_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (after_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (after_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+
+        # Sub-fixture A: without park_needs_input → needs-input halt, NO "parked" key
+        fix_park_default = "park-needs-input-default-halt"
+        try:
+            got_park_default = compute_state(park_root, cloud=False, real_device=True)
+            pda_ok = True
+            actual_tr_park = got_park_default.get("terminal_reason")
+            # CORRECT assertion: without the flag, needs-input halt must fire.
+            if actual_tr_park != "needs-input":
+                failures.append(
+                    f"[{fix_park_default}] expected terminal_reason='needs-input', "
+                    f"got {actual_tr_park!r}"
+                )
+                pda_ok = False
+            # CRITICAL: "parked" key must be ABSENT when not in park mode.
+            if "parked" in got_park_default:
+                failures.append(
+                    f"[{fix_park_default}] 'parked' key must be absent in default mode; "
+                    f"got parked={got_park_default['parked']!r}"
+                )
+                pda_ok = False
+            print(
+                f"  {'PASS' if pda_ok else 'FAIL'} [{fix_park_default}] "
+                f"default: terminal_reason={actual_tr_park!r}, parked key absent={('parked' not in got_park_default)}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_default}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_default}] SystemExit: {exc.code}")
+
+        # Sub-fixture B: WITH park_needs_input=True → feat-after dispatched,
+        # output["parked"] has one entry with id="feat-parked", decision_count=1.
+        fix_park_mode = "park-needs-input-mode-skip"
+        try:
+            got_park_mode = compute_state(
+                park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            pmode_ok = True
+            # The halt must NOT be needs-input (feat-parked is skipped)
+            actual_tr_mode = got_park_mode.get("terminal_reason")
+            if actual_tr_mode == "needs-input":
+                failures.append(
+                    f"[{fix_park_mode}] terminal_reason must NOT be 'needs-input' in park mode; "
+                    f"got {actual_tr_mode!r}"
+                )
+                pmode_ok = False
+            # feat-after must be dispatched as current
+            if got_park_mode.get("feature_id") != "feat-after":
+                failures.append(
+                    f"[{fix_park_mode}] expected feature_id='feat-after', "
+                    f"got {got_park_mode.get('feature_id')!r}"
+                )
+                pmode_ok = False
+            # "parked" key must be present and contain one entry
+            parked_list = got_park_mode.get("parked")
+            if not isinstance(parked_list, list) or len(parked_list) != 1:
+                failures.append(
+                    f"[{fix_park_mode}] expected parked=[...1 entry...], "
+                    f"got {parked_list!r}"
+                )
+                pmode_ok = False
+            elif parked_list[0].get("id") != "feat-parked":
+                failures.append(
+                    f"[{fix_park_mode}] parked[0].id must be 'feat-parked', "
+                    f"got {parked_list[0].get('id')!r}"
+                )
+                pmode_ok = False
+            elif parked_list[0].get("decision_count") != 1:
+                failures.append(
+                    f"[{fix_park_mode}] parked[0].decision_count must be 1, "
+                    f"got {parked_list[0].get('decision_count')!r}"
+                )
+                pmode_ok = False
+            print(
+                f"  {'PASS' if pmode_ok else 'FAIL'} [{fix_park_mode}] "
+                f"park mode: dispatched={got_park_mode.get('feature_id')!r}, "
+                f"parked count={len(parked_list) if isinstance(parked_list, list) else 'N/A'}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_mode}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_mode}] SystemExit: {exc.code}")
+
+        # Sub-fixture C: RESOLVED — remove NEEDS_INPUT.md → feat-parked is dispatched
+        # normally and parked[] is empty.
+        fix_park_resolved = "park-needs-input-resolved-reenter"
+        try:
+            park_sentinel.unlink()  # resolve the sentinel
+            got_park_resolved = compute_state(
+                park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            presolved_ok = True
+            # feat-parked is now first and actionable — it must be dispatched.
+            if got_park_resolved.get("feature_id") != "feat-parked":
+                failures.append(
+                    f"[{fix_park_resolved}] expected feature_id='feat-parked' after resolution, "
+                    f"got {got_park_resolved.get('feature_id')!r}"
+                )
+                presolved_ok = False
+            # parked[] must be empty (no items parked this probe).
+            parked_resolved = got_park_resolved.get("parked")
+            if not isinstance(parked_resolved, list) or len(parked_resolved) != 0:
+                failures.append(
+                    f"[{fix_park_resolved}] expected parked=[], "
+                    f"got {parked_resolved!r}"
+                )
+                presolved_ok = False
+            print(
+                f"  {'PASS' if presolved_ok else 'FAIL'} [{fix_park_resolved}] "
+                f"resolved: dispatched={got_park_resolved.get('feature_id')!r}, "
+                f"parked={parked_resolved!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_resolved}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_resolved}] SystemExit: {exc.code}")
+
+        # Sub-fixture D: BLOCKED.md precedence — feat-parked carries BOTH
+        # BLOCKED.md AND NEEDS_INPUT.md.  Under park mode it must STILL halt as
+        # "blocked", not be silently parked.  This locks FIX 1 of the code review.
+        fix_park_blocked_precedence = "park-needs-input-blocked-precedence"
+        try:
+            # Restore NEEDS_INPUT.md (removed in sub-fixture C) and add BLOCKED.md.
+            park_sentinel.write_text(needs_input_content, encoding="utf-8")
+            _write_yaml_sentinel(
+                parked_dir / "BLOCKED.md", "blocked",
+                feature_id="feat-parked", phase="Spec",
+                blocked_at="2026-06-10T00:00:00Z", retry_count=0,
+            )
+            got_park_blocked = compute_state(
+                park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            pbp_ok = True
+            # Must halt as "blocked" — NOT parked, not dispatched.
+            actual_tr_pbp = got_park_blocked.get("terminal_reason")
+            if actual_tr_pbp != "blocked":
+                failures.append(
+                    f"[{fix_park_blocked_precedence}] expected terminal_reason='blocked' "
+                    f"(BLOCKED.md must retain precedence over park-mode); "
+                    f"got {actual_tr_pbp!r}"
+                )
+                pbp_ok = False
+            # feat-parked must be the reported feature (it is the one that is blocked).
+            if got_park_blocked.get("feature_id") != "feat-parked":
+                failures.append(
+                    f"[{fix_park_blocked_precedence}] expected feature_id='feat-parked', "
+                    f"got {got_park_blocked.get('feature_id')!r}"
+                )
+                pbp_ok = False
+            # "parked" key must NOT contain feat-parked (it was NOT parked).
+            parked_pbp = got_park_blocked.get("parked", [])
+            parked_ids = [e.get("id") for e in parked_pbp if isinstance(e, dict)]
+            if "feat-parked" in parked_ids:
+                failures.append(
+                    f"[{fix_park_blocked_precedence}] feat-parked must NOT appear in "
+                    f"parked[] when BLOCKED.md is present; got parked={parked_pbp!r}"
+                )
+                pbp_ok = False
+            print(
+                f"  {'PASS' if pbp_ok else 'FAIL'} [{fix_park_blocked_precedence}] "
+                f"blocked-precedence: terminal_reason={actual_tr_pbp!r}, "
+                f"feat-parked in parked[]={'feat-parked' in parked_ids}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_blocked_precedence}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_blocked_precedence}] SystemExit: {exc.code}")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -4378,6 +4634,15 @@ def main() -> int:
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
                         help="Scope this run to a single feature by id (queue entry id). Absent → single-current default.")
+    parser.add_argument("--park-needs-input", action="store_true",
+                        help=(
+                            "OPT-IN park mode: when active, a feature carrying an unresolved "
+                            "NEEDS_INPUT.md is SKIPPED (parked) rather than halting the queue. "
+                            "The parked item is reported in the 'parked[]' output array and "
+                            "re-enters automatically once NEEDS_INPUT.md is resolved/renamed. "
+                            "Without this flag, output is byte-identical to the default behavior "
+                            "('parked' key is entirely absent and the needs-input halt fires as today)."
+                        ))
     args = parser.parse_args()
 
     if args.enqueue_adhoc:
@@ -4419,6 +4684,7 @@ def main() -> int:
         skip_needs_research=args.skip_needs_research,
         real_device=resolve_real_device(args.real_device),
         scope_feature_id=args.feature_id,
+        park_needs_input=args.park_needs_input,
     )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0

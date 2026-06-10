@@ -53,9 +53,11 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 - **`--adhoc`** (optional flag) → sets `adhoc_task` to the remainder of `$ARGUMENTS` after the `--adhoc` token (everything following it, verbatim). If `--adhoc` is the last token with no trailing text, `adhoc_task` is empty and the task is inferred from the conversation (see Step 0.45). When `adhoc_task` is set (flag present), the orchestrator runs **Step 0.45 (Ad-hoc Enqueue)** before the main loop so the referenced work is enqueued at the top of the queue. Off by default (flag absent → no ad-hoc enqueue). Because `--adhoc` consumes the rest of the string, place `<N>` and `--allow-research-skip` BEFORE it.
 
+- **`--park`** (optional flag) → sets `park_mode = true`. Default `false`. Enables "park-and-continue" mode. **This flag is opt-in and off by default. Without it, the orchestrator's behavior is byte-for-byte the existing one** — a `NEEDS_INPUT.md` halts the loop into the existing Step 1g resolution-and-wait. The `--park` flag may appear in any position relative to the cycle-count arg (e.g. `/lazy-batch --park 30` and `/lazy-batch 30 --park` are equivalent). The full park/flush/auto-accept semantics (what happens when park mode is active) are defined in Steps 1g, 1h, and 1i of this skill — this token purely enables the mode.
+
 Unknown tokens are an error:
 
-> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"]`.
+> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park]`.
 
 **Standing-directive echo-back protocol (Deliverable C):** mid-run operator messages that imply a change to the orchestrator's operating mode MUST be acknowledged with a single `AskUserQuestion` echo-back BEFORE the mode takes effect. A "standing directive" is any message that implies one of:
 
@@ -81,6 +83,7 @@ Initialize counters and per-session state:
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. In the default path this stays `false` for the entire session because Step 4 halts before the loop continues.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched. **`sub_skill_args` is part of the tuple deliberately:** a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3) returns the same `(feature_id, sub_skill, current_step)` on every part but a *different* `sub_skill_args` (the plan-part path), which is real forward progress, not a loop. Omitting `sub_skill_args` made the loop-guard false-trigger on every multi-part plan. Including it lets the guard fire only on a genuine no-progress repeat (identical part re-returned).
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if the flag was absent). See Step 0.45.
+- `park_mode = <parsed>` — `true` if `--park` was present, `false` otherwise. When `false`, all halt behavior is byte-for-byte the existing one.
 
 Print the start bookend:
 
@@ -88,6 +91,7 @@ Print the start bookend:
 ## /lazy-batch — Starting
 **Max cycles:** {max_cycles}
 **Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
+**Park mode:** {on (--park) | off (default)}
 **Repo root:** {cwd}
 ```
 
@@ -974,6 +978,7 @@ When the loop exits (terminal state or max-cycles), print:
 **Meta cycles used:** {meta_cycles}/{2*max_cycles}
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
+**Park mode:** {on | off}
 
 ### Cycle log
 | # | Feature | Action | Summary |

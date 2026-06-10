@@ -141,9 +141,17 @@ the cycle-subagent level** — the orchestrator still dispatches exactly one `Ag
   and the task is inferred from the conversation. When set, the orchestrator runs **Step 0.45
   (Ad-hoc Enqueue)** before the main loop. Place `<N>` BEFORE `--adhoc`.
 
+- **`--park`** (optional flag) → sets `park_mode = true`. Default `false`. Enables "park-and-continue"
+  mode. **This flag is opt-in and off by default. Without it, the orchestrator's behavior is
+  byte-for-byte the existing one** — a `NEEDS_INPUT.md` halts the loop into the existing Step 1g
+  resolution-and-wait. The `--park` flag may appear in any position relative to the cycle-count
+  arg (e.g. `/lazy-bug-batch --park 30` and `/lazy-bug-batch 30 --park` are equivalent). The full
+  park/flush/auto-accept semantics are defined in Steps 1g, 1h, and 1i of this skill — this token
+  purely enables the mode.
+
 Unknown tokens are an error:
 
-> `/lazy-bug-batch`: unrecognized argument `{token}`. Usage: `/lazy-bug-batch <N> [--adhoc "<task>"]`.
+> `/lazy-bug-batch`: unrecognized argument `{token}`. Usage: `/lazy-bug-batch <N> [--adhoc "<task>"] [--park]`.
 
 **Standing-directive echo-back protocol:** mid-run operator messages implying (a) a budget change, (b) a standing resolution mode (e.g. "auto-resolve all blockers as add-phase-and-fix"), or (c) an early stop MUST trigger ONE `AskUserQuestion` echo-back — "Extend to N cycles / auto-resolve blockers as add-phase-and-fix until X — confirm?" — BEFORE entering that mode. **Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`forward_cycles < max_cycles`) AND active queue items remaining without first asking (one `AskUserQuestion`) whether to continue. These are permitted `AskUserQuestion` uses alongside HARD CONSTRAINT 5's resolution modes.
 
@@ -154,12 +162,14 @@ Initialize counters and per-session state:
 - `cycle_log = []` — each entry: `{forward_cycles + meta_cycles, bug, action, subagent_summary}` (running total = monotonic N-th action this invocation).
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)`.
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (unset if flag absent).
+- `park_mode = <parsed>` — `true` if `--park` was present, `false` otherwise. When `false`, all halt behavior is byte-for-byte the existing one.
 
 Print the start bookend:
 
 ```
 ## /lazy-bug-batch — Starting
 **Max cycles:** {max_cycles}
+**Park mode:** {on (--park) | off (default)}
 **Repo root:** {cwd}
 ```
 
@@ -667,6 +677,7 @@ When the loop exits (terminal state or max-cycles), print:
 **Meta cycles used:** {meta_cycles}/{2*max_cycles}
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
+**Park mode:** {on | off}
 
 ### Cycle log
 | # | Bug | Action | Summary |

@@ -163,6 +163,12 @@ _DEVICE_DEFERRED: list[str] = []
 # Reset at the start of each compute_state() call, mirroring _DEVICE_DEFERRED.
 _OPERATOR_DEFERRED: list[str] = []
 
+# Park mode: when True (--park-needs-input flag), NEEDS_INPUT.md items are
+# skipped (parked) instead of halting. The parked items accumulate in _PARKED.
+# Reset at the start of each compute_state() call, mirroring _DEVICE_DEFERRED.
+_PARKED: list = []
+_PARK_MODE: bool = False
+
 
 # ===========================================================================
 # === IMPLEMENTATION (WU-2.2 impl-agent owns the bodies below) ==============
@@ -197,7 +203,7 @@ def _bug_state(
     merged_diag = list(lazy_core._DIAGNOSTICS)
     if diagnostics:
         merged_diag.extend(diagnostics)
-    return {
+    out = {
         "feature_id": feature_id,
         "feature_name": feature_name,
         "spec_path": spec_path,
@@ -215,6 +221,12 @@ def _bug_state(
         # Present so orchestrators can surface parked bugs without halting the queue.
         "operator_deferred": list(_OPERATOR_DEFERRED),
     }
+    # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
+    # When False the key must be entirely absent so default output (no flag) is
+    # byte-identical to the pre-WU-1 Phase-4 baseline.
+    if _PARK_MODE:
+        out["parked"] = list(_PARKED)
+    return out
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -420,6 +432,7 @@ def compute_state(
     cloud: bool,
     real_device: bool = True,
     scope_bug_id: str | None = None,
+    park_needs_input: bool = False,
 ) -> dict[str, Any]:
     """Walk the bug lifecycle and return the next action as a JSON-serializable dict.
 
@@ -435,6 +448,11 @@ def compute_state(
       - Receipt file is FIXED.md (kind: fixed).
       - Won't-fix is receipt-exempt.
       - Ordering is hybrid (queue.json + severity fallback) not ROADMAP-based.
+
+    park_needs_input: OPT-IN flag. When True, a bug carrying NEEDS_INPUT.md is
+      SKIPPED (parked) rather than halting the queue. The parked item is reported
+      in the 'parked[]' output array. Without this flag, behavior is byte-identical
+      to the pre-WU-1 Phase-4 baseline (needs-input halt fires, 'parked' key absent).
     """
     # Cloud has no audio device — force no-device like lazy-state.py does.
     if cloud:
@@ -444,6 +462,11 @@ def compute_state(
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
     _OPERATOR_DEFERRED.clear()
+    # Park mode: set the module global from the param so _bug_state() can gate
+    # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
+    global _PARK_MODE, _PARKED
+    _PARK_MODE = park_needs_input
+    _PARKED.clear()
     repo_root = repo_root.resolve()
 
     # Load the hybrid-ordered bug queue.
@@ -574,6 +597,23 @@ def compute_state(
             _diag(
                 f"operator-deferred skipped: {bug_name} — DEFERRED.md "
                 f"(reason: {reason}); re-include by deleting DEFERRED.md."
+            )
+            continue
+
+        # Park-mode: if --park-needs-input is active and this bug has an
+        # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
+        # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
+        # BLOCKED.md retains precedence: a bug carrying BOTH BLOCKED.md and
+        # NEEDS_INPUT.md must still halt as "blocked", not be silently parked.
+        if (
+            park_needs_input
+            and (spec_dir / "NEEDS_INPUT.md").exists()
+            and not (spec_dir / "BLOCKED.md").exists()
+        ):
+            _PARKED.append(lazy_core.build_parked_entry(bug_id, spec_dir / "NEEDS_INPUT.md"))
+            _diag(
+                f"parked: {bug_name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
+                "Re-enters when resolved."
             )
             continue
 
@@ -2489,6 +2529,224 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_name_br}] unexpected error: {exc}")
             print(f"  FAIL [{fix_name_br}]: {type(exc).__name__} — {exc}")
 
+        # -------------------------------------------------------------------
+        # Fixture WU-1-park (bug): --park-needs-input mode (Phase 4)
+        #
+        # Two-bug queue:
+        #   bug-parked  — carries NEEDS_INPUT.md (well-formed, 1 decision)
+        #   bug-after   — actionable (Open, SPEC present)
+        #
+        # Sub-fixture A: WITHOUT park_needs_input → terminal_reason=="needs-input"
+        #                AND "parked" key ABSENT from output.
+        # Sub-fixture B: WITH park_needs_input=True → bug-after is dispatched,
+        #                output has "parked" list with one entry whose id matches
+        #                bug-parked and decision_count==1.
+        # Sub-fixture C: RESOLVED sentinel (NEEDS_INPUT.md removed) → bug-parked
+        #                is dispatched normally, "parked" is empty.
+        # -------------------------------------------------------------------
+        bug_park_root = td_path / "bug-park-needs-input"
+        bug_park_bugs = bug_park_root / "docs" / "bugs"
+        bug_park_bugs.mkdir(parents=True, exist_ok=True)
+        # Write queue.json
+        (bug_park_bugs / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-parked", "name": "Parked Bug",
+                 "spec_dir": "bug-parked"},
+                {"id": "bug-after", "name": "After Bug",
+                 "spec_dir": "bug-after"},
+            ]
+        }), encoding="utf-8")
+        # bug-parked: Open spec + NEEDS_INPUT.md (1 decision, date set)
+        bug_parked_dir = bug_park_bugs / "bug-parked"
+        bug_parked_dir.mkdir()
+        (bug_parked_dir / "SPEC.md").write_text(
+            "# Parked Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-10\n",
+            encoding="utf-8",
+        )
+        bug_needs_input_content = (
+            "---\n"
+            "kind: needs-input\n"
+            "feature_id: bug-parked\n"
+            "written_by: spec-bug\n"
+            "decisions:\n"
+            "  - Confirm reproduction path\n"
+            "date: 2026-06-10\n"
+            "---\n\n"
+            "# Needs Input\n"
+        )
+        bug_park_sentinel = bug_parked_dir / "NEEDS_INPUT.md"
+        bug_park_sentinel.write_text(bug_needs_input_content, encoding="utf-8")
+        # bug-after: actionable (Open, SPEC present, no NEEDS_INPUT.md)
+        bug_after_dir = bug_park_bugs / "bug-after"
+        bug_after_dir.mkdir()
+        (bug_after_dir / "SPEC.md").write_text(
+            "# After Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-10\n",
+            encoding="utf-8",
+        )
+
+        # Sub-fixture A: without park_needs_input → needs-input halt, NO "parked" key
+        fix_bug_park_default = "bug-park-needs-input-default-halt"
+        try:
+            got_bug_park_default = compute_state(bug_park_root, cloud=False, real_device=True)
+            bpd_ok = True
+            actual_tr_bpd = got_bug_park_default.get("terminal_reason")
+            if actual_tr_bpd != TR_NEEDS_INPUT:
+                failures.append(
+                    f"[{fix_bug_park_default}] expected terminal_reason={TR_NEEDS_INPUT!r}, "
+                    f"got {actual_tr_bpd!r}"
+                )
+                bpd_ok = False
+            # CRITICAL: "parked" key must be ABSENT when not in park mode.
+            if "parked" in got_bug_park_default:
+                failures.append(
+                    f"[{fix_bug_park_default}] 'parked' key must be absent in default mode; "
+                    f"got parked={got_bug_park_default['parked']!r}"
+                )
+                bpd_ok = False
+            print(
+                f"  {'PASS' if bpd_ok else 'FAIL'} [{fix_bug_park_default}] "
+                f"default: terminal_reason={actual_tr_bpd!r}, parked key absent={('parked' not in got_bug_park_default)}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_default}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_default}] SystemExit: {exc.code}")
+
+        # Sub-fixture B: WITH park_needs_input=True → bug-after dispatched,
+        # output["parked"] has one entry with id="bug-parked", decision_count=1.
+        fix_bug_park_mode = "bug-park-needs-input-mode-skip"
+        try:
+            got_bug_park_mode = compute_state(
+                bug_park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            bpm_ok = True
+            actual_tr_bpm = got_bug_park_mode.get("terminal_reason")
+            if actual_tr_bpm == TR_NEEDS_INPUT:
+                failures.append(
+                    f"[{fix_bug_park_mode}] terminal_reason must NOT be {TR_NEEDS_INPUT!r} in park mode; "
+                    f"got {actual_tr_bpm!r}"
+                )
+                bpm_ok = False
+            if got_bug_park_mode.get("feature_id") != "bug-after":
+                failures.append(
+                    f"[{fix_bug_park_mode}] expected feature_id='bug-after', "
+                    f"got {got_bug_park_mode.get('feature_id')!r}"
+                )
+                bpm_ok = False
+            bug_parked_list = got_bug_park_mode.get("parked")
+            if not isinstance(bug_parked_list, list) or len(bug_parked_list) != 1:
+                failures.append(
+                    f"[{fix_bug_park_mode}] expected parked=[...1 entry...], "
+                    f"got {bug_parked_list!r}"
+                )
+                bpm_ok = False
+            elif bug_parked_list[0].get("id") != "bug-parked":
+                failures.append(
+                    f"[{fix_bug_park_mode}] parked[0].id must be 'bug-parked', "
+                    f"got {bug_parked_list[0].get('id')!r}"
+                )
+                bpm_ok = False
+            elif bug_parked_list[0].get("decision_count") != 1:
+                failures.append(
+                    f"[{fix_bug_park_mode}] parked[0].decision_count must be 1, "
+                    f"got {bug_parked_list[0].get('decision_count')!r}"
+                )
+                bpm_ok = False
+            print(
+                f"  {'PASS' if bpm_ok else 'FAIL'} [{fix_bug_park_mode}] "
+                f"park mode: dispatched={got_bug_park_mode.get('feature_id')!r}, "
+                f"parked count={len(bug_parked_list) if isinstance(bug_parked_list, list) else 'N/A'}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_mode}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_mode}] SystemExit: {exc.code}")
+
+        # Sub-fixture C: RESOLVED — remove NEEDS_INPUT.md → bug-parked dispatched
+        # normally, parked[] is empty.
+        fix_bug_park_resolved = "bug-park-needs-input-resolved-reenter"
+        try:
+            bug_park_sentinel.unlink()  # resolve the sentinel
+            got_bug_park_resolved = compute_state(
+                bug_park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            bpr_ok = True
+            if got_bug_park_resolved.get("feature_id") != "bug-parked":
+                failures.append(
+                    f"[{fix_bug_park_resolved}] expected feature_id='bug-parked' after resolution, "
+                    f"got {got_bug_park_resolved.get('feature_id')!r}"
+                )
+                bpr_ok = False
+            bug_parked_resolved = got_bug_park_resolved.get("parked")
+            if not isinstance(bug_parked_resolved, list) or len(bug_parked_resolved) != 0:
+                failures.append(
+                    f"[{fix_bug_park_resolved}] expected parked=[], "
+                    f"got {bug_parked_resolved!r}"
+                )
+                bpr_ok = False
+            print(
+                f"  {'PASS' if bpr_ok else 'FAIL'} [{fix_bug_park_resolved}] "
+                f"resolved: dispatched={got_bug_park_resolved.get('feature_id')!r}, "
+                f"parked={bug_parked_resolved!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_resolved}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_resolved}] SystemExit: {exc.code}")
+
+        # Sub-fixture D: BLOCKED.md precedence — bug-parked carries BOTH
+        # BLOCKED.md AND NEEDS_INPUT.md.  Under park mode it must STILL halt as
+        # "blocked", not be silently parked.  This locks FIX 1 of the code review.
+        fix_bug_park_blocked_precedence = "bug-park-needs-input-blocked-precedence"
+        try:
+            # Restore NEEDS_INPUT.md (removed in sub-fixture C) and add BLOCKED.md.
+            bug_park_sentinel.write_text(bug_needs_input_content, encoding="utf-8")
+            _write_yaml_sentinel(
+                bug_parked_dir / "BLOCKED.md", "blocked",
+                bug_id="bug-parked", phase="Investigation",
+                blocked_at="2026-06-10T00:00:00Z", retry_count=0,
+            )
+            got_bug_park_blocked = compute_state(
+                bug_park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            bpbp_ok = True
+            # Must halt as "blocked" — NOT parked, not dispatched.
+            actual_tr_bpbp = got_bug_park_blocked.get("terminal_reason")
+            if actual_tr_bpbp != TR_BLOCKED:
+                failures.append(
+                    f"[{fix_bug_park_blocked_precedence}] expected terminal_reason={TR_BLOCKED!r} "
+                    f"(BLOCKED.md must retain precedence over park-mode); "
+                    f"got {actual_tr_bpbp!r}"
+                )
+                bpbp_ok = False
+            # bug-parked must be the reported feature (it is the one that is blocked).
+            if got_bug_park_blocked.get("feature_id") != "bug-parked":
+                failures.append(
+                    f"[{fix_bug_park_blocked_precedence}] expected feature_id='bug-parked', "
+                    f"got {got_bug_park_blocked.get('feature_id')!r}"
+                )
+                bpbp_ok = False
+            # "parked" key must NOT contain bug-parked (it was NOT parked).
+            parked_bpbp = got_bug_park_blocked.get("parked", [])
+            parked_bpbp_ids = [e.get("id") for e in parked_bpbp if isinstance(e, dict)]
+            if "bug-parked" in parked_bpbp_ids:
+                failures.append(
+                    f"[{fix_bug_park_blocked_precedence}] bug-parked must NOT appear in "
+                    f"parked[] when BLOCKED.md is present; got parked={parked_bpbp!r}"
+                )
+                bpbp_ok = False
+            print(
+                f"  {'PASS' if bpbp_ok else 'FAIL'} [{fix_bug_park_blocked_precedence}] "
+                f"blocked-precedence: terminal_reason={actual_tr_bpbp!r}, "
+                f"bug-parked in parked[]={'bug-parked' in parked_bpbp_ids}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_blocked_precedence}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_blocked_precedence}] SystemExit: {exc.code}")
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -2568,6 +2826,17 @@ def main() -> int:
         "--bug-id", default=None,
         help="Scope this run to a single bug by id. Absent → default behavior.",
     )
+    parser.add_argument(
+        "--park-needs-input", action="store_true",
+        help=(
+            "OPT-IN park mode: when active, a bug carrying an unresolved "
+            "NEEDS_INPUT.md is SKIPPED (parked) rather than halting the queue. "
+            "The parked item is reported in the 'parked[]' output array and "
+            "re-enters automatically once NEEDS_INPUT.md is resolved/renamed. "
+            "Without this flag, output is byte-identical to the default behavior "
+            "('parked' key is entirely absent and the needs-input halt fires as today)."
+        ),
+    )
     args = parser.parse_args()
 
     if args.enqueue_adhoc:
@@ -2595,6 +2864,7 @@ def main() -> int:
         cloud=args.cloud,
         real_device=real_device,
         scope_bug_id=args.bug_id,
+        park_needs_input=args.park_needs_input,
     )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0

@@ -267,6 +267,48 @@ def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md
     return True
 
 
+def build_parked_entry(item_id: str, sentinel_path: Path) -> dict[str, Any]:
+    """Build a parked-entry record for use in the ``parked[]`` output array.
+
+    Called by lazy-state.py and bug-state.py when ``--park-needs-input`` mode
+    is active and a queue entry carries an unresolved NEEDS_INPUT.md.  The
+    returned dict is appended to the module-level ``_PARKED`` list in each
+    script so the orchestrator can surface every parked item without halting.
+
+    Contract (locked by WU-1 Phase 4 tests in test_lazy_core.py):
+      - ``"id"``             → ``item_id`` (str), unchanged.
+      - ``"sentinel"``       → ``str(sentinel_path)``.
+      - ``"decision_count"`` → ``len(decisions)`` where ``decisions`` is the
+                               ``decisions:`` YAML list in the NEEDS_INPUT.md
+                               frontmatter; **0** if absent, empty, or not a list.
+      - ``"parked_since"``   → the ``date:`` frontmatter value (str), or
+                               ``None`` if absent.
+
+    Reuses ``parse_sentinel()`` for frontmatter parsing.  Missing file,
+    missing field, and wrong-type (scalar) inputs are handled defensively and
+    do not raise.  Structurally corrupt frontmatter (missing closing fence,
+    invalid YAML, non-mapping root) routes through ``parse_sentinel``'s
+    ``_die()`` → ``sys.exit(2)``, consistent with all other sentinel parsing
+    in this codebase.
+    """
+    meta = parse_sentinel(sentinel_path) or {}
+    decisions = meta.get("decisions")
+    if not isinstance(decisions, list):
+        decision_count = 0
+    else:
+        decision_count = len(decisions)
+    parked_since = meta.get("date")
+    # Coerce to str if present (YAML may deserialize dates as date objects).
+    if parked_since is not None:
+        parked_since = str(parked_since)
+    return {
+        "id": item_id,
+        "sentinel": str(sentinel_path),
+        "decision_count": decision_count,
+        "parked_since": parked_since,
+    }
+
+
 def write_completed_receipt(
     path: Path,
     feature_id: str,

@@ -56,6 +56,7 @@ Same shape as `/lazy-batch` Step 0. `$ARGUMENTS` is tokenized:
 - positive integer → `max_cycles` (default `10`)
 - `--allow-research-skip` (optional) → `allow_research_skip = true` (default `false`)
 - `--adhoc` (optional) → sets `adhoc_task` to the remainder of `$ARGUMENTS` after the token (empty → infer from conversation). Triggers **Step 0.45 (Ad-hoc Enqueue)** before the loop. Off by default. Place `<N>` / `--allow-research-skip` BEFORE `--adhoc` since it consumes the rest of the string.
+- `--park` (optional) → sets `park_mode = true` (default `false`). Enables "park-and-continue" mode. **This flag is opt-in and off by default. Without it, the orchestrator's behavior is byte-for-byte the existing one** — a `NEEDS_INPUT.md` halts the loop into the existing Step 1g resolution-and-wait. The `--park` flag may appear in any position relative to the cycle-count arg (e.g. `/lazy-batch-cloud --park 30` and `/lazy-batch-cloud 30 --park` are equivalent). The full park/flush/auto-accept semantics are defined in Steps 1g, 1h, and 1i of this skill — this token purely enables the mode.
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 0 for the full flag semantics and rationale. The cloud variant inherits the same default-strict / opt-in-batched dichotomy — research-pending features halt the loop immediately by default; pass `--allow-research-skip` only when the remaining queue is known to be independent.
 
@@ -66,6 +67,7 @@ Print the start bookend:
 **Environment:** Cloud Linux (no Tauri/MCP)
 **Max cycles:** {max_cycles}
 **Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
+**Park mode:** {on (--park) | off (default)}
 **Repo root:** {cwd}
 ```
 
@@ -193,6 +195,7 @@ Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. Stays `false` under the default path.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched. **`sub_skill_args` is part of the tuple deliberately** (mirrored from `/lazy-batch`): a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3) returns the same `(feature_id, sub_skill, current_step)` on every part but a *different* `sub_skill_args` (the plan-part path) — real forward progress, not a loop. Omitting `sub_skill_args` made the loop-guard false-trigger on every multi-part plan.
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if absent). See Step 0.45.
+- `park_mode = <parsed>` — `true` if `--park` was present, `false` otherwise. When `false`, all halt behavior is byte-for-byte the existing one.
 
 ### 1a. Run lazy-state.py --cloud
 
@@ -630,6 +633,7 @@ When the loop exits (terminal state, forward-cycles cap, or meta-cycles cap), pr
 **Meta cycles used:** {meta_cycles}/{2*max_cycles}
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
+**Park mode:** {on | off}
 
 ### Cycle log
 | # | Feature | Action | Summary |

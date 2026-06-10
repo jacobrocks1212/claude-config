@@ -183,6 +183,7 @@ def test_symbols_present():
         "write_completed_receipt",
         "has_completion_receipt",
         "spec_status",
+        "build_parked_entry",
     ]
     missing = [sym for sym in expected if not hasattr(lazy_core, sym)]
     assert not missing, f"missing symbols: {missing}"
@@ -594,6 +595,98 @@ def test_parse_sentinel_leading_blanks():
         result = lazy_core.parse_sentinel(p)
     assert isinstance(result, dict), f"expected dict, got {type(result)}"
     assert result.get("kind") == "completed", f"kind mismatch: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: build_parked_entry
+# ---------------------------------------------------------------------------
+
+def test_build_parked_entry_well_formed_sentinel():
+    """Well-formed NEEDS_INPUT.md with 2 decisions and a date → all 4 keys correct."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: some-feature\n"
+        "written_by: some-skill\n"
+        "decisions:\n"
+        "  - Choose auth strategy\n"
+        "  - Pick database backend\n"
+        "date: 2026-06-10\n"
+        "---\n\n"
+        "# Needs Input\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.build_parked_entry("some-feature", p)
+    assert result["id"] == "some-feature", f"id mismatch: {result}"
+    assert result["sentinel"] == str(p), f"sentinel mismatch: {result}"
+    assert result["decision_count"] == 2, f"decision_count should be 2, got {result['decision_count']}"
+    assert result["parked_since"] == "2026-06-10", f"parked_since mismatch: {result}"
+
+
+def test_build_parked_entry_missing_decisions_is_zero():
+    """NEEDS_INPUT.md with no decisions: key → decision_count == 0."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-no-decisions\n"
+        "written_by: some-skill\n"
+        "date: 2026-06-10\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.build_parked_entry("feat-no-decisions", p)
+    assert result["decision_count"] == 0, (
+        f"missing decisions: key must yield decision_count 0, got {result['decision_count']}"
+    )
+
+
+def test_build_parked_entry_missing_date_is_none():
+    """NEEDS_INPUT.md with no date: key → parked_since is None."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-no-date\n"
+        "written_by: some-skill\n"
+        "decisions:\n"
+        "  - Some decision\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.build_parked_entry("feat-no-date", p)
+    assert result["parked_since"] is None, (
+        f"missing date: key must yield parked_since None, got {result['parked_since']!r}"
+    )
+
+
+def test_build_parked_entry_malformed_decisions_is_zero():
+    """decisions: present but a scalar (not a list) → decision_count == 0 and no exception."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-bad-decisions\n"
+        "written_by: some-skill\n"
+        "decisions: not-a-list\n"
+        "date: 2026-06-10\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        p.write_text(content, encoding="utf-8")
+        # Must not raise — malformed decisions field is handled defensively
+        result = lazy_core.build_parked_entry("feat-bad-decisions", p)
+    assert result["decision_count"] == 0, (
+        f"scalar decisions: must yield decision_count 0, got {result['decision_count']}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1912,6 +2005,11 @@ _TESTS = [
     ("test_append_materialized_multiple_distinct", test_append_materialized_multiple_distinct),
     ("test_update_materialized_changeddate", test_update_materialized_changeddate),
     ("test_update_materialized_changeddate_absent_wi_is_noop", test_update_materialized_changeddate_absent_wi_is_noop),
+    # build_parked_entry — park-and-continue mode (WU-1 Phase 4)
+    ("test_build_parked_entry_well_formed_sentinel", test_build_parked_entry_well_formed_sentinel),
+    ("test_build_parked_entry_missing_decisions_is_zero", test_build_parked_entry_missing_decisions_is_zero),
+    ("test_build_parked_entry_missing_date_is_none", test_build_parked_entry_missing_date_is_none),
+    ("test_build_parked_entry_malformed_decisions_is_zero", test_build_parked_entry_malformed_decisions_is_zero),
 ]
 
 

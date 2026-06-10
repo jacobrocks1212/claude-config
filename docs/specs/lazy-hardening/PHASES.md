@@ -291,8 +291,8 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Entry criteria:** Phase 3 (split counters land first — flush/park reporting uses them).
 
 **Deliverables:**
-- [ ] `--park` skill invocation flag parsed in all 3 batch orchestrators; recorded in start banner + final report; no flag → existing Step 1g halt behavior unchanged
-- [ ] Script `--park-needs-input` mode + `parked[]` output array, passed only when skill got `--park` (wrappers keep halt behavior; probe output unchanged without the flag)
+- [x] `--park` skill invocation flag parsed in all 3 batch orchestrators; recorded in start banner + final report; no flag → existing Step 1g halt behavior unchanged
+- [x] Script `--park-needs-input` mode + `parked[]` output array, passed only when skill got `--park` (wrappers keep halt behavior; probe output unchanged without the flag)
 - [ ] PushNotification at every park / halt / flush / run end (both modes)
 - [ ] D1 flush protocol (`--park` only): batched AskUserQuestion (≤4/call, Zero-Context Briefing preserved) at first opportunity (operator message / out of unparked work / run end); decision-apply per answer
 - [ ] D2 two-key auto-accept (`--park` only): `class: mechanical` + input-audit concurrence → recommended option auto-accepted, `resolved_by: auto-two-key`, receipt log + run-end digest; any disagreement → product → park; no auto-accept ever without `--park`
@@ -304,6 +304,27 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [ ] lazy-batch-retro checklist additions: parks fire notifications; flush count matches parked count; every auto-accept carries two keys + digest entry; zero parks/auto-accepts in no-flag runs
 
 **Implementation Notes:**
+
+#### Implementation Notes (Phase 4 — Batch 1: WU-1, WU-2)
+**Completed:** 2026-06-10
+**Review verdict:** PASS-WITH-FIXES → fixes applied → PASS (dedicated Opus reviewer; orchestrator independently re-ran every subagent GROUND-TRUTH block and diffed — all matched, HEAD unchanged ec8a4cd so no rogue commits; zero-drift byte-identical default output confirmed for both scripts)
+**Work completed:**
+- **WU-1** (TDD, `--park-needs-input` script mode + `parked[]`): new shared helper `lazy_core.build_parked_entry(item_id, sentinel_path)` (lazy_core.py ~270) returns `{id, sentinel, decision_count, parked_since}` from a NEEDS_INPUT.md sentinel (reuses `parse_sentinel`; `decision_count`=len of `decisions:` list with `isinstance(list)` defensive guard → 0 on absent/empty/scalar; `parked_since`=`date:` field or None). Both `lazy-state.py` and `bug-state.py` gained: a `--park-needs-input` CLI flag (store_true) threaded as `park_needs_input: bool = False` into `compute_state`; module-level `_PARKED` + `_PARK_MODE` (reset at compute_state top alongside `_DEVICE_DEFERRED`/`clear_diagnostics`); a park-peek in the queue walk that — only under park mode AND when a `NEEDS_INPUT.md` exists AND no co-present `BLOCKED.md` — appends `build_parked_entry(...)` to `_PARKED`, emits a `_diag`, and `continue`s (skip-not-halt, modeled on the existing cloud/device/operator-defer skips), placed AFTER the receipt-gated completion gate so a genuinely-complete item is never parked. **Byte-identical invariant: `"parked"` is included in the output dict ONLY inside `if _PARK_MODE:` — the key is entirely absent in default mode**, verified by the zero-drift probe (`--repo-root <AlgoBooth>` has no `parked` key for either script) + the byte-pinned `--test` baseline-match tests. BLOCKED.md retains precedence under park mode (review fix). Re-entry is automatic (per-invocation `_PARKED.clear()`; no cross-call persistence).
+- **WU-2** (prose): all 3 batch orchestrators (`lazy-batch`, `lazy-bug-batch`, `lazy-batch-cloud` SKILLs) parse an opt-in `--park` flag alongside `max_cycles` (position-independent), set `park_mode` (default false), record `Park mode: on|off` in BOTH the start banner and the final report, update the usage string to include `[--park]`, and state explicitly that without the flag behavior is byte-for-byte the existing Step 1g halt-and-wait. Park/flush/auto-accept semantics are cross-referenced to Steps 1g/1h/1i (deferred to Batches 2–4). Single-dispatch wrappers (`lazy`/`lazy-bug`/`lazy-cloud`) intentionally untouched (no `--park` there per Rule 10).
+**Review fixes applied (Sonnet fix-agent):** (1) BLOCKED.md exclusion added to the park guard in both scripts (a feature/bug with BOTH BLOCKED.md and NEEDS_INPUT.md must still halt "blocked", not be silently parked) + new `*-blocked-precedence` smoke sub-fixture in both scripts locking it; (2) removed a stale "RED→GREEN" comment in lazy-state.py that didn't match the code; (3) tightened the `build_parked_entry` docstring (handles missing-file/missing-field/scalar defensively, but structurally-corrupt frontmatter still routes through `parse_sentinel`'s `_die`→exit 2, consistent with all sentinel parsing).
+**Integration notes:**
+- The `--park-needs-input` script flag is the CONSUMER half; WU-2 wired the `--park` SKILL flag that (in later batches) is what causes the orchestrator to PASS `--park-needs-input` to the script. The park/flush/auto-accept ORCHESTRATION (when to flush, PushNotification firing, AskUserQuestion batching, two-key auto-accept) is Batches 2–5 — WU-1/WU-2 are the plumbing.
+- `parked[]` entry schema is `{id, sentinel, decision_count, parked_since}` — the WU-4 flush protocol and WU-5 digest consume these fields.
+**Pitfalls & guidance:**
+- The byte-identical contract hinges entirely on the `if _PARK_MODE:` gate in `_state`/`_bug_state`; any future field added to the parked path must stay inside that gate or it leaks into default output and breaks the baseline pins.
+- Baselines were regenerated through `_normalize_smoke_output` (never hand-edited); diffs are purely additive (+4 lines each, 0 removals).
+**Files modified:**
+- `user/scripts/lazy_core.py` — `build_parked_entry` helper
+- `user/scripts/lazy-state.py` — `--park-needs-input` flag + param + `_PARKED`/`_PARK_MODE` + park-peek (BLOCKED-excluded) + 4 park smoke sub-fixtures
+- `user/scripts/bug-state.py` — symmetric to lazy-state
+- `user/scripts/test_lazy_core.py` — 4 `build_parked_entry` unit tests + symbol-importability assertion (104/104)
+- `user/scripts/tests/baselines/{lazy-state,bug-state}-test-baseline.txt` — regenerated (additive)
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — `--park` flag parse + banner + final-report `Park mode:` line
 
 ---
 
