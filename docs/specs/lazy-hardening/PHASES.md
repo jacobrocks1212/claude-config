@@ -593,7 +593,7 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] Step 0 preflight (symlink, python3, scripts, node) before banner in batch skills + wrappers; failure prints setup recipe, zero cycles consumed
 - [x] Windows node path (`/c/nvm4w/nodejs`) baked into preflight/skill-config
 - [x] Compaction protocol: on-disk canonical dispatch template re-read after compact; Read-before-Edit rule
-- [ ] Long-build ownership rule (orchestrator-owned harness-tracked) + `cargo check --release` pre-flight
+- [x] Long-build ownership rule (orchestrator-owned harness-tracked) + `cargo check --release` pre-flight
 - [ ] `interview_work_log_append` purged from all dispatch templates; canonical-sentinel-filename + work-branch clauses added to base dispatch prompt
 
 **Runtime Verification:**
@@ -632,3 +632,16 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Files modified:**
 - `user/skills/_components/lazy-dispatch-template.md` — NEW canonical dispatch envelope + Read-before-Edit + manual-compact cadence
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 1d compaction-discipline paragraph
+
+#### Implementation Notes (Phase 7 — Batch 3: WU-3)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (orchestrator review; subagent GROUND-TRUTH block independently re-run + diffed — git status / wc -l 23 / both note greps / cloud-Tauri-absence / cargo-check greps all matched; ground-truth verified: yes. The subagent ellipsized two grep lines in its pasted block; the orchestrator's fresh full re-run confirmed the complete verbatim content, so no rework — cosmetic report abbreviation only)
+**Work completed:**
+- **WU-3** (long-build ownership rule + `cargo check --release` pre-flight, prose/config): new canonical config doc `repos/algobooth/.claude/skill-config/long-build-ownership.md` (23 lines) — codifies that any build/test expected to exceed a subagent turn is **orchestrator-owned** as a `Bash` `run_in_background` harness-tracked task (a subagent-backgrounded process tree is torn down at the subagent's turn end — a `tauri build` silently vanished this way), generalizing the Step 1d.0 `tauri dev` ownership property; and requires `cargo check --release` before committing to a 20–40 min packaged `tauri build`. Wired a "Long-build ownership (harness-tracked)" paragraph into the `### 1d.` preamble of all 3 batch SKILLs (immediately after the Batch-2 compaction-discipline paragraph): the workstation variant (`lazy-batch`, `lazy-bug-batch`) names `tauri build` + `cargo check --release`; the cloud variant (`lazy-batch-cloud`) is adapted ("Cloud has no Tauri runtime, so packaged `tauri build` does not run here — but the ownership rule is universal" for long `cargo`/`/execute-plan` runs).
+**Integration notes:**
+- The config doc reference path is repo-relative `.claude/skill-config/long-build-ownership.md` (NOT `~/.claude/skill-config/...` — that symlink does not exist; the skill-config dir resolves from the AlgoBooth repo cwd via the per-repo `.claude/skill-config` symlink).
+- Builds on Step 1d.0's established orchestrator-owned-`run_in_background` property; HARD CONSTRAINT 1 explicitly preserved (Bash-only process ownership, no `Write`/`Edit` scope growth).
+- Scripts untouched → three `--test` gates byte-identical pass (run at batch commit).
+**Files modified:**
+- `repos/algobooth/.claude/skill-config/long-build-ownership.md` — NEW canonical long-build ownership rule
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 1d long-build ownership paragraph (cloud variant adapted)
