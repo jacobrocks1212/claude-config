@@ -1368,6 +1368,227 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             deferred_at="2026-06-01",
         )
 
+    elif name == "cloud-defer-mcp":
+        # RETRO_DONE.md present; cloud=True; no VALIDATED.md / SKIP_MCP_TEST.md /
+        # DEFERRED_NON_CLOUD.md / DEFERRED_REQUIRES_DEVICE.md.
+        # Expected: current_step == STEP_CLOUD_DEFER_MCP,
+        #           sub_skill == "__write_deferred_non_cloud__"
+        # Exercises compute_state lines ~704-712 (cloud Step-9 defer branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-cdm", "name": "Cloud Defer MCP Bug",
+                 "spec_dir": "bug-cdm"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-cdm"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Cloud Defer MCP Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-10\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-cdm", date="2026-05-28", rounds=1,
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md,
+        # no DEFERRED_NON_CLOUD.md, no DEFERRED_REQUIRES_DEVICE.md
+
+    elif name == "cloud-skip-mcp":
+        # RETRO_DONE.md + SKIP_MCP_TEST.md present; cloud=True; no VALIDATED.md.
+        # Expected: current_step == STEP_MCP_SKIP,
+        #           sub_skill == "__write_validated_from_skip__"
+        # Exercises compute_state lines ~713-720 (cloud SKIP_MCP_TEST branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-csm", "name": "Cloud Skip MCP Bug",
+                 "spec_dir": "bug-csm"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-csm"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Cloud Skip MCP Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-11\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-csm", date="2026-05-29", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-csm", reason="No MCP-testable surface",
+            approved_by="human", date="2026-05-29",
+        )
+        # Intentionally no VALIDATED.md
+
+    elif name == "device-reopen":
+        # RETRO_DONE.md + DEFERRED_REQUIRES_DEVICE.md present; real_device=True;
+        # no VALIDATED.md.
+        # Expected: current_step == STEP_DEVICE_REOPEN,
+        #           sub_skill == SKILL_MCP_TEST
+        # Exercises compute_state lines ~665-686 (real-device re-open branch).
+        # This is the real-device twin of the no-device "device-deferred" fixture.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-dro", "name": "Device Reopen Bug",
+                 "spec_dir": "bug-dro"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-dro"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Device Reopen Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P0\n\n"
+            "**Discovered:** 2026-04-20\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-dro", date="2026-05-22", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "DEFERRED_REQUIRES_DEVICE.md", "device-deferred",
+            bug_id="bug-dro",
+            deferred_scenarios=["SOME-SCEN-01"],
+            date="2026-05-23",
+        )
+        # Intentionally no VALIDATED.md
+
+    elif name == "step9-skip-mcp":
+        # Workstation: RETRO_DONE.md + SKIP_MCP_TEST.md; no VALIDATED.md;
+        # no DEFERRED_REQUIRES_DEVICE.md.  cloud=False, real_device=True.
+        # Expected: current_step == STEP_MCP_SKIP,
+        #           sub_skill == "__write_validated_from_skip__"
+        # Exercises compute_state lines ~723-730 (workstation skip branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-s9sm", "name": "Step9 Skip MCP Bug",
+                 "spec_dir": "bug-s9sm"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-s9sm"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Step9 Skip MCP Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-05-12\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-s9sm", date="2026-05-30", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-s9sm", reason="No MCP-testable surface (workstation)",
+            approved_by="human", date="2026-05-30",
+        )
+        # Intentionally no VALIDATED.md, no DEFERRED_REQUIRES_DEVICE.md
+
+    elif name == "step9-mcp-results":
+        # Workstation: RETRO_DONE.md + MCP_TEST_RESULTS.md with result: all-passing;
+        # no VALIDATED.md; no SKIP_MCP_TEST.md.  cloud=False, real_device=True.
+        # Expected: current_step == "Step 9b: write validated",
+        #           sub_skill == "__write_validated_from_results__"
+        # Exercises compute_state lines ~731-740 (workstation results branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-s9mr", "name": "Step9 MCP Results Bug",
+                 "spec_dir": "bug-s9mr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-s9mr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Step9 MCP Results Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-13\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-s9mr", date="2026-05-31", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            bug_id="bug-s9mr", result="all-passing", date="2026-05-31",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md
+
+    elif name == "severity-ordering":
+        # Two on-disk open bugs with NO queue.json entry (empty queue).
+        # bug-sev-p2: Severity P2 (rank 2)
+        # bug-sev-p0: Severity P0 (rank 0)
+        # Per _SEVERITY_RANK the P0 bug must be selected FIRST.
+        # Proves severity rank orders UNLISTED (on-disk) bugs; distinct from
+        # hybrid-ordering which proves queue.json overrides severity.
+        (bugs_dir / "queue.json").write_text(json.dumps({"queue": []}),
+                                             encoding="utf-8")
+        # P2 bug (lower priority — must NOT be selected first)
+        bp2 = bugs_dir / "bug-sev-p2"
+        bp2.mkdir()
+        (bp2 / "SPEC.md").write_text(
+            "# Severity P2 Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+        # P0 bug (highest priority — MUST be selected first)
+        bp0 = bugs_dir / "bug-sev-p0"
+        bp0.mkdir()
+        (bp0 / "SPEC.md").write_text(
+            "# Severity P0 Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P0\n\n"
+            "**Discovered:** 2026-05-02\n",
+            encoding="utf-8",
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1527,6 +1748,59 @@ def run_smoke_tests() -> int:
             "all-operator-deferred", False, True,
             {
                 "terminal_reason": TR_ALL_DEFERRED,
+            },
+        ),
+        # 15. Cloud-defer-mcp: cloud=True, RETRO_DONE present, no VALIDATED/SKIP/DEFERRED files
+        #     → cloud defers MCP to workstation (STEP_CLOUD_DEFER_MCP)
+        (
+            "cloud-defer-mcp", True, False,
+            {
+                "current_step": STEP_CLOUD_DEFER_MCP,
+                "sub_skill": "__write_deferred_non_cloud__",
+            },
+        ),
+        # 16. Cloud-skip-mcp: cloud=True, RETRO_DONE + SKIP_MCP_TEST present, no VALIDATED
+        #     → STEP_MCP_SKIP with __write_validated_from_skip__
+        (
+            "cloud-skip-mcp", True, False,
+            {
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 17. Device-reopen: real_device=True, RETRO_DONE + DEFERRED_REQUIRES_DEVICE present
+        #     → re-open deferred device scenarios (STEP_DEVICE_REOPEN)
+        (
+            "device-reopen", False, True,
+            {
+                "current_step": STEP_DEVICE_REOPEN,
+                "sub_skill": SKILL_MCP_TEST,
+            },
+        ),
+        # 18. Step-9 workstation skip: RETRO_DONE + SKIP_MCP_TEST, no VALIDATED, no device deferral
+        #     → STEP_MCP_SKIP with __write_validated_from_skip__
+        (
+            "step9-skip-mcp", False, True,
+            {
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 19. Step-9 workstation MCP results: RETRO_DONE + MCP_TEST_RESULTS (all-passing)
+        #     → "Step 9b: write validated" with __write_validated_from_results__
+        (
+            "step9-mcp-results", False, True,
+            {
+                "current_step": "Step 9b: write validated",
+                "sub_skill": "__write_validated_from_results__",
+            },
+        ),
+        # 20. Severity ordering: empty queue, two unlisted P0/P2 bugs → P0 selected first
+        (
+            "severity-ordering", False, True,
+            {
+                "feature_id": "bug-sev-p0",
+                "current_step": STEP_INVESTIGATE,
             },
         ),
     ]
@@ -1751,6 +2025,75 @@ def run_smoke_tests() -> int:
             print(
                 f"  FAIL [baseline-regression-default]: NotImplementedError — {exc}"
             )
+
+        # -------------------------------------------------------------------
+        # backfill_receipts bespoke block: call backfill_receipts() directly
+        # on a tree with one Fixed bug (no FIXED.md) and one Won't-fix bug
+        # (receipt-exempt; must NOT be backfilled).
+        # We assert: count == 1, the Fixed bug id is in backfilled, FIXED.md
+        # was written, and the Won't-fix bug has no FIXED.md.
+        # CRITICAL: we do NOT assert the date or body content — backfill_receipts
+        # uses datetime.now() and any date assertion would rot daily.
+        # -------------------------------------------------------------------
+        fix_name_br = "backfill-receipts-direct"
+        root_br = td_path / fix_name_br
+        bugs_br = root_br / "docs" / "bugs"
+        bugs_br.mkdir(parents=True, exist_ok=True)
+        # Fixed bug with no FIXED.md — must get a receipt.
+        bfixed = bugs_br / "bug-needs-receipt"
+        bfixed.mkdir()
+        (bfixed / "SPEC.md").write_text(
+            "# Needs Receipt Bug\n\n"
+            "**Status:** Fixed\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+        # Won't-fix bug with no FIXED.md — must NOT get a receipt (exempt).
+        bwontfix = bugs_br / "bug-wont-fix-exempt"
+        bwontfix.mkdir()
+        (bwontfix / "SPEC.md").write_text(
+            "# Won't Fix Exempt\n\n"
+            "**Status:** Won't-fix\n\n"
+            "**Severity:** Low\n\n"
+            "**Discovered:** 2026-03-01\n",
+            encoding="utf-8",
+        )
+        br_ok = True
+        try:
+            result_br = backfill_receipts(root_br)
+            # Assert return dict shape (no date/body assertions)
+            if result_br.get("count") != 1:
+                failures.append(
+                    f"[{fix_name_br}] expected count=1, got {result_br.get('count')!r}"
+                )
+                br_ok = False
+            if "bug-needs-receipt" not in result_br.get("backfilled", []):
+                failures.append(
+                    f"[{fix_name_br}] expected 'bug-needs-receipt' in backfilled, "
+                    f"got {result_br.get('backfilled')!r}"
+                )
+                br_ok = False
+            # Assert the FIXED.md was actually written on disk
+            if not (bfixed / "FIXED.md").exists():
+                failures.append(
+                    f"[{fix_name_br}] FIXED.md not created for 'bug-needs-receipt'"
+                )
+                br_ok = False
+            # Assert Won't-fix bug did NOT get a receipt
+            if (bwontfix / "FIXED.md").exists():
+                failures.append(
+                    f"[{fix_name_br}] FIXED.md erroneously created for Won't-fix bug"
+                )
+                br_ok = False
+            print(
+                f"  {'PASS' if br_ok else 'FAIL'} [{fix_name_br}] "
+                f"backfilled={result_br.get('backfilled')!r} count={result_br.get('count')!r} "
+                f"fixed_md_written={(bfixed / 'FIXED.md').exists()}"
+            )
+        except Exception as exc:
+            failures.append(f"[{fix_name_br}] unexpected error: {exc}")
+            print(f"  FAIL [{fix_name_br}]: {type(exc).__name__} — {exc}")
 
     # Summary
     if failures:

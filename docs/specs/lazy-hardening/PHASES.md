@@ -27,10 +27,10 @@ behavior changes land.
 
 **Deliverables:**
 - [x] `user/scripts/tests/baselines/bug-state-test-baseline.txt` + durable matching test
-- [ ] Cloud-mode fixtures (currently zero `cloud=True` coverage)
-- [ ] Device re-open fixture (`STEP_DEVICE_REOPEN`)
-- [ ] Step-9 `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` fixtures
-- [ ] `backfill_receipts` fixture; severity-ordering fixture (multiple unlisted bugs)
+- [x] Cloud-mode fixtures (currently zero `cloud=True` coverage)
+- [x] Device re-open fixture (`STEP_DEVICE_REOPEN`)
+- [x] Step-9 `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` fixtures
+- [x] `backfill_receipts` fixture; severity-ordering fixture (multiple unlisted bugs)
 - [ ] Stale harness docstrings cleaned (both scripts)
 - [x] AlgoBooth `--repo-root` JSON baseline for bug-state.py
 
@@ -61,6 +61,23 @@ behavior changes land.
 - `user/scripts/tests/baselines/bug-state-test-baseline.txt` — new golden capture
 - `user/scripts/tests/baselines/bug-state-algobooth.json` — new reference snapshot
 - `user/scripts/tests/baselines/README.md` — new `bug-state-algobooth.json` section
+
+#### Implementation Notes (Phase 1 — Batch 2: WU-3)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (independent Opus reviewer; each fixture's tree→branch→assertion traced; additive-only below banner; baseline byte-identical + deterministic + date-free)
+**Work completed:**
+- Added 7 smoke fixtures to `bug-state.py`'s SMOKE FIXTURES section (below the line-853 test-agent banner), covering all 4 PHASES checkboxes: `cloud-defer-mcp` + `cloud-skip-mcp` (first-ever `cloud=True` coverage → `STEP_CLOUD_DEFER_MCP`/`__write_deferred_non_cloud__` and `STEP_MCP_SKIP`/`__write_validated_from_skip__`); `device-reopen` (`STEP_DEVICE_REOPEN`/`mcp-test`, real-device twin of the no-device `device-deferred` fixture); `step9-skip-mcp` + `step9-mcp-results` (workstation Step-9 sentinel paths → skip and `Step 9b: write validated`/`__write_validated_from_results__`); `severity-ordering` (unlisted on-disk P0 picked before P2 by `_SEVERITY_RANK`); `backfill-receipts-direct` (bespoke block: Fixed-without-FIXED.md backfilled, Won't-fix exempt).
+- Regenerated `bug-state-test-baseline.txt` through `_normalize_smoke_output` to absorb the 7 new PASS lines.
+**Integration notes:**
+- These fixtures characterize CURRENT `compute_state` behavior. Phase 2's cloud Step-9 hard-halt / receipt-content-validation changes WILL legitimately shift `cloud-defer-mcp` and the receipt fixtures — that is the intended early-warning (regenerate the baseline as part of those phases).
+- RED→GREEN was demonstrated for `cloud-defer-mcp` and `device-reopen` (deliberately-wrong expectation → captured FAIL → corrected to GREEN).
+- `severity-ordering` is deliberately constructed so the higher-severity bug has the LATER Discovered date — a date-only (severity-blind) sort would flip the result, so the test is non-tautological.
+**Pitfalls & guidance:**
+- `backfill_receipts` uses `datetime.now()`; the fixture asserts only the return dict + FIXED.md existence and prints no date, so the baseline does not rot daily.
+- Zero behavior change verified: diff is purely additive (+343/-0), all hunks below the line-853 banner; `--repo-root` zero-drift probe byte-identical to phase-start for both scripts.
+**Files modified:**
+- `user/scripts/bug-state.py` — 7 new smoke fixtures (SMOKE FIXTURES section only)
+- `user/scripts/tests/baselines/bug-state-test-baseline.txt` — regenerated
 
 ---
 

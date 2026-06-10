@@ -12,9 +12,16 @@
   PASS [stale-upstream-halt] cloud=False real_device=True: Step 2.9: stale-upstream
   PASS [operator-deferred-skip] cloud=False real_device=True: Step 4: investigate bug
   PASS [all-operator-deferred] cloud=False real_device=True: All remaining bugs are operator-deferred
+  PASS [cloud-defer-mcp] cloud=True real_device=False: Step 9: cloud defers MCP test
+  PASS [cloud-skip-mcp] cloud=True real_device=False: Step 9: skip-mcp-test → validated
+  PASS [device-reopen] cloud=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
+  PASS [step9-skip-mcp] cloud=False real_device=True: Step 9: skip-mcp-test → validated
+  PASS [step9-mcp-results] cloud=False real_device=True: Step 9b: write validated
+  PASS [severity-ordering] cloud=False real_device=True: Step 4: investigate bug
   PASS [enqueue-adhoc-writes-entry] entry written with correct fields
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'
   PASS [baseline-regression-default] default picks alpha: feature_id='bug-scope-alpha' step='Step 4: investigate bug'
+  PASS [backfill-receipts-direct] backfilled=['bug-needs-receipt'] count=1 fixed_md_written=True
 
 All smoke tests passed.
