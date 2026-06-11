@@ -40,6 +40,47 @@
   list item, not a header, and is safe). Do NOT open an RV subsection with an
   unrelated bold lead. The unticked RV boxes themselves are correct and must
   stay `- [ ]` — they belong to the mcp-test cycle, not the implementer.
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  GATE-OWNED ROW BAN — pipeline-owned actions are never checkbox rows     ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Pipeline-owned actions are NEVER authored as checkbox rows — not in
+  Deliverables, not under Runtime Verification. The class: SPEC.md / PHASES.md
+  top-level `**Status:**` flips, COMPLETED.md / FIXED.md receipt writes, ROADMAP
+  completion marks, and archive moves. These are owned by the
+  `__mark_complete__` / `__mark_fixed__` gate (which now auto-flips coherent
+  phases and REFUSES incoherent ones); a checkbox for them is unplannable,
+  untickable work that loops the state machine's routing. (Live incident
+  2026-06-11: a `- [ ] Update SPEC.md status to "Complete"` row in
+  d8-live-looping's Phase 6 deliverables routed write-plan repeatedly until a
+  manual recovery relocated it.) Author such facts as a prose
+  **Completion (gate-owned):** note instead — e.g.
+  `**Completion (gate-owned):** the __mark_complete__ gate flips SPEC.md
+  **Status:** to Complete and writes COMPLETED.md once this phase's runtime
+  verification passes.` Ordinary doc-edit deliverables ("Update SPEC §X
+  wording") remain legitimate checkboxes — the ban is on pipeline-owned
+  STATUS / receipt / archive actions only.
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  REACHABILITY SMOKE — every new API surface carries one in-phase smoke   ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Any phase that introduces a NEW user-facing API surface (a new MCP tool, a
+  new pattern-language method/builder, a new IPC command, a new UI-reachable
+  action) MUST carry one in-phase **reachability smoke** row under Runtime
+  Verification: a single MCP call proving the surface is callable end-to-end
+  (reachable, not behaviorally correct — behavioral validation stays in the
+  feature's Step-9 scenario). Tag the row `(reachability-smoke —
+  workstation-eligible)` so cloud deferral lists it individually instead of
+  batching it silently behind DEFERRED_NON_CLOUD.md. Motivating incident:
+  d8-live-looping reached its Step-9 MCP gate with the documented
+  `track(...).record()` API never reachable (0/16 BLOCKED) after eight phases
+  — the gap was detectable from the first API phase with one smoke call.
+  Example row:
+  `- [ ] reachability smoke (reachability-smoke — workstation-eligible): MCP
+  call to <new tool/command> returns a non-error response (surface is callable
+  end-to-end; behavioral correctness is asserted in the Step-9 scenario).`
 -->
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] {Observable runtime behavior 1 — e.g., "API returns expected response after action"}

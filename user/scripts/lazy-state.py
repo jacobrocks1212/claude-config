@@ -4901,12 +4901,16 @@ def main() -> int:
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.
     # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
-    # the same field via peek=True (no state-file write). Both populate the same
-    # 'repeat_count' output field.
+    # the same fields via peek=True (no state-file write). Both populate the
+    # 'repeat_count' (Phase-9 dispatch-tuple) AND 'step_repeat_count' (Phase-10
+    # step-level oscillation) output fields — emitted together so no new flag is
+    # needed and the default (no flag) output stays byte-identical.
     if args.repeat_count or args.repeat_count_peek:
-        state["repeat_count"] = lazy_core.update_repeat_count(
+        _counts = lazy_core.update_repeat_counts(
             Path(args.repo_root), state, peek=args.repeat_count_peek
         )
+        state["repeat_count"] = _counts["repeat_count"]
+        state["step_repeat_count"] = _counts["step_repeat_count"]
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or

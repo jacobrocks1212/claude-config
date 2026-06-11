@@ -2193,66 +2193,59 @@ def _current_head(repo_root: Path) -> str | None:
     return None
 
 
-def update_repeat_count(
+def update_repeat_counts(
     repo_root: Path,
     state: dict,
     *,
     signature_path: Path | None = None,
     pipeline: str = "feature",
     peek: bool = False,
-) -> int:
-    """Persist the current probe signature and return the consecutive-repeat count.
+) -> dict:
+    """Persist the probe signatures and return BOTH consecutive-repeat counts.
 
-    The «signature» is the 4-tuple
-        (feature_id, sub_skill, sub_skill_args, current_step)
-    extracted with ``.get()`` so that missing keys produce ``None`` components
-    (an all-None signature is stable and valid).
+    Two independent counters share ONE per-pipeline state file:
 
-    Each call:
-    1. Derives or accepts a ``signature_path`` for the persisted JSON file.
-    2. Reads the existing JSON (shape ``{"signature": [...], "count": int,
-       "head": str | None}``). Any missing file, OS error, or corrupt/invalid
-       JSON is silently treated as «no prior» — the function never raises on a
-       bad state file.
-    3. Compares the stored signature (a list) to the new signature (a tuple).
-       JSON has no tuple type, so comparison is list-vs-list after converting
-       the new tuple to a list.
-    4. Counting logic (Phase 9 WU-2 — HEAD-aware):
-         - signature DIFFERS (or no prior)         → count 1.
-         - signature IDENTICAL and stored ``head``:
-             * present AND DIFFERS from current HEAD → RESET to 1. Commits
-               landing between two identical probes are mechanical proof of
-               forward progress (a re-validation after work landed), NOT a
-               stall — so the streak resets even though the tuple repeats.
-             * present AND SAME (or both None)       → increment.
-             * ABSENT (legacy pre-Phase-9 file)      → increment (backward
-               compat) and store ``head`` going forward.
-    5. Atomically persists the new ``{"signature": ..., "count": count,
-       "head": <current HEAD sha or None>}`` JSON back to ``signature_path`` so
-       the next call can read it — UNLESS ``peek`` is True (see below).
-    6. Returns the (int >= 1) count.
+    1. ``repeat_count`` — the Phase-9 dispatch-tuple streak.
+       Signature = ``(feature_id, sub_skill, sub_skill_args, current_step)``.
+       HEAD-AWARE: identical tuple + a NEW HEAD since the last probe RESETS to 1
+       (commits between two identical probes are forward progress, not a stall).
 
-    ``peek`` (Phase 9 WU-2): when True, compute and RETURN the would-be count
-    WITHOUT any mutation — the state file is neither created nor rewritten.
-    Two consecutive peeks therefore return the same number, and a real advance
-    after N peeks behaves exactly as if the peeks never happened. This lets
-    diagnostic / inspection probes read the streak without inflating it (only
-    the single dispatch-bound probe should advance — see the batch SKILLs'
-    probe-hygiene guidance).
+    2. ``step_repeat_count`` — the Phase-10 step-level oscillation counter.
+       Signature = ``(feature_id, current_step)`` ONLY (no sub_skill / args).
+       NO head-advance reset: its whole purpose is catching
+       "productive-looking" oscillation where each spurious cycle commits a file
+       (HEAD advances → the dispatch streak resets every iteration) while the
+       state machine keeps returning to the SAME step. It increments whenever the
+       (feature_id, current_step) pair is unchanged from the prior probe and
+       resets to 1 only when that pair changes — commits in between are ignored.
+
+    The persisted JSON shape is
+    ``{"signature": [4], "count": int, "head": str|None,
+       "step_signature": [2], "step_count": int}``. Legacy files (Phase-9 shape,
+    no ``step_*`` keys) are honored: ``step_count`` starts at 1 and the new keys
+    are added on the next write — mirroring the ``head``-field migration.
+
+    Any missing file, OS error, or corrupt/invalid JSON is silently treated as
+    «no prior» — the function never raises on a bad state file.
+
+    ``peek`` (mirrors Phase-9 semantics): when True, compute and RETURN both
+    would-be counts WITHOUT any mutation — the state file is neither created nor
+    rewritten, so neither counter advances. Diagnostic / inspection probes use
+    peek so only the single dispatch-bound probe advances the streaks.
 
     ``head`` is the repo_root's current HEAD sha (via ``_current_head``), or
-    None when repo_root is not a git repo. None-on-both-sides preserves the
-    pre-Phase-9 same-tuple-increments behavior for non-git injected-path tests.
+    None when repo_root is not a git repo.
 
     Default ``signature_path`` (when None):
         feature pipeline: ``<tempdir>/lazy-state-last-<sha1_of_repo_root[:16]>.json``
         bug pipeline:     ``<tempdir>/bug-state-last-<sha1_of_repo_root[:16]>.json``
     This keeps the state file outside the repo tree — it is never committed
     and never triggers gitignore concerns. The per-``pipeline`` filename keeps
-    the feature and bug resolvers from sharing one signature file: the operator
-    runs /lazy-batch and /lazy-bug-batch in parallel sessions against the same
-    repo, and interleaved probes through a shared file would reset each other's
-    repeat streaks, silently defeating mechanical loop detection.
+    the feature and bug resolvers from sharing one signature file (interleaved
+    parallel /lazy-batch + /lazy-bug-batch probes would otherwise reset each
+    other's streaks, defeating mechanical loop detection).
+
+    Returns ``{"repeat_count": int >= 1, "step_repeat_count": int >= 1}``.
     """
     # --- Derive default path from a stable hash of the resolved repo root ----
     # The hash keeps per-repo state separate even when multiple repos live on
@@ -2266,24 +2259,34 @@ def update_repeat_count(
         prefix = "lazy-state-last" if pipeline == "feature" else f"{pipeline}-state-last"
         signature_path = Path(tempfile.gettempdir()) / f"{prefix}-{repo_hash}.json"
 
-    # --- Build the new signature from the current state ----------------------
+    # --- Build the new signatures from the current state ---------------------
+    # Dispatch tuple (Phase-9): full routing identity.
     new_sig = (
         state.get("feature_id"),
         state.get("sub_skill"),
         state.get("sub_skill_args"),
         state.get("current_step"),
     )
+    # Step signature (Phase-10): feature_id + current_step ONLY. Deliberately
+    # excludes sub_skill / sub_skill_args so oscillation that re-routes the SAME
+    # step through different skills/args (the d8 write-plan loop) still counts.
+    new_step_sig = (
+        state.get("feature_id"),
+        state.get("current_step"),
+    )
 
     # --- Resolve the repo's current HEAD (None when not a git repo) ----------
     current_head = _current_head(repo_root)
 
-    # --- Read the persisted prior signature (fail-safe) ----------------------
+    # --- Read the persisted prior signatures (fail-safe) ---------------------
     prior_count = 0
     prior_sig_list: list | None = None
     # Sentinel distinguishing "no `head` key at all" (legacy file) from an
     # explicit ``"head": null`` (a non-git repo wrote it under the new shape).
     _MISSING = object()
     prior_head: object = _MISSING
+    prior_step_count = 0
+    prior_step_sig_list: list | None = None
     try:
         raw = signature_path.read_text(encoding="utf-8")
         data = json.loads(raw)
@@ -2299,12 +2302,23 @@ def update_repeat_count(
             prior_count = data["count"]
             if "head" in data:
                 prior_head = data["head"]
-        # If shape is wrong, treat as no-prior (prior_count stays 0, prior_sig_list None).
+        # ``step_signature`` / ``step_count`` are OPTIONAL — a legacy pre-Phase-10
+        # file has neither key. Validated INDEPENDENTLY of the dispatch tuple so
+        # a partially-upgraded file still reads what it can.
+        if (
+            isinstance(data, dict)
+            and isinstance(data.get("step_signature"), list)
+            and len(data["step_signature"]) == 2
+            and isinstance(data.get("step_count"), int)
+        ):
+            prior_step_sig_list = data["step_signature"]
+            prior_step_count = data["step_count"]
+        # If shape is wrong, treat as no-prior (counts stay 0, sig lists None).
     except (OSError, ValueError, json.JSONDecodeError):
         # File absent, unreadable, or corrupt → treat as no prior.
         pass
 
-    # --- Compute new count (Phase 9 WU-2 — HEAD-aware) -----------------------
+    # --- Compute the dispatch-tuple count (Phase 9 WU-2 — HEAD-aware) ---------
     # JSON round-trips tuples as lists, so compare new_sig as a list.
     if prior_sig_list is None or list(new_sig) != prior_sig_list:
         # Changed signature (or no prior) — fresh streak.
@@ -2321,16 +2335,57 @@ def update_repeat_count(
         # Same tuple AND same head (or both None) — genuine consecutive repeat.
         count = prior_count + 1
 
+    # --- Compute the step-level count (Phase 10 WU-2 — NO HEAD reset) ---------
+    # Deliberately HEAD-BLIND: identical (feature_id, current_step) increments
+    # regardless of intervening commits (that is the oscillation-with-commits
+    # signal). Legacy files (no step keys) → start at 1 and add the keys below.
+    if prior_step_sig_list is None or list(new_step_sig) != prior_step_sig_list:
+        step_count = 1
+    else:
+        step_count = prior_step_count + 1
+
     # --- Persist the updated record (skipped entirely in peek mode) ----------
-    # peek=True returns the would-be count WITHOUT touching the state file, so
-    # diagnostic probes never inflate or reset the persisted streak.
+    # peek=True returns the would-be counts WITHOUT touching the state file, so
+    # diagnostic probes never inflate or reset either persisted streak.
     if not peek:
-        payload = json.dumps(
-            {"signature": list(new_sig), "count": count, "head": current_head}
-        )
+        payload = json.dumps({
+            "signature": list(new_sig),
+            "count": count,
+            "head": current_head,
+            "step_signature": list(new_step_sig),
+            "step_count": step_count,
+        })
         _atomic_write(signature_path, payload)
 
-    return count
+    return {"repeat_count": count, "step_repeat_count": step_count}
+
+
+def update_repeat_count(
+    repo_root: Path,
+    state: dict,
+    *,
+    signature_path: Path | None = None,
+    pipeline: str = "feature",
+    peek: bool = False,
+) -> int:
+    """Backward-compatible wrapper: return ONLY the dispatch-tuple ``repeat_count``.
+
+    Phase-10 added the step-level oscillation counter via ``update_repeat_counts``
+    (which returns both counts and persists the ``step_*`` keys in the SAME state
+    file). This wrapper preserves the pre-Phase-10 int return for existing callers
+    that only need the dispatch streak, while still writing the step keys (so a
+    later ``update_repeat_counts`` probe of the same step sees them). Kept as a
+    thin delegate — there is exactly one read/write of the shared state file.
+
+    See ``update_repeat_counts`` for the full counting + persistence contract.
+    """
+    return update_repeat_counts(
+        repo_root,
+        state,
+        signature_path=signature_path,
+        pipeline=pipeline,
+        peek=peek,
+    )["repeat_count"]
 
 
 # ---------------------------------------------------------------------------
@@ -3060,6 +3115,49 @@ def emit_cycle_prompt(
         if sec["content"]:
             selected.append(sec["content"])
 
+    # --- Repo prompt addenda (Phase 10 WU-3) ----------------------------------
+    # After the base sections (and BEFORE the loop block), append any matching
+    # sections from the OPTIONAL repo addenda file. The addenda path is keyed off
+    # repo_root (NOT template_dir): it is the established per-repo config surface
+    # (.claude/skill-config/). Parsing + selection reuse the SAME helpers as the
+    # base template (no duplicated grammar), and the appended content is bound +
+    # residue-guarded by the SAME map below — so a bad addenda section refuses the
+    # WHOLE emission exactly like a bad base section. Absent file (or a file with
+    # no matching sections) → no change, byte-identical to base-only behavior.
+    # Orchestrators must NEVER hand-append to cycle_prompt; repo-specific gates
+    # live here (a live orchestrator hand-spliced the AlgoBooth audio-INVARIANTS
+    # gate onto the emitted prompt on 2026-06-11 — that path is now closed).
+    addenda_path = repo_root / ".claude" / "skill-config" / "cycle-prompt-addenda.md"
+    # Track addenda-contributed content separately so the residue guard can name
+    # the addenda file when an unbound token came from a (mis-authored) addenda
+    # section rather than the base template.
+    addenda_selected: list[str] = []
+    try:
+        addenda_text = addenda_path.read_text(encoding="utf-8")
+    except OSError:
+        # Absent / unreadable → no addenda (the common, byte-identical path).
+        addenda_text = None
+    if addenda_text is not None:
+        for sec in _parse_cycle_template(addenda_text):
+            attrs = sec["attrs"]
+            if pipeline not in _csv_set(attrs.get("pipelines")):
+                continue
+            if mode not in _csv_set(attrs.get("modes")):
+                continue
+            skills = attrs.get("skills", "")
+            if skills != "all" and norm_skill not in _csv_set(skills):
+                continue
+            # Addenda sections may carry a variant= attribute too (same mcp-test
+            # one-variant rule), kept for parity with the base selection logic.
+            variant = attrs.get("variant")
+            if variant is not None:
+                if norm_skill != "mcp-test" or variant != runtime_variant:
+                    continue
+            if sec["content"]:
+                addenda_selected.append(sec["content"])
+    # Appended AFTER base sections — order: base → addenda → (loop block below).
+    selected.extend(addenda_selected)
+
     # --- Token bindings (per-pipeline + per-state) ----------------------------
     is_bug = pipeline == "bug"
     bindings = {
@@ -3112,7 +3210,22 @@ def emit_cycle_prompt(
         for tok in residue:
             if tok not in seen:
                 seen.append(tok)
-        return {"ok": False, "refused": "unbound tokens: " + ", ".join(seen)}
+        # Attribute the residue to the addenda file when an unbound token traces
+        # back to a (mis-authored) addenda section — so the operator knows which
+        # file to fix. We bind the addenda blob in isolation and check whether
+        # any of the surviving tokens originated there.
+        suffix = ""
+        if addenda_selected:
+            addenda_blob = "\n\n".join(addenda_selected)
+            for token, value in bindings.items():
+                addenda_blob = addenda_blob.replace("{" + token + "}", value)
+            addenda_residue = set(_PROMPT_RESIDUE_RE.findall(addenda_blob))
+            if addenda_residue & set(seen):
+                suffix = (
+                    " (from .claude/skill-config/cycle-prompt-addenda.md — fix or "
+                    "remove the offending addenda section)"
+                )
+        return {"ok": False, "refused": "unbound tokens: " + ", ".join(seen) + suffix}
 
     return {"ok": True, "prompt": prompt, "model": model}
 

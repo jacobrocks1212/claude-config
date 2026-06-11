@@ -4086,6 +4086,24 @@ _STATE_A_PART2 = {
     "sub_skill_args": "plan-part-2.md",   # differs from _STATE_A (args variant)
     "current_step": "Step 7a: execute plan",
 }
+# Same feature_id + current_step as _STATE_A but a DIFFERENT sub_skill_args.
+# The step signature is (feature_id, current_step) ONLY, so this state has the
+# SAME step signature as _STATE_A even though the dispatch tuple differs — used
+# to prove the step counter ignores sub_skill / sub_skill_args.
+_STATE_A_SAME_STEP_DIFF_ARGS = {
+    "feature_id": "feat-a",
+    "sub_skill": "/write-plan",            # differs from _STATE_A
+    "sub_skill_args": "plan-part-9.md",    # differs from _STATE_A
+    "current_step": "Step 7a: execute plan",  # SAME current_step as _STATE_A
+}
+# Same feature_id as _STATE_A but a DIFFERENT current_step → a DIFFERENT step
+# signature (must reset step_count to 1).
+_STATE_A_DIFF_STEP = {
+    "feature_id": "feat-a",
+    "sub_skill": "/execute-plan",
+    "sub_skill_args": "plan-part-1.md",
+    "current_step": "Step 8: retro",       # differs from _STATE_A
+}
 
 
 def test_update_repeat_count_first_call_is_one():
@@ -4374,6 +4392,193 @@ def test_update_repeat_count_non_git_root_stores_none_head():
     assert (r1, r2) == (1, 2), f"non-git same-tuple must increment 1→2, got {(r1, r2)!r}"
     assert persisted1.get("head") is None, (
         f"non-git repo_root must store head=None, got {persisted1.get('head')!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: update_repeat_counts — Phase 10 WU-2 step-level oscillation counter
+#
+# The step counter is keyed on (feature_id, current_step) ONLY — no sub_skill /
+# sub_skill_args — and has NO head-advance reset (its whole purpose is catching
+# "productive-looking" oscillation where each cycle commits, HEAD advances, and
+# the dispatch-tuple streak resets every iteration). `update_repeat_counts`
+# returns BOTH counts in one read/write pass; `update_repeat_count` stays a
+# thin int-returning wrapper for backward compatibility.
+# ---------------------------------------------------------------------------
+
+def test_update_repeat_counts_returns_both_counts():
+    """update_repeat_counts returns a dict with both repeat_count and
+    step_repeat_count; first call → both 1.
+
+    RED: update_repeat_counts missing on lazy_core → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        result = lazy_core.update_repeat_counts(Path(td), _STATE_A, signature_path=sig_path)
+    assert isinstance(result, dict), f"expected a dict, got {type(result).__name__}"
+    assert result.get("repeat_count") == 1, f"expected repeat_count 1, got {result!r}"
+    assert result.get("step_repeat_count") == 1, f"expected step_repeat_count 1, got {result!r}"
+
+
+def test_update_repeat_counts_step_counter_ignores_sub_skill_args():
+    """The step signature is (feature_id, current_step) ONLY: a probe with the
+    same step but a DIFFERENT sub_skill / sub_skill_args still INCREMENTS the
+    step counter (while the dispatch-tuple repeat_count resets to 1).
+
+    This is the load-bearing discriminator: a naïve impl reusing the dispatch
+    tuple for the step signature would reset step_repeat_count to 1 here.
+    RED: update_repeat_counts missing → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Non-git root → repeat_count head path is None==None (increment), so the
+        # only thing resetting repeat_count below is the signature change.
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_counts(Path(td), _STATE_A, signature_path=sig_path)
+        # Same (feature_id, current_step) but different sub_skill + args.
+        r2 = lazy_core.update_repeat_counts(
+            Path(td), _STATE_A_SAME_STEP_DIFF_ARGS, signature_path=sig_path
+        )
+    assert r1["step_repeat_count"] == 1, f"first step count should be 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"step counter must INCREMENT when (feature_id, current_step) is unchanged "
+        f"even though sub_skill/args differ, got {r2!r}"
+    )
+    assert r2["repeat_count"] == 1, (
+        f"dispatch-tuple repeat_count must RESET when sub_skill/args change, got {r2!r}"
+    )
+
+
+def test_update_repeat_counts_step_counter_resets_on_step_change():
+    """A different current_step → step_repeat_count resets to 1."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_counts(Path(td), _STATE_A, signature_path=sig_path)
+        r2 = lazy_core.update_repeat_counts(Path(td), _STATE_A, signature_path=sig_path)
+        # current_step changes → new step signature → reset.
+        r3 = lazy_core.update_repeat_counts(Path(td), _STATE_A_DIFF_STEP, signature_path=sig_path)
+    assert r1["step_repeat_count"] == 1, f"first → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, f"second identical step → 2, got {r2!r}"
+    assert r3["step_repeat_count"] == 1, (
+        f"step counter must RESET to 1 when current_step changes, got {r3!r}"
+    )
+
+
+def test_update_repeat_counts_step_no_head_advance_reset():
+    """THE Phase-10 discriminator: probe the same (feature_id, current_step)
+    twice with a REAL commit in between.
+
+    - repeat_count RESETS to 1 (Phase-9 HEAD-advance behavior preserved).
+    - step_repeat_count goes 1 → 2 (NO head-advance reset — its purpose is
+      catching oscillation-with-commits).
+
+    RED: a step counter that copied the HEAD-aware reset would return 1, 1.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        # A real commit lands between the two identical probes (HEAD advances).
+        _commit_dummy(repo_root, "progress.txt")
+        r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+    assert r1["repeat_count"] == 1 and r1["step_repeat_count"] == 1, f"first: {r1!r}"
+    assert r2["repeat_count"] == 1, (
+        f"repeat_count must RESET after a commit (HEAD advanced = forward progress), got {r2!r}"
+    )
+    assert r2["step_repeat_count"] == 2, (
+        f"step_repeat_count must INCREMENT despite the commit — the whole point is to "
+        f"catch oscillation where each cycle commits. got {r2!r}"
+    )
+
+
+def test_update_repeat_counts_step_peek_does_not_mutate():
+    """peek=True returns both would-be counts WITHOUT writing the state file —
+    the step counter must not advance under peek either.
+
+    Sequence (non-git root): peek, peek, advance, advance → step counts
+    1, 1, 1, 2.
+    RED: update_repeat_counts missing → AttributeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        sig_path = Path(td) / "sig.json"
+        p1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path, peek=True)
+        peek1_created = sig_path.exists()
+        p2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path, peek=True)
+        a1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        a2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+    assert not peek1_created, "peek must NOT create the state file"
+    assert p1["step_repeat_count"] == 1, f"first peek → 1, got {p1!r}"
+    assert p2["step_repeat_count"] == 1, f"second peek → 1 (no mutation), got {p2!r}"
+    assert a1["step_repeat_count"] == 1, (
+        f"first real advance starts at 1 (peeks didn't advance), got {a1!r}"
+    )
+    assert a2["step_repeat_count"] == 2, f"second advance → 2, got {a2!r}"
+
+
+def test_update_repeat_counts_legacy_file_without_step_keys():
+    """A persisted file written by the Phase-9 shape (signature/count/head, NO
+    step_signature/step_count) → step_repeat_count starts at 1, and the new keys
+    are added on the next write (legacy fallback, mirroring the head migration).
+
+    RED: an impl that KeyErrors or crashes on the missing step keys.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)  # non-git → head None
+        sig_path = Path(td) / "sig.json"
+        # Hand-write the Phase-9 shape: dispatch tuple matching _STATE_A, NO step keys.
+        legacy_sig = [
+            _STATE_A["feature_id"],
+            _STATE_A["sub_skill"],
+            _STATE_A["sub_skill_args"],
+            _STATE_A["current_step"],
+        ]
+        sig_path.write_text(
+            json.dumps({"signature": legacy_sig, "count": 1, "head": None}),
+            encoding="utf-8",
+        )
+        r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        persisted = json.loads(sig_path.read_text(encoding="utf-8"))
+        r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+    assert r1["step_repeat_count"] == 1, (
+        f"legacy file without step keys → step_count starts at 1, got {r1!r}"
+    )
+    assert "step_signature" in persisted and "step_count" in persisted, (
+        f"the new step keys must be added on the next write, got {persisted!r}"
+    )
+    assert r2["step_repeat_count"] == 2, (
+        f"second identical-step probe increments now that keys exist, got {r2!r}"
+    )
+    # The Phase-9 dispatch-tuple count keeps incrementing (legacy file had it at 1).
+    assert r1["repeat_count"] == 2, (
+        f"dispatch repeat_count must still honor the legacy count (1 → 2), got {r1!r}"
+    )
+
+
+def test_update_repeat_count_wrapper_still_returns_int():
+    """The backward-compatible wrapper update_repeat_count returns the bare
+    dispatch-tuple int (NOT a dict) — existing callers/tests are unbroken.
+
+    Also confirms the wrapper persists the step keys (a subsequent
+    update_repeat_counts sees step_count already at 1, so its identical probe
+    returns 2) — i.e. the wrapper and the plural share ONE state file.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        sig_path = Path(td) / "sig.json"
+        r = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+        assert r == 1, f"wrapper must return a bare int (1), got {r!r}"
+        # The wrapper wrote step keys too → a plural probe of the same step → 2.
+        r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+    assert isinstance(r, int), f"wrapper must return int, got {type(r).__name__}"
+    assert r2["step_repeat_count"] == 2, (
+        f"wrapper must persist step keys so the plural sees them, got {r2!r}"
     )
 
 
@@ -5240,6 +5445,213 @@ def test_emit_cycle_prompt_sub_skill_args_none_binds_empty():
 
 
 # ---------------------------------------------------------------------------
+# Tests: emit_cycle_prompt repo prompt addenda — Phase 10 WU-3
+#
+# emit_cycle_prompt reads an OPTIONAL <repo_root>/.claude/skill-config/
+# cycle-prompt-addenda.md, parsed with the SAME @section grammar + selection
+# semantics as the base template. Selected addenda are appended AFTER base
+# sections and BEFORE the loop block, token-bound + residue-guarded with the
+# same map. Absent file → byte-identical to current behavior. NOTE: the addenda
+# path is keyed off repo_root, NOT template_dir.
+# ---------------------------------------------------------------------------
+
+def _write_addenda(repo_root: Path, body: str) -> Path:
+    """Write <repo_root>/.claude/skill-config/cycle-prompt-addenda.md (creating
+    the dir tree). Returns the addenda path."""
+    addenda_dir = repo_root / ".claude" / "skill-config"
+    addenda_dir.mkdir(parents=True, exist_ok=True)
+    path = addenda_dir / "cycle-prompt-addenda.md"
+    header = "# repo addenda\n\nMetadata that must never be emitted.\n\n"
+    path.write_text(header + body, encoding="utf-8")
+    return path
+
+
+def test_emit_cycle_prompt_addenda_absent_is_byte_identical():
+    """A repo_root with NO addenda file → output byte-identical to the emission
+    without any addenda dir. Pins the absent-file no-op contract.
+
+    RED: an impl that always tries to read the addenda file and crashes, or that
+    changes output shape when the file is absent.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # repo_root WITHOUT a .claude/skill-config/cycle-prompt-addenda.md.
+        repo_a = Path(td) / "repo_a"
+        repo_a.mkdir()
+        state = _emit_state(sub_skill="/execute-plan")
+        r_no_file = lazy_core.emit_cycle_prompt(
+            repo_a, state, pipeline="feature", cloud=False,
+            template_dir=_REAL_TEMPLATE_DIR,
+        )
+        # A second repo_root, also without the file, but with the .claude tree
+        # present-but-empty (proves it's the FILE, not the dir, that gates it).
+        repo_b = Path(td) / "repo_b"
+        (repo_b / ".claude" / "skill-config").mkdir(parents=True)
+        state_b = dict(state)
+        state_b["sub_skill"] = "/execute-plan"
+        r_empty_dir = lazy_core.emit_cycle_prompt(
+            repo_b, state_b, pipeline="feature", cloud=False,
+            template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r_no_file is not None and r_no_file["ok"], r_no_file
+    assert r_empty_dir is not None and r_empty_dir["ok"], r_empty_dir
+    # cwd token binds to repo_root, so normalize it out before comparing prompts.
+    norm_a = r_no_file["prompt"].replace(str(repo_a), "<CWD>")
+    norm_b = r_empty_dir["prompt"].replace(str(repo_b), "<CWD>")
+    assert norm_a == norm_b, (
+        "absent addenda file must produce byte-identical output (modulo cwd)"
+    )
+
+
+def test_emit_cycle_prompt_addenda_selected_and_appended_after_base():
+    """A matching addenda section is appended AFTER the base sections (and the
+    addenda content + a base-section marker both appear, addenda LAST)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _write_addenda(
+            repo,
+            "<!-- @section repo-extra pipelines=feature modes=workstation skills=execute-plan -->\n"
+            "ADDENDA_BODY for execute-plan workstation feature.\n",
+        )
+        r = lazy_core.emit_cycle_prompt(
+            repo, _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r["ok"], r
+    p = r["prompt"]
+    assert "ADDENDA_BODY" in p, "selected addenda section was not appended"
+    assert "Metadata that must never be emitted" not in p, "addenda metadata header leaked"
+    # The addenda body must come AFTER the base template body (the base 'task'
+    # section's batch-mode text is near the top). Use a stable base anchor.
+    base_anchor_idx = p.find("batch")  # base 'task' section mentions batch mode
+    addenda_idx = p.find("ADDENDA_BODY")
+    assert base_anchor_idx != -1, "base section anchor not found in prompt"
+    assert addenda_idx > base_anchor_idx, "addenda must be appended AFTER base sections"
+
+
+def test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode():
+    """Addenda sections honor the same skills / pipeline / mode filters as base
+    sections: a section scoped to skills=mcp-test is NOT selected on an
+    execute-plan cycle; a section scoped to modes=cloud is NOT selected
+    workstation; a section scoped to pipelines=bug is NOT selected on feature.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _write_addenda(
+            repo,
+            "<!-- @section match pipelines=feature modes=workstation skills=execute-plan -->\n"
+            "ADDENDA_MATCH.\n"
+            "\n"
+            "<!-- @section wrongskill pipelines=feature modes=workstation skills=mcp-test -->\n"
+            "ADDENDA_WRONGSKILL.\n"
+            "\n"
+            "<!-- @section wrongmode pipelines=feature modes=cloud skills=all -->\n"
+            "ADDENDA_WRONGMODE.\n"
+            "\n"
+            "<!-- @section wrongpipe pipelines=bug modes=workstation skills=all -->\n"
+            "ADDENDA_WRONGPIPE.\n",
+        )
+        r = lazy_core.emit_cycle_prompt(
+            repo, _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r["ok"], r
+    p = r["prompt"]
+    assert "ADDENDA_MATCH" in p, "matching addenda section not selected"
+    assert "ADDENDA_WRONGSKILL" not in p, "skills filter not applied to addenda"
+    assert "ADDENDA_WRONGMODE" not in p, "modes filter not applied to addenda"
+    assert "ADDENDA_WRONGPIPE" not in p, "pipelines filter not applied to addenda"
+
+
+def test_emit_cycle_prompt_addenda_tokens_bound():
+    """Tokens inside an addenda section are bound by the SAME binding map."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _write_addenda(
+            repo,
+            "<!-- @section tok pipelines=feature modes=workstation skills=execute-plan -->\n"
+            "Addenda for {item_id} ({item_label}).\n",
+        )
+        r = lazy_core.emit_cycle_prompt(
+            repo, _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r["ok"], r
+    p = r["prompt"]
+    assert "Addenda for feat-x (Feature)." in p, f"addenda tokens not bound: {p[-300:]!r}"
+    assert not _TOKEN_RESIDUE_RE.findall(p), "residue after addenda binding"
+
+
+def test_emit_cycle_prompt_addenda_residue_refuses_naming_file():
+    """An addenda section with an unbound {bogus_token} → the WHOLE emission
+    refuses (ok=False), and the refusal names the addenda file so the operator
+    knows where the bad section lives.
+
+    RED: an impl that binds addenda but skips the residue guard, or one whose
+    refusal does not identify the addenda source.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _write_addenda(
+            repo,
+            "<!-- @section bad pipelines=feature modes=workstation skills=all -->\n"
+            "This addenda references {not_a_real_token}.\n",
+        )
+        r = lazy_core.emit_cycle_prompt(
+            repo, _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None, "refusal must be a dict, not None"
+    assert r.get("ok") is False, f"expected refusal on addenda residue, got {r}"
+    refused = r.get("refused", "")
+    assert "not_a_real_token" in refused, f"refusal must name the token: {refused!r}"
+    assert "cycle-prompt-addenda.md" in refused, (
+        f"refusal must name the addenda file so the bad section is locatable: {refused!r}"
+    )
+
+
+def test_emit_cycle_prompt_addenda_before_loop_block():
+    """With repeat_count >= 2, the assembled order is: base sections → addenda →
+    loop block. The addenda body must appear AFTER the base body and BEFORE the
+    LOOP DETECTED block.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _write_addenda(
+            repo,
+            "<!-- @section pre-loop pipelines=feature modes=workstation skills=execute-plan -->\n"
+            "ADDENDA_PRELOOP marker.\n",
+        )
+        r = lazy_core.emit_cycle_prompt(
+            repo, _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, repeat_count=2,
+            template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r["ok"], r
+    p = r["prompt"]
+    assert "ADDENDA_PRELOOP" in p, "addenda not present with loop block"
+    assert "LOOP DETECTED" in p, "loop block not appended at repeat_count=2"
+    addenda_idx = p.find("ADDENDA_PRELOOP")
+    loop_idx = p.find("LOOP DETECTED")
+    base_idx = p.find("batch")
+    assert base_idx < addenda_idx < loop_idx, (
+        f"order must be base < addenda < loop, got base={base_idx} "
+        f"addenda={addenda_idx} loop={loop_idx}"
+    )
+    assert r["model"] == "sonnet", f"loop block still flips model to sonnet, got {r['model']!r}"
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -5449,6 +5861,14 @@ _TESTS = [
     ("test_update_repeat_count_legacy_file_without_head_increments", test_update_repeat_count_legacy_file_without_head_increments),
     ("test_update_repeat_count_peek_does_not_mutate", test_update_repeat_count_peek_does_not_mutate),
     ("test_update_repeat_count_non_git_root_stores_none_head", test_update_repeat_count_non_git_root_stores_none_head),
+    # update_repeat_counts — Phase 10 WU-2 step-level oscillation counter
+    ("test_update_repeat_counts_returns_both_counts", test_update_repeat_counts_returns_both_counts),
+    ("test_update_repeat_counts_step_counter_ignores_sub_skill_args", test_update_repeat_counts_step_counter_ignores_sub_skill_args),
+    ("test_update_repeat_counts_step_counter_resets_on_step_change", test_update_repeat_counts_step_counter_resets_on_step_change),
+    ("test_update_repeat_counts_step_no_head_advance_reset", test_update_repeat_counts_step_no_head_advance_reset),
+    ("test_update_repeat_counts_step_peek_does_not_mutate", test_update_repeat_counts_step_peek_does_not_mutate),
+    ("test_update_repeat_counts_legacy_file_without_step_keys", test_update_repeat_counts_legacy_file_without_step_keys),
+    ("test_update_repeat_count_wrapper_still_returns_int", test_update_repeat_count_wrapper_still_returns_int),
     # git_guard_status — WU-5 single-probe payload (git guards)
     ("test_git_guard_status_clean_and_pushed", test_git_guard_status_clean_and_pushed),
     ("test_git_guard_status_dirty_tree", test_git_guard_status_dirty_tree),
@@ -5484,6 +5904,13 @@ _TESTS = [
     ("test_emit_cycle_prompt_mcp_variant_routing_synthetic", test_emit_cycle_prompt_mcp_variant_routing_synthetic),
     ("test_emit_cycle_prompt_work_branch_fallback_non_git", test_emit_cycle_prompt_work_branch_fallback_non_git),
     ("test_emit_cycle_prompt_sub_skill_args_none_binds_empty", test_emit_cycle_prompt_sub_skill_args_none_binds_empty),
+    # emit_cycle_prompt repo prompt addenda — Phase 10 WU-3
+    ("test_emit_cycle_prompt_addenda_absent_is_byte_identical", test_emit_cycle_prompt_addenda_absent_is_byte_identical),
+    ("test_emit_cycle_prompt_addenda_selected_and_appended_after_base", test_emit_cycle_prompt_addenda_selected_and_appended_after_base),
+    ("test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode", test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode),
+    ("test_emit_cycle_prompt_addenda_tokens_bound", test_emit_cycle_prompt_addenda_tokens_bound),
+    ("test_emit_cycle_prompt_addenda_residue_refuses_naming_file", test_emit_cycle_prompt_addenda_residue_refuses_naming_file),
+    ("test_emit_cycle_prompt_addenda_before_loop_block", test_emit_cycle_prompt_addenda_before_loop_block),
 ]
 
 
