@@ -31,8 +31,16 @@
             DotClaudeFiles = @('settings.json', 'settings.local.json', 'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md')
             DotClaudeDirs  = @('skill-config', 'skills', 'knowledge')
         }
-        'cognito-forms-side-repo' = @{
-            Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-side-repo'
+        'cognito-forms-B' = @{
+            Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-B'
+            Alias = 'cognito-forms'
+        }
+        'cognito-forms-C' = @{
+            Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-C'
+            Alias = 'cognito-forms'
+        }
+        'cognito-forms-D' = @{
+            Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-D'
             Alias = 'cognito-forms'
         }
         'algobooth' = @{

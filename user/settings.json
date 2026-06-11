@@ -1,7 +1,19 @@
 {
   "permissions": {
     "deny": [
-      "mcp__ado__repo_reply_to_comment"
+      "mcp__ado__repo_reply_to_comment",
+      "mcp__ado__repo_create_pull_request_thread",
+      "mcp__ado__repo_update_pull_request_thread",
+      "mcp__github__add_issue_comment",
+      "mcp__github__add_reply_to_pull_request_comment",
+      "mcp__github__add_comment_to_pending_review",
+      "mcp__github__pull_request_review_write",
+      "Bash(gh pr comment*)",
+      "Bash(gh pr review*)",
+      "Bash(gh issue comment*)",
+      "Bash(gh api */pulls/*/comments*-f *)",
+      "Bash(gh api */pulls/*/reviews*-f *)",
+      "Bash(gh api */issues/*/comments*-f *)"
     ],
     "defaultMode": "bypassPermissions",
     "additionalDirectories": [
@@ -9,8 +21,29 @@
       "~/Downloads"
     ]
   },
-  "model": "claude-opus-4-6",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/load-branch-docs-context.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'for DIR in ~/.claude-personal/plans ~/.claude/plans; do if [ -d \"$DIR\" ]; then PLAN=$(find \"$DIR\" -name \"*.md\" -newer /tmp/.claude-session-marker 2>/dev/null | sort | tail -1); if [ -n \"$PLAN\" ]; then echo \"--- POST-COMPACTION PLAN RECOVERY ---\"; echo \"Active plan: $PLAN\"; echo \"\"; echo \"MANDATORY — before continuing:\"; echo \"1. Read the full plan file at: $PLAN\"; echo \"2. Identify your current position (which batch/step)\"; echo \"3. Before each step, Read the component files listed in that step from disk\"; echo \"4. Do NOT proceed from memory — re-read everything from disk\"; echo \"---\"; head -80 \"$PLAN\"; echo \"...\"; echo \"--- END PREVIEW — Read full plan at: $PLAN ---\"; break; fi; fi; done'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Read",
@@ -29,44 +62,16 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/block-work-repo-git-push.sh",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:/Users/JacobMadsen/.claude/scripts/fix-line-endings.ps1\" -FilePath \"$TOOL_INPUT_file_path\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit:.*Cognito.Web.Client.*\\.(ts|vue)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:/Users/JacobMadsen/.claude/scripts/run-eslint.ps1\" -FilePath \"$TOOL_INPUT_file_path\"",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "startup|resume|clear|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/load-branch-docs-context.sh",
+            "command": "bash ~/.claude/hooks/block-terminal-kill.sh",
             "timeout": 5
           }
         ]
       }
-    ]
+    ],
+    "PostToolUse": []
   },
   "statusLine": {
     "type": "command",
@@ -99,7 +104,8 @@
       "source": {
         "source": "directory",
         "path": "C:/Users/JacobMadsen/.claude/plugins/local-tools"
-      }
+      },
+      "autoUpdate": true
     },
     "context7-marketplace": {
       "source": {
@@ -119,7 +125,8 @@
   "autoUpdatesChannel": "latest",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
-  "useAutoModeDuringPlan": false,
+  "theme": "dark",
   "remoteControlAtStartup": true,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "useAutoModeDuringPlan": false
 }
