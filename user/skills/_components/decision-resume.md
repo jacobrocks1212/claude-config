@@ -19,7 +19,7 @@ Runtime placeholders (`{feature_id}`, `{feature_name}`, `{spec_path}`, `{cwd}`,
 `{written_by}`, `{cycle}`, `{max_cycles}`) are filled from the state-script JSON — note
 **both** pipelines use the JSON field name `feature_id` (the bug id rides in it).
 
-Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (post-research only — per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`) wrote `NEEDS_INPUT.md` with a genuine design choice. The orchestrator surfaces the choice to the user via `AskUserQuestion`, captures the answer, persists it to disk, **dispatches a Sonnet subagent to apply the choice to SPEC.md / PHASES.md and neutralize the sentinel**, and then **continues the loop** — there is no halt. The user retains decision-making autonomy (they answered the question); the apply step is mechanical propagation of the choice into the planning docs.
+Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (post-research only — per the post-research halting rule in `~/.claude/skills/_components/sentinel-frontmatter.md`) wrote `NEEDS_INPUT.md` with a genuine design choice. The orchestrator first auto-resolves any **scope-class** decisions per the completeness-first standing policy (step 1b — D7, both modes, never asked), then surfaces the remaining product-class choice(s) to the user via `AskUserQuestion`, captures the answer, persists it to disk, **dispatches a Sonnet subagent to apply the choice to SPEC.md / PHASES.md and neutralize the sentinel**, and then **continues the loop** — there is no halt. The user retains decision-making autonomy over product-class choices (they answered the question); the apply step is mechanical propagation of the choice into the planning docs.
 
 **Algorithm:**
 
@@ -40,6 +40,15 @@ Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (p
      ```
 
      PushNotification with the same message, append `{cycle+1, feature_name, "🛑 needs-input (malformed)", "<writer> wrote NEEDS_INPUT.md without rich body"}` to `cycle_log`, print the final batch report, STOP. Do NOT call `AskUserQuestion` against a malformed file (HARD CONSTRAINT 6).
+
+1b. **Completeness-policy scope resolution (D7 — runs FIRST, before composing any question; BOTH modes).** Apply the scope test from `~/.claude/skills/_components/completeness-policy.md` to EACH decision in the sentinel: would the end-state product behavior differ between the options? Every decision that is `class: scope` — or scope-shaped (options differ only in effort / sizing / sequencing / completeness) regardless of declared class — is auto-resolved to the **most complete option**, never asked:
+
+   - Append a `## Resolution` block for the resolved decision(s) (same shape as step 4) carrying `resolved_by: completeness-policy`, with **Choice:** = the most complete option and **Notes:** = a one-line scope-test justification.
+   - Emit one chat line per application — `⚖ policy: {decision, ≤8 words} → {chosen path}` — and record it for the run-end D7 digest.
+   - If ALL decisions in the sentinel were scope-class: commit (step 5), dispatch the apply-resolution subagent (step 6 — note in the prompt that the choices were policy-resolved under D7, not operator-answered), and record-and-continue (step 7, with the `cycle_log` action `"▶ needs-input (D7 policy-resolved + applied)"`). Skip steps 2–3 entirely — no briefing, no `AskUserQuestion`.
+   - If only SOME were scope-class: resolve those here, then proceed to step 2 with ONLY the remaining product-class decisions (the briefing, re-print, and `AskUserQuestion` cover only those).
+
+   This step runs in default AND `--park` modes and PRECEDES the park/two-key logic — scope is resolved by standing policy (no two-key needed), mechanical two-key applies next (park mode, via `parked-flush.md`), and only the remaining product-class decisions are asked (or parked). Exceptions per the policy (Locked-Decision conflict, destructive/outward-facing ops, genuine ambiguity about "complete") stay product-class and fall through to the question.
 
 2. **Print the Zero-Context Operator Briefing (2a), then re-print the rich body VERBATIM (2b).** Assume the operator has been away for hours and retains NO session context (and may be reading on mobile, where `AskUserQuestion` truncates). Emit BOTH, in order:
 

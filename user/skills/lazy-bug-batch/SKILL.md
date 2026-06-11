@@ -82,6 +82,8 @@ cycle subagent; all skills run inline using `Edit`/`Write`/`Read`.
 
 **ALL orchestrator chat output MUST follow `~/.claude/skills/_components/orchestrator-voice.md`** — the turn-template contract (T1 run banner, T2 dispatch / T3 return / T4 inline-gate cycle blocks, T5 park line, T6 rich zones, T7 final report; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). **Read it at run start, and RE-READ it after any compaction boundary** (alongside `lazy-dispatch-template.md` — Step 1d's compaction discipline); the contract survives summarization by re-read, not by memory. Where an older passage (here or in the inherited `/lazy-batch` text) prescribes a different chat-output shape, the contract's Precedence clause wins; the verbatim re-print / Zero-Context Operator Briefing requirements (HARD CONSTRAINT 6, `decision-resume.md`, `blocked-resolution.md`, `parked-flush.md`, `halt-resolution.md`) are sanctioned T6 rich zones and are never overridden. Graded by `/lazy-batch-retro`'s R-V-* rules.
 
+**STANDING POLICY — completeness-first (D7).** Read `~/.claude/skills/_components/completeness-policy.md` at run start, and RE-READ it after any compaction boundary (it is on the Step 1d compaction re-read list). It is pre-authorized: decisions whose options differ only in effort / sizing / sequencing / completeness (`class: scope`) are auto-resolved to the MOST COMPLETE option in BOTH modes — logged (`⚖ policy:` line, `resolved_by: completeness-policy`, run-end D7 digest in the T7 report), never asked. It governs the cycle and input-audit subagent prompts, Step 1g (scope-class sentinel resolution runs first), Step 1h (sequencing-only blockers auto-resolve; spin-offs pre-authorized, notify + log), and the `__mark_fixed__` Gate-1 coverage outcome at Step 1c.5 (author coverage / test-exempt, never ask). D7 only REMOVES questions — product-class decisions still ask exactly as before. Graded by `/lazy-batch-retro`'s R-D7-* rules.
+
 ---
 
 ## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)
@@ -196,9 +198,13 @@ pipeline — never pass it).
 
 If `terminal_reason` is set:
 
-- **`blocked`**: see Step 1h (blocked-resolution mode). Re-prints `BLOCKED.md` body,
-  `AskUserQuestion`s the resolution path, enacts it, resumes — UNLESS "Halt for manual fix".
-- **`needs-input`**: see Step 1g (decision-resume mode). Resolves inline, resumes.
+- **`blocked`**: see Step 1h (blocked-resolution mode). Classifies the blocker FIRST per
+  `completeness-policy.md` §3 — sequencing-only blockers auto-resolve (add-phase + fix now, or
+  spin-off + dependency-gate + requeue), logged + notified, no question; only a genuine product
+  fork re-prints `BLOCKED.md` and `AskUserQuestion`s the resolution path, enacts it, resumes —
+  UNLESS "Halt for manual fix".
+- **`needs-input`**: see Step 1g (decision-resume mode). Auto-resolves scope-class decisions per
+  D7 first; resolves the remaining product-class decisions inline via `AskUserQuestion`, resumes.
 - **`completion-unverified`**: a bug's SPEC claims Fixed but no FIXED.md receipt exists. See
   Step 1i — re-print the gap and `AskUserQuestion` the path (reopen & re-validate / grandfather
   receipt via `bug-state.py --backfill-receipts` / defer & continue / halt). Do NOT auto-flip.
@@ -258,11 +264,15 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
 
   **Gate 1 — MCP-coverage audit** per
   `~/.claude/skills/_components/mcp-coverage-audit.md`.
-  Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns `uncovered:N`, it has
-  written `{spec_path}/NEEDS_INPUT.md`. Do NOT run the archive steps. Append to `cycle_log`
-  `{forward_cycles + meta_cycles + 1, bug_name, "__mark_fixed__ (gate halted)", "<reason> → NEEDS_INPUT.md"}`,
+  Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns `uncovered:N`, follow
+  its D7 outcome (`completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md):
+  documented-MCP-untestable decisions get an inline SPEC test-exempt note; the rest route to a
+  corrective coverage cycle (dispatch a cycle subagent to author the `mcp-tests/` scenario(s)
+  + run them — meta cycle), with `⚖ policy:` line(s) + D7-digest entries. Do NOT run the
+  archive steps. Append to `cycle_log`
+  `{forward_cycles + meta_cycles + 1, bug_name, "__mark_fixed__ (gate 1 halted)", "{N} uncovered → corrective coverage cycle"}`,
   increment `forward_cycles` (gate-halted mark-fixed is still a forward-advancing attempt),
-  return to Step 1a.
+  return to Step 1a — the next mark-fixed attempt re-audits `clean`.
 
   **Gate 2 — completion-integrity gate** per
   `~/.claude/skills/_components/completion-integrity-gate.md`
@@ -307,7 +317,7 @@ fall through to Step 1d.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md` AND `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
+**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`, `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics), AND `~/.claude/skills/_components/completeness-policy.md` (the D7 standing policy — its auto-resolve rules likewise survive compaction by re-read, not memory). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
 
 **Long-build ownership (harness-tracked).** Any build or test that may exceed a single subagent turn is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends (a `tauri build` backgrounded that way once silently vanished). Before committing to a 20–40 min packaged `tauri build`, run `cargo check --release` first to catch compile errors in minutes. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
@@ -539,7 +549,23 @@ Omit entirely otherwise.)*
 | {bug_name} ({bug_id}) | {decision title} | {chosen option label} | `{resolved_sentinel_path}` |
 ```
 
-Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, digest, terminal reason, and Next-step lines carry all required content.
+*(Print the following table whenever the run applied the completeness-first standing policy at
+least once — BOTH modes. Omit entirely when no D7 applications occurred.)*
+
+```
+### Completeness-policy applications (D7)
+
+| Bug | Decision / blocker | Chosen path | Spin-off | Link |
+|-----|--------------------|-------------|----------|------|
+| {bug_name} ({bug_id}) | {≤8-word summary} | {most-complete path taken} | {spun-off id or —} | `{resolved sentinel / SPEC note / scenario path}` |
+```
+
+*(One row per `⚖ policy:` application — Step 1g scope resolutions, Step 1h sequencing-only
+blocker resolutions, parked-flush backstop resolutions, Gate-1 coverage routings, and in-cycle
+applications disclosed in cycle summaries. Required by `completeness-policy.md` Logging; graded
+by R-D7-2.)*
+
+Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, digests, terminal reason, and Next-step lines carry all required content.
 
 STOP.
 

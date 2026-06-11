@@ -1,6 +1,6 @@
 ---
 name: lazy-cloud
-description: Cloud-environment variant of /lazy — advances the AlgoBooth queue with the same state machine, but defers any step that cannot run in a cloud-based Linux environment (e.g. MCP testing requiring the desktop Tauri app) and documents the deferral so a later /lazy run from a workstation picks up exactly where this run stopped. The `__mark_complete__` special action runs the MCP-coverage audit gate (Step 4.4) before the SPEC flip — uncovered SPEC Locked Decisions write NEEDS_INPUT.md and defer the flip; the audit is docs-only and runs identically in cloud
+description: Cloud-environment variant of /lazy — advances the AlgoBooth queue with the same state machine, but defers any step that cannot run in a cloud-based Linux environment (e.g. MCP testing requiring the desktop Tauri app) and documents the deferral so a later /lazy run from a workstation picks up exactly where this run stopped. The `__mark_complete__` special action runs the MCP-coverage audit gate (Step 4.4) before the SPEC flip — uncovered SPEC Locked Decisions route to authoring the missing MCP coverage (or a documented test-exempt note) per the completeness-first standing policy (D7), deferring the flip with no operator question; the audit and authoring are docs-only and run identically in cloud
 argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---
@@ -180,7 +180,7 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
 
 - `clean` — proceed to the completion-integrity gate (Step 4.5 below).
-- `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy-cloud` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
+- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (docs-only, works in cloud; the scenario RUN defers to workstation per the normal cloud MCP deferral) or write the SPEC test-exempt note for any decision in a documented MCP-untestable class per `docs/features/mcp-testing/SPEC.md` — emit one `⚖ policy:` line per decision, commit + push immediately (cloud durability). Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — authored corrective coverage / test-exempt note(s) for {N} locked decision(s)", Next `/lazy-cloud` will: "Re-attempt __mark_complete__ (the re-run audit returns clean); a workstation /lazy runs the corrective scenario(s)"), call work-log, STOP.
 
 **Step 4.5: Completion-integrity gate (NEW — runs after the coverage audit returns `clean`, before the flip).**
 

@@ -100,13 +100,32 @@ the flush is a no-op (proceed to run-end report or resume loop).
 After step 2, `pending_flush` contains only well-formed sentinels. If `pending_flush` is now
 empty (all were malformed), skip to the post-flush cycle accounting step.
 
+**Step 2.4 — Completeness-policy scope resolution (D7 — runs BEFORE the two-key partition).**
+Same precedence as `decision-resume.md` step 1b: scope-class decisions are resolved by standing
+policy, NOT asked, before any batching. Apply the scope test from
+`~/.claude/skills/_components/completeness-policy.md` to each decision in each `pending_flush`
+sentinel: any decision that is `class: scope` — or scope-shaped (options differ only in
+effort / sizing / sequencing / completeness, same end-state product behavior) regardless of
+declared class — is auto-resolved to the **most complete option**: append the `## Resolution`
+block carrying `resolved_by: completeness-policy`, emit the
+`⚖ policy: {decision, ≤8 words} → {chosen path}` chat line, record a D7-digest entry
+(NOT an `auto_accepted[]` entry — the digests are separate), and run the same commit +
+apply-resolution-subagent + meta-cycle accounting machinery as the auto-accept processing in
+Step 2.5 below. A sentinel whose every decision was scope-class drops out of `pending_flush`
+here; a mixed sentinel continues into Step 2.5 with only its remaining decisions. Scope-class
+decisions should normally NEVER reach the flush at all — Step 1g / probe-time D7 resolution
+handles them first — this step is the backstop for any that slipped through (e.g. parked by
+the probe before any classification ran).
+
 **Step 2.5 — Two-key auto-accept partition (`--park` mode only — this step runs only here).**
 
-**No auto-accept path exists outside this park-only component.** The auto-accept logic below is
-structurally gated inside this `--park`-only flush component; it cannot fire in the standard
-decision-resume path (Step 1g without `--park`). The structural guarantee: `class: mechanical`
-and `audit_concurs: true` in a sentinel are inert outside `--park` — they are read and acted on
-ONLY here.
+**No D2 two-key auto-accept path exists outside this park-only component.** The two-key
+auto-accept logic below is structurally gated inside this `--park`-only flush component; it
+cannot fire in the standard decision-resume path (Step 1g without `--park`). The structural
+guarantee: `class: mechanical` and `audit_concurs: true` in a sentinel are inert outside
+`--park` — they are read and acted on ONLY here. (Distinct from the D7 completeness-policy
+scope resolution in Step 2.4 / `decision-resume.md` step 1b, which IS both-modes by design —
+its authorization is the standing policy itself, not the two-key mechanism.)
 
 Partition `pending_flush` into two sets:
 

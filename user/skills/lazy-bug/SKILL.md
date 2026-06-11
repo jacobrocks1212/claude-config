@@ -177,10 +177,16 @@ via the archive-on-fix procedure.
 `~/.claude/skills/_components/mcp-coverage-audit.md`.
 Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns:
 
-- `uncovered:N` — the audit has written `{spec_path}/NEEDS_INPUT.md`. Do NOT run Gate 2 or
-  the archive steps. Print the after-status bookend (Completed: "MCP-coverage gate halted
-  mark-fixed — {N} uncovered locked decision(s)", Next `/lazy-bug` will: "Surface NEEDS_INPUT.md
-  and reconcile the coverage gap"), call work-log, STOP.
+- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md`
+  §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's
+  remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (or write
+  the SPEC test-exempt note for any decision in a documented MCP-untestable class per
+  `docs/features/mcp-testing/SPEC.md`), emit one `⚖ policy:` line per decision, commit + push.
+  Do NOT run Gate 2 or the archive steps. Print the after-status bookend (Completed:
+  "MCP-coverage gate halted mark-fixed — authored corrective coverage / test-exempt note(s) for
+  {N} locked decision(s)", Next `/lazy-bug` will: "Run /mcp-test against the corrective
+  scenario(s), then re-attempt __mark_fixed__ (the re-run audit returns clean)"), call work-log,
+  STOP.
 - `clean` — proceed to Gate 2.
 
 **Gate 2 — Completion-integrity gate and FIXED.md receipt.**

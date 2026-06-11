@@ -23,6 +23,22 @@ Operating mode: batch
   - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the decision —
     that's a halt for a human.
 
+Completeness-first (D7 — standing policy, pre-authorized, both modes):
+  Before writing NEEDS_INPUT.md for ANY decision, apply the scope test: would
+  the end-state product behavior differ between the options? If NO — the options
+  differ only in effort / sizing / sequencing / completeness (quick patch vs
+  root-cause fix, fix now vs defer, partial vs full coverage, waive vs author) —
+  the decision is scope-class. Apply it IN-CYCLE: take the MOST COMPLETE path,
+  and disclose it in your cycle summary with one line per application:
+    ⚖ policy: {decision, ≤8 words} → {chosen path}
+  NEVER write a scope-class decision to NEEDS_INPUT.md. Silently choosing a
+  lower-effort path (descoping, deferring, partial implementation) WITHOUT the
+  ⚖ disclosure is a policy violation the input-audit flags — under D7 the
+  violation is the incompleteness, not a missing question. NEEDS_INPUT.md is
+  reserved for product-class decisions (options diverge in user-visible
+  behavior, UX, API, or data semantics, or conflict with a SPEC Locked
+  Decision). Full policy: ~/.claude/skills/_components/completeness-policy.md.
+
 Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
   This subagent does NOT have the `Agent` tool — you CANNOT spawn further
   sub-subagents from inside this cycle. Any Agent() call you attempt will fail

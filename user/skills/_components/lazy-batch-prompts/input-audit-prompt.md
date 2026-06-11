@@ -45,6 +45,16 @@ recommendation strength:
   - Copy / labels / names visible to the user.
   - Research-surfaced multi-option calls at the user-visible level.
 
+Completeness-first carve-out (D7 — ~/.claude/skills/_components/completeness-policy.md):
+the aggressive bias applies to PRODUCT-class decisions only. A decision whose
+options differ only in effort / sizing / sequencing / completeness — every option
+converges on the same end-state product behavior (fix now vs defer, partial vs
+full, quick patch vs root-cause) — is scope-class and MUST NOT be classified as
+needing operator input. For each scope-shaped decision you encounter (in the
+ledger or the diff): (a) reclassify it as scope — do NOT surface it via
+NEEDS_INPUT.md; and (b) verify the cycle subagent actually took the MOST
+COMPLETE path and disclosed it with a `⚖ policy:` line in its summary.
+
 Audit algorithm:
 1. Read SPEC.md (and RESEARCH.md if it exists) from {spec_path}.
 2. Read the diff: `git show {cycle_commit_sha} -- {spec_path}/SPEC.md
@@ -61,10 +71,23 @@ Audit algorithm:
       audit: identify every user-visible change in the diff, classify each.
 4. Compile the list of `product-behavior` decisions that were baked in without
    surfacing (i.e. `Surfaced via: auto-accept` rather than `NEEDS_INPUT.md`).
-   These are the misclassifications you must surface.
+   These are the misclassifications you must surface. Scope-class decisions
+   (per the D7 carve-out above) are EXCLUDED from this list.
+4b. D7 incompleteness check (NEW audit duty): scan the diff + cycle summary for
+   silent lower-effort choices — descoping, deferral to "later", partial
+   implementation, waived coverage — taken WITHOUT a `⚖ policy:` disclosure
+   line. Under D7 the violation is the incompleteness (the lower-effort path
+   was chosen, or the complete path was taken silently), NOT a missing
+   question: do NOT write these to NEEDS_INPUT.md as operator decisions. Flag
+   each in your return summary as a D7 violation —
+   `⚖ D7 violation: {what was descoped/deferred, ≤8 words} — {complete path
+   not taken | taken but undisclosed}` — so the orchestrator surfaces it as a
+   T6 deviation and the work gets completed.
 5. If the list is EMPTY: return a one-line summary
    `clean — no product-behavior decisions baked in; cycle subagent's
    auto-accepts were all mechanical-internal`. Write nothing. STOP.
+   (Exception: if step 4b found D7 violations, append the `⚖ D7 violation:`
+   line(s) to that summary — still write no sentinel.)
 6. If the list is NON-EMPTY:
    a. Cap at the top 4 by user-visibility impact (the sentinel schema's
       `AskUserQuestion` 4-question cap). The first ≤4 highest-visibility
@@ -146,7 +169,9 @@ Audit algorithm:
 
 8. Return a one-paragraph summary (≤ 8 lines) covering:
    - Decisions reviewed (count) and how many you classified as
-     product-behavior.
+     product-behavior (and how many you reclassified as scope per D7).
+   - Any D7 violations from step 4b (silent lower-effort choices /
+     undisclosed policy applications), one `⚖ D7 violation:` line each.
    - Whether the cycle subagent's Decision-Classification Ledger was present
      and well-formed; if missing/malformed, flag the contract violation by
      skill name.

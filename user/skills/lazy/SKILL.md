@@ -1,6 +1,6 @@
 ---
 name: lazy
-description: Stateless dispatcher — infers project state from filesystem via lazy-state.py, invokes exactly ONE sub-skill per invocation to progress the current feature. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches interactive /spec to shape the baseline via AskUserQuestion) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload — single-turn, no conversation). The `__mark_complete__` special action runs an MCP-coverage audit (Gate 1) before the SPEC flip — uncovered SPEC Locked Decisions write NEEDS_INPUT.md and defer the flip until the operator authors coverage or grants a test-exempt
+description: Stateless dispatcher — infers project state from filesystem via lazy-state.py, invokes exactly ONE sub-skill per invocation to progress the current feature. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches interactive /spec to shape the baseline via AskUserQuestion) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload — single-turn, no conversation). The `__mark_complete__` special action runs an MCP-coverage audit (Gate 1) before the SPEC flip — uncovered SPEC Locked Decisions route to authoring the missing MCP coverage (or a documented test-exempt note) per the completeness-first standing policy (D7), deferring the flip; the operator is never asked
 argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---
@@ -182,7 +182,7 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
 
 - `clean` — proceed to the completion-integrity gate (Gate 2 below).
-- `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
+- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (or write the SPEC test-exempt note for any decision in a documented MCP-untestable class per `docs/features/mcp-testing/SPEC.md`), emit one `⚖ policy:` line per decision, commit + push. Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — authored corrective coverage / test-exempt note(s) for {N} locked decision(s)", Next `/lazy` will: "Run /mcp-test against the corrective scenario(s), then re-attempt __mark_complete__ (the re-run audit returns clean)"), call work-log, STOP.
 
 **Gate 2 — Completion-integrity gate (runs after Gate 1 returns `clean`, before the flip).**
 
