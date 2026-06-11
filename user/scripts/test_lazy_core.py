@@ -5652,6 +5652,866 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
 
 
 # ---------------------------------------------------------------------------
+# Phase 11 WU-1a — validation_escalation(): BLOCKED.md escalation predicate
+# Phase 11 WU-5c/d — retro_staleness(): retro-vs-PHASES staleness predicate
+#
+# These tests cover the SHARED lazy_core helpers directly, plus end-to-end
+# compute_state() routing through both state scripts. The end-to-end tests
+# deliberately live HERE (loaded via importlib) rather than as new smoke
+# fixtures inside the scripts' own `--test` harnesses: the smoke output is
+# byte-pinned to tests/baselines/*.txt, and the flag-gated byte-identity
+# discipline forbids regenerating those baselines. Loading the hyphen-named
+# scripts as modules lets us drive compute_state() against temp fixtures
+# without touching the pinned smoke output.
+# ---------------------------------------------------------------------------
+
+# Cache of importlib-loaded state-script modules (filename → module). The
+# scripts guard their CLI under `if __name__ == "__main__"`, so exec_module
+# only defines functions/constants — no side effects.
+_SCRIPT_MODULES: dict = {}
+
+
+def _load_state_script(filename: str):
+    """Load a hyphen-named state script (lazy-state.py / bug-state.py) as a module.
+
+    Direct `import` can't resolve hyphenated filenames, so we go through
+    importlib.util.spec_from_file_location. The module is cached so repeated
+    tests don't re-exec the (large) script bodies. `import lazy_core` inside
+    the scripts resolves via the sys.path insertion at the top of this file.
+    """
+    if filename not in _SCRIPT_MODULES:
+        import importlib.util
+
+        modname = filename.replace("-", "_").rsplit(".", 1)[0]
+        spec = importlib.util.spec_from_file_location(
+            modname, _SCRIPTS_DIR / filename
+        )
+        assert spec is not None and spec.loader is not None, (
+            f"cannot build import spec for {filename}"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _SCRIPT_MODULES[filename] = mod
+    return _SCRIPT_MODULES[filename]
+
+
+def _build_blocked_feature_repo(root: Path, blocked_frontmatter: str) -> Path:
+    """Build a minimal feature repo whose single queue item carries BLOCKED.md.
+
+    `blocked_frontmatter` is the raw YAML body (between the --- fences) so each
+    test controls exactly which escalation fields are present/absent.
+    Returns the repo root (pass to compute_state).
+    """
+    features = root / "docs" / "features"
+    features.mkdir(parents=True)
+    features.joinpath("queue.json").write_text(
+        json.dumps({
+            "queue": [
+                {"id": "feat-esc", "name": "Feature ESC",
+                 "spec_dir": "feat-esc", "tier": 1}
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-esc"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+        encoding="utf-8",
+    )
+    (fdir / "BLOCKED.md").write_text(
+        "---\n" + blocked_frontmatter + "---\n\n# Blocked\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def _build_blocked_bug_repo(root: Path, blocked_frontmatter: str) -> Path:
+    """Bug-pipeline mirror of _build_blocked_feature_repo (docs/bugs layout)."""
+    bugs = root / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    bugs.joinpath("queue.json").write_text(
+        json.dumps({
+            "queue": [
+                {"id": "bug-esc", "name": "Bug ESC", "spec_dir": "bug-esc"}
+            ]
+        }),
+        encoding="utf-8",
+    )
+    bdir = bugs / "bug-esc"
+    bdir.mkdir()
+    (bdir / "SPEC.md").write_text(
+        "# Bug ESC\n\n"
+        "**Status:** Investigating\n\n"
+        "**Severity:** P1\n\n"
+        "**Discovered:** 2026-06-01\n",
+        encoding="utf-8",
+    )
+    (bdir / "BLOCKED.md").write_text(
+        "---\n" + blocked_frontmatter + "---\n\n# Blocked\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def _build_retro_routing_repo(
+    root: Path,
+    retro_done_frontmatter: str | None,
+    phase_count: int = 3,
+) -> Path:
+    """Build a feature repo that reaches the Step 8/9 retro→MCP gate.
+
+    Shape mirrors the `workstation-verification-only-retro-done` smoke fixture:
+    all impl plans Complete + the only unchecked PHASES.md rows are Runtime
+    Verification rows, so compute_state falls through Step 7 to the retro gate.
+    `phase_count` controls how many `### Phase N` sections PHASES.md carries
+    (the quantity retro_staleness compares against phase_count_at_retro).
+    `retro_done_frontmatter` is the raw YAML body for RETRO_DONE.md, or None to
+    omit the sentinel entirely (→ plain Step 8 retro dispatch).
+    """
+    features = root / "docs" / "features"
+    features.mkdir(parents=True)
+    features.joinpath("queue.json").write_text(
+        json.dumps({
+            "queue": [
+                {"id": "feat-retro", "name": "Feature RETRO",
+                 "spec_dir": "feat-retro", "tier": 1}
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-retro"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+        encoding="utf-8",
+    )
+    (fdir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+    phases_body = "# Phases\n\n"
+    for n in range(1, phase_count + 1):
+        phases_body += f"### Phase {n}\n- [x] Done\n\n"
+    phases_body += "### Runtime Verification\n- [ ] MCP test only\n"
+    (fdir / "PHASES.md").write_text(phases_body, encoding="utf-8")
+    plans = fdir / "plans"
+    plans.mkdir()
+    (plans / "all-phases-retro.md").write_text(
+        "---\nkind: implementation-plan\nfeature_id: feat-retro\n"
+        "status: Complete\ncreated: 2026-06-01\n"
+        f"phases: [{', '.join(str(n) for n in range(1, phase_count + 1))}]\n"
+        "---\n\n# Plan (complete)\n",
+        encoding="utf-8",
+    )
+    if retro_done_frontmatter is not None:
+        (fdir / "RETRO_DONE.md").write_text(
+            "---\n" + retro_done_frontmatter + "---\n\n# Retro done\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+def _build_bug_retro_routing_repo(
+    root: Path,
+    retro_done_frontmatter: str | None,
+    phase_count: int = 3,
+) -> Path:
+    """Bug-pipeline mirror of _build_retro_routing_repo (docs/bugs layout).
+
+    Builds a bug whose PHASES.md deliverables are ALL checked (unchecked == 0),
+    so bug-state's compute_state falls straight through Step 7 to the Step 8
+    retro gate — no Complete plan / verification-only carve-out needed.
+    `phase_count` controls how many `### Phase N` sections PHASES.md carries
+    (the quantity retro_staleness compares against phase_count_at_retro).
+    `retro_done_frontmatter` is the raw YAML body for RETRO_DONE.md, or None to
+    omit the sentinel entirely (→ plain Step 8 retro dispatch).
+    """
+    bugs = root / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    bugs.joinpath("queue.json").write_text(
+        json.dumps({
+            "queue": [
+                {"id": "bug-retro", "name": "Bug RETRO", "spec_dir": "bug-retro"}
+            ]
+        }),
+        encoding="utf-8",
+    )
+    bdir = bugs / "bug-retro"
+    bdir.mkdir()
+    (bdir / "SPEC.md").write_text(
+        "# Bug RETRO\n\n"
+        "**Status:** In-progress\n\n"
+        "**Severity:** P1\n\n"
+        "**Discovered:** 2026-06-01\n",
+        encoding="utf-8",
+    )
+    phases_body = "# Phases\n\n"
+    for n in range(1, phase_count + 1):
+        phases_body += f"### Phase {n}\n- [x] Done\n\n"
+    (bdir / "PHASES.md").write_text(phases_body, encoding="utf-8")
+    if retro_done_frontmatter is not None:
+        (bdir / "RETRO_DONE.md").write_text(
+            "---\n" + retro_done_frontmatter + "---\n\n# Retro done\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+# ---- validation_escalation() unit tests (shared predicate) ----
+
+def test_validation_escalation_retry_1_not_escalated():
+    """blocker_kind mcp-validation + retry_count 1 → below the threshold, no escalation."""
+    _guard()
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": 1}
+    ) is False
+
+
+def test_validation_escalation_retry_2_escalated():
+    """blocker_kind mcp-validation + retry_count 2 → escalation fires (>= 2)."""
+    _guard()
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": 2}
+    ) is True
+    # And anything above the threshold also escalates.
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": 3}
+    ) is True
+
+
+def test_validation_escalation_other_blocker_kind_not_escalated():
+    """retry_count 3 but a NON-mcp-validation blocker_kind → never escalates.
+
+    The escalation policy is specific to repeated MCP-validation failures (the
+    d8 serial-discovery pattern); other blocker kinds retrying is normal flow.
+    """
+    _guard()
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "pre-research-input-required", "retry_count": 3}
+    ) is False
+
+
+def test_validation_escalation_missing_fields_not_escalated():
+    """Missing blocker_kind / missing retry_count / malformed retry_count →
+    no escalation (backward compatibility with pre-Phase-11 sentinels)."""
+    _guard()
+    # Missing blocker_kind entirely.
+    assert lazy_core.validation_escalation({"retry_count": 5}) is False
+    # Missing retry_count entirely.
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation"}
+    ) is False
+    # Malformed retry_count (non-numeric string).
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": "many"}
+    ) is False
+    # None meta (defensive caller convenience).
+    assert lazy_core.validation_escalation(None) is False
+    # Empty meta.
+    assert lazy_core.validation_escalation({}) is False
+
+
+def test_validation_escalation_string_digit_retry_count():
+    """retry_count as a string of digits is tolerated ("2" escalates, "1" not).
+
+    YAML normally types bare digits as int, but hand-written/quoted sentinels
+    may carry strings — the predicate must not silently lose the signal."""
+    _guard()
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": "2"}
+    ) is True
+    assert lazy_core.validation_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": "1"}
+    ) is False
+
+
+# ---- retro_staleness() unit tests (shared predicate) ----
+
+def test_retro_staleness_stale_counts_returned():
+    """phase_count_at_retro: 2 + PHASES.md with 3 phases → stale, returns (3, 2)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n\n"
+            "### Phase 3\n- [x] C\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) == (3, 2)
+
+
+def test_retro_staleness_string_digit_count():
+    """phase_count_at_retro as a quoted digit string is tolerated (int coercion)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n\n"
+            "### Phase 3\n- [x] C\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: \"2\"\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) == (3, 2)
+
+
+def test_retro_staleness_equal_counts_fresh():
+    """Equal (or fewer) phases than recorded at retro → fresh, returns None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) is None
+        # Fewer phases than recorded (e.g. phases consolidated) is also fresh.
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 5\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) is None
+
+
+def test_retro_staleness_missing_field_grandfathered():
+    """RETRO_DONE.md without phase_count_at_retro (pre-Phase-11) → None.
+
+    Also covers a malformed (non-numeric) field value — both grandfather to
+    current behavior so existing sentinels keep routing byte-identically."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n",
+            encoding="utf-8",
+        )
+        # Field absent entirely.
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) is None
+        # Field present but malformed (not an int / digit string).
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: some\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) is None
+        # RETRO_DONE.md absent entirely → no signal.
+        (spec_dir / "RETRO_DONE.md").unlink()
+        assert lazy_core.retro_staleness(spec_dir) is None
+
+
+def test_retro_staleness_no_phases_md_no_signal():
+    """RETRO_DONE.md carries the field but there is no PHASES.md → None (no signal)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) is None
+
+
+# ---- WU-1a end-to-end: compute_state() blocked-terminal escalation payload ----
+
+def test_lazy_state_blocked_escalation_payload():
+    """lazy-state compute_state(): BLOCKED.md with blocker_kind mcp-validation +
+    retry_count 2 → state carries validation_escalation: true and the
+    notify_message ends with the escalation suffix."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_blocked_feature_repo(
+            Path(td),
+            "kind: blocked\nfeature_id: feat-esc\nphase: MCP Validation\n"
+            "blocker_kind: mcp-validation\nretry_count: 2\n"
+            "blocked_at: 2026-06-11T00:00:00Z\n",
+        )
+        state = ls.compute_state(root, False)
+    assert state["terminal_reason"] == "blocked", state
+    assert state.get("validation_escalation") is True, (
+        f"expected validation_escalation: true at retry_count 2, got {state}"
+    )
+    assert state["notify_message"].endswith(
+        lazy_core.VALIDATION_ESCALATION_SUFFIX
+    ), f"notify_message missing escalation suffix: {state['notify_message']!r}"
+
+
+def test_lazy_state_blocked_no_escalation_retry_1():
+    """lazy-state compute_state(): retry_count 1 (mcp-validation) → NO
+    validation_escalation key at all (payload byte-identical to pre-Phase-11)
+    and an unchanged notify_message."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_blocked_feature_repo(
+            Path(td),
+            "kind: blocked\nfeature_id: feat-esc\nphase: MCP Validation\n"
+            "blocker_kind: mcp-validation\nretry_count: 1\n"
+            "blocked_at: 2026-06-11T00:00:00Z\n",
+        )
+        state = ls.compute_state(root, False)
+    assert state["terminal_reason"] == "blocked", state
+    assert "validation_escalation" not in state, (
+        f"validation_escalation must be ABSENT (not false) at retry_count 1: {state}"
+    )
+    assert state["notify_message"] == (
+        "BLOCKED: Feature ESC — MCP Validation. Awaiting input."
+    ), f"non-escalated message must be unchanged: {state['notify_message']!r}"
+
+
+def test_lazy_state_blocked_no_escalation_missing_fields():
+    """lazy-state compute_state(): BLOCKED.md without blocker_kind/retry_count
+    (legacy sentinel) → no escalation key, unchanged message (backward compat)."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_blocked_feature_repo(
+            Path(td),
+            "kind: blocked\nfeature_id: feat-esc\nphase: MCP Validation\n"
+            "blocked_at: 2026-06-11T00:00:00Z\n",
+        )
+        state = ls.compute_state(root, False)
+    assert state["terminal_reason"] == "blocked", state
+    assert "validation_escalation" not in state, state
+    assert state["notify_message"] == (
+        "BLOCKED: Feature ESC — MCP Validation. Awaiting input."
+    ), state["notify_message"]
+
+
+def test_bug_state_blocked_escalation_payload():
+    """bug-state compute_state(): the BLOCKED terminal mirrors lazy-state's
+    escalation payload exactly (key + suffixed message at retry_count >= 2)."""
+    _guard()
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_blocked_bug_repo(
+            Path(td),
+            "kind: blocked\nbug_id: bug-esc\nphase: MCP Validation\n"
+            "blocker_kind: mcp-validation\nretry_count: 2\n"
+            "blocked_at: 2026-06-11T00:00:00Z\n",
+        )
+        state = bs.compute_state(root, False)
+    assert state["terminal_reason"] == bs.TR_BLOCKED, state
+    assert state.get("validation_escalation") is True, (
+        f"expected validation_escalation: true at retry_count 2, got {state}"
+    )
+    assert state["notify_message"].endswith(
+        lazy_core.VALIDATION_ESCALATION_SUFFIX
+    ), f"notify_message missing escalation suffix: {state['notify_message']!r}"
+
+
+def test_bug_state_blocked_no_escalation_other_kind():
+    """bug-state compute_state(): retry_count 3 but a non-mcp-validation
+    blocker_kind → no escalation key, unchanged message."""
+    _guard()
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_blocked_bug_repo(
+            Path(td),
+            "kind: blocked\nbug_id: bug-esc\nphase: Investigation\n"
+            "blocker_kind: pre-research-input-required\nretry_count: 3\n"
+            "blocked_at: 2026-06-11T00:00:00Z\n",
+        )
+        state = bs.compute_state(root, False)
+    assert state["terminal_reason"] == bs.TR_BLOCKED, state
+    assert "validation_escalation" not in state, state
+    assert state["notify_message"] == (
+        "BLOCKED: Bug ESC — Investigation. Awaiting input."
+    ), state["notify_message"]
+
+
+# ---- WU-5c end-to-end: Step-8 retro-staleness routing (lazy-state only) ----
+
+def test_lazy_state_retro_stale_routes_retro_feature():
+    """RETRO_DONE.md with phase_count_at_retro: 2 + PHASES.md now carrying 3
+    phases → the retro is STALE; Step 8 re-dispatches retro-feature with the
+    same args as the not-exists branch and a stale-annotated current_step."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nfeature_id: feat-retro\ndate: 2026-06-01\n"
+            "rounds: 1\nphase_count_at_retro: 2\n",
+            phase_count=3,
+        )
+        state = ls.compute_state(root, False)
+        spec_dir = str(root / "docs" / "features" / "feat-retro")
+    assert state["sub_skill"] == "retro-feature", state
+    assert state["sub_skill_args"] == f"{spec_dir} --batch", state
+    assert state["current_step"] == (
+        "Step 8: retro phase (stale — 1 phases added since retro)"
+    ), state["current_step"]
+
+
+def test_lazy_state_retro_fresh_routes_past_step8():
+    """RETRO_DONE.md whose phase_count_at_retro EQUALS the current phase count →
+    fresh retro; routing falls through Step 8 to Step 9 mcp-test as today."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nfeature_id: feat-retro\ndate: 2026-06-01\n"
+            "rounds: 1\nphase_count_at_retro: 3\n",
+            phase_count=3,
+        )
+        state = ls.compute_state(root, False)
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+
+
+def test_lazy_state_retro_fieldless_routes_past_step8():
+    """A field-less (pre-Phase-11) RETRO_DONE.md is grandfathered: routing is
+    byte-identical to current behavior (Step 9 mcp-test), regardless of how
+    many phases PHASES.md carries now."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nfeature_id: feat-retro\ndate: 2026-06-01\n"
+            "rounds: 1\n",
+            phase_count=3,
+        )
+        state = ls.compute_state(root, False)
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+
+
+# ---- WU-5e end-to-end: Step-8 retro-staleness routing (bug-state parity) ----
+#
+# The original WU-5 scoping assumed "bugs have no retro step" — wrong:
+# bug-state.py has its own Step 8 (STEP_RETRO → retro-feature) and bug dirs
+# carry the same RETRO_DONE.md + PHASES.md shape, so a stale BUG retro must be
+# re-routed exactly like a stale feature retro.
+
+def test_bug_state_retro_stale_routes_retro_feature():
+    """bug-state: RETRO_DONE.md with phase_count_at_retro: 2 + PHASES.md now
+    carrying 3 phases → the retro is STALE; Step 8 re-dispatches retro-feature
+    with the same args as the not-exists branch and a stale-annotated
+    current_step (exact mirror of lazy-state's Step-8 staleness branch)."""
+    _guard()
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_bug_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nbug_id: bug-retro\ndate: 2026-06-01\n"
+            "rounds: 1\nphase_count_at_retro: 2\n",
+            phase_count=3,
+        )
+        state = bs.compute_state(root, False)
+        spec_dir = str(root / "docs" / "bugs" / "bug-retro")
+    assert state["sub_skill"] == "retro-feature", state
+    assert state["sub_skill_args"] == f"{spec_dir} --batch", state
+    assert state["current_step"] == (
+        "Step 8: retro phase (stale — 1 phases added since retro)"
+    ), state["current_step"]
+
+
+def test_bug_state_retro_fresh_routes_past_step8():
+    """bug-state: RETRO_DONE.md whose phase_count_at_retro EQUALS the current
+    phase count → fresh retro; routing falls through Step 8 to the Step 9
+    workstation mcp-test dispatch as today."""
+    _guard()
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_bug_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nbug_id: bug-retro\ndate: 2026-06-01\n"
+            "rounds: 1\nphase_count_at_retro: 3\n",
+            phase_count=3,
+        )
+        state = bs.compute_state(root, False)
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+
+
+def test_bug_state_retro_fieldless_routes_past_step8():
+    """bug-state: a field-less (pre-Phase-11) RETRO_DONE.md is grandfathered —
+    routing is byte-identical to current behavior (Step 9 mcp-test), regardless
+    of how many phases PHASES.md carries now. Locks every existing smoke
+    fixture (none carry phase_count_at_retro) to unchanged baselines."""
+    _guard()
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_bug_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nbug_id: bug-retro\ndate: 2026-06-01\nrounds: 1\n",
+            phase_count=3,
+        )
+        state = bs.compute_state(root, False)
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+
+
+# ---- WU-5d: apply_pseudo __mark_complete__ retro-staleness backstop ----
+
+def test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes():
+    """__mark_complete__ with a STALE RETRO_DONE.md (phase_count_at_retro 2,
+    PHASES.md now 3 phases) → refusal naming both counts, with ZERO writes:
+    PHASES.md/SPEC.md bytes unchanged, no COMPLETED.md, sentinels untouched."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Three fully-coherent phases so ONLY the staleness gate can refuse.
+        phases_text = (
+            "# Phases\n\n**Status:** In-progress\n\n"
+            "### Phase 1\n**Status:** Complete\n- [x] A\n\n"
+            "### Phase 2\n**Status:** Complete\n- [x] B\n\n"
+            "### Phase 3\n**Status:** Complete\n- [x] C\n"
+        )
+        (spec_dir / "PHASES.md").write_text(phases_text, encoding="utf-8")
+        retro_text = (
+            "---\nkind: retro-done\nfeature_id: test-feature\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n"
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(retro_text, encoding="utf-8")
+        spec_text_before = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-11"
+        )
+
+        # Refusal dict matches the Phase-9 refusal convention exactly.
+        assert result["ok"] is False, result
+        assert isinstance(result["refused"], str), result
+        assert result["wrote"] == [], result
+        assert result["deleted"] == [], result
+        assert result["noop"] is False, result
+        # Message names the counts in the agreed shape.
+        assert "retro is stale: 3 phases now vs 2 at retro" in result["refused"], (
+            result["refused"]
+        )
+        assert "route a retro round before completion" in result["refused"], (
+            result["refused"]
+        )
+        # ZERO writes: every byte on disk is exactly as before.
+        assert (spec_dir / "PHASES.md").read_text(encoding="utf-8") == phases_text
+        assert (spec_dir / "SPEC.md").read_text(encoding="utf-8") == spec_text_before
+        assert not (spec_dir / "COMPLETED.md").exists(), "receipt must NOT be minted"
+        assert (spec_dir / "RETRO_DONE.md").read_text(encoding="utf-8") == retro_text
+        assert (spec_dir / "VALIDATED.md").exists(), "sentinels must be untouched"
+
+
+def test_apply_pseudo_mark_complete_grandfathered_retro_completes():
+    """__mark_complete__ with a field-less RETRO_DONE.md (pre-Phase-11) →
+    completes exactly as today: receipt minted, status flipped, sentinels cleaned."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n**Status:** In-progress\n\n"
+            "### Phase 1\n**Status:** Complete\n- [x] A\n\n"
+            "### Phase 2\n**Status:** Complete\n- [x] B\n\n"
+            "### Phase 3\n**Status:** Complete\n- [x] C\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: test-feature\ndate: 2026-06-01\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-11"
+        )
+        # Assert on-disk effects while the temp dir still exists.
+        assert (spec_dir / "COMPLETED.md").exists(), "receipt must be minted"
+        assert not (spec_dir / "RETRO_DONE.md").exists(), (
+            "RETRO_DONE.md must be cleaned up on completion"
+        )
+    assert result["ok"] is True, result
+    assert result["refused"] is None, result
+    assert any("COMPLETED.md" in str(w) for w in result["wrote"]), result
+    assert "RETRO_DONE.md" in result["deleted"], result
+
+
+def test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro():
+    """An already-receipted dir is a clean noop even when its RETRO_DONE.md is
+    stale — the staleness backstop sits AFTER the receipt-noop (matching the
+    Phase-9 coherence-gate ordering): re-completing a done feature never
+    re-refuses."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="Complete")
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n\n"
+            "### Phase 3\n- [x] C\n",
+            encoding="utf-8",
+        )
+        # Stale retro + an existing valid receipt.
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: test-feature\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "COMPLETED.md").write_text(
+            "---\nkind: completed\nfeature_id: test-feature\ndate: 2026-06-01\n"
+            "provenance: gated\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-11"
+        )
+    assert result["ok"] is True, result
+    assert result["noop"] is True, result
+    assert result["refused"] is None, result
+
+
+def test_apply_pseudo_mark_fixed_refuses_stale_retro_zero_writes():
+    """__mark_fixed__ (bug pipeline) gets the SAME staleness backstop as
+    __mark_complete__ — the original WU-5 scoping assumed bugs have no retro
+    step, but bug-state.py has Step 8 (retro-feature) and bug dirs carry the
+    identical RETRO_DONE.md + PHASES.md shape, so a stale retro must refuse the
+    FIXED.md receipt with ZERO writes (Phase 11 WU-5e bug-pipeline parity)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Three fully-coherent phases so ONLY the staleness gate can refuse.
+        phases_text = (
+            "# Phases\n\n**Status:** In-progress\n\n"
+            "### Phase 1\n**Status:** Complete\n- [x] A\n\n"
+            "### Phase 2\n**Status:** Complete\n- [x] B\n\n"
+            "### Phase 3\n**Status:** Complete\n- [x] C\n"
+        )
+        (spec_dir / "PHASES.md").write_text(phases_text, encoding="utf-8")
+        retro_text = (
+            "---\nkind: retro-done\nbug_id: test-bug\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n"
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(retro_text, encoding="utf-8")
+        spec_text_before = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_fixed__", spec_dir, date="2026-06-11"
+        )
+
+        # Refusal dict matches the Phase-9 refusal convention exactly.
+        assert result["ok"] is False, result
+        assert isinstance(result["refused"], str), result
+        assert result["wrote"] == [], result
+        assert result["deleted"] == [], result
+        assert result["noop"] is False, result
+        # Message names the counts in the same shape as __mark_complete__.
+        assert "retro is stale: 3 phases now vs 2 at retro" in result["refused"], (
+            result["refused"]
+        )
+        assert "route a retro round before completion" in result["refused"], (
+            result["refused"]
+        )
+        # ZERO writes: every byte on disk is exactly as before.
+        assert (spec_dir / "PHASES.md").read_text(encoding="utf-8") == phases_text
+        assert (spec_dir / "SPEC.md").read_text(encoding="utf-8") == spec_text_before
+        assert not (spec_dir / "FIXED.md").exists(), "receipt must NOT be minted"
+        assert (spec_dir / "RETRO_DONE.md").read_text(encoding="utf-8") == retro_text
+        assert (spec_dir / "VALIDATED.md").exists(), "sentinels must be untouched"
+
+
+def test_apply_pseudo_mark_fixed_grandfathered_retro_completes():
+    """__mark_fixed__ with a field-less RETRO_DONE.md (pre-Phase-11) → the
+    FIXED.md receipt is minted exactly as today: every existing bug dir without
+    phase_count_at_retro keeps completing byte-identically."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n\n"
+            "### Phase 3\n- [x] C\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nbug_id: test-bug\ndate: 2026-06-01\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_fixed__", spec_dir, date="2026-06-11"
+        )
+        # Assert on-disk effects while the temp dir still exists.
+        assert (spec_dir / "FIXED.md").exists(), "receipt must be minted"
+        assert not (spec_dir / "RETRO_DONE.md").exists(), (
+            "RETRO_DONE.md must be cleaned up on fix"
+        )
+    assert result["ok"] is True, result
+    assert result["refused"] is None, result
+    assert any("FIXED.md" in str(w) for w in result["wrote"]), result
+    assert "RETRO_DONE.md" in result["deleted"], result
+
+
+def test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro():
+    """An already-receipted bug dir is a clean noop even when its RETRO_DONE.md
+    is stale — the staleness backstop keeps its position AFTER the receipt-noop
+    (matching the __mark_complete__ ordering): re-fixing a done bug never
+    re-refuses."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="Fixed")
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] A\n\n### Phase 2\n- [x] B\n\n"
+            "### Phase 3\n- [x] C\n",
+            encoding="utf-8",
+        )
+        # Stale retro + an existing valid FIXED.md receipt.
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nbug_id: test-bug\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 2\n---\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "FIXED.md").write_text(
+            "---\nkind: fixed\nfeature_id: test-bug\ndate: 2026-06-01\n"
+            "provenance: gated\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_fixed__", spec_dir, date="2026-06-11"
+        )
+    assert result["ok"] is True, result
+    assert result["noop"] is True, result
+    assert result["refused"] is None, result
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -5911,6 +6771,39 @@ _TESTS = [
     ("test_emit_cycle_prompt_addenda_tokens_bound", test_emit_cycle_prompt_addenda_tokens_bound),
     ("test_emit_cycle_prompt_addenda_residue_refuses_naming_file", test_emit_cycle_prompt_addenda_residue_refuses_naming_file),
     ("test_emit_cycle_prompt_addenda_before_loop_block", test_emit_cycle_prompt_addenda_before_loop_block),
+    # validation_escalation — Phase 11 WU-1a shared BLOCKED.md escalation predicate
+    ("test_validation_escalation_retry_1_not_escalated", test_validation_escalation_retry_1_not_escalated),
+    ("test_validation_escalation_retry_2_escalated", test_validation_escalation_retry_2_escalated),
+    ("test_validation_escalation_other_blocker_kind_not_escalated", test_validation_escalation_other_blocker_kind_not_escalated),
+    ("test_validation_escalation_missing_fields_not_escalated", test_validation_escalation_missing_fields_not_escalated),
+    ("test_validation_escalation_string_digit_retry_count", test_validation_escalation_string_digit_retry_count),
+    # retro_staleness — Phase 11 WU-5c/d shared staleness predicate
+    ("test_retro_staleness_stale_counts_returned", test_retro_staleness_stale_counts_returned),
+    ("test_retro_staleness_string_digit_count", test_retro_staleness_string_digit_count),
+    ("test_retro_staleness_equal_counts_fresh", test_retro_staleness_equal_counts_fresh),
+    ("test_retro_staleness_missing_field_grandfathered", test_retro_staleness_missing_field_grandfathered),
+    ("test_retro_staleness_no_phases_md_no_signal", test_retro_staleness_no_phases_md_no_signal),
+    # Phase 11 WU-1a end-to-end — blocked-terminal escalation payload (both scripts)
+    ("test_lazy_state_blocked_escalation_payload", test_lazy_state_blocked_escalation_payload),
+    ("test_lazy_state_blocked_no_escalation_retry_1", test_lazy_state_blocked_no_escalation_retry_1),
+    ("test_lazy_state_blocked_no_escalation_missing_fields", test_lazy_state_blocked_no_escalation_missing_fields),
+    ("test_bug_state_blocked_escalation_payload", test_bug_state_blocked_escalation_payload),
+    ("test_bug_state_blocked_no_escalation_other_kind", test_bug_state_blocked_no_escalation_other_kind),
+    # Phase 11 WU-5c end-to-end — Step-8 retro-staleness routing (lazy-state)
+    ("test_lazy_state_retro_stale_routes_retro_feature", test_lazy_state_retro_stale_routes_retro_feature),
+    ("test_lazy_state_retro_fresh_routes_past_step8", test_lazy_state_retro_fresh_routes_past_step8),
+    ("test_lazy_state_retro_fieldless_routes_past_step8", test_lazy_state_retro_fieldless_routes_past_step8),
+    # Phase 11 WU-5e end-to-end — Step-8 retro-staleness routing (bug-state parity)
+    ("test_bug_state_retro_stale_routes_retro_feature", test_bug_state_retro_stale_routes_retro_feature),
+    ("test_bug_state_retro_fresh_routes_past_step8", test_bug_state_retro_fresh_routes_past_step8),
+    ("test_bug_state_retro_fieldless_routes_past_step8", test_bug_state_retro_fieldless_routes_past_step8),
+    # Phase 11 WU-5d/5e — apply_pseudo __mark_complete__/__mark_fixed__ retro-staleness backstop
+    ("test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes", test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes),
+    ("test_apply_pseudo_mark_complete_grandfathered_retro_completes", test_apply_pseudo_mark_complete_grandfathered_retro_completes),
+    ("test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro", test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro),
+    ("test_apply_pseudo_mark_fixed_refuses_stale_retro_zero_writes", test_apply_pseudo_mark_fixed_refuses_stale_retro_zero_writes),
+    ("test_apply_pseudo_mark_fixed_grandfathered_retro_completes", test_apply_pseudo_mark_fixed_grandfathered_retro_completes),
+    ("test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro", test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro),
 ]
 
 

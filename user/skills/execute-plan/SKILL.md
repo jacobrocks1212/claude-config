@@ -255,7 +255,7 @@ The plan file STAYS in `plans/` after Complete — the frontmatter is the audit 
 Sequence at plan-part / plan completion:
 
 1. **First, do the file Edits** that are not cleanly shell-doable — these MUST land BEFORE the compound command below:
-   - Tick EVERY completed deliverable AND verification checkbox in PHASES.md (`- [ ]` → `- [x]`), including the per-phase VERIFICATION boxes — leaving these unticked while flipping the plan to `Complete` is the inconsistent state that routes `lazy-state.py` BACKWARD to `write-plan`.
+   - Tick EVERY completed deliverable AND verification checkbox in PHASES.md (`- [ ]` → `- [x]`), including the per-phase VERIFICATION boxes — leaving these unticked while flipping the plan to `Complete` is the inconsistent state that routes `lazy-state.py` BACKWARD to `write-plan`. EXCEPTION — runtime-spike rows: a row claiming `runtime`/`spike` confirmation ticks ONLY with a cited runtime artifact (MCP result, session-log line, or a test driving the REAL component); a static code trace cannot close it — leave it unticked with a `NEEDS_RUNTIME:` note instead (see `~/.claude/skills/_components/phases-update.md`).
    - Flip the plan frontmatter `status:` line to `Complete`.
    - Write Implementation Notes.
 

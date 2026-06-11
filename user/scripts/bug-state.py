@@ -760,12 +760,26 @@ def compute_state(
     if blocked_file.exists():
         meta = parse_sentinel(blocked_file) or {}
         phase = meta.get("phase", "unknown")
-        return _bug_state(
+        notify_message = f"BLOCKED: {bug_name} — {phase}. Awaiting input."
+        # Validation-escalation payload (Phase 11 WU-1a) — exact mirror of
+        # lazy-state.py's Step-3 blocked terminal: blocker_kind mcp-validation
+        # at retry_count >= 2 gains `validation_escalation: true` plus the
+        # shared lazy_core.VALIDATION_ESCALATION_SUFFIX on notify_message. The
+        # key is added ONLY in the escalation case (post-hoc, mirroring the
+        # _PARK_MODE "parked" invariant) so non-escalated output — including
+        # every existing retry_count: 0 fixture — stays byte-identical.
+        escalated = lazy_core.validation_escalation(meta)
+        if escalated:
+            notify_message += lazy_core.VALIDATION_ESCALATION_SUFFIX
+        state = _bug_state(
             **common,
             current_step=STEP_BLOCKED,
             terminal_reason=TR_BLOCKED,
-            notify_message=f"BLOCKED: {bug_name} — {phase}. Awaiting input.",
+            notify_message=notify_message,
         )
+        if escalated:
+            state["validation_escalation"] = True
+        return state
 
     # Step 3.5: NEEDS_INPUT.md
     needs_input_file = spec_dir / "NEEDS_INPUT.md"
@@ -851,6 +865,31 @@ def compute_state(
         return _bug_state(
             **common,
             current_step=STEP_RETRO,
+            sub_skill=SKILL_RETRO,
+            sub_skill_args=f"{spec_dir_str} --batch",
+        )
+
+    # Step 8 staleness re-route (Phase 11 WU-5e — bug-pipeline parity with
+    # lazy-state.py's WU-5c branch): RETRO_DONE.md exists, but if it recorded a
+    # phase_count_at_retro SMALLER than the number of `### Phase` sections
+    # PHASES.md carries now, corrective phases landed AFTER the retro concluded
+    # — the retro graded a fix it never saw finished. Re-dispatch the SAME
+    # retro-feature action as the not-exists branch above; /retro re-running
+    # writes a fresh RETRO_DONE.md with the updated count, which un-sticks this
+    # route. Grandfathering: a field-less RETRO_DONE.md, a malformed count, or
+    # a missing PHASES.md all return None from retro_staleness → fall through
+    # unchanged (byte-identical routing for every pre-Phase-11 sentinel,
+    # including all pinned smoke baselines). The __mark_fixed__ backstop in
+    # lazy_core.apply_pseudo enforces the same predicate as a second key.
+    _retro_stale = lazy_core.retro_staleness(spec_dir)
+    if _retro_stale is not None:
+        _now_count, _retro_count = _retro_stale
+        return _bug_state(
+            **common,
+            current_step=(
+                f"{STEP_RETRO} (stale — {_now_count - _retro_count} "
+                "phases added since retro)"
+            ),
             sub_skill=SKILL_RETRO,
             sub_skill_args=f"{spec_dir_str} --batch",
         )

@@ -5,6 +5,8 @@
 For each completed work unit, update PHASES.md:
 
 1. Check off completed deliverables: `- [ ]` → `- [x]`
+
+   **Runtime-spike evidence rule (HARD):** a deliverable or Validated-Assumptions ledger row that claims `runtime` / `spike` confirmation may be ticked ONLY with a cited **runtime artifact** — an MCP tool result, a session-log line, or a test that drives the REAL component (the actual ring/transport/process, not a mock). A static code trace does NOT satisfy a runtime row, however thorough: d8-live-looping's WU-9.0 "runtime spike" was closed on a static trace that concluded "no broken seam" and was wrong twice, costing two further full validation rounds. If a live probe is impossible this cycle (no runtime available), the row STAYS UNTICKED with an explicit `NEEDS_RUNTIME:` note naming what must be observed — never downgrade the confirmation method to close the box.
 2. Add/append an Implementation Notes block:
 
    ```

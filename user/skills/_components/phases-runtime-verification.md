@@ -81,6 +81,27 @@
   `- [ ] reachability smoke (reachability-smoke — workstation-eligible): MCP
   call to <new tool/command> returns a non-error response (surface is callable
   end-to-end; behavioral correctness is asserted in the Step-9 scenario).`
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  TERMINAL-MCP-STACKING BAN — integration cannot all land in one phase     ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Decomposition red flag: MORE THAN TWO consecutive phases declaring
+  `MCP Integration Test Assertions: N/A` while ALL integration assertions land
+  in a single terminal phase. That shape guarantees defects stack silently and
+  are discovered SERIALLY at end-of-feature validation — one full corrective
+  round per layer. (Motivating incident: 5 of d8-live-looping's 6 original
+  phases were `N/A — engine-only`, all built in cloud sessions where every
+  runtime check defers; terminal validation then found three stacked defects
+  across three ~1M-token BLOCKED→add-phase rounds.) When the breakdown has this
+  shape, the author MUST place a **vertical tracer-bullet smoke** at the
+  EARLIEST phase where the user-surface → engine → observable chain minimally
+  exists: one Runtime Verification row driving the SPEC's canonical code
+  example end-to-end live (≥1 assertion — reachable AND minimally observable),
+  tagged `(reachability-smoke — workstation-eligible)` like the smoke rows
+  above. Pure-engine prefix phases (no chain yet) remain legitimately N/A —
+  the ban is on deferring the FIRST end-to-end probe past the phase where the
+  chain first exists.
 -->
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] {Observable runtime behavior 1 — e.g., "API returns expected response after action"}

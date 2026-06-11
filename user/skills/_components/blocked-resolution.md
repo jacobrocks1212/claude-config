@@ -28,6 +28,8 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
 
 1. **Read the sentinel.** `{spec_path}/BLOCKED.md`. Parse the YAML frontmatter (`kind`, `feature_id`, `phase`, `blocked_at`, `retry_count`, and `blocker_kind` if present) and read the markdown body. Unlike `NEEDS_INPUT.md`, `BLOCKED.md` has no mandated rich-body schema — a thin body is NOT a malformation halt; proceed, noting in chat if the blocker context is sparse.
 
+1a. **Validation-escalation check (serial-discovery guard).** If the frontmatter shows `blocker_kind: mcp-validation` AND `retry_count >= 2` (the state script also signals this mechanically via `validation_escalation: true` in its JSON), this {ITEM} has failed end-to-end validation at least twice — evidence that fixes are peeling back ONE layer per round (d8-live-looping burned three ~1M-token rounds this way: API reachability → unsupported source → command-apply drop, each "fix" validated cold against the next undiscovered layer). From here on, **every resolution path that enacts a corrective phase MUST give that phase a full-chain seam audit**: enumerate every boundary in the failing path (user surface → IPC → engine → final observable; consume the `## Seam Enumeration` section the validation cycle wrote into BLOCKED.md if present) and live-probe each seam post-fix BEFORE re-dispatching full validation. A single-layer corrective phase at `retry_count >= 2` is a drafting error — include the escalation requirement verbatim in the `{ADD_PHASE}` description and the apply-subagent prompt (step 6 carries the clause).
+
 1b. **Classify the blocker FIRST (completeness-policy §3 — STEP ONE, before any re-print or question).** Apply the scope test from `~/.claude/skills/_components/completeness-policy.md`: does every resolution path converge on the same product behavior (the standard "fix now / defer / halt" shape)? If **YES — sequencing-only** — auto-resolve per the policy, NO `AskUserQuestion`. Pick the matching resolution:
 
    - **In-scope defect** (missing / under-scoped work within this {ITEM} — the common case) → the complete path: `{ADD_PHASE}` + fix now. Append the `## Resolution` block to `BLOCKED.md` (step 5 shape, with `**Chosen path:** Add a phase to resolve the blocker` and a `resolved_by: completeness-policy` line), then dispatch the apply-resolution subagent (step 6) with that path — the same machinery, minus the question.
@@ -106,6 +108,12 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        unchecked deliverables) per its own contract. Then NEUTRALIZE BLOCKED.md
        (see below). The next loop cycle's {STATE_SCRIPT} routes the {ITEM} to
        plan/implement the new phase.
+       ESCALATION (only when the orchestrator flagged validation-escalation —
+       blocker_kind mcp-validation + retry_count >= 2): the new phase MUST carry
+       a full-chain seam-audit deliverable — enumerate every boundary in the
+       failing path and live-probe each seam post-fix to the final observable
+       BEFORE full re-validation; consume BLOCKED.md's `## Seam Enumeration`
+       section as the seam checklist. Do NOT author a single-layer fix phase.
 
    • "Defer this {ITEM}; continue the rest of the queue":
        Edit {SPEC_ROOT}/queue.json: move this {ITEM}'s entry to the END of the

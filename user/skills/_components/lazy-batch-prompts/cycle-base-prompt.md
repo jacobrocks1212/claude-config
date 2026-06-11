@@ -214,6 +214,16 @@ Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
     nothing in it remains unchecked (per-phase flips are permitted — R7). WHY: the
     completion gate refuses an incoherent flip, so an unreconciled PHASES strands
     the feature at mark-complete.
+  - SEAM ENUMERATION (escalation — when writing BLOCKED.md at retry_count >= 2):
+    if the BLOCKED.md you are writing carries `blocker_kind: mcp-validation` and
+    `retry_count >= 2` (this is the 2nd+ validation failure for this {item_label}),
+    its body MUST include a `## Seam Enumeration` section listing EVERY boundary
+    in the failing chain (user surface → sidecar/IPC → engine → final observable),
+    each with a per-seam status: `probed-OK` / `probed-FAIL` / `unprobed`. You are
+    already inside the live runtime — you are the cheapest enumeration point. The
+    corrective phase consumes this as its seam-audit checklist so the NEXT
+    validation round does not discover the next layer cold (a feature once burned
+    three ~1M-token rounds peeling one layer per round).
 
 <!-- @section mcp-test-runtime pipelines=feature,bug modes=workstation skills=mcp-test variant=runtime-up -->
 RUNTIME IS ALREADY UP (orchestrator-managed): the orchestrator pre-booted the

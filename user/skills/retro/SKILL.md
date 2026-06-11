@@ -664,6 +664,8 @@ Skip this step (do NOT write the sentinel) iff the retro identified at least one
    - Else if `{spec_path}/DEFERRED_NON_CLOUD.md` exists → `deferred-to-workstation`
    - Else → `pending` (the normal case under the current ordering — MCP test runs AFTER retro at Step 9, so neither VALIDATED.md nor DEFERRED_NON_CLOUD.md is on disk yet when retro concludes). The downstream state machine reads `mcp_validation_status` only for human-facing audit; it does not gate any state-machine transitions on this field.
 
+2b. **Compute `phase_count_at_retro`:** count the `### Phase` section headings in `{spec_path}/PHASES.md` (e.g. `grep -c '^### Phase' PHASES.md`; if the feature has no PHASES.md, omit the field). This is the retro staleness anchor — if corrective `/add-phase` rounds later grow PHASES.md past this count, `lazy-state.py` routes another retro round and `__mark_complete__` refuses completion until it runs, so a retro never silently stands for phases it never saw.
+
 3. **Write `{spec_path}/RETRO_DONE.md`** per `~/.claude/skills/_components/sentinel-frontmatter.md`:
 
    ```yaml
@@ -674,6 +676,7 @@ Skip this step (do NOT write the sentinel) iff the retro identified at least one
    rounds: <N>
    retro_plans: [<retro-1-...md>, <retro-2-...md>, ...]
    mcp_validation_status: complete   # or deferred-to-workstation
+   phase_count_at_retro: <count of "### Phase" sections in PHASES.md right now>
    ---
 
    # Retro Done

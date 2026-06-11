@@ -232,6 +232,55 @@ def skip_waiver_refusal(meta: dict[str, Any] | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Validation-escalation predicate (Phase 11 WU-1a)
+# ---------------------------------------------------------------------------
+
+# Suffix the Step-3 blocked terminal appends to notify_message when the
+# escalation fires. Defined HERE (not in the state scripts) so lazy-state.py
+# and bug-state.py emit the byte-identical message — the orchestrators key
+# corrective-phase drafting discipline on this exact text.
+VALIDATION_ESCALATION_SUFFIX = (
+    " ESCALATION: 2+ validation failures — corrective phase requires a "
+    "full-chain seam audit, not a single-layer fix."
+)
+
+
+def validation_escalation(meta: dict[str, Any] | None) -> bool:
+    """Return True when a BLOCKED.md sentinel shows repeated MCP-validation failure.
+
+    Single source of truth for the Phase 11 WU-1a escalation policy, consumed
+    by BOTH state scripts' Step-3 blocked terminals: ``blocker_kind ==
+    "mcp-validation"`` AND ``retry_count >= 2``. The threshold is 2 because the
+    d8-live-looping pattern showed each BLOCKED→add-phase round discovering
+    exactly ONE more broken layer — by the second failure a single-layer
+    corrective fix is presumptively insufficient and the corrective phase needs
+    a full-chain seam audit.
+
+    Tolerances (backward compatibility — pre-Phase-11 sentinels must never
+    escalate or crash):
+      - ``retry_count`` as an int is used directly.
+      - ``retry_count`` as a string of digits (quoted YAML) is coerced.
+      - Missing/malformed ``retry_count``, missing ``blocker_kind``, a non-
+        mcp-validation ``blocker_kind``, or a None/empty meta → False.
+      - YAML booleans are ints in Python (``True == 1``); they are NOT counts,
+        so bool values are explicitly rejected rather than coerced.
+    """
+    meta = meta or {}
+    if meta.get("blocker_kind") != "mcp-validation":
+        return False
+    raw = meta.get("retry_count")
+    # bool is an int subclass — `retry_count: true` must not coerce to 1.
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        return raw >= 2
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip()) >= 2
+    # Missing or malformed → no escalation (never crash the blocked terminal).
+    return False
+
+
+# ---------------------------------------------------------------------------
 # SPEC parsing helpers
 # ---------------------------------------------------------------------------
 
@@ -1161,6 +1210,58 @@ def parse_phases(phases_text: str) -> list[dict]:
     return phases
 
 
+def retro_staleness(spec_path: Path) -> tuple[int, int] | None:
+    """Detect a stale retro: corrective phases landed AFTER the retro concluded.
+
+    Shared predicate for Phase 11 WU-5c (lazy-state Step-8 routing) and WU-5d
+    (the ``apply_pseudo __mark_complete__`` backstop) — both keys compare the
+    CURRENT number of phase sections in PHASES.md against the count the retro
+    recorded at conclusion time (``phase_count_at_retro`` in RETRO_DONE.md
+    frontmatter, written by /retro per the Phase 11 WU-5a prose half).
+
+    Returns ``(current_count, recorded_count)`` when the retro is STALE
+    (strictly more phase sections now than at retro time — the retro graded a
+    feature that has since grown corrective phases it never saw), else None.
+
+    Grandfathering / no-signal cases (all → None, preserving pre-Phase-11
+    behavior byte-identically):
+      - RETRO_DONE.md absent, or present without frontmatter.
+      - ``phase_count_at_retro`` missing or malformed (not an int / digit
+        string; YAML bools rejected — not counts).
+      - PHASES.md absent (nothing to compare against).
+      - Equal or FEWER phases now (consolidation is not staleness).
+    """
+    retro_meta = parse_sentinel(spec_path / "RETRO_DONE.md")
+    if not retro_meta:
+        # Absent (None) or frontmatter-less ({}) — no recorded count, no signal.
+        return None
+    raw = retro_meta.get("phase_count_at_retro")
+    # bool is an int subclass — reject before the int branch (see
+    # validation_escalation for the same YAML-boolean pitfall).
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        recorded = raw
+    elif isinstance(raw, str) and raw.strip().isdigit():
+        recorded = int(raw.strip())
+    else:
+        # Missing or malformed — grandfathered (current behavior).
+        return None
+    phases_path = spec_path / "PHASES.md"
+    if not phases_path.exists():
+        return None
+    try:
+        phases_text = phases_path.read_text(encoding="utf-8")
+    except OSError:
+        # Unreadable PHASES.md: treat as no signal rather than crashing the
+        # routing/gate — the doc-consistency lints own malformed-file policing.
+        return None
+    current = len(parse_phases(phases_text))
+    if current > recorded:
+        return (current, recorded)
+    return None
+
+
 # Canonical terminal phase statuses (case-insensitive). A phase whose status is
 # one of these is "done" and never refuses / auto-flips at completion time.
 # Mirrors check-docs-consistency.ts's Complete/Superseded acceptance in the
@@ -1894,6 +1995,30 @@ def apply_pseudo(
         existing_receipt = parse_sentinel(receipt_path)
         if existing_receipt is not None and existing_receipt.get("kind") == receipt_kind:
             return _noop()
+
+        # --- Retro-staleness backstop (Phase 11 WU-5d + WU-5e) ---
+        # Mechanical second key behind the state scripts' Step-8 staleness
+        # routing (WU-5c lazy-state, WU-5e bug-state): when RETRO_DONE.md
+        # recorded fewer phase sections than PHASES.md carries NOW, corrective
+        # phases landed after the retro concluded — the retro graded work it
+        # never saw finished, so completion must refuse until a fresh retro
+        # round runs. ZERO writes: this check sits BEFORE the coherence gate's
+        # auto-flip writes, and AFTER the receipt-noop above (matching the
+        # Phase-9 ordering rule — re-completing an already-receipted dir never
+        # re-refuses). Covers BOTH __mark_complete__ AND __mark_fixed__: the
+        # original WU-5 scoping assumed bugs have no retro step, but
+        # bug-state.py has its own Step 8 (retro-feature) and bug dirs carry
+        # the identical RETRO_DONE.md + PHASES.md shape, so the bug pipeline
+        # needs the same backstop. Missing field / missing PHASES.md →
+        # retro_staleness returns None (grandfathered, pre-Phase-11 behavior).
+        _staleness = retro_staleness(spec_path)
+        if _staleness is not None:
+            _now_count, _retro_count = _staleness
+            return _refused(
+                f"retro is stale: {_now_count} phases now vs "
+                f"{_retro_count} at retro — route a retro round before "
+                "completion"
+            )
 
         # --- Completion-coherence gate (Phase 9 WU-1) ---
         # Before minting the receipt and flipping the top-level Status, make

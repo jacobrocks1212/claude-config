@@ -148,8 +148,20 @@ date: <YYYY-MM-DD>
 rounds: <int>
 retro_plans: [<filename>, ...]
 mcp_validation_status: complete  # one of: complete | deferred-to-workstation
+phase_count_at_retro: <int>      # optional but REQUIRED going forward — see below
 ---
 ```
+
+`phase_count_at_retro` records the number of `### Phase` sections in the
+feature's PHASES.md at the moment the retro concluded. It is the **retro
+staleness anchor**: when later corrective `/add-phase` rounds grow PHASES.md
+past this count, `lazy-state.py` Step 8 routes another retro round (and the
+`__mark_complete__` gate refuses completion) instead of letting a retro that
+graded the pre-corrective code stand for phases it never saw — d8-live-looping
+carried a RETRO_DONE.md written BEFORE three corrective validation rounds, so
+retro had effectively graded a 0/16-functional feature. Legacy files without
+the field are grandfathered (no staleness check). Keep in lockstep with
+AlgoBooth's `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
 
 Body keeps the per-round summary so humans can scan retro history.
 
