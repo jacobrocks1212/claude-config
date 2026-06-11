@@ -185,7 +185,12 @@ These flags are purely additive (base JSON fields unchanged) — see
 `--repeat-count` advances the persisted (HEAD-aware) streak and is reserved for the SINGLE
 dispatch-bound probe per cycle; diagnostic / inspection probes use `--repeat-count-peek` (reads
 the would-be streak without advancing it); never redirect probe or diagnostic output into the
-repo tree (use the OS temp dir). `--emit-prompt` folds the
+repo tree (use the OS temp dir). `--repeat-count` also emits `step_repeat_count` (consecutive
+cycles at the same `(bug_id, current_step)` step — `sub_skill`/args-blind, NO head-advance reset):
+when it is `>= 3`, STOP — surface `⚠ step '<current_step>' reached <N> times without advancing —
+inspect routing before dispatching` and do NOT keep dispatching the emitted action mechanically.
+This catches "productive-looking" oscillation (each cycle commits → HEAD advances → the dispatch
+streak resets while routing never leaves the step). Full semantics: `/lazy-batch` Step 1a. `--emit-prompt` folds the
 script-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assembly failure) into
 the JSON, with the `pipelines=bug` sections selected and the bug tokens bound; SHOULD be passed on
 every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consumes it verbatim.

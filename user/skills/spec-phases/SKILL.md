@@ -274,6 +274,11 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 !`cat .claude/skill-config/phases-runtime-verification.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-verification.md`
 
+**Deliverables / Runtime-Verification authoring discipline (read the component above for the full rules + rationale):**
+
+- **No gate-owned rows.** Pipeline-owned actions are NEVER authored as `- [ ]` rows — not in Deliverables, not under Runtime Verification. The class: SPEC.md/PHASES.md top-level `**Status:**` flips, COMPLETED.md/FIXED.md receipt writes, ROADMAP completion marks, archive moves. These are owned by the `__mark_complete__`/`__mark_fixed__` gate; a checkbox for them is unplannable, untickable work that loops the state machine (live incident 2026-06-11: a `- [ ] Update SPEC.md status to "Complete"` row in d8-live-looping routed write-plan repeatedly). Record such facts as a prose `**Completion (gate-owned):**` note instead. Ordinary doc-edit deliverables ("Update SPEC §X wording") stay legitimate checkboxes — the ban is on STATUS/receipt/archive actions only.
+- **Reachability smoke per new API surface.** Any phase introducing a NEW user-facing API surface (new MCP tool, new pattern-language method/builder, new IPC command, new UI-reachable action) MUST carry one in-phase **reachability smoke** row under Runtime Verification: a single MCP call proving the surface is callable end-to-end (reachable, not behaviorally correct — behavioral validation stays in the feature's Step-9 scenario). Tag it `(reachability-smoke — workstation-eligible)` so cloud deferral lists it individually instead of batching it silently behind DEFERRED_NON_CLOUD.md. Motivating incident: d8-live-looping reached its Step-9 MCP gate with `track(...).record()` never reachable (0/16 BLOCKED) after eight phases — detectable from the first API phase with one smoke call.
+
 **Prerequisites:** None (first phase) OR {specific prior phase work}
 
 **Files likely modified:**
@@ -338,10 +343,6 @@ Phase-level dependencies on completed upstream features, extracted from each ups
    ```
 2. Add any new "Open Questions" discovered during analysis to the spec
 3. Update "Decisions Log" in the spec with phase boundary rationale
-
-### Step 8: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
 
 ## Phase Size Guidelines
 

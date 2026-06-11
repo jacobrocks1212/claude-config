@@ -191,9 +191,8 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
       - **Single-dispatch wrappers (`/lazy`, `/lazy-bug`, `/lazy-cloud`):** the
         enactment was this invocation's ONE meaningful action. Print the after-status
         bookend (Completed: "{terminal_reason} resolved — <path> enacted"; Next `/lazy`
-        will: "continue from the enacted state"), log the work per the wrapper's
-        work-log step, and **STOP**. The next invocation re-runs the state script and
-        proceeds from the now-neutralized state.
+        will: "continue from the enacted state") and **STOP**. The next invocation
+        re-runs the state script and proceeds from the now-neutralized state.
 
 ### Re-prompt note
 

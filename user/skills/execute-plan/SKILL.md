@@ -162,7 +162,7 @@ If the plan specifies an EXECUTION MODEL with orchestrator/subagent roles:
 - **You are the orchestrator.** Your job is to read the plan, compose `Agent` tool calls, dispatch Sonnet subagents, review their output, run quality gates, and update tracking docs.
 - **You MUST NOT call `Edit` or `Write` on source or test files.** If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP. Compose an `Agent({ model: "sonnet", prompt: "..." })` tool call instead.
 - **Self-check before every action:** "Am I about to edit a source/test file directly?" If yes, compose an Agent call instead.
-- The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `PLAN.md`, the plan file currently being executed (frontmatter status transitions only — body stays read-only), `work-log.jsonl`, and task tracking.
+- The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `PLAN.md`, the plan file currently being executed (frontmatter status transitions only — body stays read-only), and task tracking.
 
 #### Sub-subagent dispatch contract (LOAD-BEARING)
 
@@ -243,7 +243,6 @@ When all work units are complete (all tasks marked `completed`):
 
 1. Follow the plan's **Completion** section if it has one (final QG run, completion report, etc.)
 2. **Flip the plan's frontmatter to `status: Complete`** (per `~/.claude/skills/_components/plan-frontmatter.md`) — one-line edit to the existing `status:` field. This is the authoritative signal that downstream tooling (`lazy-state.py`, AlgoBooth lint) uses to skip the plan on future cycles. Stage this change so it lands in the final commit produced by the plan's Completion or Commit step.
-3. Follow the plan's **Work Log** section if it has one
 
 > **A runtime/MCP-validation gate is NOT unfinished plan work — flip to `Complete` anyway.** "All work units complete" means every work unit `/execute-plan` can ACT ON is done (code, tests, quality gates, commits). A live runtime-validation gate — "re-run `/mcp-test` and earn `VALIDATED.md`", "validate on device", a per-phase `**Runtime Verification**` / `**MCP Integration Test Assertions:**` row — is owned by the pipeline's dedicated `/lazy-batch` Step 9 (`/mcp-test`), NOT by this skill. It can ONLY be closed by booting the live runtime, which `/execute-plan` does not do. So once the implementable work units are done, **flip the plan to `status: Complete`** even though such a gate is still open — leaving it `In-progress` *solely* because a runtime/MCP gate is unticked is the exact inconsistent state that routes `lazy-state.py` BACKWARD into re-dispatching `/execute-plan` on this same plan, looping. Leave the verification row itself UNCHECKED in PHASES.md (Step 9's `/mcp-test` ticks it); `lazy-state.py`'s `remaining_unchecked_are_verification_only()` recognizes an all-verification-rows remainder and advances to the retro→MCP gate. (`status: In-progress` remains correct ONLY for a genuine BLOCKED.md / NEEDS_INPUT.md halt with real implementation work still pending — see Step 3's Blocking Issues. A runtime gate is not such a halt. `write-plan` Step 1c.5 should prevent these gates from ever being authored as plan WUs; this rule is the execution-side backstop for plans authored before that guard, or whose verification intent landed as a WU anyway.)
 
@@ -270,29 +269,9 @@ Sequence at plan-part / plan completion:
 
 3. **Definition of done (verify before reporting):** ALL verification boxes in PHASES.md ticked, plan frontmatter `status: Complete`, working tree clean, and HEAD == origin. Confirm with a final `git status --short` — it MUST print nothing (empty output). If it prints anything, the ledger/commit is NOT done: stage and commit the remainder (re-running the gate chain) before you report completion. Do NOT end your turn while the gate+commit job is still backgrounded — a task-completion notification mid-job is your cue to CONTINUE and verify, not to stop.
 
-### Step 4a: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-Regardless of whether the plan includes a Work Log section, you MUST call `interview_work_log_append` at the end of every execution. This is a hard requirement — not optional, not conditional on the plan's contents.
-
-Load the tool if not already loaded: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
-
-Call `interview_work_log_append` with:
-- `skill`: `"execute-plan"`
-- `project`: repo name or cwd basename
-- `title`: short description of the plan executed
-- `summary`: 2-4 sentences covering what was implemented, key patterns, and tradeoffs
-- `files_modified`: all files modified during execution
-- `branch`: current git branch
-- `commit`: HEAD short sha
-- `phases_md`: path to PHASES.md if the plan references one
-- `spec_md`: path to SPEC.md if applicable
-- `technologies`: languages/frameworks used
-- `patterns`: design patterns applied
-- `technical_context`: 3-5 sentences on engineering depth
-
 ### Step 4b: Summarize Enabled Behavior (MANDATORY — DO NOT SKIP)
 
-After the work log is appended, conclude with a summary of **actual product behavior that is now enabled by the work just completed** — what can be done now that couldn't be done before. This is the deliverable's value statement, expressed in terms of capability rather than code changes.
+Conclude with a summary of **actual product behavior that is now enabled by the work just completed** — what can be done now that couldn't be done before. This is the deliverable's value statement, expressed in terms of capability rather than code changes.
 
 **Scope:** Only behavior enabled by THIS plan execution. Do not include behavior that already existed, and do not include behavior still pending in later phases.
 
@@ -321,7 +300,7 @@ Rules for the summary:
 If this execution completed a spec — meaning **every deliverable in PHASES.md is now checked off (`- [x]`)** — print an additional feature-level summary covering the entire feature, not just this execution's slice.
 
 To determine spec completion:
-1. Read PHASES.md (the path was used in the work log call)
+1. Read PHASES.md (the path referenced by the plan)
 2. Verify there are no unchecked deliverable boxes (`- [ ]`) remaining anywhere in the file
 3. If any deliverable remains unchecked, SKIP this step — the spec is not yet complete
 4. If all deliverables are checked, print the feature-level block below

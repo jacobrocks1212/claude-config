@@ -117,6 +117,8 @@ Therefore, when building the WU list:
 - **Runtime-observable verification still belongs in PHASES.md** — author it as a **non-blocking runtime-verification row** under a recognized `**Runtime Verification**` / `**MCP Integration Test Assertions:**` subsection (the bold-marker or `### Runtime Verification` heading formats both work). `lazy-state.py`'s `remaining_unchecked_are_verification_only()` recognizes these rows and routes a phase whose ONLY remaining unchecked rows are verification rows forward to the retro→MCP gate (Step 8→9) instead of looping on `write-plan`/`execute-plan`. These rows are ticked by the Step 9 `/mcp-test` pass, not by `/execute-plan`.
 
   > **PLACEMENT RULE (enforced by state-script heuristic):** Runtime-verification / MCP-assertion `- [ ]` checkboxes MUST live under the `## Runtime Verification` section (or the `**Runtime Verification**` / `**MCP Integration Test Assertions:**` bold-marker subsection). They MUST **never** appear under a phase's `### Deliverables` list. A verification checkbox mistakenly placed under `### Deliverables` is classified as an outstanding implementation item, causing spurious write-plan/execute-plan churn. See `~/.claude/skills/_components/phases-runtime-verification.md` for the full placement rule and rationale.
+  >
+  > **GATE-OWNED ROW BAN (same component, sibling rule):** pipeline-owned actions — SPEC.md/PHASES.md top-level `**Status:**` flips, COMPLETED.md/FIXED.md receipt writes, ROADMAP completion marks, archive moves — are NEVER authored as `- [ ]` rows anywhere (not even under Runtime Verification); they are `__mark_complete__`/`__mark_fixed__`-gate-owned and a checkbox for them loops the state machine. **When consuming an existing PHASES.md into the plan, SKIP/flag any such gate-owned row you encounter rather than planning a work unit for it** — it is not work `/execute-plan` can close (a gate-owned row that survived authoring is a PHASES quality issue; surface it in the final report, do not emit a WU). See `~/.claude/skills/_components/phases-runtime-verification.md`.
 - **Net rule:** a plan WU must be something `/execute-plan` can actually DO and CLOSE in-session (write code, write tests, run quality gates, commit). Anything that can only be closed by booting the live runtime is a Step-9 responsibility — keep it OUT of the plan's WU list, and let the PHASES.md runtime-verification subsection carry the deferred verification intent.
 
 ---
@@ -179,7 +181,7 @@ Every part file MUST start (after the existing "Mobile plan" preamble) with a `P
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
-Each part is otherwise **fully self-contained** per the existing /write-plan contract (execution model, mandatory rules, component reference card, blocking-issue protocol, completion section, work log). Generate each part with the full template; do not abbreviate later parts.
+Each part is otherwise **fully self-contained** per the existing /write-plan contract (execution model, mandatory rules, component reference card, blocking-issue protocol, completion section). Generate each part with the full template; do not abbreviate later parts.
 
 ---
 
@@ -221,7 +223,7 @@ The plan MUST contain all of the following sections. Everything below is plan te
 > | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
 > | **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
 >
-> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`.
 >
 > **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
 
@@ -251,7 +253,6 @@ The plan MUST contain all of the following sections. Everything below is plan te
 > | Step B.5 | Commit Policy | `.claude/skill-config/commit-policy.md` (fallback: `~/.claude/skills/_components/commit-and-push.md`) |
 > | Post-phase | Integration Verification | `~/.claude/skills/_components/integration-verification.md` |
 > | Post-phase | CLAUDE.md Review | `~/.claude/skills/_components/claude-md-review.md` |
-> | Final | Work Log | `~/.claude/skills/_components/work-log.md` |
 
 **References section (write this, listing each upstream artifact you read in Step 1b.1):**
 
@@ -503,15 +504,6 @@ Include a batch overview table per phase:
 >
 >    **Implementation Notes summary:**
 >    [key cross-feature integration notes and pitfalls, collapsed into a brief reference for the next wave]
-
----
-
-**Work Log — write this into the plan:**
-
-> ## Append to Work Log (MANDATORY — DO NOT SKIP)
->
-> Read `~/.claude/skills/_components/work-log.md` and follow its instructions.
-> Call interview_work_log_append MCP tool with skill, project, title, summary, files_modified, and technical_context.
 
 ---
 

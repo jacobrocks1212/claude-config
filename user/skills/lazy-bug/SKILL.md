@@ -128,11 +128,11 @@ For `blocked`, `needs-input`, `completion-unverified`, and `stale_upstream`, fol
 
 `~/.claude/skills/_components/halt-resolution.md`
 
-Use the matrix's `blocked` and `needs-input` rows (single-dispatch wrappers route those here — `/lazy-bug` has no bespoke Step 1g/1h); for `completion-unverified` use that row (reopen & re-validate / grandfather via `bug-state.py --backfill-receipts` / defer / halt). Log the resolution as the invocation's work via the Work Log step (below). Only the operator-chosen "Halt for manual fix" reverts to a report + STOP.
+Use the matrix's `blocked` and `needs-input` rows (single-dispatch wrappers route those here — `/lazy-bug` has no bespoke Step 1g/1h); for `completion-unverified` use that row (reopen & re-validate / grandfather via `bug-state.py --backfill-receipts` / defer / halt). Only the operator-chosen "Halt for manual fix" reverts to a report + STOP.
 
 ### 2b. Clean-stop terminals → report + STOP
 
-For these there is nothing to resolve in-session: PushNotification with `notify_message`, print the **before** bookend (State `current_step`, Action `"halt — {terminal_reason}"`) and the **after** bookend (Completed "halted on {terminal_reason}"; Next `/lazy-bug` will: per the row below), STOP, and skip the work-log step.
+For these there is nothing to resolve in-session: PushNotification with `notify_message`, print the **before** bookend (State `current_step`, Action `"halt — {terminal_reason}"`) and the **after** bookend (Completed "halted on {terminal_reason}"; Next `/lazy-bug` will: per the row below), then STOP.
 
 | `terminal_reason` | After-bookend / operator action |
 |------|---|
@@ -157,7 +157,7 @@ machine progresses to retro on the next invocation.
 1. Parse `{spec_path}/SKIP_MCP_TEST.md`'s frontmatter.
 2. Write `{spec_path}/VALIDATED.md` with kind `validated`, `mcp_scenarios: []`,
    `result: all-passing`, and a body note: "MCP tests skipped per prior SKIP_MCP_TEST.md".
-3. Print the after-status bookend, call work-log, STOP.
+3. Print the after-status bookend, STOP.
 
 ### `__write_validated_from_results__`
 
@@ -166,7 +166,7 @@ machine progresses to retro on the next invocation.
 1. Parse `{spec_path}/MCP_TEST_RESULTS.md`'s frontmatter — extract `scenarios`.
 2. Write `{spec_path}/VALIDATED.md` with kind `validated`, the parsed scenarios,
    `result: all-passing`.
-3. Print the after-status bookend, call work-log, STOP.
+3. Print the after-status bookend, STOP.
 
 ### `__mark_fixed__`
 
@@ -185,8 +185,7 @@ Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns:
   Do NOT run Gate 2 or the archive steps. Print the after-status bookend (Completed:
   "MCP-coverage gate halted mark-fixed — authored corrective coverage / test-exempt note(s) for
   {N} locked decision(s)", Next `/lazy-bug` will: "Run /mcp-test against the corrective
-  scenario(s), then re-attempt __mark_fixed__ (the re-run audit returns clean)"), call work-log,
-  STOP.
+  scenario(s), then re-attempt __mark_fixed__ (the re-run audit returns clean)"), STOP.
 - `clean` — proceed to Gate 2.
 
 **Gate 2 — Completion-integrity gate and FIXED.md receipt.**
@@ -203,11 +202,11 @@ Run the gate and archive procedure per the component above with `{spec_path}`, `
 - `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the archive
   steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-fixed
   — {reason}", Next `/lazy-bug` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"),
-  call work-log, STOP.
+  STOP.
 
 After the component's archive procedure completes successfully:
 1. PushNotification: `"{bug_name} FIXED and archived. Run /lazy-bug to continue."`
-2. Print the after-status bookend, call work-log, STOP.
+2. Print the after-status bookend, STOP.
 
 ### `__flip_plan_complete_cloud_saturated__`
 
@@ -220,7 +219,7 @@ After the component's archive procedure completes successfully:
    the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
 3. Stage the plan file and invoke `Skill({ skill: "commit", args: "chore({bug_id}): mark plan
    Complete (cloud-saturated)" })`.
-4. Print the after-status bookend, call work-log, STOP.
+4. Print the after-status bookend, STOP.
 
 ### Any other `__*__` action
 
@@ -262,11 +261,9 @@ After the skill returns:
    the dual ledger is half-flipped.
 2. Print the after-status bookend (Completed: "ran /<sub_skill>", Next `/lazy-bug` will:
    "Re-run bug-state.py to determine.").
-3. Call the work-log step below.
-4. STOP.
+3. STOP.
 
-The sub-skill is responsible for its own internal status bookends and work-log entry. /lazy-bug's
-work-log entry captures the dispatch-level view only.
+The sub-skill is responsible for its own internal status bookends.
 
 ---
 
@@ -280,34 +277,6 @@ Only triggered when `$ARGUMENTS` contains `"skip"`.
    reason in a `> Skipped: {reason}` line below the status block.
 4. The next `/lazy-bug` invocation will automatically pick up the following bug.
 5. STOP.
-
----
-
-## Work Log (MANDATORY — DO NOT SKIP)
-
-Every /lazy-bug invocation that performs meaningful work MUST call `interview_work_log_append`
-before producing the "After" status bookend.
-
-Load the tool: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
-
-Call with:
-- `skill`: `"lazy-bug"`
-- `project`: project root basename
-- `title`: `"/lazy-bug → {action taken}"` (e.g., "/lazy-bug → /spec-bug cue-channel-audio-bleed")
-- `summary`: 2-4 sentences. What state was detected, what skill was dispatched (or what special
-  action ran), what it accomplished, any issues.
-- `files_modified`: files modified during this invocation (from sub-skill output, plus any
-  sentinel writes the wrapper performed)
-- `technologies`: relevant tech stack
-- `patterns`: patterns applied
-- `technical_context`: architectural context of what was fixed or investigated
-
-**Skip work-log only when:** /lazy-bug did nothing meaningful (terminal halt without dispatch,
-status query, or skip command).
-
-**The sub-skill invoked by /lazy-bug is ALSO expected to log its own work** — both logs are
-required when a dispatch happened. /lazy-bug logs the dispatch-level view; the sub-skill logs the
-implementation-level detail.
 
 ---
 
@@ -339,7 +308,7 @@ bug-state.py → JSON {sub_skill, sub_skill_args, terminal_reason}
 
 terminal_reason set?     → notify + STOP
 sub_skill = "__*__"?     → wrapper performs special action (sentinel write / mark fixed) + STOP
-sub_skill = real skill?  → Skill({skill, args}) → work-log → STOP
+sub_skill = real skill?  → Skill({skill, args}) → STOP
 ```
 
 The script mirrors the lifecycle:

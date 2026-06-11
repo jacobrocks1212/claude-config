@@ -127,7 +127,7 @@ The plan must follow this exact structure. Everything below is plan template con
 > | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
 > | **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
 >
-> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`.
 >
 > **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
 
@@ -156,7 +156,6 @@ The plan must follow this exact structure. Everything below is plan template con
 > | Step B.4.5 | MCP Integration Test | `~/.claude/skills/_components/mcp/mcp-integration-test.md` |
 > | Post-batch | Integration Verification | `~/.claude/skills/_components/integration-verification.md` |
 > | Post-batch | CLAUDE.md Review | `~/.claude/skills/_components/claude-md-review.md` |
-> | Final | Work Log | `~/.claude/skills/_components/work-log.md` |
 
 **Mandatory rules section (write this verbatim):**
 
@@ -284,13 +283,6 @@ When drafting work units, identify any that introduce import indirection (wrappe
 >
 > Read `~/.claude/skills/_components/claude-md-review.md` and follow its instructions.
 > Review whether project root or subdirectory CLAUDE.md files need updates based on this phase's changes.
-
-**Work Log Step — write this into the plan:**
-
-> ## Append to Work Log (MANDATORY — DO NOT SKIP)
->
-> Read `~/.claude/skills/_components/work-log.md` and follow its instructions.
-> Call interview_work_log_append MCP tool with skill, project, title, summary, files_modified, and technical_context.
 
 ---
 

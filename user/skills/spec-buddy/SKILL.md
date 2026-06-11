@@ -37,7 +37,7 @@ Create tasks immediately:
 1. `TaskCreate({ subject: "Phase 0: Autonomous groundwork", description: "Project-context discovery, dep-block, reuse ledger, atomic decomposition" })`
 2. `TaskCreate({ subject: "Phase 1: Partition planning", description: "Propose tiered partition list, user approval gate, checkpoint buddy-session.json" })`
 3. `TaskCreate({ subject: "Phase 2: Partition walk", description: "For each partition: recon → check-in → decide → persist → advance" })`
-4. `TaskCreate({ subject: "Phase 4: Finalize", description: "Complete SPEC.md, dep-block checkpoint, validation criteria, work log" })`
+4. `TaskCreate({ subject: "Phase 4: Finalize", description: "Complete SPEC.md, dep-block checkpoint, validation criteria" })`
 
 Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position, then read `buddy-session.json` to find the current partition.
 
@@ -369,10 +369,6 @@ If Phase 3 ran, confirm `{spec-dir}/{feature-slug}/RESEARCH_SUMMARY.md` exists. 
 ### Step 4.6: Confirm with User
 
 Confirm the spec is complete and downstream-ready.
-
-### Step 4.7: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
 
 Mark task 4 `completed`.
 

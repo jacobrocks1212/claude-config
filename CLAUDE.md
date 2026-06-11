@@ -102,7 +102,7 @@ At runtime, Claude Code expands this inline. The `project-skills.py` script pre-
 - `mcp-coverage-audit.md` — Gates `__mark_complete__` (feature pipeline) and `__mark_fixed__` (bug pipeline) across the `/lazy*` family: **Gate 1** in `/lazy` + `/lazy-cloud` + `/lazy-bug`, Step 1c.5 in `/lazy-batch` + `/lazy-batch-cloud` + `/lazy-bug-batch`. Reads SPEC.md's `## Locked Decisions` / `## Resolved by Research` / numbered key-decisions surface; greps `mcp-tests/*.md` for each decision's id + keywords (consumers pass `{feature_id}` or `{bug_id}`); uncovered decisions write `NEEDS_INPUT.md` (test-or-exempt choice) instead of flipping SPEC to Complete. Docs-only — runs identically in cloud and workstation.
 - `audit-table-validator.md` — Post-generation validator for any audit artifact that writes per-feature decision tables. Non-destructive — appends `⚠ NOT-FOUND-IN-SPEC` (SPEC keyword search miss) and `⚠ CROSS-FEATURE-DUP(<other-feature-id>)` (literal duplicate row text across artifacts) markers in place + a `## Audit-Table Validator Report` summary. Injected into `/lazy-batch-retro` Step 6c; future ad-hoc audit-ledger generators inject it the same way.
 - `tdd-protocol.md` / `tdd-test-agent.md` / `implementation-agent.md` — TDD pipeline
-- `work-log.md` — Interview prep work logging
+- `work-log.md` — Interview prep work logging (cognito-forms skills only)
 
 ### Per-Repo Skill Config
 

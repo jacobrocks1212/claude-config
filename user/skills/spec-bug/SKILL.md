@@ -43,14 +43,13 @@ If the user's description is (or references) a work-item id, the work-item conte
 
 Report format: chronological list of relevant findings with source attribution.
 
-### Subagent B: Work Log & Recent Activity
+### Subagent B: Recent Activity
 
-**Prompt:** Check the interview-prep-plugin work log and recent git activity for context.
+**Prompt:** Check recent git activity for context.
 
-1. Call `interview_work_log_append` — no, read the work log: check `~/.interview-prep/work-log.jsonl` for recent entries related to this project
-2. Run `git log --oneline -20` and `git diff --stat HEAD~5` to understand recent changes
-3. Run `git diff` (unstaged) and `git diff --cached` (staged) to see current uncommitted work
-4. Identify: what was recently changed, what skills were used, what files were modified
+1. Run `git log --oneline -20` and `git diff --stat HEAD~5` to understand recent changes
+2. Run `git diff` (unstaged) and `git diff --cached` (staged) to see current uncommitted work
+3. Identify: what was recently changed, what skills were used, what files were modified
 
 Report format: timeline of recent work with file lists and commit messages.
 
@@ -279,19 +278,3 @@ Use **AskUserQuestion** (interactive only):
 - **"Need more investigation"** — Do NOT flip status; return to Step 3 for additional symptom verification or Step 1 to gather more evidence
 
 When transitioning to `/fix`, pass the investigation spec path so `/fix` can read verified symptoms and proven findings instead of re-investigating from scratch.
-
----
-
-## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
-
-**Extra fields for spec-bug:**
-
-| Field | Value |
-|-------|-------|
-| `verified_symptoms` | Count of VERIFIED symptoms |
-| `theories` | Count of theories formed |
-| `theories_confirmed` | Count of theories confirmed |
-| `placement` | `docs/bugs` or `docs/features/{group}` |
-| `transitioned_to_fix` | boolean — whether the user proceeded to /fix |

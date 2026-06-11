@@ -90,7 +90,7 @@ Classify **why** the original implementation produced this bug. Pick the best-fi
 - **tooling-config** — Build, lint, type-check, or dependency config caused or masked the issue.
 - **other** — Explain briefly.
 
-Record the chosen category (and a one-sentence justification) — it drives Step 6 and the persistent log (Step 6c).
+Record the chosen category (and a one-sentence justification) — it drives the skill-suggestion step (Step 6a).
 
 ---
 
@@ -153,7 +153,7 @@ This plan uses an **orchestrator + Sonnet subagent** architecture:
 | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
 | **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
 
-**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`.
 
 **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
 
@@ -269,18 +269,6 @@ If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 ## Update CLAUDE.md Files (MANDATORY — DO NOT SKIP)
 
 !`cat ~/.claude/skills/_components/claude-md-review.md`
-```
-
----
-
-### Step 6. Append to Work Log (MANDATORY — DO NOT SKIP)
-
-Include this block verbatim in the plan — after Integration Verification and CLAUDE.md review — so it records the final state:
-
-```
-## Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
 ```
 
 ---

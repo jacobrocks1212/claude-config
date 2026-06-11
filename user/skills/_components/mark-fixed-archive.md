@@ -111,7 +111,6 @@ On `ok: true`:
 - Push the archive commit (`git push origin $(git rev-parse --abbrev-ref HEAD)`, 4× backoff
   retry on network error; work branch only, never main, never force).
 - Print a one-line confirmation: `✅ {bug_name} archived → {archived_to}/`.
-- Call the work-log step (`interview_work_log_append`) per the consumer skill's work-log protocol.
 
 On `ok: false`: write `{spec_path}/BLOCKED.md` (`blocker_kind: archive-failure`, quoting the
 script's `refused` diagnostic verbatim) and halt. If the diagnostic says PARTIAL STATE, do NOT

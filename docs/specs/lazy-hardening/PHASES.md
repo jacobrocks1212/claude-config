@@ -861,6 +861,100 @@ green with baselines UNREGENERATED.
 
 ---
 
+## Phase 10 — Gate-owned row ban + oscillation detection + repo prompt addenda + reachability smokes
+
+**Scope:** Close the four NOVEL issues from the 2026-06-11 second live-run review (transcript
+`5c33b6ba` entries 398–522): (N1) gate-owned checkbox rows in PHASES deliverables loop the
+state machine (d8-live-looping's `- [ ] Update SPEC.md status to "Complete"` box routed
+write-plan repeatedly — unplannable, untickable work; cost one inspection + one meta recovery,
+and only orchestrator suspicion prevented a max-cycles burn); (N2) BOTH loop guards are blind
+to "productive-looking" oscillation (each spurious write-plan cycle commits a plan file → HEAD
+advances → the Phase-9 HEAD-aware streak resets every iteration; the tuple guard misses it via
+differing `sub_skill_args`); (N3) repo-specific prompt addenda are hand-appended (the
+orchestrator spliced the AlgoBooth audio-INVARIANTS gate onto the emitted prompt, in direct
+tension with Phase 8's consume-VERBATIM contract); (N4) an unreachable API survived eight
+phases to the Step-9 MCP gate (d8 BLOCKED 0/16: `track(...).record()` on the wrong prototype,
+zero telemetry — every per-phase MCP row had batched silently behind `DEFERRED_NON_CLOUD.md`).
+
+**Repo-boundary note (documented exception):** WU-4 lands in **AlgoBooth**
+(`scripts/check-docs-consistency.ts` + its test + a docs corpus sweep) — the mechanical lint
+half of N1 belongs to the repo that owns the checker. The live `/lazy-batch` session commits to
+that same working tree: WU-4 must stage by EXPLICIT path only, verify the full gate rc=0
+repo-wide, and land rule + sweep in ONE atomic commit (a half-landed rule would fail the live
+session's `qg:docs-consistency` gate mid-cycle).
+
+**Circuit-breaker note:** this is phase 10 of an original 7 (+43%) — the NEXT corrective phase
+fires the +50% breaker; further additions should go through `/realign-spec` + a fresh
+decomposition of this hardening track.
+
+**Entry criteria:** Phase 9 complete (the streak/peek + emitter surfaces WU-2/WU-3 extend).
+
+**Validated Assumptions:**
+
+| assumption | how-confirmed (`grep` / `runtime` / `spike`) | evidence |
+|---|---|---|
+| the gate-owned box, not a script bug, caused the write-plan loop | runtime (live transcript) | entries 448/458: `remaining_unchecked_are_verification_only` False because line 669 sat before the `**Runtime Verification:**` marker; relocation commit 50bc5ddb cleared the loop |
+| the trap class recurs in the corpus | grep | `d8-tempo-sync/PHASES.md:720` (instructs hand-promotion of P7/PHASES/SPEC — would trip the completion-unverified hard halt; row IS under Runtime Verification so no loop, but the instruction contradicts R7), `d8-signal-flow-viz/PHASES.md:550` (ROADMAP-completion mark inside a checkbox); `clap-target-export:341` is a REAL doc edit and must NOT be flagged (pattern precision requirement) |
+| HEAD-aware streak resets on each spurious write-plan iteration | grep + runtime | Phase 9 WU-2 reset-on-advanced-HEAD semantics; each write-plan cycle commits a new plan file |
+| orchestrator hand-appended the audio gate to the emitted prompt | runtime (live transcript) | entry 421: "I'll append the INVARIANTS.md pointer per the project's audio-code HARD requirement" |
+| addenda file location resolvable per-repo | grep | `.claude/skill-config/` is the established per-repo config surface (quality-gates.md, commit-policy.md, long-build-ownership.md precedents) |
+
+**Deliverables:**
+- [x] WU-1 (claude-config, prose) — **gate-owned row authoring ban**: `phases-runtime-verification.md` (the placement-convention component) + `spec-phases/SKILL.md` + `write-plan/SKILL.md` + `add-phase/SKILL.md` (the corrective-phase author): pipeline-owned actions (SPEC/PHASES top-level Status flips, COMPLETED.md/FIXED.md receipt writes, ROADMAP completion marks, archive moves) are NEVER authored as `- [ ]` rows anywhere (not even under Runtime Verification) — they are `{mark_pseudo}`-owned; author them as a prose "Completion (gate-owned)" note. Cite the d8 write-plan loop as the motivating incident (one line).
+- [x] WU-2 (claude-config, TDD) — **step-level oscillation counter**: persisted alongside the Phase-9 streak (same per-pipeline file, new `step_signature`/`step_count` keys, legacy fallback): keyed on `(feature_id, current_step)` ONLY — no `sub_skill_args`, NO head-advance reset (its purpose is catching oscillation-with-commits). Emitted as `step_repeat_count` under the same `--repeat-count`/`--repeat-count-peek` flags (peek reads without writing; byte-identical default preserved). Prose: the three batch SKILLs surface a T6 warning at `step_repeat_count >= 3` ("same step reached 3+ times without advancing — inspect routing before dispatching; do NOT keep dispatching the emitted action").
+- [x] WU-3 (claude-config, TDD) — **repo prompt addenda**: `emit_cycle_prompt` reads optional `<repo_root>/.claude/skill-config/cycle-prompt-addenda.md` with the SAME `@section` grammar; selected sections appended AFTER the base sections (BEFORE the loop block), token-bound, residue-checked (a bad addenda section refuses like a bad base section); absent file = exact current behavior. Prose: lazy-batch Step 1d consumption paragraph + `lazy-dispatch-template.md`: orchestrators NEVER hand-append to `cycle_prompt` — repo-specific addenda live in the addenda file. Seed AlgoBooth's addenda file (in claude-config `repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md`, symlink-served) with the audio-INVARIANTS gate section (`skills=execute-plan,retro-feature,mcp-test`).
+- [x] WU-4 (AlgoBooth, TDD) — **gate-owned row lint + corpus sweep**: new `check-docs-consistency.ts` rule (`phase.deliverables.gate-owned-action`) flagging `- [ ]`/`- [x]` rows whose text matches gate-owned patterns (SPEC/PHASES status-flip, promote-to-Complete, ROADMAP completion, receipt writes, archive moves) — precise enough that `clap-target-export:341` ("Update SPEC §…" — a real doc edit) does NOT match; unit tests in `scripts/__tests__/check-docs-consistency.test.ts` (positive: the three live patterns; negative: clap-target-export's row + ordinary deliverables); corpus sweep rewriting the existing violations honestly (d8-tempo-sync:720 — validation stays, promotion language → "the `__mark_complete__` gate performs the promotion"; d8-signal-flow-viz:550 — ROADMAP fragment out of the checkbox; d8-live-looping's relocated row — re-word as validation with a gate-owned note). ONE atomic commit, explicit-path staging, full `qg:docs-consistency` rc=0 verified pre-commit, pushed immediately (live-session co-tenancy).
+- [x] WU-5 (claude-config, prose) — **in-phase API reachability smokes**: `spec-phases/SKILL.md` + `phases-runtime-verification.md`: any phase introducing a NEW user-facing API surface carries one in-phase reachability-smoke row under Runtime Verification — a single MCP call proving the surface is callable end-to-end (distinct from behavioral validation), tagged `(reachability-smoke — workstation-eligible)` so deferral lists it individually instead of batching it silently behind DEFERRED_NON_CLOUD.md. Cite d8's 0/16 BLOCKED as the motivating incident. (Opportunistic workstation scheduling of deferred smokes is a future state-script candidate, NOT in scope.)
+
+**Files likely modified:**
+- claude-config: `user/scripts/{lazy_core,lazy-state,bug-state,test_lazy_core}.py`; `user/skills/_components/{phases-runtime-verification,lazy-dispatch-template}.md`; `user/skills/{spec-phases,write-plan,add-phase,lazy-batch,lazy-bug-batch}/SKILL.md`; `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`; `repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md` (NEW)
+- AlgoBooth: `scripts/check-docs-consistency.ts`, `scripts/__tests__/check-docs-consistency.test.ts`, `docs/features/audio/audio-vision/domains/{d8-tempo-sync,d8-signal-flow-viz,d8-live-looping}/PHASES.md`
+
+**Testing Strategy:** WU-2/WU-3 TDD in `test_lazy_core.py` (RED→GREEN, `_TESTS` registry; step-counter
+no-head-reset discriminator: commit between identical-step probes must NOT reset `step_count` while
+it DOES reset `repeat_count`; addenda tests: selection, binding, absent-file no-op byte-identity,
+residue refusal). WU-4 TDD in the checker's vitest suite. All three claude-config gates green,
+baselines unregenerated; AlgoBooth `qg:docs-consistency` rc=0 repo-wide + checker vitest green.
+
+**Integration Notes for Next Phase:**
+- N1 is now closed at three layers (authoring ban / mechanical lint / swept corpus); the state
+  scripts deliberately do NOT pattern-match gate-owned rows (prose inference in the routing
+  layer is fragile — the lint owns detection).
+- `step_repeat_count` gives the orchestrator the oscillation signal that was previously manual
+  suspicion; if it proves reliable, a future phase could make the state script itself refuse to
+  emit the same routing a 4th time.
+
+**Context from prior phases:**
+- Phase 9 WU-2 defined the persisted-streak file shape — WU-2 extends it with legacy fallback,
+  mirroring the `head`-field migration pattern.
+- Phase 8 defined the section grammar + residue refusal — WU-3 reuses both verbatim for addenda;
+  the binding-completeness matrix tests remain the tripwire.
+- Phase 3 WU-3 pinned the runtime-verification placement convention — WU-1 extends that same
+  component with the gate-owned ban (one source of truth for row placement).
+
+**Implementation Notes:**
+
+#### Implementation Notes (Phase 10 — three parallel agents: WU-2+3, WU-1+5, WU-4)
+**Completed:** 2026-06-11
+**Review verdict:** PASS (orchestrator re-ran all gates fresh in BOTH repos — claude-config 214/214 + both --test baselines unregenerated + lint OK; AlgoBooth `check-docs-consistency` rc=0 repo-wide, 16/16 checker vitest; addenda proven end-to-end through the AlgoBooth `.claude/skill-config` symlink with a synthetic execute-plan emission — `INVARIANTS.md`/`load_full` present, zero residue; live peek emission confirmed `step_repeat_count` emitted and write-plan correctly receives NO audio addenda)
+**Work completed:**
+- **WU-2 (TDD, +7):** `lazy_core.update_repeat_counts()` computes BOTH counters in one read/write of the shared per-pipeline file — `step_repeat_count` keyed on `(feature_id, current_step)` with NO head-advance reset (the discriminator test proves a commit between identical-step probes resets `repeat_count` but NOT `step_count`); legacy-file fallback; `update_repeat_count` kept as a compatible wrapper. Emitted under `--repeat-count`/`--repeat-count-peek` (peek non-mutating for both). T6 warning at ≥3 in all three batch SKILLs.
+- **WU-3 (TDD, +6):** `emit_cycle_prompt` reads optional `<repo_root>/.claude/skill-config/cycle-prompt-addenda.md` via the EXISTING template parser (no duplicated grammar); matching sections append after base / before loop block; residue in an addenda section refuses naming the addenda file (isolation re-bind attributes the source). Absent-file byte-identity pinned by test. AlgoBooth addenda seeded with the audio-INVARIANTS section (`skills=execute-plan,retro-feature,mcp-test`); never-hand-append prose in lazy-batch Step 1d + lazy-dispatch-template.
+- **WU-1+5 (prose, additive-only, anchors preserved):** gate-owned row ban + reachability-smoke rule canonically in `phases-runtime-verification.md`, surfaced in spec-phases (authoring site) + add-phase (corrective-phase author, smoke rule cross-referenced to its Step 3.5) + write-plan (which also now SKIPS/flags gate-owned rows it encounters instead of planning work for them).
+- **WU-4 (AlgoBooth `2e315e4e`, TDD 16/16):** rule `phase.deliverables.gate-owned-action` (per-row `deliverableRows` added to the PHASES parser); pre-sweep evidence: **5 corpus hits** (the 3 investigation rows PLUS `d2-choke-groups:345` + `d8-track-pattern-interaction:787`, both historical `[x]` rows — D7: swept all five rather than weakening the rule); `clap-target-export:341` + "mark this box"/"complete the form" negatives NOT flagged; archive pattern anchored to the literal `/_archive` token after a repo-wide scan excluded one false positive. Atomic explicit-path commit, clean fast-forward push, live session had nothing in flight.
+**Live-run convergence note:** the live `/lazy-batch` session independently committed an identical-text fix for the d8-live-looping row (`64e7f1e3`) minutes before WU-4's commit — the agents converged on the same rewording; WU-4's commit landed the rule + the other four rows.
+**Pitfalls & guidance:**
+- The addenda file is parsed with the SAME grammar/contract as the base template — addenda edits are subject to the same residue refusal; keep them token-free or use the 14 documented tokens.
+- `step_repeat_count` deliberately ignores HEAD advance — do NOT "fix" that symmetry with `repeat_count`; oscillation-with-commits is exactly what it exists to see.
+- The gate-owned lint runs only on PHASES.md phase sections (plan files are out of scope by checker design) — the authoring ban in write-plan covers the plan-file side.
+**Carried follow-ups (future candidates, NOT blocking):**
+- State-script refusal to emit the same routing a 4th time (escalate the T6 warning to a mechanical halt) once `step_repeat_count` proves reliable in live runs.
+- Opportunistic workstation scheduling of deferred reachability-smoke rows (state-script change, deliberately out of scope here).
+- **Circuit-breaker horizon:** the next corrective phase fires the +50% breaker — route further hardening through `/realign-spec` + a fresh decomposition.
+**Files modified:** claude-config `17fca2e` (13 files: scripts ×4, batch SKILLs ×3, dispatch-template, phases-runtime-verification, spec-phases/write-plan/add-phase SKILLs, NEW algobooth cycle-prompt-addenda.md); AlgoBooth `2e315e4e` (checker + tests + 4 PHASES sweeps).
+
+---
+
 ## Post-implementation adversarial review (2026-06-10, separate session)
 
 Three independent adversarial reviewers (scripts / batch orchestrators / components+wrappers+retro)

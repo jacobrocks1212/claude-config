@@ -770,18 +770,3 @@ Results saved to: docs/testing/mcp-tests/results/{scenario-name}-{YYYY-MM-DD}.md
 {If improvements found}: ✓ {N} improvement(s) vs prior run ({prior-date}).
 {If first run}: First run recorded.
 ```
-
----
-
-## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
-
-**Extra fields for mcp-test:**
-
-| Field | Value |
-|-------|-------|
-| `scenarios_run` | Array of scenario names executed |
-| `pass_count` | Number of scenarios passing |
-| `fail_count` | Number of scenarios failing |
-| `regressions` | Number of regressions vs prior run |

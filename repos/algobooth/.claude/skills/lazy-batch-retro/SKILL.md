@@ -649,7 +649,7 @@ If the project has a `.claude/skill-config/commit-policy.md`, follow it instead 
 **Confidence caveats:** {e.g., "2 cycles unverifiable due to transcript reclaim"}
 ```
 
-STOP. Do not call work-log (review skills are themselves the work log).
+STOP.
 
 ---
 
