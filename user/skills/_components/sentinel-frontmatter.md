@@ -136,6 +136,44 @@ Optional:
 
 Body keeps the human-readable summary of which scenarios ran.
 
+#### `INVESTIGATION.md` — `kind: investigation`
+
+The durable evidence artifact written by the `/investigate` skill (on-demand
+root-cause investigation cycle). A **permanent audit artifact**
+(MCP_TEST_RESULTS-class) — explicitly NOT a halt sentinel: the state scripts do
+not key any routing or halt on it; it is consumed by `blocked-resolution`,
+`/add-phase`, and `/write-plan` as the evidence-backed root-cause record that
+replaces orchestrator-authored causal narratives.
+
+Required:
+
+```yaml
+---
+kind: investigation
+feature_id: <id>
+date: <YYYY-MM-DD>
+trigger: validation-escalation   # one of: validation-escalation | failed-fix-live-check | orchestrator-budget | manual
+status: root-cause-confirmed     # one of: root-cause-confirmed | partially-localized | inconclusive
+investigated_commit: <git rev-parse HEAD when the investigation ran>
+---
+```
+
+`investigated_commit` is the **freshness anchor** (mirrors `validated_commit`):
+a consumer treats the artifact as current when it equals HEAD or the only
+commits since are the investigation's own `diag(<feature_id>):`-prefixed
+instrumentation commits; otherwise consumers cite it only as
+`(stale — re-verify)`.
+
+The body is LOAD-BEARING for human + downstream-skill consumption (the
+`/investigate` skill owns the authoring rules): `## Symptom`, `## Seam Table`
+(per-seam `probed-OK | probed-FAIL | unprobed` with one line of evidence),
+`## Hypothesis Ledger` (every hypothesis **confirmed**/**refuted**/**unproven**
+with a cited evidence artifact — no citation, no verdict), `## Repro Recipe`,
+`## Recommended Fix Scope`. Repeat investigations APPEND `## Investigation N
+(date, commit)` rounds to the same file — one artifact per feature/bug dir, not
+one per round. Keep in lockstep with AlgoBooth
+`scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
+
 #### `RETRO_DONE.md` — `kind: retro-done`
 
 Required:

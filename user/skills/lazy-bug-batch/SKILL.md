@@ -190,7 +190,11 @@ cycles at the same `(bug_id, current_step)` step — `sub_skill`/args-blind, NO 
 when it is `>= 3`, STOP — surface `⚠ step '<current_step>' reached <N> times without advancing —
 inspect routing before dispatching` and do NOT keep dispatching the emitted action mechanically.
 This catches "productive-looking" oscillation (each cycle commits → HEAD advances → the dispatch
-streak resets while routing never leaves the step). Full semantics: `/lazy-batch` Step 1a. `--emit-prompt` folds the
+streak resets while routing never leaves the step). Full semantics: `/lazy-batch` Step 1a.
+The **investigation triggers, inline-diagnosis budget (~8 own diagnostic tool calls per issue),
+and no-narrative-as-fact rule apply identically** to the bug pipeline — see `/lazy-batch` Step 1a
+and `~/.claude/skills/_components/investigation-dispatch.md` (the bug id rides in `feature_id`;
+the artifact lives in the bug's `docs/bugs/<id>/` dir). `--emit-prompt` folds the
 script-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assembly failure) into
 the JSON, with the `pipelines=bug` sections selected and the bug tokens bound; SHOULD be passed on
 every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consumes it verbatim.
