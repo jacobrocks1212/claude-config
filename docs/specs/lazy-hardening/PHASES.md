@@ -665,6 +665,83 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 
 ---
 
+## Phase 8 — Script-emitted cycle prompts + prompt diet + sha-free chat output
+
+**Scope:** `--emit-prompt` makes the state scripts the single assembler of the cycle dispatch
+prompt — closing the last unscripted deterministic mechanic left out of the Phase-5
+script-ification. The canonical template is rewritten on a diet (each rule exactly once,
+war-story prose dropped, stable policy pointer-ized), parameterized (`{work_branch}`,
+bug/feature tokens), and sectioned so per-skill / per-pipeline / per-mode selection is
+mechanical. Orchestrator chat output drops commit shas (operator request — shas are noise on a
+phone; durable provenance shas in docs/sentinels are kept).
+
+**Why (operator-commissioned, 2026-06-10):** the 20.7MB WSL audit showed the orchestrator
+re-TYPING the ~2K-token cycle prompt every dispatch (1.64M output tokens, ~70% boilerplate —
+more than all 311 subagents combined) and dropping bindings post-compaction (41% lost
+`model:`). The template itself accreted 2–4× repetition per rule (inline override ×3, commit
+discipline ×4, sentinel discipline ×3) plus mechanism/war-story prose, and the base template
+carries a "never push main" rule that the AlgoBooth orchestrator must countermand with an
+inline NOTE (rule-then-exception). The cloud variant retains a hand-synced ~230-line inline
+copy of the prompt (accepted follow-up from the post-implementation review — subsumed here).
+
+**Entry criteria:** Phases 5–7 (probe enrichment flags, componentized prompts, dispatch
+template) — all complete.
+
+**Validated Assumptions:**
+
+| assumption | how-confirmed (`grep` / `runtime` / `spike`) | evidence |
+|---|---|---|
+| the script can locate the template via its own path through the `~/.claude` symlinks | runtime | `Path('~/.claude/scripts/lazy-state.py').resolve()` → `<claude-config>/user/scripts/lazy-state.py`; `parent.parent / 'skills/_components/lazy-batch-prompts/cycle-base-prompt.md'` exists (probe run 2026-06-10, this session) |
+| probe payload carries `feature_id` / `feature_name` / `spec_path` / `current_step` / `sub_skill` / `sub_skill_args` in BOTH scripts (bug-state reuses the `feature_*` keys for bugs) | grep | `lazy-state.py:120-124`, `bug-state.py:217-221` (code-provable: the emitter consumes the scripts' own in-process dict, no cross-process boundary) |
+| persisted `repeat_count` is per-pipeline (parallel feature+bug runs don't reset each other's streaks) | grep | commit `f7f8bb3` (per-pipeline loop-signature files) |
+| work branch resolvable at emit time | runtime | `git rev-parse --abbrev-ref HEAD` → `main` in claude-config (same subprocess pattern as `_current_head`) |
+| retro graders key on literal prompt anchors | grep | `lazy-batch-retro/SKILL.md:381` (`INLINE OVERRIDE — LOAD-BEARING` unconditional in the workstation template), `:293` (R-O-4 load-bearing clauses incl. `Operating mode: batch`), `:379` (`CLOUD OVERRIDE — LOAD-BEARING`) — the rewrite MUST preserve these literal strings |
+
+**Deliverables:**
+- [ ] WU-1 (prose) — `cycle-base-prompt.md` rewritten as the deduplicated, sectioned, parameterized template: `<!-- @section <name> pipelines=feature,bug modes=workstation,cloud skills=all|<csv> -->` markers; every rule stated exactly ONCE (header comment carries a rule-inventory table R1–R16 mapping each surviving rule to its single section; the turn-end pre-return checklist is the ONE sanctioned restatement); mechanism/war-story prose dropped (≤1-line rationale max); D7 block reduced to the operational core (scope test → most-complete path → `⚖` disclosure → never NEEDS_INPUT for scope-class) + `completeness-policy.md` pointer; work branch parameterized as `{work_branch}` (kills the rule-then-exception NOTE); bug/feature differences tokenized (`{item_label}`, `{pipeline_phrase}`, `{receipt_name}`, `{mark_pseudo}`, `{forbidden_status}`, sentinel-set lines as tiny per-pipeline sections) so lazy-bug-batch's substitution list + "No premature Fixed" block become dead; cloud deltas folded in as `modes=cloud` sections (subsumes lazy-batch-cloud's hand-synced inline copy) keeping the literal `CLOUD OVERRIDE — LOAD-BEARING` marker; retro anchors preserved verbatim (`Operating mode: batch`, `INLINE OVERRIDE — LOAD-BEARING`, ``This subagent does NOT have the `Agent` tool``); subagent report contract asks "committed+pushed | no commit" (NO commit hash); `loop-block.md` parameterized for both pipelines (`{receipt_name}` in the never-author list). Size target: workstation execute-plan emission ≤ ~900 tokens; mcp-test (largest) ≤ ~1300.
+- [ ] WU-2 (TDD) — `lazy_core.emit_cycle_prompt(repo_root, state, *, pipeline, cloud=False, repeat_count=None, template_dir=None) -> dict | None`: `None` for pseudo-skills (`__*`) and terminal/idle probes; parses the section markers; selects by (pipeline, mode, normalized sub_skill); binds all tokens (`{work_branch}` via `git rev-parse --abbrev-ref HEAD`, safe fallback `"the current branch"`; mcp-test runtime variant chosen by the spec's PHASES.md `**MCP runtime:**` line, binding `{untestability_reason}`); REFUSES (returns `{"ok": false, "refused": …}`) on any unbound `{token}` residue or unknown section reference — never emits a half-bound prompt; appends the loop block and selects `model: "sonnet"` when `repeat_count >= 2`, else `"opus"`. CLI `--emit-prompt` on BOTH scripts: flag-gated output fields `cycle_prompt` + `cycle_model` (byte-identical default output — same discipline as `--probe`/`--repeat-count`; NO baseline regeneration); composes with `--repeat-count` (the same invocation's count drives the loop block). Unit tests: selection matrix, binding completeness (zero `\{[a-z_]+\}` residue) for every (pipeline × mode × skill) combination, pseudo → None, loop append + model flip at repeat_count 2, mcp-test variant routing (both branches), bug-token binding (FIXED.md present / COMPLETED.md absent), cloud section inclusion/exclusion, refusal path.
+- [ ] WU-3 (prose) — consumers: `lazy-batch` Step 1a/1d (probe call gains `--emit-prompt`; dispatch uses `cycle_prompt` verbatim + `model: cycle_model`; hand-binding + loop-block-append + model-selection prose deleted — script-owned; `prev_cycle_signature` retained for Step-2 forward-progress + post-cycle bookkeeping); `lazy-bug-batch` Step 1d (substitution list + "No premature Fixed" block deleted; consumes `bug-state.py --emit-prompt`); `lazy-batch-cloud` Step 1d (the ~230-line inline prompt copy DELETED → `lazy-state.py --cloud … --emit-prompt`; cloud-specific dispatch nuances like background-dispatch remain); `lazy-dispatch-template.md` (prompt field = `cycle_prompt` verbatim, `model:` = `cycle_model`); Step 1d.0 variant-swap prose simplified (script chooses the mcp-test prompt variant; the orchestrator keeps the BOOT decision).
+- [ ] WU-4 (prose) — sha-free orchestrator chat output: `orchestrator-voice.md` T4 example drops `· a1b2c3d`; `lazy-batch` §1c.5 item 3 ("+ the sentinel/plan commit short-sha") + §1e item 2 ("+ the cycle's commit short-sha, or `—`") + the bottom quick-reference `done` line; `lazy-bug-batch` quick-reference `done` line; `lazy-batch-cloud` §1c.5 analog + §1e + quick-reference. Durable provenance shas are intentionally KEPT (FIXED.md `**Fix commit:**` evidence header, plan `source_commit`, `validated_commit`, retro citation requirements, work-log `commit` field) — the removal is chat-output-only.
+
+**Files likely modified:**
+- `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` — rewrite (WU-1)
+- `user/skills/_components/lazy-batch-prompts/loop-block.md` — parameterize (WU-1)
+- `user/scripts/lazy_core.py` — `emit_cycle_prompt` (WU-2)
+- `user/scripts/lazy-state.py`, `user/scripts/bug-state.py` — `--emit-prompt` CLI (WU-2)
+- `user/scripts/test_lazy_core.py` — unit tests (WU-2)
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — consumption + sha removal (WU-3, WU-4)
+- `user/skills/_components/lazy-dispatch-template.md` — envelope update (WU-3)
+- `user/skills/_components/orchestrator-voice.md` — T4 example (WU-4)
+
+**Testing Strategy:** WU-2 is TDD with unit tests in `test_lazy_core.py` (RED→GREEN; registered
+in `_TESTS`); the flag-gating discipline means NO smoke-baseline regeneration — the three
+regression gates passing UNCHANGED is itself the byte-identical-default proof. WU-1/3/4 are
+prose: verified by grep gates (anchors present, sha specs absent, zero unbound tokens via the
+WU-2 binding-completeness tests which read the REAL template file).
+
+**Integration Notes for Next Phase:**
+- After this phase the orchestrators' Step 1d is consume-and-dispatch; any future prompt-text
+  change goes in the COMPONENT (sectioned template), never in SKILL prose, and is picked up by
+  both pipelines + cloud automatically.
+- `prev_cycle_signature` is retained only for the Step-2 forward-progress check and T2 tag; a
+  future phase could retire it in favor of `repeat_count` everywhere.
+
+**Context from prior phases:**
+- Phase 5 established the flag-gated byte-identical-default discipline (`--repeat-count`,
+  `--probe`) — WU-2 must follow it exactly (fields appear ONLY under `--emit-prompt`).
+- Phase 6 WU-2 extracted the templates; its pitfall note ("future edits to a prompt template
+  must edit the COMPONENT file, not re-inline it into SKILL.md") is strengthened by WU-3
+  deleting the cloud inline copy.
+- Phase 7 WU-4's sentinel/git-hygiene clauses and the adversarial-review D-4 fix
+  (`validated_commit` producer in the mcp-test override) are LOAD-BEARING rules the WU-1
+  rewrite must preserve (rule inventory entries).
+
+**Implementation Notes:**
+
+_(pending)_
+
+---
+
 ## Post-implementation adversarial review (2026-06-10, separate session)
 
 Three independent adversarial reviewers (scripts / batch orchestrators / components+wrappers+retro)

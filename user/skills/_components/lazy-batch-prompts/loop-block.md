@@ -1,18 +1,17 @@
 # lazy-batch — LOOP DETECTED block
 
-<!-- Verbatim LOOP DETECTED block appended to the cycle dispatch prompt
-     when the loop-guard fires (prev_cycle_signature == current signature).
-     Bind {feature_id}, {sub_skill}, {sub_skill_args}, {current_step},
-     {spec_path} before appending.
-     Append this block AFTER the final paragraph of cycle-base-prompt.md
-     (i.e. after "that you wrote the failing tests before implementing
-     (test-first discipline).").
-     Do NOT include this block on the first cycle (prev_cycle_signature is None)
-     or when the signature differs from the previous cycle. -->
+<!-- Appended to the assembled cycle prompt by the emitter
+     (`lazy_core.emit_cycle_prompt`) when repeat_count >= 2 (the state script
+     returned the same (item_id, sub_skill, sub_skill_args, current_step) tuple
+     on the previous cycle as well) — NOT by orchestrator hand-binding.
+     Tokens bound by the emitter: {item_id}, {sub_skill}, {sub_skill_args},
+     {current_step}, {spec_path}.
+     The emitter omits this block entirely on the first cycle (no prior
+     signature) or when the signature differs from the previous cycle. -->
 
 ```
 ⚠️  LOOP DETECTED: The state script returned this exact
-(feature_id={feature_id}, sub_skill={sub_skill}, sub_skill_args={sub_skill_args}, current_step={current_step})
+(item_id={item_id}, sub_skill={sub_skill}, sub_skill_args={sub_skill_args}, current_step={current_step})
 tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
 (RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
 missing — the skill that was supposed to write it on the prior cycle did not.
@@ -21,7 +20,7 @@ Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
   1. Read the canonical schemas in
      ~/.claude/skills/_components/sentinel-frontmatter.md.
   2. Inspect {spec_path}/ for existing sentinels and plan files.
-  3. Determine which sentinel SHOULD exist given the feature's current state
+  3. Determine which sentinel SHOULD exist given the item's current state
      (e.g. all phases complete + validated + retro plan present with no
      significant divergences → RETRO_DONE.md should already exist; if it
      doesn't, the previous retro round failed to write it).

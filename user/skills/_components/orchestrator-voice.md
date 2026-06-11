@@ -129,7 +129,7 @@ deviation). `next` is the fresh probe's routing (or `terminal: <reason>`).
 ### Mark Fixed — gate + archive the e2e bridge bug [5/6]
 act    __mark_fixed__ → e2e-no-tauri-event-bridge
 gates  G1 pass (4/4 covered) · G2 pass
-done   FIXED.md (gated) · archived · 16 refs repointed · a1b2c3d
+done   FIXED.md (gated) · archived · 16 refs repointed
 next   probe
 ```
 

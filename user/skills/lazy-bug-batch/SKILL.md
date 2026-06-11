@@ -587,7 +587,7 @@ from `~/.claude/skills/_components/orchestrator-voice.md`, under the canonical s
 ```
 ### {Step name} — {work summary, ≤12 words} [{n}/{max}]
 disp   {sub_skill} → {bug_id} ({model}[, loop-resolution|recovery])
-done   {duration} · {load-bearing outcome} · {short-sha | —}
+done   {duration} · {load-bearing outcome}
 audit  {…}        ← only where required (see below)
 ledger {clean · pushed | …}
 next   {fresh probe routing | terminal: <reason>}
