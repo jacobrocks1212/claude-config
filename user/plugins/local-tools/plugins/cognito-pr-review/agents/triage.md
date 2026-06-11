@@ -17,7 +17,7 @@ When invoked by the review-pr command, files are pre-cached by the prep agent:
 - **PR context:** `{cacheDir}/pr-context.json` — PR description, comments, work items, thread statuses
 - **PR timeline:** `{cacheDir}/pr-timeline.json` — Chronological lifecycle data
 - **Iteration diff:** `{cacheDir}/iteration-diff.json` — Changes since last review (re-reviews only)
-- **Journey file:** `.claude.local/reviews/PR-{id}-journey.md` — PR journey (produced by journey-planner agent)
+- **Journey file:** `<cogDocsItemDir>/PR-{id}-journey.md` — PR journey (produced by journey-planner agent; exact path provided by the orchestrator)
 
 **Reading strategy:**
 1. Read `manifest.json` to understand file inventory, PR metadata, and re-review flags

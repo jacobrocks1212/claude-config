@@ -79,7 +79,7 @@ This command uses a hierarchical planner pipeline: deterministic prep → planni
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
 │  Steps 10-12: Write Review + Finalize + Report                   │
-│  - Write to .claude.local/reviews/                               │
+│  - Write to <cogDocsItemDir>/ (cog-docs item dir)               │
 │  - Finalize journey file                                         │
 │  - Print completion output                                       │
 └──────────────────────────────────────────────────────────────────┘
@@ -117,8 +117,8 @@ npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/prep-pr.
 
 The script produces a cache with: manifest v2, pr-timeline.json, pr-context.json, diffs, downloaded files, structural-context/ for large files.
 
-**Cache paths:**
-- PR Mode: `.claude/pr-cache/{pr_id}/`
+**Cache paths** (read the exact `cacheDir` from the manifest the script prints):
+- PR Mode: `<cogDocsItemDir>/.pr-review/pr-cache/{pr_id}/` — under the resolved (or newly created) cog-docs item dir
 - Local Mode: `.claude/pr-cache/local/` (always overwritten)
 
 **Cache check (PR Mode only):** The script automatically checks if cache is current (same iteration and commit). Use `--force` to rebuild cache.
@@ -131,35 +131,27 @@ The script produces a cache with: manifest v2, pr-timeline.json, pr-context.json
 
 ### Step 1.5: Enable Cache Boundary Enforcement
 
-Create marker file to enable the PreToolUse hook that blocks reads outside the cache:
+Create the marker file that activates the `pr-review-cache-guard` PreToolUse hook (a read-warning guard). The hook only checks the marker's **presence** and already whitelists reads under `/cog-docs/` (where the cache now lives), so the marker stays a small transient lock in the work repo. `{cacheDir}` is the path printed in the Step 1 manifest — in PR mode that is `<cogDocsItemDir>/.pr-review/pr-cache/{pr_id}`.
 
 **PR Mode:**
 ```bash
-echo '{"cacheDir": ".claude/pr-cache/{pr_id}", "prId": {pr_id}}' > .claude/pr-cache/pr-review-active.json
+mkdir -p .claude/pr-cache
+echo '{"cacheDir": "{cacheDir}", "prId": {pr_id}}' > .claude/pr-cache/pr-review-active.json
 ```
 
 **Local Mode:**
 ```bash
+mkdir -p .claude/pr-cache
 echo '{"cacheDir": ".claude/pr-cache/local", "prId": 0, "local": true}' > .claude/pr-cache/pr-review-active.json
 ```
 
-**IMPORTANT:** The marker file MUST be in the project directory (`.claude/pr-cache/`), NOT in `~/.claude/`. Writing to `~/.claude/` triggers Claude Code's "modify settings" permission prompt.
+**IMPORTANT:** The marker file MUST be in the project directory (`.claude/pr-cache/`), NOT in `~/.claude/`. Writing to `~/.claude/` triggers Claude Code's "modify settings" permission prompt. This marker is the *only* plugin file written outside cog-docs — it is a transient process-lock (removed in Step 12.5), created independent of the resolved destination. All durable artifacts live in cog-docs.
 
-### Step 1.6: Resolve cog-docs Destination (PR Mode only)
+### Step 1.6: Confirm cog-docs Destination (PR Mode only)
 
-Read `{cacheDir}/pr-context.json` and check `cogDocsItemDir`. This field controls where Step 10/11 land the review artifacts.
+The prep script (Step 1) **guarantees** `cogDocsItemDir` is set. It resolves the cog-docs item dir for the PR's work item (materialized.json → `<id>-*` dir scan → WIP.md branch match), and if none matches it **creates** `docs/bugs/<id>-<slug>/` with a minimal SPEC.md (carrying a `**Branch:**` line so the branch-doc SessionStart hook resolves it later). If no cog-docs repo is present at all, prep hard-fails — there is **no** `.claude.local/reviews/` fallback.
 
-**If non-null:** nothing to do — proceed to Step 2.
-
-**If null**, the prep script's deterministic resolution (materialized.json, `<wi_id>-*` dir scan, WIP.md branch match) found nothing. Attempt to resolve it yourself:
-
-1. Locate the cog-docs root: `$COG_DOCS_ROOT` if set, else the sibling `../cog-docs` of the current repo. If neither exists, skip this step (artifacts fall back to `.claude.local/reviews/`).
-2. List the item directories: `docs/features/*/` and `docs/bugs/*/`.
-3. Match against the PR using, in order of strength:
-   - A directory whose `<id>-` prefix matches a work item id you know for this PR (from the invocation, conversation context, or `workItems` in pr-context.json).
-   - A directory whose name is a clear semantic match for the PR title or source branch slug (e.g. PR "Classify target action viability" / branch `p/is-target-action-filtering` → `docs/features/target-action-viability/`). Require an obvious single match — do not guess between plausible candidates.
-4. **If exactly one confident match:** update `{cacheDir}/pr-context.json`, setting `cogDocsItemDir` to the matched directory's absolute path (edit the JSON in place; preserve all other fields). State which directory was chosen and why. Steps 10/11 then use it automatically.
-5. **If no confident match (or ambiguous):** leave it null and note that artifacts will land in `.claude.local/reviews/`.
+Read `{cacheDir}/pr-context.json` and confirm `cogDocsItemDir` is present (it always will be in PR mode). All artifacts — cache, review, and journey — live under it. State which directory was chosen, and whether it was newly created (the prep log prints `Created cog-docs item dir: ...` when it creates one).
 
 ### Step 2: Launch Journey/Planner Agent
 
@@ -175,10 +167,10 @@ Agent:
     Manifest: {cacheDir}/manifest.json
     PR context: {cacheDir}/pr-context.json
     PR timeline: {cacheDir}/pr-timeline.json
-    {If re-review: Previous journey file: .claude.local/reviews/PR-{pr_id}-journey.md}
+    {If re-review: Previous journey file: <cogDocsItemDir>/PR-{pr_id}-journey.md}
     {If re-review: Iteration diff: {cacheDir}/iteration-diff.json}
     
-    TASK: Create (or update on re-review) the journey file at .claude.local/reviews/PR-{pr_id}-journey.md
+    TASK: Create (or update on re-review) the journey file at <cogDocsItemDir>/PR-{pr_id}-journey.md
     Read all prep context from the cache directory.
     Produce the journey file with: Overview, Objectives, File Change Map, Manual Review Guide, PR Lifecycle.
 ```
@@ -194,7 +186,7 @@ Agent:
     You are the Triage Agent for PR #{pr_id}: {title}
     
     Cache directory: {cacheDir}
-    Journey file: .claude.local/reviews/PR-{pr_id}-journey.md
+    Journey file: <cogDocsItemDir>/PR-{pr_id}-journey.md
     Manifest: {cacheDir}/manifest.json
     {If re-review: Iteration diff: {cacheDir}/iteration-diff.json}
     {If re-review: PR context with thread statuses: {cacheDir}/pr-context.json}
@@ -219,7 +211,7 @@ Agent (journey-planner):
     {triage JSON from step 3}
     
     Cache directory: {cacheDir}
-    Journey file: .claude.local/reviews/PR-{pr_id}-journey.md
+    Journey file: <cogDocsItemDir>/PR-{pr_id}-journey.md
     
     Cross-check the triage against prep data:
     - Files touching core services classified as skim? → Override to important/critical
@@ -401,7 +393,7 @@ If no escalations, skip this step.
 Run the aggregation script to combine all agent outputs into the unified CombinedFindings format expected by post-process.ts:
 
 ```bash
-npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/aggregate-findings.ts --cache-dir {cacheDir} --manifest {cacheDir}/manifest.json [--previous-review .claude.local/reviews/PR-{pr_id}.md]
+npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/aggregate-findings.ts --cache-dir {cacheDir} --manifest {cacheDir}/manifest.json [--previous-review <cogDocsItemDir>/PR-{pr_id}.md]
 ```
 
 The `--previous-review` flag is only included for re-reviews.
@@ -411,7 +403,7 @@ The script reads all `investigation-*.json` and `sweep.json` from `{cacheDir}/ag
 ### Step 8: Run Deterministic Post-Processing
 
 ```bash
-npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/post-process.ts --input {cacheDir}/combined-findings.json --manifest {cacheDir}/manifest.json [--previous-review .claude.local/reviews/PR-{pr_id}.md]
+npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/post-process.ts --input {cacheDir}/combined-findings.json --manifest {cacheDir}/manifest.json [--previous-review <cogDocsItemDir>/PR-{pr_id}.md]
 ```
 
 The `--previous-review` flag is only included for re-reviews.
@@ -429,7 +421,7 @@ Agent:
     
     Read these files:
     - Processed findings: {cacheDir}/processed-findings.json
-    - Journey file: .claude.local/reviews/PR-{pr_id}-journey.md
+    - Journey file: <cogDocsItemDir>/PR-{pr_id}-journey.md
     - Triage classification: {validated triage JSON inline or file path}
     
     PR metadata:
@@ -443,29 +435,19 @@ Agent:
 
 ### Step 10: Write Review
 
-Read `{cacheDir}/pr-context.json` and check the `cogDocsItemDir` field.
+Read `{cacheDir}/pr-context.json` for the `cogDocsItemDir` field (always set in PR mode — see Step 1.6).
 
-**PR Mode — cogDocsItemDir is set (non-null):**
+**PR Mode:**
 Write both the review artifact and the journey file under the cog-docs item directory:
 - `<cogDocsItemDir>/PR-{pr_id}.md` — the synthesized review
-- `<cogDocsItemDir>/PR-{pr_id}-journey.md` — the persistent journey file
+- `<cogDocsItemDir>/PR-{pr_id}-journey.md` — the persistent journey file (already created in Step 2 under this directory)
 
 ```bash
 mkdir -p "<cogDocsItemDir>"
-# Write PR-{pr_id}.md and PR-{pr_id}-journey.md to <cogDocsItemDir>
+# Write PR-{pr_id}.md to <cogDocsItemDir>; the journey file is already there from Step 2.
 ```
 
-**PR Mode — cogDocsItemDir is null/absent:**
-Fall back to the default location (unchanged behavior):
-- `.claude.local/reviews/PR-{pr_id}.md`
-- `.claude.local/reviews/PR-{pr_id}-journey.md`
-
-```bash
-mkdir -p ".claude.local/reviews"
-# Write review content to .claude.local/reviews/PR-{pr_id}.md
-```
-
-**Local Mode (unchanged):** Write to `.claude.local/reviews/LOCAL-{branch}-{timestamp}.md`
+**Local Mode:** Local mode has no work item, so it is not routed to cog-docs. Write to `.claude.local/reviews/LOCAL-{branch}-{timestamp}.md`.
 
 ```bash
 mkdir -p ".claude.local/reviews"
@@ -492,11 +474,9 @@ Remove the marker file to restore normal Read behavior:
 rm -f .claude/pr-cache/pr-review-active.json
 ```
 
-### Step 12.6: Emit REVIEWED.md Sentinel (cog-docs only)
+### Step 12.6: Emit REVIEWED.md Sentinel (PR Mode)
 
-Read `{cacheDir}/pr-context.json` and check the `cogDocsItemDir` field (the same field used in Step 10).
-
-**IF `cogDocsItemDir` is non-null:**
+Read `{cacheDir}/pr-context.json` for the `cogDocsItemDir` field (always set in PR mode — see Step 1.6).
 
 Write `<cogDocsItemDir>/REVIEWED.md` with YAML frontmatter carrying the PR identity, today's date, and the finding counts reported in Step 12 (total count plus per-tier counts — critical, important, minor — as produced by the synthesizer). Follow the frontmatter with a one-line human-readable body.
 
@@ -519,7 +499,7 @@ EOF
 
 This makes `derive_stage` report stage `reviewed` for the cog-docs item (it detects `REVIEWED.md` presence).
 
-**IF `cogDocsItemDir` is null/absent:** no-op — do nothing. No `REVIEWED.md` is written; the review still landed in `.claude.local/reviews/` per Step 10's fallback. This step is entirely skipped.
+**Local Mode:** no work item, so no `REVIEWED.md` — skip this step entirely.
 
 **On write failure:** WARN the user (e.g. "Warning: could not write REVIEWED.md to <path> — <reason>") and continue. Never block or fail the review on this write; the review artifact from Step 10 is the primary deliverable.
 
@@ -527,10 +507,11 @@ This makes `derive_stage` report stage `reviewed` for the cog-docs item (it dete
 
 ### Step 13: Cache Cleanup (Background)
 
-Optionally clean up old caches (>7 days):
+Optionally clean up old caches (>7 days) — the PR cache now lives under the cog-docs item dir (gitignored), plus local-mode caches in the work repo:
 
 ```bash
-find .claude/pr-cache -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \;
+find "<cogDocsItemDir>/.pr-review/pr-cache" -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null
+find .claude/pr-cache -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null
 ```
 
 ## Usage Examples
@@ -566,10 +547,10 @@ find .claude/pr-cache -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \;
 - Fetches PR data, timeline, iteration diffs, thread statuses, structural context
 - Manifest v2 with structural context for large files
 - Uses GitHub REST API for all data — no dependency on local git branch state
-- Writes cache to `.claude/pr-cache/{pr-number}/`
+- Resolves/creates the cog-docs item dir and writes the cache to `<cogDocsItemDir>/.pr-review/pr-cache/{pr-number}/` (hard-fails if no cog-docs repo)
 
 **journey-planner** (Opus):
-- Creates persistent journey file at `.claude.local/reviews/PR-{id}-journey.md`
+- Creates persistent journey file at `<cogDocsItemDir>/PR-{id}-journey.md`
 - Contains: overview, objectives, file change map, manual review guide, PR lifecycle
 - Validates triage classifications as hierarchical planner
 - Evaluates sweep escalations for ad-hoc investigation dispatch

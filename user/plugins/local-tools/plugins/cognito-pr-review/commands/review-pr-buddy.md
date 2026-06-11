@@ -36,8 +36,8 @@ Parse arguments exactly as `commands/review-pr.md` specifies:
 - **--base <branch>**: Target branch for local diff (default: `main`)
 - **--include-untracked**: Include untracked files in local mode
 
-Derive `cacheDir`:
-- PR Mode: `.claude/pr-cache/{pr_id}/`
+Derive `cacheDir` from the Step 1 manifest output (its `cacheDir` field):
+- PR Mode: `<cogDocsItemDir>/.pr-review/pr-cache/{pr_id}/` — under the resolved cog-docs item dir
 - Local Mode: `.claude/pr-cache/local/`
 
 ---
@@ -47,7 +47,7 @@ Derive `cacheDir`:
 Execute the steps defined in `commands/review-pr.md` Step 1 through Step 8 — prep → cache marker → cog-docs dest → journey → triage → planner-validate → reuse-candidacy + investigation + sweep → aggregate → post-process. Do not re-specify them here; `commands/review-pr.md` is the single source of truth for those step bodies.
 
 On successful completion of Step 8:
-- The journey file is at `.claude.local/reviews/PR-{pr_id}-journey.md` (or `-journey.md` for local mode)
+- The journey file is at `<cogDocsItemDir>/PR-{pr_id}-journey.md` (PR mode) or `.claude.local/reviews/` for local mode
 - `{cacheDir}/processed-findings.json` is on disk, including `source:"reuse"` findings from Step 5b
 
 Announce to the reviewer:
@@ -65,7 +65,7 @@ Initialize Task-tool tracking for the three high-level phases:
 
 ### Setup
 
-Read the journey file (`.claude.local/reviews/PR-{pr_id}-journey.md`) and locate the `## Manual Review Guide` section. Extract every `### Step N: {Group Name}` chunk — each chunk has `**Files:**`, `**What to look for:**`, and `**Key questions:**`.
+Read the journey file (`<cogDocsItemDir>/PR-{pr_id}-journey.md` in PR mode) and locate the `## Manual Review Guide` section. Extract every `### Step N: {Group Name}` chunk — each chunk has `**Files:**`, `**What to look for:**`, and `**Key questions:**`.
 
 Read `{cacheDir}/processed-findings.json` into memory. Findings carry a `file` field; a finding belongs to a chunk if its `file` appears in that chunk's `**Files:**` list.
 
@@ -211,15 +211,11 @@ The Summary section should reflect the reviewer's overall assessment as shaped b
 
 ### Write Review Artifact
 
-Read `{cacheDir}/pr-context.json` and check the `cogDocsItemDir` field — mirror the write logic from `commands/review-pr.md` Step 10 exactly:
+Read `{cacheDir}/pr-context.json` for the `cogDocsItemDir` field (always set in PR mode) — mirror the write logic from `commands/review-pr.md` Step 10 exactly:
 
-**PR Mode — cogDocsItemDir non-null:**
+**PR Mode:**
 - Write `<cogDocsItemDir>/PR-{pr_id}.md`
-- Write `<cogDocsItemDir>/PR-{pr_id}-journey.md` (copy/finalize from `.claude.local/reviews/`)
-
-**PR Mode — cogDocsItemDir null:**
-- Write `.claude.local/reviews/PR-{pr_id}.md`
-- Write `.claude.local/reviews/PR-{pr_id}-journey.md`
+- Finalize `<cogDocsItemDir>/PR-{pr_id}-journey.md` (already created there in Phase 0)
 
 **Local Mode:** Write `.claude.local/reviews/LOCAL-{branch}-{timestamp}.md`
 
@@ -246,7 +242,7 @@ minor: {minor_count}
 EOF
 ```
 
-If `cogDocsItemDir` is null/absent: no-op. On write failure: WARN the reviewer and continue — never block on this write.
+Local Mode (no work item): no-op — skip the sentinel. On write failure: WARN the reviewer and continue — never block on this write.
 
 ### Cleanup and Report
 

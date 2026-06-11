@@ -40,7 +40,7 @@ The **intra-file consistency stage** (also `review-pr.md` Step 5b, a second clus
 **`review-pr-buddy`** (`commands/review-pr-buddy.md`) is an interactive front-end over the SAME pipeline: Phase 0 delegates entirely to `review-pr.md` (the single source of pipeline truth — steps are not duplicated); Phase 1 walks the journey's Manual Review Guide chunk-by-chunk, capturing per-finding verdicts to `{cacheDir}/buddy-session.json` (compaction-safe); Phase 2 emits a human-curated `PR-{id}.md` in synthesizer-v2 format. `review-pr.md` remains the main pipeline orchestration; `review-pr-buddy.md` is the buddy orchestration.
 
 ### Scripts (deterministic TypeScript, no LLM)
-- `scripts/prep-pr.ts` — Gathers PR data from GitHub API, populates `.claude/pr-cache/{id}/`
+- `scripts/prep-pr.ts` — Gathers PR data from GitHub API; resolves/creates the cog-docs item dir and populates `<cogDocsItemDir>/.pr-review/pr-cache/{id}/` (hard-fails if no cog-docs repo)
 - `scripts/post-process.ts` — EMA weights, dedup, rank, filter, lifespan annotations
 - `scripts/aggregate-findings.ts` — Combines agent outputs into unified format
 
@@ -86,9 +86,13 @@ The **intra-file consistency stage** (also `review-pr.md` Step 5b, a second clus
 
 ## Cache & Artifacts
 
-- PR cache: `.claude/pr-cache/{id}/` (relative to Cognito Forms repo)
-- Review artifacts: `.claude.local/reviews/PR-{id}.md` and `PR-{id}-journey.md`
-- PR comments export: `.claude.local/slop/pr-comments/`
+cog-docs is the sole output destination (PR mode). All artifacts land under the resolved cog-docs item dir `<cogDocsItemDir>` (= `<cog-docs>/docs/{bugs,features}/<id>-<slug>/`, created with a minimal SPEC.md if it doesn't exist):
+
+- PR cache (gitignored): `<cogDocsItemDir>/.pr-review/pr-cache/{id}/`
+- Review artifacts (committable): `<cogDocsItemDir>/PR-{id}.md`, `PR-{id}-journey.md`, `REVIEWED.md`
+- Transient lock (work repo, the only file outside cog-docs): `.claude/pr-cache/pr-review-active.json`
+- PR comments export (input, unchanged): `.claude.local/slop/pr-comments/`
+- Local mode (no work item) still uses `.claude/pr-cache/local/` + `.claude.local/reviews/`
 
 ## External Dependencies
 

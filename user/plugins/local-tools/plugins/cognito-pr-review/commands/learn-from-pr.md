@@ -56,11 +56,11 @@ Extract comments from senior reviewers. Skip:
 
 Before extracting new rules, compare the plugin's review findings against the actual reviewer comments to calibrate rule weights.
 
-**Prerequisites:** This step requires that a plugin review artifact exists at `.claude.local/reviews/PR-{PR_ID}.md`. If no review artifact exists for this PR, skip to step 3.
+**Prerequisites:** This step requires that a plugin review artifact exists at `<cog-docs>/docs/{bugs,features}/*/PR-{PR_ID}.md` (locate it by globbing the cog-docs item dirs for `PR-{PR_ID}.md`). If no review artifact exists for this PR, skip to step 3.
 
 #### 2.5.1 Load Review Artifact
 
-Read the plugin's review artifact from `.claude.local/reviews/PR-{PR_ID}.md`. Parse the review to extract all findings with their:
+Read the plugin's review artifact (the `PR-{PR_ID}.md` found under the matching cog-docs item dir). Parse the review to extract all findings with their:
 - File path and line number
 - Rule ID (for sweep/rule-based findings)
 - Finding title (for investigation findings)

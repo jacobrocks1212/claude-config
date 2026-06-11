@@ -14,7 +14,7 @@
  *   { investigation: [{ findings, escalations, group }], sweep: { findings, escalations }, manifest_path, previous_review_path? }
  *
  * Usage:
- *   npx tsx post-process.ts --input findings.json --manifest .claude/pr-cache/12345/manifest.json [--previous-review .claude.local/reviews/PR-12345.md]
+ *   npx tsx post-process.ts --input findings.json --manifest <cogDocsItemDir>/.pr-review/pr-cache/12345/manifest.json [--previous-review <cogDocsItemDir>/PR-12345.md]
  */
 
 import { readFileSync } from "fs";

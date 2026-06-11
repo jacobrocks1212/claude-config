@@ -1,6 +1,6 @@
 {
   "name": "cognito-pr-review",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Cognito Forms PR review with team-specific patterns. Hierarchical investigation-driven pipeline with deterministic TypeScript prep (GitHub API), Opus investigation agents, Sonnet sweep with 95 calibrated rules, EMA weight system, reuse-candidacy stage, and interactive pair-review via review-pr-buddy.",
   "author": {
     "name": "Jacob Madsen"

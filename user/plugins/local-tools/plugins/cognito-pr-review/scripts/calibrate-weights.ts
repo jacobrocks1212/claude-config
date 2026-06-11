@@ -16,7 +16,7 @@ import yaml from "js-yaml";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const REVIEWS_DIR = "C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude.local\\reviews";
+const COG_DOCS_ROOT = process.env.COG_DOCS_ROOT || "C:\\Users\\JacobMadsen\\source\\repos\\cog-docs";
 const WEIGHTS_PATH =
 	"C:\\Users\\JacobMadsen\\.claude\\plugins\\local-tools\\plugins\\cognito-pr-review\\knowledge\\weights.yaml";
 const DEFAULT_REPORT_PATH =
@@ -126,25 +126,48 @@ function normalizePath(filePath: string): string {
 // ── Step 1: Enumerate Review Artifacts ────────────────────────────────────────
 
 function enumerateReviewArtifacts(filterPrId: string | null): { prId: number; filePath: string }[] {
-	let files: string[];
-	try {
-		files = fs.readdirSync(REVIEWS_DIR);
-	} catch (err) {
-		process.stderr.write(`[calibrate-weights] ERROR: Cannot read reviews directory: ${err}\n`);
-		process.exit(1);
+	// Reviews live under cog-docs item dirs: <cog-docs>/docs/{features,bugs}/<item>/PR-{id}.md
+	const results: { prId: number; filePath: string }[] = [];
+	const pipelineDirs = ["features", "bugs"].map((p) => path.join(COG_DOCS_ROOT, "docs", p));
+	let scannedAny = false;
+
+	for (const base of pipelineDirs) {
+		let itemDirs: string[];
+		try {
+			itemDirs = fs.readdirSync(base);
+			scannedAny = true;
+		} catch {
+			continue; // bucket may not exist
+		}
+		for (const name of itemDirs) {
+			const itemDir = path.join(base, name);
+			try {
+				if (!fs.statSync(itemDir).isDirectory()) continue;
+			} catch {
+				continue;
+			}
+			let files: string[];
+			try {
+				files = fs.readdirSync(itemDir);
+			} catch {
+				continue;
+			}
+			for (const file of files) {
+				// Match PR-{id}.md but skip PR-{id}-journey.md
+				const match = /^PR-(\d+)\.md$/.exec(file);
+				if (!match) continue;
+
+				const prId = parseInt(match[1], 10);
+				if (filterPrId !== null && match[1] !== filterPrId) continue;
+
+				results.push({ prId, filePath: path.join(itemDir, file) });
+			}
+		}
 	}
 
-	const results: { prId: number; filePath: string }[] = [];
-
-	for (const file of files) {
-		// Match PR-{id}.md but skip PR-{id}-journey.md
-		const match = /^PR-(\d+)\.md$/.exec(file);
-		if (!match) continue;
-
-		const prId = parseInt(match[1], 10);
-		if (filterPrId !== null && match[1] !== filterPrId) continue;
-
-		results.push({ prId, filePath: path.join(REVIEWS_DIR, file) });
+	if (!scannedAny) {
+		process.stderr.write(`[calibrate-weights] ERROR: Cannot read cog-docs at ${COG_DOCS_ROOT}\n`);
+		process.exit(1);
 	}
 
 	return results;
@@ -602,7 +625,7 @@ function main(): void {
 	const artifacts = enumerateReviewArtifacts(prId);
 	if (artifacts.length === 0) {
 		process.stderr.write(
-			`[calibrate-weights] ERROR: No review artifacts found in ${REVIEWS_DIR}\n`
+			`[calibrate-weights] ERROR: No review artifacts found under ${COG_DOCS_ROOT}\\docs\\{bugs,features}\\*\\PR-*.md\n`
 		);
 		process.exit(1);
 	}

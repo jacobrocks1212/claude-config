@@ -231,11 +231,13 @@ Options:
 
 ## Cache Structure
 
-PR Mode: `.claude/pr-cache/{pr_number}/`
-Local Mode: `.claude/pr-cache/local/`
+cog-docs is the sole output destination in PR mode. The cache (gitignored via `.pr-review/`) and the human-facing review/journey both live under the resolved cog-docs item dir — `<cog-docs>/docs/{bugs,features}/<id>-<slug>/`, created with a minimal SPEC.md if absent. If no cog-docs repo is present, prep hard-fails.
+
+PR Mode cache: `<cogDocsItemDir>/.pr-review/pr-cache/{pr_number}/`
+Local Mode cache: `.claude/pr-cache/local/`
 
 ```
-.claude/pr-cache/{id}/
+<cogDocsItemDir>/.pr-review/pr-cache/{id}/
 ├── manifest.json               # PR metadata + file listing (v2 schema)
 ├── pr-context.json             # PR description, comments, thread statuses
 ├── pr-timeline.json            # Iterations, reviews, statuses, votes
@@ -252,11 +254,17 @@ Local Mode: `.claude/pr-cache/local/`
 
 ## Review Artifacts
 
+PR mode (committable, alongside the cache's `.pr-review/` sibling):
+
 ```
-.claude.local/reviews/
+<cogDocsItemDir>/                # <cog-docs>/docs/{bugs,features}/<id>-<slug>/
+├── SPEC.md                     # Minimal stub if auto-created
 ├── PR-{id}-journey.md          # Persistent journey file (lifecycle tracking)
-└── PR-{id}.md                  # Final review markdown
+├── PR-{id}.md                  # Final review markdown
+└── REVIEWED.md                 # Stage sentinel (derive_stage → reviewed)
 ```
+
+Local mode (no work item) falls back to `.claude.local/reviews/`.
 
 ## Requirements
 

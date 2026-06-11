@@ -10,7 +10,10 @@
  *   PR Mode:    npx tsx prep-pr.ts <pr_id> [--force]
  *   Local Mode: npx tsx prep-pr.ts --local [--base <branch>] [--include-untracked]
  *
- * Output: Writes to .claude/pr-cache/{pr_id|local}/ and prints manifest JSON to stdout
+ * Output (PR mode): writes all artifacts under the resolved cog-docs item dir
+ *   (<item>/.pr-review/pr-cache/{pr_id}/), creating docs/bugs/<id>-<slug>/ if none exists,
+ *   and hard-fails if no cog-docs repo is present. Local mode still uses .claude/pr-cache/local/.
+ *   Prints the manifest JSON to stdout.
  */
 
 import { execSync } from "child_process";
@@ -776,8 +779,8 @@ async function computeIterationDiff(
   return diffData;
 }
 
-function detectReReview(prId: number): ReReviewInfo {
-  const journeyPath = `.claude.local/reviews/PR-${prId}-journey.md`;
+function detectReReview(prId: number, cogDocsItemDir: string): ReReviewInfo {
+  const journeyPath = path.join(cogDocsItemDir, `PR-${prId}-journey.md`);
 
   if (!fs.existsSync(journeyPath)) {
     console.error("  No previous journey file found — initial review");
@@ -983,8 +986,138 @@ async function distillLargeFiles(
   return structuralContextFiles;
 }
 
+interface WorkItemRef { id: number; type: string; title: string; }
+
+// Parse work item IDs from PR title + description (AB#NNNNN), with a branch-name fallback (p/NNNNN-...).
+function parseWorkItems(prData: PullRequest): WorkItemRef[] {
+  const workItems: WorkItemRef[] = [];
+  const wiText = `${prData.title || ""}\n${prData.description || ""}`;
+  const seenWiIds = new Set<number>();
+  for (const match of wiText.matchAll(/AB#(\d+)/g)) {
+    const id = parseInt(match[1], 10);
+    if (seenWiIds.has(id)) continue;
+    seenWiIds.add(id);
+    workItems.push({ id, type: "Work Item", title: `AB#${match[1]}` });
+  }
+  if (workItems.length === 0) {
+    const branchName = (prData.sourceRefName || "").replace(/^refs\/heads\//, "");
+    const branchWiMatch = branchName.match(/^p\/(\d+)-/);
+    if (branchWiMatch) {
+      const wiId = parseInt(branchWiMatch[1], 10);
+      workItems.push({ id: wiId, type: "Work Item", title: `AB#${branchWiMatch[1]}` });
+    }
+  }
+  return workItems;
+}
+
+// Derive a kebab slug for a new item dir from the source branch (or PR title fallback).
+function deriveItemSlug(prData: PullRequest): string {
+  const branch = (prData.sourceRefName || "").replace(/^refs\/heads\//, "");
+  let slug = branch.replace(/^p\//, "").replace(/^\d+-/, "");
+  if (!slug) {
+    slug = (prData.title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  }
+  return slug || "review";
+}
+
+// Resolve the cog-docs item directory for this PR's work item, creating docs/bugs/<id>-<slug>/
+// (with a minimal SPEC.md) when none exists. Hard-fails if no cog-docs repo can be located, since
+// cog-docs is the sole output destination for this plugin.
+function resolveOrCreateCogDocsItemDir(prId: number, prData: PullRequest, workItems: WorkItemRef[]): { cogDocsRoot: string; cogDocsItemDir: string; created: boolean } {
+  let cogDocsRoot: string | null = null;
+  if (process.env.COG_DOCS_ROOT && fs.existsSync(process.env.COG_DOCS_ROOT)) {
+    cogDocsRoot = process.env.COG_DOCS_ROOT;
+  } else {
+    const siblingCogDocs = path.resolve(process.cwd(), "..", "cog-docs");
+    if (fs.existsSync(siblingCogDocs)) {
+      cogDocsRoot = siblingCogDocs;
+    }
+  }
+  if (!cogDocsRoot) {
+    throw new Error(
+      "cog-docs repository not found. cognito-pr-review writes all artifacts to cog-docs, so it is required. " +
+      "Check out cog-docs as a sibling directory (../cog-docs) or set COG_DOCS_ROOT."
+    );
+  }
+
+  const pipelineDirs = ["features", "bugs"].map(p => path.join(cogDocsRoot!, "docs", p));
+  let cogDocsItemDir: string | null = null;
+
+  // 1. Materialized lookup (lazy-pipeline items): wi_id -> feature_id slug
+  if (workItems.length > 0) {
+    const materializedPath = path.join(cogDocsRoot, "docs", "work", "materialized.json");
+    if (fs.existsSync(materializedPath)) {
+      try {
+        const materialized: Array<{ wi_id: number | string; feature_id: string }> = JSON.parse(fs.readFileSync(materializedPath, "utf-8"));
+        const record = materialized.find(rec => String(rec.wi_id) === String(workItems[0].id));
+        if (record && record.feature_id) {
+          for (const base of pipelineDirs) {
+            const candidate = path.join(base, record.feature_id);
+            if (fs.existsSync(candidate)) { cogDocsItemDir = candidate; break; }
+          }
+        }
+      } catch { /* ignore malformed materialized.json */ }
+    }
+  }
+
+  // 2. Id-prefix dir scan (manual items): docs/{features,bugs}/<id> or <id>-*
+  if (!cogDocsItemDir && workItems.length > 0) {
+    const wid = String(workItems[0].id);
+    outer: for (const base of pipelineDirs) {
+      if (!fs.existsSync(base)) continue;
+      for (const name of fs.readdirSync(base).sort()) {
+        const candidate = path.join(base, name);
+        if (!fs.statSync(candidate).isDirectory()) continue;
+        if (name === wid || name.startsWith(`${wid}-`)) { cogDocsItemDir = candidate; break outer; }
+      }
+    }
+  }
+
+  // 3. WIP.md branch match: an item dir whose liveness sentinel records this PR's source branch.
+  if (!cogDocsItemDir) {
+    const sourceBranch = (prData.sourceRefName || "").replace(/^refs\/heads\//, "");
+    if (sourceBranch) {
+      const branchMatches: string[] = [];
+      for (const base of pipelineDirs) {
+        if (!fs.existsSync(base)) continue;
+        for (const name of fs.readdirSync(base).sort()) {
+          const candidate = path.join(base, name);
+          const wipPath = path.join(candidate, "WIP.md");
+          if (!fs.existsSync(wipPath)) continue;
+          const branchLine = fs.readFileSync(wipPath, "utf-8").match(/^branch:\s*(.+)\s*$/m);
+          if (branchLine && branchLine[1].trim() === sourceBranch) branchMatches.push(candidate);
+        }
+      }
+      if (branchMatches.length === 1) cogDocsItemDir = branchMatches[0];
+    }
+  }
+
+  if (cogDocsItemDir) {
+    return { cogDocsRoot, cogDocsItemDir, created: false };
+  }
+
+  // 4. Nothing resolved — create a minimal bug item dir so the review has a durable home.
+  const slug = deriveItemSlug(prData);
+  const wiId = workItems.length > 0 ? workItems[0].id : null;
+  const dirName = wiId !== null ? `${wiId}-${slug}` : slug;
+  const newDir = path.join(cogDocsRoot, "docs", "bugs", dirName);
+  fs.mkdirSync(newDir, { recursive: true });
+
+  const specPath = path.join(newDir, "SPEC.md");
+  if (!fs.existsSync(specPath)) {
+    const sourceBranch = (prData.sourceRefName || "").replace(/^refs\/heads\//, "");
+    const lines = [`# ${prData.title || dirName}`, "", `**Branch:** ${sourceBranch}`, ""];
+    if (wiId !== null) lines.push(`**Work item:** AB#${wiId}`);
+    lines.push(`**PR:** #${prId}`, "");
+    lines.push("_Auto-created by cognito-pr-review as the output home for this PR's review. Replace with the real spec when one is written._", "");
+    fs.writeFileSync(specPath, lines.join("\n"));
+  }
+  console.error(`  Created cog-docs item dir: ${newDir}`);
+  return { cogDocsRoot, cogDocsItemDir: newDir, created: true };
+}
+
 // Fetch PR context (description, comments, work items) — built inline from GitHub data
-function fetchPrContext(prNumber: number, cacheDir: string, token: string, prData: PullRequest, timelineData?: TimelineData): void {
+function fetchPrContext(prNumber: number, cacheDir: string, token: string, prData: PullRequest, cogDocsItemDir: string, workItems: WorkItemRef[], timelineData?: TimelineData): void {
   console.error("Fetching PR context (description, comments, work items)...");
   const outputFile = path.join(cacheDir, "pr-context.json");
 
@@ -996,111 +1129,7 @@ function fetchPrContext(prNumber: number, cacheDir: string, token: string, prDat
       author: prData.createdBy.displayName,
     };
 
-    // Parse work item IDs from PR title + description (AB#NNNNN pattern)
-    const workItems: Array<{ id: number; type: string; title: string }> = [];
-    const wiText = `${prData.title || ""}\n${prData.description || ""}`;
-    const seenWiIds = new Set<number>();
-    const wiMatches = wiText.matchAll(/AB#(\d+)/g);
-    for (const match of wiMatches) {
-      const id = parseInt(match[1], 10);
-      if (seenWiIds.has(id)) continue;
-      seenWiIds.add(id);
-      workItems.push({ id, type: "Work Item", title: `AB#${match[1]}` });
-    }
-
-    // Branch-regex fallback: if no AB# found, try to extract WI id from branch name (p/NNNNN-...)
-    if (workItems.length === 0) {
-      const branchName = (prData.sourceRefName || "").replace(/^refs\/heads\//, "");
-      const branchWiMatch = branchName.match(/^p\/(\d+)-/);
-      if (branchWiMatch) {
-        const wiId = parseInt(branchWiMatch[1], 10);
-        workItems.push({ id: wiId, type: "Work Item", title: `AB#${branchWiMatch[1]}` });
-      }
-    }
-
-    // Resolve cog-docs item directory (null if not available or not materialized)
-    let cogDocsItemDir: string | null = null;
-    try {
-      // Determine COG_DOCS root: env var > sibling ../cog-docs > null
-      let cogDocsRoot: string | null = null;
-      if (process.env.COG_DOCS_ROOT && fs.existsSync(process.env.COG_DOCS_ROOT)) {
-        cogDocsRoot = process.env.COG_DOCS_ROOT;
-      } else {
-        const siblingCogDocs = path.resolve(process.cwd(), "..", "cog-docs");
-        if (fs.existsSync(siblingCogDocs)) {
-          cogDocsRoot = siblingCogDocs;
-        }
-      }
-
-      if (cogDocsRoot) {
-        const pipelineDirs = ["features", "bugs"].map(p => path.join(cogDocsRoot!, "docs", p));
-
-        // 1. Materialized lookup (lazy-pipeline items): wi_id -> feature_id slug
-        if (workItems.length > 0) {
-          const materializedPath = path.join(cogDocsRoot, "docs", "work", "materialized.json");
-          if (fs.existsSync(materializedPath)) {
-            const materializedRaw = fs.readFileSync(materializedPath, "utf-8");
-            const materialized: Array<{ wi_id: number | string; feature_id: string; materialized_changedDate: string }> = JSON.parse(materializedRaw);
-            const primaryWiId = workItems[0].id;
-            const record = materialized.find(rec => String(rec.wi_id) === String(primaryWiId));
-            if (record && record.feature_id) {
-              for (const base of pipelineDirs) {
-                const candidate = path.join(base, record.feature_id);
-                if (fs.existsSync(candidate)) {
-                  cogDocsItemDir = candidate;
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        // 2. Id-prefix dir scan (manual items): docs/{features,bugs}/<id> or <id>-*
-        if (!cogDocsItemDir && workItems.length > 0) {
-          const wid = String(workItems[0].id);
-          outer: for (const base of pipelineDirs) {
-            if (!fs.existsSync(base)) continue;
-            for (const name of fs.readdirSync(base).sort()) {
-              const candidate = path.join(base, name);
-              if (!fs.statSync(candidate).isDirectory()) continue;
-              if (name === wid || name.startsWith(`${wid}-`)) {
-                cogDocsItemDir = candidate;
-                break outer;
-              }
-            }
-          }
-        }
-
-        // 3. WIP.md branch match: an item dir whose liveness sentinel records
-        //    this PR's source branch (unique match only).
-        if (!cogDocsItemDir) {
-          const sourceBranch = (prData.sourceRefName || "").replace(/^refs\/heads\//, "");
-          if (sourceBranch) {
-            const branchMatches: string[] = [];
-            for (const base of pipelineDirs) {
-              if (!fs.existsSync(base)) continue;
-              for (const name of fs.readdirSync(base).sort()) {
-                const candidate = path.join(base, name);
-                const wipPath = path.join(candidate, "WIP.md");
-                if (!fs.existsSync(wipPath)) continue;
-                const wipRaw = fs.readFileSync(wipPath, "utf-8");
-                const branchLine = wipRaw.match(/^branch:\s*(.+)\s*$/m);
-                if (branchLine && branchLine[1].trim() === sourceBranch) {
-                  branchMatches.push(candidate);
-                }
-              }
-            }
-            if (branchMatches.length === 1) {
-              cogDocsItemDir = branchMatches[0];
-            }
-          }
-        }
-      }
-    } catch (cogDocsErr) {
-      // Non-fatal: degrade to null
-      console.error(`  Warning: Failed to resolve cog-docs item dir: ${cogDocsErr}`);
-      cogDocsItemDir = null;
-    }
+    // Work items and the cog-docs destination were resolved by the caller and passed in.
 
     // Build the context object matching the expected format
     const context: any = {
@@ -1458,8 +1487,13 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
   const iterationId = latestIteration?.id;
   console.error(`Latest iteration: ${iterationId}`);
 
-  // Check for existing manifest
-  const cacheDir = `.claude/pr-cache/${prId}`;
+  // Resolve (or create) the cog-docs item dir — the sole output home for this review.
+  const workItems = parseWorkItems(pr);
+  const { cogDocsItemDir, created: cogDocsCreated } = resolveOrCreateCogDocsItemDir(prId, pr, workItems);
+  console.error(`Cog-docs item dir: ${cogDocsItemDir}${cogDocsCreated ? " (created)" : ""}`);
+
+  // Check for existing manifest. All artifacts (cache, review, journey) live under the item dir.
+  const cacheDir = path.join(cogDocsItemDir, ".pr-review", "pr-cache", String(prId));
   const manifestPath = path.join(cacheDir, "manifest.json");
   let existingManifest: Manifest | null = null;
 
@@ -1529,10 +1563,10 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
   const timelineData = await fetchTimeline(prId, token, cacheDir, pr.createdBy.displayName);
 
   // Fetch PR context with thread status enrichment
-  fetchPrContext(prId, cacheDir, token, pr, timelineData);
+  fetchPrContext(prId, cacheDir, token, pr, cogDocsItemDir, workItems, timelineData);
 
   // Detect re-review
-  const reReviewInfo = detectReReview(prId);
+  const reReviewInfo = detectReReview(prId, cogDocsItemDir);
 
   // Compute iteration diff if re-review and we have iteration info
   let iterationDiffData: IterationDiffData | null = null;

@@ -17,7 +17,7 @@ One-time bulk calibration that analyzes historical PR reviews against actual hum
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 1: Enumerate Review Artifacts                             │
-│  - Scan .claude.local/reviews/PR-*.md for historical reviews    │
+│  - Scan cog-docs/docs/{bugs,features}/*/PR-*.md for reviews     │
 │  - Extract PR IDs from filenames                                │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -70,13 +70,13 @@ Before starting, parse `$ARGUMENTS`:
 
 ### Step 1: Enumerate Review Artifacts
 
-Scan the reviews directory for historical plugin review artifacts:
+Scan the cog-docs item dirs for historical plugin review artifacts (one `PR-{id}.md` per item dir):
 
 ```bash
-ls "C:\Users\JacobMadsen\source\repos\Cognito Forms\.claude.local\reviews\PR-*.md"
+ls "C:\Users\JacobMadsen\source\repos\cog-docs\docs\bugs\*\PR-*.md" "C:\Users\JacobMadsen\source\repos\cog-docs\docs\features\*\PR-*.md"
 ```
 
-Extract PR IDs from filenames (pattern: `PR-{id}.md`).
+Extract PR IDs from filenames (pattern: `PR-{id}.md`; skip `PR-{id}-journey.md`).
 
 If `--pr PR_ID` was specified, restrict to that single PR ID. Verify it has a corresponding review artifact; abort with a clear error if not.
 
@@ -293,6 +293,6 @@ Dry run complete — no weights updated.
 - The Haiku semantic judge is essential — proximity filtering alone would produce too many false matches in large files with many comments on nearby lines.
 - Rules without a `rule_id` in the plugin finding cannot be individually calibrated; they contribute to FN counts only.
 - Weights file path: `~/.claude/plugins/local-tools/plugins/cognito-pr-review/knowledge/weights.yaml`
-- Review artifacts path: `.claude.local/reviews/PR-*.md` (relative to `C:\Users\JacobMadsen\source\repos\Cognito Forms`)
+- Review artifacts path: `cog-docs/docs/{bugs,features}/*/PR-*.md` (under `C:\Users\JacobMadsen\source\repos\cog-docs`)
 - PR comments path: `.claude.local/slop/pr-comments/` (relative to `C:\Users\JacobMadsen\source\repos\Cognito Forms`)
 - `get-pr-comments.ps1` lives at the Cognito Forms repo root; always `cd` into the repo before running it
