@@ -180,9 +180,9 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
    c. **Record, then continue (batch) or stop (single-dispatch).**
       - **Batch orchestrators (`/lazy-batch`, `/lazy-bug-batch`):** append to
         `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, "▶ {terminal_reason} (resolved: <path>)",
-        "<subagent summary>"}`; emit the canonical per-cycle update block
-        (`### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles+1}/{2*max_cycles} · {feature_name} · {terminal_reason}`,
-        `**Result:**` = "<path> enacted — <first line of summary>"); update
+        "<subagent summary>"}`; emit the canonical per-cycle block per orchestrator-voice.md
+        (heading `### Resolve — {terminal_reason} on {feature_name} [meta {meta_cycles+1}/{2*max_cycles}]`,
+        `done` line = "<path> enacted — <first line of summary>"); update
         `prev_cycle_signature = (feature_id, "__resolve_halt__", sub_skill_args,
         current_step)`; increment `meta_cycles`; **return to Step 1a** (DO NOT halt, DO NOT
         print the final batch report — except the Halt path in step 3).

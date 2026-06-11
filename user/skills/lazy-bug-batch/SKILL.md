@@ -412,7 +412,7 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 1e for the full post-cycle proce
 bindings:
 
 - `cycle_log` entry uses `bug_name` instead of `feature_name`.
-- Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}`; the `disp` line carries `{sub_skill} → {bug_id}`.
+- Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### {Step name} — {work summary} [{n}/{max}]` (forward: `[{forward_cycles+1}/{max_cycles}]`; meta: `[meta {meta_cycles}/{2*max_cycles}]`); the `disp` line carries `{sub_skill} → {bug_id}`.
 - **Post-`/execute-plan` and `/mcp-test` ledger-consistency guard (guardrail D):** see
   `~/.claude/skills/lazy-batch/SKILL.md` Step 1e item 4a for the full guard algorithm. Runs
   identically for the bug pipeline:
@@ -575,11 +575,10 @@ STOP.
 
 Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 3 with bug-pipeline token substitutions:
 per-cycle chat output is the T2 dispatch block + T3 return block (or T4 for inline pseudo-skills)
-from `~/.claude/skills/_components/orchestrator-voice.md`, under the canonical split-counter
-heading:
+from `~/.claude/skills/_components/orchestrator-voice.md`, under the canonical step heading:
 
 ```
-### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}
+### {Step name} — {work summary, ≤12 words} [{n}/{max}]
 disp   {sub_skill} → {bug_id} ({model}[, loop-resolution|recovery])
 done   {duration} · {load-bearing outcome} · {short-sha | —}
 audit  {…}        ← only where required (see below)
@@ -587,8 +586,11 @@ ledger {clean · pushed | …}
 next   {fresh probe routing | terminal: <reason>}
 ```
 
-For a forward cycle, `forward_cycles` in the heading is the post-increment value. For a meta
-cycle, `meta_cycles` is the post-increment value. All contract rules are inherited verbatim from
+The heading leads with the pipeline step being advanced to (bug-pipeline names: Investigate /
+Plan / Implement / Retro / Validate / Mark Fixed), then a ≤12-word summary of this cycle's
+work, then the counter — `[{forward_cycles}/{max_cycles}]` for forward cycles (post-increment),
+`[meta {meta_cycles}/{2*max_cycles}]` for meta cycles. The retired `### Cycle fwd N/M · meta
+K/L` heading must not reappear. All contract rules are inherited verbatim from
 `/lazy-batch` Step 3 (mechanics silent; deviations are T6; halt/resolution briefings are T6 rich
 zones; final report is T7; the retired `**Result:**`/`**Commit:**` bullets, `· {bug_name} ·
 {sub_skill}` heading suffix, and any multi-line cycle summary must NOT reappear). Bug-pipeline

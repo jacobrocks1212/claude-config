@@ -328,7 +328,7 @@ After the inline action:
 
 1. Append to `cycle_log`: `{forward_cycles + meta_cycles, feature_name, sub_skill, "inline: <one-line summary>"}` (use the UPDATED total after the increment in step 5 below, i.e. the N-th total action completed this invocation).
 2. **Push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** The inline pseudo-skill committed a sentinel / plan-frontmatter change locally; push it now — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This backstops inline cycles the orchestrator owns directly — a `git push` of an already-committed change, NOT a Write/Edit, so HARD CONSTRAINT 1 still holds. "Up to date" is a fine result (a prior cycle's push already carried it).
-3. Emit the T4 inline pseudo-skill block (Step 3 / orchestrator-voice.md): the canonical split-counter heading, an `act` line (`{sub_skill} → {feature_id}`), a `gates` line when gates ran (`__mark_complete__`), a `done` line (inline outcome + the sentinel/plan commit short-sha), and a `next` line. Nothing else. A gate REFUSAL switches to T6-refusal (rich) — the refusal evidence and the NEEDS_INPUT routing deserve full detail.
+3. Emit the T4 inline pseudo-skill block (Step 3 / orchestrator-voice.md): the canonical step heading (`### {Step name} — {work summary} [x/y]`), an `act` line (`{sub_skill} → {feature_id}`), a `gates` line when gates ran (`__mark_complete__`), a `done` line (inline outcome + the sentinel/plan commit short-sha), and a `next` line. Nothing else. A gate REFUSAL switches to T6-refusal (rich) — the refusal evidence and the NEEDS_INPUT routing deserve full detail.
 4. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` (same uniform post-cycle update as Step 1e — keeps loop-guard accurate across mixed pseudo-skill / real-skill cycles).
 5. Increment the appropriate counter: `forward_cycles` for pipeline-advancing pseudo-skills (`__mark_complete__`, `__mark_fixed__`, `__write_deferred_non_cloud__` (cloud variant only — workstation `lazy-state.py` never emits this), `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`); `meta_cycles` for cleanup pseudo-skills (`__flip_plan_complete_stale__`). Return to Step 1a — DO NOT fall through to Step 1d.
 
@@ -391,7 +391,7 @@ If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, n
 
 **Read `~/.claude/skills/_components/lazy-batch-prompts/loop-block.md` now** and append its verbatim fenced block AFTER the final paragraph of the cycle dispatch prompt, binding {feature_id}, {sub_skill}, {sub_skill_args}, {current_step}, {spec_path}. Append when and ONLY when the loop-guard condition holds (prev_cycle_signature == current signature). Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle. The loop-guard evaluation itself is silent — never announce "no loop-guard fires" (orchestrator-voice.md hard ban); the only visible trace of a fired guard is the `(sonnet, loop-resolution)` tag on the T2 `disp` line.
 
-**Emit the T2 cycle-dispatch block (Step 3 / orchestrator-voice.md) immediately before the Agent call:** the canonical split-counter heading + the `disp` line (`{sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])`). Nothing else between the block and the dispatch.
+**Emit the T2 cycle-dispatch block (Step 3 / orchestrator-voice.md) immediately before the Agent call:** the canonical step heading (`### {Step name} — {work summary, ≤12 words} [x/y]`) + the `disp` line (`{sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])`). Nothing else between the block and the dispatch.
 
 Dispatch:
 
@@ -709,10 +709,10 @@ STOP.
 
 ## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)
 
-Per-cycle chat output follows the turn templates in `~/.claude/skills/_components/orchestrator-voice.md` — re-read it after any compaction boundary. Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), decision-resume (Step 1g), blocked-resolution (Step 1h), or halt-resolution (Step 1i) — emits exactly its template blocks under the canonical split-counter heading, and nothing else:
+Per-cycle chat output follows the turn templates in `~/.claude/skills/_components/orchestrator-voice.md` — re-read it after any compaction boundary. Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), decision-resume (Step 1g), blocked-resolution (Step 1h), or halt-resolution (Step 1i) — emits exactly its template blocks under the canonical step heading, and nothing else:
 
 ```
-### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}
+### {Step name} — {work summary, ≤12 words} [{n}/{max}]                   ← T2 heading
 disp   {sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])   ← T2, at dispatch
 done   {duration} · {load-bearing outcome} · {short-sha | —}              ← T3, at return
 audit  {…}                                                                ← only where Steps 1e / 1d.5 require it
@@ -720,7 +720,7 @@ ledger {clean · pushed | …}                                               ←
 next   {fresh probe routing | terminal: <reason>}
 ```
 
-Inline pseudo-skill cycles emit T4 (`act` / `gates` / `done` / `next`) instead of T2+T3. For a forward cycle (real-skill or pipeline-advancing pseudo-skill), `forward_cycles` in the heading is the post-increment value; for a meta cycle (decision-resume 1g, blocked-resolution 1h, halt-resolution 1i, or stale-plan flip), `meta_cycles` is. The retired formats — the `· {feature_name} · {sub_skill}` heading suffix (those fields live on the `disp`/`act` line now), the `**Result:**`/`**Commit:**` bullet block, and any 3–5-line cycle summary — must NOT reappear; the contract's Precedence clause governs.
+The heading leads with the **pipeline step being advanced to** (T2's canonical names: Spec / Investigate / Plan / Implement / Retro / Validate / Realign / Research / Mark Complete / Mark Fixed), then a **≤12-word summary of the work this cycle is about to do** (specific to the item, not a restatement of the step name), then the **counter**: `[{forward_cycles}/{max_cycles}]` for forward cycles (post-increment), `[meta {meta_cycles}/{2*max_cycles}]` for meta cycles (decision-resume 1g, blocked-resolution 1h, halt-resolution 1i, stale-plan flip). Both counters are still tracked and both appear in the T7 final report. Inline pseudo-skill cycles emit T4 (`act` / `gates` / `done` / `next`) instead of T2+T3, under the same heading shape. The retired formats — the `### Cycle fwd N/M · meta K/L` heading, the `· {feature_name} · {sub_skill}` heading suffix, the `**Result:**`/`**Commit:**` bullet block, and any 3–5-line cycle summary — must NOT reappear; the contract's Precedence clause governs.
 
 **Rules (all follow from the contract's "mechanics are silent" principle):**
 

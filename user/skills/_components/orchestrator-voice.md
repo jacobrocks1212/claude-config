@@ -20,7 +20,7 @@ it and is pure noise on a phone.
 of the templates. Operational test — sanctioned output starts with exactly one of:
 
 - `## ` (T1 run-start / T7 final report headings)
-- `### Cycle ` (T2/T4 block heading)
+- `### ` (T2/T4 cycle-block heading: `### {Step name} — {work summary} [x/y]`)
 - a template field line: `mode `, `budget `, `queue `, `disp `, `done `, `audit `, `ledger `,
   `next `, `act `, `gates `
 - `⏸` (T5 park) · `⚖` (D7 policy line) · `⚠` (T6 deviation)
@@ -63,6 +63,12 @@ the next visible thing after the silent mechanics is the template block itself.
   Reading the dispatch template…" — the T2 block carries ALL of this.
 - "Composing the dispatch. This is an execute-plan cycle (not mcp-test…). First cycle, no
   loop-guard. Model: opus." — every fact here is either silent mechanics or a `disp` field.
+- "Cycle returned: plan Complete / PHASES In-progress… Running the post-execute-plan
+  ledger-consistency guard:" — the T3 `done`/`ledger` lines carry this; run the guard silently.
+- "Ledger clean. Emitting the cycle return block." — never announce a template; just emit it.
+- "forward_cycles = 1. Next probe:" — counter bookkeeping is silent; it shows in the heading.
+- "Retro phase next — retro-feature for the same bug. No loop (step advanced). Dispatching."
+  — that is the T3 `next` line + the next T2 heading, nothing more.
 
 ## Turn templates
 
@@ -80,13 +86,27 @@ queue  4 bugs · first: track-path-filestream-source-silent
 ### T2 — Cycle dispatch (every forward or meta cycle)
 
 ```
-### Cycle fwd 2/6 · meta 0/12
+### Plan — author PHASES + implementation plan for the silent FileStream source [2/6]
 disp   plan-bug → track-path-filestream-source-silent (opus)
 ```
 
-Heading is the canonical D3 split-counter header. `disp` carries sub-skill, target, model, and
-— only when applicable — a trailing tag: `(sonnet, loop-resolution)` / `(opus, recovery)`.
-Nothing else before the Agent call.
+Heading format: `### {Step name} — {work summary, ≤12 words} [{n}/{max}]`.
+
+- **Step name** — the human-readable pipeline step being advanced to. Canonical names:
+  `Spec` (spec) · `Investigate` (spec-bug) · `Plan` (plan-feature / plan-bug / spec-phases /
+  write-plan) · `Implement` (execute-plan) · `Retro` (retro / retro-feature) ·
+  `Validate` (mcp-test) · `Realign` (realign-spec) · `Research` (ingest-research) ·
+  `Mark Complete` / `Mark Fixed` (the terminal pseudo-skills). Derive an equally plain name
+  for anything new.
+- **Work summary** — one clause saying what THIS cycle is about to do, specific to the item
+  ("implement plan part 2 of 3", "real-device validation of the resize scenario"), not a
+  restatement of the step name.
+- **Counter** — forward cycles: `[2/6]`. Meta cycles: `[meta 1/12]`. Both counters are still
+  tracked per D3 and both appear in the T7 final report; the heading shows only the counter
+  this cycle consumes.
+
+`disp` carries sub-skill, target, model, and — only when applicable — a trailing tag:
+`(sonnet, loop-resolution)` / `(opus, recovery)`. Nothing else before the Agent call.
 
 ### T3 — Cycle return (when the subagent's result is processed)
 
@@ -106,12 +126,14 @@ deviation). `next` is the fresh probe's routing (or `terminal: <reason>`).
 ### T4 — Inline pseudo-skill / completion gates
 
 ```
-### Cycle fwd 5/6 · meta 1/12
+### Mark Fixed — gate + archive the e2e bridge bug [5/6]
 act    __mark_fixed__ → e2e-no-tauri-event-bridge
 gates  G1 pass (4/4 covered) · G2 pass
 done   FIXED.md (gated) · archived · 16 refs repointed · a1b2c3d
 next   probe
 ```
+
+Same heading format as T2 (step name — work summary — counter).
 
 A gate REFUSAL switches to T6-refusal (rich) — the refusal evidence and the NEEDS_INPUT routing
 deserve full detail.
