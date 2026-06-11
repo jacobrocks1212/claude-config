@@ -236,12 +236,21 @@ Launch a Sonnet subagent with:
 - The PHASES.md output format below
 - Instruction to write the file at the resolved path
 
+**MCP-runtime assessment (REQUIRED header line):** while decomposing, assess whether validating this work will need the live dev runtime (Tauri + MCP HTTP server) and record it as a header line directly under the `> Phases for` quote:
+
+- `**MCP runtime:** required` — the default. Any deliverable with an MCP-reachable surface (app behavior, stores, audio through `load_test_tone`/`get_audio_buffer`, UI state, events).
+- `**MCP runtime:** not-required — {reason citing the untestable class per docs/features/mcp-testing/SPEC.md}` — ONLY when the entire deliverable is structurally outside MCP reach (e.g. a standalone crate with no app integration, build tooling, docs-only). Cross-check the mcp-testing SPEC before claiming this; "Audio IS MCP-testable", so audio features are virtually never `not-required`.
+
+This line is **routing, not a waiver**: the batch orchestrators use it to skip the ~3–7.5 min dev-runtime pre-boot before an `/mcp-test` cycle (lazy-batch Step 1d.0 step 0). The mcp-test cycle still owns the actual skip decision — a wrong `not-required` costs one recovery dispatch, not correctness.
+
 **PHASES.md Output Format:**
 
 ```markdown
 # Implementation Phases — {Feature Name}
 
 > Phases for [`SPEC.md`](./SPEC.md)
+
+**MCP runtime:** {required | not-required — reason citing the mcp-testing SPEC class}
 
 ## Cross-feature Integration Notes
 

@@ -88,6 +88,7 @@ from lazy_core import (
     _VERIFICATION_SECTION_RE,
     write_completed_receipt,
     has_completion_receipt,
+    skip_waiver_refusal,
     spec_status,
 )
 
@@ -1676,21 +1677,20 @@ def compute_state(
             )
         # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
-            # Provenance gate: a pipeline-self-granted skip must NOT vacuously
+            # Provenance gate (skip_waiver_refusal): a pipeline-self-granted
+            # skip, a pipeline-authored skip with NO granted_by field, or an
+            # mcp-test grant missing its spec_class citation must NOT vacuously
             # validate — the pipeline cannot waive its own MCP requirement.
-            # Only operator-granted (or legacy absent) granted_by values are
-            # accepted as a legitimate skip waiver.
-            _skip_meta = parse_sentinel(skip_mcp_file) or {}
-            if _skip_meta.get("granted_by") == "pipeline":
+            # Accepted: operator grants, legacy no-provenance files, and
+            # mcp-test grants carrying a spec_class citation.
+            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+            if _skip_refusal:
                 return _state(
                     **common,
                     current_step="Step 9: pipeline-granted skip needs operator confirmation",
                     terminal_reason="needs-input",
                     notify_message=(
-                        f"{feature_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
-                        "(self-granted) — a pipeline-granted MCP skip needs operator "
-                        "confirmation before it can vacuously validate. Reconcile via "
-                        "NEEDS_INPUT or update granted_by to 'operator'."
+                        f"{feature_name}: SKIP_MCP_TEST.md {_skip_refusal}"
                     ),
                 )
             return _state(
@@ -1703,21 +1703,19 @@ def compute_state(
         # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
-                # Provenance gate: a pipeline-self-granted skip must NOT vacuously
-                # validate — the pipeline cannot waive its own MCP requirement.
-                # Only operator-granted (or legacy absent) granted_by values are
-                # accepted as a legitimate skip waiver.
-                _skip_meta = parse_sentinel(skip_mcp_file) or {}
-                if _skip_meta.get("granted_by") == "pipeline":
+                # Provenance gate (skip_waiver_refusal): a pipeline-self-granted
+                # skip, a pipeline-authored skip with NO granted_by field, or an
+                # mcp-test grant missing its spec_class citation must NOT
+                # vacuously validate. Accepted: operator grants, legacy
+                # no-provenance files, mcp-test grants with a spec_class citation.
+                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+                if _skip_refusal:
                     return _state(
                         **common,
                         current_step="Step 9: pipeline-granted skip needs operator confirmation",
                         terminal_reason="needs-input",
                         notify_message=(
-                            f"{feature_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
-                            "(self-granted) — a pipeline-granted MCP skip needs operator "
-                            "confirmation before it can vacuously validate. Reconcile via "
-                            "NEEDS_INPUT or update granted_by to 'operator'."
+                            f"{feature_name}: SKIP_MCP_TEST.md {_skip_refusal}"
                         ),
                     )
                 return _state(
@@ -2836,6 +2834,115 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # NO VALIDATED.md — not yet validated.
         # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
 
+    elif name == "skip-mcp-test-granted-with-class-validates":
+        # Provenance positive: granted_by: mcp-test + a spec_class citation is a
+        # verified structural assessment by the validation step itself —
+        # accepted as a waiver → __write_validated_from_skip__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-smtc", "name": "Feature SMTC",
+                 "spec_dir": "feat-smtc", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        smtc = features / "feat-smtc"
+        smtc.mkdir()
+        (smtc / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (smtc / "RESEARCH.md").write_text("# R\n")
+        (smtc / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (smtc / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            smtc / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-smtc", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-smtc.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            smtc / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-smtc",
+            reason="standalone crate — no MCP-reachable surface",
+            alternative_validation="covered by cargo tests",
+            date="2026-06-10", skipped_by="lazy",
+            granted_by="mcp-test",
+            spec_class="no app integration — covered by cargo tests",
+        )
+        # NO VALIDATED.md — not yet validated.
+
+    elif name == "skip-mcp-test-granted-missing-class-refuses":
+        # Provenance gate: granted_by: mcp-test WITHOUT a spec_class citation is
+        # an unverified claim — refused (needs-input), not validated. The
+        # citation is what distinguishes a verified structural assessment from
+        # a convenience skip.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-smtn", "name": "Feature SMTN",
+                 "spec_dir": "feat-smtn", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        smtn = features / "feat-smtn"
+        smtn.mkdir()
+        (smtn / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (smtn / "RESEARCH.md").write_text("# R\n")
+        (smtn / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (smtn / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            smtn / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-smtn", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-smtn.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            smtn / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-smtn",
+            reason="claims untestable but cites no class",
+            alternative_validation="none",
+            date="2026-06-10", skipped_by="lazy",
+            granted_by="mcp-test",
+        )
+        # NO VALIDATED.md — not yet validated.
+
+    elif name == "skip-pipeline-authored-no-grant-refuses":
+        # Provenance omission gate: a skip whose skipped_by identifies a
+        # pipeline author ("lazy") but which carries NO granted_by at all used
+        # to sail through as legacy-operator — the omission side-door (observed
+        # 2026-06-10: an mcp-test cycle wrote a skip without the field and it
+        # auto-validated with no operator confirmation). Must now refuse.
+        # Files with NEITHER provenance field stay grandfathered.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spa", "name": "Feature SPA",
+                 "spec_dir": "feat-spa", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        spa = features / "feat-spa"
+        spa.mkdir()
+        (spa / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (spa / "RESEARCH.md").write_text("# R\n")
+        (spa / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (spa / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            spa / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-spa", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-spa.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            spa / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-spa",
+            reason="pipeline-written skip with no provenance field",
+            alternative_validation="none",
+            date="2026-06-10", skipped_by="lazy",
+        )
+        # NO VALIDATED.md — not yet validated.
+
     elif name == "roadmap-substring-collision-no-false-halt":
         # Fixture A — substring-collision bug in roadmap_marks_complete.
         # completion_claimed() passes the queue entry's `name` (not id) to
@@ -3445,6 +3552,27 @@ def run_smoke_tests() -> int:
                 "sub_skill": "__write_validated_from_skip__",
                 "feature_id": "feat-sog",
                 "current_step": "Step 9: skip-mcp-test → validated",
+            }),
+            # Provenance positive: granted_by: mcp-test WITH a spec_class
+            # citation is a verified structural assessment by the validation
+            # step itself — accepted → __write_validated_from_skip__.
+            ("skip-mcp-test-granted-with-class-validates", False, False, {
+                "sub_skill": "__write_validated_from_skip__",
+                "feature_id": "feat-smtc",
+                "current_step": "Step 9: skip-mcp-test → validated",
+            }),
+            # Provenance gate: granted_by: mcp-test WITHOUT spec_class is an
+            # unverified claim — refuse (needs-input), never vacuous-validate.
+            ("skip-mcp-test-granted-missing-class-refuses", False, False, {
+                "terminal_reason": "needs-input",
+                "feature_id": "feat-smtn",
+            }),
+            # Provenance omission gate: pipeline-authored skip (skipped_by:
+            # lazy) with NO granted_by must refuse — closes the side-door where
+            # omitting the field bypassed the WU-5 provenance gate entirely.
+            ("skip-pipeline-authored-no-grant-refuses", False, False, {
+                "terminal_reason": "needs-input",
+                "feature_id": "feat-spa",
             }),
             # Fixture A — roadmap_marks_complete substring collision.
             # Feature name "Audio" is a strict substring of the completed ROADMAP

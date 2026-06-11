@@ -5,7 +5,12 @@
      {sub_skill}, {sub_skill_args} before dispatch.
      Append the LOOP DETECTED block (loop-block.md) AFTER the final paragraph
      when the loop-guard fires (prev_cycle_signature == current signature).
-     Do NOT include the loop block on the first cycle or when signatures differ. -->
+     Do NOT include the loop block on the first cycle or when signatures differ.
+     mcp-test RUNTIME VARIANT: when PHASES.md declares `**MCP runtime:**
+     not-required` (Step 1d.0 step 0), REPLACE the "RUNTIME IS ALREADY UP"
+     paragraph inside the /mcp-test override with the "RUNTIME NOT PRE-BOOTED"
+     block at the BOTTOM of this file (bind {untestability_reason} from the
+     PHASES.md line). All other /mcp-test override paragraphs stay. -->
 
 ```
 You are advancing one cycle of the autonomous feature pipeline.
@@ -151,6 +156,15 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       mcp-testing SPEC) OR a `BLOCKED.md` naming a CONCRETE blocker. Returning
       with no sentinel and no result is a contract violation that wastes the
       whole cycle — do not do it.
+      SKIP PROVENANCE (HARD): any SKIP_MCP_TEST.md you write MUST carry
+      `granted_by: mcp-test` AND `spec_class: <the untestable class you
+      verified against docs/features/mcp-testing/SPEC.md>` in its frontmatter
+      (schema: sentinel-frontmatter.md). The state scripts REFUSE a
+      pipeline-written skip that omits granted_by or omits the spec_class
+      citation — it halts the queue for operator confirmation instead of
+      validating. Cross-check the mcp-testing SPEC before claiming a class;
+      "Audio IS MCP-testable" (load_test_tone + get_audio_buffer), so audio
+      untestability claims are usually wrong.
     • retro-feature — composed orchestrator; same override — perform all
       internal work inline rather than dispatching nested sub-subagents.
     • plan-feature — composed orchestrator; runs /spec-phases THEN /write-plan
@@ -258,4 +272,61 @@ After the skill returns:
      calls) — this is the inline-override audit signal, and note for each batch
      that you wrote the failing tests before implementing (test-first
      discipline).
+
+TURN-END CONTRACT (HARD — applies to EVERY cycle, not just /mcp-test; read
+this LAST because it is checked LAST):
+  Your background processes DIE when your turn ends — they do NOT keep running
+  (recurring incident: a cycle ended its turn "waiting" on a backgrounded
+  test/build job; the job's process tree was torn down, Phase work was left
+  uncommitted, and the orchestrator burned a recovery cycle).
+  1. NEVER end your turn while a process you started is still running. If a
+     long gate/test/build was auto-backgrounded by the harness, you MUST block
+     on it before returning: wait for its completion notification, or poll its
+     output in a bounded foreground loop — your turn is not over until the job
+     is.
+  2. Long jobs MUST be launched as ONE chained command that carries its own
+     commit: `<gate/test> && git add -A && git commit -m "..." && git push` —
+     so even an interrupted turn leaves committed, pushed state instead of a
+     half-flipped ledger.
+  3. Pre-return checklist, in order, EVERY cycle: (a) no background job of
+     yours still running; (b) `git status --short` is EMPTY (commit or revert
+     anything left); (c) the branch is pushed; (d) the result sentinel or
+     plan/PHASES flip your skill owes is ON DISK. Only then report and return.
+  A return that fails any of these is a resultless return — the contract
+  violation, not an acceptable partial.
+```
+
+## mcp-test runtime variant — RUNTIME NOT PRE-BOOTED
+
+<!-- Swap-in block for /mcp-test cycles where the feature's PHASES.md declares
+     `**MCP runtime:** not-required` (lazy-batch Step 1d.0 step 0 — the
+     orchestrator skipped the dev-runtime pre-boot). This block REPLACES the
+     "RUNTIME IS ALREADY UP (orchestrator-managed)" paragraph of the /mcp-test
+     per-skill override above; every other override paragraph (validated_commit,
+     INLINE-FIX POLICY, NO FIRE-AND-FORGET, SKIP PROVENANCE) still applies.
+     Bind {untestability_reason} = the reason text after the dash on the
+     PHASES.md `**MCP runtime:**` line. -->
+
+```
+      RUNTIME NOT PRE-BOOTED (plan asserts structural MCP-untestability): this
+      feature's PHASES.md declares `**MCP runtime:** not-required` —
+      {untestability_reason}. The orchestrator therefore did NOT boot the dev
+      runtime; no MCP HTTP server is running. The plan's declaration is
+      ROUTING, not a waiver — YOU still own the skip decision. Your FIRST
+      action: verify the assessment against docs/features/mcp-testing/SPEC.md
+      (the genuinely untestable classes are the "What We Cannot Prove"
+      observation gaps and the raw-PCM-injection-into-the-Rust-callback path;
+      "Audio IS MCP-testable" via load_test_tone + get_audio_buffer, so audio
+      untestability claims are usually WRONG).
+        - If you CONCUR (no MCP-reachable surface exists for this deliverable):
+          write SKIP_MCP_TEST.md per sentinel-frontmatter.md with
+          `granted_by: mcp-test` AND `spec_class: <the class you verified>`,
+          a scoped reason, and `alternative_validation` citing the non-MCP
+          evidence (e.g. the cargo/vitest suites that certify the fix). Commit
+          + push. Do NOT attempt any MCP HTTP call and do NOT boot the runtime.
+        - If you DISAGREE (ANY MCP-testable surface exists): do NOT boot the
+          runtime yourself (your background processes die at turn end) and do
+          NOT write any sentinel. Return the single line NEEDS_RUNTIME as your
+          ENTIRE report — the orchestrator will boot the runtime in its own
+          session and re-dispatch you against a live server.
 ```

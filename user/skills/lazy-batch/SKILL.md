@@ -350,6 +350,17 @@ If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, n
 
 **Procedure (orchestrator session, all `Bash` — NOT file edits):**
 
+0. **Plan-declared structural untestability — skip the boot entirely (routing only, NOT a waiver).** Check the feature's PHASES.md for an `**MCP runtime:**` header line (authored by `/spec-phases` at decomposition time):
+
+   ```bash
+   grep -m1 '^\*\*MCP runtime:\*\*' "{spec_path}/PHASES.md"
+   ```
+
+   - Line says `not-required` → **skip steps 1–3 entirely** (no probe, no `dev:restart`, no readiness block — the ~3–7.5 min boot is pure waste when the deliverable has no MCP surface). In step 4, REPLACE the "RUNTIME IS ALREADY UP" prompt paragraph with the **"RUNTIME NOT PRE-BOOTED"** block at the bottom of `~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`, binding `{untestability_reason}` from the PHASES.md line. The skip AUTHORITY stays with the mcp-test cycle (it verifies the plan's claim against `docs/features/mcp-testing/SPEC.md` and writes the `granted_by: mcp-test` + `spec_class` sentinel only if it concurs) — the plan field is routing, never a grant.
+   - Line absent or `required` → proceed with steps 1–3 as written.
+
+   **NEEDS_RUNTIME recovery:** if a no-runtime mcp-test cycle returns the single line `NEEDS_RUNTIME` (it found an MCP-testable surface the plan missed), run steps 1–3 NOW and re-dispatch the same cycle with the standard "RUNTIME IS ALREADY UP" block. The failed attempt + re-dispatch together consume ONE forward cycle (increment once, after the re-dispatched cycle returns); tag the re-dispatch `disp` line `(opus, recovery)`. A disagreement costs one extra dispatch round-trip — never correctness.
+
 1. **Probe whether the dev runtime + MCP HTTP server are already up.** Per the AlgoBooth canonical reference (`docs/development/CLAUDE.md`, referenced from the root CLAUDE.md), the MCP HTTP server listens on **TCP 3333** and `GET http://localhost:3333/health` returns 200 when ready:
 
    ```bash
@@ -379,7 +390,7 @@ If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, n
 
    (`tauri dev` takes ~3–5 min to compile + boot; 90 × 5s ≈ 7.5 min ceiling.) Health-200 is the readiness signal AlgoBooth's reference defines. Do NOT cache or reuse any `logs/session-{ts}/` path here — re-resolve the session dir from the live server if you ever need it (HARD REQUIREMENT in `docs/development/CLAUDE.md`); the readiness gate above is keyed on the stable health endpoint, not on any session-log path. If health never reaches 200 within the ceiling, surface a `BLOCKED.md` (blocker_kind: mcp-runtime-unready) rather than dispatching a subagent against a dead runtime — a subagent cannot recover a runtime the orchestrator failed to boot.
 
-4. **Amend the mcp-test subagent prompt** (the dispatch later in this Step 1d) to state that the runtime is already orchestrator-managed — see the `/mcp-test` per-skill inline override in `~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (the "RUNTIME IS ALREADY UP (orchestrator-managed)" block) for the exact prompt language.
+4. **Amend the mcp-test subagent prompt** (the dispatch later in this Step 1d): when steps 1–3 ran, state that the runtime is already orchestrator-managed — the "RUNTIME IS ALREADY UP (orchestrator-managed)" block in the `/mcp-test` per-skill inline override of `~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`. When step 0 short-circuited the boot, use the "RUNTIME NOT PRE-BOOTED" variant block (bottom of the same file) instead.
 
 **HARD CONSTRAINT 1 is NOT relaxed by this.** Step 1d.0 is `Bash` only — a `run_in_background` process plus a `curl`/`sleep` readiness loop. It performs ZERO `Write`/`Edit` on any file (the orchestrator's sentinel-only edit scope is untouched). Owning a background process and polling a health endpoint are not file edits, exactly as Step 0.4's git reconciliation (also `Bash`-only) does not expand the edit scope.
 

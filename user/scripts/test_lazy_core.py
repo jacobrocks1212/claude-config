@@ -3584,6 +3584,311 @@ def test_format_cycle_header_missing_fields():
 
 
 # ---------------------------------------------------------------------------
+# Tests: skip_waiver_refusal — SKIP_MCP_TEST.md provenance gate (single source
+# of truth for the Step-9 gates in lazy-state.py / bug-state.py and for
+# apply_pseudo's __write_validated_from_skip__).
+# ---------------------------------------------------------------------------
+
+def test_skip_waiver_refusal_operator_accepts():
+    """granted_by: operator is a human-reviewed waiver — accepted (None)."""
+    _guard()
+    assert lazy_core.skip_waiver_refusal(
+        {"granted_by": "operator", "skipped_by": "operator"}
+    ) is None
+
+
+def test_skip_waiver_refusal_legacy_no_provenance_accepts():
+    """Files with NEITHER granted_by NOR a pipeline skipped_by are
+    grandfathered (pre-WU-5 legacy sentinels keep validating)."""
+    _guard()
+    assert lazy_core.skip_waiver_refusal({}) is None
+    assert lazy_core.skip_waiver_refusal(None) is None
+    # approved_by is not a provenance field — still legacy-accepted.
+    assert lazy_core.skip_waiver_refusal({"approved_by": "human"}) is None
+    # skipped_by: operator with no granted_by — human-authored, accepted.
+    assert lazy_core.skip_waiver_refusal({"skipped_by": "operator"}) is None
+
+
+def test_skip_waiver_refusal_pipeline_refuses():
+    """granted_by: pipeline is a self-grant — refused with the operator-
+    confirmation message (the WU-5 contract)."""
+    _guard()
+    reason = lazy_core.skip_waiver_refusal({"granted_by": "pipeline"})
+    assert reason is not None
+    assert "granted_by: pipeline" in reason
+    assert "operator" in reason
+
+
+def test_skip_waiver_refusal_unknown_value_refuses():
+    """An unrecognized granted_by value is untrusted — refused like pipeline."""
+    _guard()
+    reason = lazy_core.skip_waiver_refusal({"granted_by": "subagent-7"})
+    assert reason is not None
+    assert "granted_by: subagent-7" in reason
+
+
+def test_skip_waiver_refusal_mcp_test_with_class_accepts():
+    """granted_by: mcp-test + a non-empty spec_class citation is a verified
+    structural assessment by the validation step — accepted."""
+    _guard()
+    assert lazy_core.skip_waiver_refusal({
+        "granted_by": "mcp-test",
+        "spec_class": "raw-PCM injection into the Rust callback thread",
+    }) is None
+
+
+def test_skip_waiver_refusal_mcp_test_missing_class_refuses():
+    """granted_by: mcp-test WITHOUT spec_class (absent, empty, or whitespace)
+    is an unverified claim — refused."""
+    _guard()
+    for meta in (
+        {"granted_by": "mcp-test"},
+        {"granted_by": "mcp-test", "spec_class": ""},
+        {"granted_by": "mcp-test", "spec_class": "   "},
+        {"granted_by": "mcp-test", "spec_class": None},
+    ):
+        reason = lazy_core.skip_waiver_refusal(meta)
+        assert reason is not None, f"expected refusal for {meta!r}"
+        assert "spec_class" in reason
+
+
+def test_skip_waiver_refusal_pipeline_authored_omission_refuses():
+    """The omission side-door: skipped_by identifies a pipeline author but
+    granted_by is absent — refused (observed 2026-06-10: an mcp-test cycle
+    omitted granted_by and the skip auto-validated unconfirmed)."""
+    _guard()
+    for author in ("lazy", "lazy-cloud", "pipeline"):
+        reason = lazy_core.skip_waiver_refusal({"skipped_by": author})
+        assert reason is not None, f"expected refusal for skipped_by={author!r}"
+        assert author in reason
+
+
+# ---------------------------------------------------------------------------
+# Tests: archive_fixed — scripted __mark_fixed__ archive mechanics
+# (mark-fixed-archive.md Steps 1–5, moved from prose to code after the
+# 2026-06-10 incident: unstaged sentinel deletions broke `git mv`, a Windows
+# lock broke the rename, and a repo-wide grep crawled node_modules).
+# ---------------------------------------------------------------------------
+
+def _make_fixed_bug_repo(td: str, *, receipt: bool = True,
+                         status: str = "Fixed") -> tuple:
+    """Build a real git repo with a committed docs/bugs/my-bug/ directory,
+    an inbound reference, and a queue.json entry. Returns (repo_root, bug_dir).
+    """
+    repo_root, _origin = _make_git_repo_with_origin(td)
+    bug_dir = repo_root / "docs" / "bugs" / "my-bug"
+    bug_dir.mkdir(parents=True)
+    (bug_dir / "SPEC.md").write_text(
+        "# My Bug — Bug Specification\n\n"
+        f"**Status:** {status}\n\n"
+        "**Severity:** P2 (nuisance)\n\n"
+        "**Discovered:** 2026-06-01\n\n"
+        "## Description\n\nA bug.\n",
+        encoding="utf-8",
+    )
+    if receipt:
+        (bug_dir / "FIXED.md").write_text(
+            "---\n"
+            "kind: fixed\n"
+            "feature_id: my-bug\n"
+            "date: 2026-06-10\n"
+            "provenance: gated\n"
+            "---\n\n# Fixed\n",
+            encoding="utf-8",
+        )
+    # A sentinel that apply_pseudo would later DELETE without staging — the
+    # exact precondition that broke the prose `git mv`.
+    (bug_dir / "VALIDATED.md").write_text(
+        "---\nkind: validated\nfeature_id: my-bug\ndate: 2026-06-09\n---\n",
+        encoding="utf-8",
+    )
+    # Inbound root-relative reference from another doc.
+    (repo_root / "docs" / "bugs" / "CLAUDE.md").write_text(
+        "# Bugs\n\nSee docs/bugs/my-bug/SPEC.md for details.\n",
+        encoding="utf-8",
+    )
+    (repo_root / "docs" / "bugs" / "queue.json").write_text(
+        json.dumps({"queue": [
+            {"id": "my-bug", "name": "My Bug", "spec_dir": "my-bug",
+             "severity": "P2"},
+            {"id": "other-bug", "name": "Other Bug", "spec_dir": "other-bug",
+             "severity": "P1"},
+        ]}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                   capture_output=True)
+    subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                    "add bug files"], check=True, capture_output=True)
+    return repo_root, bug_dir
+
+
+def test_archive_fixed_happy_path_with_unstaged_deletion():
+    """End-to-end: archive succeeds even with an UNSTAGED tracked-file deletion
+    inside the bug dir (the 2026-06-10 `git mv` failure), repoints the inbound
+    reference, trims queue.json, adds the evidence header lines, and commits."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(td)
+        # Simulate apply_pseudo's post-commit sentinel deletion (unstaged).
+        (bug_dir / "VALIDATED.md").unlink()
+
+        result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+
+        assert result["ok"] is True, f"expected ok, got {result}"
+        assert result["archived_to"] == "docs/bugs/_archive/my-bug"
+        dest = repo_root / "docs" / "bugs" / "_archive" / "my-bug"
+        assert dest.exists() and not bug_dir.exists()
+        assert (dest / "FIXED.md").exists()
+        assert not (dest / "VALIDATED.md").exists(), (
+            "the unstaged deletion must be honored, not resurrected"
+        )
+        # Evidence header lines, in canonical order after **Discovered:**.
+        spec_text = (dest / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Fixed:** 2026-06-10" in spec_text
+        assert "**Fix commit:** " in spec_text
+        assert spec_text.index("**Discovered:**") < spec_text.index("**Fixed:**")
+        # Inbound reference repointed.
+        claude_md = (repo_root / "docs" / "bugs" / "CLAUDE.md").read_text(
+            encoding="utf-8")
+        assert "docs/bugs/_archive/my-bug/SPEC.md" in claude_md
+        assert "docs/bugs/my-bug/SPEC.md" not in claude_md
+        assert "docs/bugs/CLAUDE.md" in result["repointed"]
+        # Queue trimmed — other entries intact.
+        queue = json.loads((repo_root / "docs" / "bugs" / "queue.json")
+                           .read_text(encoding="utf-8"))
+        ids = [e["id"] for e in queue["queue"]]
+        assert ids == ["other-bug"]
+        assert result["queue_removed"] is True
+        # Committed, clean tree.
+        assert result["committed"]
+        status = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True, text=True,
+        )
+        assert status.stdout.strip() == "", (
+            f"expected clean tree, got: {status.stdout}"
+        )
+        # Canonical commit message.
+        log = subprocess.run(
+            ["git", "-C", str(repo_root), "log", "-1", "--format=%s"],
+            capture_output=True, text=True,
+        )
+        assert log.stdout.strip() == (
+            "fix(my-bug): mark fixed and archive — FIXED.md receipt gated"
+        )
+
+
+def test_archive_fixed_refuses_without_receipt():
+    """No FIXED.md and SPEC not Won't-fix → refused, nothing moved."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(td, receipt=False)
+        result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+        assert result["ok"] is False
+        assert "FIXED.md" in result["refused"]
+        assert bug_dir.exists(), "refusal must not move anything"
+
+
+def test_archive_fixed_wont_fix_archives_without_receipt():
+    """Won't-fix bugs are receipt-EXEMPT (mark-fixed-archive.md) — archived
+    with no FIXED.md and no evidence header lines."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(
+            td, receipt=False, status="Won't-fix")
+        result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+        assert result["ok"] is True, f"expected ok, got {result}"
+        dest = repo_root / "docs" / "bugs" / "_archive" / "my-bug"
+        assert dest.exists() and not bug_dir.exists()
+        spec_text = (dest / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Fix commit:**" not in spec_text, (
+            "Won't-fix carries no fix-commit evidence"
+        )
+
+
+def test_archive_fixed_collision_appends_suffix():
+    """A same-name directory already in _archive/ → -archived-<date> suffix."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(td)
+        prior = repo_root / "docs" / "bugs" / "_archive" / "my-bug"
+        prior.mkdir(parents=True)
+        (prior / "SPEC.md").write_text("# Old duplicate\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "prior archive"], check=True, capture_output=True)
+
+        result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+
+        assert result["ok"] is True, f"expected ok, got {result}"
+        assert result["archived_to"] == (
+            "docs/bugs/_archive/my-bug-archived-2026-06-10"
+        )
+        assert (repo_root / "docs" / "bugs" / "_archive" /
+                "my-bug-archived-2026-06-10" / "FIXED.md").exists()
+        # Inbound refs repoint to the ACTUAL (suffixed) destination.
+        claude_md = (repo_root / "docs" / "bugs" / "CLAUDE.md").read_text(
+            encoding="utf-8")
+        assert "docs/bugs/_archive/my-bug-archived-2026-06-10/SPEC.md" in claude_md
+
+
+def test_archive_fixed_rerun_is_noop():
+    """A second run after a fully-completed archive is ok+noop (no new commit)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(td)
+        first = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+        assert first["ok"] is True
+        sha_before = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+
+        second = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+
+        assert second["ok"] is True, f"expected ok, got {second}"
+        assert second["noop"] is True
+        sha_after = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        assert sha_before == sha_after, "noop re-run must not create a commit"
+
+
+def test_archive_fixed_resume_after_partial_move():
+    """If a prior run moved the directory but died before repoint/commit,
+    re-running resumes: repoints, trims the queue, and commits."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(td)
+        # Simulate the partial state: the mv happened, nothing else did.
+        archive_parent = repo_root / "docs" / "bugs" / "_archive"
+        archive_parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "-C", str(repo_root), "mv", str(bug_dir),
+             str(archive_parent / "my-bug")],
+            check=True, capture_output=True,
+        )
+
+        result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+
+        assert result["ok"] is True, f"expected ok, got {result}"
+        assert result["archived_to"] == "docs/bugs/_archive/my-bug"
+        claude_md = (repo_root / "docs" / "bugs" / "CLAUDE.md").read_text(
+            encoding="utf-8")
+        assert "docs/bugs/_archive/my-bug/SPEC.md" in claude_md
+        assert result["queue_removed"] is True
+        assert result["committed"]
+        status = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True, text=True,
+        )
+        assert status.stdout.strip() == ""
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -3768,6 +4073,21 @@ _TESTS = [
     # format_cycle_header — WU-5 single-probe payload (cycle header)
     ("test_format_cycle_header_full", test_format_cycle_header_full),
     ("test_format_cycle_header_missing_fields", test_format_cycle_header_missing_fields),
+    # skip_waiver_refusal — SKIP_MCP_TEST.md provenance gate
+    ("test_skip_waiver_refusal_operator_accepts", test_skip_waiver_refusal_operator_accepts),
+    ("test_skip_waiver_refusal_legacy_no_provenance_accepts", test_skip_waiver_refusal_legacy_no_provenance_accepts),
+    ("test_skip_waiver_refusal_pipeline_refuses", test_skip_waiver_refusal_pipeline_refuses),
+    ("test_skip_waiver_refusal_unknown_value_refuses", test_skip_waiver_refusal_unknown_value_refuses),
+    ("test_skip_waiver_refusal_mcp_test_with_class_accepts", test_skip_waiver_refusal_mcp_test_with_class_accepts),
+    ("test_skip_waiver_refusal_mcp_test_missing_class_refuses", test_skip_waiver_refusal_mcp_test_missing_class_refuses),
+    ("test_skip_waiver_refusal_pipeline_authored_omission_refuses", test_skip_waiver_refusal_pipeline_authored_omission_refuses),
+    # archive_fixed — scripted __mark_fixed__ archive mechanics
+    ("test_archive_fixed_happy_path_with_unstaged_deletion", test_archive_fixed_happy_path_with_unstaged_deletion),
+    ("test_archive_fixed_refuses_without_receipt", test_archive_fixed_refuses_without_receipt),
+    ("test_archive_fixed_wont_fix_archives_without_receipt", test_archive_fixed_wont_fix_archives_without_receipt),
+    ("test_archive_fixed_collision_appends_suffix", test_archive_fixed_collision_appends_suffix),
+    ("test_archive_fixed_rerun_is_noop", test_archive_fixed_rerun_is_noop),
+    ("test_archive_fixed_resume_after_partial_move", test_archive_fixed_resume_after_partial_move),
 ]
 
 

@@ -44,6 +44,9 @@
   [stale-mcp-results-reverify] cloud=False skip_nr=False real_device=True: Step 9: stale MCP results — re-verify
   [skip-pipeline-granted-needs-input] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   [skip-operator-granted-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
+  [skip-mcp-test-granted-with-class-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
+  [skip-mcp-test-granted-missing-class-refuses] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
+  [skip-pipeline-authored-no-grant-refuses] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   [roadmap-substring-collision-no-false-halt] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [is-stub-prose-mention-not-stub] cloud=False skip_nr=False real_device=True: Step 6: plan feature (phases + plan)
   [upstream-substring-collision] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt

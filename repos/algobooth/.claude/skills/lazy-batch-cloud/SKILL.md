@@ -507,6 +507,24 @@ After the skill returns:
      mirroring the sub-subagent-count signal /lazy-batch uses on workstation.
      Also CONFIRM each batch commit was pushed as it landed (the reclaim-safety
      audit signal).
+
+TURN-END CONTRACT (HARD — applies to EVERY cycle; read this LAST because it
+is checked LAST):
+  Your background processes DIE when your turn ends — they do NOT keep running
+  (recurring incident: a cycle ended its turn "waiting" on a backgrounded
+  test/build job; the job's process tree was torn down and the cycle returned
+  resultless with uncommitted work).
+  1. NEVER end your turn while a process you started is still running. If a
+     long gate/test/build was auto-backgrounded by the harness, block on it
+     before returning — your turn is not over until the job is.
+  2. Long jobs MUST be launched as ONE chained command that carries its own
+     commit+push: `<gate/test> && git add -A && git commit -m "..." && git push`.
+  3. Pre-return checklist, in order, EVERY cycle: (a) no background job of
+     yours still running; (b) `git status --short` is EMPTY; (c) the branch is
+     pushed; (d) the result sentinel or plan/PHASES flip your skill owes is ON
+     DISK. Only then report and return.
+  A return that fails any of these is a resultless return — the contract
+  violation, not an acceptable partial.
 ```
 
 **LOOP DETECTED block (append only when the loop-guard fires):**

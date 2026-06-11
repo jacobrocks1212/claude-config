@@ -100,6 +100,17 @@ Each scenario name corresponds to the file `docs/testing/mcp-tests/{scenario-nam
 
 ## Step 2: Server Lifecycle — Kill, Start, and Verify
 
+> **Plan-declared structural untestability — assess BEFORE booting anything:** if the
+> feature/bug PHASES.md carries `**MCP runtime:** not-required — {reason}` (authored by
+> `/spec-phases`), do NOT start the server yet. FIRST verify the plan's claim against
+> `docs/features/mcp-testing/SPEC.md` (the genuinely untestable classes are the "What We
+> Cannot Prove" observation gaps and raw-PCM injection into the Rust callback thread —
+> "Audio IS MCP-testable" via `load_test_tone` + `get_audio_buffer`, so audio claims are
+> usually wrong). If you CONCUR, skip Steps 2–5 entirely and write the scoped
+> `SKIP_MCP_TEST.md` (provenance fields below) — no runtime needed. If you DISAGREE,
+> proceed with the normal lifecycle (standalone runs boot it here; lazy-batch cycles
+> return the single line `NEEDS_RUNTIME` instead, per the dispatch prompt).
+
 > **Orchestrator-managed runtime (lazy-pipeline / `--batch` runs):** when `/mcp-test`
 > is driven by `/lazy-batch` (or `/lazy`), the **orchestrator** pre-boots the dev
 > runtime in its own long-lived session and BLOCKS on `GET
@@ -461,6 +472,10 @@ When invoked under the lazy state machine (Step 9), `/mcp-test` writes a termina
 
 - A sustained-timing/dropout/jitter assertion that fails ONLY because the host runs the HeadlessPumpDriver is **WSL2-untestable, not un-testable** → write `DEFERRED_REQUIRES_DEVICE.md`. It is NOT permanent: a real-device `/lazy` host re-opens it. (`lazy-state.py` Step 9 on a real-device host re-dispatches `/mcp-test` scoped to the deferred scenario IDs.)
 - An assertion that NO host can drive through MCP (raw-PCM injection only) → `SKIP_MCP_TEST.md` (permanent). Cross-check `docs/features/mcp-testing/SPEC.md` before writing one.
+
+**SKIP provenance (HARD — the state scripts enforce this):** every `SKIP_MCP_TEST.md` this skill writes MUST carry, in frontmatter:
+- `granted_by: mcp-test` — you are the validation step; this is the only `granted_by` value a pipeline-written skip may carry.
+- `spec_class: <the untestable class you verified>` — the `docs/features/mcp-testing/SPEC.md` class the deliverable falls under (e.g. `raw-PCM injection into the Rust callback thread`, an observation-gap row, or `standalone crate — no app integration`). REQUIRED: `lazy_core.skip_waiver_refusal()` REFUSES an mcp-test grant without it (and refuses any pipeline-written skip that omits `granted_by` entirely) — the queue halts for operator confirmation instead of validating. Schema: `~/.claude/skills/_components/sentinel-frontmatter.md`.
 
 **`DEFERRED_REQUIRES_DEVICE.md` — the required shape (NOT a blanket whole-feature deferral):**
 

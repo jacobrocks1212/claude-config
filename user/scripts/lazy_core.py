@@ -52,6 +52,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -162,6 +163,72 @@ def parse_sentinel(path: Path) -> dict[str, Any] | None:
         _die("sentinel frontmatter must be a YAML mapping", path)
         return None  # pragma: no cover
     return data
+
+
+# Pipeline-authored `skipped_by` values. A SKIP_MCP_TEST.md whose skipped_by
+# identifies the pipeline as the author but which carries NO granted_by field
+# is the omission side-door skip_waiver_refusal() closes — without this list,
+# simply leaving granted_by off the frontmatter bypassed the WU-5 provenance
+# gate (absent was unconditionally treated as legacy-operator).
+_PIPELINE_SKIPPED_BY = ("lazy", "lazy-cloud", "pipeline")
+
+
+def skip_waiver_refusal(meta: dict[str, Any] | None) -> str | None:
+    """Return a refusal reason when a SKIP_MCP_TEST.md waiver lacks trustworthy provenance.
+
+    Single source of truth for the Step-9 / pseudo-skill provenance gate —
+    called by lazy-state.py and bug-state.py (Step 9, cloud + workstation
+    branches) and by apply_pseudo's ``__write_validated_from_skip__``.
+    Returns None when the waiver is acceptable, else a human-readable reason
+    fragment (callers prefix it with the sentinel filename / feature name).
+
+    Provenance contract (sentinel-frontmatter.md ``granted_by``):
+      - ``operator`` — human-reviewed waiver: accepted.
+      - ``mcp-test`` — granted by an /mcp-test validation cycle after
+        cross-checking docs/features/mcp-testing/SPEC.md. Accepted ONLY when
+        the sentinel also carries a non-empty ``spec_class`` field citing the
+        untestable class it verified — the citation is what distinguishes a
+        verified structural assessment from a convenience skip.
+      - ``pipeline`` (or any unrecognized value) — self-granted by a
+        non-validation pipeline step: refused.
+      - absent — legacy files predate the field. Accepted UNLESS ``skipped_by``
+        identifies a pipeline author (``lazy`` / ``lazy-cloud`` / ``pipeline``):
+        a pipeline-written skip with no provenance field is refused, closing
+        the omission loophole.
+    """
+    meta = meta or {}
+    granted = meta.get("granted_by")
+    if granted == "operator":
+        return None
+    if granted == "mcp-test":
+        spec_class = str(meta.get("spec_class") or "").strip()
+        if spec_class:
+            return None
+        return (
+            "is granted_by: mcp-test without a spec_class citation — an "
+            "mcp-test-granted skip must cite the untestable class it verified "
+            "against docs/features/mcp-testing/SPEC.md (add `spec_class: "
+            "<class>`), or an operator must confirm via granted_by: operator."
+        )
+    if granted is None:
+        if meta.get("skipped_by") in _PIPELINE_SKIPPED_BY:
+            return (
+                f"was written by the pipeline (skipped_by: "
+                f"{meta.get('skipped_by')}) with NO granted_by provenance — a "
+                "pipeline-authored skip cannot vacuously validate without "
+                "provenance. Set granted_by: mcp-test (+ spec_class) if an "
+                "/mcp-test cycle verified structural untestability, or have an "
+                "operator confirm via granted_by: operator."
+            )
+        # Legacy file with no provenance fields at all — grandfathered as
+        # operator-granted (backward compatibility for pre-WU-5 sentinels).
+        return None
+    # "pipeline" and any unrecognized value: refuse.
+    return (
+        f"was granted_by: {granted} (self-granted) — a pipeline-granted MCP "
+        "skip needs operator confirmation before it can vacuously validate. "
+        "Reconcile via NEEDS_INPUT or update granted_by to 'operator'."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1299,19 +1366,14 @@ def apply_pseudo(
         skip_meta = parse_sentinel(skip_path)
         if not skip_path.exists() or skip_meta is None:
             return _refused("SKIP_MCP_TEST.md absent")
-        # Provenance gate — mirrors compute_state's Step-9 gate in
-        # lazy-state.py / bug-state.py: a pipeline-self-granted skip must NOT
-        # vacuously validate, because the pipeline cannot waive its own MCP
-        # requirement. Only operator-granted values are accepted as a
-        # legitimate waiver; an absent granted_by is legacy and treated as
-        # operator-granted (matches the compute_state semantics).
-        if skip_meta.get("granted_by") == "pipeline":
-            return _refused(
-                "SKIP_MCP_TEST.md is granted_by: pipeline (self-granted) — a "
-                "pipeline-granted MCP skip needs operator confirmation before "
-                "it can vacuously validate. Update granted_by to 'operator' "
-                "(or resolve via NEEDS_INPUT) and re-run."
-            )
+        # Provenance gate — the SAME skip_waiver_refusal() helper compute_state
+        # consults in lazy-state.py / bug-state.py Step 9: a pipeline-self-
+        # granted skip (and a pipeline-authored skip that simply OMITS
+        # granted_by, and an mcp-test grant missing its spec_class citation)
+        # must NOT vacuously validate.
+        _waiver_refusal = skip_waiver_refusal(skip_meta)
+        if _waiver_refusal:
+            return _refused(f"SKIP_MCP_TEST.md {_waiver_refusal}")
         # Idempotency: if VALIDATED.md already exists as kind=validated → noop.
         validated_path = spec_path / "VALIDATED.md"
         existing = parse_sentinel(validated_path)
@@ -1851,6 +1913,323 @@ def update_repeat_count(
 # ---------------------------------------------------------------------------
 # WU-5: Single-probe payload helpers
 # ---------------------------------------------------------------------------
+
+def _git(repo_root: Path, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run a git command against repo_root, capturing output. Never raises on
+    non-zero exit (callers check .returncode); raises only on OS-level failure,
+    which callers wrap."""
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def archive_fixed(
+    repo_root: Path,
+    spec_path: Path,
+    *,
+    date: str | None = None,
+) -> dict:
+    """Archive a Fixed bug directory: the deterministic successor to the prose
+    archive mechanics in mark-fixed-archive.md Steps 1–5.
+
+    Why this is script-owned (2026-06-10 incident): the orchestrator performing
+    these steps as prose improvised through three consecutive failures — a
+    `git mv` refused because apply_pseudo's sentinel deletions were unstaged
+    (tracked-but-missing files inside the dir), a transient Windows
+    "Permission denied" on the directory rename, and a repo-wide `grep -r`
+    crawling node_modules. Each is handled deterministically here.
+
+    Steps (all best-effort idempotent; safe to re-run after a partial failure):
+      1. Gate: FIXED.md receipt present (kind: fixed) — or SPEC ``**Status:**
+         Won't-fix`` (receipt-exempt). If spec_path is already gone and the
+         archive destination exists, treat as a RESUME: skip to step 5.
+      2. SPEC.md evidence header lines: ensure ``**Fixed:** <date>`` and
+         ``**Fix commit:** <short sha>`` after ``**Discovered:**`` (fallback:
+         after ``**Status:**``), updating them if already present.
+      3. ``git add -A <spec_path>`` — stages the receipt, status flips, AND the
+         sentinel deletions so the index is coherent before the move (the exact
+         precondition the prose flow missed).
+      4. ``git mv <spec_path> docs/bugs/_archive/<bug_id>`` with retry/backoff
+         (1s/2s/4s — Windows transient handle locks), then a per-file
+         ``git mv`` fallback if the directory rename never succeeds. A name
+         collision in _archive/ gets a ``-archived-<date>`` suffix.
+      5. Repoint inbound references: ``git grep -l`` (tracked files only — never
+         node_modules/target) for ``docs/bugs/<bug_id>/`` across ``*.md``,
+         replacing with ``docs/bugs/_archive/<bug_id>/``.
+      6. Remove the bug's entry from docs/bugs/queue.json (matched on
+         ``spec_dir`` or ``id``).
+      7. Stage the touched paths and commit:
+         ``fix(<bug_id>): mark fixed and archive — FIXED.md receipt gated``.
+
+    Return shape (callers may JSON-dump unconditionally)::
+
+        {
+            "name": "archive_fixed",
+            "ok": bool,
+            "refused": str | None,   # non-None → nothing irreversible was done,
+                                     #   OR a partial-state diagnostic (see note)
+            "noop": bool,            # True iff there was nothing left to do
+            "archived_to": str | None,   # repo-relative destination
+            "fix_commit": str | None,    # short sha recorded in SPEC.md
+            "repointed": [str, ...],     # repo-relative files whose refs moved
+            "queue_removed": bool,
+            "fallback_used": bool,       # per-file git mv fallback engaged
+            "committed": str | None,     # short sha of the archive commit
+        }
+
+    Partial-state note: a refusal AFTER the move (e.g. commit failure) names
+    the completed steps so the consumer can surface an accurate BLOCKED.md;
+    re-running resumes from the archive destination rather than redoing the
+    move.
+    """
+    if date is None:
+        date = datetime.date.today().isoformat()
+    repo_root = repo_root.resolve()
+    bug_id = spec_path.name
+    result: dict[str, Any] = {
+        "name": "archive_fixed",
+        "ok": False,
+        "refused": None,
+        "noop": False,
+        "archived_to": None,
+        "fix_commit": None,
+        "repointed": [],
+        "queue_removed": False,
+        "fallback_used": False,
+        "committed": None,
+    }
+
+    def _refuse(msg: str) -> dict:
+        result["refused"] = msg
+        return result
+
+    archive_parent = repo_root / "docs" / "bugs" / "_archive"
+    dest = archive_parent / bug_id
+
+    try:
+        # --- step 1: gate / resume detection --------------------------------
+        resume = False
+        if not spec_path.exists():
+            if dest.exists():
+                # Prior run moved the directory but died before repoint/commit.
+                resume = True
+            else:
+                return _refuse(
+                    f"spec_path does not exist and no archive at "
+                    f"{dest.relative_to(repo_root).as_posix()} — nothing to archive"
+                )
+        if not resume:
+            receipt_ok = has_completion_receipt(spec_path, "FIXED.md")
+            wont_fix = (spec_status(spec_path) or "").startswith("Won't-fix")
+            if not receipt_ok and not wont_fix:
+                return _refuse(
+                    "no FIXED.md receipt (kind: fixed) and SPEC is not "
+                    "Won't-fix — run `--apply-pseudo __mark_fixed__` first; "
+                    "archive_fixed never writes the receipt itself"
+                )
+
+            # --- step 2: SPEC.md evidence header lines -----------------------
+            # Short sha of the last work commit BEFORE the archive commit — the
+            # load-bearing evidence of when the fix landed (mark-fixed-archive
+            # Step 1). Skipped for Won't-fix (no receipt → no fix commit).
+            if receipt_ok:
+                sha_proc = _git(repo_root, "rev-parse", "--short", "HEAD")
+                fix_sha = sha_proc.stdout.strip() if sha_proc.returncode == 0 else None
+                if fix_sha:
+                    result["fix_commit"] = fix_sha
+                    spec_md = spec_path / "SPEC.md"
+                    if spec_md.exists():
+                        text = spec_md.read_text(encoding="utf-8")
+                        # Update-in-place when the lines already exist…
+                        text = re.sub(
+                            r"^\*\*Fixed:\*\*.*$", f"**Fixed:** {date}",
+                            text, count=1, flags=re.MULTILINE,
+                        )
+                        text = re.sub(
+                            r"^\*\*Fix commit:\*\*.*$", f"**Fix commit:** {fix_sha}",
+                            text, count=1, flags=re.MULTILINE,
+                        )
+                        # …then insert any that are still missing, after
+                        # **Discovered:** (canonical field order per
+                        # docs/bugs/CLAUDE.md: Status → Severity → Discovered →
+                        # Fixed → Fix commit), falling back to **Status:**.
+                        missing = []
+                        if not re.search(r"^\*\*Fixed:\*\*", text, flags=re.MULTILINE):
+                            missing.append(f"**Fixed:** {date}")
+                        if not re.search(r"^\*\*Fix commit:\*\*", text, flags=re.MULTILINE):
+                            missing.append(f"**Fix commit:** {fix_sha}")
+                        if missing:
+                            anchor = re.search(
+                                r"^\*\*Discovered:\*\*.*$", text, flags=re.MULTILINE
+                            ) or re.search(
+                                r"^\*\*Status:\*\*.*$", text, flags=re.MULTILINE
+                            )
+                            if anchor:
+                                insert_at = anchor.end()
+                                text = (
+                                    text[:insert_at]
+                                    + "".join("\n" + line for line in missing)
+                                    + text[insert_at:]
+                                )
+                            else:
+                                # No header block at all — append (degenerate
+                                # SPEC; keep the evidence rather than dropping it).
+                                text = text.rstrip("\n") + "\n\n" + "\n".join(missing) + "\n"
+                        _atomic_write(spec_md, text)
+
+            # --- step 3: stage the bug dir (deletions included) --------------
+            add_proc = _git(repo_root, "add", "-A", "--", str(spec_path))
+            if add_proc.returncode != 0:
+                return _refuse(
+                    f"git add -A {spec_path.name} failed: {add_proc.stderr.strip()}"
+                )
+
+            # --- step 4: git mv with retry + per-file fallback ---------------
+            archive_parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                dest = archive_parent / f"{bug_id}-archived-{date}"
+                if dest.exists():
+                    return _refuse(
+                        f"archive collision: both {bug_id} and "
+                        f"{dest.name} already exist under _archive/"
+                    )
+            mv_err = ""
+            moved = False
+            for attempt, delay in enumerate((0, 1, 2, 4)):
+                if delay:
+                    time.sleep(delay)  # transient Windows handle/lock backoff
+                mv_proc = _git(repo_root, "mv", str(spec_path), str(dest))
+                if mv_proc.returncode == 0:
+                    moved = True
+                    break
+                mv_err = mv_proc.stderr.strip()
+            if not moved:
+                # Per-file fallback: move every tracked file individually so a
+                # single locked file is isolated instead of failing the whole
+                # directory rename.
+                ls_proc = _git(
+                    repo_root, "ls-files", "--", str(spec_path)
+                )
+                if ls_proc.returncode != 0:
+                    return _refuse(
+                        f"git mv failed after retries ({mv_err}) and ls-files "
+                        f"fallback failed: {ls_proc.stderr.strip()}"
+                    )
+                rel_spec = spec_path.relative_to(repo_root).as_posix()
+                failed_files = []
+                for rel in ls_proc.stdout.splitlines():
+                    rel = rel.strip()
+                    if not rel:
+                        continue
+                    suffix = rel[len(rel_spec):].lstrip("/")
+                    target = dest / suffix
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    f_proc = _git(repo_root, "mv", rel, str(target))
+                    if f_proc.returncode != 0:
+                        failed_files.append(f"{rel}: {f_proc.stderr.strip()}")
+                if failed_files:
+                    return _refuse(
+                        "per-file git mv fallback left files behind — "
+                        "PARTIAL STATE, resolve the locks and re-run: "
+                        + "; ".join(failed_files)
+                    )
+                result["fallback_used"] = True
+                # Remove the now-empty source tree (best-effort).
+                for dirpath, dirnames, filenames in os.walk(spec_path, topdown=False):
+                    if not filenames and not dirnames:
+                        try:
+                            os.rmdir(dirpath)
+                        except OSError:
+                            pass
+                moved = True
+
+        result["archived_to"] = dest.relative_to(repo_root).as_posix()
+
+        # --- step 5: repoint inbound references (tracked *.md only) ----------
+        old_ref = f"docs/bugs/{bug_id}/"
+        # NOTE: dest may carry the -archived-<date> suffix; repoint to the
+        # actual destination, not the canonical name.
+        new_ref = dest.relative_to(repo_root).as_posix() + "/"
+        grep_proc = _git(repo_root, "grep", "-l", "-F", old_ref, "--", "*.md")
+        # returncode 1 = no matches (fine); >1 = real error.
+        if grep_proc.returncode > 1:
+            return _refuse(
+                f"archived to {result['archived_to']} but inbound-reference "
+                f"scan failed: {grep_proc.stderr.strip()} — PARTIAL STATE, "
+                "re-run to resume"
+            )
+        for rel in grep_proc.stdout.splitlines():
+            rel = rel.strip()
+            if not rel:
+                continue
+            ref_path = repo_root / rel
+            try:
+                content = ref_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if old_ref in content:
+                _atomic_write(ref_path, content.replace(old_ref, new_ref))
+                result["repointed"].append(rel)
+
+        # --- step 6: trim queue.json ------------------------------------------
+        queue_path = repo_root / "docs" / "bugs" / "queue.json"
+        if queue_path.exists():
+            try:
+                data = json.loads(queue_path.read_text(encoding="utf-8"))
+                items = data.get("queue", [])
+                kept = [
+                    e for e in items
+                    if not (
+                        isinstance(e, dict)
+                        and (e.get("spec_dir") == bug_id or e.get("id") == bug_id)
+                    )
+                ]
+                if len(kept) != len(items):
+                    data["queue"] = kept
+                    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+                    result["queue_removed"] = True
+            except (json.JSONDecodeError, AttributeError) as exc:
+                return _refuse(
+                    f"archived to {result['archived_to']} but queue.json is "
+                    f"malformed ({exc}) — PARTIAL STATE, fix queue.json and re-run"
+                )
+
+        # --- step 7: stage + commit -------------------------------------------
+        to_stage = ["docs/bugs"] + result["repointed"]
+        add_proc = _git(repo_root, "add", "-A", "--", *to_stage)
+        if add_proc.returncode != 0:
+            return _refuse(
+                f"archived to {result['archived_to']} but final staging "
+                f"failed: {add_proc.stderr.strip()} — PARTIAL STATE, re-run"
+            )
+        diff_proc = _git(repo_root, "diff", "--cached", "--quiet")
+        if diff_proc.returncode == 0:
+            # Nothing staged — a re-run after a fully-completed prior pass.
+            result["ok"] = True
+            result["noop"] = True
+            return result
+        commit_proc = _git(
+            repo_root, "commit", "-m",
+            f"fix({bug_id}): mark fixed and archive — FIXED.md receipt gated",
+        )
+        if commit_proc.returncode != 0:
+            return _refuse(
+                f"archived to {result['archived_to']} but commit failed: "
+                f"{commit_proc.stderr.strip()} — PARTIAL STATE (changes are "
+                "staged), commit manually or re-run"
+            )
+        sha_proc = _git(repo_root, "rev-parse", "--short", "HEAD")
+        result["committed"] = (
+            sha_proc.stdout.strip() if sha_proc.returncode == 0 else "unknown"
+        )
+        result["ok"] = True
+        return result
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _refuse(f"git unavailable or I/O failure: {exc}")
+
 
 def git_guard_status(repo_root: Path) -> dict:
     """Return a three-key git status snapshot for the probe payload.

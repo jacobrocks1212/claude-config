@@ -36,7 +36,7 @@ bug-state.py).
 | Status vocab | Open / In-progress / Complete | Open / Investigating / In-progress / Fixed / Won't-fix |
 | Completion receipt | `COMPLETED.md` (kind: completed) | `FIXED.md` (kind: fixed) |
 | Won't-fix / exempt | N/A | `Won't-fix` bugs are receipt-EXEMPT — no FIXED.md required |
-| Archive step | N/A (features stay in place) | `git mv` to `docs/bugs/_archive/` + inbound-ref repoint |
+| Archive step | N/A (features stay in place) | script-owned: `bug-state.py --archive-fixed` (`git mv` to `docs/bugs/_archive/` + inbound-ref repoint + queue trim + commit) |
 | Terminal pseudo-skill | `__mark_complete__` | `__mark_fixed__` |
 | Plan-bug terminal | N/A | `plan-bug` — emitted when SPEC.md `**Status:** Concluded` + no PHASES.md (a concluded investigation routes to implementation planning via `/plan-bug`) |
 | Spec dispatch | `spec` → `/spec` | `spec-bug` → `/spec-bug` |
@@ -288,11 +288,15 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   `**Status:** Fixed` flip, and the deletion of the consumed VALIDATED.md / RETRO_DONE.md /
   DEFERRED_NON_CLOUD.md sentinels (FIXED.md / SKIP_MCP_TEST.md / MCP_TEST_RESULTS.md are kept).
   The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
-  After the script returns, the orchestrator performs ONLY the **archive mechanics** per
-  `~/.claude/skills/_components/mark-fixed-archive.md`
-  (`**Fixed:**`/`**Fix commit:**` SPEC header lines, `git mv` to `_archive/`, inbound-reference
-  repoint, queue.json trim, atomic commit). Those remaining docs-level edits are within
-  HARD CONSTRAINT 1's allowance.
+  After the script returns, the orchestrator runs ONE more script call — the **archive
+  mechanics** are also script-owned per `~/.claude/skills/_components/mark-fixed-archive.md`:
+  `python3 ~/.claude/scripts/bug-state.py --repo-root {repo_root} --archive-fixed {spec_path}`
+  (SPEC evidence header lines, staged-deletion-coherent `git mv` with Windows-lock retry,
+  tracked-only inbound-reference repoint, queue.json trim, atomic commit — then push the
+  commit it created). The orchestrator performs ZERO hand edits for the archive; on
+  `ok: false` it writes BLOCKED.md (`blocker_kind: archive-failure`) quoting the script's
+  `refused` diagnostic verbatim (sentinel-scope — within HARD CONSTRAINT 1). The call is
+  idempotent and resume-safe — a PARTIAL STATE diagnostic means re-run, never hand-unwind.
 
 - **`__flip_plan_complete_cloud_saturated__`** — emitted only by `bug-state.py --cloud` when an
   `In-progress` plan's only unchecked WUs are in `{spec_path}/DEFERRED_NON_CLOUD.md` as
@@ -363,9 +367,12 @@ No premature Fixed (PIPELINE-GATE HONESTY — HARD REQUIREMENT):
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 1d.0 for the full pre-boot procedure, health
 probe, background `npm run dev:restart`, MCP-readiness poll, and BLOCKED.md guidance. The
 procedure is **identical** for the bug pipeline — bug `mcp-test` cycles need the same
-orchestrator-owned runtime. RUNTIME IS ALREADY UP guidance and NO FIRE-AND-FORGET clause (a
-resultless return is a violation) carry over verbatim — substitute `{bug_name}/{bug_id}` for
-`{feature_name}/{feature_id}` in any messages.
+orchestrator-owned runtime. This INCLUDES step 0 (plan-declared structural untestability):
+when the bug's PHASES.md carries `**MCP runtime:** not-required`, skip the boot entirely and
+dispatch with the "RUNTIME NOT PRE-BOOTED" variant block; honor the `NEEDS_RUNTIME`
+single-line return with a boot + `(opus, recovery)` re-dispatch. RUNTIME IS ALREADY UP
+guidance and NO FIRE-AND-FORGET clause (a resultless return is a violation) carry over
+verbatim — substitute `{bug_name}/{bug_id}` for `{feature_name}/{feature_id}` in any messages.
 
 **HARD CONSTRAINT 1 is NOT relaxed.** Step 1d.0 is `Bash`-only.
 

@@ -202,10 +202,12 @@ date: <YYYY-MM-DD>
 
 Optional:
 - `skipped_by: <"lazy" | "lazy-cloud" | "operator" | "pipeline">` — who wrote the skip.
-- `granted_by: <"operator" | "pipeline">` — **provenance of the waiver decision**.
-  - `operator` — a human reviewed the feature and approved the MCP skip. `lazy-state.py` Step 9 accepts this as a legitimate vacuous-pass and emits `__write_validated_from_skip__`.
-  - `pipeline` — the automated pipeline self-granted the skip. Step 9 **refuses** this: a pipeline-self-granted skip cannot vacuously validate its own MCP requirement. The state machine routes to `terminal_reason="needs-input"` so an operator can confirm the waiver before the pipeline proceeds. Update `granted_by` to `operator` (after human review) to unblock.
-  - Absent (legacy files without this field) — treated as `operator` for backward compatibility; the existing vacuous-pass behavior is preserved.
+- `granted_by: <"operator" | "mcp-test" | "pipeline">` — **provenance of the waiver decision**. The gate is `lazy_core.skip_waiver_refusal()` (single source of truth — consulted by both state scripts' Step 9 and by `__write_validated_from_skip__`):
+  - `operator` — a human reviewed the feature and approved the MCP skip. Accepted as a legitimate vacuous-pass → `__write_validated_from_skip__`.
+  - `mcp-test` — an `/mcp-test` validation cycle verified structural untestability against `docs/features/mcp-testing/SPEC.md`. Accepted **ONLY when `spec_class` (below) is also present and non-empty** — the citation is what distinguishes a verified assessment from a convenience skip. Missing `spec_class` → refused (`needs-input`).
+  - `pipeline` (or any unrecognized value) — a non-validation pipeline step self-granted the skip. **Refused**: a pipeline-self-granted skip cannot vacuously validate its own MCP requirement. Routes to `terminal_reason="needs-input"`; update `granted_by` to `operator` (after human review) to unblock.
+  - Absent — legacy files are treated as `operator` for backward compatibility **UNLESS `skipped_by` identifies a pipeline author (`lazy` / `lazy-cloud` / `pipeline`)**, in which case the skip is refused: a pipeline-written skip that simply omits `granted_by` is the omission side-door this rule closes (observed 2026-06-10 — an mcp-test cycle omitted the field and its skip auto-validated unconfirmed). NEW pipeline-written skips MUST always carry an explicit `granted_by`.
+- `spec_class: <one-line>` — the untestable class from `docs/features/mcp-testing/SPEC.md` that an `mcp-test` grant verified (e.g. `raw-PCM injection into the Rust callback thread`, or an observation-gap row, or `standalone crate — no app integration`). REQUIRED when `granted_by: mcp-test`; meaningless otherwise.
 
 #### `MCP_TEST_RESULTS.md` — `kind: mcp-test-results`
 

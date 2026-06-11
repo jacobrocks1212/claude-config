@@ -90,6 +90,7 @@ from lazy_core import (
     remaining_unchecked_are_verification_only,
     write_completed_receipt,
     has_completion_receipt,
+    skip_waiver_refusal,
     spec_status,
 )
 
@@ -906,21 +907,20 @@ def compute_state(
             )
         # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
-            # Provenance gate (mirrors lazy-state.py's Step 9): a pipeline-
-            # self-granted skip must NOT vacuously validate — the pipeline
-            # cannot waive its own MCP requirement. Only operator-granted (or
-            # legacy absent) granted_by values are accepted as a waiver.
-            _skip_meta = parse_sentinel(skip_mcp_file) or {}
-            if _skip_meta.get("granted_by") == "pipeline":
+            # Provenance gate (skip_waiver_refusal — mirrors lazy-state.py's
+            # Step 9): a pipeline-self-granted skip, a pipeline-authored skip
+            # with NO granted_by field, or an mcp-test grant missing its
+            # spec_class citation must NOT vacuously validate. Accepted:
+            # operator grants, legacy no-provenance files, and mcp-test grants
+            # carrying a spec_class citation.
+            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+            if _skip_refusal:
                 return _bug_state(
                     **common,
                     current_step=STEP_MCP_SKIP_PIPELINE_GRANTED,
                     terminal_reason=TR_NEEDS_INPUT,
                     notify_message=(
-                        f"{bug_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
-                        "(self-granted) — a pipeline-granted MCP skip needs operator "
-                        "confirmation before it can vacuously validate. Reconcile via "
-                        "NEEDS_INPUT or update granted_by to 'operator'."
+                        f"{bug_name}: SKIP_MCP_TEST.md {_skip_refusal}"
                     ),
                 )
             return _bug_state(
@@ -933,21 +933,20 @@ def compute_state(
         # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
-                # Provenance gate (mirrors lazy-state.py's Step 9): a pipeline-
-                # self-granted skip must NOT vacuously validate — the pipeline
-                # cannot waive its own MCP requirement. Only operator-granted
-                # (or legacy absent) granted_by values are accepted as a waiver.
-                _skip_meta = parse_sentinel(skip_mcp_file) or {}
-                if _skip_meta.get("granted_by") == "pipeline":
+                # Provenance gate (skip_waiver_refusal — mirrors lazy-state.py's
+                # Step 9): a pipeline-self-granted skip, a pipeline-authored
+                # skip with NO granted_by field, or an mcp-test grant missing
+                # its spec_class citation must NOT vacuously validate. Accepted:
+                # operator grants, legacy no-provenance files, and mcp-test
+                # grants carrying a spec_class citation.
+                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+                if _skip_refusal:
                     return _bug_state(
                         **common,
                         current_step=STEP_MCP_SKIP_PIPELINE_GRANTED,
                         terminal_reason=TR_NEEDS_INPUT,
                         notify_message=(
-                            f"{bug_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
-                            "(self-granted) — a pipeline-granted MCP skip needs operator "
-                            "confirmation before it can vacuously validate. Reconcile via "
-                            "NEEDS_INPUT or update granted_by to 'operator'."
+                            f"{bug_name}: SKIP_MCP_TEST.md {_skip_refusal}"
                         ),
                     )
                 return _bug_state(
@@ -2100,6 +2099,129 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         )
         # Intentionally no VALIDATED.md.
 
+    elif name == "step9-skip-mcp-test-granted-with-class":
+        # Provenance gate positive: granted_by: mcp-test + a spec_class citation
+        # is a verified structural assessment by the validation step itself —
+        # accepted as a waiver → __write_validated_from_skip__.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-smtc", "name": "Skip McpTest Class Bug",
+                 "spec_dir": "bug-smtc"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-smtc"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip McpTest Class Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-08\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-smtc", date="2026-06-09", rounds=1,
+        )
+        # mcp-test-granted skip WITH the required spec_class citation.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-smtc",
+            reason="standalone crate — no MCP-reachable surface",
+            date="2026-06-09", skipped_by="lazy",
+            granted_by="mcp-test",
+            spec_class="no app integration — covered by cargo tests",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-mcp-test-granted-missing-class":
+        # Provenance gate: granted_by: mcp-test WITHOUT a spec_class citation is
+        # an unverified claim — refused (needs-input), not validated. The
+        # citation is what distinguishes a verified structural assessment from
+        # a convenience skip.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-smtn", "name": "Skip McpTest NoClass Bug",
+                 "spec_dir": "bug-smtn"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-smtn"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip McpTest NoClass Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-08\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-smtn", date="2026-06-09", rounds=1,
+        )
+        # mcp-test-granted skip MISSING the spec_class citation — refused.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-smtn",
+            reason="claims untestable but cites no class",
+            date="2026-06-09", skipped_by="lazy",
+            granted_by="mcp-test",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-pipeline-authored-no-grant":
+        # Provenance omission gate: a skip whose skipped_by identifies a
+        # pipeline author ("lazy") but which carries NO granted_by at all used
+        # to sail through as legacy-operator — the omission side-door. Must now
+        # refuse (needs-input). Files with NEITHER field stay grandfathered
+        # (pinned by step9-skip-mcp).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spa", "name": "Skip Pipeline Authored Bug",
+                 "spec_dir": "bug-spa"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spa"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip Pipeline Authored Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-08\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-spa", date="2026-06-09", rounds=1,
+        )
+        # Pipeline-authored (skipped_by: lazy), NO granted_by — refused.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-spa",
+            reason="pipeline-written skip with no provenance field",
+            date="2026-06-09", skipped_by="lazy",
+        )
+        # Intentionally no VALIDATED.md.
+
     elif name == "step9-stale-mcp-results":
         # D-3(b) freshness gate: MCP_TEST_RESULTS.md claims all-passing but its
         # validated_commit (all-zeros sha) cannot equal the fixture's actual git
@@ -2568,6 +2690,53 @@ def run_smoke_tests() -> int:
                 "current_step": STEP_MCP_SKIP,
                 "sub_skill": "__write_validated_from_skip__",
             },
+        ),
+        # 27a. Provenance positive: granted_by: mcp-test + spec_class citation is
+        #      a verified structural assessment → __write_validated_from_skip__.
+        (
+            "step9-skip-mcp-test-granted-with-class", False, True,
+            {
+                "feature_id": "bug-smtc",
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 27b. Provenance gate: granted_by: mcp-test WITHOUT spec_class is an
+        #      unverified claim → needs-input, never vacuous-validate.
+        (
+            "step9-skip-mcp-test-granted-missing-class", False, True,
+            {
+                "feature_id": "bug-smtn",
+                "terminal_reason": TR_NEEDS_INPUT,
+                "current_step": STEP_MCP_SKIP_PIPELINE_GRANTED,
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be '__write_validated_from_skip__'; "
+                    f"got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == "__write_validated_from_skip__"
+                else None
+            ),
+        ),
+        # 27c. Provenance omission gate: pipeline-authored skip (skipped_by:
+        #      lazy) with NO granted_by → needs-input (closes the side-door
+        #      where omitting the field bypassed the WU-5 gate).
+        (
+            "step9-skip-pipeline-authored-no-grant", False, True,
+            {
+                "feature_id": "bug-spa",
+                "terminal_reason": TR_NEEDS_INPUT,
+                "current_step": STEP_MCP_SKIP_PIPELINE_GRANTED,
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be '__write_validated_from_skip__'; "
+                    f"got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == "__write_validated_from_skip__"
+                else None
+            ),
         ),
         # 28. D-3(b) freshness gate: all-passing MCP_TEST_RESULTS.md with a stale
         #     validated_commit (all-zeros ≠ real HEAD) must re-verify via mcp-test,
@@ -3299,6 +3468,15 @@ def main() -> int:
              "is byte-identical to the default.",
     )
     parser.add_argument(
+        "--archive-fixed", metavar="SPEC_PATH", default=None,
+        help="Archive a Fixed bug directory to docs/bugs/_archive/: SPEC.md "
+             "evidence header lines, staged-deletion-coherent git mv (with "
+             "Windows lock retry + per-file fallback), tracked-only inbound "
+             "reference repoint, queue.json trim, and the archive commit. "
+             "Run AFTER `--apply-pseudo __mark_fixed__` (the receipt gate). "
+             "Prints a JSON result; exit 1 on refusal.",
+    )
+    parser.add_argument(
         "--forward-cycles", type=int, default=None,
         help="Orchestrator forward-cycle count (for --probe cycle header).",
     )
@@ -3324,6 +3502,14 @@ def main() -> int:
             plan_path=Path(args.plan) if args.plan else None,
             date=args.apply_date, reason=args.reason,
             deferred_step=args.deferred_step,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
+    if args.archive_fixed is not None:
+        result = lazy_core.archive_fixed(
+            Path(args.repo_root), Path(args.archive_fixed),
+            date=args.apply_date,
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
