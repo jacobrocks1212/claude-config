@@ -147,7 +147,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a special action the 
 1. If `{spec_path}/DEFERRED_NON_CLOUD.md` already exists, skip the write (idempotent).
 2. Otherwise write `{spec_path}/DEFERRED_NON_CLOUD.md` with kind `deferred-non-cloud`, `deferred_step: 8`, `reason: "Cloud Linux environment cannot run tauri:dev or reach the MCP HTTP server."`, `deferred_by: lazy-cloud`, `date: <today>`, and a body explaining how the workstation /lazy resumes.
 3. PushNotification: `"{feature_name}: MCP testing deferred to workstation /lazy. Run /lazy-cloud again to continue with retro."`
-4. Print the after-status bookend (Deferred: "Step 8 MCP testing → {spec_path}/DEFERRED_NON_CLOUD.md"), call work-log, STOP.
+4. Print the after-status bookend (Deferred: "Step 8 MCP testing → {spec_path}/DEFERRED_NON_CLOUD.md"), STOP.
 
 ### `__write_validated_from_skip__`
 
@@ -155,7 +155,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a special action the 
 
 1. Parse `{spec_path}/SKIP_MCP_TEST.md`'s frontmatter.
 2. Write `{spec_path}/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body: "MCP tests skipped per prior SKIP_MCP_TEST.md").
-3. Print the after-status bookend, call work-log, STOP.
+3. Print the after-status bookend, STOP.
 
 ### `__flip_plan_complete_cloud_saturated__`
 
@@ -165,7 +165,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a special action the 
 2. Replace ONLY the value: `In-progress` → `Complete`. Leave every other frontmatter field and the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
 3. Derive the plan part number from `phases:` (e.g. `phases: [6]` → "part 6"); fall back to the filename's leading `part-N` / `phase-N` token if absent.
 4. Stage the plan file and invoke `Skill({ skill: "commit", args: "chore({feature_id}): mark plan part N Complete (cloud-saturated)" })`.
-5. Print the after-status bookend (Completed: "flipped {plan filename} status to Complete (cloud-saturated)"), call work-log, STOP.
+5. Print the after-status bookend (Completed: "flipped {plan filename} status to Complete (cloud-saturated)"), STOP.
 
 This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a single-field frontmatter flip plus commit. The cloud-saturated audit trail lives in `DEFERRED_NON_CLOUD.md`; the plan's `status: Complete` is just the state-machine signal that no further cloud `/execute-plan` cycles should fire on this plan part.
 
@@ -180,7 +180,7 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
 
 - `clean` — proceed to the completion-integrity gate (Step 4.5 below).
-- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (docs-only, works in cloud; the scenario RUN defers to workstation per the normal cloud MCP deferral) or write the SPEC test-exempt note for any decision in a documented MCP-untestable class per `docs/features/mcp-testing/SPEC.md` — emit one `⚖ policy:` line per decision, commit + push immediately (cloud durability). Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — authored corrective coverage / test-exempt note(s) for {N} locked decision(s)", Next `/lazy-cloud` will: "Re-attempt __mark_complete__ (the re-run audit returns clean); a workstation /lazy runs the corrective scenario(s)"), call work-log, STOP.
+- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (docs-only, works in cloud; the scenario RUN defers to workstation per the normal cloud MCP deferral) or write the SPEC test-exempt note for any decision in a documented MCP-untestable class per `docs/features/mcp-testing/SPEC.md` — emit one `⚖ policy:` line per decision, commit + push immediately (cloud durability). Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — authored corrective coverage / test-exempt note(s) for {N} locked decision(s)", Next `/lazy-cloud` will: "Re-attempt __mark_complete__ (the re-run audit returns clean); a workstation /lazy runs the corrective scenario(s)"), STOP.
 
 **Step 4.5: Completion-integrity gate (NEW — runs after the coverage audit returns `clean`, before the flip).**
 
@@ -189,7 +189,7 @@ Run the audit per the component above with `{spec_path}` and `{feature_id}`. If 
 Run the gate per the component above with `{spec_path}`, `{feature_id}`, and `{cloud}=true`. In cloud, `DEFERRED_NON_CLOUD.md` satisfies the validation-sentinel check ONLY when `VALIDATED.md` is also present (cloud completes a feature whose MCP pass was produced on a workstation); a bare deferral with no `VALIDATED.md` should never reach mark-complete (Step 2's cloud-saturated skip catches it). If the gate returns:
 
 - `gated` — `{spec_path}/COMPLETED.md` has been written (validation evidence folded in). Proceed to the finalize steps below.
-- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy-cloud` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), call work-log, STOP.
+- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy-cloud` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), STOP.
 
 **Finalize steps (only when BOTH gates passed — coverage `clean` AND integrity `gated`):**
 
@@ -198,7 +198,7 @@ On `gated`, the gate has already run `python3 ~/.claude/scripts/lazy-state.py --
 1. Update `docs/features/ROADMAP.md` — wrap the feature row in `~~ ... ~~` and append `**COMPLETE**` (the one docs write the script does not perform).
 2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
 3. PushNotification: `"{feature_name} COMPLETE. Run /lazy-cloud to continue."`
-4. Print the after-status bookend, call work-log, STOP.
+4. Print the after-status bookend, STOP.
 
 ### Any other `__*__` action
 
@@ -216,8 +216,7 @@ Skill({ skill: "<sub_skill>", args: "<sub_skill_args>" })
 
 After the skill returns:
 1. Print the after-status bookend.
-2. Call the work-log step below.
-3. STOP.
+2. STOP.
 
 > **Cloud note:** if `/execute-plan` encounters a deliverable that genuinely cannot be implemented in the cloud Linux environment (e.g. a Windows-only build step, a Tauri-runtime-only behavior), it should write BLOCKED.md with `blocker_kind: cloud-limitation` so the next workstation `/lazy` knows the unblock requires re-running the deliverable, not a fix.
 
@@ -232,26 +231,6 @@ Only triggered when `$ARGUMENTS` contains `"skip"`.
 3. Update ROADMAP.md: append `(SKIPPED — {reason})` to the feature row.
 4. The next `/lazy-cloud` invocation will automatically pick up the following feature.
 5. STOP.
-
----
-
-## Work Log (MANDATORY — DO NOT SKIP)
-
-Every /lazy-cloud invocation that performs meaningful work MUST call `interview_work_log_append` before producing the "After" status bookend. A pure deferral (writing `DEFERRED_NON_CLOUD.md`) DOES count as meaningful work and MUST be logged — it's the audit record of why a feature didn't progress in this session.
-
-Load the tool: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
-
-Call with:
-- `skill`: `"lazy-cloud"`
-- `project`: `"algobooth"`
-- `title`: `"/lazy-cloud → {action taken or 'defer MCP test'}"`
-- `summary`: 2-4 sentences.
-- `files_modified`: files modified during this invocation (from sub-skill output, plus any sentinel files written)
-- `technologies`: relevant tech stack
-- `patterns`: patterns applied (include `cloud-deferral` when DEFERRED_NON_CLOUD.md was written)
-- `technical_context`: architectural context
-
-**Skip work-log only when:** /lazy-cloud did nothing meaningful (terminal halt without dispatch, status query, or skip command).
 
 ---
 
@@ -289,7 +268,7 @@ sub_skill = "__write_deferred_non_cloud__"                 → write DEFERRED_NO
 sub_skill = "__write_validated_from_skip__"                → write VALIDATED.md (from SKIP_MCP_TEST) + STOP
 sub_skill = "__flip_plan_complete_cloud_saturated__"       → flip plan frontmatter In-progress → Complete + commit + STOP
 sub_skill = "__mark_complete__"                            → ROADMAP edit + sentinel cleanup + commit + STOP
-sub_skill = real skill?                                    → Skill({skill, args}) → work-log → STOP
+sub_skill = real skill?                                    → Skill({skill, args}) → STOP
 ```
 
 This skill and the paired `/lazy` are coupled per CLAUDE.md — their only intended divergence is whether they pass `--cloud` to lazy-state.py. Any state-machine change goes into the script, not into prose duplicated between the two skills.

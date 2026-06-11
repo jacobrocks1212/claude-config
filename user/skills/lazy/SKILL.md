@@ -121,11 +121,11 @@ For `blocked`, `needs-input`, `completion-unverified`, `needs-spec-input`, and `
 
 `~/.claude/skills/_components/halt-resolution.md`
 
-Use the matrix's `blocked` and `needs-input` rows (single-dispatch wrappers route those here — `/lazy` has no bespoke Step 1g/1h). Log the resolution as the invocation's work via the Work Log step (below). Only the operator-chosen "Halt for manual fix" reverts to a report + STOP.
+Use the matrix's `blocked` and `needs-input` rows (single-dispatch wrappers route those here — `/lazy` has no bespoke Step 1g/1h). Only the operator-chosen "Halt for manual fix" reverts to a report + STOP.
 
 ### 2b. Clean-stop terminals → report + STOP
 
-For these there is nothing to resolve in-session: PushNotification with `notify_message`, print the **before** bookend (State `current_step`, Action `"halt — {terminal_reason}"`) and the **after** bookend (Completed "halted on {terminal_reason}"; Next `/lazy` will: per the row below), STOP, and skip the work-log step.
+For these there is nothing to resolve in-session: PushNotification with `notify_message`, print the **before** bookend (State `current_step`, Action `"halt — {terminal_reason}"`) and the **after** bookend (Completed "halted on {terminal_reason}"; Next `/lazy` will: per the row below), then STOP.
 
 | `terminal_reason` | After-bookend / operator action |
 |------|---|
@@ -147,7 +147,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a **special action** 
 
 1. Parse `{spec_path}/SKIP_MCP_TEST.md`'s frontmatter.
 2. Write `{spec_path}/VALIDATED.md` with kind `validated`, `mcp_scenarios: []`, `result: all-passing`, and a body note: "MCP tests skipped per prior SKIP_MCP_TEST.md".
-3. Print the after-status bookend, call work-log, STOP.
+3. Print the after-status bookend, STOP.
 
 ### `__write_validated_from_results__`
 
@@ -155,7 +155,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a **special action** 
 
 1. Parse `{spec_path}/MCP_TEST_RESULTS.md`'s frontmatter — extract `scenarios`.
 2. Write `{spec_path}/VALIDATED.md` with kind `validated`, the parsed scenarios, `result: all-passing`.
-3. Print the after-status bookend, call work-log, STOP.
+3. Print the after-status bookend, STOP.
 
 ### `__flip_plan_complete_cloud_saturated__`
 
@@ -167,7 +167,7 @@ Conditions when emitted: the plan's only unchecked WUs (scoped to its `phases:` 
 2. Replace ONLY the value: `In-progress` → `Complete`. Leave every other frontmatter field and the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
 3. Derive the plan part number from `phases:` (e.g. `phases: [6]` → "part 6"); fall back to the filename's leading `part-N` / `phase-N` token if absent.
 4. Stage the plan file and invoke `Skill({ skill: "commit", args: "chore({feature_id}): mark plan part N Complete (cloud-saturated)" })`.
-5. Print the after-status bookend, call work-log, STOP.
+5. Print the after-status bookend, STOP.
 
 This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a single-field frontmatter flip plus commit.
 
@@ -182,7 +182,7 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
 
 - `clean` — proceed to the completion-integrity gate (Gate 2 below).
-- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (or write the SPEC test-exempt note for any decision in a documented MCP-untestable class per `docs/features/mcp-testing/SPEC.md`), emit one `⚖ policy:` line per decision, commit + push. Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — authored corrective coverage / test-exempt note(s) for {N} locked decision(s)", Next `/lazy` will: "Run /mcp-test against the corrective scenario(s), then re-attempt __mark_complete__ (the re-run audit returns clean)"), call work-log, STOP.
+- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (or write the SPEC test-exempt note for any decision in a documented MCP-untestable class per `docs/features/mcp-testing/SPEC.md`), emit one `⚖ policy:` line per decision, commit + push. Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — authored corrective coverage / test-exempt note(s) for {N} locked decision(s)", Next `/lazy` will: "Run /mcp-test against the corrective scenario(s), then re-attempt __mark_complete__ (the re-run audit returns clean)"), STOP.
 
 **Gate 2 — Completion-integrity gate (runs after Gate 1 returns `clean`, before the flip).**
 
@@ -191,7 +191,7 @@ Run the audit per the component above with `{spec_path}` and `{feature_id}`. If 
 Run the gate per the component above with `{spec_path}`, `{feature_id}`, and `{cloud}=false` (workstation). If it returns:
 
 - `gated` — the gate has already written `{spec_path}/COMPLETED.md` (folding in the validation evidence) and verified phase-coherence + validation-sentinel preconditions. Proceed to the finalize steps below.
-- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), call work-log, STOP.
+- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), STOP.
 
 **Finalize steps (only when BOTH gates passed — coverage `clean` AND integrity `gated`):**
 
@@ -200,7 +200,7 @@ On `gated`, the gate has already run `python3 ~/.claude/scripts/lazy-state.py --
 1. Update `docs/features/ROADMAP.md` — find the feature row, wrap name+description in `~~ ... ~~`, append `**COMPLETE**` (the one docs write the script does not perform).
 2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
 3. PushNotification: `"{feature_name} COMPLETE. Run /lazy to continue."`
-4. Print the after-status bookend, call work-log, STOP.
+4. Print the after-status bookend, STOP.
 
 ### Any other `__*__` action
 
@@ -219,10 +219,9 @@ Skill({ skill: "<sub_skill>", args: "<sub_skill_args>" })
 After the skill returns:
 1. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard.** If `sub_skill` was `/execute-plan` or `/mcp-test`, run a single-turn consistency check before reporting (one git/grep check, not polling): (a) `git status --short` is empty; (b) `HEAD == origin/<branch>` (after `git fetch origin <branch>`); (c) **(`/execute-plan` only)** the plan part's frontmatter is `status: Complete` AND `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0`. The dispatched skill's atomic gate+commit should leave this clean, but it empirically loses its turn between gates and commit; this guard catches the residue. If any check fails, reconcile inline (stage + commit + push residue, tick the remaining PHASES.md verification boxes, re-flip the plan status if needed) and re-check before reporting — do NOT report a clean run while the tree is dirty or the dual ledger is half-flipped.
 2. Print the after-status bookend (Completed: "ran /<sub_skill>", Next `/lazy` will: "Re-run lazy-state.py to determine.").
-3. Call the work-log step below.
-4. STOP.
+3. STOP.
 
-The sub-skill is responsible for its own internal status bookends and work-log entry. /lazy's work-log entry captures the dispatch-level view only.
+The sub-skill is responsible for its own internal status bookends.
 
 ---
 
@@ -235,28 +234,6 @@ Only triggered when `$ARGUMENTS` contains `"skip"`.
 3. Update ROADMAP.md: append `(SKIPPED — {reason})` to the feature row.
 4. The next `/lazy` invocation will automatically pick up the following feature.
 5. STOP.
-
----
-
-## Work Log (MANDATORY — DO NOT SKIP)
-
-Every /lazy invocation that performs meaningful work MUST call `interview_work_log_append` before producing the "After" status bookend.
-
-Load the tool: `ToolSearch({ query: "select:mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append" })`
-
-Call with:
-- `skill`: `"lazy"`
-- `project`: project root basename
-- `title`: `"/lazy → {action taken}"` (e.g., "/lazy → /execute-plan phase 3")
-- `summary`: 2-4 sentences. What state was detected, what skill was dispatched (or what special action ran), what it accomplished, any issues.
-- `files_modified`: files modified during this invocation (from sub-skill output, plus any sentinel writes the wrapper performed)
-- `technologies`: relevant tech stack
-- `patterns`: patterns applied
-- `technical_context`: architectural context of what was implemented
-
-**Skip work-log only when:** /lazy did nothing meaningful (terminal halt without dispatch, status query, or skip command).
-
-**The sub-skill invoked by /lazy is ALSO expected to log its own work** — both logs are required when a dispatch happened. /lazy logs the dispatch-level view; the sub-skill logs the implementation-level detail.
 
 ---
 
@@ -287,7 +264,7 @@ lazy-state.py → JSON {sub_skill, sub_skill_args, terminal_reason}
 
 terminal_reason set?     → notify + STOP
 sub_skill = "__*__"?     → wrapper performs special action (sentinel write / mark complete) + STOP
-sub_skill = real skill?  → Skill({skill, args}) → work-log → STOP
+sub_skill = real skill?  → Skill({skill, args}) → STOP
 ```
 
 The script mirrors the state machine documented in earlier revisions of this file (Step 3 blocker, Step 4 SPEC, Step 4.5 stub, Step 4.6 realign, Step 5 research gate, Step 6 phases, Step 7 plan, **Step 8 retro, Step 9 MCP**, Step 10 mark-complete). When the state machine needs to change, update `lazy-state.py` — and keep this skill's wrapper logic + the paired `/lazy-cloud` skill (per CLAUDE.md coupling rule) in sync.

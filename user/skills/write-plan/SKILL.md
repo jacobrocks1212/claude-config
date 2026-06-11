@@ -181,7 +181,7 @@ Every part file MUST start (after the existing "Mobile plan" preamble) with a `P
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
-Each part is otherwise **fully self-contained** per the existing /write-plan contract (execution model, mandatory rules, component reference card, blocking-issue protocol, completion section, work log). Generate each part with the full template; do not abbreviate later parts.
+Each part is otherwise **fully self-contained** per the existing /write-plan contract (execution model, mandatory rules, component reference card, blocking-issue protocol, completion section). Generate each part with the full template; do not abbreviate later parts.
 
 ---
 
@@ -223,7 +223,7 @@ The plan MUST contain all of the following sections. Everything below is plan te
 > | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
 > | **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
 >
-> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`.
 >
 > **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
 
@@ -253,7 +253,6 @@ The plan MUST contain all of the following sections. Everything below is plan te
 > | Step B.5 | Commit Policy | `.claude/skill-config/commit-policy.md` (fallback: `~/.claude/skills/_components/commit-and-push.md`) |
 > | Post-phase | Integration Verification | `~/.claude/skills/_components/integration-verification.md` |
 > | Post-phase | CLAUDE.md Review | `~/.claude/skills/_components/claude-md-review.md` |
-> | Final | Work Log | `~/.claude/skills/_components/work-log.md` |
 
 **References section (write this, listing each upstream artifact you read in Step 1b.1):**
 
@@ -505,15 +504,6 @@ Include a batch overview table per phase:
 >
 >    **Implementation Notes summary:**
 >    [key cross-feature integration notes and pitfalls, collapsed into a brief reference for the next wave]
-
----
-
-**Work Log — write this into the plan:**
-
-> ## Append to Work Log (MANDATORY — DO NOT SKIP)
->
-> Read `~/.claude/skills/_components/work-log.md` and follow its instructions.
-> Call interview_work_log_append MCP tool with skill, project, title, summary, files_modified, and technical_context.
 
 ---
 

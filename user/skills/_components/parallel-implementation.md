@@ -41,7 +41,6 @@ Agent({
 - Skill files (`~/.claude/skills/**/*.md`, `~/.claude-personal/skills/**/*.md`)
 - Component files (`~/.claude/skills/_components/*.md`)
 - Configuration files (`settings.json`, `skill-config/`)
-- `work-log.jsonl` (via MCP tool)
 
 ### What MUST Go to Subagents
 

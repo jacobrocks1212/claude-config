@@ -344,10 +344,6 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 2. Add any new "Open Questions" discovered during analysis to the spec
 3. Update "Decisions Log" in the spec with phase boundary rationale
 
-### Step 8: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
-
 ## Phase Size Guidelines
 
 **Too Small:**

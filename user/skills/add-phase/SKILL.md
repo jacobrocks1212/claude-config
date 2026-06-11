@@ -277,7 +277,3 @@ After approval:
 1. Append the new phase to PHASES.md (before any trailing notes/appendix sections)
 2. Apply supersession markings to affected phases
 3. Read back the modified file to verify formatting is correct
-
-## Step 8: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`

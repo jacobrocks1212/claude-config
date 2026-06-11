@@ -1,6 +1,6 @@
 ---
 name: log
-description: Manually trigger interview-prep work logging if not already done this session
+description: Manually trigger interview-prep work logging for a Cognito Forms session if not already done
 argument-hint: [optional: skill name to log as]
 model: haiku
 ---
@@ -8,6 +8,8 @@ model: haiku
 # Log Work
 
 Manually trigger the interview-prep work log for the current session. Use when a session produced meaningful engineering output but the work log wasn't called automatically.
+
+> **Scoped to Cognito Forms sessions only (2026-06-11).** This skill now lives under the Cognito Forms repo's `.claude/skills/` and is invocable only there — other repos no longer log interview-prep work.
 
 ---
 
@@ -24,7 +26,7 @@ Review the full conversation history for any prior call to `mcp__plugin_intervie
 
 Scan the session to reconstruct the work performed. Identify:
 
-- **Skill used** — which skill drove the work (e.g. `fix`, `implement-phase`, `spec`). If `$ARGUMENTS` specifies a skill name, use that. If no skill was invoked (ad-hoc work), use `manual`.
+- **Skill used** — which skill drove the work (e.g. `write-plan`, or another Cognito Forms skill). If `$ARGUMENTS` specifies a skill name, use that. If no skill was invoked (ad-hoc work), use `manual`.
 - **Project** — repo name or cwd basename
 - **Title** — short descriptive title of the work
 - **Summary** — 1-2 sentences describing what was accomplished

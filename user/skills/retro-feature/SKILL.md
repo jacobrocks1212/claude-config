@@ -176,10 +176,6 @@ STOP. Do NOT chain into Step 10 or `__mark_complete__` — feature completion is
 
 The one exception: if both `/retro` and `/execute-plan` succeed but neither sentinel is written AND `round >= max_rounds`, this skill emits `terminal = "max-rounds"` to its caller — it does NOT write a sentinel to capture that state. Max-rounds is a `/retro-feature`-internal cap, not a state-machine condition; the next `/retro-feature` invocation gets a fresh budget.
 
-### Work-log handling
-
-This skill does NOT call `interview_work_log_append` directly. Its sub-skills (`/retro` and `/execute-plan`) each log their own work, and a wrapping log entry would just duplicate. The orchestrator (`/lazy-batch`) logs the dispatch-level view via its cycle subagent's commit message.
-
 ### Relationship to `lazy-state.py` Step 9
 
 `lazy-state.py`'s current Step 9 dispatch (lines ~972–1005) handles the retro phase one cycle at a time:

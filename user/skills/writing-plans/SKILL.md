@@ -95,10 +95,6 @@ git commit -m "feat: add specific feature"
 - DRY, YAGNI, TDD, frequent commits
 - When writing orchestration plans that use subagent patterns, quality gates, PHASES.md updates, integration verification, or CLAUDE.md review — inject from `~/.claude/skills/_components/` via `!`cat``. Never copy shared protocol text inline. When modifying a shared protocol, edit the component file, not individual skills.
 
-## Append to Work Log
-
-!`cat ~/.claude/skills/_components/work-log.md`
-
 ## Execution Handoff
 
 After saving the plan, offer execution choice:

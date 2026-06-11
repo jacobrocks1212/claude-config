@@ -561,12 +561,6 @@ These criteria are used during `/implement-phase-batch` to validate spec alignme
 
 ---
 
-## Step 4: Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
-
----
-
 ## Notes
 
 - The feature slug should be kebab-case, derived from the feature name (e.g., `user-notifications`).

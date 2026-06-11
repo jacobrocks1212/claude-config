@@ -222,18 +222,11 @@ Extract from matched sessions:
 2. Read every identified skill's SKILL.md **in full** — these are the source of truth for what each skill's mandatory requirements are:
    - `~/.claude/skills/{name}/SKILL.md` for user-level skills
    - `.claude/skills/{name}/SKILL.md` for repo-scoped skills (e.g., `/mcp-test`)
-3. Also read `~/.claude/skills/_components/work-log.md` — the shared work-log component all skills must follow
-4. Pass the full text of each relevant skill's SKILL.md to Subagent G in its prompt so it can verify compliance against the actual requirements, not a stale summary
+3. Pass the full text of each relevant skill's SKILL.md to Subagent G in its prompt so it can verify compliance against the actual requirements, not a stale summary
 
 **Prompt:** Verify that all skills invoked during this feature's implementation followed their mandatory requirements. The full text of each skill is provided below for reference — use these as the authoritative checklist. Check each of the following:
 
-**1. Work Log entries exist:**
-- Read `~/.interview-prep/work-log.jsonl`
-- Search for entries where `project` matches this repo AND (`title` or `summary`) references this feature name or feature ID
-- Expected: at least one entry per major skill invocation (/spec, /spec-phases, /execute-plan, /mcp-test, etc.)
-- Report: which skills logged vs. which are missing
-
-**2. PHASES.md Implementation Notes:**
+**1. PHASES.md Implementation Notes:**
 - For each completed phase, verify an `## Implementation Notes` block exists with:
   - Date
   - Work completed summary
@@ -242,22 +235,22 @@ Extract from matched sessions:
   - Pitfalls/guidance
 - Report: which phases have complete notes vs. which are missing/incomplete
 
-**3. Quality gates passed:**
+**2. Quality gates passed:**
 - Check git log for evidence of QG runs (commit messages mentioning "qg", "quality gate", or presence of QG-related files)
 - Check PHASES.md implementation notes for QG pass/fail mentions
 - Report: evidence of QG compliance per phase
 
-**4. Task tracking was used:**
+**3. Task tracking was used:**
 - Search session history (if available) for `TaskCreate`/`TaskUpdate` tool calls
 - If session history unavailable, check PHASES.md notes for task-related references
 - Report: evidence of task tracking usage
 
-**5. TDD discipline:**
+**4. TDD discipline:**
 - For each phase that produced source code, verify corresponding test files exist
 - Check if tests were created BEFORE or alongside implementation (look at commit order)
 - Report: test file coverage per phase, any phases with implementation but no tests
 
-**6. Subagent review was performed:**
+**5. Subagent review was performed:**
 - Check PHASES.md implementation notes for review verdicts (PASS/PASS-WITH-FIXES/NEEDS-REWORK)
 - If session history available, search for review report patterns
 - Report: review evidence per batch
@@ -269,7 +262,6 @@ Extract from matched sessions:
 
 | Requirement | Status | Evidence | Gap |
 |-------------|--------|----------|-----|
-| Work log entries | ✓/✗ | {count} entries found | {missing skills} |
 | Implementation Notes | ✓/✗ | {N}/{total} phases complete | {missing phases} |
 | Quality gates | ✓/✗ | {evidence} | {gaps} |
 | Task tracking | ✓/✗ | {evidence} | {gaps} |
@@ -359,7 +351,6 @@ Summarize how context compaction affected the implementation:
 
 Incorporate Subagent G's compliance report. For any requirement below 100%:
 - Classify as implementation defect (one-off miss) or systematic issue (skill enforcement too weak)
-- If work-log entries are missing: flag as **critical** — this breaks the autonomous audit trail
 - If Implementation Notes are incomplete: flag as **high** — downstream phases and retros depend on them
 - If QG evidence is missing: flag as **medium** — may indicate skipped gates
 - If TDD evidence is weak: assess whether the feature's nature warranted TDD (pure config/scaffolding may not)
@@ -716,17 +707,6 @@ If a later session re-runs `/retro` on the same feature and finds new Significan
 
 ---
 
-## Step 7: Append to Work Log (MANDATORY — DO NOT SKIP)
+## Step 7: Close Documentation Tracking (MANDATORY — DO NOT SKIP)
 
 !`cat .claude/skill-config/cog-doc-track-close.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-close.md`
-
-!`cat ~/.claude/skills/_components/work-log.md`
-
-**Extra fields for retro:**
-
-| Field | Value |
-|-------|-------|
-| `retro_scope` | Feature/work reviewed |
-| `issues_found` | Count of issues identified |
-| `improvements_proposed` | Count of concrete improvements proposed |
-| `categories` | Array of issue categories found (e.g. `["incorrect-assumptions", "serial-bottleneck", "tooling-gap"]`) |

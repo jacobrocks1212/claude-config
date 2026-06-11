@@ -123,7 +123,7 @@ This plan uses an **orchestrator + Sonnet subagent** architecture:
 | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
 | **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
 
-**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `work-log.jsonl`.
+**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`.
 
 **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
 
@@ -163,7 +163,6 @@ Every "Launch Subagents" step below MUST be executed by composing Agent calls us
 | Step N.5 | Commit Policy | `.claude/skill-config/commit-policy.md` (fallback: `~/.claude/skills/_components/commit-and-push.md`) |
 | Post-fix | Integration Verification | `~/.claude/skills/_components/integration-verification.md` |
 | Post-fix | CLAUDE.md Review | `~/.claude/skills/_components/claude-md-review.md` |
-| Final | Work Log | `~/.claude/skills/_components/work-log.md` |
 ```
 
 #### Work Unit Definitions
@@ -280,15 +279,6 @@ Read `~/.claude/skills/_components/claude-md-review.md` and follow its instructi
 ## Commit and Push
 
 Read the commit policy: first try `.claude/skill-config/commit-policy.md` in the project root. If it doesn't exist, read `~/.claude/skills/_components/commit-and-push.md` instead.
-```
-
-#### Work Log
-
-```
-## Append to Work Log (MANDATORY — DO NOT SKIP)
-
-Read `~/.claude/skills/_components/work-log.md` and follow its instructions.
-Call interview_work_log_append MCP tool with skill, project, title, summary, files_modified, and technical_context.
 ```
 
 ---

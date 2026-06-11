@@ -278,12 +278,6 @@ Print a completion report:
    - If none: "No speculative breakdowns — all specs are root-level or 1 hop from root"
 
    **Next step:** `/implement-phase-batch [paths to PHASES.md files]`
-
----
-
-## Append to Work Log (MANDATORY — DO NOT SKIP)
-
-!`cat ~/.claude/skills/_components/work-log.md`
 ```
 
 ---
