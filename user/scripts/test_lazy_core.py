@@ -2230,6 +2230,271 @@ def test_verify_ledger_unchecked_verification_only_passes():
 
 
 # ---------------------------------------------------------------------------
+# Tests: verify_ledger — Phase 9 WU-3 plan-scoped mode
+# ---------------------------------------------------------------------------
+
+def _write_plan(plans_dir: Path, filename: str, status: str, phases: list) -> Path:
+    """Write an implementation plan with the given status + phases: list."""
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    p = plans_dir / filename
+    phases_yaml = "".join(f"  - {n}\n" for n in phases) if phases else ""
+    body = (
+        "---\n"
+        "kind: implementation-plan\n"
+        f"status: {status}\n"
+    )
+    if phases:
+        body += "phases:\n" + phases_yaml
+    body += "---\n\n# Implementation Plan\n"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+# A two-part PHASES.md: phases 1-2 fully ticked, phase 3 has an unchecked
+# non-verification WU plus an unchecked verification row.
+_PHASES_PART1_DONE_PART2_PENDING = (
+    "### Phase 1\n"
+    "- [x] Implement part-1 thing A\n"
+    "- [x] Implement part-1 thing B\n"
+    "### Phase 2\n"
+    "- [x] Implement part-2-of-scope thing\n"
+    "### Phase 3\n"
+    "- [ ] Implement phase-3 production wiring\n"
+    "**Runtime Verification**\n"
+    "- [ ] Phase 3 MCP smoke test passes\n"
+)
+
+
+def _commit_and_push_spec(repo_root: Path) -> None:
+    """Stage/commit/push everything so clean_tree + head_matches_origin pass."""
+    subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                   capture_output=True)
+    subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m", "spec"],
+                   check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                   capture_output=True)
+
+
+def test_verify_ledger_feature_level_fails_when_part2_pending():
+    """Feature-level (no --plan) on a part-1-complete/part-2-pending feature →
+    plan_complete False (part-2 plan still Ready) — the false-alarm baseline.
+
+    Discriminator: the SAME spec passes plan-scoped on part-1 (next test) but
+    feature-level fails because later parts are legitimately pending.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        _write_plan(plans, "plan-part-1.md", "Complete", [1, 2])
+        _write_plan(plans, "plan-part-2.md", "Ready", [3])
+        (spec_dir / "PHASES.md").write_text(_PHASES_PART1_DONE_PART2_PENDING,
+                                            encoding="utf-8")
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+    assert result["ok"] is False, f"feature-level should fail (part-2 pending): {result}"
+    assert result["checks"]["plan_complete"] is False, (
+        f"feature-level plan_complete should be False (part-2 Ready): {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_scoped_part1_passes():
+    """Plan-scoped on part-1 (phases [1,2], status Complete) → ok=True.
+
+    plan_complete = part-1's own status (Complete); deliverables_done = no
+    unchecked in-scope WUs (phases 1-2 fully ticked). Part-3's pending rows are
+    OUT of scope and must not fail the scoped verdict.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        part1 = _write_plan(plans, "plan-part-1.md", "Complete", [1, 2])
+        _write_plan(plans, "plan-part-2.md", "Ready", [3])
+        (spec_dir / "PHASES.md").write_text(_PHASES_PART1_DONE_PART2_PENDING,
+                                            encoding="utf-8")
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["ok"] is True, f"plan-scoped part-1 should pass: {result}"
+    assert result["checks"]["plan_complete"] is True, (
+        f"part-1 status is Complete → plan_complete True: {result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is True, (
+        f"in-scope phases 1-2 fully ticked → deliverables_done True: {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_scoped_part2_pending_fails():
+    """Plan-scoped on part-2 (phases [3], status Ready) → plan_complete False.
+
+    Part-2 is legitimately pending; its scoped verdict must reflect that.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        _write_plan(plans, "plan-part-1.md", "Complete", [1, 2])
+        part2 = _write_plan(plans, "plan-part-2.md", "Ready", [3])
+        (spec_dir / "PHASES.md").write_text(_PHASES_PART1_DONE_PART2_PENDING,
+                                            encoding="utf-8")
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part2)
+    assert result["ok"] is False, f"plan-scoped part-2 should fail (Ready): {result}"
+    assert result["checks"]["plan_complete"] is False, (
+        f"part-2 status Ready → plan_complete False: {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_scoped_catches_unflipped_status():
+    """All in-scope WUs ticked but the plan frontmatter is still In-progress →
+    plan_complete False.
+
+    Proves the scoped check reads THIS plan's status (not just deliverables) —
+    a stale, unflipped status line is caught.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        # part-1 covers phases 1-2 (both fully ticked) but status is In-progress.
+        part1 = _write_plan(plans, "plan-part-1.md", "In-progress", [1, 2])
+        _write_plan(plans, "plan-part-2.md", "Ready", [3])
+        (spec_dir / "PHASES.md").write_text(_PHASES_PART1_DONE_PART2_PENDING,
+                                            encoding="utf-8")
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["ok"] is False, f"unflipped status should fail: {result}"
+    assert result["checks"]["plan_complete"] is False, (
+        f"In-progress status → plan_complete False even with WUs ticked: {result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is True, (
+        f"in-scope WUs are ticked → deliverables_done True: {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_scoped_catches_in_scope_unchecked_wu():
+    """Plan frontmatter Complete but an in-scope NON-verification WU is unchecked
+    → deliverables_done False (verification rows in scope remain exempt).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        # part-1 claims Complete for phases [1] but phase 1 has an unchecked WU.
+        part1 = _write_plan(plans, "plan-part-1.md", "Complete", [1])
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Implement thing A\n"
+            "- [ ] Implement thing B (still pending)\n"
+            "**Runtime Verification**\n"
+            "- [ ] Phase 1 smoke test\n",  # verification row stays exempt
+            encoding="utf-8",
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["ok"] is False, f"in-scope unchecked WU should fail: {result}"
+    assert result["checks"]["plan_complete"] is True, (
+        f"plan status Complete → plan_complete True: {result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is False, (
+        f"in-scope non-verification WU unchecked → deliverables_done False: {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_scoped_verification_only_in_scope_passes():
+    """Plan Complete; in-scope unchecked rows are ALL verification → passes.
+
+    Mirrors the feature-level verification-exemption, but scoped to the plan's
+    phases — proving the scoped path preserves mid-feature verification semantics.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        part1 = _write_plan(plans, "plan-part-1.md", "Complete", [1])
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Implement thing A\n"
+            "- [x] Implement thing B\n"
+            "**Runtime Verification**\n"
+            "- [ ] Phase 1 smoke test passes\n",  # only unchecked is verification
+            encoding="utf-8",
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["ok"] is True, f"verification-only in-scope unchecked should pass: {result}"
+    assert result["checks"]["deliverables_done"] is True, (
+        f"only verification rows unchecked in scope → deliverables_done True: {result['checks']}"
+    )
+
+
+def test_verify_ledger_plan_scoped_empty_phases_falls_back_to_feature_level():
+    """A plan with no `phases:` set → deliverables_done falls back to the
+    feature-level semantics (unknown scope must NOT vacuously pass).
+
+    Here the feature has a real unchecked non-verification WU somewhere, so the
+    fallback correctly yields deliverables_done False.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        # No phases: field → unknown scope.
+        no_phases = _write_plan(plans, "plan-all.md", "Complete", [])
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Implement thing A\n"
+            "### Phase 2\n"
+            "- [ ] Implement thing B (still pending, real WU)\n",
+            encoding="utf-8",
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=no_phases)
+    assert result["checks"]["plan_complete"] is True, (
+        f"plan status Complete → plan_complete True: {result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is False, (
+        f"empty phases → feature-level fallback catches the real unchecked WU: {result['checks']}"
+    )
+    assert result["ok"] is False, f"fallback must not vacuously pass: {result}"
+
+
+def test_verify_ledger_plan_scoped_missing_plan_file_fails():
+    """A non-existent plan_path → plan_complete False (cannot be Complete)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        _write_plan(plans, "plan-part-1.md", "Complete", [1])
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n- [x] Implement thing A\n", encoding="utf-8"
+        )
+        _commit_and_push_spec(repo_root)
+        missing = plans / "does-not-exist.md"
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=missing)
+    assert result["checks"]["plan_complete"] is False, (
+        f"missing plan file → plan_complete False: {result['checks']}"
+    )
+    assert result["ok"] is False, f"missing plan must fail: {result}"
+
+
+# ---------------------------------------------------------------------------
 # Tests: apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
 # ---------------------------------------------------------------------------
 
@@ -3969,6 +4234,150 @@ def test_update_repeat_count_pipelines_are_isolated():
 
 
 # ---------------------------------------------------------------------------
+# Tests: update_repeat_count — Phase 9 WU-2 HEAD-aware streak + peek mode
+# ---------------------------------------------------------------------------
+
+def _commit_dummy(repo_root: Path, name: str) -> None:
+    """Make a real (no-op-ish) commit in a git repo fixture so HEAD advances."""
+    (repo_root / name).write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo_root), "add", name], check=True,
+                   capture_output=True)
+    subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m", name],
+                   check=True, capture_output=True)
+
+
+def test_update_repeat_count_head_advance_resets():
+    """Identical signature probed twice with a REAL commit in between → second
+    call returns 1, NOT 2.
+
+    Commits landing between identical probes are mechanical proof of forward
+    progress (a re-validation after work landed), so the streak must RESET even
+    though the (feature_id, sub_skill, args, step) tuple is unchanged.
+
+    Uses a real git repo_root so HEAD resolves; signature_path is injected into
+    the tempdir (not the repo) so the state file does not dirty the tree.
+    RED: pre-WU-2 update_repeat_count ignores HEAD → returns 2.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+        # A real commit lands between the two identical probes.
+        _commit_dummy(repo_root, "progress.txt")
+        r2 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+    assert r1 == 1, f"expected 1 on first call, got {r1!r}"
+    assert r2 == 1, (
+        f"expected 1 after a commit landed between identical probes (HEAD advanced "
+        f"= forward progress, reset the streak), got {r2!r}"
+    )
+
+
+def test_update_repeat_count_same_head_increments():
+    """Identical signature, NO commit between calls → 1 then 2.
+
+    Pins that HEAD-awareness does NOT break the genuine-stall case: when the
+    tuple repeats AND HEAD has not moved, the streak still increments.
+    RED: a naive 'always reset when git repo' impl would return 1, 1.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+        # No commit — HEAD unchanged → genuine stall → increment.
+        r2 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+    assert r1 == 1, f"expected 1 on first call, got {r1!r}"
+    assert r2 == 2, (
+        f"expected 2 on identical probe with unchanged HEAD (genuine stall), got {r2!r}"
+    )
+
+
+def test_update_repeat_count_legacy_file_without_head_increments():
+    """A hand-written legacy {signature, count} file (no `head`) + identical
+    signature → increments (backward-compat), and the rewritten file now
+    carries `head`.
+
+    Proves the pre-Phase-9 file shape is honored (no spurious reset) AND that
+    the payload is upgraded to the new shape going forward.
+    RED: an impl that REQUIRES `head` to match would reset the legacy file to 1.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        sig_path = Path(td) / "sig.json"
+        # Hand-write the OLD shape: signature matching _STATE_A, count 1, NO head.
+        legacy_sig = [
+            _STATE_A["feature_id"],
+            _STATE_A["sub_skill"],
+            _STATE_A["sub_skill_args"],
+            _STATE_A["current_step"],
+        ]
+        sig_path.write_text(
+            json.dumps({"signature": legacy_sig, "count": 1}), encoding="utf-8"
+        )
+        result = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+        persisted = json.loads(sig_path.read_text(encoding="utf-8"))
+    assert result == 2, (
+        f"expected 2 (legacy file without `head` must increment, not reset), got {result!r}"
+    )
+    assert "head" in persisted, (
+        f"rewritten payload must now carry `head`: {persisted!r}"
+    )
+    assert persisted["head"] is not None, (
+        f"`head` should be the repo HEAD sha (real git repo), got {persisted['head']!r}"
+    )
+
+
+def test_update_repeat_count_peek_does_not_mutate():
+    """peek=True computes the would-be count WITHOUT writing the state file.
+
+    Sequence in a NON-git repo_root (head is None on both sides → increment
+    path): peek, peek, advance, advance → 1, 1, 1, 2.
+
+    The two peeks neither create nor advance the file; the first real advance
+    therefore starts the streak at 1 as if the peeks never happened.
+    RED: pre-WU-2 has no `peek` kwarg → TypeError.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Non-git repo_root → _current_head returns None on every call.
+        repo_root = Path(td)
+        sig_path = Path(td) / "sig.json"
+        p1 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path, peek=True)
+        peek1_created = sig_path.exists()
+        p2 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path, peek=True)
+        a1 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+        a2 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+    assert p1 == 1, f"first peek should compute 1, got {p1!r}"
+    assert not peek1_created, "peek must NOT create the state file"
+    assert p2 == 1, f"second peek should ALSO compute 1 (no mutation), got {p2!r}"
+    assert a1 == 1, (
+        f"first real advance must start at 1 (peeks did not advance the streak), got {a1!r}"
+    )
+    assert a2 == 2, f"second real advance should increment to 2, got {a2!r}"
+
+
+def test_update_repeat_count_non_git_root_stores_none_head():
+    """Non-git repo_root: head stored as None and same-tuple still increments
+    exactly as the pre-Phase-9 behavior (None == None → increment).
+
+    Backward-compat guard for the common non-git injected-path tests.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        sig_path = Path(td) / "sig.json"
+        r1 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+        persisted1 = json.loads(sig_path.read_text(encoding="utf-8"))
+        r2 = lazy_core.update_repeat_count(repo_root, _STATE_A, signature_path=sig_path)
+    assert (r1, r2) == (1, 2), f"non-git same-tuple must increment 1→2, got {(r1, r2)!r}"
+    assert persisted1.get("head") is None, (
+        f"non-git repo_root must store head=None, got {persisted1.get('head')!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: git_guard_status — WU-5 single-probe payload (git guards)
 # ---------------------------------------------------------------------------
 
@@ -4970,6 +5379,15 @@ _TESTS = [
     ("test_verify_ledger_plan_not_complete_fails", test_verify_ledger_plan_not_complete_fails),
     ("test_verify_ledger_unchecked_nonverification_deliverable_fails", test_verify_ledger_unchecked_nonverification_deliverable_fails),
     ("test_verify_ledger_unchecked_verification_only_passes", test_verify_ledger_unchecked_verification_only_passes),
+    # verify_ledger — Phase 9 WU-3 plan-scoped mode
+    ("test_verify_ledger_feature_level_fails_when_part2_pending", test_verify_ledger_feature_level_fails_when_part2_pending),
+    ("test_verify_ledger_plan_scoped_part1_passes", test_verify_ledger_plan_scoped_part1_passes),
+    ("test_verify_ledger_plan_scoped_part2_pending_fails", test_verify_ledger_plan_scoped_part2_pending_fails),
+    ("test_verify_ledger_plan_scoped_catches_unflipped_status", test_verify_ledger_plan_scoped_catches_unflipped_status),
+    ("test_verify_ledger_plan_scoped_catches_in_scope_unchecked_wu", test_verify_ledger_plan_scoped_catches_in_scope_unchecked_wu),
+    ("test_verify_ledger_plan_scoped_verification_only_in_scope_passes", test_verify_ledger_plan_scoped_verification_only_in_scope_passes),
+    ("test_verify_ledger_plan_scoped_empty_phases_falls_back_to_feature_level", test_verify_ledger_plan_scoped_empty_phases_falls_back_to_feature_level),
+    ("test_verify_ledger_plan_scoped_missing_plan_file_fails", test_verify_ledger_plan_scoped_missing_plan_file_fails),
     # apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
     ("test_apply_pseudo_validated_from_skip_writes", test_apply_pseudo_validated_from_skip_writes),
     ("test_apply_pseudo_validated_from_skip_refuses_when_skip_absent", test_apply_pseudo_validated_from_skip_refuses_when_skip_absent),
@@ -5025,6 +5443,12 @@ _TESTS = [
     ("test_update_repeat_count_args_distinguish_signature", test_update_repeat_count_args_distinguish_signature),
     ("test_update_repeat_count_corrupt_file_resets", test_update_repeat_count_corrupt_file_resets),
     ("test_update_repeat_count_pipelines_are_isolated", test_update_repeat_count_pipelines_are_isolated),
+    # update_repeat_count — Phase 9 WU-2 HEAD-aware streak + peek mode
+    ("test_update_repeat_count_head_advance_resets", test_update_repeat_count_head_advance_resets),
+    ("test_update_repeat_count_same_head_increments", test_update_repeat_count_same_head_increments),
+    ("test_update_repeat_count_legacy_file_without_head_increments", test_update_repeat_count_legacy_file_without_head_increments),
+    ("test_update_repeat_count_peek_does_not_mutate", test_update_repeat_count_peek_does_not_mutate),
+    ("test_update_repeat_count_non_git_root_stores_none_head", test_update_repeat_count_non_git_root_stores_none_head),
     # git_guard_status — WU-5 single-probe payload (git guards)
     ("test_git_guard_status_clean_and_pushed", test_git_guard_status_clean_and_pushed),
     ("test_git_guard_status_dirty_tree", test_git_guard_status_dirty_tree),

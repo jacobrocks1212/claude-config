@@ -1252,7 +1252,44 @@ def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
 # Completion ledger verification
 # ---------------------------------------------------------------------------
 
-def verify_ledger(repo_root: Path, spec_path: Path) -> dict:
+def _phases_text_scoped_to(phases_text: str, phase_set: set[int]) -> str:
+    """Return the subset of PHASES.md lines belonging to phases in ``phase_set``.
+
+    Phase 9 WU-3 helper: the plan-scoped ``deliverables_done`` check must apply
+    the SAME verification-only exemption mid-feature
+    (``remaining_unchecked_are_verification_only``) but only over the plan's
+    phases. ``_unchecked_wus_in_plan_scope`` already collects in-scope unchecked
+    rows but does NOT distinguish verification rows, so instead we slice the
+    PHASES body down to the in-scope ``### Phase N`` sections (each section runs
+    from its ``### Phase N`` heading until the next phase heading or a ``## ``
+    top-level boundary) and hand that slice to the existing exemption helper.
+
+    Fence-aware in the same spirit as ``_unchecked_wus_in_plan_scope``: a fenced
+    block opened inside an in-scope phase stays part of that phase's slice (the
+    downstream helper re-tracks fences itself, so we simply preserve the lines).
+    """
+    out: list[str] = []
+    current_phase: int | None = None
+    for line in phases_text.splitlines():
+        h = re.match(r"^###\s+Phase\s+(\d+)", line)
+        if h:
+            current_phase = int(h.group(1))
+            if current_phase in phase_set:
+                out.append(line)
+            continue
+        # A top-level ``## `` heading (NOT ``### Phase``) closes phase tracking —
+        # content after it is not part of any in-scope phase. Keep the verification
+        # heading recognizable to the exemption helper by re-emitting the line only
+        # when we are still inside an in-scope phase.
+        if line.startswith("## ") and not line.startswith("### "):
+            current_phase = None
+            continue
+        if current_phase is not None and current_phase in phase_set:
+            out.append(line)
+    return "\n".join(out)
+
+
+def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = None) -> dict:
     """Verify the four completion-ledger preconditions for a feature.
 
     Called by lazy-state.py and bug-state.py with ``--verify-ledger <spec_path>``
@@ -1284,6 +1321,25 @@ def verify_ledger(repo_root: Path, spec_path: Path) -> dict:
        zero-unchecked, and falls back to ``remaining_unchecked_are_verification_only``
        for the exemption. If PHASES.md does not exist, returns False (no evidence
        that implementation phases were ever completed).
+
+    Plan-scoped mode (Phase 9 WU-3 — ``plan_path`` given):
+      Multi-part plans split one feature across several plan files (each with a
+      ``phases:`` set). Feature-level checks 3 + 4 fire false alarms while later
+      parts are legitimately pending. When ``plan_path`` is provided, checks 3
+      and 4 narrow to THAT plan's scope; checks 1 and 2 are unchanged:
+        - ``plan_complete`` = THIS plan's frontmatter ``status:`` == ``Complete``
+          (read via ``_plan_status`` — the same parser ``find_implementation_plans``
+          and the stale-flip logic use). A missing ``plan_path`` file parses to the
+          legacy default ``Ready`` → False.
+        - ``deliverables_done`` = no unchecked NON-verification rows remain in the
+          plan's phases (``_unchecked_wus_in_plan_scope`` for the in-scope unchecked
+          rows, with the mid-feature verification-only exemption applied by slicing
+          the in-scope phase sections through
+          ``remaining_unchecked_are_verification_only``). A plan with an EMPTY /
+          missing ``phases:`` set has unknown scope, so it FALLS BACK to the
+          feature-level ``deliverables_done`` semantics (unknown scope must not
+          vacuously pass).
+      ``plan_path=None`` → byte-for-byte the original feature-level behavior.
 
     Return shape:
     ```
@@ -1343,13 +1399,28 @@ def verify_ledger(repo_root: Path, spec_path: Path) -> dict:
     except (OSError, subprocess.SubprocessError):
         head_matches_origin = False
 
-    # --- check 3: all implementation plans are Complete ---
-    # _has_any_complete_plan: at least one plan has status: Complete.
-    # find_implementation_plans: returns only non-Complete plans (filters out Complete).
-    # Together: any_complete AND no_incomplete → all plans are Complete (and ≥1 exists).
-    any_complete = _has_any_complete_plan(spec_path)
-    incomplete_plans = find_implementation_plans(spec_path)
-    plan_complete = any_complete and len(incomplete_plans) == 0
+    # --- Plan scope (Phase 9 WU-3): None → feature-level (original behavior) ---
+    # When plan_path is given, checks 3 + 4 narrow to that plan's declared phase
+    # set. An empty phase set (no `phases:`) means unknown scope → fall back to
+    # the feature-level deliverables_done semantics below.
+    scoped = plan_path is not None
+    plan_phase_set: set[int] = _plan_phase_set(plan_path) if scoped else set()
+
+    # --- check 3: implementation plan(s) Complete ---
+    if scoped:
+        # Plan-scoped: ONLY this plan's own frontmatter status matters. Read it
+        # via _plan_status (the same parser find_implementation_plans uses); a
+        # missing plan_path file parses to the legacy default "Ready" → not
+        # Complete → False.
+        plan_complete = _plan_status(plan_path) == "Complete"
+    else:
+        # Feature-level: every implementation plan must be Complete (≥1 exists).
+        # _has_any_complete_plan: at least one plan has status: Complete.
+        # find_implementation_plans: returns only non-Complete plans.
+        # Together: any_complete AND no_incomplete → all plans Complete (and ≥1).
+        any_complete = _has_any_complete_plan(spec_path)
+        incomplete_plans = find_implementation_plans(spec_path)
+        plan_complete = any_complete and len(incomplete_plans) == 0
 
     # --- check 4: no real (non-verification) unchecked deliverables ---
     phases_file = spec_path / "PHASES.md"
@@ -1358,13 +1429,30 @@ def verify_ledger(repo_root: Path, spec_path: Path) -> dict:
         deliverables_done = False
     else:
         phases_text = phases_file.read_text(encoding="utf-8")
-        unchecked, _checked = count_deliverables(phases_text)
-        if unchecked == 0:
-            deliverables_done = True
+        if scoped and plan_phase_set:
+            # Plan-scoped with a known phase set: only the plan's phases count.
+            # Mid-feature verification-only rows in scope stay exempt — slice the
+            # in-scope phase sections and apply the same exemption helper used at
+            # feature level.
+            in_scope_unchecked = _unchecked_wus_in_plan_scope(phases_text, plan_phase_set)
+            if not in_scope_unchecked:
+                # No unchecked rows at all inside the plan's phases → done.
+                deliverables_done = True
+            else:
+                # Some in-scope rows are unchecked — done only if they are ALL
+                # under a Runtime Verification / MCP Integration Test subsection.
+                scoped_text = _phases_text_scoped_to(phases_text, plan_phase_set)
+                deliverables_done = remaining_unchecked_are_verification_only(scoped_text)
         else:
-            # Remaining unchecked rows may be exempted if they are all under
-            # a Runtime Verification / MCP Integration Test subsection.
-            deliverables_done = remaining_unchecked_are_verification_only(phases_text)
+            # Feature-level (or a scoped plan with no `phases:` → unknown scope,
+            # which must NOT vacuously pass, so it uses feature-level semantics).
+            unchecked, _checked = count_deliverables(phases_text)
+            if unchecked == 0:
+                deliverables_done = True
+            else:
+                # Remaining unchecked rows may be exempted if they are all under
+                # a Runtime Verification / MCP Integration Test subsection.
+                deliverables_done = remaining_unchecked_are_verification_only(phases_text)
 
     # --- assemble result: determine first failing check in defined order ---
     checks = {
@@ -2079,12 +2167,39 @@ def neutralize_sentinel(path: Path, date: str | None = None) -> dict:
 # Persisted probe signature / loop detection — WU-4
 # ---------------------------------------------------------------------------
 
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a git
+    repo / git is unavailable.
+
+    Best-effort and never raises: a missing git binary, a non-repo path, or any
+    subprocess error all map to None. update_repeat_count uses this for the
+    Phase 9 WU-2 HEAD-aware streak — None on both sides (e.g. a non-git
+    repo_root) preserves the pre-Phase-9 same-tuple-increments behavior.
+
+    This mirrors lazy-state.py's own _current_head (which lazy-state keeps for
+    its Step-9 MCP-results freshness gate); the duplication is deliberate — the
+    two scripts are independently importable and lazy_core must not depend on a
+    sibling script. Both share the same best-effort contract.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def update_repeat_count(
     repo_root: Path,
     state: dict,
     *,
     signature_path: Path | None = None,
     pipeline: str = "feature",
+    peek: bool = False,
 ) -> int:
     """Persist the current probe signature and return the consecutive-repeat count.
 
@@ -2095,16 +2210,39 @@ def update_repeat_count(
 
     Each call:
     1. Derives or accepts a ``signature_path`` for the persisted JSON file.
-    2. Reads the existing JSON (shape ``{"signature": [...], "count": int}``).
-       Any missing file, OS error, or corrupt/invalid JSON is silently treated
-       as «no prior» — the function never raises on a bad state file.
+    2. Reads the existing JSON (shape ``{"signature": [...], "count": int,
+       "head": str | None}``). Any missing file, OS error, or corrupt/invalid
+       JSON is silently treated as «no prior» — the function never raises on a
+       bad state file.
     3. Compares the stored signature (a list) to the new signature (a tuple).
        JSON has no tuple type, so comparison is list-vs-list after converting
        the new tuple to a list.
-    4. If the signatures match → increments count; otherwise resets to 1.
-    5. Atomically persists the new ``{"signature": ..., "count": count}`` JSON
-       back to ``signature_path`` so the next call can read it.
+    4. Counting logic (Phase 9 WU-2 — HEAD-aware):
+         - signature DIFFERS (or no prior)         → count 1.
+         - signature IDENTICAL and stored ``head``:
+             * present AND DIFFERS from current HEAD → RESET to 1. Commits
+               landing between two identical probes are mechanical proof of
+               forward progress (a re-validation after work landed), NOT a
+               stall — so the streak resets even though the tuple repeats.
+             * present AND SAME (or both None)       → increment.
+             * ABSENT (legacy pre-Phase-9 file)      → increment (backward
+               compat) and store ``head`` going forward.
+    5. Atomically persists the new ``{"signature": ..., "count": count,
+       "head": <current HEAD sha or None>}`` JSON back to ``signature_path`` so
+       the next call can read it — UNLESS ``peek`` is True (see below).
     6. Returns the (int >= 1) count.
+
+    ``peek`` (Phase 9 WU-2): when True, compute and RETURN the would-be count
+    WITHOUT any mutation — the state file is neither created nor rewritten.
+    Two consecutive peeks therefore return the same number, and a real advance
+    after N peeks behaves exactly as if the peeks never happened. This lets
+    diagnostic / inspection probes read the streak without inflating it (only
+    the single dispatch-bound probe should advance — see the batch SKILLs'
+    probe-hygiene guidance).
+
+    ``head`` is the repo_root's current HEAD sha (via ``_current_head``), or
+    None when repo_root is not a git repo. None-on-both-sides preserves the
+    pre-Phase-9 same-tuple-increments behavior for non-git injected-path tests.
 
     Default ``signature_path`` (when None):
         feature pipeline: ``<tempdir>/lazy-state-last-<sha1_of_repo_root[:16]>.json``
@@ -2136,13 +2274,21 @@ def update_repeat_count(
         state.get("current_step"),
     )
 
+    # --- Resolve the repo's current HEAD (None when not a git repo) ----------
+    current_head = _current_head(repo_root)
+
     # --- Read the persisted prior signature (fail-safe) ----------------------
     prior_count = 0
     prior_sig_list: list | None = None
+    # Sentinel distinguishing "no `head` key at all" (legacy file) from an
+    # explicit ``"head": null`` (a non-git repo wrote it under the new shape).
+    _MISSING = object()
+    prior_head: object = _MISSING
     try:
         raw = signature_path.read_text(encoding="utf-8")
         data = json.loads(raw)
-        # Validate expected shape: {"signature": [4 items], "count": int}
+        # Validate expected shape: {"signature": [4 items], "count": int, ...}.
+        # ``head`` is OPTIONAL — a legacy pre-Phase-9 file has no head key.
         if (
             isinstance(data, dict)
             and isinstance(data.get("signature"), list)
@@ -2151,23 +2297,38 @@ def update_repeat_count(
         ):
             prior_sig_list = data["signature"]
             prior_count = data["count"]
-        # If shape is wrong, treat as no-prior (prior_count stays 0, prior_sig_list stays None).
+            if "head" in data:
+                prior_head = data["head"]
+        # If shape is wrong, treat as no-prior (prior_count stays 0, prior_sig_list None).
     except (OSError, ValueError, json.JSONDecodeError):
         # File absent, unreadable, or corrupt → treat as no prior.
         pass
 
-    # --- Compute new count ---------------------------------------------------
+    # --- Compute new count (Phase 9 WU-2 — HEAD-aware) -----------------------
     # JSON round-trips tuples as lists, so compare new_sig as a list.
-    if prior_sig_list is not None and list(new_sig) == prior_sig_list:
-        # Same signature as last time — consecutive repeat.
-        count = prior_count + 1
-    else:
-        # Changed signature (or no prior) — reset streak.
+    if prior_sig_list is None or list(new_sig) != prior_sig_list:
+        # Changed signature (or no prior) — fresh streak.
         count = 1
+    elif prior_head is _MISSING:
+        # Legacy file (no `head` recorded) — increment for backward-compat and
+        # begin recording head going forward.
+        count = prior_count + 1
+    elif prior_head is not None and prior_head != current_head:
+        # Same tuple but commits landed between probes (HEAD advanced) — that is
+        # forward progress, not a stall, so reset the streak to 1.
+        count = 1
+    else:
+        # Same tuple AND same head (or both None) — genuine consecutive repeat.
+        count = prior_count + 1
 
-    # --- Persist the updated record ------------------------------------------
-    payload = json.dumps({"signature": list(new_sig), "count": count})
-    _atomic_write(signature_path, payload)
+    # --- Persist the updated record (skipped entirely in peek mode) ----------
+    # peek=True returns the would-be count WITHOUT touching the state file, so
+    # diagnostic probes never inflate or reset the persisted streak.
+    if not peek:
+        payload = json.dumps(
+            {"signature": list(new_sig), "count": count, "head": current_head}
+        )
+        _atomic_write(signature_path, payload)
 
     return count
 

@@ -3427,6 +3427,9 @@ def main() -> int:
             "in the lazy-bug skills). Verifies: (1) clean working tree, "
             "(2) HEAD == @{u}, (3) all implementation plans are status: Complete, "
             "(4) no real (non-verification) unchecked deliverables in SPEC_PATH/PHASES.md. "
+            "With --plan PLAN, checks 3+4 narrow to that plan part's phase scope "
+            "(plan_complete = the plan's own status: Complete; deliverables_done = "
+            "no unchecked non-verification rows in the plan's phases). "
             "Emits a JSON verdict and exits 0 on pass, 1 on first failing check."
         ),
     )
@@ -3436,7 +3439,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--plan", default=None,
-        help="Plan-file path for __flip_plan_complete_*__ pseudo-skills.",
+        help="Plan-file path for __flip_plan_complete_*__ pseudo-skills AND "
+             "for plan-scoped --verify-ledger (Phase 9 WU-3).",
     )
     parser.add_argument(
         "--apply-date", default=None,
@@ -3458,8 +3462,16 @@ def main() -> int:
         "--repeat-count", action="store_true",
         help="Persist the probe signature and emit a 'repeat_count' field "
              "(consecutive identical-probe count) for mechanical loop detection. "
-             "Without this flag, output is byte-identical to the default and no "
-             "state file is written.",
+             "ADVANCES the persisted streak — reserve for the single dispatch-bound "
+             "probe per cycle. Without this flag, output is byte-identical to the "
+             "default and no state file is written.",
+    )
+    parser.add_argument(
+        "--repeat-count-peek", action="store_true",
+        help="Like --repeat-count but PEEK only: compute and emit the would-be "
+             "'repeat_count' WITHOUT advancing the persisted streak (no state-file "
+             "write). Use for diagnostic/inspection probes so they do not inflate "
+             "the streak. Mutually exclusive with --repeat-count.",
     )
     parser.add_argument(
         "--probe", action="store_true",
@@ -3495,6 +3507,12 @@ def main() -> int:
         help="Orchestrator max-cycles ceiling (for --probe cycle header).",
     )
     args = parser.parse_args()
+
+    # --repeat-count (advances the streak) and --repeat-count-peek (reads it
+    # without advancing) are mutually exclusive — a single probe cannot both
+    # advance and peek the persisted streak.
+    if args.repeat_count and args.repeat_count_peek:
+        _die("--repeat-count and --repeat-count-peek are mutually exclusive")
 
     if args.neutralize_sentinel is not None:
         result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
@@ -3542,8 +3560,13 @@ def main() -> int:
     if args.verify_ledger is not None:
         # Scripted completion-ledger guard: verify the four preconditions for
         # marking a bug fixed. The orchestrator's && chains short-circuit on
-        # non-zero exit when any check fails.
-        result = lazy_core.verify_ledger(Path(args.repo_root), Path(args.verify_ledger))
+        # non-zero exit when any check fails. When --plan is also passed, checks
+        # 3+4 narrow to that plan part's scope (Phase 9 WU-3) — reuses the
+        # existing --plan flag (shared with --apply-pseudo, no dest collision).
+        result = lazy_core.verify_ledger(
+            Path(args.repo_root), Path(args.verify_ledger),
+            plan_path=Path(args.plan) if args.plan else None,
+        )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -3555,26 +3578,28 @@ def main() -> int:
         scope_bug_id=args.bug_id,
         park_needs_input=args.park_needs_input,
     )
-    # --repeat-count is strictly additive and flag-gated so that default output
-    # remains byte-identical when the flag is absent. No state file is written
-    # and no field is injected unless --repeat-count is explicitly passed.
-    if args.repeat_count:
+    # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
+    # so that default output remains byte-identical when neither is passed.
+    # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
+    # the same field via peek=True (no state-file write). Both populate the same
+    # 'repeat_count' output field.
+    if args.repeat_count or args.repeat_count_peek:
         # pipeline="bug" namespaces the persisted signature file so a parallel
         # /lazy-batch session's lazy-state.py probes (which share the repo
         # root) cannot reset this pipeline's repeat streak — and vice versa.
         state["repeat_count"] = lazy_core.update_repeat_count(
-            Path(args.repo_root), state, pipeline="bug"
+            Path(args.repo_root), state, pipeline="bug", peek=args.repeat_count_peek
         )
     # --emit-prompt is strictly additive and flag-gated so that default output
-    # remains byte-identical when the flag is absent. Placed AFTER --repeat-count
-    # so the same-invocation count (when --repeat-count was also passed) drives
-    # the emitter's loop-block + model decision. Pipeline is "bug" here (bug-state
-    # reuses the feature_* keys for bugs). emit_cycle_prompt(...) is None for
-    # pseudo-skills / terminal probes → cycle_prompt: null, cycle_model: null (so
-    # the orchestrator's one probe call is uniform); on refusal it also adds
-    # cycle_prompt_refused.
+    # remains byte-identical when the flag is absent. Placed AFTER the repeat
+    # flags so the same-invocation count (from EITHER --repeat-count or
+    # --repeat-count-peek) drives the emitter's loop-block + model decision.
+    # Pipeline is "bug" here (bug-state reuses the feature_* keys for bugs).
+    # emit_cycle_prompt(...) is None for pseudo-skills / terminal probes →
+    # cycle_prompt: null, cycle_model: null (so the orchestrator's one probe
+    # call is uniform); on refusal it also adds cycle_prompt_refused.
     if args.emit_prompt:
-        rc = state.get("repeat_count") if args.repeat_count else None
+        rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
         emitted = lazy_core.emit_cycle_prompt(
             Path(args.repo_root), state,
             pipeline="bug", cloud=args.cloud, repeat_count=rc,
