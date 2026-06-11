@@ -216,12 +216,12 @@ Pass `--skip-needs-research` **only when `allow_research_skip == true` AND `skip
 **Probe enrichment (optional — folds repeat-count, git guards, and cycle header into one payload).** The orchestrator MAY call the probe with additional flags to fold `repeat_count`, `git_guards`, and `cycle_header` into the JSON in a single invocation:
 
 ```bash
-python3 ~/.claude/scripts/lazy-state.py --cloud --repeat-count --probe \
+python3 ~/.claude/scripts/lazy-state.py --cloud --repeat-count --emit-prompt --probe \
   --forward-cycles {forward_cycles} --meta-cycles {meta_cycles} --max-cycles {max_cycles} \
   [--skip-needs-research]
 ```
 
-`--repeat-count` enriches the output with a `repeat_count` field (how many consecutive cycles returned the same `(feature_id, sub_skill, sub_skill_args, current_step)` tuple) for mechanical loop detection. `--probe` (combined with the three counter flags) folds `git_guards` (clean-tree + origin-parity) and a pre-formatted `cycle_header` string into the response. These flags are purely additive — the base JSON fields are unchanged.
+`--repeat-count` enriches the output with a `repeat_count` field (how many consecutive cycles returned the same `(feature_id, sub_skill, sub_skill_args, current_step)` tuple) for mechanical loop detection. `--probe` (combined with the three counter flags) folds `git_guards` (clean-tree + origin-parity) and a pre-formatted `cycle_header` string into the response. `--emit-prompt` folds the fully-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assembly failure) into the JSON — with `--cloud` the emitter selects the cloud-mode sections (cloud preamble, `CLOUD OVERRIDE — LOAD-BEARING`, cloud push discipline, cloud turn-end) and binds every token. SHOULD be passed on every probe (null on pseudo-skill/terminal probes, always safe); Step 1d consumes it verbatim. These flags are purely additive — the base JSON fields are unchanged.
 
 **Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation flag), append `--park-needs-input` to EVERY `lazy-state.py --cloud` probe invocation in this step (base or enriched form alike). With the flag, the script skips features carrying an unresolved `NEEDS_INPUT.md` instead of halting on `needs-input` and reports them in a `parked[]` array on the JSON output — the input to the Step 1g park path and the §1c.6 park notifications. When `park_mode == false`, call the script plain (no `--park-needs-input`) — existing behavior, byte-for-byte; the `parked[]` key never appears.
 
@@ -288,285 +288,20 @@ After the inline action:
 
 **Long-build ownership (harness-tracked).** Cloud has no Tauri runtime, so packaged `tauri build` does not run here — but the ownership rule is universal: any build or test that may exceed a single subagent turn (e.g. a multi-minute `cargo` run inside a long `/execute-plan` cycle) is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
-If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), the cloud cycle subagent prompt adds explicit reminders of (1) cloud runtime limitations (no Tauri / MCP / audio / Windows-only tooling) and (2) the cloud recursive-`Agent`-dispatch limit, with a per-skill inline-edit override that supersedes the dispatched skill's sub-subagent contract.
+If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build the dispatch by CONSUMING the script-assembled prompt — the cloud cycle prompt is NO LONGER inlined here.
 
-**Loop-guard check (identical shape to `/lazy-batch` Step 1d):** BEFORE composing the prompt, compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, append the **LOOP DETECTED** block below to the subagent prompt — the state script has returned the same tuple two cycles in a row, almost always indicating a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing. **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (different plan-part path per part, same other fields) false-triggers the guard on every part despite genuine forward progress.
+**Consume the script-assembled cloud prompt — do NOT hand-bind or inline it.** The probe (`python3 ~/.claude/scripts/lazy-state.py --cloud … --repeat-count --emit-prompt`, Step 1a) returns `cycle_prompt` already assembled for cloud: `emit_cycle_prompt` selected the cloud-mode sections (the cloud preamble — no Tauri / MCP / audio / Windows-only tooling, no persistent state; the `CLOUD OVERRIDE — LOAD-BEARING` sub-subagent / per-skill inline-edit override; the cloud per-batch push discipline; and the cloud TURN-END CONTRACT) and bound every token (`{item_name}`, `{item_id}`, `{cwd}`, `{current_step}`, `{sub_skill}`, `{sub_skill_args}`, `{work_branch}`, … — the full 14-token list is in the component's header). Use `cycle_prompt` **VERBATIM** as the Agent `prompt:` and `cycle_model` as the Agent `model:`. The orchestrator no longer maintains a hand-synced copy of the cloud cycle prompt — the sectioned `cycle-base-prompt.md` (with its `modes=cloud` sections) is the single source, and the `--cloud` emit selects it. **Same null/refused fallback rule as `/lazy-batch`** — see `~/.claude/skills/lazy-batch/SKILL.md` Step 1d: on a `cycle_prompt_refused` for a REAL skill, surface a T6 deviation and fall back to reading + hand-binding the component (degraded path).
 
-Base prompt template:
+**Loop-guard cross-check (identical shape to `/lazy-batch` Step 1d):** BEFORE dispatching, independently compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, the state returned the same tuple two cycles in a row — almost always a missing terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`). **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (different plan-part path per part, same other fields) false-triggers the guard on every part despite genuine forward progress. **Loop-block inclusion and the opus/sonnet selection are SCRIPT-OWNED** (driven by the persisted per-pipeline `repeat_count`): `cycle_prompt` arrives with the loop block already appended and `cycle_model` already `"sonnet"` when `repeat_count >= 2`. The in-session signature is retained as the cross-check (it still drives the T2 `(sonnet, loop-resolution)` `disp` tag); if it fires but `cycle_model` came back `"opus"`, re-run the probe WITH `--repeat-count --emit-prompt` rather than hand-appending the block.
 
-```
-You are advancing one cycle of the autonomous feature pipeline in a CLOUD
-Linux session. This container has:
-  - No Tauri desktop runtime
-  - No MCP HTTP server
-  - No audio device
-  - No Windows-only tooling
-  - No persistent state — the container is reclaimed after the session.
+<!-- The cloud cycle base prompt is no longer inlined in this SKILL. Its content (cloud preamble,
+     CLOUD OVERRIDE — LOAD-BEARING, cloud Commit + PUSH policy, cloud TURN-END CONTRACT, and the
+     LOOP DETECTED block) lives in the sectioned component
+     `~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (modes=cloud sections)
+     + `loop-block.md`, and is emitted, fully token-bound, as the probe's `cycle_prompt`. NEVER
+     re-inline it here — that hand-synced copy was exactly what Phase 8 deleted. -->
 
-Feature: {feature_name} ({feature_id})
-Working directory: {cwd}
-State script said: {current_step}
-
-Action for this cycle:
-  Invoke the {sub_skill} skill with args: {sub_skill_args} --batch
-
-Operating mode: batch
-  - Do NOT ask interactive questions. Skills accept --batch and either auto-accept
-    a recommended option or write NEEDS_INPUT.md and halt.
-  - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the decision.
-  - The state script (--cloud variant) has already guaranteed this skill is safe
-    to run in cloud. If a deliverable genuinely cannot be implemented in cloud
-    (e.g. Windows-only build step, Tauri-runtime-only behavior), write
-    BLOCKED.md with blocker_kind: cloud-limitation per
-    ~/.claude/skills/_components/sentinel-frontmatter.md and halt.
-
-Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
-  This subagent runs in a cloud Linux session and does NOT have the `Agent`
-  tool — you CANNOT spawn further sub-subagents from inside this cycle. Any
-  Agent() call you attempt will fail (tool unavailable) and waste the cycle.
-
-  Therefore, regardless of what the dispatched skill's SKILL.md says about
-  spawning sub-subagents (test-agent, impl-agent, research subagents A–G,
-  etc.), you MUST perform that work INLINE in this subagent session using
-  Edit / Write / Read directly. The cloud cycle subagent SUPERSEDES the
-  dispatched skill's sub-subagent dispatch contract — this is the documented
-  cloud override, not a hard contract violation.
-
-  Per-skill cloud overrides (override the workstation SKILL.md contract):
-    • /execute-plan — IGNORE Step 3's "Execution Model Enforcement". Do NOT
-      attempt Agent({model: "sonnet"}) test-agent / impl-agent dispatches.
-      Perform each batch's test additions and implementation edits INLINE
-      with Edit / Write / Read on source/test files directly
-      (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files included).
-      Follow the rest of /execute-plan as written (batch ordering, commits,
-      plan-file checkbox flips, sentinel emissions). Zero sub-subagent
-      dispatches in a cloud /execute-plan cycle is the EXPECTED state —
-      NOT a contract violation.
-      ATOMIC GATE+COMMIT (HARD): per /execute-plan's "Atomic gate+commit"
-      rule, the FINAL action of each batch AND of plan-part completion MUST be
-      ONE chained Bash command — `<gate> && git add -A && git commit -m "..."
-      && git push` — so the auto-backgrounded gate job commits + pushes itself.
-      This closes the turn-loss gap (the recurring failure where the cycle ends
-      between "gates passed" and "commit", leaving the tree dirty or the dual
-      ledger half-flipped). Before reporting, tick EVERY PHASES.md verification
-      box for the completed phase(s) and confirm `git status --short` is empty.
-      SKIP THE GROUND-TRUTH RE-RUN: subagent-review.md Step 1.5 exists to
-      detect a *separate* untrusted subagent falsifying its report by re-running
-      every command (git status / wc -l / grep / test runner) from the
-      orchestrator's shell and diffing. In this inline path YOU wrote both the
-      tests and the implementation in this same session — there is no separate
-      subagent report to police, so that mechanical command re-run is pure
-      redundant work. Do NOT re-run-and-diff your own commands; you already have
-      ground truth from having just run them. Still perform the SUBSTANTIVE
-      correctness review (spec alignment, deliverable coverage, logic/edge-case
-      check, propagation check per subagent-review.md Step 2.5) and still run
-      the quality gates — only the falsification-detection re-run is dropped.
-      (This matches /lazy-batch-retro, which already grades R-EP-4 — the
-      subagent-review step — as `n/a (cloud-override)` for cloud cycles.)
-      KNOWN CLOUD LIMITATION: collapsing the test-agent/impl-agent split into
-      one inline session trades away the STRUCTURAL test-first guarantee.
-      You MUST still preserve test-first DISCIPLINE within each batch: write
-      the failing tests FIRST (per the plan's test expectations), confirm they
-      fail for the right reason, THEN implement until they pass. The
-      compensating controls are quality gates (run + pass per the right-sized
-      cadence — targeted on intermediate batches, full workspace gate at
-      plan-part end + on any escalation trigger; see quality-gates.md), the
-      workstation /retro pass, and the deferred MCP-validation pass — none of
-      which substitute for writing tests before implementation here.
-    • /retro — IGNORE Step 3's parallel research-subagent fanout (A–G). Do
-      the research INLINE: read each input serially, synthesize, and write
-      the retro plan + RETRO_DONE.md directly. The deliverable is identical;
-      only the parallelism is dropped.
-    • retro-feature — composed orchestrator; same override — perform all
-      internal work inline rather than dispatching nested sub-subagents.
-    • plan-feature — composed orchestrator; runs /spec-phases THEN
-      /write-plan via the Skill tool (in-context, NOT Agent dispatch). Both
-      sub-skills are docs-only (PHASES.md + plan files) and orchestrator-only
-      in cloud, so no recursive Agent dispatch is needed — invoke /plan-feature
-      once and let it run its two sub-skills in your context. This is what
-      lazy-state.py --cloud emits at Step 6 (replacing the separate
-      /spec-phases dispatch).
-    • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
-      already orchestrator-only; no change.
-    • /mcp-test — cloud cannot run this (Step 9 deferral); should not appear
-      in a cloud cycle's sub_skill.
-
-  If you find yourself about to write Agent({...}) inside this cycle, STOP
-  and replace it with the equivalent Edit / Write / Read sequence. Do NOT
-  write BLOCKED.md because of the recursive-dispatch limit — that limit is
-  exactly what this override exists to handle. BLOCKED.md is still correct
-  for genuine cloud-RUNTIME limitations (Tauri, MCP, audio, Windows-only
-  tooling) per blocker_kind: cloud-limitation.
-
-  The dispatched skill's own SKILL.md remains authoritative for everything
-  else: batch ordering, sentinel emissions, commit policy, file-shape
-  invariants, plan-checkbox semantics. Re-read it from disk if any non-
-  dispatch detail is unclear — do NOT rely on memory.
-
-Source/test file edits:
-  - All cloud-cycle paths: perform Edit / Write on source/test files
-    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) DIRECTLY in
-    this subagent session. The cloud override above removes the
-    /execute-plan dispatch requirement and replaces it with inline edits.
-
-No premature Complete (PIPELINE-GATE + CLOUD HONESTY — HARD REQUIREMENT):
-  - You MUST NEVER set the top-level `**Status:**` of SPEC.md or PHASES.md to
-    `Complete` — under ANY condition. That flip is reserved EXCLUSIVELY for the
-    orchestrator's __mark_complete__ pseudo-skill, which runs only after the
-    full downstream tail (/retro → MCP-validation → the __mark_complete__
-    MCP-coverage audit) and itself refuses to fire without VALIDATED.md. If a
-    phase-implementation cycle flips SPEC/PHASES `**Status:** Complete` itself,
-    the feature has NO COMPLETED.md receipt, so lazy-state.py Step 2 now
-    HARD-HALTS on `completion-unverified` instead of rolling the queue forward —
-    the rogue flip stops the loop until a human reconciles rather than silently
-    skipping /retro + the coverage audit + the deferred workstation MCP pass.
-    The receipt gate makes this guard self-enforcing. Do NOT write a
-    COMPLETED.md yourself either — only the orchestrator's __mark_complete__
-    integrity gate writes it, after the validation tail passes.
-  - This is doubly true in cloud: MCP validation is DEFERRED to a workstation
-    pass that writes VALIDATED.md; until that runs, `Complete` asserts something
-    that has not happened. The honest terminal cloud state is `In-progress` (work
-    implemented + pushed, validation pending). What you MAY flip when a phase's
-    work lands: the PLAN-PART frontmatter `status:` and the per-PHASE
-    checkboxes/`Status:` for the phase you implemented; set the top-level PHASES
-    `**Status:**` to `In-progress` (NOT `Complete`). Let the deferral sentinel +
-    cloud-saturated flow + __mark_complete__ carry it to `Complete`.
-
-Plan-part status + per-WU granularity (RESUME SAFETY — HARD REQUIREMENT):
-  A cloud cycle can be killed mid-run by a container reclaim. To make a killed
-  cycle resume CLEANLY instead of redoing the whole part, you MUST keep the
-  plan part's on-disk status and per-WU checkboxes accurate AS THE WORK LANDS —
-  not only at end-of-cycle:
-
-  - For /execute-plan (and any /retro / realign cycle that mutates a plan part):
-    BEFORE starting any work-unit work, flip the plan part's YAML frontmatter
-    `status:` from `Ready` → `In-progress`, then commit AND push that single
-    change immediately (per the Commit + PUSH policy below). A mid-run kill then
-    leaves an accurate `In-progress` marker that resumes cleanly, instead of a
-    stale `Ready` that makes the resume redo the entire part.
-  - As EACH work-unit lands, tick its `- [ ]` → `- [x]` checkbox in the plan
-    file, then commit AND push that tick immediately — folded into the same
-    per-WU commit as the WU's code, or as its own small commit. This makes
-    resume granularity PER-WU: a kill loses at most the in-flight WU, and the
-    next run's Step 0.6 probe resumes at the first still-unchecked box.
-  - Prefer plan work-units authored as parseable `- [ ]` markdown checkboxes
-    (one per WU) so the resume probe can read per-WU completion straight from
-    the plan file. If a plan part is authored as prose without checkboxes,
-    resume granularity collapses to per-part — flag this in your summary so the
-    plan can be re-authored with checkboxes next time.
-  - Do NOT flip the plan part to `Complete` from inside the cycle when
-    DEFERRED_NON_CLOUD.md exists and VALIDATED.md does not (see "No premature
-    Complete" above) — `In-progress` is the honest cloud terminal; the
-    orchestrator's pseudo-skills own the `Complete` flip.
-
-Commit + PUSH policy (CLOUD DURABILITY — HARD REQUIREMENT):
-  This is a cloud container with NO persistent state — it is reclaimed on
-  inactivity, and a long-running cycle (20-45 min) looks idle to the
-  reclaimer. ANY local commit you make that has not been pushed is
-  PERMANENTLY LOST if the container is reclaimed mid-cycle. Therefore:
-
-  - After EACH batch / work-unit commit, IMMEDIATELY push it — do NOT defer
-    pushing to the end of the plan part or the end of the cycle:
-
-      git push origin <work-branch>
-
-    where <work-branch> is the current branch (git rev-parse --abbrev-ref
-    HEAD). Retry up to 4× with exponential backoff (2s/4s/8s/16s) on a
-    NETWORK error only. This shrinks the reclaim-loss window from "the entire
-    cycle runtime" to "a single batch".
-  - This applies per /execute-plan batch (push after every per-batch commit),
-    and to any other skill that commits incrementally. If the skill makes a
-    single commit, push that one commit immediately after it lands.
-  - You are authorized to push to the WORK BRANCH ONLY (the branch you are
-    already on). NEVER push to main / master. NEVER force-push. If the push
-    is rejected as non-fast-forward, STOP and report it — do not force.
-  - This does NOT change WHO owns source edits: you (the cycle subagent)
-    already own all source/test edits and commits per the cloud override
-    above. Adding `git push` is a git operation on work you already authored;
-    it does not touch the orchestrator's sentinel-only Write/Edit scope.
-
-Canonical sentinel filenames (HARD — prevents silent gate breakage):
-  - When you write a pipeline sentinel, use the EXACT canonical filename — never
-    a variant (lowercased, abbreviated, pluralized, or renamed). A mis-named
-    sentinel is invisible to lazy-state.py --cloud and silently breaks the gate,
-    looping the pipeline. Canonical set (feature pipeline):
-      BLOCKED.md · NEEDS_INPUT.md · NEEDS_RESEARCH.md · RETRO_DONE.md ·
-      VALIDATED.md · MCP_TEST_RESULTS.md · SKIP_MCP_TEST.md · COMPLETED.md ·
-      DEFERRED_NON_CLOUD.md · DEFERRED_REQUIRES_DEVICE.md
-    Re-read ~/.claude/skills/_components/sentinel-frontmatter.md for the exact
-    name + frontmatter schema before writing any sentinel — do NOT rely on
-    memory of the filename.
-
-After the skill returns:
-  1. Commit per .claude/skill-config/commit-policy.md (or standard pattern)
-     for any final uncommitted changes, then push per the Commit + PUSH
-     policy above. By this point every batch commit should ALREADY be pushed.
-  2. Report a one-paragraph summary (under 8 lines). If you ran /execute-plan
-     or /retro, CONFIRM that you performed all source/test edits and research
-     INLINE (zero Agent() calls) — this is the cloud-override audit signal,
-     mirroring the sub-subagent-count signal /lazy-batch uses on workstation.
-     Also CONFIRM each batch commit was pushed as it landed (the reclaim-safety
-     audit signal).
-
-TURN-END CONTRACT (HARD — applies to EVERY cycle; read this LAST because it
-is checked LAST):
-  Your background processes DIE when your turn ends — they do NOT keep running
-  (recurring incident: a cycle ended its turn "waiting" on a backgrounded
-  test/build job; the job's process tree was torn down and the cycle returned
-  resultless with uncommitted work).
-  1. NEVER end your turn while a process you started is still running. If a
-     long gate/test/build was auto-backgrounded by the harness, block on it
-     before returning — your turn is not over until the job is.
-  2. Long jobs MUST be launched as ONE chained command that carries its own
-     commit+push: `<gate/test> && git add -A && git commit -m "..." && git push`.
-  3. Pre-return checklist, in order, EVERY cycle: (a) no background job of
-     yours still running; (b) `git status --short` is EMPTY; (c) the branch is
-     pushed; (d) the result sentinel or plan/PHASES flip your skill owes is ON
-     DISK. Only then report and return.
-  A return that fails any of these is a resultless return — the contract
-  violation, not an acceptable partial.
-```
-
-**LOOP DETECTED block (append only when the loop-guard fires):**
-
-```
-⚠️  LOOP DETECTED: The state script returned this exact
-(feature_id={feature_id}, sub_skill={sub_skill}, sub_skill_args={sub_skill_args}, current_step={current_step})
-tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
-(RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
-missing — the skill that was supposed to write it on the prior cycle did not.
-
-Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
-  1. Read the canonical schemas in
-     ~/.claude/skills/_components/sentinel-frontmatter.md.
-  2. Inspect {spec_path}/ for existing sentinels and plan files.
-  3. Determine which sentinel SHOULD exist given the feature's current state
-     (e.g. all phases complete + deferred-non-cloud + retro plan present
-     with no significant divergences → RETRO_DONE.md should already exist;
-     if it doesn't, the previous retro round failed to write it).
-  4. The only sentinels a loop-breaker may author are `NEEDS_INPUT.md` and
-     `BLOCKED.md`. Do NOT directly write `VALIDATED.md`, `SKIP_MCP_TEST.md`,
-     `RETRO_DONE.md`, `COMPLETED.md`, `FIXED.md`, or any other completion or
-     validation receipt — those sentinels must be earned through their proper
-     gate (the skill that owns them). If you diagnose that such a sentinel is
-     missing, your permitted moves are: (a) re-run {sub_skill} so the sentinel
-     is earned through its proper gate (item 5), or (b) if genuinely stuck or
-     ambiguous, write `BLOCKED.md` (item 6) or `NEEDS_INPUT.md` describing the
-     gap. Then commit the sentinel you DID write and report the loop-break.
-  5. If the preconditions for the correct terminal sentinel are NOT unambiguously
-     met via a direct write, run {sub_skill} as instructed but explicitly emit
-     the appropriate terminal sentinel as part of its completion (e.g. /retro
-     Step 6c writes RETRO_DONE.md when no significant divergences). Report
-     which sentinel you emitted.
-  6. If no sentinel applies (genuine ambiguity), write BLOCKED.md with
-     blocker_kind: loop-detected and a clear description so the next cycle
-     surfaces it as a terminal halt.
-
-The orchestrator will halt on the next cycle's max-cycles cap if this loop
-persists — your job here is to break it.
-```
-
-Append the LOOP DETECTED block after the base prompt's final paragraph when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle. The loop-guard evaluation itself is silent — never announce "no loop-guard fires" (orchestrator-voice.md hard ban); the only visible trace of a fired guard is the `(sonnet, loop-resolution)` tag on the T2 `disp` line.
+The loop-guard evaluation itself is silent — never announce "no loop-guard fires" (orchestrator-voice.md hard ban); the only visible trace of a fired guard is the `(sonnet, loop-resolution)` tag on the T2 `disp` line.
 
 **Emit the T2 cycle-dispatch block (Step 3 / orchestrator-voice.md) immediately before the Agent call:** the canonical step heading (`### {Step name} — {work summary, ≤12 words} [x/y]`) + the `disp` line (`{sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])`). Nothing else between the block and the dispatch.
 
@@ -576,12 +311,12 @@ Dispatch:
 Agent({
   description: "lazy-batch-cloud cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {feature_name}",
   subagent_type: "general-purpose",
-  model: <"sonnet" if LOOP DETECTED else "opus">,
-  prompt: <the prompt above>
+  model: <the probe's cycle_model>,
+  prompt: <the probe's cycle_prompt, verbatim>
 })
 ```
 
-**Model selection (mirrored with `/lazy-batch`).** Normal cycles dispatch on Opus because real-skill cycles can involve novel implementation decisions. The loop-resolution cycle (LOOP DETECTED branch) is mechanical — the prompt already contains the diagnosis and the work is "read the canonical sentinel schema, identify which sentinel preconditions are met, write it, commit". Sonnet is sufficient at roughly 5× the cost-efficiency. Use `model: "sonnet"` when the LOOP DETECTED block was appended, `model: "opus"` otherwise.
+**Model selection — script-owned (mirrored with `/lazy-batch`).** The orchestrator no longer chooses the model: copy `cycle_model` from the `--cloud … --emit-prompt` probe into the `model:` field (never omit it — see the dispatch template). The script makes the choice — `"sonnet"` ONLY when it appended the loop block (persisted `repeat_count >= 2`), `"opus"` otherwise. The rationale is unchanged: normal real-skill cycles run Opus because they can involve novel implementation decisions, while the loop-resolution cycle is mechanical (the cloud `cycle_prompt` already carries the diagnosis — read the canonical sentinel schema, identify which sentinel's preconditions are met, write it, commit), so Sonnet suffices at roughly 5× the cost-efficiency.
 
 ### 1d.5. Post-cycle input audit (Opus — runs only on `/spec` and `plan-feature` cycles)
 
@@ -897,7 +632,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | `__write_validated_from_results__` pseudo-skill | normal Step 9 action — inline | not emitted (cloud cannot produce MCP results) |
 | `__flip_plan_complete_cloud_saturated__` pseudo-skill | listed in Step 1c.5 handlers as defensive (rare under workstation execution; included so any future state-script change that emits it under `--cloud=false` is still handled). | normal Step 7a action — emitted by `lazy-state.py --cloud` when an In-progress plan's only unchecked WUs are documented as workstation-only in `DEFERRED_NON_CLOUD.md`. Handled INLINE in Step 1c.5, no subagent dispatch. Prevents the `Step 7a: execute plan` no-op loop. |
 | No-premature-Complete guard (SPEC/PHASES `**Status:**`) | **NOW MIRRORED (was a divergence).** Workstation's Step 1d cycle prompt carries a "No premature Complete (PIPELINE-GATE HONESTY)" guard: the cycle subagent MUST NOT flip top-level SPEC/PHASES `**Status:**` to `Complete` — reserved for `__mark_complete__` after /retro → /mcp-test (VALIDATED.md) → coverage audit. Added because an `/execute-plan` cycle flipping `Complete` itself was observed to roll the queue forward and SILENTLY SKIP the /retro + /mcp-test + coverage-audit tail. | both the cycle subagent prompt (Step 1d "No premature Complete") and the `__mark_complete__` inline handler (Step 1c.5) FORBID the cycle subagent flipping SPEC/PHASES top `**Status:**` to `Complete` under ANY condition; doubly enforced when `DEFERRED_NON_CLOUD.md` exists and `VALIDATED.md` is absent — MCP validation is deferred to a workstation pass in cloud, so `Complete` before it runs is dishonest. Honest terminal cloud state is `In-progress`. `/lazy-batch-retro` adds matching low-severity rule **R-C-4**. |
-| Cycle subagent prompt (real skills only) | bare batch-mode instructions; cycle subagent honors each dispatched skill's sub-subagent contract (e.g. /execute-plan → Sonnet test-agent + impl-agent fanout, /retro → research subagents A–G) | adds cloud-environment limitations block AND a cloud-override block: cycle subagent has NO `Agent` tool (no recursive dispatch), so it performs all source/test edits and research INLINE using Edit / Write / Read, SUPERSEDING each dispatched skill's sub-subagent contract. Per-skill overrides (/execute-plan, /retro, retro-feature) are enumerated in the prompt template. **Known cloud limitation:** collapsing /execute-plan's test-agent→impl-agent split into one inline subagent trades away the STRUCTURAL test-first guarantee (the cycle subagent must still write tests-before-impl by discipline). Compensating controls: per-batch quality gates + workstation /retro + deferred MCP-validation pass. `/lazy-batch-retro` Step 4b cloud branch grades the corresponding R-EP-2/R-EP-3 as `n/a (cloud-override)`, not `fail`. |
+| Cycle subagent prompt (real skills only) | **same script-assembled prompt** — the orchestrator consumes the probe's `cycle_prompt` verbatim; the workstation sections are selected by the emitter. | **same script-assembled prompt, cloud sections selected by `--cloud`** — `lazy-state.py --cloud … --emit-prompt` makes the emitter add the cloud-environment limitations block AND the `CLOUD OVERRIDE — LOAD-BEARING` block (cycle subagent has NO `Agent` tool → performs all source/test edits and research INLINE using Edit / Write / Read, SUPERSEDING each dispatched skill's sub-subagent contract). The per-skill overrides (/execute-plan, /retro, retro-feature) live in the sectioned `cycle-base-prompt.md` `modes=cloud` sections — NOT inlined in this SKILL (Phase 8 deleted the hand-synced copy). **Known cloud limitation:** collapsing /execute-plan's test-agent→impl-agent split into one inline subagent trades away the STRUCTURAL test-first guarantee (the cycle subagent must still write tests-before-impl by discipline). Compensating controls: per-batch quality gates + workstation /retro + deferred MCP-validation pass. `/lazy-batch-retro` Step 4b cloud branch grades the corresponding R-EP-2/R-EP-3 as `n/a (cloud-override)`, not `fail`. |
 | Ground-truth re-run (subagent-review.md Step 1.5) | **performed** — the orchestrator/review subagent re-runs each Sonnet sub-subagent's reported commands (git status / wc -l / grep / test runner) and diffs to detect falsified reports. Valuable because the implementer is a *separate* untrusted subagent. | **CLOUD-SCOPED DIVERGENCE — skipped.** In the inline path the cycle subagent wrote both tests and implementation itself, so there is no separate subagent report to police — the mechanical re-run is pure redundant work. The cloud /execute-plan override drops it (substantive correctness + propagation review still run). Consistent with `/lazy-batch-retro` already grading R-EP-4 as `n/a (cloud-override)` for cloud cycles. |
 | Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, sub_skill_args, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
 | Cycle subagent model selection | normal cycles → `model: "opus"`. LOOP DETECTED branch → `model: "sonnet"`. **Same in both** — the loop-resolution work is mechanical (read sentinel schema, identify which sentinel preconditions are met, write it, commit), and the diagnosis is already in the prompt. Sonnet handles it at ~5× the cost-efficiency. | same as workstation. |

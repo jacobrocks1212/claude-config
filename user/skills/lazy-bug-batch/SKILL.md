@@ -176,12 +176,15 @@ probe with the enrichment flags to fold `repeat_count`, `git_guards`, and `cycle
 the JSON in a single invocation:
 
 ```bash
-python3 ~/.claude/scripts/bug-state.py --repeat-count --probe \
+python3 ~/.claude/scripts/bug-state.py --repeat-count --emit-prompt --probe \
   --forward-cycles {forward_cycles} --meta-cycles {meta_cycles} --max-cycles {max_cycles}
 ```
 
 These flags are purely additive (base JSON fields unchanged) — see
-`~/.claude/skills/lazy-batch/SKILL.md` Step 1a for their semantics.
+`~/.claude/skills/lazy-batch/SKILL.md` Step 1a for their semantics. `--emit-prompt` folds the
+script-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assembly failure) into
+the JSON, with the `pipelines=bug` sections selected and the bug tokens bound; SHOULD be passed on
+every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consumes it verbatim.
 
 **Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation
 flag), append `--park-needs-input` to EVERY `bug-state.py` probe invocation in this step (base
@@ -325,40 +328,25 @@ fall through to Step 1d.
 
 **Long-build ownership (harness-tracked).** Any build or test that may exceed a single subagent turn is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends (a `tauri build` backgrounded that way once silently vanished). Before committing to a 20–40 min packaged `tauri build`, run `cargo check --release` first to catch compile errors in minutes. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
-If Step 1c.5 did not handle this cycle, build a minimal subagent prompt. See
-`~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the full base prompt template, loop-guard
-check, LOOP DETECTED block, and dispatch mechanics.
+If Step 1c.5 did not handle this cycle, build the dispatch by CONSUMING the script-assembled
+prompt. Composition is now `python3 ~/.claude/scripts/bug-state.py … --repeat-count --emit-prompt`
+(the bug-pipeline mirror of lazy-batch's Step 1a probe) → use the probe's `cycle_prompt` verbatim
+as the Agent `prompt:` and `cycle_model` as the Agent `model:`. See
+`~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the shared consume-and-dispatch rules,
+in-session loop-guard cross-check, and the `cycle_prompt`-null/refused fallback — they apply
+identically to the bug pipeline.
 
-Bug-pipeline token substitutions in the prompt:
-- `"autonomous feature pipeline"` → `"autonomous bug pipeline"`
-- `Feature: {feature_name} ({feature_id})` → `Bug: {bug_name} ({bug_id})`
-- `COMPLETED.md` / `FIXED.md` in sentinel lists
-- LOOP DETECTED block guidance: mentions `RETRO_DONE.md / VALIDATED.md / SKIP_MCP_TEST.md /
-  DEFERRED_NON_CLOUD.md` — the same set, but `FIXED.md` replaces `COMPLETED.md`
+**Bug wording, the work branch, and the premature-status guard are now SCRIPT-BOUND via the
+sectioned template's tokens** (`{item_label}`/`{pipeline_phrase}`/`{receipt_name}` = FIXED.md /
+`{mark_pseudo}` = __mark_fixed__ / `{forbidden_status}` = "Fixed or Won't-fix" / `{work_branch}`,
+plus per-pipeline sentinel-set sections). The orchestrator does NO hand-substitution — `bug-state.py
+--emit-prompt` selects the `pipelines=bug` sections and binds every token, so the former
+"autonomous bug pipeline" / `Bug:`-header / FIXED.md substitution list and the whole "No premature
+Fixed" guard block are dead (the template's generic status-honesty section emits them already).
 
-Per-skill inline override substitutions (in addition to `/lazy-batch`'s overrides):
-- `/spec-bug` replaces `/spec` — already orchestrator-only docs pass; no sub-subagents.
-- `plan-bug` replaces `plan-feature` — dispatched after a concluded investigation (SPEC.md
-  `**Status:** Concluded`); it calls `/spec-phases` then `/write-plan` in-context, no Agent
-  dispatch needed.
-
-**"No premature Fixed" guard** (replaces `/lazy-batch`'s "No premature Complete"):
-```
-No premature Fixed (PIPELINE-GATE HONESTY — HARD REQUIREMENT):
-  - You MUST NOT set the `**Status:**` of SPEC.md to `Fixed` or `Won't-fix`.
-    That flip is reserved EXCLUSIVELY for the orchestrator's `__mark_fixed__`
-    pseudo-skill, which runs ONLY after the full downstream tail: /retro-feature
-    (writes RETRO_DONE.md) → /mcp-test (writes VALIDATED.md or a justified
-    SKIP_MCP_TEST.md) → the __mark_fixed__ gates. If a cycle subagent flips
-    SPEC **Status:** Fixed itself, the bug has NO FIXED.md receipt, so
-    bug-state.py hard-halts on `completion-unverified` instead of advancing.
-    Do NOT write a FIXED.md yourself either — only the orchestrator's
-    __mark_fixed__ integrity gate may, after the validation tail passes.
-  - What you MAY flip: the PLAN-PART frontmatter `status:` (Ready → In-progress
-    → Complete) and per-PHASE checkboxes/Status line for the phase you just
-    implemented. When the last phase's work lands, set the top-level PHASES
-    **Status:** to `In-progress` (NOT `Complete` and NOT `Fixed`).
-```
+Bug cycles dispatch `spec-bug` / `plan-bug` / `execute-plan` / `retro-feature` / `mcp-test`; the
+sectioned template covers all of them via its `skills=` section selection (`/spec-bug` replaces
+`/spec`, `plan-bug` replaces `plan-feature` — both orchestrator-only docs passes, no sub-subagents).
 
 #### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY)
 
@@ -368,19 +356,27 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 1d.0 for the full pre-boot proce
 probe, background `npm run dev:restart`, MCP-readiness poll, and BLOCKED.md guidance. The
 procedure is **identical** for the bug pipeline — bug `mcp-test` cycles need the same
 orchestrator-owned runtime. This INCLUDES step 0 (plan-declared structural untestability):
-when the bug's PHASES.md carries `**MCP runtime:** not-required`, skip the boot entirely and
-dispatch with the "RUNTIME NOT PRE-BOOTED" variant block; honor the `NEEDS_RUNTIME`
-single-line return with a boot + `(opus, recovery)` re-dispatch. RUNTIME IS ALREADY UP
-guidance and NO FIRE-AND-FORGET clause (a resultless return is a violation) carry over
-verbatim — substitute `{bug_name}/{bug_id}` for `{feature_name}/{feature_id}` in any messages.
+when the bug's PHASES.md carries `**MCP runtime:** not-required`, skip the boot entirely. **The
+mcp-test prompt VARIANT (runtime-up vs no-runtime) is script-owned** — `bug-state.py --emit-prompt`
+reads the same PHASES.md `**MCP runtime:**` line and selects the matching section, so `cycle_prompt`
+already carries the correct variant; the orchestrator does NOT swap a runtime block by hand (mirror of
+lazy-batch Step 1d.0 step 4). Honor the `NEEDS_RUNTIME` single-line return with a boot +
+`(opus, recovery)` re-dispatch. The NO FIRE-AND-FORGET clause (a resultless return is a violation)
+carries over — the bug-pipeline token bindings (`{item_label}`/`{item_name}`/`{item_id}` =
+Bug/`{bug_name}`/`{bug_id}`) are bound by the script, not substituted in any orchestrator message.
 
 **HARD CONSTRAINT 1 is NOT relaxed.** Step 1d.0 is `Bash`-only.
 
 #### Loop-guard check and LOOP DETECTED block
 
-See `~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the full loop-guard logic. Same
-`prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)` check; same
-LOOP DETECTED block appended to the prompt; same Sonnet model selection on LOOP DETECTED cycles.
+See `~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the full loop-guard logic. **Loop-block
+inclusion and the opus/sonnet selection are SCRIPT-OWNED** (driven by the persisted per-pipeline
+`repeat_count` `bug-state.py` reads itself): `cycle_prompt` arrives with the loop block already
+appended and `cycle_model` already flipped to `"sonnet"` when `repeat_count >= 2`. The in-session
+`prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)` check is RETAINED as
+the orchestrator's cross-check (it still drives the T2 `(sonnet, loop-resolution)` `disp` tag); if it
+fires but `cycle_model` came back `"opus"`, re-run the probe WITH `--repeat-count --emit-prompt`
+rather than hand-appending the block.
 
 Dispatch:
 
@@ -388,8 +384,8 @@ Dispatch:
 Agent({
   description: "lazy-bug-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {bug_name}",
   subagent_type: "general-purpose",
-  model: <"sonnet" if LOOP DETECTED else "opus">,
-  prompt: <the prompt above>
+  model: <the probe's cycle_model>,
+  prompt: <the probe's cycle_prompt, verbatim>
 })
 ```
 
