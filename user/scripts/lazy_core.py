@@ -2378,3 +2378,338 @@ def format_cycle_header(
         f" · {feature_str}"
         f" · {sub_skill_str}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 WU-2: script-assembled cycle dispatch prompt (emit_cycle_prompt)
+# ---------------------------------------------------------------------------
+#
+# Moves the LAST unscripted deterministic orchestrator mechanic — re-typing the
+# ~2K-token cycle dispatch prompt every dispatch — into the state scripts. The
+# emitter parses the sectioned, parameterized `cycle-base-prompt.md`, selects
+# the sections that apply to this (pipeline, mode, sub_skill) cycle, binds the
+# 14 tokens, optionally appends the loop block, and returns the finished prompt
+# + the model to dispatch it under. See the template file's header comment for
+# the authoritative marker grammar / selection semantics / token inventory.
+
+# Default cycle-prompt template directory, resolved through this module's own
+# path. lazy_core.py lives at <claude-config>/user/scripts/lazy_core.py, so
+# parent.parent is <claude-config>/user, and the templates live under
+# skills/_components/lazy-batch-prompts/. The PHASES "Validated Assumptions"
+# table confirms this resolves correctly through the ~/.claude symlink chain.
+_CYCLE_TEMPLATE_DIRNAME = ("skills", "_components", "lazy-batch-prompts")
+
+# The marker line shape the emitter parses, e.g.:
+#   <!-- @section task pipelines=feature,bug modes=workstation skills=all -->
+# with an optional `variant=runtime-up|no-runtime` token before the closing
+# `-->`. Attributes are matched by key=value tokens (order-tolerant), so the
+# variant attribute's position in the file is not load-bearing.
+_SECTION_MARKER_RE = re.compile(r"^<!--\s*@section\s+(?P<rest>.*?)\s*-->\s*$")
+
+# Residue regex: any `{lower_snake}` token surviving the bind is an unbound
+# token the emitter REFUSES on (never emits a half-bound prompt).
+_PROMPT_RESIDUE_RE = re.compile(r"\{[a-z_]+\}")
+
+
+def _default_cycle_template_dir() -> Path:
+    """Resolve the default cycle-prompt template dir from this module's path."""
+    return Path(__file__).resolve().parent.parent.joinpath(*_CYCLE_TEMPLATE_DIRNAME)
+
+
+def _emit_work_branch(repo_root: Path) -> str:
+    """Resolve repo_root's current branch name for the {work_branch} token.
+
+    Best-effort, mirroring _current_head's subprocess guard: any non-zero exit,
+    empty output, or OS/subprocess error falls back to the literal string
+    ``"the current branch"`` so the emitter never raises on a non-git root."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            branch = r.stdout.strip()
+            if branch:
+                return branch
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "the current branch"
+
+
+def _parse_section_attrs(rest: str) -> dict[str, str]:
+    """Parse the attribute tokens of a `@section` marker into a dict.
+
+    `rest` is the text between `@section` and the closing `-->` (already
+    stripped), e.g. ``task pipelines=feature,bug modes=workstation skills=all``.
+    The first whitespace token is the section NAME (stored under the special
+    key ``"name"``); every remaining ``key=value`` token is stored verbatim.
+    Tokens without an ``=`` (other than the leading name) are ignored.
+    """
+    tokens = rest.split()
+    if not tokens:
+        return {}
+    attrs: dict[str, str] = {"name": tokens[0]}
+    for tok in tokens[1:]:
+        if "=" in tok:
+            key, _, value = tok.partition("=")
+            attrs[key] = value
+    return attrs
+
+
+def _parse_cycle_template(text: str) -> list[dict[str, Any]]:
+    """Split a cycle-base-prompt template into its `@section` blocks.
+
+    Everything BEFORE the first marker line is template metadata and is dropped.
+    Each returned dict has: ``attrs`` (the parsed marker attributes, incl.
+    ``name``) and ``content`` (the section body with leading/trailing blank
+    lines stripped). A section's content runs from the line AFTER its marker to
+    the line BEFORE the next marker (or EOF).
+    """
+    lines = text.splitlines()
+    sections: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    body: list[str] = []
+
+    def _flush():
+        if current is not None:
+            # Strip leading/trailing blank lines from the accumulated body.
+            content_lines = body[:]
+            while content_lines and not content_lines[0].strip():
+                content_lines.pop(0)
+            while content_lines and not content_lines[-1].strip():
+                content_lines.pop()
+            current["content"] = "\n".join(content_lines)
+            sections.append(current)
+
+    for line in lines:
+        m = _SECTION_MARKER_RE.match(line)
+        if m:
+            # New section starts — finish the previous one (if any).
+            _flush()
+            current = {"attrs": _parse_section_attrs(m.group("rest"))}
+            body = []
+        elif current is not None:
+            # Accumulate content (lines before the first marker are metadata).
+            body.append(line)
+    _flush()
+    return sections
+
+
+def _csv_set(value: str | None) -> set[str]:
+    """Split a comma-separated attribute value into a set of trimmed tokens."""
+    if not value:
+        return set()
+    return {tok.strip() for tok in value.split(",") if tok.strip()}
+
+
+def _read_mcp_runtime_decision(spec_path: str | None) -> tuple[str, str | None]:
+    """Decide the mcp-test runtime variant + untestability reason from PHASES.md.
+
+    Reads ``{spec_path}/PHASES.md`` and looks for a line starting
+    ``**MCP runtime:**``:
+      - contains ``not-required`` → ``("no-runtime", <reason>)`` where reason is
+        the text after the first ``-`` / ``—`` dash on that line (or a fallback
+        when no dash is present).
+      - any other value, line absent, or file/dir absent → ``("runtime-up", None)``.
+
+    Never raises: an unreadable file is treated as "line absent" → runtime-up.
+    """
+    fallback_reason = "the plan declares no MCP-reachable surface"
+    if not spec_path:
+        return ("runtime-up", None)
+    phases = Path(spec_path) / "PHASES.md"
+    try:
+        text = phases.read_text(encoding="utf-8")
+    except OSError:
+        return ("runtime-up", None)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("**MCP runtime:**"):
+            if "not-required" in stripped:
+                # Reason = text after the first dash (ASCII '-' or em-dash '—').
+                reason = fallback_reason
+                for dash in ("—", "-"):
+                    idx = stripped.find(dash)
+                    if idx != -1:
+                        candidate = stripped[idx + len(dash):].strip()
+                        if candidate:
+                            reason = candidate
+                        break
+                return ("no-runtime", reason)
+            # Line present but not the not-required value → runtime-up.
+            return ("runtime-up", None)
+    # No **MCP runtime:** line at all → runtime-up.
+    return ("runtime-up", None)
+
+
+def emit_cycle_prompt(
+    repo_root: Path,
+    state: dict,
+    *,
+    pipeline: str,
+    cloud: bool = False,
+    repeat_count: int | None = None,
+    template_dir: Path | None = None,
+) -> dict | None:
+    """Assemble the cycle dispatch prompt for one orchestrator cycle.
+
+    The state scripts call this under ``--emit-prompt`` so the orchestrator
+    never re-types the boilerplate prompt (the 2026-06-10 audit found this was
+    ~70% of the orchestrator's output tokens). The emitter is the single
+    assembler: it parses the sectioned ``cycle-base-prompt.md``, selects the
+    sections matching this cycle, binds the tokens, optionally appends the loop
+    block, and returns the finished prompt + dispatch model.
+
+    Args:
+        repo_root: the project root (used for {cwd} and {work_branch}).
+        state: the dict ``compute_state`` produced. Consumed keys:
+            ``feature_id``, ``feature_name``, ``spec_path``, ``current_step``,
+            ``sub_skill``, ``sub_skill_args`` (bug-state reuses the feature_*
+            keys for bugs).
+        pipeline: ``"feature"`` or ``"bug"`` — selects per-pipeline sections and
+            the bug/feature token bindings.
+        cloud: when True the mode is ``"cloud"``, else ``"workstation"``.
+        repeat_count: the consecutive-identical-probe count; when ``>= 2`` the
+            loop block is appended and the dispatch model flips to ``"sonnet"``.
+        template_dir: override the template directory (for tests). Defaults to
+            the resolved ``skills/_components/lazy-batch-prompts/`` dir.
+
+    Returns:
+        ``None`` when the probe is not a dispatchable real-skill cycle —
+        ``sub_skill`` is falsy, ``sub_skill`` starts with ``"__"`` (a pseudo-skill
+        the orchestrator applies via ``--apply-pseudo``, not a dispatched skill),
+        or ``feature_id`` is falsy (a terminal / idle probe). This keeps the
+        orchestrator's single probe call uniform — the field is always present.
+
+        Otherwise a dict: ``{"ok": True, "prompt": <str>, "model": "opus"|"sonnet"}``
+        on success, or ``{"ok": False, "refused": <reason>}`` when binding leaves
+        an unbound ``{token}`` (the emitter never emits a half-bound prompt). The
+        function never raises on bad template content — it refuses instead.
+    """
+    sub_skill = state.get("sub_skill")
+    # Not a dispatchable real-skill cycle → None (uniform "no prompt" signal).
+    if not sub_skill or sub_skill.startswith("__"):
+        return None
+    if not state.get("feature_id"):
+        return None
+
+    if template_dir is None:
+        template_dir = _default_cycle_template_dir()
+
+    mode = "cloud" if cloud else "workstation"
+    # Normalize the sub_skill for skills-csv matching: strip a leading "/".
+    norm_skill = sub_skill[1:] if sub_skill.startswith("/") else sub_skill
+
+    # --- Read + parse the base template (refuse, never raise, on bad input) ---
+    base_path = template_dir / "cycle-base-prompt.md"
+    try:
+        base_text = base_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "refused": f"cannot read cycle-base-prompt.md: {exc}"}
+
+    sections = _parse_cycle_template(base_text)
+
+    # --- mcp-test runtime variant decision (only consulted for mcp-test) ------
+    runtime_variant, untestability_reason = _read_mcp_runtime_decision(
+        state.get("spec_path")
+    )
+
+    # --- Select the sections that apply to this cycle -------------------------
+    selected: list[str] = []
+    for sec in sections:
+        attrs = sec["attrs"]
+        pipelines = _csv_set(attrs.get("pipelines"))
+        modes = _csv_set(attrs.get("modes"))
+        skills = attrs.get("skills", "")
+        if pipeline not in pipelines:
+            continue
+        if mode not in modes:
+            continue
+        # skills=all OR the normalized sub_skill is in the csv.
+        if skills != "all" and norm_skill not in _csv_set(skills):
+            continue
+        # variant= sections are mcp-test-only and additionally filtered by the
+        # runtime decision (the emitter picks EXACTLY ONE variant).
+        variant = attrs.get("variant")
+        if variant is not None:
+            if norm_skill != "mcp-test" or variant != runtime_variant:
+                continue
+        if sec["content"]:
+            selected.append(sec["content"])
+
+    # --- Token bindings (per-pipeline + per-state) ----------------------------
+    is_bug = pipeline == "bug"
+    bindings = {
+        "item_label": "Bug" if is_bug else "Feature",
+        "pipeline_phrase": "bug pipeline" if is_bug else "feature pipeline",
+        "item_name": state.get("feature_name") or "",
+        "item_id": state.get("feature_id") or "",
+        "cwd": str(repo_root),
+        "current_step": state.get("current_step") or "",
+        "sub_skill": sub_skill,
+        # sub_skill_args binds to "" when None so the prompt never shows "None".
+        "sub_skill_args": state.get("sub_skill_args") or "",
+        "spec_path": state.get("spec_path") or "",
+        "work_branch": _emit_work_branch(repo_root),
+        "receipt_name": "FIXED.md" if is_bug else "COMPLETED.md",
+        "mark_pseudo": "__mark_fixed__" if is_bug else "__mark_complete__",
+        "forbidden_status": "Fixed or Won't-fix" if is_bug else "Complete",
+        # untestability_reason is only present in the no-runtime mcp-test section;
+        # bind it whenever a reason was derived (fallback applies otherwise).
+        "untestability_reason": untestability_reason
+        or "the plan declares no MCP-reachable surface",
+    }
+
+    prompt = "\n\n".join(selected)
+
+    # --- Loop block: appended when the same signature repeated (>= 2) ---------
+    # The loop block lives in loop-block.md inside a ``` fence; strip the fence
+    # lines and bind its tokens. Model flips to sonnet when the block is added.
+    model = "opus"
+    if repeat_count is not None and repeat_count >= 2:
+        loop_path = template_dir / "loop-block.md"
+        try:
+            loop_text = loop_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "refused": f"cannot read loop-block.md: {exc}"}
+        loop_inner = _strip_loop_fence(loop_text)
+        if loop_inner:
+            prompt = prompt + "\n\n" + loop_inner if prompt else loop_inner
+            model = "sonnet"
+
+    # --- Bind all tokens (all occurrences, all sections + loop block) ---------
+    for token, value in bindings.items():
+        prompt = prompt.replace("{" + token + "}", value)
+
+    # --- Residue guard: any surviving {token} → refuse (never half-bound) -----
+    residue = _PROMPT_RESIDUE_RE.findall(prompt)
+    if residue:
+        # De-duplicate while preserving first-seen order for a stable message.
+        seen: list[str] = []
+        for tok in residue:
+            if tok not in seen:
+                seen.append(tok)
+        return {"ok": False, "refused": "unbound tokens: " + ", ".join(seen)}
+
+    return {"ok": True, "prompt": prompt, "model": model}
+
+
+def _strip_loop_fence(loop_text: str) -> str:
+    """Extract the inner text of loop-block.md, dropping its ``` code fence.
+
+    loop-block.md wraps its emittable body in a single ```-fenced block (after a
+    metadata header comment). This returns the content BETWEEN the opening and
+    closing fence lines, with leading/trailing blank lines stripped. When no
+    fence is found (defensive), the whole text minus blank edges is returned.
+    """
+    lines = loop_text.splitlines()
+    fence_idxs = [i for i, ln in enumerate(lines) if ln.strip().startswith("```")]
+    if len(fence_idxs) >= 2:
+        inner = lines[fence_idxs[0] + 1: fence_idxs[1]]
+    else:
+        inner = lines
+    while inner and not inner[0].strip():
+        inner.pop(0)
+    while inner and not inner[-1].strip():
+        inner.pop()
+    return "\n".join(inner)

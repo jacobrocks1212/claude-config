@@ -3889,6 +3889,422 @@ def test_archive_fixed_resume_after_partial_move():
 
 
 # ---------------------------------------------------------------------------
+# Tests: emit_cycle_prompt — Phase 8 WU-2 script-assembled cycle dispatch prompt
+# ---------------------------------------------------------------------------
+#
+# Two flavors of test below:
+#   * MATRIX tests run against the REAL template dir (the default — passing
+#     template_dir=None) so any drift between the emitter and the on-disk
+#     `cycle-base-prompt.md` / `loop-block.md` fails LOUDLY here.
+#   * PARSER-BEHAVIOR unit tests write synthetic templates into a tmpdir and
+#     pass that dir explicitly, exercising selection/refusal logic in isolation.
+
+import os as _os  # noqa: E402  (module-level import already present; alias for clarity here)
+
+# The real template dir, resolved the same way the emitter's default does
+# (validated against the ~/.claude symlink chain in the PHASES Validated
+# Assumptions table). Used by the matrix tests.
+_REAL_TEMPLATE_DIR = (
+    Path(__file__).resolve().parent
+    / "skills" / "_components" / "lazy-batch-prompts"
+)
+# Fallback: when the test file is run from the canonical scripts dir, __file__'s
+# parent IS user/scripts, so the template dir is parent.parent/skills/... — match
+# the emitter's own default exactly.
+if not _REAL_TEMPLATE_DIR.exists():
+    _REAL_TEMPLATE_DIR = (
+        Path(__file__).resolve().parent.parent
+        / "skills" / "_components" / "lazy-batch-prompts"
+    )
+
+
+# Residue regex — the same pattern the emitter's residue guard uses.
+_TOKEN_RESIDUE_RE = re.compile(r"\{[a-z_]+\}")
+
+
+def _emit_state(**overrides):
+    """Build a representative compute_state-shaped dict for emit tests.
+
+    Defaults to a feature-pipeline execute-plan cycle; override any key.
+    """
+    base = {
+        "feature_id": "feat-x",
+        "feature_name": "Feature X",
+        "spec_path": "/nonexistent/spec/dir",
+        "current_step": "Step 7a: execute plan",
+        "sub_skill": "/execute-plan",
+        "sub_skill_args": "plan-part-1.md",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_emit_cycle_prompt_symbol_present():
+    """emit_cycle_prompt must be importable from lazy_core.
+
+    RED: emit_cycle_prompt missing → AttributeError.
+    """
+    _guard()
+    assert hasattr(lazy_core, "emit_cycle_prompt"), "lazy_core.emit_cycle_prompt missing"
+
+
+def test_emit_cycle_prompt_binding_matrix_real_template():
+    """Binding-completeness matrix over the REAL template for the non-variant
+    skills × both pipelines × both modes: ok, ZERO token residue, and the
+    mode/always anchors present.
+
+    RED: emit_cycle_prompt missing → AttributeError.
+    """
+    _guard()
+    skills = ["/execute-plan", "/retro", "/retro-feature", "/spec"]
+    for pipeline in ("feature", "bug"):
+        for cloud in (False, True):
+            mode = "cloud" if cloud else "workstation"
+            for skill in skills:
+                state = _emit_state(sub_skill=skill)
+                result = lazy_core.emit_cycle_prompt(
+                    Path("/nonexistent/repo"), state,
+                    pipeline=pipeline, cloud=cloud,
+                    template_dir=_REAL_TEMPLATE_DIR,
+                )
+                ctx = f"pipeline={pipeline} mode={mode} skill={skill}"
+                assert result is not None, f"{ctx}: expected a dict, got None"
+                assert result.get("ok") is True, f"{ctx}: not ok → {result}"
+                prompt = result["prompt"]
+                residue = _TOKEN_RESIDUE_RE.findall(prompt)
+                assert not residue, f"{ctx}: unbound token residue {residue}"
+                # Always-present anchor (retro grader keys on this literal).
+                assert "Operating mode: batch" in prompt, f"{ctx}: missing 'Operating mode: batch'"
+                # Mode-specific load-bearing override anchor.
+                if cloud:
+                    assert "CLOUD OVERRIDE — LOAD-BEARING" in prompt, f"{ctx}: missing cloud override anchor"
+                else:
+                    assert "INLINE OVERRIDE — LOAD-BEARING" in prompt, f"{ctx}: missing inline override anchor"
+                assert result["model"] == "opus", f"{ctx}: expected opus model, got {result['model']!r}"
+
+
+def test_emit_cycle_prompt_mcp_test_variant_anchors_real_template():
+    """mcp-test (workstation) over the REAL template: runtime-up variant by
+    default (no PHASES.md), no-runtime variant when PHASES declares
+    not-required — each with its distinct anchor and zero residue.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # --- runtime-up: no PHASES.md present → default runtime-up ---
+        state_up = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
+        res_up = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), state_up,
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+        assert res_up is not None and res_up.get("ok") is True, f"runtime-up: {res_up}"
+        assert "RUNTIME IS ALREADY UP" in res_up["prompt"], "runtime-up anchor missing"
+        assert "RUNTIME NOT PRE-BOOTED" not in res_up["prompt"], "no-runtime section leaked into runtime-up"
+        assert not _TOKEN_RESIDUE_RE.findall(res_up["prompt"]), "runtime-up residue"
+
+        # --- no-runtime: PHASES.md declares not-required + a reason ---
+        reason = "the plan touches no MCP-reachable surface at all"
+        (spec_dir / "PHASES.md").write_text(
+            f"# PHASES\n\n**MCP runtime:** not-required — {reason}\n",
+            encoding="utf-8",
+        )
+        state_nr = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
+        res_nr = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), state_nr,
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+        assert res_nr is not None and res_nr.get("ok") is True, f"no-runtime: {res_nr}"
+        assert "RUNTIME NOT PRE-BOOTED" in res_nr["prompt"], "no-runtime anchor missing"
+        assert "RUNTIME IS ALREADY UP" not in res_nr["prompt"], "runtime-up section leaked into no-runtime"
+        assert reason in res_nr["prompt"], "untestability_reason not bound"
+        assert not _TOKEN_RESIDUE_RE.findall(res_nr["prompt"]), "no-runtime residue"
+
+
+def test_emit_cycle_prompt_bug_tokens_real_template():
+    """pipeline=bug binds FIXED.md + __mark_fixed__ (never COMPLETED.md /
+    __mark_complete__ in a NO-LOOP emission); feature is the mirror image.
+
+    Scoped to a no-loop emission because loop-block.md legitimately names both
+    receipts; the base template's receipt name is exclusively via {receipt_name}.
+    """
+    _guard()
+    state = _emit_state(sub_skill="/execute-plan")
+    bug = lazy_core.emit_cycle_prompt(
+        Path("/nonexistent/repo"), state,
+        pipeline="bug", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert bug is not None and bug.get("ok") is True, f"bug emit: {bug}"
+    bp = bug["prompt"]
+    assert "FIXED.md" in bp, "bug prompt missing FIXED.md"
+    assert "__mark_fixed__" in bp, "bug prompt missing __mark_fixed__"
+    assert "COMPLETED.md" not in bp, "bug prompt leaked COMPLETED.md"
+    assert "__mark_complete__" not in bp, "bug prompt leaked __mark_complete__"
+    assert "bug pipeline" in bp, "bug prompt missing pipeline_phrase 'bug pipeline'"
+
+    feat = lazy_core.emit_cycle_prompt(
+        Path("/nonexistent/repo"), state,
+        pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert feat is not None and feat.get("ok") is True, f"feature emit: {feat}"
+    fp = feat["prompt"]
+    assert "COMPLETED.md" in fp, "feature prompt missing COMPLETED.md"
+    assert "__mark_complete__" in fp, "feature prompt missing __mark_complete__"
+    assert "FIXED.md" not in fp, "feature prompt leaked FIXED.md"
+    assert "__mark_fixed__" not in fp, "feature prompt leaked __mark_fixed__"
+    assert "feature pipeline" in fp, "feature prompt missing pipeline_phrase 'feature pipeline'"
+
+
+def test_emit_cycle_prompt_pseudo_and_idle_return_none():
+    """Pseudo-skill (__*), falsy sub_skill, and falsy feature_id each → None."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    # Pseudo-skill.
+    assert lazy_core.emit_cycle_prompt(
+        repo, _emit_state(sub_skill="__mark_complete__"),
+        pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
+    ) is None, "pseudo-skill must return None"
+    # Falsy sub_skill (empty / None).
+    assert lazy_core.emit_cycle_prompt(
+        repo, _emit_state(sub_skill=""),
+        pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
+    ) is None, "empty sub_skill must return None"
+    assert lazy_core.emit_cycle_prompt(
+        repo, _emit_state(sub_skill=None),
+        pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
+    ) is None, "None sub_skill must return None"
+    # Falsy feature_id (terminal / idle probe).
+    assert lazy_core.emit_cycle_prompt(
+        repo, _emit_state(feature_id=None),
+        pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
+    ) is None, "None feature_id must return None"
+    assert lazy_core.emit_cycle_prompt(
+        repo, _emit_state(feature_id=""),
+        pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
+    ) is None, "empty feature_id must return None"
+
+
+def test_emit_cycle_prompt_loop_append_and_model_flip():
+    """repeat_count>=2 → loop block appended (fence stripped, tokens bound,
+    LOOP DETECTED present) + model=='sonnet'. repeat_count 1/None → no block,
+    model=='opus'.
+    """
+    _guard()
+    repo = Path("/nonexistent/repo")
+    state = _emit_state(sub_skill="/execute-plan")
+
+    # repeat_count == 2 → loop appended, sonnet.
+    looped = lazy_core.emit_cycle_prompt(
+        repo, state, pipeline="feature", cloud=False,
+        repeat_count=2, template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert looped is not None and looped.get("ok") is True, f"looped: {looped}"
+    assert looped["model"] == "sonnet", f"expected sonnet, got {looped['model']!r}"
+    assert "LOOP DETECTED" in looped["prompt"], "loop block not appended"
+    # Fence lines stripped: no bare ``` triple-backtick fence in the assembled prompt.
+    assert "```" not in looped["prompt"], "loop-block code fence not stripped"
+    # Tokens bound (item_id appears in the loop block's literal text).
+    assert "feat-x" in looped["prompt"], "loop block item_id not bound"
+    assert not _TOKEN_RESIDUE_RE.findall(looped["prompt"]), "loop residue"
+
+    # repeat_count == 1 → no block, opus.
+    one = lazy_core.emit_cycle_prompt(
+        repo, state, pipeline="feature", cloud=False,
+        repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert one is not None and one.get("ok") is True
+    assert one["model"] == "opus", f"repeat_count=1 expected opus, got {one['model']!r}"
+    assert "LOOP DETECTED" not in one["prompt"], "loop block appended at repeat_count=1"
+
+    # repeat_count == None → no block, opus.
+    none = lazy_core.emit_cycle_prompt(
+        repo, state, pipeline="feature", cloud=False,
+        repeat_count=None, template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert none is not None and none.get("ok") is True
+    assert none["model"] == "opus", f"repeat_count=None expected opus, got {none['model']!r}"
+    assert "LOOP DETECTED" not in none["prompt"], "loop block appended at repeat_count=None"
+
+
+# --- Synthetic-template parser-behavior unit tests --------------------------
+
+def _write_synth_template(template_dir: Path, sections: str, loop_body: str | None = None):
+    """Write a synthetic cycle-base-prompt.md (+ optional loop-block.md) into
+    template_dir. `sections` is the post-metadata body (markers + content);
+    a metadata header line is prepended so the emitter strips it.
+    """
+    template_dir.mkdir(parents=True, exist_ok=True)
+    header = "# synthetic template\n\nMetadata line that must never be emitted.\n\n"
+    (template_dir / "cycle-base-prompt.md").write_text(header + sections, encoding="utf-8")
+    if loop_body is not None:
+        (template_dir / "loop-block.md").write_text(loop_body, encoding="utf-8")
+
+
+def test_emit_cycle_prompt_section_selection_synthetic():
+    """Selection unit tests: skills csv inclusion, mode exclusion, pipeline
+    exclusion — all on a synthetic template.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        body = (
+            "<!-- @section a pipelines=feature modes=workstation skills=execute-plan -->\n"
+            "SECTION_A for execute-plan workstation feature only.\n"
+            "\n"
+            "<!-- @section b pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+            "SECTION_B universal.\n"
+            "\n"
+            "<!-- @section c pipelines=bug modes=workstation skills=all -->\n"
+            "SECTION_C bug only.\n"
+            "\n"
+            "<!-- @section d pipelines=feature modes=cloud skills=all -->\n"
+            "SECTION_D feature cloud only.\n"
+        )
+        _write_synth_template(tdir, body)
+
+        # feature / workstation / execute-plan → A + B, not C (bug) not D (cloud).
+        r = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r is not None and r["ok"], r
+        p = r["prompt"]
+        assert "SECTION_A" in p and "SECTION_B" in p
+        assert "SECTION_C" not in p, "bug-only section leaked into feature emission"
+        assert "SECTION_D" not in p, "cloud-only section leaked into workstation emission"
+        # Metadata header never emitted.
+        assert "Metadata line that must never be emitted" not in p
+        # Exactly one blank line between the two joined sections.
+        assert "SECTION_A for execute-plan workstation feature only.\n\nSECTION_B universal." in p
+
+        # feature / workstation / retro → skills csv excludes A → only B.
+        r2 = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), _emit_state(sub_skill="/retro"),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r2 is not None and r2["ok"], r2
+        assert "SECTION_A" not in r2["prompt"], "skills-csv exclusion failed (A should be excluded for retro)"
+        assert "SECTION_B" in r2["prompt"]
+
+        # bug / workstation → B + C, not A (skills + pipeline) not D.
+        r3 = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), _emit_state(sub_skill="/retro"),
+            pipeline="bug", cloud=False, template_dir=tdir,
+        )
+        assert r3 is not None and r3["ok"], r3
+        assert "SECTION_C" in r3["prompt"] and "SECTION_B" in r3["prompt"]
+        assert "SECTION_A" not in r3["prompt"]
+
+        # feature / cloud → B + D, not A not C.
+        r4 = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), _emit_state(sub_skill="/retro"),
+            pipeline="feature", cloud=True, template_dir=tdir,
+        )
+        assert r4 is not None and r4["ok"], r4
+        assert "SECTION_D" in r4["prompt"] and "SECTION_B" in r4["prompt"]
+        assert "SECTION_C" not in r4["prompt"]
+
+
+def test_emit_cycle_prompt_refuses_unknown_token_synthetic():
+    """A synthetic section with an unknown {bogus_token} → ok=False naming it."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        body = (
+            "<!-- @section a pipelines=feature modes=workstation skills=all -->\n"
+            "This section references {bogus_token} which is not bindable.\n"
+        )
+        _write_synth_template(tdir, body)
+        r = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"), _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r is not None, "refusal must be a dict, not None"
+        assert r.get("ok") is False, f"expected refusal, got {r}"
+        assert "bogus_token" in r.get("refused", ""), f"refusal must name the token: {r}"
+
+
+def test_emit_cycle_prompt_mcp_variant_routing_synthetic():
+    """Variant routing on a synthetic template: PHASES.md with not-required →
+    no-runtime section + reason bound; PHASES.md absent → runtime-up section.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        body = (
+            "<!-- @section base pipelines=feature modes=workstation skills=mcp-test -->\n"
+            "MCP base section.\n"
+            "\n"
+            "<!-- @section v pipelines=feature modes=workstation skills=mcp-test variant=runtime-up -->\n"
+            "VARIANT_RUNTIME_UP body.\n"
+            "\n"
+            "<!-- @section v pipelines=feature modes=workstation skills=mcp-test variant=no-runtime -->\n"
+            "VARIANT_NO_RUNTIME body — reason: {untestability_reason}.\n"
+        )
+        _write_synth_template(tdir, body)
+
+        # No PHASES.md → runtime-up.
+        spec_up = Path(td) / "spec_up"
+        spec_up.mkdir()
+        r_up = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"),
+            _emit_state(sub_skill="/mcp-test", spec_path=str(spec_up)),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r_up is not None and r_up["ok"], r_up
+        assert "VARIANT_RUNTIME_UP" in r_up["prompt"]
+        assert "VARIANT_NO_RUNTIME" not in r_up["prompt"]
+
+        # PHASES.md not-required → no-runtime + reason.
+        spec_nr = Path(td) / "spec_nr"
+        spec_nr.mkdir()
+        reason = "no MCP-reachable surface in this plan"
+        (spec_nr / "PHASES.md").write_text(
+            f"**MCP runtime:** not-required — {reason}\n", encoding="utf-8"
+        )
+        r_nr = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"),
+            _emit_state(sub_skill="/mcp-test", spec_path=str(spec_nr)),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r_nr is not None and r_nr["ok"], r_nr
+        assert "VARIANT_NO_RUNTIME" in r_nr["prompt"]
+        assert "VARIANT_RUNTIME_UP" not in r_nr["prompt"]
+        assert reason in r_nr["prompt"], "untestability_reason not bound from PHASES line"
+
+
+def test_emit_cycle_prompt_work_branch_fallback_non_git():
+    """A non-git repo_root → {work_branch} falls back to 'the current branch',
+    and the emission still succeeds (ok=True, no residue).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        non_git = Path(td) / "not-a-repo"
+        non_git.mkdir()
+        r = lazy_core.emit_cycle_prompt(
+            non_git, _emit_state(sub_skill="/execute-plan"),
+            pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+        )
+        assert r is not None and r["ok"] is True, f"non-git emit: {r}"
+        assert "the current branch" in r["prompt"], "work_branch fallback string missing"
+        assert not _TOKEN_RESIDUE_RE.findall(r["prompt"]), "non-git residue"
+
+
+def test_emit_cycle_prompt_sub_skill_args_none_binds_empty():
+    """sub_skill_args=None binds to an empty string (no 'None' literal, no residue)."""
+    _guard()
+    state = _emit_state(sub_skill="/execute-plan", sub_skill_args=None)
+    r = lazy_core.emit_cycle_prompt(
+        Path("/nonexistent/repo"), state,
+        pipeline="feature", cloud=False, template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert r is not None and r["ok"] is True, f"emit: {r}"
+    # The literal "args: None" must not appear (None → "").
+    assert "args: None" not in r["prompt"], "sub_skill_args=None leaked a 'None' literal"
+    assert not _TOKEN_RESIDUE_RE.findall(r["prompt"]), "residue with None args"
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -4088,6 +4504,18 @@ _TESTS = [
     ("test_archive_fixed_collision_appends_suffix", test_archive_fixed_collision_appends_suffix),
     ("test_archive_fixed_rerun_is_noop", test_archive_fixed_rerun_is_noop),
     ("test_archive_fixed_resume_after_partial_move", test_archive_fixed_resume_after_partial_move),
+    # emit_cycle_prompt — Phase 8 WU-2 script-assembled cycle dispatch prompt
+    ("test_emit_cycle_prompt_symbol_present", test_emit_cycle_prompt_symbol_present),
+    ("test_emit_cycle_prompt_binding_matrix_real_template", test_emit_cycle_prompt_binding_matrix_real_template),
+    ("test_emit_cycle_prompt_mcp_test_variant_anchors_real_template", test_emit_cycle_prompt_mcp_test_variant_anchors_real_template),
+    ("test_emit_cycle_prompt_bug_tokens_real_template", test_emit_cycle_prompt_bug_tokens_real_template),
+    ("test_emit_cycle_prompt_pseudo_and_idle_return_none", test_emit_cycle_prompt_pseudo_and_idle_return_none),
+    ("test_emit_cycle_prompt_loop_append_and_model_flip", test_emit_cycle_prompt_loop_append_and_model_flip),
+    ("test_emit_cycle_prompt_section_selection_synthetic", test_emit_cycle_prompt_section_selection_synthetic),
+    ("test_emit_cycle_prompt_refuses_unknown_token_synthetic", test_emit_cycle_prompt_refuses_unknown_token_synthetic),
+    ("test_emit_cycle_prompt_mcp_variant_routing_synthetic", test_emit_cycle_prompt_mcp_variant_routing_synthetic),
+    ("test_emit_cycle_prompt_work_branch_fallback_non_git", test_emit_cycle_prompt_work_branch_fallback_non_git),
+    ("test_emit_cycle_prompt_sub_skill_args_none_binds_empty", test_emit_cycle_prompt_sub_skill_args_none_binds_empty),
 ]
 
 

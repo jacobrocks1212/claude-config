@@ -3477,6 +3477,12 @@ def main() -> int:
              "Prints a JSON result; exit 1 on refusal.",
     )
     parser.add_argument(
+        "--emit-prompt", action="store_true",
+        help="Enrich the probe JSON with cycle_prompt + cycle_model "
+             "(script-assembled cycle dispatch prompt; composes with "
+             "--repeat-count for loop detection).",
+    )
+    parser.add_argument(
         "--forward-cycles", type=int, default=None,
         help="Orchestrator forward-cycle count (for --probe cycle header).",
     )
@@ -3559,6 +3565,30 @@ def main() -> int:
         state["repeat_count"] = lazy_core.update_repeat_count(
             Path(args.repo_root), state, pipeline="bug"
         )
+    # --emit-prompt is strictly additive and flag-gated so that default output
+    # remains byte-identical when the flag is absent. Placed AFTER --repeat-count
+    # so the same-invocation count (when --repeat-count was also passed) drives
+    # the emitter's loop-block + model decision. Pipeline is "bug" here (bug-state
+    # reuses the feature_* keys for bugs). emit_cycle_prompt(...) is None for
+    # pseudo-skills / terminal probes → cycle_prompt: null, cycle_model: null (so
+    # the orchestrator's one probe call is uniform); on refusal it also adds
+    # cycle_prompt_refused.
+    if args.emit_prompt:
+        rc = state.get("repeat_count") if args.repeat_count else None
+        emitted = lazy_core.emit_cycle_prompt(
+            Path(args.repo_root), state,
+            pipeline="bug", cloud=args.cloud, repeat_count=rc,
+        )
+        if emitted is None:
+            state["cycle_prompt"] = None
+            state["cycle_model"] = None
+        elif emitted.get("ok"):
+            state["cycle_prompt"] = emitted["prompt"]
+            state["cycle_model"] = emitted["model"]
+        else:
+            state["cycle_prompt"] = None
+            state["cycle_model"] = None
+            state["cycle_prompt_refused"] = emitted.get("refused")
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).
