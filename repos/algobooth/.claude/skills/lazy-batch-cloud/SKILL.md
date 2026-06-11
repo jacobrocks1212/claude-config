@@ -487,6 +487,18 @@ Commit + PUSH policy (CLOUD DURABILITY — HARD REQUIREMENT):
     above. Adding `git push` is a git operation on work you already authored;
     it does not touch the orchestrator's sentinel-only Write/Edit scope.
 
+Canonical sentinel filenames (HARD — prevents silent gate breakage):
+  - When you write a pipeline sentinel, use the EXACT canonical filename — never
+    a variant (lowercased, abbreviated, pluralized, or renamed). A mis-named
+    sentinel is invisible to lazy-state.py --cloud and silently breaks the gate,
+    looping the pipeline. Canonical set (feature pipeline):
+      BLOCKED.md · NEEDS_INPUT.md · NEEDS_RESEARCH.md · RETRO_DONE.md ·
+      VALIDATED.md · MCP_TEST_RESULTS.md · SKIP_MCP_TEST.md · COMPLETED.md ·
+      DEFERRED_NON_CLOUD.md · DEFERRED_REQUIRES_DEVICE.md
+    Re-read ~/.claude/skills/_components/sentinel-frontmatter.md for the exact
+    name + frontmatter schema before writing any sentinel — do NOT rely on
+    memory of the filename.
+
 After the skill returns:
   1. Commit per .claude/skill-config/commit-policy.md (or standard pattern)
      for any final uncommitted changes, then push per the Commit + PUSH

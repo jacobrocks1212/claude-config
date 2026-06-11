@@ -200,6 +200,25 @@ Plan-part status + per-WU granularity (RESUME SAFETY):
   end-of-cycle push in the commit step below is sufficient durability — pushing
   each flip/tick immediately is a cloud-only requirement in /lazy-batch-cloud.)
 
+Sentinel + git hygiene (HARD — prevents the recurring subagent deviations):
+  - CANONICAL SENTINEL FILENAMES: when you write a pipeline sentinel, use the
+    EXACT canonical filename — never a variant (lowercased, abbreviated,
+    pluralized, or otherwise renamed). A mis-named sentinel is invisible to
+    lazy-state.py / bug-state.py and silently breaks the gate, looping the
+    pipeline. Canonical set:
+      BLOCKED.md · NEEDS_INPUT.md · NEEDS_RESEARCH.md · RETRO_DONE.md ·
+      VALIDATED.md · MCP_TEST_RESULTS.md · SKIP_MCP_TEST.md · COMPLETED.md ·
+      FIXED.md · DEFERRED_NON_CLOUD.md · DEFERRED_REQUIRES_DEVICE.md
+    Re-read ~/.claude/skills/_components/sentinel-frontmatter.md for the exact
+    name + frontmatter schema before writing any sentinel — do NOT rely on
+    memory of the filename. (FIXED.md is bug-pipeline only; COMPLETED.md is
+    feature-pipeline only — use the one for your pipeline.)
+  - WORK-BRANCH-ONLY COMMITS: every commit and push goes to the CURRENT work
+    branch ONLY. NEVER commit or push to main / master, NEVER --force /
+    --force-with-lease, NEVER create a new branch. If `git rev-parse
+    --abbrev-ref HEAD` shows main / master, STOP and report rather than
+    committing — do not "fix" it by branching.
+
 After the skill returns:
   1. If a commit policy file exists at .claude/skill-config/commit-policy.md,
      follow it. Otherwise commit per the standard pattern and push to the

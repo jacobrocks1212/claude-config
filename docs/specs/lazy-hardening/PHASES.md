@@ -594,11 +594,11 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 - [x] Windows node path (`/c/nvm4w/nodejs`) baked into preflight/skill-config
 - [x] Compaction protocol: on-disk canonical dispatch template re-read after compact; Read-before-Edit rule
 - [x] Long-build ownership rule (orchestrator-owned harness-tracked) + `cargo check --release` pre-flight
-- [ ] `interview_work_log_append` purged from all dispatch templates; canonical-sentinel-filename + work-branch clauses added to base dispatch prompt
+- [x] `interview_work_log_append` purged from all dispatch templates; canonical-sentinel-filename + work-branch clauses added to base dispatch prompt
 
 **Runtime Verification:**
 - [x] Simulated DOA conditions (missing symlink / shadowed python3) caught by preflight with recipe
-- [ ] `grep -r interview_work_log_append user/skills/` returns nothing
+- [x] `grep -r interview_work_log_append` returns nothing **inside dispatch prompt templates** (cycle-base-prompt.md, input-audit-prompt.md, loop-block.md, research-halt-announcement.md, cloud inlined prompt — all 0); legitimate orchestrator-own work-log steps remain per Rule 11
 
 **Implementation Notes:**
 
@@ -645,3 +645,20 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 **Files modified:**
 - `repos/algobooth/.claude/skill-config/long-build-ownership.md` — NEW canonical long-build ownership rule
 - `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — Step 1d long-build ownership paragraph (cloud variant adapted)
+
+#### Implementation Notes (Phase 7 — Batch 4: WU-4 + Post-Phase)
+**Completed:** 2026-06-10
+**Review verdict:** PASS (orchestrator review; subagent GROUND-TRUTH block independently re-run + diffed — git status / wc -l (233, 897) / clause greps / zero-work-log all matched; ground-truth verified: yes; both insertions read directly and confirmed INSIDE the prompt fences immediately before `After the skill returns:`, closing fence intact)
+**Work completed:**
+- **WU-4** (prompt hygiene, prose; grep-verified): two anti-deviation clauses added to the cycle **dispatch prompt templates**, and the stale-tool purge confirmed already satisfied.
+  - **Purge (drift-reconciled — Rule 11):** `interview_work_log_append` is ALREADY absent from every dispatch prompt template (cycle-base-prompt.md, input-audit-prompt.md, loop-block.md, research-halt-announcement.md, cloud's inlined Step-1d prompt — all grep 0). It was removed during the Phase 6 prompt extraction; WU-4's purge half is a verified no-op. The legitimate orchestrator-own Work-Log steps (the `/lazy`, `/lazy-bug`, `/lazy-cloud` wrappers' final step; `/log`; `_components/work-log.md`; this `/execute-plan` skill's Step 4a; the "does NOT call" meta-notes in plan-feature/plan-bug/retro-feature/realign-spec) correctly REMAIN — they are not dispatch prompts (Rule 11).
+  - **Additive (canonical-sentinel + work-branch clauses):** added a "Sentinel + git hygiene" block to `cycle-base-prompt.md` (the shared base prompt for BOTH `/lazy-batch` and `/lazy-bug-batch` — lazy-bug-batch Step 1d references it) carrying (1) **CANONICAL SENTINEL FILENAMES** (use the exact name from the canonical set; a mis-named sentinel is invisible to the state script and silently loops the pipeline; re-read sentinel-frontmatter.md before writing) and (2) **WORK-BRANCH-ONLY COMMITS** (current work branch only; never main/master, never --force, never a new branch). Cloud's inlined Step-1d prompt already carried the work-branch clause (lines ~482-484), so it received ONLY the canonical-sentinel clause (feature-pipeline set). Both inserted INSIDE the prompt fence, immediately before `After the skill returns:`. Closes the 3 subagent git/sentinel deviations seen in the Jun-9 run.
+**Post-Phase — Integration Verification (Phase 7 whole):** all six grep gates green — (1) `Step 0.0: Environment Preflight` present in all 6 entry points; (2) all 4 new component/config files present on disk; (3) `lazy-dispatch-template.md` referenced by all 3 batch SKILLs; (4) `long-build-ownership.md` referenced by all 3 batch SKILLs; (5) both dispatch prompts carry the sentinel clause; (6) zero `interview_work_log_append` across ALL dispatch prompt templates. The five new artifacts cohere as one preconditions+resilience layer: preflight aborts DOA runs at zero cycles BEFORE the banner/remote-sync/first-probe; the dispatch template + Read-before-Edit rule survive compaction (re-read on every dispatch); the long-build rule keeps any over-a-turn build orchestrator-owned (subagent-backgrounded processes die at turn end); the prompt-hygiene clauses stop subagent sentinel/git deviations.
+**CLAUDE.md review:** no structural CLAUDE.md update warranted — the preflight component REFERENCES AlgoBooth `CLAUDE.md`'s "Claude Code Config" + "WSL PATH note" (which already document the symlink recipe + node path); the node path is now also baked into `skill-config/lazy-preflight.md`. No new public surface requires a CLAUDE.md edit (consistent with Phases 2-3's CLAUDE.md-review conclusions).
+**Files modified:**
+- `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` — canonical-sentinel + work-branch clauses (covers lazy-batch + lazy-bug-batch)
+- `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — canonical-sentinel clause (cloud inlined prompt; work-branch already present)
+
+#### Post-Phase (Phase 7 — part close = SERIES FINAL)
+**Part-end full quality gate (MANDATORY, all exit 0):** `python3 ~/.claude/scripts/lazy-state.py --test` (0), `python3 ~/.claude/scripts/bug-state.py --test` (0), `python3 ~/.claude/scripts/test_lazy_core.py` ("All tests passed", 0) — run as the final chained command before the part-close commit. Scripts were untouched across all of Phase 7 (prose/config only), so every batch's gates were byte-identical green.
+**Series status:** Phase 7 is the FINAL part (7 of 7) of the lazy-hardening series. With all Phase 7 deliverables + both runtime-verification rows ticked and Phases 1-6 already complete, the entire 7-part series is DONE. Plan part-7 frontmatter flipped `Ready` → `Complete`.
