@@ -41,7 +41,7 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 ## OUTPUT CONTRACT — orchestrator voice (read at run start)
 
-**ALL orchestrator chat output MUST follow `~/.claude/skills/_components/orchestrator-voice.md`** — the turn-template contract (T1 run banner, T2 dispatch / T3 return / T4 inline-gate cycle blocks, T5 park line, T6 rich zones, T7 final report; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). **Read it at run start, and RE-READ it after any compaction boundary** (alongside `lazy-dispatch-template.md` — see Step 1d's compaction discipline); the contract survives summarization by re-read, not by memory. Where an older passage in this skill prescribes a different chat-output shape, the contract's Precedence clause wins; the verbatim re-print / Zero-Context Operator Briefing requirements (HARD CONSTRAINT 6, `decision-resume.md`, `blocked-resolution.md`, `parked-flush.md`, `halt-resolution.md`) are sanctioned T6 rich zones and are never overridden. Graded by `/lazy-batch-retro`'s R-V-* rules.
+**ALL orchestrator chat output MUST follow `~/.claude/skills/_components/orchestrator-voice.md`** — the turn-template contract (T1 run banner, T2 dispatch / T3 return / T4 inline-gate cycle blocks, T5 park line, T6 rich zones, T7 final report; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). **ZERO-TEXT RULE:** Claude Code's general "say what you're about to do before tool calls / give brief updates" guidance is OVERRIDDEN for this run — the UI already prints every tool call; between tool calls emit NOTHING unless it is byte-shaped as a template (sanctioned output starts with `## `, `### Cycle `, a template field line, `⏸`/`⚖`/`⚠`, or a T6/T7 body — anything else, don't type it). No transition sentences, no "reading X", no "preflight passed", no "composing the dispatch". **Read it at run start, and RE-READ it after any compaction boundary** (alongside `lazy-dispatch-template.md` — see Step 1d's compaction discipline); the contract survives summarization by re-read, not by memory. Where an older passage in this skill prescribes a different chat-output shape, the contract's Precedence clause wins; the verbatim re-print / Zero-Context Operator Briefing requirements (HARD CONSTRAINT 6, `decision-resume.md`, `blocked-resolution.md`, `parked-flush.md`, `halt-resolution.md`) are sanctioned T6 rich zones and are never overridden. Graded by `/lazy-batch-retro`'s R-V-* rules.
 
 **STANDING POLICY — completeness-first (D7).** Read `~/.claude/skills/_components/completeness-policy.md` at run start, and RE-READ it after any compaction boundary (it is on the Step 1d compaction re-read list). It is pre-authorized: decisions whose options differ only in effort / sizing / sequencing / completeness (`class: scope`) are auto-resolved to the MOST COMPLETE option in BOTH modes — logged (`⚖ policy:` line, `resolved_by: completeness-policy`, run-end D7 digest in the T7 report), never asked. It governs the cycle and input-audit subagent prompts (source suppression), Step 1g (scope-class sentinel resolution runs first), Step 1h (sequencing-only blockers auto-resolve; spin-offs pre-authorized, notify + log), and the Gate-1 coverage outcome at Step 1c.5 (author coverage / test-exempt, never ask). D7 only REMOVES questions — product-class decisions still ask exactly as before. Graded by `/lazy-batch-retro`'s R-D7-* rules.
 
@@ -102,6 +102,12 @@ Run its read-only check block (skills symlink resolves, `~/.claude/scripts/lazy-
 component's setup recipe and **STOP — zero cycles consumed** (do not print the banner, do not call the
 state script, do not enter the loop). On success, node is on PATH for the whole session (no per-call
 `export PATH`), and you continue to the banner / Step 0.4 as normal.
+
+**The entire run-start sequence is SILENT (zero-text rule):** the preflight, the contract/policy
+reads, Step 0.4 remote sync, and the queue read for the banner are executed back-to-back with NO
+text between the tool calls — no "I'll start by…", no "preflight passed", no "let me read…", no
+"sync clean". The FIRST text this invocation emits is the T1 banner (preflight failure and sync
+divergence are the T6 exceptions).
 
 ---
 

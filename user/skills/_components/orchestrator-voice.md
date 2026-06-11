@@ -8,6 +8,30 @@ messages, or subagent transcripts. Consumed by `/lazy-batch`, `/lazy-bug-batch`,
 Re-read this file after any compaction boundary (alongside `lazy-dispatch-template.md`) — the
 contract survives summarization by re-read, not by memory.
 
+## THE ZERO-TEXT RULE (overrides the harness default — read this twice)
+
+Claude Code's general guidance — "before your first tool call, say in a sentence what you're
+about to do; while working, give brief updates" — is **explicitly OVERRIDDEN** for orchestrator
+runs. The operator's UI already prints every tool call (`Read lazy-preflight.md`,
+`Ran bug-state.py …`); a sentence announcing the same call duplicates the line directly above
+it and is pure noise on a phone.
+
+**Between tool calls, emit ZERO text** unless what you are about to type is byte-shaped as one
+of the templates. Operational test — sanctioned output starts with exactly one of:
+
+- `## ` (T1 run-start / T7 final report headings)
+- `### Cycle ` (T2/T4 block heading)
+- a template field line: `mode `, `budget `, `queue `, `disp `, `done `, `audit `, `ledger `,
+  `next `, `act `, `gates `
+- `⏸` (T5 park) · `⚖` (D7 policy line) · `⚠` (T6 deviation)
+- a T6 rich-zone section (resolution briefing / verbatim sentinel block / echo-back) or the
+  T7 report body
+
+If the text you are about to type does not start with one of those, **do not type it**. There
+is no sanctioned "transition sentence", no "reading X now", no "composing the dispatch", no
+"preflight passed", no "sync clean". Run the tool calls back-to-back with nothing in between;
+the next visible thing after the silent mechanics is the template block itself.
+
 ## Principles
 
 1. **Mechanics are silent.** Probe parsing, git guards, loop-guard evaluation, template/component
@@ -23,7 +47,7 @@ contract survives summarization by re-read, not by memory.
 5. **Every turn matches exactly one template below.** Freeform prose is permitted only inside
    the rich zones (T6/T7), and there only within their stated budgets.
 
-## Hard bans (anti-patterns observed in real runs)
+## Hard bans (anti-patterns observed in real runs — all are zero-text-rule violations)
 
 - "Per the compaction discipline, I must re-read…" — do it silently.
 - "No loop-guard fires (first cycle, prev_cycle_signature is None)." — silence = no fire.
@@ -31,6 +55,14 @@ contract survives summarization by re-read, not by memory.
 - "Probe returned real work — bug X, step Y, sub_skill Z, no terminal reason…" — that is the
   cycle block's job.
 - "Reading the canonical cycle base prompt I must bind…" — narrated file reads.
+- "I'll start by running the environment preflight as required before anything else."
+- "Preflight passed (FAIL=0). Now I'll read the required run-start contracts…"
+- "Let me read the Step 0.4 remote-sync section:" / "Now the cycle base prompt template:"
+- "Sync clean. Printing the run-start banner and entering the cycle loop."
+- "Real work returned — execute-plan for X (Step 7a), no terminal, repeat_count=1 (no loop).
+  Reading the dispatch template…" — the T2 block carries ALL of this.
+- "Composing the dispatch. This is an execute-plan cycle (not mcp-test…). First cycle, no
+  loop-guard. Model: opus." — every fact here is either silent mechanics or a `disp` field.
 
 ## Turn templates
 
