@@ -1,3 +1,8 @@
+{
+  "id": "broken-submit-button",
+  "spec_dir": "broken-submit-button",
+  "status": "queued"
+}
   [fresh-queue] cloud=False skip_nr=False real_device=True: Step 4: no SPEC, no research
   [blocker] cloud=False skip_nr=False real_device=True: Step 3: blocked
   [mid-implementation] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
@@ -8,6 +13,7 @@
   [workstation-verification-only-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [workstation-verification-only-bold-marker] cloud=False skip_nr=False real_device=True: Step 8: retro phase
   [workstation-all-plans-complete-real-unchecked] cloud=False skip_nr=False real_device=True: Step 7a: write plan
+  [superseded-phase-unchecked] cloud=False skip_nr=False real_device=True: Step 8: retro phase
   [adhoc-brief] cloud=False skip_nr=False real_device=True: Step 4: ad-hoc brief → spec
   [all-complete] cloud=False skip_nr=False real_device=True: all-features-complete
   [needs-research] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research
@@ -35,10 +41,37 @@
   [device-deferred-cleared] cloud=False skip_nr=False real_device=True: Step 10: mark complete
   [device-deferred-stale-validated] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
   [device-deferred-with-skip] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
+  [stale-mcp-results-reverify] cloud=False skip_nr=False real_device=True: Step 9: stale MCP results — re-verify
+  [skip-pipeline-granted-needs-input] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
+  [skip-operator-granted-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
+  [skip-mcp-test-granted-with-class-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
+  [skip-mcp-test-granted-missing-class-refuses] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
+  [skip-pipeline-authored-no-grant-refuses] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
+  [roadmap-substring-collision-no-false-halt] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [is-stub-prose-mention-not-stub] cloud=False skip_nr=False real_device=True: Step 6: plan feature (phases + plan)
+  [upstream-substring-collision] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [stale-plan-all-refs-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced deliverables already checked)
+  [ready-plan-unchecked-in-scope-still-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
+  [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
+  PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
 {
   "error": "feature_id already queued: adhoc-test",
-  "path": "/tmp/claude-1000/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
+  "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
 }
   [enqueue] enqueue_adhoc prepend + brief + roadmap: ok
+  PASS [materialize-feature] feature materialize
+  PASS [materialize-bug] bug materialize
+  PASS [materialize-unknown-type] unknown type → skip
+  PASS [materialize-idempotent] idempotent: 1 record after 2 materialize calls
+  PASS [stale-detection-writer] stale detection writes STALE_UPSTREAM.md, preserves SPEC.md
+  PASS [stale-halt-reader] stale halt: terminal_reason='stale_upstream'
+  PASS [scoped-feature-id] scope_feature_id selected feat-scope-beta
+  PASS [baseline-regression-default] default picks feat-scope-alpha at 'Step 6: plan feature (phases + plan)'
+  PASS [scoped-feature-id-not-found] terminal_reason='scoped-id-not-found' (impl landed)
+  PASS [park-needs-input-default-halt] default: terminal_reason='needs-input', parked key absent=True
+  PASS [park-needs-input-mode-skip] park mode: dispatched='feat-after', parked count=1
+  PASS [park-needs-input-resolved-reenter] resolved: dispatched='feat-parked', parked=[]
+  PASS [park-needs-input-blocked-precedence] blocked-precedence: terminal_reason='blocked', feat-parked in parked[]=False
 
 All smoke tests passed.

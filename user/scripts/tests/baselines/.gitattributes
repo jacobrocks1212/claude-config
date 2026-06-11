@@ -1,0 +1,3 @@
+# Byte-pinned smoke-test baselines: compared verbatim by test_lazy_core.py.
+# Must stay LF on every platform or the byte-for-byte comparison breaks under core.autocrlf.
+*.txt text eol=lf

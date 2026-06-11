@@ -60,6 +60,8 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 
 ### Algorithm
 
+**Meta-cap check (FIRST — before any other action):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP. This check is what guarantees a Defer→same-terminal re-prompt loop is bounded — the meta-cycle counter (ceiling 2× `max_cycles`, checked at the TOP of every resolution mode) provides the true bound.
+
 1. **Re-print the obstacle context to chat VERBATIM** (the load-bearing context BEFORE
    the truncated `AskUserQuestion` UI — the antidote to a zero-context halt):
 
@@ -165,8 +167,10 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 
       Commit per .claude/skill-config/commit-policy.md (or the standard pattern):
       `docs({feature_id}): enact {terminal_reason} resolution (<path>)`. Push the work
-      branch. Report a one-paragraph summary (≤ 8 lines): what you enacted, which
-      files/status/sentinels changed, and the commit hash.
+      branch. WORK-BRANCH-ONLY: commit and push to the CURRENT branch only
+      (`git rev-parse --abbrev-ref HEAD` at start); NEVER create a new branch,
+      NEVER --force. Report a one-paragraph summary (≤ 8 lines): what you enacted,
+      which files/status/sentinels changed, and the commit hash.
 
       You may NOT spawn further subagents (no Agent). You MAY use the Skill tool and
       Edit/Write/Read/Bash.
@@ -177,12 +181,12 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 
    c. **Record, then continue (batch) or stop (single-dispatch).**
       - **Batch orchestrators (`/lazy-batch`, `/lazy-bug-batch`):** append to
-        `cycle_log` `{cycle+1, feature_name, "▶ {terminal_reason} (resolved: <path>)",
-        "<subagent summary>"}`; emit the canonical per-cycle update block
-        (`### Cycle {cycle+1}/{max_cycles} · {feature_name} · {terminal_reason}`,
-        `**Result:**` = "<path> enacted — <first line of summary>"); update
+        `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, "▶ {terminal_reason} (resolved: <path>)",
+        "<subagent summary>"}`; emit the canonical per-cycle block per orchestrator-voice.md
+        (heading `### Resolve — {terminal_reason} on {feature_name} [meta {meta_cycles+1}/{2*max_cycles}]`,
+        `done` line = "<path> enacted — <first line of summary>"); update
         `prev_cycle_signature = (feature_id, "__resolve_halt__", sub_skill_args,
-        current_step)`; increment `cycle`; **return to Step 1a** (DO NOT halt, DO NOT
+        current_step)`; increment `meta_cycles`; **return to Step 1a** (DO NOT halt, DO NOT
         print the final batch report — except the Halt path in step 3).
       - **Single-dispatch wrappers (`/lazy`, `/lazy-bug`, `/lazy-cloud`):** the
         enactment was this invocation's ONE meaningful action. Print the after-status
@@ -196,7 +200,10 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 If "Defer & continue queue" is chosen and the deferred feature is the ONLY remaining
 actionable entry, the next probe returns the same terminal again and this handler
 re-prompts — correct (there is nothing else to work). The operator breaks the cycle
-by choosing the fix option, Other, or Halt. `max_cycles` bounds it regardless.
+by choosing the fix option, Other, or Halt. The **meta-cycle counter (ceiling 2×
+`max_cycles`, checked at the TOP of this algorithm before step 1) bounds the
+re-prompt loop** — each re-prompt increments `meta_cycles`, so the loop terminates
+at most after `2 * max_cycles` total meta-cycles across all resolution modes.
 
 ### Coupling note
 

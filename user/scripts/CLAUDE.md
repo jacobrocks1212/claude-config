@@ -115,12 +115,19 @@ python3 lazy-state.py --cloud               # cloud variant
 python3 lazy-state.py --real-device auto    # resolve host audio capability from env
 python3 lazy-state.py --skip-needs-research # batch: skip research-pending items
 python3 lazy-state.py --repo-root <path>    # operate on a specific repo
+python3 lazy-state.py --park-needs-input    # batch --park mode: skip (park) NEEDS_INPUT items into parked[] instead of halting (BLOCKED still halts; output byte-identical without the flag)
 python3 lazy-state.py --enqueue-adhoc …     # prepend an ad-hoc item to the queue
 python3 lazy-state.py --backfill-receipts   # grandfather pre-gate completions
 python3 lazy-state.py --test                # run the in-file fixture smoke tests
+# --- Phase 5 orchestrator-loop subcommands (shared impl in lazy_core.py; same flags on bug-state.py) ---
+python3 lazy-state.py --verify-ledger <spec_path>          # completion-ledger gate as JSON {ok, failing_check, checks:{clean_tree, head_matches_origin, plan_complete, deliverables_done}}; exit 1 iff not ok. Replaces the 5 duplicated prose ledger blocks. deliverables_done exempts verification-only rows (refined vs a blunt grep).
+python3 lazy-state.py --apply-pseudo <name> <spec_path>    # SINGLE author of the deterministic pseudo-skill writes: __write_validated_from_{skip,results}__, __write_deferred_non_cloud__, __flip_plan_complete_cloud_saturated__ (pass --plan), __mark_complete__/__mark_fixed__ (receipt + SPEC/PHASES status flip + sentinel cleanup). Idempotent; refuses when gate inputs absent. Optional: --plan/--apply-date/--reason/--deferred-step. (ROADMAP strikethrough + __flip_plan_complete_stale__ stay orchestrator-inline.)
+python3 lazy-state.py --neutralize-sentinel <path>         # rename a resolved sentinel to <stem>_RESOLVED_<date><ext>, collision-safe (numeric suffix, never clobbers)
+python3 lazy-state.py --repeat-count                       # fold a repeat_count field (consecutive identical-probe count, per-repo OS-temp signature file) into the probe JSON for mechanical loop detection; byte-identical default without the flag
+python3 lazy-state.py --probe --forward-cycles N --meta-cycles M --max-cycles K  # fold git_guards (clean_tree/head_matches_origin/unpushed) + a pre-formatted cycle_header line into the probe JSON; byte-identical default without the flag
 ```
 
-Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json).
+Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json), `1` ledger/pseudo-skill failure (`--verify-ledger`/`--apply-pseudo`/`--neutralize-sentinel` not ok).
 
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 
@@ -177,10 +184,15 @@ When the state machine changes:
 `lazy-state.py --test` and `bug-state.py --test` build temp-dir fixtures and assert the
 computed state. They are the only fast, hermetic check for state-machine correctness — **a
 refactor that keeps `--test` green has preserved behavior.** Because both scripts share
-`lazy_core.py`, any change there MUST keep BOTH suites green (and `lazy-state.py --test`
-byte-identical to `tests/baselines/lazy-state-test-baseline.txt`, normalizing the per-run
-`tempfile` suffix); `test_lazy_core.py` characterizes the shared helpers directly. Green
-smoke tests are the acceptance gate before touching anything downstream.
+`lazy_core.py`, any change there MUST keep BOTH suites green. Each `--test` output is
+byte-pinned: `lazy-state.py --test` to `tests/baselines/lazy-state-test-baseline.txt` and
+`bug-state.py --test` to `tests/baselines/bug-state-test-baseline.txt`, compared via the
+shared **cross-platform** `_normalize_smoke_output` helper in `test_lazy_core.py` — it
+canonicalizes the per-run `tempfile` suffix, the OS temp-root, and `\`-vs-`/` separators, so
+the committed baselines are platform-neutral across Windows and WSL (regenerate a baseline ONLY
+by piping live `--test` output through that helper, never by hand). `test_lazy_core.py`
+characterizes the shared helpers directly. Green smoke tests are the acceptance gate before
+touching anything downstream.
 
 ## Related
 

@@ -127,6 +127,13 @@ result: all-passing
 ---
 ```
 
+Optional:
+- `validated_commit: <git-sha>` — HEAD sha at the time the MCP validation run
+  completed. The same sha-freshness anchor `MCP_TEST_RESULTS.md` carries; the
+  `/mcp-test` orchestrator override mandates capturing it so the certification is
+  matched to the exact code it ran against. Optional for back-compat with
+  pre-anchor `VALIDATED.md` files.
+
 Body keeps the human-readable summary of which scenarios ran.
 
 #### `RETRO_DONE.md` — `kind: retro-done`
@@ -201,7 +208,13 @@ date: <YYYY-MM-DD>
 ```
 
 Optional:
-- `skipped_by: <"lazy" | "lazy-cloud">` — who wrote the skip.
+- `skipped_by: <"lazy" | "lazy-cloud" | "operator" | "pipeline">` — who wrote the skip.
+- `granted_by: <"operator" | "mcp-test" | "pipeline">` — **provenance of the waiver decision**. The gate is `lazy_core.skip_waiver_refusal()` (single source of truth — consulted by both state scripts' Step 9 and by `__write_validated_from_skip__`):
+  - `operator` — a human reviewed the feature and approved the MCP skip. Accepted as a legitimate vacuous-pass → `__write_validated_from_skip__`.
+  - `mcp-test` — an `/mcp-test` validation cycle verified structural untestability against `docs/features/mcp-testing/SPEC.md`. Accepted **ONLY when `spec_class` (below) is also present and non-empty** — the citation is what distinguishes a verified assessment from a convenience skip. Missing `spec_class` → refused (`needs-input`).
+  - `pipeline` (or any unrecognized value) — a non-validation pipeline step self-granted the skip. **Refused**: a pipeline-self-granted skip cannot vacuously validate its own MCP requirement. Routes to `terminal_reason="needs-input"`; update `granted_by` to `operator` (after human review) to unblock.
+  - Absent — legacy files are treated as `operator` for backward compatibility **UNLESS `skipped_by` identifies a pipeline author (`lazy` / `lazy-cloud` / `pipeline`)**, in which case the skip is refused: a pipeline-written skip that simply omits `granted_by` is the omission side-door this rule closes (observed 2026-06-10 — an mcp-test cycle omitted the field and its skip auto-validated unconfirmed). NEW pipeline-written skips MUST always carry an explicit `granted_by`.
+- `spec_class: <one-line>` — the untestable class from `docs/features/mcp-testing/SPEC.md` that an `mcp-test` grant verified (e.g. `raw-PCM injection into the Rust callback thread`, or an observation-gap row, or `standalone crate — no app integration`). REQUIRED when `granted_by: mcp-test`; meaningless otherwise.
 
 #### `MCP_TEST_RESULTS.md` — `kind: mcp-test-results`
 
@@ -216,10 +229,13 @@ scenarios: [<scenario-name>, ...]
 result: all-passing  # one of: all-passing | partial
 pass_count: <int>
 total_count: <int>
+validated_commit: <git-sha>  # HEAD sha at the time the MCP run completed; consumed by lazy-state Step-9 freshness gate
 ---
 ```
 
 Body keeps the per-scenario pass/fail breakdown.
+
+`validated_commit` is **required going forward** for every new `MCP_TEST_RESULTS.md`: producers (`/mcp-test`, and the inline `/mcp-test` cycle override in `lazy-batch-prompts/cycle-base-prompt.md`) MUST capture `git rev-parse HEAD` when the MCP run completes and write it here. The state scripts' Step-9 sha-freshness gate compares it to the current HEAD; legacy files without the field skip the check (lenient for backward compatibility), but a new results file written without it leaves the freshness gate inert for that feature.
 
 #### `NEEDS_RESEARCH.md` — `kind: needs-research`  *(new)*
 
@@ -260,6 +276,12 @@ date: <YYYY-MM-DD>
 Optional:
 - `next_skill: <skill name>` — what to re-run after the human resolves the decision (defaults to the writer).
 - `partial_artifacts: [<path>, ...]` — paths to any half-finished artifacts the human should review or discard.
+- `class: mechanical | scope | product` — decision classification. **`scope`** means EVERY decision in this file differs only in effort / sizing / sequencing / completeness — all options converge on the same end-state product behavior — and is auto-resolved to the MOST COMPLETE option in BOTH modes (default and `--park`) per `~/.claude/skills/_components/completeness-policy.md` (D7), never asked. (Under D7, cycle subagents shouldn't write scope-class sentinels at all — apply the policy in-cycle and disclose; this value mainly serves the orchestrator's reclassification of scope-shaped files.) **`mechanical`** is **Key 1 of the D2 two-key auto-accept (`--park` mode only).** Authored by the cycle subagent that wrote this sentinel (or by the input-audit at Step 1d.5). FILE-LEVEL classification: `mechanical` means EVERY decision in this file is mechanical-internal with a single defensible recommended option; `product` means at least one decision requires human judgment on product behavior. If ANY decision touches user-visible behavior (in the divergent-end-state sense — not mere effort/sequencing), workflow, defaults, copy, or UX — the whole file is `product`. **Absent ⇒ treated as `product` (the conservative default).** The `mechanical` value is a `--park`-mode auto-accept signal ONLY — the non-park decision-resume path (Step 1g without `--park`) ignores it and asks the operator; `scope` is the exception: it is acted on in both modes (the D7 standing policy is itself the operator's authorization).
+- `audit_concurs: true | false` — **Key 2 of the D2 two-key auto-accept (`--park` mode only).** Written by the Step 1d.5 input-audit subagent AFTER it independently re-classifies every decision in this file against the product-behavior smells checklist. `true` iff the audit concurs that ALL decisions are mechanical-internal and agrees with a `class: mechanical` self-classification. `false` (or absent) ⇒ treated as no-concurrence → the decision is parked and flushed to the operator via the normal WU-4 flush. Like `class`, this field is a `--park`-mode auto-accept signal ONLY — the non-park path ignores it.
+
+**D2 two-key auto-accept rule (enforced in `parked-flush.md` — `--park` mode only):** A parked decision MAY be auto-accepted (recommended option taken, logged, sentinel resolved) ONLY when ALL three conditions hold simultaneously: (1) `class: mechanical` is set, (2) `audit_concurs: true` is set, AND (3) every decision in the file carries a `**Recommendation:**` block. A single-key classification (`class: mechanical` alone, without `audit_concurs: true`) is NOT sufficient — both keys must agree. On ANY disagreement, absence, or missing recommendation → the decision is treated as `product` → parked → flushed to the operator. **No decision is EVER two-key auto-accepted without `--park`** — this is a structural guarantee: the two-key auto-accept code path lives exclusively in `parked-flush.md` (a `--park`-only component) and cannot fire in the standard decision-resume path. (Scope-class decisions are the separate D7 case: resolved in BOTH modes by the completeness-first standing policy, whose authorization is the policy itself — see `completeness-policy.md`.) The two-key classifier is the controlled, park-mode-only relaxation that lets a both-keys-mechanical decision bypass the operator `AskUserQuestion` instead of being surfaced in the batched flush.
+
+**`resolved_by` marker in `## Resolution` blocks:** When the auto-accept path resolves a decision, it appends a `## Resolution` block carrying `resolved_by: auto-two-key` so the sentinel is a self-describing audit trail. When the completeness-first standing policy (D7) resolves a scope-class decision (both modes — Step 1g or the parked-flush backstop), the block carries `resolved_by: completeness-policy`. Human-answered resolutions (from `AskUserQuestion` via the standard flush or decision-resume path) carry no `resolved_by` field (or may carry `resolved_by: operator` for clarity). Consumers that inspect resolution blocks can distinguish auto-accepted and policy-resolved decisions from operator-answered ones by this marker.
 
 Body keeps the full decision context, options considered, and any chat-visible tradeoff notes the writer would have surfaced interactively.
 
@@ -333,7 +355,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 
 | File | Written when | Cleared when |
 |------|-------------|--------------|
-| BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or via /add-phase / /lazy skip) |
+| BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or human-manual fix); blocked-resolution mode neutralizes by **rename** → `BLOCKED_RESOLVED_<date>.md` (`--neutralize-sentinel`), preserving audit trail |
 | DEFERRED_NON_CLOUD.md | /lazy-cloud cannot run a step in cloud | /lazy Step 10 (feature completion) |
 | DEFERRED_REQUIRES_DEVICE.md | /mcp-test on a no-real-device host can't certify a real-device-only assertion | A real-device /lazy host re-opens (Step 9), certifies the deferred scenarios, then deletes it + writes VALIDATED.md |
 | VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
@@ -341,8 +363,8 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
 | SKIP_MCP_TEST.md | /lazy assessment: not testable | Persists permanently |
 | MCP_TEST_RESULTS.md | /lazy after mcp-test runs | Persists permanently (audit) |
-| NEEDS_RESEARCH.md | /lazy-batch when RESEARCH.md absent | Human runs research, drops RESEARCH.md, deletes this file |
-| NEEDS_INPUT.md | A `--batch` skill hits an ambiguous decision | Human resolves the decisions, deletes the file, re-runs |
+| NEEDS_RESEARCH.md | `/lazy-batch` or `/lazy-batch-cloud` Step 4 (research halt), fired when the state machine's Step 5 returns `needs-research` (RESEARCH.md absent) — `written_by` is the writing orchestrator per the schema enum above | Human drops RESEARCH.md, then next `/lazy-batch` (or `/lazy-batch-cloud`) run ingests it and proceeds; file may be left stale or overwritten on ingestion |
+| NEEDS_INPUT.md | A `--batch` skill hits an ambiguous decision | Resolution-mode neutralizes by **rename** → `NEEDS_INPUT_RESOLVED_<date>.md` (`--neutralize-sentinel`), not deleted; resolved sentinel persists as audit trail |
 
 ### Producer rules
 

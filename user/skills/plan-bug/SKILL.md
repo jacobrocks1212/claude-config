@@ -51,7 +51,7 @@ This skill does NOT invoke `/execute-plan`. Execution is a separate `/lazy-bug` 
 
 `/plan-bug` plans a fix off a **concluded investigation**, not a stub. Read `<spec-md>` and confirm BOTH:
 
-- **Status gate:** the SPEC's `**Status:**` line is `Investigating` or `Open` (the pre-fix statuses). If it is already `In-progress`, `Fixed`, or `Won't-fix`, this bug is past planning — return success with a "nothing to plan; SPEC status is `{status}`" note and STOP. (`bug-state.py` would not have dispatched `/plan-bug` for a fixed bug; this guard makes the skill safe to invoke directly.)
+- **Status gate:** the SPEC's `**Status:**` line is `Investigating`, `Open`, or `Concluded` (the pre-fix statuses). `Concluded` is the canonical status when `bug-state.py` routes here — it means the investigation is done and fix-planning can begin. If it is already `In-progress`, `Fixed`, or `Won't-fix`, this bug is past planning — return success with a "nothing to plan; SPEC status is `{status}`" note and STOP. (`bug-state.py` would not have dispatched `/plan-bug` for a fixed bug; this guard makes the skill safe to invoke directly.)
 - **Findings gate:** the SPEC contains enough root-cause / scope content to plan a fix — e.g. a populated `## Affected Area`, `## Proven Findings`, or a theory marked `Likely`/`Confirmed`. A SPEC that is only `## Verified Symptoms` with no affected-area / findings is **still investigating**.
 
 If the findings gate fails, refuse:

@@ -8,13 +8,14 @@ completion was trustworthy only by *convention*, not by *construction*:
 3. After a legitimate completion, `__mark_complete__` *deleted* `VALIDATED.md` / `RETRO_DONE.md`, so a real completion and an un-gated one became indistinguishable on disk.
 
 This gate is the structural fix. It runs INSIDE `__mark_complete__`, AFTER the
-`mcp-coverage-audit` returns `clean`, and BEFORE the ROADMAP/SPEC flip. It does
-two things: (a) **verifies** completion preconditions, refusing the flip if they
-don't hold; and (b) **writes a durable `COMPLETED.md` receipt** that folds in the
-validation evidence, so completion is provable forever after. `lazy-state.py`
-Step 2 keys on that receipt — a `Complete` claim without a receipt is a
-`completion-unverified` hard-halt, which is what makes failure (2) impossible to
-repeat.
+`mcp-coverage-audit` returns `clean`, and BEFORE the ROADMAP strikethrough. It
+does two things: (a) **verifies** completion preconditions, refusing the flip if
+they don't hold; and (b) on pass, **delegates the receipt write, SPEC/PHASES
+status flip, and sentinel cleanup** to the script (`--apply-pseudo __mark_complete__`),
+which is the sole author of those writes — so completion is provable forever after.
+`lazy-state.py` Step 2 keys on that receipt — a `Complete` claim without a receipt
+is a `completion-unverified` hard-halt, which is what makes failure (2) impossible
+to repeat.
 
 The gate is docs-only — it reads `SPEC.md`, `PHASES.md`, and the validation
 sentinels and runs no Tauri / no MCP server / no shell beyond `git`. It runs
@@ -65,26 +66,61 @@ identically in cloud and workstation.
    This is the gate-level enforcement of the same invariant `lazy-state.py`
    routes around (it re-opens rather than completing while the sentinel exists).
 
-3. **All preconditions pass → write the receipt, then flip.** Write
-   `{spec_path}/COMPLETED.md` (`kind: completed`, `provenance: gated`) per
-   `sentinel-frontmatter.md`, FOLDING the validation evidence into it BEFORE the
-   next step deletes those sentinels:
-   - `completed_commit:` — fill in after the flip commit (or omit; the commit
-     that writes the receipt is itself the record).
-   - `validated_via:` — `mcp` if `VALIDATED.md` present, `skip-mcp-test` if only
-     `SKIP_MCP_TEST.md`, `deferred-non-cloud` if cloud-deferred.
-   - `mcp_pass_count` / `mcp_total_count` — copy from `MCP_TEST_RESULTS.md` /
-     `VALIDATED.md` if present.
-   - Body — paste the one-paragraph validation summary from `VALIDATED.md` (or
-     the skip rationale, or the deferral note) so the evidence survives the
-     sentinel deletion in the flip steps.
+3. **All preconditions pass → delegate the receipt write + status flip + sentinel
+   cleanup to the script.** The gate's responsibility here is to VERIFY (steps 1–2a
+   above) and then, on pass, to call the script as the single author:
 
-   Then perform the flip the consumer already documents: ROADMAP
-   strikethrough+`COMPLETE`, set `SPEC.md **Status:** Complete` (and `PHASES.md`
-   to `Complete`), delete `VALIDATED.md` / `RETRO_DONE.md` /
-   `DEFERRED_NON_CLOUD.md` (their content now lives in the receipt), KEEP
-   `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` / `COMPLETED.md` / `plans/`,
-   commit per project policy.
+   ```
+   python3 ~/.claude/scripts/lazy-state.py \
+       --apply-pseudo __mark_complete__ {spec_path}
+   ```
+
+   (For bugs, use `bug-state.py --apply-pseudo __mark_fixed__ {spec_path}`.)
+
+   **The script enforces per-phase coherence as a MECHANICAL THIRD GATE before any
+   write.** `apply_pseudo __mark_complete__` / `__mark_fixed__` parses PHASES.md
+   per-phase (fence-aware) and, BEFORE writing the receipt or flipping any status,
+   (a) AUTO-FLIPS any phase that has ≥1 checkbox, zero unchecked, and a
+   non-`Complete`/non-`Superseded` Status line → `Complete` (deterministic and
+   safe), then (b) REFUSES the whole operation (`refused:<reason>`, **zero writes —
+   no receipt, no status flip, sentinels untouched**) if any phase would remain
+   incoherent: any unchecked checkbox in any phase (verification rows included — by
+   completion time the verification-only carve-out's job is done), or any phase
+   Status that is not `Complete`/`Superseded` (a zero-checkbox non-Complete phase
+   refuses too — there is no mechanical signal to flip on). The refusal message
+   names the offending phases/rows. This is the structural backstop for the steps-1–2a
+   prose checks: even if the gate prose missed an incoherent phase, the script will
+   not write an incoherent completion.
+
+   **On `ok: false` + this script-level refusal, route a corrective coherence cycle.**
+   Treat it exactly like a Gate-1 uncovered-decision halt: do NOT flip, do NOT retry
+   the apply blindly — dispatch a cycle subagent to reconcile PHASES.md HONESTLY
+   (tick each unchecked verification row WITH on-disk evidence, or re-scope rows it
+   cannot prove — never blind-tick to satisfy the gate), then return to the loop so
+   the next `__mark_complete__`/`__mark_fixed__` attempt re-runs against a coherent
+   PHASES.md. A blind tick that makes the script pass without real verification is
+   the exact incoherence this gate exists to prevent.
+
+   The script (`apply_pseudo` in `lazy_core.py`) is the **sole author** of the
+   following writes — the gate and the consumer skill prose must NOT duplicate them:
+
+   - **Writes** `{spec_path}/COMPLETED.md` (`kind: completed`, `provenance: gated`),
+     folding validation evidence in before the sentinel deletes:
+     - `validated_via:` — `mcp` if `VALIDATED.md` present, `skip-mcp-test` if only
+       `SKIP_MCP_TEST.md`.
+     - `mcp_pass_count` / `mcp_total_count` — copied from `MCP_TEST_RESULTS.md`
+       if present.
+   - **Flips** `SPEC.md **Status:** Complete` (first occurrence) and
+     `PHASES.md **Status:** Complete` (first occurrence) when those files exist.
+   - **Deletes** `VALIDATED.md`, `RETRO_DONE.md`, and `DEFERRED_NON_CLOUD.md`
+     (content now lives in the receipt). Keeps `SKIP_MCP_TEST.md`,
+     `MCP_TEST_RESULTS.md`, `COMPLETED.md`, and `plans/`.
+
+   The **ROADMAP strikethrough** (multi-line fuzzy edit) remains the orchestrator's
+   responsibility — it is not a deterministic scripted write and stays in skill
+   prose.
+
+   Commit the resulting file changes per project policy after the script exits 0.
 
 4. **Refuse path (any precondition in steps 1–2a fails).** Do NOT flip. Do NOT
    write `COMPLETED.md`. This means the state script emitted `__mark_complete__`
@@ -99,17 +135,22 @@ identically in cloud and workstation.
 
 ### Return status to the consumer
 
-- `gated` — receipt written, preconditions met; consumer proceeds with the flip.
+- `gated` — preconditions met; the script has written `COMPLETED.md`, flipped
+  `SPEC.md`/`PHASES.md` status to `Complete`, and deleted `VALIDATED.md` /
+  `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md`. The consumer's only remaining step
+  is the ROADMAP strikethrough (the single orchestrator-side write that the
+  script does not perform).
 - `refused:<reason>` — `NEEDS_INPUT.md` written; consumer MUST NOT flip this
   cycle. Print a one-line halt note (`🛑 completion-integrity gate: <reason> — NEEDS_INPUT.md written; mark-complete deferred.`) and return.
 
 ### Coupling note
 
-Consumed by `__mark_complete__` in all four /lazy-family skills, ALWAYS as the
-second gate after `mcp-coverage-audit.md`:
+Consumed by `__mark_complete__` in all four /lazy-family skills and by `__mark_fixed__` in the bug pipeline, ALWAYS as the second gate after `mcp-coverage-audit.md`:
 - `user/skills/lazy/SKILL.md` Step 3 `__mark_complete__`
 - `user/skills/lazy-batch/SKILL.md` Step 1c.5 `__mark_complete__`
 - `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` Step 3 `__mark_complete__`
 - `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` Step 1c.5 `__mark_complete__`
+- `user/skills/lazy-bug/SKILL.md` `__mark_fixed__` (Gate 2)
+- `user/skills/lazy-bug-batch/SKILL.md` Step 1c.5 `__mark_fixed__` (Gate 2)
 
-When editing this component, run `grep -rl "completion-integrity-gate.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md"` to confirm the blast radius matches the four files above.
+When editing this component, run `grep -rl "completion-integrity-gate.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md"` to confirm the blast radius matches the six files above.

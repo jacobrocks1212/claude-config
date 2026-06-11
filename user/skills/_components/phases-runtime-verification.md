@@ -1,4 +1,26 @@
 <!--
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  PLACEMENT RULE — enforced by lazy_core state-script heuristic          ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  **Runtime-verification / MCP-assertion checkboxes (`- [ ]`) MUST live under
+  a dedicated `## Runtime Verification` heading (or under a recognized bold-
+  marker subsection: `**Runtime Verification**` / `**MCP Integration Test
+  Assertions:**`). They MUST NEVER appear under a phase's `### Deliverables`
+  list.**
+
+  Rationale: `lazy_core`'s `remaining_unchecked_are_verification_only()`
+  heuristic decides whether all remaining unchecked rows are verification-only
+  so it can route the phase forward to the retro→MCP gate (Step 8→9) instead
+  of looping back on write-plan/execute-plan. A `- [ ]` checkbox placed under
+  `### Deliverables` is read as an outstanding IMPLEMENTATION item — this
+  misclassification causes spurious write-plan/execute-plan churn (this exact
+  misplacement cost two Sonnet recoveries + two pipeline stalls in production).
+
+  Additionally: `- [ ]` rows shown INSIDE ``` fenced code blocks are treated
+  as illustrative examples and are NOT counted as deliverables or verification
+  rows by the state script.
+
   AUTHORING CAUTION — line-leading bold inside a Runtime Verification section.
   The lazy_core state machine's `remaining_unchecked_are_verification_only`
   heuristic treats ANY line-leading `**bold**` paragraph as a *subsection

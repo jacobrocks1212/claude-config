@@ -40,7 +40,7 @@ Output schema (stdout JSON) — same keys as lazy-state.py:
                             | "device-queue-exhausted" | "blocked"
                             | "needs-input" | "completion-unverified"
                             | "queue-missing" | "all-remaining-deferred"
-                            | "stale_upstream",
+                            | "stale_upstream" | "scoped-id-not-found",
   "notify_message":    "<string>"      | null,
   "diagnostics":       [],
   "device_deferred_features": [],
@@ -64,6 +64,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from datetime import datetime
@@ -89,6 +90,7 @@ from lazy_core import (
     remaining_unchecked_are_verification_only,
     write_completed_receipt,
     has_completion_receipt,
+    skip_waiver_refusal,
     spec_status,
 )
 
@@ -108,9 +110,11 @@ TR_CLOUD_QUEUE_EXHAUSTED = "cloud-queue-exhausted"
 TR_QUEUE_MISSING = "queue-missing"
 TR_STALE_UPSTREAM = "stale_upstream"
 TR_ALL_DEFERRED = "all-remaining-deferred"
+TR_SCOPED_ID_NOT_FOUND = "scoped-id-not-found"
 
 # sub_skill tokens for bug-specific actions
 SKILL_INVESTIGATE = "spec-bug"             # root-cause investigation / spec-bug skill
+SKILL_PLAN_BUG = "plan-bug"               # implementation planning for a concluded investigation (SPEC **Status:** Concluded, no PHASES.md)
 SKILL_SPEC_PHASES = "spec-phases"          # break bug SPEC into PHASES
 SKILL_WRITE_PLAN = "write-plan"            # write an implementation plan
 SKILL_EXECUTE_PLAN = "execute-plan"        # execute a Ready plan
@@ -128,6 +132,14 @@ STEP_EXECUTE_PLAN = "Step 7a: execute plan"
 STEP_RETRO = "Step 8: retro phase"
 STEP_MCP = "Step 9: run MCP tests"
 STEP_MCP_SKIP = "Step 9: skip-mcp-test → validated"
+# Provenance gate: a SKIP_MCP_TEST.md with granted_by: pipeline (self-granted)
+# halts for operator confirmation instead of vacuously validating.
+# Mirrors lazy-state.py's identical Step-9 step string.
+STEP_MCP_SKIP_PIPELINE_GRANTED = "Step 9: pipeline-granted skip needs operator confirmation"
+# Freshness gate: MCP_TEST_RESULTS.md whose validated_commit does not match the
+# current HEAD must re-verify rather than auto-validate stale results.
+# Mirrors lazy-state.py's identical Step-9 step string.
+STEP_MCP_STALE_RESULTS = "Step 9: stale MCP results — re-verify"
 STEP_MARK_FIXED = "Step 10: mark fixed"
 STEP_CLOUD_DEFER_MCP = "Step 9: cloud defers MCP test"
 STEP_DEVICE_DEFERRED_GUARD = "Step 9: device-deferred (no real device on this host)"
@@ -160,6 +172,12 @@ _DEVICE_DEFERRED: list[str] = []
 # Module-level mutable list for operator-deferred bugs (DEFERRED.md sentinel).
 # Reset at the start of each compute_state() call, mirroring _DEVICE_DEFERRED.
 _OPERATOR_DEFERRED: list[str] = []
+
+# Park mode: when True (--park-needs-input flag), NEEDS_INPUT.md items are
+# skipped (parked) instead of halting. The parked items accumulate in _PARKED.
+# Reset at the start of each compute_state() call, mirroring _DEVICE_DEFERRED.
+_PARKED: list = []
+_PARK_MODE: bool = False
 
 
 # ===========================================================================
@@ -195,7 +213,7 @@ def _bug_state(
     merged_diag = list(lazy_core._DIAGNOSTICS)
     if diagnostics:
         merged_diag.extend(diagnostics)
-    return {
+    out = {
         "feature_id": feature_id,
         "feature_name": feature_name,
         "spec_path": spec_path,
@@ -213,6 +231,12 @@ def _bug_state(
         # Present so orchestrators can surface parked bugs without halting the queue.
         "operator_deferred": list(_OPERATOR_DEFERRED),
     }
+    # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
+    # When False the key must be entirely absent so default output (no flag) is
+    # byte-identical to the pre-WU-1 Phase-4 baseline.
+    if _PARK_MODE:
+        out["parked"] = list(_PARKED)
+    return out
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -230,6 +254,25 @@ def resolve_real_device(flag_value: str) -> bool:
     # auto: read env var; absent means no-device (conservative default)
     raw = os.environ.get(REAL_DEVICE_ENV, "")
     return raw == "1" or raw.strip().lower() == "true"
+
+
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a
+    git repo / git is unavailable. Best-effort — the MCP-results freshness
+    check is SKIPPED (legacy-permissive) when this returns None.
+
+    Mirrors lazy-state.py's _current_head() exactly.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
 
 
 def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
@@ -268,6 +311,16 @@ def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
             name = entry.get("name")
             spec_subdir = entry.get("spec_dir", bug_id)
             if not bug_id or not name:
+                # Malformed entry — diagnose HERE (not in the compute_state
+                # walk loop): load_bug_queue normalizes entries before the
+                # walk ever sees them, so this is the only place the drop is
+                # observable. Mirrors lazy-state.py's walk-loop diagnostic
+                # wording for queue entries missing id/name.
+                missing = [k for k, v in (("id", bug_id), ("name", name)) if not v]
+                _diag(
+                    f"bug queue entry skipped — missing {', '.join(missing)} "
+                    f"(entry: {str(entry)[:120]!r})"
+                )
                 continue
             spec_path = (bugs_dir / spec_subdir).resolve() if spec_subdir else None
             if spec_path is None or not spec_path.exists():
@@ -357,8 +410,15 @@ def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
     """Return on-disk open bug dirs NOT already in queued_ids.
 
     Searches bugs_dir (one level deep), skips _archive/, and skips any dir
-    whose SPEC.md **Status:** is Fixed or Won't-fix.  Returns dirs sorted by
-    severity rank then Discovered date ascending.
+    whose SPEC.md **Status:** is a genuinely-done terminal state.  Returns
+    dirs sorted by severity rank then Discovered date ascending.
+
+    Done-status semantics:
+      - Won't-fix → always skipped (receipt-exempt, retired without fix).
+      - Fixed WITH a valid FIXED.md receipt → skipped (genuinely done).
+      - Fixed WITHOUT a valid FIXED.md receipt → NOT skipped; returned so
+        compute_state's queue-walk receipt gate can fire TR_COMPLETION_UNVERIFIED.
+        A diagnostic is emitted to surface the bypass to the operator.
 
     Note: the first parameter is the bugs_dir (docs/bugs/), NOT the repo root.
     """
@@ -378,10 +438,24 @@ def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
         spec_md = child / "SPEC.md"
         if not spec_md.exists():
             continue
-        # Read status — skip if the bug is already done
+        # Read status and apply done-status filtering with receipt awareness.
         status = spec_status(child)
-        if status in _BUG_DONE_STATUSES:
+        if status == BUG_STATUS_WONT_FIX:
+            # Receipt-exempt: retired without fix — always skip.
             continue
+        if status == BUG_STATUS_FIXED:
+            if has_completion_receipt(child, filename="FIXED.md"):
+                # Genuinely done: Fixed with a valid FIXED.md receipt — skip.
+                continue
+            # Fixed WITHOUT receipt: do NOT silently skip.  Surface this dir so
+            # the queue-walk receipt gate in compute_state fires
+            # TR_COMPLETION_UNVERIFIED — same as the queued-bug path.
+            _diag(
+                f"unqueued Fixed-without-receipt dir surfaced for receipt gate: "
+                f"'{child.name}' — SPEC marks Fixed but no valid FIXED.md receipt found. "
+                "Routing to completion gate (completion-unverified)."
+            )
+            # Fall through to append into candidates below.
         # Sort key: severity rank (ascending priority) + discovered date string (ascending)
         sev = bug_severity(spec_md)
         sev_rank = _SEVERITY_RANK.get(sev, _SEVERITY_DEFAULT) if sev else _SEVERITY_DEFAULT
@@ -397,6 +471,7 @@ def compute_state(
     cloud: bool,
     real_device: bool = True,
     scope_bug_id: str | None = None,
+    park_needs_input: bool = False,
 ) -> dict[str, Any]:
     """Walk the bug lifecycle and return the next action as a JSON-serializable dict.
 
@@ -412,6 +487,11 @@ def compute_state(
       - Receipt file is FIXED.md (kind: fixed).
       - Won't-fix is receipt-exempt.
       - Ordering is hybrid (queue.json + severity fallback) not ROADMAP-based.
+
+    park_needs_input: OPT-IN flag. When True, a bug carrying NEEDS_INPUT.md is
+      SKIPPED (parked) rather than halting the queue. The parked item is reported
+      in the 'parked[]' output array. Without this flag, behavior is byte-identical
+      to the pre-WU-1 Phase-4 baseline (needs-input halt fires, 'parked' key absent).
     """
     # Cloud has no audio device — force no-device like lazy-state.py does.
     if cloud:
@@ -421,14 +501,33 @@ def compute_state(
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
     _OPERATOR_DEFERRED.clear()
+    # Park mode: set the module global from the param so _bug_state() can gate
+    # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
+    global _PARK_MODE, _PARKED
+    _PARK_MODE = park_needs_input
+    _PARKED.clear()
     repo_root = repo_root.resolve()
 
     # Load the hybrid-ordered bug queue.
+    # Track whether queue.json is entirely absent (distinct from "present but empty"),
+    # so we can emit TR_QUEUE_MISSING instead of TR_ALL_BUGS_FIXED.
+    _queue_path = repo_root / "docs" / "bugs" / "queue.json"
+    _queue_json_absent = not _queue_path.exists()
     queue = load_bug_queue(repo_root)
 
     # Walk the queue to find the current (first actionable) bug.
     current = None
     device_saturated_skipped: list[str] = []
+    # cloud_saturated_skipped: bugs that have RETRO_DONE.md + DEFERRED_NON_CLOUD.md
+    # but no VALIDATED.md.  Cloud cannot run MCP tests, so we skip them here and
+    # emit TR_CLOUD_QUEUE_EXHAUSTED if nothing else is actionable (mirrors
+    # lazy-state.py lines ~848, ~912-919, ~975-982).
+    cloud_saturated_skipped: list[str] = []
+    # Tracks whether the --bug-id scope arg matched ANY raw entry id in the queue
+    # (set BEFORE any completion/cloud/device skip would continue past a matched entry).
+    # If scope is set but no entry matched, we emit TR_SCOPED_ID_NOT_FOUND instead
+    # of TR_ALL_BUGS_FIXED so callers can distinguish "queue exhausted" from "typo".
+    scope_id_seen: bool = False
 
     for entry in queue:
         bug_id = entry.get("id")
@@ -436,12 +535,23 @@ def compute_state(
         spec_dir: Path = entry.get("spec_path")
 
         if not bug_id or not bug_name or not spec_dir:
+            # Emit a diagnostic naming the missing fields so the operator can
+            # fix the malformed queue entry.  Matches the WU-7 deliverable.
+            missing = [f for f, v in [("id", bug_id), ("name", bug_name), ("spec_dir", spec_dir)] if not v]
+            _diag(
+                f"queue entry skipped — missing {', '.join(missing)} "
+                f"(entry: {str(entry)[:120]!r})"
+            )
             continue
 
         # --bug-id scoping: when set, process ONLY the matching queue entry.
-        # Absent the flag (None) behavior is byte-identical to today.
-        if scope_bug_id is not None and str(bug_id) != str(scope_bug_id):
-            continue
+        # scope_id_seen is set here — BEFORE any completion/cloud/device skip
+        # would continue past a matched entry — so a matched-but-skipped entry
+        # still counts as "seen" (not reported as scoped-id-not-found).
+        if scope_bug_id is not None:
+            if str(bug_id) != str(scope_bug_id):
+                continue
+            scope_id_seen = True
 
         # -----------------------------------------------------------------------
         # Completion gate: Fixed + receipt → genuinely done (skip).
@@ -473,6 +583,25 @@ def compute_state(
                     "bug-state.py --backfill-receipts to grandfather it."
                 ),
             )
+
+        # -----------------------------------------------------------------------
+        # Cloud-saturated skip (mirrors lazy-state.py lines ~912-919).
+        # A bug that has RETRO_DONE.md + DEFERRED_NON_CLOUD.md but no VALIDATED.md
+        # cannot be certified on a cloud host (cloud cannot run MCP tests).  Skip it
+        # so the queue advances; TR_CLOUD_QUEUE_EXHAUSTED is emitted if no other bug
+        # is actionable.
+        # -----------------------------------------------------------------------
+        if cloud:
+            retro_done = (spec_dir / "RETRO_DONE.md").exists()
+            deferred = (spec_dir / "DEFERRED_NON_CLOUD.md").exists()
+            validated = (spec_dir / "VALIDATED.md").exists()
+            if retro_done and deferred and not validated:
+                cloud_saturated_skipped.append(bug_name)
+                _diag(
+                    f"cloud-saturated skipped: {bug_name} — DEFERRED_NON_CLOUD.md "
+                    "present, no VALIDATED.md; awaiting workstation /lazy-bug."
+                )
+                continue
 
         # -----------------------------------------------------------------------
         # Device-saturated skip (mirrors lazy-state.py's device-axis logic).
@@ -510,6 +639,23 @@ def compute_state(
             )
             continue
 
+        # Park-mode: if --park-needs-input is active and this bug has an
+        # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
+        # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
+        # BLOCKED.md retains precedence: a bug carrying BOTH BLOCKED.md and
+        # NEEDS_INPUT.md must still halt as "blocked", not be silently parked.
+        if (
+            park_needs_input
+            and (spec_dir / "NEEDS_INPUT.md").exists()
+            and not (spec_dir / "BLOCKED.md").exists()
+        ):
+            _PARKED.append(lazy_core.build_parked_entry(bug_id, spec_dir / "NEEDS_INPUT.md"))
+            _diag(
+                f"parked: {bug_name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
+                "Re-enters when resolved."
+            )
+            continue
+
         # This bug is actionable — stop scanning.
         current = {
             "id": bug_id,
@@ -522,6 +668,18 @@ def compute_state(
     # No actionable bug found.
     # -----------------------------------------------------------------------
     if current is None:
+        # Cloud-saturated: cloud host has DEFERRED_NON_CLOUD bugs awaiting workstation
+        # MCP validation.  Emit TR_CLOUD_QUEUE_EXHAUSTED so the orchestrator knows to
+        # pause until a workstation /lazy-bug run validates and writes VALIDATED.md.
+        # Mirrors lazy-state.py lines ~975-982.
+        if cloud and cloud_saturated_skipped:
+            return _bug_state(
+                terminal_reason=TR_CLOUD_QUEUE_EXHAUSTED,
+                notify_message=(
+                    f"Cloud queue exhausted — {len(cloud_saturated_skipped)} bug(s) "
+                    "carry DEFERRED_NON_CLOUD.md awaiting workstation /lazy-bug validation."
+                ),
+            )
         if (not real_device) and device_saturated_skipped:
             return _bug_state(
                 terminal_reason=TR_DEVICE_QUEUE_EXHAUSTED,
@@ -542,6 +700,30 @@ def compute_state(
                     f"All remaining bugs are operator-deferred — "
                     f"{len(_OPERATOR_DEFERRED)} bug(s) parked via DEFERRED.md. "
                     "Re-include by deleting DEFERRED.md in each bug dir."
+                ),
+            )
+        # queue.json is entirely absent (no bugs dir or no queue file) — this is
+        # distinct from "queue present but all bugs done" (which is all-bugs-fixed).
+        # TR_QUEUE_MISSING signals that the queue file was never created, so the
+        # operator should run --enqueue-adhoc or create docs/bugs/queue.json manually.
+        if _queue_json_absent:
+            return _bug_state(
+                terminal_reason=TR_QUEUE_MISSING,
+                notify_message=(
+                    "docs/bugs/queue.json is absent — no bug queue exists yet. "
+                    "Run bug-state.py --enqueue-adhoc to create it, or create "
+                    "docs/bugs/queue.json manually."
+                ),
+            )
+        # scoped-id-not-found: --bug-id was given but matched no queue entry.
+        # Placed here (after all other specific terminals) because when the scope
+        # id is a typo none of the skip-lists will have populated.
+        if scope_bug_id is not None and not scope_id_seen:
+            return _bug_state(
+                terminal_reason=TR_SCOPED_ID_NOT_FOUND,
+                notify_message=(
+                    f"--bug-id '{scope_bug_id}' matched no entry in the bug queue — "
+                    "check the id (typo?) or that the bug is queued. No cycle was dispatched."
                 ),
             )
         return _bug_state(
@@ -599,11 +781,24 @@ def compute_state(
             ),
         )
 
-    # Step 4: SPEC.md present but no PHASES.md → investigation dispatch.
+    # Step 4: SPEC.md present but no PHASES.md → investigation or planning dispatch.
     # (SPEC.md is guaranteed to exist at this point: load_bug_queue only returns
-    # dirs that have one.  Status is Open or Investigating → spec-bug.)
+    # dirs that have one.)
+    # If the SPEC status is "Concluded", the investigation is done and PHASES.md has not
+    # been authored yet — route to plan-bug so it can create PHASES.md from the concluded
+    # spec.  Any other status (e.g. "Investigating", "Open") → spec-bug to continue the
+    # investigation.  This avoids an infinite spec-bug loop after a concluded investigation.
     phases_file = spec_dir / "PHASES.md"
     if not phases_file.exists():
+        _status = spec_status(spec_dir)
+        if _status == "Concluded":
+            # Investigation concluded; hand off to plan-bug to author PHASES.md.
+            return _bug_state(
+                **common,
+                current_step=STEP_INVESTIGATE,
+                sub_skill=SKILL_PLAN_BUG,
+                sub_skill_args=f"{spec_dir_str}/SPEC.md",
+            )
         return _bug_state(
             **common,
             current_step=STEP_INVESTIGATE,
@@ -712,6 +907,22 @@ def compute_state(
             )
         # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
+            # Provenance gate (skip_waiver_refusal — mirrors lazy-state.py's
+            # Step 9): a pipeline-self-granted skip, a pipeline-authored skip
+            # with NO granted_by field, or an mcp-test grant missing its
+            # spec_class citation must NOT vacuously validate. Accepted:
+            # operator grants, legacy no-provenance files, and mcp-test grants
+            # carrying a spec_class citation.
+            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+            if _skip_refusal:
+                return _bug_state(
+                    **common,
+                    current_step=STEP_MCP_SKIP_PIPELINE_GRANTED,
+                    terminal_reason=TR_NEEDS_INPUT,
+                    notify_message=(
+                        f"{bug_name}: SKIP_MCP_TEST.md {_skip_refusal}"
+                    ),
+                )
             return _bug_state(
                 **common,
                 current_step=STEP_MCP_SKIP,
@@ -722,6 +933,22 @@ def compute_state(
         # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
+                # Provenance gate (skip_waiver_refusal — mirrors lazy-state.py's
+                # Step 9): a pipeline-self-granted skip, a pipeline-authored
+                # skip with NO granted_by field, or an mcp-test grant missing
+                # its spec_class citation must NOT vacuously validate. Accepted:
+                # operator grants, legacy no-provenance files, and mcp-test
+                # grants carrying a spec_class citation.
+                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+                if _skip_refusal:
+                    return _bug_state(
+                        **common,
+                        current_step=STEP_MCP_SKIP_PIPELINE_GRANTED,
+                        terminal_reason=TR_NEEDS_INPUT,
+                        notify_message=(
+                            f"{bug_name}: SKIP_MCP_TEST.md {_skip_refusal}"
+                        ),
+                    )
                 return _bug_state(
                     **common,
                     current_step=STEP_MCP_SKIP,
@@ -732,6 +959,26 @@ def compute_state(
             if mcp_results_file.exists():
                 meta = parse_sentinel(mcp_results_file) or {}
                 if meta.get("result") == "all-passing":
+                    # Freshness gate (mirrors lazy-state.py's Step 9): the
+                    # results must have been validated against the CURRENT
+                    # HEAD commit. If validated_commit is present and doesn't
+                    # match HEAD, the results are stale and we must re-run MCP
+                    # tests against the current code before writing
+                    # VALIDATED.md. When _current_head returns None (not a
+                    # git repo) or validated_commit is absent (legacy
+                    # results), skip the check — legacy permissive.
+                    head = _current_head(repo_root)
+                    validated_commit = meta.get("validated_commit")
+                    if head and validated_commit and str(validated_commit) != head:
+                        return _bug_state(
+                            **common,
+                            current_step=STEP_MCP_STALE_RESULTS,
+                            sub_skill=SKILL_MCP_TEST,
+                            sub_skill_args=(
+                                f"re-validate {bug_name} — MCP_TEST_RESULTS.md was "
+                                f"validated against a stale commit; see {spec_dir_str}/SPEC.md"
+                            ),
+                        )
                     return _bug_state(
                         **common,
                         current_step="Step 9b: write validated",
@@ -748,6 +995,23 @@ def compute_state(
 
     # Step 10: Mark fixed.
     # Entry: RETRO_DONE.md + VALIDATED.md (+ Status not yet Fixed).
+    #
+    # Cloud defensive backstop (mirrors lazy-state.py lines ~1441-1453).
+    # The Step-2 cloud-saturated skip normally prevents a cloud host from ever
+    # reaching this point without VALIDATED.md (RETRO_DONE.md + DEFERRED_NON_CLOUD.md
+    # → skip in queue walk → TR_CLOUD_QUEUE_EXHAUSTED at exhaustion).  But if somehow
+    # a bug arrives here on a cloud host without VALIDATED.md, halt rather than
+    # silently archiving with zero validation.
+    if cloud and not validated_file.exists():
+        return _bug_state(
+            **common,
+            current_step="Step 10a: cloud halt",
+            terminal_reason=TR_CLOUD_QUEUE_EXHAUSTED,
+            notify_message=(
+                f"{bug_name}: cloud work complete (phases + retro). "
+                "Awaiting workstation /lazy-bug for deferred MCP validation."
+            ),
+        )
     return _bug_state(
         **common,
         current_step=STEP_MARK_FIXED,
@@ -904,6 +1168,10 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
       operator-deferred-skip  — 2 bugs: one with DEFERRED.md (parked), one actionable;
                                 the actionable bug must be selected (DEFERRED.md skipped)
       all-operator-deferred   — only bug has DEFERRED.md → all-remaining-deferred terminal
+      queue-json-missing      — docs/bugs/ exists but queue.json absent → queue-missing terminal
+      unqueued-fixed-no-receipt-halt — on-disk Fixed bug NOT in queue.json, no FIXED.md
+                                       → must halt with completion-unverified (not silently
+                                         skip to all-bugs-fixed via _find_open_bug_dirs)
     """
     root = tmpdir / name
     bugs_dir = root / "docs" / "bugs"
@@ -1368,6 +1636,743 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             deferred_at="2026-06-01",
         )
 
+    elif name == "cloud-defer-mcp":
+        # RETRO_DONE.md present; cloud=True; no VALIDATED.md / SKIP_MCP_TEST.md /
+        # DEFERRED_NON_CLOUD.md / DEFERRED_REQUIRES_DEVICE.md.
+        # Expected: current_step == STEP_CLOUD_DEFER_MCP,
+        #           sub_skill == "__write_deferred_non_cloud__"
+        # Exercises compute_state lines ~704-712 (cloud Step-9 defer branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-cdm", "name": "Cloud Defer MCP Bug",
+                 "spec_dir": "bug-cdm"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-cdm"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Cloud Defer MCP Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-10\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-cdm", date="2026-05-28", rounds=1,
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md,
+        # no DEFERRED_NON_CLOUD.md, no DEFERRED_REQUIRES_DEVICE.md
+
+    elif name == "cloud-skip-mcp":
+        # RETRO_DONE.md + SKIP_MCP_TEST.md present; cloud=True; no VALIDATED.md.
+        # Expected: current_step == STEP_MCP_SKIP,
+        #           sub_skill == "__write_validated_from_skip__"
+        # Exercises compute_state lines ~713-720 (cloud SKIP_MCP_TEST branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-csm", "name": "Cloud Skip MCP Bug",
+                 "spec_dir": "bug-csm"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-csm"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Cloud Skip MCP Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-11\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-csm", date="2026-05-29", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-csm", reason="No MCP-testable surface",
+            approved_by="human", date="2026-05-29",
+        )
+        # Intentionally no VALIDATED.md
+
+    elif name == "device-reopen":
+        # RETRO_DONE.md + DEFERRED_REQUIRES_DEVICE.md present; real_device=True;
+        # no VALIDATED.md.
+        # Expected: current_step == STEP_DEVICE_REOPEN,
+        #           sub_skill == SKILL_MCP_TEST
+        # Exercises compute_state lines ~665-686 (real-device re-open branch).
+        # This is the real-device twin of the no-device "device-deferred" fixture.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-dro", "name": "Device Reopen Bug",
+                 "spec_dir": "bug-dro"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-dro"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Device Reopen Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P0\n\n"
+            "**Discovered:** 2026-04-20\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-dro", date="2026-05-22", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "DEFERRED_REQUIRES_DEVICE.md", "device-deferred",
+            bug_id="bug-dro",
+            deferred_scenarios=["SOME-SCEN-01"],
+            date="2026-05-23",
+        )
+        # Intentionally no VALIDATED.md
+
+    elif name == "step9-skip-mcp":
+        # Workstation: RETRO_DONE.md + SKIP_MCP_TEST.md; no VALIDATED.md;
+        # no DEFERRED_REQUIRES_DEVICE.md.  cloud=False, real_device=True.
+        # Expected: current_step == STEP_MCP_SKIP,
+        #           sub_skill == "__write_validated_from_skip__"
+        # Exercises compute_state lines ~723-730 (workstation skip branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-s9sm", "name": "Step9 Skip MCP Bug",
+                 "spec_dir": "bug-s9sm"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-s9sm"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Step9 Skip MCP Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-05-12\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-s9sm", date="2026-05-30", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-s9sm", reason="No MCP-testable surface (workstation)",
+            approved_by="human", date="2026-05-30",
+        )
+        # Intentionally no VALIDATED.md, no DEFERRED_REQUIRES_DEVICE.md
+
+    elif name == "step9-mcp-results":
+        # Workstation: RETRO_DONE.md + MCP_TEST_RESULTS.md with result: all-passing;
+        # no VALIDATED.md; no SKIP_MCP_TEST.md.  cloud=False, real_device=True.
+        # Expected: current_step == "Step 9b: write validated",
+        #           sub_skill == "__write_validated_from_results__"
+        # Exercises compute_state lines ~731-740 (workstation results branch).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-s9mr", "name": "Step9 MCP Results Bug",
+                 "spec_dir": "bug-s9mr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-s9mr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Step9 MCP Results Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-13\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-s9mr", date="2026-05-31", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            bug_id="bug-s9mr", result="all-passing", date="2026-05-31",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md
+
+    elif name == "severity-ordering":
+        # Two on-disk open bugs with NO queue.json entry (empty queue).
+        # bug-sev-p2: Severity P2 (rank 2)
+        # bug-sev-p0: Severity P0 (rank 0)
+        # Per _SEVERITY_RANK the P0 bug must be selected FIRST.
+        # Proves severity rank orders UNLISTED (on-disk) bugs; distinct from
+        # hybrid-ordering which proves queue.json overrides severity.
+        (bugs_dir / "queue.json").write_text(json.dumps({"queue": []}),
+                                             encoding="utf-8")
+        # P2 bug (lower priority — must NOT be selected first)
+        bp2 = bugs_dir / "bug-sev-p2"
+        bp2.mkdir()
+        (bp2 / "SPEC.md").write_text(
+            "# Severity P2 Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+        # P0 bug (highest priority — MUST be selected first)
+        bp0 = bugs_dir / "bug-sev-p0"
+        bp0.mkdir()
+        (bp0 / "SPEC.md").write_text(
+            "# Severity P0 Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P0\n\n"
+            "**Discovered:** 2026-05-02\n",
+            encoding="utf-8",
+        )
+
+    elif name == "cloud-defer-no-validate-halts":
+        # cloud=True; RETRO_DONE.md + DEFERRED_NON_CLOUD.md present; no VALIDATED.md,
+        # no SKIP_MCP_TEST.md, no DEFERRED_REQUIRES_DEVICE.md.
+        #
+        # BUG being pinned (WU-2): the first cloud if-branch in Step 9 is False
+        # (deferred_file.exists() makes it skip), the second is also False (no
+        # skip_mcp_file), so control FALLS THROUGH to Step 10 __mark_fixed__ —
+        # archiving without validation.
+        #
+        # NEW (post-fix) behavior: cloud MUST halt with
+        #   terminal_reason == TR_CLOUD_QUEUE_EXHAUSTED ("cloud-queue-exhausted")
+        # mirroring lazy-state.py's Step-10 hard-halt for cloud hosts that have no
+        # VALIDATED.md.  sub_skill MUST NOT be SKILL_MARK_FIXED.
+        #
+        # This fixture is RED against current code (current code routes to
+        # __mark_fixed__); GREEN only after the WU-2.2 impl-agent adds the guard.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-cdnv", "name": "Cloud Defer No Validate Bug",
+                 "spec_dir": "bug-cdnv"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-cdnv"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Cloud Defer No Validate Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-15\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-cdnv", date="2026-05-30", rounds=1,
+        )
+        _write_yaml_sentinel(
+            bdir / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            bug_id="bug-cdnv",
+            reason="MCP validation requires workstation audio stack",
+            deferred_at="2026-05-30",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md,
+        # no DEFERRED_REQUIRES_DEVICE.md.
+
+    elif name == "queue-json-missing":
+        # docs/bugs/ directory exists but queue.json is absent entirely.
+        # No on-disk open bug dirs either — only missing queue file.
+        # Expected: terminal_reason == TR_QUEUE_MISSING ("queue-missing").
+        # Characterization test for the newly-wired TR_QUEUE_MISSING terminal.
+        bugs_dir.mkdir(parents=True, exist_ok=True)
+        # Intentionally NO queue.json — the trigger for TR_QUEUE_MISSING.
+
+    elif name == "unqueued-fixed-no-receipt-halt":
+        # Pin the bypass: an on-disk bug dir marked **Status:** Fixed but with NO
+        # FIXED.md receipt and NOT listed in queue.json must NOT be silently skipped
+        # by _find_open_bug_dirs.  It must surface through the completion gate and
+        # halt with terminal_reason == TR_COMPLETION_UNVERIFIED.
+        #
+        # Current behavior (RED): _find_open_bug_dirs pre-filters every dir whose
+        # status ∈ _BUG_DONE_STATUSES (which includes "Fixed"), so the bug never
+        # reaches the queue-walk receipt gate.  The pipeline sees no open bugs and
+        # returns TR_ALL_BUGS_FIXED, silently treating the Fixed-without-receipt bug
+        # as done.
+        #
+        # Expected behavior (GREEN after impl-agent fix): _find_open_bug_dirs only
+        # pre-filters Fixed dirs that HAVE a FIXED.md receipt (genuinely done) and
+        # Won't-fix dirs (receipt-exempt).  Fixed-WITHOUT-receipt dirs are returned
+        # so the queue-walk receipt gate at line ~457-475 can halt with
+        # TR_COMPLETION_UNVERIFIED.
+        #
+        # The queue.json is present but does NOT list this bug dir — forcing the
+        # _find_open_bug_dirs code path (not the queued-bug path).
+        (bugs_dir / "queue.json").write_text(json.dumps({"queue": []}),
+                                             encoding="utf-8")
+        bdir = bugs_dir / "bug-unqueued-fnr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Unqueued Fixed No Receipt Bug\n\n"
+            "**Status:** Fixed\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n\n"
+            "## Description\n\nFixed outside validation gate — no FIXED.md receipt.\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO FIXED.md receipt — the absence triggers the bypass being pinned.
+
+    elif name == "concluded-investigation-plan-bug":
+        # SPEC.md has **Status:** Concluded; no PHASES.md.
+        # Pinning the infinite-loop bug: after a /spec-bug investigation concludes, the
+        # SPEC is marked Concluded but PHASES.md is absent.  The next cycle must dispatch
+        # plan-bug (which authors PHASES.md from the concluded spec) NOT spec-bug again.
+        #
+        # Current behavior (RED): Step 4 always dispatches SKILL_INVESTIGATE ("spec-bug")
+        # when PHASES.md is absent, regardless of the SPEC status.
+        #
+        # Expected behavior (GREEN after impl-agent fix):
+        #   sub_skill == "plan-bug"
+        #   current_step == STEP_INVESTIGATE (reused step label)
+        #   sub_skill_args ends with "SPEC.md"  (points at concluded spec)
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-concluded", "name": "Concluded Investigation Bug",
+                 "spec_dir": "bug-concluded"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-concluded"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Concluded Investigation Bug\n\n"
+            "**Status:** Concluded\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n\n"
+            "## Description\n\n"
+            "Investigation has concluded; root cause identified. "
+            "Awaiting plan-bug to produce PHASES.md.\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO PHASES.md — triggers the discriminating guard being pinned.
+
+    elif name == "concluded-investigation-guard-still-spec-bug":
+        # SPEC.md has **Status:** Investigating; no PHASES.md.
+        # Guard fixture: the discriminating marker must NOT change behavior when the
+        # investigation is still in progress.  Proves the "Concluded" marker is the
+        # exclusive trigger — an Investigating SPEC still routes to spec-bug.
+        #
+        # Expected behavior (GREEN today AND after impl-agent fix):
+        #   sub_skill == "spec-bug"   (SKILL_INVESTIGATE — unchanged)
+        #   current_step == STEP_INVESTIGATE
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-still-investigating", "name": "Still Investigating Bug",
+                 "spec_dir": "bug-still-investigating"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-still-investigating"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Still Investigating Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-02\n\n"
+            "## Description\n\n"
+            "Investigation still in progress — must remain on spec-bug, not plan-bug.\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO PHASES.md.
+
+    elif name == "step9-skip-pipeline-granted":
+        # D-3(a) provenance gate: SKIP_MCP_TEST.md carrying granted_by: pipeline
+        # must NOT vacuously validate — the pipeline cannot self-waive its own
+        # MCP requirement. Workstation host (cloud=False).
+        # Expected: terminal_reason == TR_NEEDS_INPUT,
+        #           current_step == STEP_MCP_SKIP_PIPELINE_GRANTED,
+        #           sub_skill is NOT "__write_validated_from_skip__".
+        # RED against pre-fix code (which ignored granted_by and always emitted
+        # __write_validated_from_skip__); GREEN after the gate mirrors lazy-state.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spg", "name": "Skip Pipeline Granted Bug",
+                 "spec_dir": "bug-spg"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spg"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip Pipeline Granted Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-spg", date="2026-06-05", rounds=1,
+        )
+        # Self-granted skip — must be refused (needs-input), not validated.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-spg",
+            reason="pipeline self-asserted skip to avoid MCP test",
+            date="2026-06-05", skipped_by="pipeline",
+            granted_by="pipeline",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-operator-granted":
+        # D-3(a) positive guard: SKIP_MCP_TEST.md with granted_by: operator is a
+        # legitimate human-authored waiver — must continue to emit
+        # __write_validated_from_skip__ (same as the legacy absent-granted_by path
+        # pinned by the step9-skip-mcp fixture).
+        # Expected: current_step == STEP_MCP_SKIP,
+        #           sub_skill == "__write_validated_from_skip__".
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-sog", "name": "Skip Operator Granted Bug",
+                 "spec_dir": "bug-sog"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-sog"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip Operator Granted Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-02\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-sog", date="2026-06-06", rounds=1,
+        )
+        # Operator-granted skip — legitimate human waiver.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-sog",
+            reason="pure docs/config fix — no runtime MCP surface",
+            date="2026-06-06", skipped_by="operator",
+            granted_by="operator",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-mcp-test-granted-with-class":
+        # Provenance gate positive: granted_by: mcp-test + a spec_class citation
+        # is a verified structural assessment by the validation step itself —
+        # accepted as a waiver → __write_validated_from_skip__.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-smtc", "name": "Skip McpTest Class Bug",
+                 "spec_dir": "bug-smtc"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-smtc"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip McpTest Class Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-08\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-smtc", date="2026-06-09", rounds=1,
+        )
+        # mcp-test-granted skip WITH the required spec_class citation.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-smtc",
+            reason="standalone crate — no MCP-reachable surface",
+            date="2026-06-09", skipped_by="lazy",
+            granted_by="mcp-test",
+            spec_class="no app integration — covered by cargo tests",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-mcp-test-granted-missing-class":
+        # Provenance gate: granted_by: mcp-test WITHOUT a spec_class citation is
+        # an unverified claim — refused (needs-input), not validated. The
+        # citation is what distinguishes a verified structural assessment from
+        # a convenience skip.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-smtn", "name": "Skip McpTest NoClass Bug",
+                 "spec_dir": "bug-smtn"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-smtn"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip McpTest NoClass Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-08\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-smtn", date="2026-06-09", rounds=1,
+        )
+        # mcp-test-granted skip MISSING the spec_class citation — refused.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-smtn",
+            reason="claims untestable but cites no class",
+            date="2026-06-09", skipped_by="lazy",
+            granted_by="mcp-test",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-pipeline-authored-no-grant":
+        # Provenance omission gate: a skip whose skipped_by identifies a
+        # pipeline author ("lazy") but which carries NO granted_by at all used
+        # to sail through as legacy-operator — the omission side-door. Must now
+        # refuse (needs-input). Files with NEITHER field stay grandfathered
+        # (pinned by step9-skip-mcp).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spa", "name": "Skip Pipeline Authored Bug",
+                 "spec_dir": "bug-spa"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spa"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip Pipeline Authored Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-08\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-spa", date="2026-06-09", rounds=1,
+        )
+        # Pipeline-authored (skipped_by: lazy), NO granted_by — refused.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-spa",
+            reason="pipeline-written skip with no provenance field",
+            date="2026-06-09", skipped_by="lazy",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-stale-mcp-results":
+        # D-3(b) freshness gate: MCP_TEST_RESULTS.md claims all-passing but its
+        # validated_commit (all-zeros sha) cannot equal the fixture's actual git
+        # HEAD. The fixture root is a real git repo so `git rev-parse HEAD`
+        # resolves to a non-zero sha; the mismatch must route to re-verify
+        # (sub_skill=mcp-test), NOT __write_validated_from_results__.
+        # RED against pre-fix code (which ignored validated_commit entirely).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-smr", "name": "Stale MCP Results Bug",
+                 "spec_dir": "bug-smr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-smr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Stale MCP Results Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-03\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-smr", date="2026-06-07", rounds=1,
+        )
+        # Stale results: all-passing but validated against the all-zeros sha
+        # (which cannot equal any real git HEAD).
+        _write_yaml_sentinel(
+            bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            bug_id="bug-smr", result="all-passing",
+            validated_commit="0000000000000000000000000000000000000000",
+            date="2026-06-07",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md.
+        # Make the fixture root a real git repo so `git rev-parse HEAD`
+        # resolves to a genuine (non-zero) sha (mirrors lazy-state.py's
+        # stale-mcp-results-reverify fixture setup).
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"step9-stale-mcp-results git setup failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+
+    elif name == "step9-fresh-mcp-results":
+        # D-3(b) positive guard: MCP_TEST_RESULTS.md whose validated_commit
+        # EQUALS the fixture's actual git HEAD is fresh — must auto-validate via
+        # __write_validated_from_results__ (Step 9b), not re-verify.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-fmr", "name": "Fresh MCP Results Bug",
+                 "spec_dir": "bug-fmr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-fmr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Fresh MCP Results Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-04\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-fmr", date="2026-06-08", rounds=1,
+        )
+        # Commit the tree FIRST so HEAD exists, then write the results file
+        # carrying that exact sha. The post-commit write dirties the working
+        # tree but `git rev-parse HEAD` is unaffected.
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"step9-fresh-mcp-results git setup failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+        head_proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        )
+        if head_proc.returncode != 0:
+            raise RuntimeError(
+                f"step9-fresh-mcp-results rev-parse failed: {head_proc.stderr.strip()}"
+            )
+        fresh_sha = head_proc.stdout.strip()
+        _write_yaml_sentinel(
+            bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            bug_id="bug-fmr", result="all-passing",
+            validated_commit=fresh_sha,
+            date="2026-06-08",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md.
+
+    elif name == "malformed-queue-entry-diagnostic":
+        # D-5: a queue entry missing `name` (or `id`) is dropped inside
+        # load_bug_queue BEFORE the compute_state walk loop ever sees it, so
+        # the walk-loop diagnostic can never fire. load_bug_queue itself must
+        # emit a diagnostic naming the dropped entry. The fixture also carries
+        # a dangling-spec_dir entry so the PRE-EXISTING dangling diagnostic is
+        # pinned alongside the new one, plus one valid bug that must still be
+        # selected normally.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                # Missing `name` → must produce the new load_bug_queue diagnostic.
+                {"id": "bug-no-name", "spec_dir": "bug-no-name"},
+                # Dangling spec_dir → must keep producing the existing diagnostic.
+                {"id": "bug-dangling", "name": "Dangling Bug",
+                 "spec_dir": "does-not-exist"},
+                # Valid entry → must be selected despite the malformed siblings.
+                {"id": "bug-valid", "name": "Valid Bug", "spec_dir": "bug-valid"},
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-valid"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Valid Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-05\n",
+            encoding="utf-8",
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -1377,9 +2382,10 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
 def run_smoke_tests() -> int:
     """Build fixtures in a temp dir, call compute_state(), assert expected shapes.
 
-    Prints PASS/FAIL per fixture and a summary.  Returns 0 on all pass, 1 if any
-    fixture fails.  All failures stem from NotImplementedError ("WU-2.2") because
-    compute_state() is a stub — that is the expected RED state for WU-2.1.
+    Prints PASS/FAIL per fixture and a summary.  Returns 0 when all fixtures pass,
+    1 otherwise.  Each fixture builds a synthetic repo tree, calls the fully
+    implemented compute_state() (and a few helper functions directly such as
+    enqueue_adhoc), and asserts the returned dict against expected values.
     """
     failures: list[str] = []
 
@@ -1529,6 +2535,262 @@ def run_smoke_tests() -> int:
                 "terminal_reason": TR_ALL_DEFERRED,
             },
         ),
+        # 15. Cloud-defer-mcp: cloud=True, RETRO_DONE present, no VALIDATED/SKIP/DEFERRED files
+        #     → cloud defers MCP to workstation (STEP_CLOUD_DEFER_MCP)
+        (
+            "cloud-defer-mcp", True, False,
+            {
+                "current_step": STEP_CLOUD_DEFER_MCP,
+                "sub_skill": "__write_deferred_non_cloud__",
+            },
+        ),
+        # 16. Cloud-skip-mcp: cloud=True, RETRO_DONE + SKIP_MCP_TEST present, no VALIDATED
+        #     → STEP_MCP_SKIP with __write_validated_from_skip__
+        (
+            "cloud-skip-mcp", True, False,
+            {
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 17. Device-reopen: real_device=True, RETRO_DONE + DEFERRED_REQUIRES_DEVICE present
+        #     → re-open deferred device scenarios (STEP_DEVICE_REOPEN)
+        (
+            "device-reopen", False, True,
+            {
+                "current_step": STEP_DEVICE_REOPEN,
+                "sub_skill": SKILL_MCP_TEST,
+            },
+        ),
+        # 18. Step-9 workstation skip: RETRO_DONE + SKIP_MCP_TEST, no VALIDATED, no device deferral
+        #     → STEP_MCP_SKIP with __write_validated_from_skip__
+        (
+            "step9-skip-mcp", False, True,
+            {
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 19. Step-9 workstation MCP results: RETRO_DONE + MCP_TEST_RESULTS (all-passing)
+        #     → "Step 9b: write validated" with __write_validated_from_results__
+        (
+            "step9-mcp-results", False, True,
+            {
+                "current_step": "Step 9b: write validated",
+                "sub_skill": "__write_validated_from_results__",
+            },
+        ),
+        # 20. Severity ordering: empty queue, two unlisted P0/P2 bugs → P0 selected first
+        (
+            "severity-ordering", False, True,
+            {
+                "feature_id": "bug-sev-p0",
+                "current_step": STEP_INVESTIGATE,
+            },
+        ),
+        # 21. Cloud + DEFERRED_NON_CLOUD.md present + no VALIDATED.md → must HALT
+        #     (cloud-queue-exhausted), NOT silently __mark_fixed__.
+        #     RED against current code; GREEN after WU-2.2 impl-agent adds the guard.
+        (
+            "cloud-defer-no-validate-halts", True, False,
+            {
+                "terminal_reason": TR_CLOUD_QUEUE_EXHAUSTED,
+            },
+            # Extra assertion: must NOT route to __mark_fixed__ regardless of what
+            # current_step says.  Catches the silent fall-through bug.
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be SKILL_MARK_FIXED "
+                    f"({SKILL_MARK_FIXED!r}); got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == SKILL_MARK_FIXED
+                else None
+            ),
+        ),
+        # 22. queue.json entirely absent → queue-missing terminal (not all-bugs-fixed).
+        #     Characterization test for the newly-wired TR_QUEUE_MISSING terminal.
+        (
+            "queue-json-missing", False, True,
+            {
+                "terminal_reason": TR_QUEUE_MISSING,
+            },
+        ),
+        # 23. Unqueued Fixed-no-receipt bypass pin (WU-3).
+        #     An on-disk bug marked Fixed but lacking FIXED.md, NOT in queue.json,
+        #     must be surfaced by _find_open_bug_dirs and halted by the receipt gate
+        #     with terminal_reason == TR_COMPLETION_UNVERIFIED.
+        #     RED against current code (_find_open_bug_dirs pre-filters all Fixed dirs,
+        #     so it returns [] → pipeline sees no open bugs → TR_ALL_BUGS_FIXED).
+        (
+            "unqueued-fixed-no-receipt-halt", False, True,
+            {
+                "terminal_reason": TR_COMPLETION_UNVERIFIED,
+            },
+        ),
+        # 24. concluded-investigation-plan-bug (RED — pin the infinite-loop bug).
+        #     SPEC.md marked **Status:** Concluded + no PHASES.md → must dispatch
+        #     plan-bug (not spec-bug again) so the pipeline can author PHASES.md.
+        #     Current code always routes to SKILL_INVESTIGATE ("spec-bug") at Step 4
+        #     regardless of SPEC status → this fixture is RED until impl-agent fixes it.
+        (
+            "concluded-investigation-plan-bug", False, True,
+            {
+                "feature_id": "bug-concluded",
+                "sub_skill": "plan-bug",
+                "current_step": STEP_INVESTIGATE,
+            },
+            # Extra: sub_skill_args must point at the SPEC.md (path ends with SPEC.md).
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill_args must end with 'SPEC.md'; "
+                    f"got sub_skill_args={got.get('sub_skill_args')!r}"
+                )
+                if not str(got.get("sub_skill_args") or "").endswith("SPEC.md")
+                else None
+            ),
+        ),
+        # 25. concluded-investigation-guard-still-spec-bug (GREEN — discriminating guard).
+        #     SPEC.md marked **Status:** Investigating + no PHASES.md → must still dispatch
+        #     spec-bug.  Proves the "Concluded" marker is the exclusive trigger; an
+        #     Investigating SPEC must remain on spec-bug both before AND after the fix.
+        (
+            "concluded-investigation-guard-still-spec-bug", False, True,
+            {
+                "feature_id": "bug-still-investigating",
+                "sub_skill": SKILL_INVESTIGATE,
+                "current_step": STEP_INVESTIGATE,
+            },
+        ),
+        # 26. D-3(a) provenance gate: pipeline-self-granted SKIP_MCP_TEST.md must
+        #     NOT vacuously validate — halt with needs-input for operator review.
+        #     RED against pre-fix code (which emitted __write_validated_from_skip__).
+        (
+            "step9-skip-pipeline-granted", False, True,
+            {
+                "feature_id": "bug-spg",
+                "terminal_reason": TR_NEEDS_INPUT,
+                "current_step": STEP_MCP_SKIP_PIPELINE_GRANTED,
+            },
+            # Extra: must NOT route to the vacuous-validate write.
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be '__write_validated_from_skip__'; "
+                    f"got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == "__write_validated_from_skip__"
+                else None
+            ),
+        ),
+        # 27. D-3(a) positive guard: operator-granted SKIP_MCP_TEST.md remains a
+        #     legitimate waiver → __write_validated_from_skip__ (non-regression).
+        (
+            "step9-skip-operator-granted", False, True,
+            {
+                "feature_id": "bug-sog",
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 27a. Provenance positive: granted_by: mcp-test + spec_class citation is
+        #      a verified structural assessment → __write_validated_from_skip__.
+        (
+            "step9-skip-mcp-test-granted-with-class", False, True,
+            {
+                "feature_id": "bug-smtc",
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 27b. Provenance gate: granted_by: mcp-test WITHOUT spec_class is an
+        #      unverified claim → needs-input, never vacuous-validate.
+        (
+            "step9-skip-mcp-test-granted-missing-class", False, True,
+            {
+                "feature_id": "bug-smtn",
+                "terminal_reason": TR_NEEDS_INPUT,
+                "current_step": STEP_MCP_SKIP_PIPELINE_GRANTED,
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be '__write_validated_from_skip__'; "
+                    f"got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == "__write_validated_from_skip__"
+                else None
+            ),
+        ),
+        # 27c. Provenance omission gate: pipeline-authored skip (skipped_by:
+        #      lazy) with NO granted_by → needs-input (closes the side-door
+        #      where omitting the field bypassed the WU-5 gate).
+        (
+            "step9-skip-pipeline-authored-no-grant", False, True,
+            {
+                "feature_id": "bug-spa",
+                "terminal_reason": TR_NEEDS_INPUT,
+                "current_step": STEP_MCP_SKIP_PIPELINE_GRANTED,
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be '__write_validated_from_skip__'; "
+                    f"got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == "__write_validated_from_skip__"
+                else None
+            ),
+        ),
+        # 28. D-3(b) freshness gate: all-passing MCP_TEST_RESULTS.md with a stale
+        #     validated_commit (all-zeros ≠ real HEAD) must re-verify via mcp-test,
+        #     NOT auto-validate. RED against pre-fix code.
+        (
+            "step9-stale-mcp-results", False, True,
+            {
+                "feature_id": "bug-smr",
+                "current_step": STEP_MCP_STALE_RESULTS,
+                "sub_skill": SKILL_MCP_TEST,
+            },
+        ),
+        # 29. D-3(b) positive guard: validated_commit == actual HEAD is fresh →
+        #     Step 9b auto-validate via __write_validated_from_results__.
+        (
+            "step9-fresh-mcp-results", False, True,
+            {
+                "feature_id": "bug-fmr",
+                "current_step": "Step 9b: write validated",
+                "sub_skill": "__write_validated_from_results__",
+            },
+        ),
+        # 30. D-5: queue entry missing `name` is dropped by load_bug_queue and
+        #     must be DIAGNOSED there (the walk-loop diagnostic is unreachable
+        #     for it). The dangling-spec_dir diagnostic must keep firing, and
+        #     the valid sibling bug must still be dispatched normally.
+        #     RED against pre-fix code (load_bug_queue dropped silently →
+        #     diagnostics empty).
+        (
+            "malformed-queue-entry-diagnostic", False, True,
+            {
+                "feature_id": "bug-valid",
+                "current_step": STEP_INVESTIGATE,
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] expected a load_bug_queue diagnostic naming the "
+                    f"entry missing 'name' (id 'bug-no-name') AND the dangling "
+                    f"'bug-dangling' diagnostic; got diagnostics="
+                    f"{got.get('diagnostics')!r}"
+                )
+                if not (
+                    any(
+                        "missing name" in d and "bug-no-name" in d
+                        for d in got.get("diagnostics") or []
+                    )
+                    and any(
+                        "dangling" in d and "bug-dangling" in d
+                        for d in got.get("diagnostics") or []
+                    )
+                )
+                else None
+            ),
+        ),
     ]
 
     with tempfile.TemporaryDirectory(prefix="bug-state-fixtures-") as td:
@@ -1547,7 +2809,7 @@ def run_smoke_tests() -> int:
             try:
                 got = compute_state(root, cloud=cloud, real_device=real_device)
             except NotImplementedError as exc:
-                # Expected RED state: stub raises NotImplementedError("WU-2.2")
+                # Defensive: compute_state is implemented, so this NotImplementedError guard is now dead code retained for harness symmetry.
                 failures.append(
                     f"[{fix_name}] NotImplementedError (stub not yet implemented): {exc}"
                 )
@@ -1587,7 +2849,7 @@ def run_smoke_tests() -> int:
         # -------------------------------------------------------------------
         # Fixture 12: enqueue_adhoc writes a spec_dir-keyed queue entry.
         # Calls enqueue_adhoc directly (not via compute_state).
-        # Expected RED: NotImplementedError until impl.
+        # Defensive: enqueue_adhoc is implemented; the NotImplementedError guard below is dead code retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_name_ea = "enqueue-adhoc-writes-entry"
         root_ea = _build_bug_fixture(td_path, fix_name_ea)
@@ -1632,7 +2894,7 @@ def run_smoke_tests() -> int:
         # -------------------------------------------------------------------
         # Fixture 13: enqueue_adhoc is idempotent — duplicate id is a no-op.
         # Calls enqueue_adhoc twice with the same id; second call MUST NOT raise.
-        # Expected RED: NotImplementedError on both calls until impl.
+        # Defensive: enqueue_adhoc is implemented; the NotImplementedError guard below is dead code retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_name_idem = "enqueue-adhoc-idempotent"
         root_idem = _build_bug_fixture(td_path, fix_name_idem)
@@ -1668,10 +2930,10 @@ def run_smoke_tests() -> int:
             print(f"  FAIL [{fix_name_idem}]: NotImplementedError — {exc}")
 
         # -------------------------------------------------------------------
-        # scoped-bug-id (RED): compute_state() with scope_bug_id="bug-scope-beta"
+        # scoped-bug-id: compute_state() with scope_bug_id="bug-scope-beta"
         # must advance the SECOND bug in the queue, not the default first one.
-        # The kwarg does not exist yet → TypeError: unexpected keyword argument.
-        # Wrapped in try/except TypeError so the harness reports a clean FAIL.
+        # scope_bug_id is now implemented; the TypeError guard below is dead code
+        # retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_name_scope = "scope-bug-id-two-bugs"
         root_scope = _build_bug_fixture(td_path, fix_name_scope)
@@ -1701,7 +2963,7 @@ def run_smoke_tests() -> int:
                 f"scoped-bug-id: feature_id={fid_scope!r}"
             )
         except TypeError as exc:
-            # Expected RED: scope_bug_id kwarg not yet accepted.
+            # Defensive: compute_state is implemented, so this TypeError guard is now dead code retained for harness symmetry.
             failures.append(
                 f"[{fix_name_scope}] scoped-bug-id: TypeError (scope_bug_id param missing): {exc}"
             )
@@ -1751,6 +3013,322 @@ def run_smoke_tests() -> int:
             print(
                 f"  FAIL [baseline-regression-default]: NotImplementedError — {exc}"
             )
+
+        # -------------------------------------------------------------------
+        # scoped-bug-id-not-found  (RED until impl lands)
+        # Same two-bug queue as the scope-bug-id-two-bugs fixture above; but
+        # the scope_bug_id is a typo'd id that matches NO queue entry.
+        # EXPECTED: terminal_reason == "scoped-id-not-found"
+        # CURRENT (pre-fix): falls through to terminal_reason == "all-bugs-fixed"
+        # The impl agent must emit a distinct terminal so callers can distinguish
+        # "queue exhausted" from "id was never in the queue at all".
+        # -------------------------------------------------------------------
+        fix_not_found = "scoped-bug-id-not-found"
+        root_not_found = _build_bug_fixture(td_path, "scope-bug-id-two-bugs")
+        try:
+            got_not_found = compute_state(
+                root_not_found, cloud=False, real_device=True,
+                scope_bug_id="bug-typo-does-not-exist",
+            )
+            actual_tr = got_not_found.get("terminal_reason")
+            if actual_tr == "scoped-id-not-found":
+                print(f"  PASS [{fix_not_found}] terminal_reason='scoped-id-not-found' (impl landed)")
+            else:
+                failures.append(
+                    f"[{fix_not_found}] expected terminal_reason='scoped-id-not-found', "
+                    f"got {actual_tr!r}"
+                )
+                print(f"  FAIL [{fix_not_found}] expected 'scoped-id-not-found', got {actual_tr!r}")
+        except (TypeError, NotImplementedError, SystemExit) as e:
+            failures.append(f"[{fix_not_found}] unexpected exception: {type(e).__name__}: {e}")
+            print(f"  FAIL [{fix_not_found}] {type(e).__name__} — {e}")
+
+        # -------------------------------------------------------------------
+        # backfill_receipts bespoke block: call backfill_receipts() directly
+        # on a tree with one Fixed bug (no FIXED.md) and one Won't-fix bug
+        # (receipt-exempt; must NOT be backfilled).
+        # We assert: count == 1, the Fixed bug id is in backfilled, FIXED.md
+        # was written, and the Won't-fix bug has no FIXED.md.
+        # CRITICAL: we do NOT assert the date or body content — backfill_receipts
+        # uses datetime.now() and any date assertion would rot daily.
+        # -------------------------------------------------------------------
+        fix_name_br = "backfill-receipts-direct"
+        root_br = td_path / fix_name_br
+        bugs_br = root_br / "docs" / "bugs"
+        bugs_br.mkdir(parents=True, exist_ok=True)
+        # Fixed bug with no FIXED.md — must get a receipt.
+        bfixed = bugs_br / "bug-needs-receipt"
+        bfixed.mkdir()
+        (bfixed / "SPEC.md").write_text(
+            "# Needs Receipt Bug\n\n"
+            "**Status:** Fixed\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+        # Won't-fix bug with no FIXED.md — must NOT get a receipt (exempt).
+        bwontfix = bugs_br / "bug-wont-fix-exempt"
+        bwontfix.mkdir()
+        (bwontfix / "SPEC.md").write_text(
+            "# Won't Fix Exempt\n\n"
+            "**Status:** Won't-fix\n\n"
+            "**Severity:** Low\n\n"
+            "**Discovered:** 2026-03-01\n",
+            encoding="utf-8",
+        )
+        br_ok = True
+        try:
+            result_br = backfill_receipts(root_br)
+            # Assert return dict shape (no date/body assertions)
+            if result_br.get("count") != 1:
+                failures.append(
+                    f"[{fix_name_br}] expected count=1, got {result_br.get('count')!r}"
+                )
+                br_ok = False
+            if "bug-needs-receipt" not in result_br.get("backfilled", []):
+                failures.append(
+                    f"[{fix_name_br}] expected 'bug-needs-receipt' in backfilled, "
+                    f"got {result_br.get('backfilled')!r}"
+                )
+                br_ok = False
+            # Assert the FIXED.md was actually written on disk
+            if not (bfixed / "FIXED.md").exists():
+                failures.append(
+                    f"[{fix_name_br}] FIXED.md not created for 'bug-needs-receipt'"
+                )
+                br_ok = False
+            # Assert Won't-fix bug did NOT get a receipt
+            if (bwontfix / "FIXED.md").exists():
+                failures.append(
+                    f"[{fix_name_br}] FIXED.md erroneously created for Won't-fix bug"
+                )
+                br_ok = False
+            print(
+                f"  {'PASS' if br_ok else 'FAIL'} [{fix_name_br}] "
+                f"backfilled={result_br.get('backfilled')!r} count={result_br.get('count')!r} "
+                f"fixed_md_written={(bfixed / 'FIXED.md').exists()}"
+            )
+        except Exception as exc:
+            failures.append(f"[{fix_name_br}] unexpected error: {exc}")
+            print(f"  FAIL [{fix_name_br}]: {type(exc).__name__} — {exc}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-1-park (bug): --park-needs-input mode (Phase 4)
+        #
+        # Two-bug queue:
+        #   bug-parked  — carries NEEDS_INPUT.md (well-formed, 1 decision)
+        #   bug-after   — actionable (Open, SPEC present)
+        #
+        # Sub-fixture A: WITHOUT park_needs_input → terminal_reason=="needs-input"
+        #                AND "parked" key ABSENT from output.
+        # Sub-fixture B: WITH park_needs_input=True → bug-after is dispatched,
+        #                output has "parked" list with one entry whose id matches
+        #                bug-parked and decision_count==1.
+        # Sub-fixture C: RESOLVED sentinel (NEEDS_INPUT.md removed) → bug-parked
+        #                is dispatched normally, "parked" is empty.
+        # -------------------------------------------------------------------
+        bug_park_root = td_path / "bug-park-needs-input"
+        bug_park_bugs = bug_park_root / "docs" / "bugs"
+        bug_park_bugs.mkdir(parents=True, exist_ok=True)
+        # Write queue.json
+        (bug_park_bugs / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-parked", "name": "Parked Bug",
+                 "spec_dir": "bug-parked"},
+                {"id": "bug-after", "name": "After Bug",
+                 "spec_dir": "bug-after"},
+            ]
+        }), encoding="utf-8")
+        # bug-parked: Open spec + NEEDS_INPUT.md (1 decision, date set)
+        bug_parked_dir = bug_park_bugs / "bug-parked"
+        bug_parked_dir.mkdir()
+        (bug_parked_dir / "SPEC.md").write_text(
+            "# Parked Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-10\n",
+            encoding="utf-8",
+        )
+        bug_needs_input_content = (
+            "---\n"
+            "kind: needs-input\n"
+            "feature_id: bug-parked\n"
+            "written_by: spec-bug\n"
+            "decisions:\n"
+            "  - Confirm reproduction path\n"
+            "date: 2026-06-10\n"
+            "---\n\n"
+            "# Needs Input\n"
+        )
+        bug_park_sentinel = bug_parked_dir / "NEEDS_INPUT.md"
+        bug_park_sentinel.write_text(bug_needs_input_content, encoding="utf-8")
+        # bug-after: actionable (Open, SPEC present, no NEEDS_INPUT.md)
+        bug_after_dir = bug_park_bugs / "bug-after"
+        bug_after_dir.mkdir()
+        (bug_after_dir / "SPEC.md").write_text(
+            "# After Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-10\n",
+            encoding="utf-8",
+        )
+
+        # Sub-fixture A: without park_needs_input → needs-input halt, NO "parked" key
+        fix_bug_park_default = "bug-park-needs-input-default-halt"
+        try:
+            got_bug_park_default = compute_state(bug_park_root, cloud=False, real_device=True)
+            bpd_ok = True
+            actual_tr_bpd = got_bug_park_default.get("terminal_reason")
+            if actual_tr_bpd != TR_NEEDS_INPUT:
+                failures.append(
+                    f"[{fix_bug_park_default}] expected terminal_reason={TR_NEEDS_INPUT!r}, "
+                    f"got {actual_tr_bpd!r}"
+                )
+                bpd_ok = False
+            # CRITICAL: "parked" key must be ABSENT when not in park mode.
+            if "parked" in got_bug_park_default:
+                failures.append(
+                    f"[{fix_bug_park_default}] 'parked' key must be absent in default mode; "
+                    f"got parked={got_bug_park_default['parked']!r}"
+                )
+                bpd_ok = False
+            print(
+                f"  {'PASS' if bpd_ok else 'FAIL'} [{fix_bug_park_default}] "
+                f"default: terminal_reason={actual_tr_bpd!r}, parked key absent={('parked' not in got_bug_park_default)}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_default}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_default}] SystemExit: {exc.code}")
+
+        # Sub-fixture B: WITH park_needs_input=True → bug-after dispatched,
+        # output["parked"] has one entry with id="bug-parked", decision_count=1.
+        fix_bug_park_mode = "bug-park-needs-input-mode-skip"
+        try:
+            got_bug_park_mode = compute_state(
+                bug_park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            bpm_ok = True
+            actual_tr_bpm = got_bug_park_mode.get("terminal_reason")
+            if actual_tr_bpm == TR_NEEDS_INPUT:
+                failures.append(
+                    f"[{fix_bug_park_mode}] terminal_reason must NOT be {TR_NEEDS_INPUT!r} in park mode; "
+                    f"got {actual_tr_bpm!r}"
+                )
+                bpm_ok = False
+            if got_bug_park_mode.get("feature_id") != "bug-after":
+                failures.append(
+                    f"[{fix_bug_park_mode}] expected feature_id='bug-after', "
+                    f"got {got_bug_park_mode.get('feature_id')!r}"
+                )
+                bpm_ok = False
+            bug_parked_list = got_bug_park_mode.get("parked")
+            if not isinstance(bug_parked_list, list) or len(bug_parked_list) != 1:
+                failures.append(
+                    f"[{fix_bug_park_mode}] expected parked=[...1 entry...], "
+                    f"got {bug_parked_list!r}"
+                )
+                bpm_ok = False
+            elif bug_parked_list[0].get("id") != "bug-parked":
+                failures.append(
+                    f"[{fix_bug_park_mode}] parked[0].id must be 'bug-parked', "
+                    f"got {bug_parked_list[0].get('id')!r}"
+                )
+                bpm_ok = False
+            elif bug_parked_list[0].get("decision_count") != 1:
+                failures.append(
+                    f"[{fix_bug_park_mode}] parked[0].decision_count must be 1, "
+                    f"got {bug_parked_list[0].get('decision_count')!r}"
+                )
+                bpm_ok = False
+            print(
+                f"  {'PASS' if bpm_ok else 'FAIL'} [{fix_bug_park_mode}] "
+                f"park mode: dispatched={got_bug_park_mode.get('feature_id')!r}, "
+                f"parked count={len(bug_parked_list) if isinstance(bug_parked_list, list) else 'N/A'}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_mode}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_mode}] SystemExit: {exc.code}")
+
+        # Sub-fixture C: RESOLVED — remove NEEDS_INPUT.md → bug-parked dispatched
+        # normally, parked[] is empty.
+        fix_bug_park_resolved = "bug-park-needs-input-resolved-reenter"
+        try:
+            bug_park_sentinel.unlink()  # resolve the sentinel
+            got_bug_park_resolved = compute_state(
+                bug_park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            bpr_ok = True
+            if got_bug_park_resolved.get("feature_id") != "bug-parked":
+                failures.append(
+                    f"[{fix_bug_park_resolved}] expected feature_id='bug-parked' after resolution, "
+                    f"got {got_bug_park_resolved.get('feature_id')!r}"
+                )
+                bpr_ok = False
+            bug_parked_resolved = got_bug_park_resolved.get("parked")
+            if not isinstance(bug_parked_resolved, list) or len(bug_parked_resolved) != 0:
+                failures.append(
+                    f"[{fix_bug_park_resolved}] expected parked=[], "
+                    f"got {bug_parked_resolved!r}"
+                )
+                bpr_ok = False
+            print(
+                f"  {'PASS' if bpr_ok else 'FAIL'} [{fix_bug_park_resolved}] "
+                f"resolved: dispatched={got_bug_park_resolved.get('feature_id')!r}, "
+                f"parked={bug_parked_resolved!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_resolved}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_resolved}] SystemExit: {exc.code}")
+
+        # Sub-fixture D: BLOCKED.md precedence — bug-parked carries BOTH
+        # BLOCKED.md AND NEEDS_INPUT.md.  Under park mode it must STILL halt as
+        # "blocked", not be silently parked.  This locks FIX 1 of the code review.
+        fix_bug_park_blocked_precedence = "bug-park-needs-input-blocked-precedence"
+        try:
+            # Restore NEEDS_INPUT.md (removed in sub-fixture C) and add BLOCKED.md.
+            bug_park_sentinel.write_text(bug_needs_input_content, encoding="utf-8")
+            _write_yaml_sentinel(
+                bug_parked_dir / "BLOCKED.md", "blocked",
+                bug_id="bug-parked", phase="Investigation",
+                blocked_at="2026-06-10T00:00:00Z", retry_count=0,
+            )
+            got_bug_park_blocked = compute_state(
+                bug_park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            bpbp_ok = True
+            # Must halt as "blocked" — NOT parked, not dispatched.
+            actual_tr_bpbp = got_bug_park_blocked.get("terminal_reason")
+            if actual_tr_bpbp != TR_BLOCKED:
+                failures.append(
+                    f"[{fix_bug_park_blocked_precedence}] expected terminal_reason={TR_BLOCKED!r} "
+                    f"(BLOCKED.md must retain precedence over park-mode); "
+                    f"got {actual_tr_bpbp!r}"
+                )
+                bpbp_ok = False
+            # bug-parked must be the reported feature (it is the one that is blocked).
+            if got_bug_park_blocked.get("feature_id") != "bug-parked":
+                failures.append(
+                    f"[{fix_bug_park_blocked_precedence}] expected feature_id='bug-parked', "
+                    f"got {got_bug_park_blocked.get('feature_id')!r}"
+                )
+                bpbp_ok = False
+            # "parked" key must NOT contain bug-parked (it was NOT parked).
+            parked_bpbp = got_bug_park_blocked.get("parked", [])
+            parked_bpbp_ids = [e.get("id") for e in parked_bpbp if isinstance(e, dict)]
+            if "bug-parked" in parked_bpbp_ids:
+                failures.append(
+                    f"[{fix_bug_park_blocked_precedence}] bug-parked must NOT appear in "
+                    f"parked[] when BLOCKED.md is present; got parked={parked_bpbp!r}"
+                )
+                bpbp_ok = False
+            print(
+                f"  {'PASS' if bpbp_ok else 'FAIL'} [{fix_bug_park_blocked_precedence}] "
+                f"blocked-precedence: terminal_reason={actual_tr_bpbp!r}, "
+                f"bug-parked in parked[]={'bug-parked' in parked_bpbp_ids}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_bug_park_blocked_precedence}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bug_park_blocked_precedence}] SystemExit: {exc.code}")
 
     # Summary
     if failures:
@@ -1831,7 +3409,134 @@ def main() -> int:
         "--bug-id", default=None,
         help="Scope this run to a single bug by id. Absent → default behavior.",
     )
+    parser.add_argument(
+        "--park-needs-input", action="store_true",
+        help=(
+            "OPT-IN park mode: when active, a bug carrying an unresolved "
+            "NEEDS_INPUT.md is SKIPPED (parked) rather than halting the queue. "
+            "The parked item is reported in the 'parked[]' output array and "
+            "re-enters automatically once NEEDS_INPUT.md is resolved/renamed. "
+            "Without this flag, output is byte-identical to the default behavior "
+            "('parked' key is entirely absent and the needs-input halt fires as today)."
+        ),
+    )
+    parser.add_argument(
+        "--verify-ledger", default=None, metavar="SPEC_PATH",
+        help=(
+            "Scripted completion-ledger guard (replaces the prose guard blocks "
+            "in the lazy-bug skills). Verifies: (1) clean working tree, "
+            "(2) HEAD == @{u}, (3) all implementation plans are status: Complete, "
+            "(4) no real (non-verification) unchecked deliverables in SPEC_PATH/PHASES.md. "
+            "With --plan PLAN, checks 3+4 narrow to that plan part's phase scope "
+            "(plan_complete = the plan's own status: Complete; deliverables_done = "
+            "no unchecked non-verification rows in the plan's phases). "
+            "Emits a JSON verdict and exits 0 on pass, 1 on first failing check."
+        ),
+    )
+    parser.add_argument(
+        "--apply-pseudo", nargs=2, default=None, metavar=("NAME", "SPEC_PATH"),
+        help="Single-author the deterministic sentinel/receipt write for a lazy pseudo-skill.",
+    )
+    parser.add_argument(
+        "--plan", default=None,
+        help="Plan-file path for __flip_plan_complete_*__ pseudo-skills AND "
+             "for plan-scoped --verify-ledger (Phase 9 WU-3).",
+    )
+    parser.add_argument(
+        "--apply-date", default=None,
+        help="Override date (YYYY-MM-DD) for --apply-pseudo writes.",
+    )
+    parser.add_argument(
+        "--reason", default=None,
+        help="Reason string for __write_deferred_non_cloud__.",
+    )
+    parser.add_argument(
+        "--deferred-step", type=int, default=None,
+        help="deferred_step for __write_deferred_non_cloud__.",
+    )
+    parser.add_argument(
+        "--neutralize-sentinel", default=None, metavar="PATH",
+        help="Rename a resolved sentinel to the canonical *_RESOLVED_<date> form (collision-safe).",
+    )
+    parser.add_argument(
+        "--repeat-count", action="store_true",
+        help="Persist the probe signature and emit a 'repeat_count' field "
+             "(consecutive identical-probe count) for mechanical loop detection. "
+             "ADVANCES the persisted streak — reserve for the single dispatch-bound "
+             "probe per cycle. Without this flag, output is byte-identical to the "
+             "default and no state file is written.",
+    )
+    parser.add_argument(
+        "--repeat-count-peek", action="store_true",
+        help="Like --repeat-count but PEEK only: compute and emit the would-be "
+             "'repeat_count' WITHOUT advancing the persisted streak (no state-file "
+             "write). Use for diagnostic/inspection probes so they do not inflate "
+             "the streak. Mutually exclusive with --repeat-count.",
+    )
+    parser.add_argument(
+        "--probe", action="store_true",
+        help="Fold git-guard results + a pre-formatted cycle-header line into the "
+             "probe JSON (orchestrator happy-path payload). Without this flag, output "
+             "is byte-identical to the default.",
+    )
+    parser.add_argument(
+        "--archive-fixed", metavar="SPEC_PATH", default=None,
+        help="Archive a Fixed bug directory to docs/bugs/_archive/: SPEC.md "
+             "evidence header lines, staged-deletion-coherent git mv (with "
+             "Windows lock retry + per-file fallback), tracked-only inbound "
+             "reference repoint, queue.json trim, and the archive commit. "
+             "Run AFTER `--apply-pseudo __mark_fixed__` (the receipt gate). "
+             "Prints a JSON result; exit 1 on refusal.",
+    )
+    parser.add_argument(
+        "--emit-prompt", action="store_true",
+        help="Enrich the probe JSON with cycle_prompt + cycle_model "
+             "(script-assembled cycle dispatch prompt; composes with "
+             "--repeat-count for loop detection).",
+    )
+    parser.add_argument(
+        "--forward-cycles", type=int, default=None,
+        help="Orchestrator forward-cycle count (for --probe cycle header).",
+    )
+    parser.add_argument(
+        "--meta-cycles", type=int, default=None,
+        help="Orchestrator meta-cycle count (for --probe cycle header).",
+    )
+    parser.add_argument(
+        "--max-cycles", type=int, default=None,
+        help="Orchestrator max-cycles ceiling (for --probe cycle header).",
+    )
     args = parser.parse_args()
+
+    # --repeat-count (advances the streak) and --repeat-count-peek (reads it
+    # without advancing) are mutually exclusive — a single probe cannot both
+    # advance and peek the persisted streak.
+    if args.repeat_count and args.repeat_count_peek:
+        _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    if args.neutralize_sentinel is not None:
+        result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
+    if args.apply_pseudo is not None:
+        name, spec = args.apply_pseudo
+        result = lazy_core.apply_pseudo(
+            Path(args.repo_root), name, Path(spec),
+            plan_path=Path(args.plan) if args.plan else None,
+            date=args.apply_date, reason=args.reason,
+            deferred_step=args.deferred_step,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
+    if args.archive_fixed is not None:
+        result = lazy_core.archive_fixed(
+            Path(args.repo_root), Path(args.archive_fixed),
+            date=args.apply_date,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
 
     if args.enqueue_adhoc:
         if not args.id:
@@ -1852,13 +3557,72 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.verify_ledger is not None:
+        # Scripted completion-ledger guard: verify the four preconditions for
+        # marking a bug fixed. The orchestrator's && chains short-circuit on
+        # non-zero exit when any check fails. When --plan is also passed, checks
+        # 3+4 narrow to that plan part's scope (Phase 9 WU-3) — reuses the
+        # existing --plan flag (shared with --apply-pseudo, no dest collision).
+        result = lazy_core.verify_ledger(
+            Path(args.repo_root), Path(args.verify_ledger),
+            plan_path=Path(args.plan) if args.plan else None,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
     real_device = resolve_real_device(args.real_device)
     state = compute_state(
         Path(args.repo_root),
         cloud=args.cloud,
         real_device=real_device,
         scope_bug_id=args.bug_id,
+        park_needs_input=args.park_needs_input,
     )
+    # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
+    # so that default output remains byte-identical when neither is passed.
+    # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
+    # the same field via peek=True (no state-file write). Both populate the same
+    # 'repeat_count' output field.
+    if args.repeat_count or args.repeat_count_peek:
+        # pipeline="bug" namespaces the persisted signature file so a parallel
+        # /lazy-batch session's lazy-state.py probes (which share the repo
+        # root) cannot reset this pipeline's repeat streak — and vice versa.
+        state["repeat_count"] = lazy_core.update_repeat_count(
+            Path(args.repo_root), state, pipeline="bug", peek=args.repeat_count_peek
+        )
+    # --emit-prompt is strictly additive and flag-gated so that default output
+    # remains byte-identical when the flag is absent. Placed AFTER the repeat
+    # flags so the same-invocation count (from EITHER --repeat-count or
+    # --repeat-count-peek) drives the emitter's loop-block + model decision.
+    # Pipeline is "bug" here (bug-state reuses the feature_* keys for bugs).
+    # emit_cycle_prompt(...) is None for pseudo-skills / terminal probes →
+    # cycle_prompt: null, cycle_model: null (so the orchestrator's one probe
+    # call is uniform); on refusal it also adds cycle_prompt_refused.
+    if args.emit_prompt:
+        rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
+        emitted = lazy_core.emit_cycle_prompt(
+            Path(args.repo_root), state,
+            pipeline="bug", cloud=args.cloud, repeat_count=rc,
+        )
+        if emitted is None:
+            state["cycle_prompt"] = None
+            state["cycle_model"] = None
+        elif emitted.get("ok"):
+            state["cycle_prompt"] = emitted["prompt"]
+            state["cycle_model"] = emitted["model"]
+        else:
+            state["cycle_prompt"] = None
+            state["cycle_model"] = None
+            state["cycle_prompt_refused"] = emitted.get("refused")
+    # --probe is strictly additive and flag-gated so that default output remains
+    # byte-identical when the flag is absent.  Composes independently with
+    # --repeat-count (both may be present simultaneously).
+    if args.probe:
+        state["git_guards"] = lazy_core.git_guard_status(Path(args.repo_root))
+        state["cycle_header"] = lazy_core.format_cycle_header(
+            state, forward_cycles=args.forward_cycles,
+            max_cycles=args.max_cycles, meta_cycles=args.meta_cycles,
+        )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

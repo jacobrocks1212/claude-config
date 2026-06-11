@@ -46,13 +46,25 @@ dispatches directly.
 
 ## Sentinel File Format
 
-All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema:
+All sentinel files this skill reads or writes follow the canonical YAML-frontmatter schema.
 
-!`cat ~/.claude/skills/_components/sentinel-frontmatter.md`
+**Sentinel frontmatter schema:** when you write or validate any sentinel file (NEEDS_INPUT.md / BLOCKED.md / VALIDATED.md / FIXED.md / etc.), **Read `~/.claude/skills/_components/sentinel-frontmatter.md`** for the required `kind:`/`provenance:`/field schema. (Read on demand — do not assume it is already in context.)
 
 When this skill writes a sentinel (Step 4 special actions), emit the YAML frontmatter first, then a
 blank line, then a human-readable markdown body. When this skill reads a sentinel, parse the
 frontmatter per the protocol above; the markdown body is for humans only.
+
+---
+
+## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)
+
+**Read and follow `~/.claude/skills/_components/lazy-preflight.md` as the very first action of this
+invocation — before the start banner, before Step 0.4 remote sync, before the first state probe.**
+Run its read-only check block (skills symlink resolves, `~/.claude/scripts/bug-state.py` exists,
+`python3` runs, node resolvable — prepending `/c/nvm4w/nodejs` if needed). If any check fails, print the
+component's setup recipe and **STOP — zero cycles consumed** (do not print the banner, do not call the
+state script, do not enter the loop). On success, node is on PATH for the whole session (no per-call
+`export PATH`), and you continue to the banner / Step 0.4 as normal.
 
 ---
 
@@ -161,7 +173,23 @@ machine progresses to retro on the next invocation.
 `sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize the bug
 via the archive-on-fix procedure.
 
-**Step 3.1: Completion-integrity gate and FIXED.md receipt.**
+**Gate 1 — MCP-coverage audit** per
+`~/.claude/skills/_components/mcp-coverage-audit.md`.
+Run the audit with `{spec_path}` and `{bug_id}`. If the audit returns:
+
+- `uncovered:N` — per the audit component's D7 outcome (`~/.claude/skills/_components/completeness-policy.md`
+  §4 — Gate 1 never asks, no NEEDS_INPUT.md): perform the docs-only routing as THIS invocation's
+  remaining action — author the `mcp-tests/` scenario(s) for the uncovered decisions (or write
+  the SPEC test-exempt note for any decision in a documented MCP-untestable class per
+  `docs/features/mcp-testing/SPEC.md`), emit one `⚖ policy:` line per decision, commit + push.
+  Do NOT run Gate 2 or the archive steps. Print the after-status bookend (Completed:
+  "MCP-coverage gate halted mark-fixed — authored corrective coverage / test-exempt note(s) for
+  {N} locked decision(s)", Next `/lazy-bug` will: "Run /mcp-test against the corrective
+  scenario(s), then re-attempt __mark_fixed__ (the re-run audit returns clean)"), call work-log,
+  STOP.
+- `clean` — proceed to Gate 2.
+
+**Gate 2 — Completion-integrity gate and FIXED.md receipt.**
 
 The gate and archive procedure are documented in the shared component below:
 
@@ -214,6 +242,7 @@ Sub-skill routing table (from `bug-state.py`'s `SKILL_*` constants):
 | `sub_skill` from script | Dispatches to |
 |------------------------|--------------|
 | `spec-bug` | `/spec-bug` — root-cause investigation |
+| `plan-bug` | `/plan-bug` — consolidated planning round-trip (emitted when SPEC.md is `**Status:** Concluded` and no PHASES.md exists; authors PHASES.md from the concluded investigation, then runs `/write-plan`) |
 | `spec-phases` | `/spec-phases` — decompose bug SPEC into PHASES |
 | `write-plan` | `/write-plan` — write implementation plan |
 | `execute-plan` | `/execute-plan` — run the next ready plan |

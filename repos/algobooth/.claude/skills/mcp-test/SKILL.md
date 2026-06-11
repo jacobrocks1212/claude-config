@@ -100,6 +100,38 @@ Each scenario name corresponds to the file `docs/testing/mcp-tests/{scenario-nam
 
 ## Step 2: Server Lifecycle — Kill, Start, and Verify
 
+> **Plan-declared structural untestability — assess BEFORE booting anything:** if the
+> feature/bug PHASES.md carries `**MCP runtime:** not-required — {reason}` (authored by
+> `/spec-phases`), do NOT start the server yet. FIRST verify the plan's claim against
+> `docs/features/mcp-testing/SPEC.md` (the genuinely untestable classes are the "What We
+> Cannot Prove" observation gaps and raw-PCM injection into the Rust callback thread —
+> "Audio IS MCP-testable" via `load_test_tone` + `get_audio_buffer`, so audio claims are
+> usually wrong). If you CONCUR, skip Steps 2–5 entirely and write the scoped
+> `SKIP_MCP_TEST.md` (provenance fields below) — no runtime needed. If you DISAGREE,
+> proceed with the normal lifecycle (standalone runs boot it here; lazy-batch cycles
+> return the single line `NEEDS_RUNTIME` instead, per the dispatch prompt).
+
+> **Orchestrator-managed runtime (lazy-pipeline / `--batch` runs):** when `/mcp-test`
+> is driven by `/lazy-batch` (or `/lazy`), the **orchestrator** pre-boots the dev
+> runtime in its own long-lived session and BLOCKS on `GET
+> http://localhost:3333/health` == 200 BEFORE dispatching this cycle. In that case
+> the server is ALREADY running and MCP-ready: **do NOT kill/restart it, do NOT
+> `npx kill-port`, and do NOT start a background `tauri:dev`.** Treat
+> `server_was_running = true` and skip straight to the Step 4 *readiness* check.
+> The reason the orchestrator owns the boot: this skill runs INLINE inside a cycle
+> subagent that has no `Agent` tool, and a background process it starts does NOT
+> survive the subagent's turn boundary — so a subagent that backgrounded the build
+> and ended its turn produced a resultless, sentinel-less return (a contract
+> violation). The orchestrator's session persists across the subagent's turn; the
+> subagent's does not.
+>
+> **NO FIRE-AND-FORGET (applies to ALL invocations, human or pipeline):** never
+> start a long build/process as a background task and then end the turn waiting on
+> background events. Either drive the validation to a definitive pass/fail + a
+> written sentinel within the turn, or use a BLOCKING foreground readiness wait
+> (a `curl`/`sleep` `until`-loop, or a Monitor you await). A return with no result
+> and no sentinel wastes the run.
+
 **CRITICAL: Test isolation requires a fresh server.** The Strudel sidecar maintains internal state (cycle counter, pattern scheduling, PLL clock) that persists across `reset_state` calls. A sidecar that connected in a prior session may report `is_connected: true` but have a stuck `current_cycle: 0.0`, producing zero voices. The ONLY reliable fix is a full app restart.
 
 ### When to restart (ALWAYS do this)
@@ -430,14 +462,20 @@ When invoked under the lazy state machine (Step 9), `/mcp-test` writes a termina
 | Outcome | Sentinel | When |
 |---------|----------|------|
 | Every scenario passed | `VALIDATED.md` (`kind: validated`, `result: all-passing`) | Full pass — nothing environment-blocked |
-| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
+| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`, `validated_commit`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
 | Residual failures are real-device-only but **certifiable on a real device** | `DEFERRED_REQUIRES_DEVICE.md` (`kind: deferred-requires-device`) **scoped to the specific scenario IDs** | The default for sustained-timing / dropout / jitter assertions that fail only under the headless pump. DEFERS to a real-device host — does NOT complete the feature here. |
 | Residual failures are un-testable on **ANY** host (genuinely no MCP path) | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`) **scoped to the specific scenario IDs** | Permanent waiver. The ONLY genuinely any-host-untestable path is raw-PCM injection into the Rust callback thread (per `docs/features/mcp-testing/SPEC.md`). Almost never the right call for a timing assertion. |
+
+**`validated_commit` is REQUIRED in every `MCP_TEST_RESULTS.md` (going forward).** When writing `MCP_TEST_RESULTS.md`, include the frontmatter field `validated_commit: <git rev-parse HEAD at validation time>` — capture the sha when the MCP run completes, BEFORE any further commits. The state scripts' Step-9 sha-freshness gate compares this field to the current HEAD so stale results (validated against older code) trigger a re-verify instead of silently certifying current code. Legacy files without the field skip the check — new writes MUST carry it. Schema: `~/.claude/skills/_components/sentinel-frontmatter.md` (`kind: mcp-test-results`).
 
 **Deferral vs skip — pick by re-testability (this is the load-bearing distinction):**
 
 - A sustained-timing/dropout/jitter assertion that fails ONLY because the host runs the HeadlessPumpDriver is **WSL2-untestable, not un-testable** → write `DEFERRED_REQUIRES_DEVICE.md`. It is NOT permanent: a real-device `/lazy` host re-opens it. (`lazy-state.py` Step 9 on a real-device host re-dispatches `/mcp-test` scoped to the deferred scenario IDs.)
 - An assertion that NO host can drive through MCP (raw-PCM injection only) → `SKIP_MCP_TEST.md` (permanent). Cross-check `docs/features/mcp-testing/SPEC.md` before writing one.
+
+**SKIP provenance (HARD — the state scripts enforce this):** every `SKIP_MCP_TEST.md` this skill writes MUST carry, in frontmatter:
+- `granted_by: mcp-test` — you are the validation step; this is the only `granted_by` value a pipeline-written skip may carry.
+- `spec_class: <the untestable class you verified>` — the `docs/features/mcp-testing/SPEC.md` class the deliverable falls under (e.g. `raw-PCM injection into the Rust callback thread`, an observation-gap row, or `standalone crate — no app integration`). REQUIRED: `lazy_core.skip_waiver_refusal()` REFUSES an mcp-test grant without it (and refuses any pipeline-written skip that omits `granted_by` entirely) — the queue halts for operator confirmation instead of validating. Schema: `~/.claude/skills/_components/sentinel-frontmatter.md`.
 
 **`DEFERRED_REQUIRES_DEVICE.md` — the required shape (NOT a blanket whole-feature deferral):**
 
@@ -450,6 +488,15 @@ When invoked under the lazy state machine (Step 9), `/mcp-test` writes a termina
 **Re-open contract (what a real-device run must do).** When `/mcp-test` is dispatched on a real-device host against a feature carrying `DEFERRED_REQUIRES_DEVICE.md` (its args name the deferred scenario IDs), run EXACTLY those scenarios against the live cpal backend (confirm `get_audio_mode` reports `mode: cpal`, not `forced`). On pass: **delete `DEFERRED_REQUIRES_DEVICE.md` and write `VALIDATED.md`** so the pipeline proceeds to completion. On a genuine failure (a real dropout on real hardware): that is a real bug → `BLOCKED.md`, NOT a re-deferral or a skip.
 
 The intent: a future real-device run re-validates the deferred assertions instead of inheriting a permanent blanket exemption. A blanket whole-feature deferral is wrong — if the logic + signal-presence scenarios are MCP-testable here (they are), only the sustained-timing residual gets deferred, and only with the device-specific justification above.
+
+### Reconcile PHASES.md after writing VALIDATED.md (REQUIRED on a full pass)
+
+Immediately after writing `VALIDATED.md`, RECONCILE the feature's `PHASES.md` so it is coherent for the completion gate. Walk every phase and, for EACH unchecked Runtime Verification row:
+
+- **Covered by this validation run** → tick it (`- [ ]` → `- [x]`) with a brief evidence annotation naming the scenario / assertion that proved it.
+- **NOT covered by this run** → re-scope it honestly: convert the row to a non-checkbox follow-up note, OR — if the gap is genuinely blocking — downgrade the outcome to an `MCP_TEST_RESULTS.md` partial instead of `VALIDATED.md`. Disclose the re-scope with a `⚖` line in your Step 6 summary.
+
+Then flip each phase's `**Status:**` to `Complete` once nothing in that phase remains unchecked (per-phase flips are permitted — only the top-level `**Status:**` and the receipt are orchestrator-owned). **Why:** the completion-integrity gate refuses an incoherent flip (top-level `Complete` while a per-phase row stays unchecked or a per-phase Status is not `Complete`/`Superseded`), so an unreconciled `PHASES.md` strands the feature at `__mark_complete__`. Commit the reconciliation alongside the `VALIDATED.md` write.
 
 ---
 

@@ -29,7 +29,8 @@ Output schema (stdout JSON):
                             | "queue-blocked-on-research"
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing"
-                            | "completion-unverified" | "stale_upstream",
+                            | "completion-unverified" | "stale_upstream"
+                            | "scoped-id-not-found",
   "notify_message":    "<string>"      | null,
   "diagnostics":       []                                  # always present; non-empty
                                                            # surfaces backlog warnings
@@ -45,6 +46,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -86,6 +88,7 @@ from lazy_core import (
     _VERIFICATION_SECTION_RE,
     write_completed_receipt,
     has_completion_receipt,
+    skip_waiver_refusal,
     spec_status,
 )
 
@@ -113,7 +116,7 @@ def _state(
     merged_diag = list(lazy_core._DIAGNOSTICS)
     if diagnostics:
         merged_diag.extend(diagnostics)
-    return {
+    out = {
         "feature_id": feature_id,
         "feature_name": feature_name,
         "spec_path": spec_path,
@@ -130,11 +133,23 @@ def _state(
         # not only when the queue exhausts. Mirrors _DIAGNOSTICS.
         "device_deferred_features": list(_DEVICE_DEFERRED),
     }
+    # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
+    # When False the key must be entirely absent so default output (no flag) is
+    # byte-identical to the pre-WU-1 Phase-4 baseline.
+    if _PARK_MODE:
+        out["parked"] = list(_PARKED)
+    return out
 
 
 # Device-deferred features observed this invocation (see _state()). Reset at the
 # start of each compute_state() call alongside lazy_core._DIAGNOSTICS.
 _DEVICE_DEFERRED: list[str] = []
+
+# Park mode: when True (--park-needs-input flag), NEEDS_INPUT.md items are
+# skipped (parked) instead of halting. The parked items accumulate in _PARKED.
+# Reset at the start of each compute_state() call, alongside _DEVICE_DEFERRED.
+_PARKED: list = []
+_PARK_MODE: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +208,22 @@ def resolve_real_device(flag_value: str) -> bool:
 
 
 # parse_sentinel — imported from lazy_core
+
+
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a
+    git repo / git is unavailable. Best-effort — the freshness check is
+    SKIPPED (behavior unchanged) when this returns None."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -499,12 +530,39 @@ def check_stale_upstream(repo_root: Path, mirror: dict | None = None) -> list:
 def roadmap_marks_complete(roadmap_text: str, feature_name: str) -> bool:
     """Fallback completion signal: a ROADMAP.md row mentioning the feature with
     both `~~` strikethrough AND the `COMPLETE` token. Retained for repos that
-    don't follow the SPEC.md status convention."""
+    don't follow the SPEC.md status convention.
+
+    Anchoring: we extract the text inside the first `~~...~~` pair on the line,
+    take the portion before any ` — ` (space–em-dash–space) separator (which
+    separates the feature name from its description), trim whitespace, and compare
+    case-insensitively for EQUALITY with feature_name. This prevents a strict
+    substring like "Audio" from matching an unrelated completed row whose name is
+    "Audio Engine". Word-boundary anchors are insufficient here because `\bAudio\b`
+    still matches within "Audio Engine".
+
+    ROADMAP row grammar this match relies on:
+      ~~<Feature Name> — <description>~~ ... **COMPLETE**
+      ~~<Feature Name>~~ ... **COMPLETE**   (no description variant)
+    The extracted token is the text before the first ` — ` (or the full strikethrough
+    text if no separator is present), trimmed of surrounding whitespace.  Comparison
+    is case-insensitive EQUALITY against feature_name — so a feature whose name is a
+    prefix or substring of a different completed row (e.g. "Audio" vs "Audio Engine")
+    does NOT produce a false match.
+    """
     if not roadmap_text:
         return False
-    needle = re.escape(feature_name)
+    # Matches the content inside the first ~~...~~ on a line.
+    strikethrough_re = re.compile(r"~~([^~]+)~~")
     for line in roadmap_text.splitlines():
-        if re.search(needle, line) and "~~" in line and "COMPLETE" in line:
+        if "~~" not in line or "COMPLETE" not in line:
+            continue
+        m = strikethrough_re.search(line)
+        if not m:
+            continue
+        # The strikethrough text is "Name — description"; take the name portion.
+        struck_text = m.group(1)
+        struck_name = struck_text.split(" — ")[0].strip()
+        if struck_name.lower() == feature_name.lower():
             return True
     return False
 
@@ -620,7 +678,20 @@ def is_stub_spec(spec_text: str, queue_entry: dict[str, Any] | None = None) -> b
         return True
     if "> Stub generated from advanced feature research" in spec_text:
         return True
-    if "Draft (pre-Gemini)" in spec_text:
+    # Anchor the pre-Gemini stub check so it does NOT fire on arbitrary prose
+    # mentions of the phrase "Draft (pre-Gemini)". We match two structural forms:
+    #   (a) The **Status:** line's value contains "Draft (pre-Gemini)" — e.g.
+    #       `**Status:** Draft (pre-Gemini)` as a first-class status value.
+    #   (b) A blockquote line beginning with `>` contains "Draft (pre-Gemini)" —
+    #       e.g. `> Draft (pre-Gemini). Open questions ...` which is the canonical
+    #       stub trailer format used in older SPECs (kept for back-compat).
+    # Normal inline prose ("Unlike a Draft (pre-Gemini) stub, this spec ...") does
+    # NOT start with `>` and does NOT appear on the **Status:** line, so it is
+    # excluded. This prevents a false-positive stub classification for researched
+    # specs that merely discuss the concept.
+    if re.search(r"^\s*\*\*Status:\*\*\s*.*Draft \(pre-Gemini\)", spec_text, re.MULTILINE):
+        return True
+    if re.search(r"^\s*>.*Draft \(pre-Gemini\)", spec_text, re.MULTILINE):
         return True
     if queue_entry is not None and queue_entry.get("stub") is True:
         return True
@@ -706,9 +777,21 @@ def upstream_is_complete(repo_root: Path, upstream_dir: Path) -> bool:
     if roadmap.exists():
         text = roadmap.read_text(encoding="utf-8")
         upstream_name = upstream_dir.name
-        # ROADMAP rows usually mention the directory name or human name; check both
+        # ROADMAP rows usually mention the directory name or human name; check both.
+        # We apply whole-token anchoring: extract the text inside ~~...~~, take the
+        # portion before any " — " separator, trim, and compare case-insensitively
+        # for EQUALITY. This prevents "audio" from matching "~~audio-engine — ...~~".
+        # The bare `upstream_name in line` check would produce a false positive
+        # whenever upstream_name is a prefix/substring of a different completed name.
+        strikethrough_re = re.compile(r"~~([^~]+)~~")
         for line in text.splitlines():
-            if "~~" in line and "COMPLETE" in line and upstream_name in line:
+            if "~~" not in line or "COMPLETE" not in line:
+                continue
+            m = strikethrough_re.search(line)
+            if not m:
+                continue
+            struck_name = m.group(1).split(" — ")[0].strip()
+            if struck_name.lower() == upstream_name.lower():
                 return True
     spec = upstream_dir / "SPEC.md"
     if spec.exists():
@@ -731,11 +814,64 @@ def newest_realign_plan(spec_dir: Path) -> Path | None:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+def _phases_sha(upstream_dir: Path) -> str | None:
+    """Return the sha256 hex digest of <upstream_dir>/PHASES.md, or None if absent.
+
+    Used by realign_is_fresh to compare recorded upstream hashes in a realign
+    plan's frontmatter against the current on-disk state. Git checkout/clone
+    resets mtimes, making them unreliable; content hashes are stable.
+    """
+    phases_path = upstream_dir / "PHASES.md"
+    if not phases_path.exists():
+        return None
+    return hashlib.sha256(phases_path.read_bytes()).hexdigest()
+
+
 def realign_is_fresh(spec_dir: Path, hard_complete_upstream_dirs: list[Path]) -> bool:
-    """Skip-if-fresh gate per /lazy Step 4.6a."""
+    """Skip-if-fresh gate per /lazy Step 4.6a.
+
+    Hash path (new): if the newest realign plan's frontmatter carries an
+    ``upstream_phases_hashes`` dict (dir-name → sha256 hex), compare each
+    recorded hash against the current PHASES.md on disk. Any mismatch or
+    missing recorded entry means stale → realign needed → return False.
+    All hashes match → return True (fresh, no realign needed).
+
+    Legacy/mtime path (preserved): if the plan has no ``upstream_phases_hashes``
+    field (older plan written before WU-8), fall back to the original mtime
+    comparison so pre-existing realign plans are not invalidated.
+    """
     plan = newest_realign_plan(spec_dir)
     if plan is None:
         return False
+
+    # Try the hash path first: parse the plan's frontmatter and look for the
+    # recorded upstream hashes dict.
+    meta = _parse_plan_frontmatter(plan) or {}
+    recorded_hashes = meta.get("upstream_phases_hashes")
+
+    if recorded_hashes is not None:
+        # Hash path: compare recorded sha256 against current PHASES.md content.
+        # Any upstream whose hash is absent from the recorded dict OR whose
+        # current sha256 differs from the recorded value triggers a re-realign.
+        for ud in hard_complete_upstream_dirs:
+            dir_name = ud.name
+            if dir_name not in recorded_hashes:
+                # Upstream not recorded — treat as stale (plan was written
+                # before this dependency was added, or for a different set).
+                return False
+            current_sha = _phases_sha(ud)
+            if current_sha is None:
+                # Upstream has no PHASES.md — skip (same as before; can't
+                # compare a hash for a file that doesn't exist).
+                continue
+            if current_sha != recorded_hashes[dir_name]:
+                # Hash mismatch: upstream PHASES.md changed since the realign
+                # plan was written → stale → re-realign needed.
+                return False
+        return True
+
+    # Legacy/mtime fallback: no upstream_phases_hashes in the plan frontmatter
+    # (old plan). Preserve exact original behaviour so pre-WU-8 plans still work.
     plan_mtime = plan.stat().st_mtime
     for ud in hard_complete_upstream_dirs:
         upstream_phases = ud / "PHASES.md"
@@ -804,6 +940,77 @@ def _plan_cloud_saturated(plan_path: Path, phases_text: str, spec_path: Path) ->
 
 
 # ---------------------------------------------------------------------------
+# Step 10 helpers
+# ---------------------------------------------------------------------------
+
+def _write_step10_needs_input(spec_dir: Path, feature_name: str) -> None:
+    """Write a well-formed NEEDS_INPUT.md sentinel into spec_dir for the Step 10
+    unexpected-state defensive branch.
+
+    The Step 10 branch fires when RETRO_DONE.md is present but none of the
+    expected validation sentinels (VALIDATED.md, SKIP_MCP_TEST.md, or
+    DEFERRED_NON_CLOUD.md) exists — a state that should be unreachable via the
+    normal pipeline but may arise from manual sentinel manipulation. Writing
+    NEEDS_INPUT.md here ensures the orchestrator's Step 1g decision-resume can
+    surface the issue to the operator rather than silently cycling.
+
+    Follows the NEEDS_INPUT.md schema in
+    ~/.claude/skills/_components/sentinel-frontmatter.md:
+      - YAML frontmatter: kind, feature_id, written_by, decisions list, date
+      - Body: ## Decision Context H2 with one H3 per decision
+
+    Idempotent: overwrites an existing NEEDS_INPUT.md without error.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    # Derive feature_id from the last component of spec_dir (standard convention:
+    # docs/features/<feature-id>/). Used in both the frontmatter and body.
+    feature_id = spec_dir.name
+
+    decision_title = (
+        "Resolve unexpected Step 10 state: RETRO_DONE without a validation sentinel"
+    )
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        f"feature_id: {feature_id}\n"
+        "written_by: lazy-state-step10\n"
+        "decisions:\n"
+        f'  - "{decision_title}"\n'
+        f"date: {today}\n"
+        "---\n"
+        "\n"
+        "## Decision Context\n"
+        "\n"
+        f"### 1. {decision_title}\n"
+        "\n"
+        "**Problem:** `RETRO_DONE.md` is present (signalling the retro cycle is "
+        "complete) but none of the expected post-retro validation sentinels exist: "
+        "no `VALIDATED.md`, no `SKIP_MCP_TEST.md`, and no `DEFERRED_NON_CLOUD.md`. "
+        "This state is defensively unreachable via the normal pipeline — it most "
+        f"likely means sentinels were deleted or renamed manually for `{feature_name}`. "
+        "The pipeline cannot proceed to Step 10 (mark complete) without knowing "
+        "whether MCP validation was performed.\n"
+        "\n"
+        "**Options:**\n"
+        "- **Re-open for MCP validation** — delete `RETRO_DONE.md` and re-run "
+        "`/lazy` so the pipeline re-dispatches `/mcp-test`. Use this when the "
+        "feature was never actually validated.\n"
+        "- **Restore a missing sentinel** — if `VALIDATED.md` or `SKIP_MCP_TEST.md` "
+        "was accidentally deleted, recreate it (check git history for the original "
+        "content) and re-run `/lazy`. Use this when validation DID happen but the "
+        "file was lost.\n"
+        "- **Investigate and reset** — if the root cause is unclear, check "
+        "`git log -- docs/features/ ` and `git log --diff-filter=D` to find when "
+        "the sentinels were removed, then decide which of the above options applies.\n"
+        "\n"
+        "**Recommendation:** Re-open for MCP validation — this is the safest option "
+        "because it forces a confirmed validation pass before `Complete` is written.\n"
+    )
+    needs_input_path = spec_dir / "NEEDS_INPUT.md"
+    needs_input_path.write_text(content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Main state machine
 # ---------------------------------------------------------------------------
 
@@ -813,6 +1020,7 @@ def compute_state(
     skip_needs_research: bool = False,
     real_device: bool = True,
     scope_feature_id: str | None = None,
+    park_needs_input: bool = False,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -832,7 +1040,21 @@ def compute_state(
     # clear_diagnostics() resets lazy_core._DIAGNOSTICS — the canonical list.
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
+    # Park mode: set the module global from the param so _state() can gate
+    # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
+    global _PARK_MODE, _PARKED
+    _PARK_MODE = park_needs_input
+    _PARKED.clear()
     repo_root = repo_root.resolve()
+
+    # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
+    # materialization mirror exists. check_stale_upstream writes STALE_UPSTREAM.md
+    # into any item dir whose upstream WI changed since materialize; Step 2.9 then
+    # halts on it. This is the production writer the stale-upstream halt previously
+    # lacked. Guarded by materialized.json so the common queue-only workflow is a no-op.
+    if (repo_root / "docs" / "work" / "materialized.json").exists():
+        check_stale_upstream(repo_root)
+
     queue = load_queue(repo_root)
     if not queue:
         return _state(
@@ -849,11 +1071,21 @@ def compute_state(
     device_saturated_skipped: list[str] = []
     research_pending_skipped: list[str] = []
     seen_ids: set[str] = set()
+    # Tracks whether the --feature-id scope arg matched ANY entry in the queue
+    # (by raw id, before any dir/duplicate/completion skip).  If scope is set but
+    # no entry matched, we emit "scoped-id-not-found" instead of "all-features-complete"
+    # so callers can distinguish "queue exhausted" from "id typo / not queued".
+    scope_id_seen: bool = False
     for entry in queue:
         name = entry.get("name")
         feature_id = entry.get("id")
         spec_subdir = entry.get("spec_dir")
         if not name or not feature_id or not spec_subdir:
+            missing = [k for k, v in (("id", feature_id), ("name", name), ("spec_dir", spec_subdir)) if not v]
+            _diag(
+                f"queue entry skipped — missing {', '.join(missing)} "
+                f"(entry: {str(entry)[:120]!r})"
+            )
             continue
         # FM3 anti-fabrication guard: a queue entry whose spec_dir does NOT
         # resolve to an on-disk directory is a dangling reference (typo, stale
@@ -881,8 +1113,13 @@ def compute_state(
         seen_ids.add(feature_id)
         # --feature-id scoping: when set, process ONLY the matching queue entry.
         # Absent the flag (None) behavior is byte-identical to single-current.
-        if scope_feature_id is not None and feature_id != scope_feature_id:
-            continue
+        # scope_id_seen is set here — BEFORE any completion/cloud/device skip
+        # would continue past the entry — so a matched-but-skipped scoped feature
+        # still counts as "seen" (not reported as scoped-id-not-found).
+        if scope_feature_id is not None:
+            if feature_id != scope_feature_id:
+                continue
+            scope_id_seen = True
         # FM1 receipt-gated completion. A feature is genuinely DONE only when it
         # CLAIMS completion AND carries a durable COMPLETED.md receipt proving it
         # passed through __mark_complete__'s integrity gate. Superseded is exempt
@@ -962,6 +1199,22 @@ def compute_state(
             if research_pending:
                 research_pending_skipped.append(name)
                 continue
+        # Park-mode: if --park-needs-input is active and this feature has an
+        # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
+        # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
+        # BLOCKED.md retains precedence: a feature carrying BOTH BLOCKED.md and
+        # NEEDS_INPUT.md must still halt as "blocked", not be silently parked.
+        if (
+            park_needs_input
+            and (spec_path / "NEEDS_INPUT.md").exists()
+            and not (spec_path / "BLOCKED.md").exists()
+        ):
+            _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "NEEDS_INPUT.md"))
+            _diag(
+                f"parked: {name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
+                "Re-enters when resolved."
+            )
+            continue
         current = {
             "name": name,
             "id": feature_id,
@@ -1003,6 +1256,19 @@ def compute_state(
                 notify_message=(
                     f"Queue blocked — {len(research_pending_skipped)} feature(s) "
                     "awaiting Gemini research uploads."
+                ),
+            )
+        # scoped-id-not-found: --feature-id was given but matched no queue entry.
+        # This is distinct from "queue exhausted" — the id itself is unknown.
+        # Placed here (after all other specific terminals) because when the scope
+        # id is a typo none of the skip-lists will have populated.
+        if scope_feature_id is not None and not scope_id_seen:
+            return _state(
+                terminal_reason="scoped-id-not-found",
+                notify_message=(
+                    f"--feature-id '{scope_feature_id}' matched no entry in "
+                    "docs/features/queue.json — check the id (typo?) or that the "
+                    "feature is queued. No cycle was dispatched."
                 ),
             )
         return _state(
@@ -1248,6 +1514,32 @@ def compute_state(
             # Use the lowest-ordered plan (sorted-name preference); if part-N
             # exists, this returns part-1 first which is what we want.
             plan = plans[0]
+            # Stale-plan gate (all modes). When every work-unit referenced by
+            # this plan's phases: scope is already checked ([x]) in PHASES.md,
+            # the plan is stale — its work was completed in a prior session but
+            # the plan's frontmatter was never flipped to Complete. Dispatching
+            # /execute-plan in this state wastes an Opus cycle re-verifying work
+            # that is already done (observed twice in production). Instead, flip
+            # the plan Complete inline via the __flip_plan_complete_stale__
+            # pseudo-action. The non-empty plan_phase_set guard is required: a
+            # plan with no phases: field has an empty scope and must fall through
+            # to execute-plan (its full scope is unknown so we cannot declare it
+            # stale). This check runs before the cloud-saturation gate so a
+            # fully-checked scope always flips stale regardless of cloud mode.
+            plan_phase_set = _plan_phase_set(plan)
+            if plan_phase_set and not _unchecked_wus_in_plan_scope(phases_text, plan_phase_set):
+                # Stale already-applied plan: every WU this plan references (scoped to its
+                # phases: field) is already [x], yet its frontmatter is still Ready/In-progress
+                # and PHASES.md still has unchecked rows elsewhere so we reached this branch.
+                # Dispatching /execute-plan would burn an Opus cycle re-verifying a plan whose
+                # work is already done (observed twice in production). Flip it Complete inline
+                # via the __flip_plan_complete_stale__ pseudo-action instead.
+                return _state(
+                    **common,
+                    current_step="Step 7a: flip plan Complete (stale — all referenced deliverables already checked)",
+                    sub_skill="__flip_plan_complete_stale__",
+                    sub_skill_args=str(plan),
+                )
             # Cloud-saturation gate (cloud mode only). When a plan is
             # In-progress because the only unchecked WUs in its phase scope
             # are explicitly documented in DEFERRED_NON_CLOUD.md as
@@ -1385,6 +1677,22 @@ def compute_state(
             )
         # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
+            # Provenance gate (skip_waiver_refusal): a pipeline-self-granted
+            # skip, a pipeline-authored skip with NO granted_by field, or an
+            # mcp-test grant missing its spec_class citation must NOT vacuously
+            # validate — the pipeline cannot waive its own MCP requirement.
+            # Accepted: operator grants, legacy no-provenance files, and
+            # mcp-test grants carrying a spec_class citation.
+            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+            if _skip_refusal:
+                return _state(
+                    **common,
+                    current_step="Step 9: pipeline-granted skip needs operator confirmation",
+                    terminal_reason="needs-input",
+                    notify_message=(
+                        f"{feature_name}: SKIP_MCP_TEST.md {_skip_refusal}"
+                    ),
+                )
             return _state(
                 **common,
                 current_step="Step 9: skip-mcp-test → validated",
@@ -1395,6 +1703,21 @@ def compute_state(
         # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
+                # Provenance gate (skip_waiver_refusal): a pipeline-self-granted
+                # skip, a pipeline-authored skip with NO granted_by field, or an
+                # mcp-test grant missing its spec_class citation must NOT
+                # vacuously validate. Accepted: operator grants, legacy
+                # no-provenance files, mcp-test grants with a spec_class citation.
+                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+                if _skip_refusal:
+                    return _state(
+                        **common,
+                        current_step="Step 9: pipeline-granted skip needs operator confirmation",
+                        terminal_reason="needs-input",
+                        notify_message=(
+                            f"{feature_name}: SKIP_MCP_TEST.md {_skip_refusal}"
+                        ),
+                    )
                 return _state(
                     **common,
                     current_step="Step 9: skip-mcp-test → validated",
@@ -1405,6 +1728,27 @@ def compute_state(
             if mcp_results_file.exists():
                 meta = parse_sentinel(mcp_results_file) or {}
                 if meta.get("result") == "all-passing":
+                    # Freshness gate: ensure the results were validated against the
+                    # CURRENT HEAD commit, not a stale one. If validated_commit is
+                    # present and doesn't match HEAD, the results are stale and we
+                    # must re-run MCP tests against the current code before writing
+                    # VALIDATED.md. When _current_head returns None (not a git repo)
+                    # or validated_commit is absent (legacy results), skip the check
+                    # and fall through to the existing write-validated path.
+                    head = _current_head(repo_root)
+                    validated_commit = meta.get("validated_commit")
+                    if head and validated_commit and str(validated_commit) != head:
+                        # Stale results validated an older commit — must NOT validate
+                        # current code. Re-verify by re-running MCP tests against HEAD.
+                        return _state(
+                            **common,
+                            current_step="Step 9: stale MCP results — re-verify",
+                            sub_skill="mcp-test",
+                            sub_skill_args=(
+                                f"re-validate {feature_name} — MCP_TEST_RESULTS.md was "
+                                f"validated against a stale commit; see {spec_path_str}/SPEC.md"
+                            ),
+                        )
                     return _state(
                         **common,
                         current_step="Step 9b: write validated",
@@ -1426,6 +1770,9 @@ def compute_state(
     if not entry_ok:
         # No entry — should be unreachable: Step 9 either wrote validated /
         # deferred or dispatched mcp-test. Defensive.
+        # Write a durable NEEDS_INPUT.md so the orchestrator's Step 1g
+        # decision-resume can surface the issue to the operator.
+        _write_step10_needs_input(spec_path, feature_name)
         return _state(
             **common,
             current_step="Step 10: unexpected state",
@@ -2345,6 +2692,607 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             reason="audio item blocked by no-device ALSA failure under HeadlessPumpDriver",
             deferred_by="lazy", date="2026-05-30",
         )
+    elif name == "stale-mcp-results-reverify":
+        # Workstation Step 9 path: on-disk MCP_TEST_RESULTS.md claims all-passing
+        # but carries a stale validated_commit (all-zeros sha) that does NOT match
+        # the fixture's actual HEAD. The fixture root is a real git repo so the
+        # implementation's `git rev-parse HEAD` resolves to a non-zero sha.
+        # Expected: compute_state detects staleness and re-verifies (sub_skill=
+        # "mcp-test"), NOT __write_validated_from_results__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-smrr", "name": "Feature SMRR",
+                 "spec_dir": "feat-smrr", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        smrr = features / "feat-smrr"
+        smrr.mkdir()
+        (smrr / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (smrr / "RESEARCH.md").write_text("# R\n")
+        (smrr / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # All phases checked — no remaining unchecked rows.
+        (smrr / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            smrr / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-smrr", date="2026-06-01",
+            rounds=1, retro_plans=["retro-1-feat-smrr.md"],
+            mcp_validation_status="pending",
+        )
+        # Stale on-disk results: all-passing but validated against the all-zeros sha
+        # (a sha that cannot equal any real git HEAD). The implementation's freshness
+        # check should catch this and route to re-verify rather than auto-validate.
+        _write_yaml_sentinel(
+            smrr / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            result="all-passing",
+            validated_commit="0000000000000000000000000000000000000000",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO SKIP_MCP_TEST.md — waiver not present.
+
+        # Make the fixture root a real git repo so `git rev-parse HEAD` resolves
+        # to a genuine (non-zero) sha. The implementation compares that sha against
+        # the stale validated_commit above and must detect the mismatch.
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"stale-mcp-results-reverify git setup failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+    elif name == "skip-pipeline-granted-needs-input":
+        # WU-5 Phase-2 contract (RED fixture): SKIP_MCP_TEST.md carrying
+        # `granted_by: pipeline` must NOT be accepted as a waiver by the
+        # pipeline itself — a model could self-grant the skip to defeat MCP
+        # validation. When `granted_by == "pipeline"`, compute_state must
+        # refuse and route to terminal_reason="needs-input" rather than
+        # emitting __write_validated_from_skip__.
+        # This fixture is RED against current code: current Step 9 ignores
+        # `granted_by` and always emits __write_validated_from_skip__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spg", "name": "Feature SPG",
+                 "spec_dir": "feat-spg", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        spg = features / "feat-spg"
+        spg.mkdir()
+        (spg / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (spg / "RESEARCH.md").write_text("# R\n")
+        (spg / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # All phases checked — retro + MCP gate reached.
+        (spg / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            spg / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-spg", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-spg.md"],
+            mcp_validation_status="pending",
+        )
+        # SKIP_MCP_TEST.md with granted_by: pipeline — self-grant the waiver.
+        # Phase-2 contract: this must be refused (needs-input), not validated.
+        _write_yaml_sentinel(
+            spg / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-spg",
+            reason="pipeline self-asserted skip to avoid MCP test",
+            alternative_validation="none",
+            date="2026-06-10", skipped_by="pipeline",
+            granted_by="pipeline",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
+
+    elif name == "skip-operator-granted-validates":
+        # WU-5 Phase-2 positive guard (GREEN fixture): SKIP_MCP_TEST.md
+        # carrying `granted_by: operator` is a legitimate human-authored waiver.
+        # compute_state must continue to emit __write_validated_from_skip__ for
+        # operator grants — the existing vacuous-pass behavior is intentional
+        # here and must not regress.
+        # This fixture is expected GREEN even against current code (current
+        # always validates-from-skip, regardless of granted_by).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sog", "name": "Feature SOG",
+                 "spec_dir": "feat-sog", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sog = features / "feat-sog"
+        sog.mkdir()
+        (sog / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (sog / "RESEARCH.md").write_text("# R\n")
+        (sog / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # All phases checked — retro + MCP gate reached.
+        (sog / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            sog / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-sog", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-sog.md"],
+            mcp_validation_status="pending",
+        )
+        # SKIP_MCP_TEST.md with granted_by: operator — legitimate human waiver.
+        # Phase-2 contract: operator grant → __write_validated_from_skip__
+        # (same as the pre-Phase-2 vacuous-pass behavior).
+        _write_yaml_sentinel(
+            sog / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-sog",
+            reason="feature is a pure docs/config change — no runtime MCP path",
+            alternative_validation="manual smoke test by operator",
+            date="2026-06-10", skipped_by="operator",
+            granted_by="operator",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
+
+    elif name == "skip-mcp-test-granted-with-class-validates":
+        # Provenance positive: granted_by: mcp-test + a spec_class citation is a
+        # verified structural assessment by the validation step itself —
+        # accepted as a waiver → __write_validated_from_skip__.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-smtc", "name": "Feature SMTC",
+                 "spec_dir": "feat-smtc", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        smtc = features / "feat-smtc"
+        smtc.mkdir()
+        (smtc / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (smtc / "RESEARCH.md").write_text("# R\n")
+        (smtc / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (smtc / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            smtc / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-smtc", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-smtc.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            smtc / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-smtc",
+            reason="standalone crate — no MCP-reachable surface",
+            alternative_validation="covered by cargo tests",
+            date="2026-06-10", skipped_by="lazy",
+            granted_by="mcp-test",
+            spec_class="no app integration — covered by cargo tests",
+        )
+        # NO VALIDATED.md — not yet validated.
+
+    elif name == "skip-mcp-test-granted-missing-class-refuses":
+        # Provenance gate: granted_by: mcp-test WITHOUT a spec_class citation is
+        # an unverified claim — refused (needs-input), not validated. The
+        # citation is what distinguishes a verified structural assessment from
+        # a convenience skip.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-smtn", "name": "Feature SMTN",
+                 "spec_dir": "feat-smtn", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        smtn = features / "feat-smtn"
+        smtn.mkdir()
+        (smtn / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (smtn / "RESEARCH.md").write_text("# R\n")
+        (smtn / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (smtn / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            smtn / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-smtn", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-smtn.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            smtn / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-smtn",
+            reason="claims untestable but cites no class",
+            alternative_validation="none",
+            date="2026-06-10", skipped_by="lazy",
+            granted_by="mcp-test",
+        )
+        # NO VALIDATED.md — not yet validated.
+
+    elif name == "skip-pipeline-authored-no-grant-refuses":
+        # Provenance omission gate: a skip whose skipped_by identifies a
+        # pipeline author ("lazy") but which carries NO granted_by at all used
+        # to sail through as legacy-operator — the omission side-door (observed
+        # 2026-06-10: an mcp-test cycle wrote a skip without the field and it
+        # auto-validated with no operator confirmation). Must now refuse.
+        # Files with NEITHER provenance field stay grandfathered.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spa", "name": "Feature SPA",
+                 "spec_dir": "feat-spa", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        spa = features / "feat-spa"
+        spa.mkdir()
+        (spa / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (spa / "RESEARCH.md").write_text("# R\n")
+        (spa / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (spa / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            spa / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-spa", date="2026-06-10",
+            rounds=1, retro_plans=["retro-1-feat-spa.md"],
+            mcp_validation_status="pending",
+        )
+        _write_yaml_sentinel(
+            spa / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            feature_id="feat-spa",
+            reason="pipeline-written skip with no provenance field",
+            alternative_validation="none",
+            date="2026-06-10", skipped_by="lazy",
+        )
+        # NO VALIDATED.md — not yet validated.
+
+    elif name == "roadmap-substring-collision-no-false-halt":
+        # Fixture A — substring-collision bug in roadmap_marks_complete.
+        # completion_claimed() passes the queue entry's `name` (not id) to
+        # roadmap_marks_complete. The feature name "Audio" is a STRICT SUBSTRING
+        # of the unrelated completed ROADMAP row text "Audio Engine". "Audio"
+        # itself is NOT marked complete anywhere.
+        #
+        # Pre-fix (RED): roadmap_marks_complete does a bare re.search(re.escape("Audio"), line)
+        # which matches the "Audio Engine" row → completion_claimed() returns True
+        # → no COMPLETED.md receipt → hard-halt with terminal_reason="completion-unverified".
+        #
+        # Post-fix (GREEN): the match is anchored to whole-word / word-boundary so
+        # "Audio" does NOT match the "Audio Engine" row → completion_claimed()
+        # returns False → feature proceeds normally → Step 5 dispatches /spec to
+        # generate a research prompt (no research files present).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-audio", "name": "Audio",
+                 "spec_dir": "feat-audio", "tier": 1}
+            ]
+        }))
+        # ROADMAP has a completed row for the UNRELATED "Audio Engine" feature.
+        # "Audio" appears as a substring inside "Audio Engine" — this is the
+        # exact collision the fix must prevent. Note the feature name searched by
+        # roadmap_marks_complete is the queue entry name "Audio", not the id.
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n"
+            "- ~~Audio Engine — deep audio processing~~ **COMPLETE**\n"
+        )
+        a_dir = features / "feat-audio"
+        a_dir.mkdir()
+        # SPEC.md Status: Draft — not complete. No receipt, no research files.
+        (a_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # No RESEARCH.md, no RESEARCH_SUMMARY.md, no RESEARCH_PROMPT.md →
+        # Step 5 will dispatch /spec (generate research prompt).
+
+    elif name == "is-stub-prose-mention-not-stub":
+        # Fixture B — substring-collision bug in is_stub_spec.
+        # The SPEC.md has a non-stub **Status:** (just "Draft", no "(pre-Gemini)"
+        # qualifier) but the body PROSE contains the literal phrase
+        # "Draft (pre-Gemini)" in a sentence discussing the concept.
+        #
+        # Pre-fix (RED): is_stub_spec does `"Draft (pre-Gemini)" in spec_text`
+        # which is a bare substring match against the ENTIRE spec body. It matches
+        # the prose mention → the feature is falsely routed to Step 4.5 stub-spec
+        # → sub_skill="spec" at the stub branch instead of the normal pipeline.
+        #
+        # Post-fix (GREEN): the check is anchored to the **Status:** line, so the
+        # prose mention does NOT trigger is_stub_spec → the feature falls through
+        # to the normal pipeline. With RESEARCH.md + RESEARCH_SUMMARY.md present
+        # but no PHASES.md yet → Step 6 dispatches /plan-feature.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-prose-stub", "name": "Prose Stub Feature",
+                 "spec_dir": "feat-prose-stub", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        ps = features / "feat-prose-stub"
+        ps.mkdir()
+        # **Status:** is a clean "Draft" — NOT a stub marker. The body prose
+        # mentions "Draft (pre-Gemini)" as an illustrative example, which is
+        # the text that the buggy bare-substring check incorrectly matches.
+        (ps / "SPEC.md").write_text(
+            "# Spec\n\n"
+            "**Status:** Draft\n\n"
+            "**Depends on:** (none)\n\n"
+            "## Background\n\n"
+            "Unlike a Draft (pre-Gemini) stub, this spec is fully researched "
+            "and does not require a Gemini deep-research sprint before phases "
+            "can be written.\n"
+        )
+        # Research files present → passes Step 5 gate, reaches Step 6.
+        (ps / "RESEARCH.md").write_text("# Research\n\nResearch complete.\n")
+        (ps / "RESEARCH_SUMMARY.md").write_text("# Summary\n\nKey findings.\n")
+        # No PHASES.md → Step 6 dispatches /plan-feature.
+
+    elif name == "upstream-substring-collision":
+        # Fixture C — substring-collision bug in upstream_is_complete.
+        # The upstream feature directory is named "audio". The ROADMAP contains
+        # a strikethrough+COMPLETE row for the UNRELATED "audio-engine" feature.
+        # upstream_is_complete checks `upstream_name in line` (bare substring) which
+        # matches the "audio-engine" row when upstream_name="audio".
+        #
+        # Pre-fix (RED): upstream_is_complete("audio") returns True (false positive)
+        # → hard_complete_upstream_dirs is non-empty → realign_is_fresh returns False
+        # (no realign plan exists) → compute_state emits sub_skill="realign-spec"
+        # at Step 4.6, even though "audio" upstream is NOT actually complete.
+        #
+        # Post-fix (GREEN): the match is anchored to word boundary / whole directory
+        # name so "audio" does NOT match "audio-engine" → upstream_is_complete returns
+        # False → hard_complete_upstream_dirs stays empty → Step 4.6 does not fire
+        # → feature proceeds to Step 5 (no research) → sub_skill="spec".
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-downstream", "name": "Downstream Feature",
+                 "spec_dir": "feat-downstream", "tier": 1}
+            ]
+        }))
+        # ROADMAP has a completed row for "audio-engine" — NOT for "audio" (the
+        # upstream the downstream feature depends on). Bare substring "audio" in
+        # "audio-engine" is the collision.
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n"
+            "- ~~audio-engine — deep audio processing~~ **COMPLETE**\n"
+        )
+        # Create the upstream "audio" feature directory. Its SPEC.md status is
+        # Draft (NOT Complete), so the SPEC-based check in upstream_is_complete
+        # also returns False. Only the buggy ROADMAP substring check fires.
+        aud = features / "audio"
+        aud.mkdir()
+        (aud / "SPEC.md").write_text(
+            "# Upstream Audio\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # Create the downstream feature with a hard dep on "audio" (the upstream).
+        ds = features / "feat-downstream"
+        ds.mkdir()
+        # The dep block references "audio" by feature_id. resolve_upstream_dir
+        # finds the sibling "audio" dir (has SPEC.md).
+        (ds / "SPEC.md").write_text(
+            "# Downstream Spec\n\n"
+            "**Status:** Draft\n\n"
+            "**Depends on:**\n\n"
+            "- audio — hard — this feature builds on the audio foundation\n"
+        )
+        # No research files → if Step 4.6 correctly does NOT fire, the feature
+        # falls through to Step 5 and dispatches /spec (research prompt generation).
+
+    elif name == "stale-plan-all-refs-checked-flips":
+        # Fixture A — stale-plan detection.
+        # Plan's phases: [1] scope is fully checked (all Phase 1 deliverables
+        # are [x]). Phase 2 still has an unchecked row, so unchecked > 0 overall
+        # and Step 7 is entered. The plan is STALE: every WU it references is
+        # done, yet its frontmatter still says status: Ready (never flipped to
+        # Complete by a prior session).
+        #
+        # Pre-fix (RED): compute_state dispatches execute-plan — it burns an
+        # Opus cycle re-verifying a plan whose work is already done.
+        #
+        # Post-fix (GREEN): the stale-plan guard detects that
+        # _unchecked_wus_in_plan_scope(phases_text, {1}) is empty → emits
+        # sub_skill="__flip_plan_complete_stale__" with sub_skill_args=plan path.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-stale", "name": "Feature Stale",
+                 "spec_dir": "feat-stale", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        st = features / "feat-stale"
+        st.mkdir()
+        (st / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (st / "RESEARCH.md").write_text("# R\n")
+        (st / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Phase 1: ALL deliverables checked (the plan's scope is fully done).
+        # Phase 2: one unchecked deliverable → unchecked > 0 overall so Step 7
+        # is entered and plan selection runs.
+        (st / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] WU1 implement core logic\n"
+            "- [x] WU2 write unit tests\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = st / "plans"
+        plans.mkdir()
+        # Plan scoped to phases: [1] only — the fully-checked phase.
+        # status: Ready (never updated after phase 1 completed) → STALE.
+        (plans / "all-phases-stale.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-stale\n"
+            "status: Ready\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan for Phase 1\n"
+        )
+        # No RETRO_DONE.md → stays in Step 7 (not past Step 8).
+        # No DEFERRED_NON_CLOUD.md → cloud-saturation gate does not interfere.
+
+    elif name == "ready-plan-unchecked-in-scope-still-executes":
+        # Fixture B — discriminating guard: plan scope has genuine remaining work.
+        # Phase 1 still has an unchecked deliverable inside the plan's phases: [1]
+        # scope. The stale-plan guard must NOT fire — _unchecked_wus_in_plan_scope
+        # returns a non-empty list so the plan is live work.
+        #
+        # Expected (GREEN today and must stay GREEN): sub_skill="execute-plan".
+        # This fixture proves the flip fires ONLY when the scope is fully checked.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-live", "name": "Feature Live",
+                 "spec_dir": "feat-live", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        lv = features / "feat-live"
+        lv.mkdir()
+        (lv / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (lv / "RESEARCH.md").write_text("# R\n")
+        (lv / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Phase 1: UNCHECKED deliverable still in scope → plan is NOT stale.
+        # Phase 2: also unchecked, but the plan only declares phases: [1].
+        (lv / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] WU1 implement core logic\n"
+            "- [ ] WU2 write unit tests\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = lv / "plans"
+        plans.mkdir()
+        # Plan scoped to phases: [1] — phase 1 has WU2 unchecked → live work
+        # remains → execute-plan must be dispatched as normal.
+        (plans / "all-phases-live.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-live\n"
+            "status: Ready\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan for Phase 1\n"
+        )
+        # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
+
+    elif name == "realign-hash-gate-detects-changed-upstream":
+        # WU-8 Fixture 1: realign freshness gate hash comparison.
+        #
+        # Scenario: downstream feat-rhg has a hard dep on upstream feat-rhg-up
+        # (Complete). The downstream has a realign plan whose frontmatter records
+        # upstream_phases_hashes: with a BOGUS hash (64 zeros) that does NOT match
+        # the upstream PHASES.md actual content. The plan file's mtime is NEWER
+        # than the upstream PHASES.md (simulating: upstream changed AFTER the plan
+        # was written, but the plan mtime ordering is reversed by os.utime trickery
+        # — actually here we write PHASES.md first so plan is naturally newer).
+        #
+        # RED today (mtime gate): plan mtime > upstream PHASES.md mtime → mtime
+        # gate says "fresh" → no realign needed → routes onward (Step 5/6).
+        # GREEN after fix (hash gate): recorded hash ≠ actual PHASES.md sha256 →
+        # hash gate says "stale" → routes to Step 4.6 realign-spec.
+        #
+        # We write upstream PHASES.md FIRST so its mtime is older, then write the
+        # realign plan so its mtime is newer — satisfying the "plan is newer"
+        # condition the old mtime gate would declare as fresh.
+        import time as _time_mod
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-rhg", "name": "Feature RHG", "spec_dir": "feat-rhg", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text(
+            "# Roadmap\n\n- ~~Upstream RHG Up — done~~ **COMPLETE**\n"
+        )
+        # Complete upstream feature directory
+        up_dir = features / "feat-rhg-up"
+        up_dir.mkdir(parents=True, exist_ok=True)
+        (up_dir / "SPEC.md").write_text("# Upstream\n\n**Status:** Complete\n")
+        upstream_phases = up_dir / "PHASES.md"
+        upstream_phases.write_text("# Phases\n\n- [x] Upstream done\n")
+        # Force the upstream PHASES.md mtime to be clearly OLDER (10 seconds ago)
+        # so the plan file written next is naturally NEWER.
+        old_mtime = _time_mod.time() - 10.0
+        os.utime(str(upstream_phases), (old_mtime, old_mtime))
+
+        # Downstream feature with hard dep on the upstream
+        down_dir = features / "feat-rhg"
+        down_dir.mkdir(parents=True, exist_ok=True)
+        (down_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n"
+            "**Depends on:**\n\n"
+            "- feat-rhg-up — hard — downstream relies on upstream contract\n"
+        )
+        (down_dir / "RESEARCH.md").write_text("# R\n")
+        (down_dir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Realign plan with a BOGUS recorded hash (64 zeros) that will never match
+        # the real upstream PHASES.md sha256. The impl agent's hash gate must detect
+        # the mismatch and require a new realign even though plan mtime > PHASES mtime.
+        plans_dir = down_dir / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        bogus_hash = "0" * 64
+        realign_plan_path = plans_dir / "realign-2026-01-01.md"
+        realign_plan_path.write_text(
+            "---\n"
+            "kind: realign\n"
+            "upstream_phases_hashes:\n"
+            # Use the upstream dir NAME as the key (per task description: dir-name → sha256)
+            f"  feat-rhg-up: {bogus_hash}\n"
+            "---\n\n"
+            "# Realign plan (with stale recorded hash)\n"
+        )
+        # The plan is written AFTER upstream PHASES.md (so plan mtime > PHASES mtime).
+        # The old mtime gate reads plan mtime > PHASES mtime → declares fresh → no realign.
+        # The new hash gate reads recorded hash ≠ real sha256 → declares stale → realign.
+
+    elif name == "stale-upstream-auto-wired-at-probe":
+        # WU-8 Fixture 2: check_stale_upstream auto-runs at probe start.
+        #
+        # Scenario: docs/work/materialized.json records wi_id=201, feature_id=
+        # "feat-sau" with materialized_changedDate "2026-01-01T00:00:00Z".
+        # docs/work/ado-mirror.json has the same WI with changedDate
+        # "2026-06-01T00:00:00Z" (STRICTLY NEWER). The feature dir exists with
+        # a minimal queue entry so compute_state would otherwise process it.
+        # STALE_UPSTREAM.md is NOT pre-written.
+        #
+        # RED today: nothing auto-calls check_stale_upstream → STALE_UPSTREAM.md
+        # is never written → Step 2.9 stale check finds nothing → feature routes
+        # through its normal early pipeline (no stale halt).
+        # GREEN after fix: compute_state auto-calls check_stale_upstream at probe
+        # start → writes STALE_UPSTREAM.md → Step 2.9 reads it and halts with
+        # terminal_reason="stale_upstream".
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sau", "name": "Feature SAU", "spec_dir": "feat-sau", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sau_dir = features / "feat-sau"
+        sau_dir.mkdir(parents=True, exist_ok=True)
+        (sau_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        # Seed materialized.json with an OLDER changedDate for this WI
+        work_dir = root / "docs" / "work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        lazy_core.append_materialized(
+            work_dir, 201, "feat-sau", "2026-01-01T00:00:00Z"
+        )
+        # Mirror has a STRICTLY NEWER changedDate for the same WI
+        (work_dir / "ado-mirror.json").write_text(
+            json.dumps({
+                "syncedAt": "2026-06-10T12:00:00Z",
+                "watermark": "2026-06-10",
+                "query": "SELECT ...",
+                "workItems": [
+                    {
+                        "id": 201,
+                        "type": "User Story",
+                        "title": "Feature SAU upstream",
+                        "description": "Updated upstream.",
+                        "acceptanceCriteria": "AC.",
+                        "url": "https://dev.azure.com/org/proj/_workitems/edit/201",
+                        "changedDate": "2026-06-01T00:00:00Z",
+                    }
+                ],
+            }, indent=2),
+            encoding="utf-8",
+        )
+        # Do NOT pre-write STALE_UPSTREAM.md — the auto-wiring at probe start must create it.
+
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -2572,6 +3520,156 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-dws",
                 "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
             }, True),
+            # Stale MCP results freshness gate (WU-4). The on-disk
+            # MCP_TEST_RESULTS.md carries validated_commit=all-zeros, which cannot
+            # equal the fixture's actual git HEAD. The implementation must detect
+            # the mismatch and re-verify (sub_skill=mcp-test) rather than silently
+            # accepting the stale results as proof of the current commit.
+            # RED against current code: compute_state ignores validated_commit and
+            # returns sub_skill="__write_validated_from_results__" instead.
+            ("stale-mcp-results-reverify", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-smrr",
+                "current_step": "Step 9: stale MCP results — re-verify",
+            }),
+            # WU-5: pipeline-self-granted SKIP_MCP_TEST.md must NOT vacuously
+            # validate. When `granted_by: pipeline`, the pipeline is trying to
+            # self-waive its own validation requirement — refuse this and route
+            # to needs-input so an operator can review.
+            # RED against current code: current Step 9 ignores `granted_by` and
+            # emits sub_skill="__write_validated_from_skip__" instead of
+            # terminal_reason="needs-input".
+            ("skip-pipeline-granted-needs-input", False, False, {
+                "terminal_reason": "needs-input",
+                "feature_id": "feat-spg",
+            }),
+            # WU-5 positive guard: operator-granted SKIP_MCP_TEST.md must still
+            # produce __write_validated_from_skip__ (legitimate human waiver).
+            # GREEN even against current code — kept as a non-regression guard.
+            # If this fixture ever turns RED, it means the Phase-2 impl broke
+            # the backward-compat path for operator grants.
+            ("skip-operator-granted-validates", False, False, {
+                "sub_skill": "__write_validated_from_skip__",
+                "feature_id": "feat-sog",
+                "current_step": "Step 9: skip-mcp-test → validated",
+            }),
+            # Provenance positive: granted_by: mcp-test WITH a spec_class
+            # citation is a verified structural assessment by the validation
+            # step itself — accepted → __write_validated_from_skip__.
+            ("skip-mcp-test-granted-with-class-validates", False, False, {
+                "sub_skill": "__write_validated_from_skip__",
+                "feature_id": "feat-smtc",
+                "current_step": "Step 9: skip-mcp-test → validated",
+            }),
+            # Provenance gate: granted_by: mcp-test WITHOUT spec_class is an
+            # unverified claim — refuse (needs-input), never vacuous-validate.
+            ("skip-mcp-test-granted-missing-class-refuses", False, False, {
+                "terminal_reason": "needs-input",
+                "feature_id": "feat-smtn",
+            }),
+            # Provenance omission gate: pipeline-authored skip (skipped_by:
+            # lazy) with NO granted_by must refuse — closes the side-door where
+            # omitting the field bypassed the WU-5 provenance gate entirely.
+            ("skip-pipeline-authored-no-grant-refuses", False, False, {
+                "terminal_reason": "needs-input",
+                "feature_id": "feat-spa",
+            }),
+            # Fixture A — roadmap_marks_complete substring collision.
+            # Feature name "Audio" is a strict substring of the completed ROADMAP
+            # text "Audio Engine". Pre-fix: falsely halts with completion-unverified.
+            # Post-fix: normal Draft routing → Step 5 /spec (no research files).
+            # RED today: roadmap_marks_complete substring-matches the Audio Engine
+            # row → completion_claimed returns True → no receipt → halt.
+            ("roadmap-substring-collision-no-false-halt", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-audio",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # Fixture B — is_stub_spec prose-mention false-positive.
+            # SPEC.md Status is plain "Draft" (not a stub), but the body prose
+            # contains the literal phrase "Draft (pre-Gemini)" as illustrative text.
+            # Pre-fix: bare substring match triggers stub route → Step 4.5 /spec.
+            # Post-fix: only the **Status:** line is checked → not a stub →
+            # proceeds to Step 6 /plan-feature (research present, no PHASES.md).
+            # RED today: "Draft (pre-Gemini)" in spec_text matches the prose.
+            ("is-stub-prose-mention-not-stub", False, False, {
+                "sub_skill": "plan-feature",
+                "feature_id": "feat-prose-stub",
+                "current_step": "Step 6: plan feature (phases + plan)",
+            }),
+            # Fixture C — upstream_is_complete substring collision.
+            # Upstream feature dir "audio" is a strict substring of the completed
+            # ROADMAP entry "audio-engine". Pre-fix: upstream_is_complete falsely
+            # returns True → triggers realign-spec at Step 4.6. Post-fix: word-
+            # boundary anchor prevents the collision → no realign → Step 5 /spec.
+            # RED today: upstream_name in line matches "audio-engine" for "audio".
+            ("upstream-substring-collision", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-downstream",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # Fixture A — stale-plan: plan's phases: [1] scope is fully checked
+            # but Phase 2 has an unchecked row so unchecked > 0 overall → Step 7
+            # is entered. The plan should be recognised as stale and the pseudo-
+            # skill __flip_plan_complete_stale__ emitted (not execute-plan).
+            # RED today: current code emits sub_skill="execute-plan".
+            # current_step is asserted via a post-loop substring check below
+            # (impl agent sets the exact string; we require "stale" appear in it).
+            ("stale-plan-all-refs-checked-flips", False, False, {
+                "sub_skill": "__flip_plan_complete_stale__",
+                "feature_id": "feat-stale",
+            }),
+            # Fixture B — discriminating guard: plan still has real unchecked work
+            # inside its phases: [1] scope → stale-plan guard must NOT fire.
+            # GREEN today and must stay GREEN after the fix lands.
+            ("ready-plan-unchecked-in-scope-still-executes", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-live",
+                "current_step": "Step 7a: execute plan",
+            }),
+
+            # WU-8 Fixture 1: realign hash gate detects changed upstream.
+            # Downstream has a hard dep on a complete upstream. The realign plan
+            # frontmatter records upstream_phases_hashes: with a BOGUS hash (64
+            # zeros). The plan mtime is NEWER than the upstream PHASES.md mtime
+            # (so the old mtime gate declares fresh). The hash gate must detect the
+            # mismatch and require a new realign.
+            # RED today: realign_is_fresh() compares mtimes → plan is newer →
+            # declares fresh → no realign → routes onward (Step 5/6, not Step 4.6).
+            # GREEN after fix: hash gate fires → sub_skill="realign-spec".
+            ("realign-hash-gate-detects-changed-upstream", False, False, {
+                "sub_skill": "realign-spec",
+                "feature_id": "feat-rhg",
+                "current_step": "Step 4.6: upstream realign needed",
+            }),
+
+            # WU-8 Fixture 2: check_stale_upstream auto-wired at probe start.
+            # materialized.json + ado-mirror.json show upstream WI changed.
+            # STALE_UPSTREAM.md NOT pre-written. compute_state must auto-call
+            # check_stale_upstream and then halt at Step 2.9.
+            # RED today: nothing auto-runs check_stale_upstream → no STALE_UPSTREAM.md
+            # written → feature routes through normal early pipeline (e.g. Step 4/5).
+            # GREEN after fix: auto-call writes STALE_UPSTREAM.md → Step 2.9 halts
+            # with terminal_reason="stale_upstream".
+            ("stale-upstream-auto-wired-at-probe", False, False, {
+                "terminal_reason": "stale_upstream",
+                "feature_id": "feat-sau",
+            }),
+
+            # NOTE: WU-8 Fixture 3 (step10-unexpected-writes-needs-input) is NOT a
+            # compute_state routing case. The Step 10 "unexpected state" branch is
+            # GENUINELY UNREACHABLE through compute_state's inputs (workstation Step 9
+            # is fully guarded by `if not validated_file.exists():` and every sub-path
+            # returns, so Step 10 is only reached when validated_file exists →
+            # entry_ok is always True there). Forcing a RETRO_DONE + no-validation
+            # state to write NEEDS_INPUT would break normal MCP-test dispatch.
+            #
+            # The honest, testable unit for this defensive branch is the sentinel
+            # WRITE itself, which the impl agent extracts into the module-level helper
+            # _write_step10_needs_input(spec_dir, feature_name). That helper is
+            # exercised directly in an inline functional check AFTER this loop (search
+            # for "Fixture WU-8.3" below), mirroring how enqueue_adhoc / materialize_wi
+            # are tested directly rather than through compute_state.
         ]
         for case in cases:
             # Cases are 4-tuples (real_device defaults to True — behavior
@@ -2643,11 +3741,160 @@ def run_smoke_tests() -> int:
                         f"[{name}] expected device-saturated diagnostics; "
                         f"got diagnostics={diag!r}"
                     )
+            if name == "stale-plan-all-refs-checked-flips":
+                # current_step substring check: after the fix the impl agent will
+                # emit something containing "stale". We do NOT assert the exact
+                # string so small wording changes don't break this fixture.
+                # (The primary behavioral signal is sub_skill above.)
+                cs = got.get("current_step") or ""
+                if cs and "stale" not in cs.lower():
+                    failures.append(
+                        f"[{name}] expected current_step to contain 'stale'; "
+                        f"got {cs!r}"
+                    )
+                # sub_skill_args must reference the plan file path.
+                args = got.get("sub_skill_args") or ""
+                if args and "all-phases-stale.md" not in args:
+                    failures.append(
+                        f"[{name}] expected sub_skill_args to reference the stale "
+                        f"plan file; got {args!r}"
+                    )
+            if name == "stale-upstream-auto-wired-at-probe":
+                # Post-call disk check (WU-8 Fixture 2): the auto-wiring at probe
+                # start must have WRITTEN STALE_UPSTREAM.md into the feature dir.
+                # RED today: check_stale_upstream is never auto-called → the file
+                # doesn't exist → this assertion fails regardless of terminal_reason.
+                sau_stale_sentinel = (
+                    root / "docs" / "features" / "feat-sau" / "STALE_UPSTREAM.md"
+                )
+                if not sau_stale_sentinel.exists():
+                    failures.append(
+                        f"[{name}] STALE_UPSTREAM.md was NOT written to "
+                        f"{sau_stale_sentinel} — check_stale_upstream not auto-wired "
+                        "at probe start"
+                    )
             print(
                 f"  [{name}] cloud={cloud} skip_nr={skip_nr} "
                 f"real_device={real_device}: "
                 f"{got['current_step'] or got['terminal_reason']}"
             )
+
+        # -------------------------------------------------------------------
+        # Fixture WU-8.3: _write_step10_needs_input writes a well-formed
+        # NEEDS_INPUT.md sentinel (direct helper unit test).
+        # -------------------------------------------------------------------
+        # The Step 10 "unexpected state" defensive branch (compute_state, the
+        # `if not entry_ok:` arm) is GENUINELY UNREACHABLE through compute_state's
+        # inputs — workstation Step 9 is fully guarded by
+        # `if not validated_file.exists():` and every sub-path returns, so Step 10
+        # is reached only when validated_file exists, where entry_ok is always
+        # True. We therefore can't drive this branch via a routing fixture without
+        # breaking normal MCP-test dispatch. The honest, testable unit is the
+        # sentinel WRITE the branch performs, which the impl agent extracts into
+        # the module-level helper _write_step10_needs_input(spec_dir, feature_name)
+        # and calls from the defensive arm. We exercise that helper directly here,
+        # exactly the way enqueue_adhoc / materialize_wi are tested directly below.
+        #
+        # RED today: _write_step10_needs_input does not exist yet → calling it
+        # raises NameError ("missing symbol" RED — the standard TDD red for a new
+        # function). GREEN after the impl lands the helper: NEEDS_INPUT.md exists
+        # on disk, parses as kind="needs-input" with a written_by field, and its
+        # body carries the `## Decision Context` H2 that the orchestrator's
+        # decision-resume (Step 1g) consumes.
+        fix_name_s10 = "step10-unexpected-writes-needs-input"
+        s10_spec_dir = td_path / fix_name_s10 / "docs" / "features" / "feat-s10u"
+        s10_spec_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            # Reference the helper as a module-level name (mirrors how the inline
+            # checks below call enqueue_adhoc / materialize_wi directly). When the
+            # symbol does not yet exist this raises NameError — the intended RED.
+            _write_step10_needs_input(s10_spec_dir, "Some Feature")
+            s10_ok = True
+            # Assertion 1: the sentinel now EXISTS on disk.
+            s10_sentinel = s10_spec_dir / "NEEDS_INPUT.md"
+            if not s10_sentinel.exists():
+                failures.append(
+                    f"[{fix_name_s10}] NEEDS_INPUT.md was NOT written to "
+                    f"{s10_sentinel} — _write_step10_needs_input must create the "
+                    "sentinel the defensive branch tells the orchestrator to resolve"
+                )
+                s10_ok = False
+            else:
+                # Assertion 2a: well-formed frontmatter — parse_sentinel yields the
+                # required schema fields (kind: needs-input + written_by) so the
+                # orchestrator's Step 1g decision-resume can consume it.
+                s10_meta = parse_sentinel(s10_sentinel) or {}
+                if s10_meta.get("kind") != "needs-input":
+                    failures.append(
+                        f"[{fix_name_s10}] NEEDS_INPUT.md frontmatter kind must be "
+                        f"'needs-input'; got {s10_meta.get('kind')!r}"
+                    )
+                    s10_ok = False
+                if not s10_meta.get("written_by"):
+                    failures.append(
+                        f"[{fix_name_s10}] NEEDS_INPUT.md frontmatter must carry a "
+                        f"'written_by' field; got {s10_meta.get('written_by')!r}"
+                    )
+                    s10_ok = False
+                # Assertion 2b: well-formed body — the `## Decision Context` H2 the
+                # orchestrator re-prints verbatim before AskUserQuestion, plus at
+                # least one decision described under it. Kept specific (the H2 must
+                # be a real heading line) but not brittle (no exact wording pinned).
+                s10_text = s10_sentinel.read_text(encoding="utf-8")
+                s10_body_lines = s10_text.splitlines()
+                has_decision_h2 = any(
+                    ln.strip() == "## Decision Context" for ln in s10_body_lines
+                )
+                if not has_decision_h2:
+                    failures.append(
+                        f"[{fix_name_s10}] NEEDS_INPUT.md body must contain a "
+                        "'## Decision Context' H2 heading (the structure Step 1g "
+                        "requires)"
+                    )
+                    s10_ok = False
+                else:
+                    # At least one decision must be described under the H2: either a
+                    # frontmatter decisions[] entry or an H3 subsection in the body.
+                    has_decision_h3 = any(
+                        ln.lstrip().startswith("### ") for ln in s10_body_lines
+                    )
+                    decisions_fm = s10_meta.get("decisions")
+                    has_decision_fm = bool(
+                        isinstance(decisions_fm, list) and decisions_fm
+                    )
+                    # Regression guard: every entry must be a plain string, not a
+                    # dict. An unquoted "key: value" YAML list item (e.g. a title
+                    # containing a colon-space) parses as a nested mapping — a dict —
+                    # which breaks the orchestrator's Step 1g decision-resume that
+                    # expects string descriptions.
+                    if has_decision_fm and not all(
+                        isinstance(x, str) for x in decisions_fm
+                    ):
+                        failures.append(
+                            f"[{fix_name_s10}] NEEDS_INPUT.md decisions[] entries must "
+                            "all be strings (not dicts); got "
+                            f"{[type(x).__name__ for x in decisions_fm]!r} — "
+                            "ensure decision_title is quoted in the YAML list item"
+                        )
+                        s10_ok = False
+                        has_decision_fm = False  # don't double-count as passing
+                    if not (has_decision_h3 or has_decision_fm):
+                        failures.append(
+                            f"[{fix_name_s10}] NEEDS_INPUT.md must describe at least "
+                            "one decision (an H3 subsection under '## Decision "
+                            "Context' or a non-empty decisions[] frontmatter list)"
+                        )
+                        s10_ok = False
+            print(f"  {'PASS' if s10_ok else 'FAIL'} [{fix_name_s10}] "
+                  "_write_step10_needs_input writes well-formed NEEDS_INPUT.md")
+        except (NameError, AttributeError) as exc:
+            # Missing-symbol RED: the helper genuinely does not exist yet. The impl
+            # agent will create _write_step10_needs_input and this flips to GREEN.
+            failures.append(
+                f"[{fix_name_s10}] _write_step10_needs_input is not defined yet "
+                f"(missing-helper RED — impl must extract it): {exc}"
+            )
+            print(f"  FAIL [{fix_name_s10}]: helper not defined — {exc}")
 
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
@@ -3130,11 +4377,11 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_name_halt}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
-        # Fixture WU-4.2-1: scoped-feature-id (RED — param does not exist yet)
+        # Fixture WU-4.2-1: scoped-feature-id
         # Two actionable ad-hoc features; default picks the FIRST (feat-scope-alpha),
         # so scoping to the SECOND (feat-scope-beta) proves the filter took effect.
-        # This call passes `scope_feature_id` which does not exist on compute_state
-        # yet → raises TypeError. Wrapped so the harness records a clean FAIL.
+        # scope_feature_id is now implemented; the TypeError guard below is dead code
+        # retained for harness symmetry.
         # -------------------------------------------------------------------
         fix_scope_root = td_path / "scope-filter"
         scope_features = fix_scope_root / "docs" / "features"
@@ -3156,7 +4403,7 @@ def run_smoke_tests() -> int:
             )
             (fdir / "RESEARCH.md").write_text("# R\n")
             (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
-        # RED: scope_feature_id kwarg does not exist yet — expect TypeError
+        # Defensive: scope_feature_id is implemented; the TypeError guard below is dead code retained for harness symmetry.
         try:
             got_scoped = compute_state(
                 fix_scope_root, cloud=False, real_device=True,
@@ -3209,6 +4456,256 @@ def run_smoke_tests() -> int:
             )
         except SystemExit as exc:
             failures.append(f"[baseline-regression-default] SystemExit: {exc.code}")
+
+        # -------------------------------------------------------------------
+        # Fixture: scoped-feature-id-not-found  (RED until impl lands)
+        # Same two-feature queue as the scoped-feature-id fixture above; but
+        # the scope_feature_id is a typo'd id that matches NO entry.
+        # EXPECTED: terminal_reason == "scoped-id-not-found"
+        # CURRENT (pre-fix): falls through to terminal_reason == "all-features-complete"
+        # The impl agent must emit a distinct terminal so callers can distinguish
+        # "queue exhausted" from "id was never in the queue at all".
+        # -------------------------------------------------------------------
+        fix_not_found = "scoped-feature-id-not-found"
+        try:
+            got_not_found = compute_state(
+                fix_scope_root, cloud=False, real_device=True,
+                scope_feature_id="feat-typo-does-not-exist",
+            )
+            actual_tr = got_not_found.get("terminal_reason")
+            if actual_tr == "scoped-id-not-found":
+                print(f"  PASS [{fix_not_found}] terminal_reason='scoped-id-not-found' (impl landed)")
+            else:
+                failures.append(
+                    f"[{fix_not_found}] expected terminal_reason='scoped-id-not-found', "
+                    f"got {actual_tr!r}"
+                )
+                print(f"  FAIL [{fix_not_found}] expected 'scoped-id-not-found', got {actual_tr!r}")
+        except (TypeError, SystemExit) as e:
+            failures.append(f"[{fix_not_found}] unexpected exception: {type(e).__name__}: {e}")
+            print(f"  FAIL [{fix_not_found}] {type(e).__name__} — {e}")
+
+        # -------------------------------------------------------------------
+        # Fixture WU-1-park: --park-needs-input mode (Phase 4)
+        #
+        # Two-feature queue:
+        #   feat-parked  — carries NEEDS_INPUT.md (well-formed, 1 decision)
+        #   feat-after   — actionable (Open, SPEC+RESEARCH present)
+        #
+        # Sub-fixture A: WITHOUT park_needs_input → terminal_reason=="needs-input"
+        #                AND "parked" key ABSENT from output.
+        # Sub-fixture B: WITH park_needs_input=True → feat-after is dispatched,
+        #                output has "parked" list with one entry whose id matches
+        #                feat-parked and decision_count==1.
+        # Sub-fixture C: RESOLVED sentinel (NEEDS_INPUT.md removed) → feat-parked
+        #                is dispatched normally, "parked" is empty.
+        # -------------------------------------------------------------------
+        park_root = td_path / "park-needs-input"
+        park_features = park_root / "docs" / "features"
+        park_features.mkdir(parents=True, exist_ok=True)
+        (park_features / "ROADMAP.md").write_text("# Roadmap\n")
+        (park_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-parked", "name": "Parked Feature",
+                 "spec_dir": "feat-parked", "tier": 1},
+                {"id": "feat-after", "name": "After Feature",
+                 "spec_dir": "feat-after", "tier": 1},
+            ]
+        }))
+        # feat-parked: Open spec + RESEARCH + NEEDS_INPUT.md (1 decision, date set)
+        parked_dir = park_features / "feat-parked"
+        parked_dir.mkdir()
+        (parked_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (parked_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (parked_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+        needs_input_content = (
+            "---\n"
+            "kind: needs-input\n"
+            "feature_id: feat-parked\n"
+            "written_by: spec-phases\n"
+            "decisions:\n"
+            "  - Choose auth strategy\n"
+            "date: 2026-06-10\n"
+            "---\n\n"
+            "# Needs Input\n"
+        )
+        park_sentinel = parked_dir / "NEEDS_INPUT.md"
+        park_sentinel.write_text(needs_input_content, encoding="utf-8")
+        # feat-after: actionable (Open, SPEC+RESEARCH, no NEEDS_INPUT.md)
+        after_dir = park_features / "feat-after"
+        after_dir.mkdir()
+        (after_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (after_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (after_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+
+        # Sub-fixture A: without park_needs_input → needs-input halt, NO "parked" key
+        fix_park_default = "park-needs-input-default-halt"
+        try:
+            got_park_default = compute_state(park_root, cloud=False, real_device=True)
+            pda_ok = True
+            actual_tr_park = got_park_default.get("terminal_reason")
+            # CORRECT assertion: without the flag, needs-input halt must fire.
+            if actual_tr_park != "needs-input":
+                failures.append(
+                    f"[{fix_park_default}] expected terminal_reason='needs-input', "
+                    f"got {actual_tr_park!r}"
+                )
+                pda_ok = False
+            # CRITICAL: "parked" key must be ABSENT when not in park mode.
+            if "parked" in got_park_default:
+                failures.append(
+                    f"[{fix_park_default}] 'parked' key must be absent in default mode; "
+                    f"got parked={got_park_default['parked']!r}"
+                )
+                pda_ok = False
+            print(
+                f"  {'PASS' if pda_ok else 'FAIL'} [{fix_park_default}] "
+                f"default: terminal_reason={actual_tr_park!r}, parked key absent={('parked' not in got_park_default)}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_default}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_default}] SystemExit: {exc.code}")
+
+        # Sub-fixture B: WITH park_needs_input=True → feat-after dispatched,
+        # output["parked"] has one entry with id="feat-parked", decision_count=1.
+        fix_park_mode = "park-needs-input-mode-skip"
+        try:
+            got_park_mode = compute_state(
+                park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            pmode_ok = True
+            # The halt must NOT be needs-input (feat-parked is skipped)
+            actual_tr_mode = got_park_mode.get("terminal_reason")
+            if actual_tr_mode == "needs-input":
+                failures.append(
+                    f"[{fix_park_mode}] terminal_reason must NOT be 'needs-input' in park mode; "
+                    f"got {actual_tr_mode!r}"
+                )
+                pmode_ok = False
+            # feat-after must be dispatched as current
+            if got_park_mode.get("feature_id") != "feat-after":
+                failures.append(
+                    f"[{fix_park_mode}] expected feature_id='feat-after', "
+                    f"got {got_park_mode.get('feature_id')!r}"
+                )
+                pmode_ok = False
+            # "parked" key must be present and contain one entry
+            parked_list = got_park_mode.get("parked")
+            if not isinstance(parked_list, list) or len(parked_list) != 1:
+                failures.append(
+                    f"[{fix_park_mode}] expected parked=[...1 entry...], "
+                    f"got {parked_list!r}"
+                )
+                pmode_ok = False
+            elif parked_list[0].get("id") != "feat-parked":
+                failures.append(
+                    f"[{fix_park_mode}] parked[0].id must be 'feat-parked', "
+                    f"got {parked_list[0].get('id')!r}"
+                )
+                pmode_ok = False
+            elif parked_list[0].get("decision_count") != 1:
+                failures.append(
+                    f"[{fix_park_mode}] parked[0].decision_count must be 1, "
+                    f"got {parked_list[0].get('decision_count')!r}"
+                )
+                pmode_ok = False
+            print(
+                f"  {'PASS' if pmode_ok else 'FAIL'} [{fix_park_mode}] "
+                f"park mode: dispatched={got_park_mode.get('feature_id')!r}, "
+                f"parked count={len(parked_list) if isinstance(parked_list, list) else 'N/A'}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_mode}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_mode}] SystemExit: {exc.code}")
+
+        # Sub-fixture C: RESOLVED — remove NEEDS_INPUT.md → feat-parked is dispatched
+        # normally and parked[] is empty.
+        fix_park_resolved = "park-needs-input-resolved-reenter"
+        try:
+            park_sentinel.unlink()  # resolve the sentinel
+            got_park_resolved = compute_state(
+                park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            presolved_ok = True
+            # feat-parked is now first and actionable — it must be dispatched.
+            if got_park_resolved.get("feature_id") != "feat-parked":
+                failures.append(
+                    f"[{fix_park_resolved}] expected feature_id='feat-parked' after resolution, "
+                    f"got {got_park_resolved.get('feature_id')!r}"
+                )
+                presolved_ok = False
+            # parked[] must be empty (no items parked this probe).
+            parked_resolved = got_park_resolved.get("parked")
+            if not isinstance(parked_resolved, list) or len(parked_resolved) != 0:
+                failures.append(
+                    f"[{fix_park_resolved}] expected parked=[], "
+                    f"got {parked_resolved!r}"
+                )
+                presolved_ok = False
+            print(
+                f"  {'PASS' if presolved_ok else 'FAIL'} [{fix_park_resolved}] "
+                f"resolved: dispatched={got_park_resolved.get('feature_id')!r}, "
+                f"parked={parked_resolved!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_resolved}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_resolved}] SystemExit: {exc.code}")
+
+        # Sub-fixture D: BLOCKED.md precedence — feat-parked carries BOTH
+        # BLOCKED.md AND NEEDS_INPUT.md.  Under park mode it must STILL halt as
+        # "blocked", not be silently parked.  This locks FIX 1 of the code review.
+        fix_park_blocked_precedence = "park-needs-input-blocked-precedence"
+        try:
+            # Restore NEEDS_INPUT.md (removed in sub-fixture C) and add BLOCKED.md.
+            park_sentinel.write_text(needs_input_content, encoding="utf-8")
+            _write_yaml_sentinel(
+                parked_dir / "BLOCKED.md", "blocked",
+                feature_id="feat-parked", phase="Spec",
+                blocked_at="2026-06-10T00:00:00Z", retry_count=0,
+            )
+            got_park_blocked = compute_state(
+                park_root, cloud=False, real_device=True, park_needs_input=True
+            )
+            pbp_ok = True
+            # Must halt as "blocked" — NOT parked, not dispatched.
+            actual_tr_pbp = got_park_blocked.get("terminal_reason")
+            if actual_tr_pbp != "blocked":
+                failures.append(
+                    f"[{fix_park_blocked_precedence}] expected terminal_reason='blocked' "
+                    f"(BLOCKED.md must retain precedence over park-mode); "
+                    f"got {actual_tr_pbp!r}"
+                )
+                pbp_ok = False
+            # feat-parked must be the reported feature (it is the one that is blocked).
+            if got_park_blocked.get("feature_id") != "feat-parked":
+                failures.append(
+                    f"[{fix_park_blocked_precedence}] expected feature_id='feat-parked', "
+                    f"got {got_park_blocked.get('feature_id')!r}"
+                )
+                pbp_ok = False
+            # "parked" key must NOT contain feat-parked (it was NOT parked).
+            parked_pbp = got_park_blocked.get("parked", [])
+            parked_ids = [e.get("id") for e in parked_pbp if isinstance(e, dict)]
+            if "feat-parked" in parked_ids:
+                failures.append(
+                    f"[{fix_park_blocked_precedence}] feat-parked must NOT appear in "
+                    f"parked[] when BLOCKED.md is present; got parked={parked_pbp!r}"
+                )
+                pbp_ok = False
+            print(
+                f"  {'PASS' if pbp_ok else 'FAIL'} [{fix_park_blocked_precedence}] "
+                f"blocked-precedence: terminal_reason={actual_tr_pbp!r}, "
+                f"feat-parked in parked[]={'feat-parked' in parked_ids}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_park_blocked_precedence}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_park_blocked_precedence}] SystemExit: {exc.code}")
 
     if failures:
         print("\nFAILURES:")
@@ -3265,7 +4762,87 @@ def main() -> int:
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
                         help="Scope this run to a single feature by id (queue entry id). Absent → single-current default.")
+    parser.add_argument("--park-needs-input", action="store_true",
+                        help=(
+                            "OPT-IN park mode: when active, a feature carrying an unresolved "
+                            "NEEDS_INPUT.md is SKIPPED (parked) rather than halting the queue. "
+                            "The parked item is reported in the 'parked[]' output array and "
+                            "re-enters automatically once NEEDS_INPUT.md is resolved/renamed. "
+                            "Without this flag, output is byte-identical to the default behavior "
+                            "('parked' key is entirely absent and the needs-input halt fires as today)."
+                        ))
+    parser.add_argument("--verify-ledger", default=None, metavar="SPEC_PATH",
+                        help=(
+                            "Scripted completion-ledger guard (replaces the prose guard blocks "
+                            "in the lazy skills). Verifies: (1) clean working tree, "
+                            "(2) HEAD == @{u}, (3) all implementation plans are status: Complete, "
+                            "(4) no real (non-verification) unchecked deliverables in SPEC_PATH/PHASES.md. "
+                            "With --plan PLAN, checks 3+4 narrow to that plan part's phase scope "
+                            "(plan_complete = the plan's own status: Complete; deliverables_done = "
+                            "no unchecked non-verification rows in the plan's phases). "
+                            "Emits a JSON verdict and exits 0 on pass, 1 on first failing check."
+                        ))
+    parser.add_argument("--apply-pseudo", nargs=2, default=None, metavar=("NAME", "SPEC_PATH"),
+                        help="Single-author the deterministic sentinel/receipt write for a lazy pseudo-skill.")
+    parser.add_argument("--plan", default=None,
+                        help="Plan-file path for __flip_plan_complete_*__ pseudo-skills AND "
+                             "for plan-scoped --verify-ledger (Phase 9 WU-3).")
+    parser.add_argument("--apply-date", default=None,
+                        help="Override date (YYYY-MM-DD) for --apply-pseudo writes.")
+    parser.add_argument("--reason", default=None,
+                        help="Reason string for __write_deferred_non_cloud__.")
+    parser.add_argument("--deferred-step", type=int, default=None,
+                        help="deferred_step for __write_deferred_non_cloud__.")
+    parser.add_argument("--neutralize-sentinel", default=None, metavar="PATH",
+                        help="Rename a resolved sentinel to the canonical *_RESOLVED_<date> form (collision-safe).")
+    parser.add_argument("--repeat-count", action="store_true",
+                        help="Persist the probe signature and emit a 'repeat_count' field "
+                             "(consecutive identical-probe count) for mechanical loop detection. "
+                             "ADVANCES the persisted streak — reserve for the single dispatch-bound "
+                             "probe per cycle. Without this flag, output is byte-identical to the "
+                             "default and no state file is written.")
+    parser.add_argument("--repeat-count-peek", action="store_true",
+                        help="Like --repeat-count but PEEK only: compute and emit the would-be "
+                             "'repeat_count' WITHOUT advancing the persisted streak (no state-file "
+                             "write). Use for diagnostic/inspection probes so they do not inflate "
+                             "the streak. Mutually exclusive with --repeat-count.")
+    parser.add_argument("--probe", action="store_true",
+                        help="Fold git-guard results + a pre-formatted cycle-header line into the "
+                             "probe JSON (orchestrator happy-path payload). Without this flag, output "
+                             "is byte-identical to the default.")
+    parser.add_argument("--emit-prompt", action="store_true",
+                        help="Enrich the probe JSON with cycle_prompt + cycle_model "
+                             "(script-assembled cycle dispatch prompt; composes with "
+                             "--repeat-count for loop detection).")
+    parser.add_argument("--forward-cycles", type=int, default=None,
+                        help="Orchestrator forward-cycle count (for --probe cycle header).")
+    parser.add_argument("--meta-cycles", type=int, default=None,
+                        help="Orchestrator meta-cycle count (for --probe cycle header).")
+    parser.add_argument("--max-cycles", type=int, default=None,
+                        help="Orchestrator max-cycles ceiling (for --probe cycle header).")
     args = parser.parse_args()
+
+    # --repeat-count (advances the streak) and --repeat-count-peek (reads it
+    # without advancing) are mutually exclusive — a single probe cannot both
+    # advance and peek the persisted streak.
+    if args.repeat_count and args.repeat_count_peek:
+        _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    if args.neutralize_sentinel is not None:
+        result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
+    if args.apply_pseudo is not None:
+        name, spec = args.apply_pseudo
+        result = lazy_core.apply_pseudo(
+            Path(args.repo_root), name, Path(spec),
+            plan_path=Path(args.plan) if args.plan else None,
+            date=args.apply_date, reason=args.reason,
+            deferred_step=args.deferred_step,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
 
     if args.enqueue_adhoc:
         if not args.id or not args.name:
@@ -3297,6 +4874,19 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.verify_ledger is not None:
+        # Scripted completion-ledger guard: verify the four preconditions for
+        # marking a feature complete. The orchestrator's && chains short-circuit
+        # on non-zero exit when any check fails. When --plan is also passed,
+        # checks 3+4 narrow to that plan part's scope (Phase 9 WU-3) — reuses the
+        # existing --plan flag (shared with --apply-pseudo, no dest collision).
+        result = lazy_core.verify_ledger(
+            Path(args.repo_root), Path(args.verify_ledger),
+            plan_path=Path(args.plan) if args.plan else None,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
     if args.test:
         return run_smoke_tests()
 
@@ -3306,7 +4896,49 @@ def main() -> int:
         skip_needs_research=args.skip_needs_research,
         real_device=resolve_real_device(args.real_device),
         scope_feature_id=args.feature_id,
+        park_needs_input=args.park_needs_input,
     )
+    # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
+    # so that default output remains byte-identical when neither is passed.
+    # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
+    # the same field via peek=True (no state-file write). Both populate the same
+    # 'repeat_count' output field.
+    if args.repeat_count or args.repeat_count_peek:
+        state["repeat_count"] = lazy_core.update_repeat_count(
+            Path(args.repo_root), state, peek=args.repeat_count_peek
+        )
+    # --emit-prompt is strictly additive and flag-gated so that default output
+    # remains byte-identical when the flag is absent. Placed AFTER the repeat
+    # flags so the same-invocation count (from EITHER --repeat-count or
+    # --repeat-count-peek) drives the emitter's loop-block + model decision.
+    # emit_cycle_prompt(...) is None for pseudo-skills / terminal probes →
+    # cycle_prompt: null, cycle_model: null (so the orchestrator's one probe
+    # call is uniform); on refusal it also adds cycle_prompt_refused.
+    if args.emit_prompt:
+        rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
+        emitted = lazy_core.emit_cycle_prompt(
+            Path(args.repo_root), state,
+            pipeline="feature", cloud=args.cloud, repeat_count=rc,
+        )
+        if emitted is None:
+            state["cycle_prompt"] = None
+            state["cycle_model"] = None
+        elif emitted.get("ok"):
+            state["cycle_prompt"] = emitted["prompt"]
+            state["cycle_model"] = emitted["model"]
+        else:
+            state["cycle_prompt"] = None
+            state["cycle_model"] = None
+            state["cycle_prompt_refused"] = emitted.get("refused")
+    # --probe is strictly additive and flag-gated so that default output remains
+    # byte-identical when the flag is absent.  Composes independently with
+    # --repeat-count (both may be present simultaneously).
+    if args.probe:
+        state["git_guards"] = lazy_core.git_guard_status(Path(args.repo_root))
+        state["cycle_header"] = lazy_core.format_cycle_header(
+            state, forward_cycles=args.forward_cycles,
+            max_cycles=args.max_cycles, meta_cycles=args.meta_cycles,
+        )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

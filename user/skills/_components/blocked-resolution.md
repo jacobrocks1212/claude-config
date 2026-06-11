@@ -20,13 +20,23 @@ Runtime placeholders (`{feature_id}`, `{feature_name}`, `{spec_path}`, `{cwd}`, 
 `{retry_count}`, `{blocker_kind}`, `{cycle}`, `{max_cycles}`) are filled from the
 state-script JSON — **both** pipelines use the JSON field `feature_id` (the bug id rides in it).
 
-Triggered when `{STATE_SCRIPT}` reports `blocked` — a cycle subagent (or a hand edit) wrote `BLOCKED.md` because it hit a genuine blocker it could not resolve autonomously (a missing upstream surface, an ambiguous failure, a real bug needing a planning decision). **`blocked` is no longer a terminal halt.** Modeled on Step 1g (decision-resume): the orchestrator surfaces the blocker to the operator via `AskUserQuestion`, captures the chosen resolution path, records it, dispatches an Opus apply-resolution subagent to ENACT that path (neutralizing `BLOCKED.md`), and **continues the loop**. The sole exception is the explicit **Halt for manual fix** choice, which preserves the legacy stop-for-human behavior.
+Triggered when `{STATE_SCRIPT}` reports `blocked` — a cycle subagent (or a hand edit) wrote `BLOCKED.md` because it hit a genuine blocker it could not resolve autonomously (a missing upstream surface, an ambiguous failure, a real bug needing a planning decision). **`blocked` is no longer a terminal halt — and most blockers no longer ask.** STEP ONE is the blocker classification per `~/.claude/skills/_components/completeness-policy.md` §3 (step 1b below): a **sequencing-only** blocker — every resolution path converges on the same product behavior — is auto-resolved by standing policy (add-phase + fix now, or spin-off + dependency-gate + requeue), logged + push-notified, and the loop continues with NO question. Only a blocker embedding a **genuine product fork** takes the operator path: the orchestrator surfaces it via `AskUserQuestion`, captures the chosen resolution path, records it, dispatches an Opus apply-resolution subagent to ENACT that path (neutralizing `BLOCKED.md`), and **continues the loop**. The sole stopping exception is the explicit **Halt for manual fix** choice, which preserves the legacy stop-for-human behavior.
 
 This replaces the old **zero-context halt** (a bare `PushNotification` + STOP that handed the operator a one-line `notify_message` and nothing actionable). The operator now sees the full blocker context in chat and directs how the pipeline proceeds.
 
 **Algorithm:**
 
 1. **Read the sentinel.** `{spec_path}/BLOCKED.md`. Parse the YAML frontmatter (`kind`, `feature_id`, `phase`, `blocked_at`, `retry_count`, and `blocker_kind` if present) and read the markdown body. Unlike `NEEDS_INPUT.md`, `BLOCKED.md` has no mandated rich-body schema — a thin body is NOT a malformation halt; proceed, noting in chat if the blocker context is sparse.
+
+1b. **Classify the blocker FIRST (completeness-policy §3 — STEP ONE, before any re-print or question).** Apply the scope test from `~/.claude/skills/_components/completeness-policy.md`: does every resolution path converge on the same product behavior (the standard "fix now / defer / halt" shape)? If **YES — sequencing-only** — auto-resolve per the policy, NO `AskUserQuestion`. Pick the matching resolution:
+
+   - **In-scope defect** (missing / under-scoped work within this {ITEM} — the common case) → the complete path: `{ADD_PHASE}` + fix now. Append the `## Resolution` block to `BLOCKED.md` (step 5 shape, with `**Chosen path:** Add a phase to resolve the blocker` and a `resolved_by: completeness-policy` line), then dispatch the apply-resolution subagent (step 6) with that path — the same machinery, minus the question.
+   - **Discovered defect beyond this {ITEM}'s scope** → spin off `/spec-bug`: the apply subagent authors the bug doc directly (per the established dispatched-subagent pattern), cross-references BOTH docs (the new doc names its origin; the origin names the spin-off), dependency-gates the current {ITEM} if it cannot proceed without the fix, and requeues it to the END of `{SPEC_ROOT}/queue.json` (the Defer mechanics from step 3's option list). Record the chosen path in the `## Resolution` block (`resolved_by: completeness-policy`) before dispatch.
+   - **Feature-scope growth** (the blocker reveals work that is a new feature, not a defect) → spin off a new {ITEM} via the `--enqueue-adhoc` bootstrap + a brief, cross-reference both ways, dependency-gate as needed. Same `## Resolution` + apply-subagent machinery.
+
+   For every auto-resolution: emit one chat line — `⚖ policy: {blocker, ≤8 words} → {chosen path}[ · spun off {id}]` — fire `PushNotification` (`"spun off {id} — {reason}"` for spin-offs; the resolution one-liner otherwise), record a D7-digest entry, then record-and-continue per step 7. Spin-offs are pre-authorized (notify + log, no cap — never ask permission to spin off). Neutralization rules are unchanged: every path except a pure requeue-to-tail neutralizes `BLOCKED.md` by rename (see step 6); a dependency-gated requeue leaves `BLOCKED.md` in place exactly like the operator "Defer" path.
+
+   If **NO** — the resolution paths embed a **genuine product fork** (two complete-but-different end states, a conflict with a SPEC Locked Decision, or a destructive / outward-facing operation) — fall through to steps 2–7: the existing verbatim re-print + `AskUserQuestion` flow, unchanged.
 
 2. **Re-print the blocker context to chat VERBATIM** (HARD CONSTRAINT 6 applies here too — the load-bearing context BEFORE the truncated `AskUserQuestion` UI; this is the antidote to the old zero-context halt):
 
@@ -111,15 +121,22 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
 
    NEUTRALIZING BLOCKED.md (for every path EXCEPT "Defer"): {STATE_SCRIPT} keys the
    `blocked` halt on the FILENAME `BLOCKED.md` (NOT a frontmatter field), so a
-   `kind:` edit does NOT clear the halt. RENAME the file:
-   `git mv {spec_path}/BLOCKED.md {spec_path}/BLOCKED_RESOLVED_<YYYY-MM-DD>.md`
-   (preserves the audit trail including the `## Resolution`). If that name already
-   exists, add a short disambiguating suffix. NEVER just flip a frontmatter field
-   (this is a real bug that was hit in practice — the rename is mandatory).
+   `kind:` edit does NOT clear the halt. Run:
+     python3 ~/.claude/scripts/{STATE_SCRIPT} --neutralize-sentinel {spec_path}/BLOCKED.md
+   The script performs the canonical rename to BLOCKED_RESOLVED_<YYYY-MM-DD>.md
+   (git-mv-aware, collision-safe — it appends a numeric suffix if the target
+   name already exists), preserving the audit trail including the `## Resolution`.
+   Manual fallback (only if the script is unavailable):
+   `git mv {spec_path}/BLOCKED.md {spec_path}/BLOCKED_RESOLVED_<YYYY-MM-DD>.md`.
+   NEVER just flip a frontmatter field (this is a real bug that was hit in
+   practice — the rename is mandatory).
 
    Then commit per .claude/skill-config/commit-policy.md (or the standard
    pattern); message `docs({feature_id}): enact blocker resolution (<path>)`.
    {PUSH_RULE}
+   WORK-BRANCH-ONLY: commit and push to the CURRENT branch only
+   (`git rev-parse --abbrev-ref HEAD` at start); NEVER create a new branch,
+   NEVER --force.
 
    Report a one-paragraph summary (≤ 8 lines): what you enacted (the new phase
    title / the queue move / the custom edits), whether BLOCKED.md was neutralized
@@ -148,7 +165,7 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
 
 **Re-prompt note (Defer path).** If "Defer" is chosen and the blocked {ITEM} is the ONLY remaining actionable entry, the next probe returns `blocked` for it again and this handler re-prompts immediately — that is correct (there is nothing else to work). The operator breaks the cycle by choosing Add-a-phase, Other, or Halt. `max_cycles` bounds it regardless.
 
-This eliminates the legacy zero-context blocked halt: the operator gets the full blocker context in chat and directs the pipeline (add a phase / defer / hand off), and the orchestrator enacts the choice and keeps going.
+This eliminates the legacy zero-context blocked halt: sequencing-only blockers are auto-resolved under the completeness-first standing policy (logged + notified, never asked), and for genuine product forks the operator gets the full blocker context in chat and directs the pipeline (add a phase / defer / hand off) — the orchestrator enacts the choice and keeps going either way.
 
 ### Coupling note
 

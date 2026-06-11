@@ -1,7 +1,7 @@
 ---
 name: lazy-batch
-description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py and spawns Opus subagents per cycle. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches /spec as a normal cycle subagent that calls AskUserQuestion freely to shape the baseline) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload — single-turn, no conversation). HARD CONSTRAINT 5's no-AskUserQuestion-outside-Step-1g rule binds the orchestrator only, not subagents it dispatches. Halts on needs-research (strict halt by default — the first research-pending feature stops the queue; opt into batched research with --allow-research-skip), queue-blocked-on-research (only reachable under --allow-research-skip), or max-cycles cap. NEEDS_INPUT.md (design decisions) does NOT halt: Step 1g calls AskUserQuestion, dispatches a Sonnet apply-resolution subagent to propagate the choice into SPEC/PHASES, and resumes the loop. BLOCKED.md ALSO does NOT halt by default: Step 1h re-prints the blocker context, calls AskUserQuestion for the resolution path (add a phase / defer to the queue tail / halt-for-manual / custom), dispatches an Opus apply-resolution subagent to enact it (neutralizing BLOCKED.md via rename), and resumes — only the operator-chosen "Halt for manual fix" path stops the run. More broadly, a halt for ANY reason other than max-cycles asks the operator how to proceed and continues: completion-unverified / needs-spec-input route to Step 1i (operator-directed halt-resolution, shared _components/halt-resolution.md). Only max-cycles, genuine completion (all-features-complete), environment-exhaustion (cloud/device-queue-exhausted), and a missing queue remain clean stops; the research-pending halts keep their existing chat-upload / re-invoke resume. After every /spec or plan-feature cycle, Step 1d.5 dispatches a dedicated Opus input-audit subagent that independently re-classifies the cycle's decisions and writes NEEDS_INPUT.md if any product-behavior calls were silently baked into SPEC/PHASES — Step 1g then resolves them inline on the next cycle. Research uploaded mid-session via chat (file attachment, pasted text, or absolute path) triggers in-session resume: /ingest-research is dispatched immediately and the loop is re-invoked — no manual re-run required. --adhoc "<task>" enqueues an ad-hoc task at the TOP of the queue before the loop starts (Step 0.45) so the next cycle picks it up first; a brand-new ad-hoc feature begins at /spec Phase 1 and advances autonomously, pausing only for baseline-gating product-behavior decisions via Step 1g.
-argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue]
+description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py, spawns one Opus subagent per cycle, and drives the full tail (/spec → /plan-feature → /execute-plan → /retro → /mcp-test → __mark_complete__). A halt for any reason other than max-cycles presents an AskUserQuestion resolution path and resumes — only max-cycles, all-features-complete, environment-exhaustion, and missing-queue remain clean stops. Terminal action is __mark_complete__, gated by the MCP-coverage audit + completion-integrity gate.
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -19,14 +19,19 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 ## HARD CONSTRAINTS (non-negotiable)
 
-1. **The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files** (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `COMPLETED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` / `PHASES.md` status lines when performing the `__mark_complete__` action (which is a documentation-level update by definition, not a source-code edit). `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns; the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. **`BLOCKED.md` may likewise be appended to** (not overwritten) with a `## Resolution` section by Step 1h (blocked-resolution mode) after `AskUserQuestion` returns; the orchestrator then dispatches an Opus subagent to enact the chosen resolution path (e.g. `/add-phase`, queue reorder) and neutralize the sentinel by **rename** (lazy-state.py keys the halt on the `BLOCKED.md` filename). All other `Write`/`Edit` operations — source code, test files, plan files, PHASES.md — require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
+1. **The orchestrator MAY use `Write`/`Edit` ONLY on sentinel files** (`BLOCKED.md`, `DEFERRED_NON_CLOUD.md`, `VALIDATED.md`, `COMPLETED.md`, `NEEDS_RESEARCH.md`, `NEEDS_INPUT.md`, `RETRO_DONE.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`) inside `docs/features/`, AND on `ROADMAP.md` / per-feature `SPEC.md` / `PHASES.md` status lines when performing the `__mark_complete__` action (which is a documentation-level update by definition, not a source-code edit). `NEEDS_INPUT.md` may additionally be **appended to** (not overwritten) with a `## Resolution` section by Step 1g (decision-resume mode) after `AskUserQuestion` returns — or by the Step 1g D7 scope resolution (`resolved_by: completeness-policy`, no question); the orchestrator then dispatches a Sonnet subagent to propagate the choice into SPEC.md / PHASES.md and neutralize the sentinel. **`BLOCKED.md` may likewise be appended to** (not overwritten) with a `## Resolution` section by Step 1h (blocked-resolution mode) after `AskUserQuestion` returns — or by the Step 1h D7 sequencing-only auto-resolution (no question); the orchestrator then dispatches an Opus subagent to enact the chosen resolution path (e.g. `/add-phase`, queue reorder) and neutralize the sentinel by **rename** (lazy-state.py keys the halt on the `BLOCKED.md` filename). All other `Write`/`Edit` operations — source code, test files, plan files, PHASES.md — require subagent dispatch (the Step 1g apply-resolution subagent is the dispatch that authorizes the SPEC/PHASES edits flowing from a decision).
 2. **The orchestrator MUST NOT invoke any `/skill` directly via the `Skill` tool.** Every sub-skill invocation goes through a spawned `Agent` subagent. This keeps the orchestrator's context lean across many cycles. Pseudo-skills (`__*__`) are NOT real skills and are handled inline per Step 1c.5 — they are sentinel-file edits + commits, not skill dispatches.
 3. **The orchestrator MUST NOT manually parse SPEC.md, PHASES.md, or plan files.** State inference is exclusively via `lazy-state.py`. Sentinel files MAY be read by the orchestrator to confirm a write or to drive a pseudo-skill action.
 4. **One cycle = one subagent dispatch FOR REAL WORK SKILLS.** Do not chain multiple sub-skills inside a single cycle; the state machine drives that progression across cycles. Pseudo-skill cycles (sentinel writes) are not subagent dispatches at all — they are inline orchestrator actions that count as one cycle each.
-5. **Interactive prompts are scoped to the resolution modes — decision-resume (Step 1g), blocked-resolution (Step 1h), and operator-directed halt-resolution (Step 1i) — ONLY for the orchestrator itself.** The guiding rule: a halt for ANY reason other than `max-cycles` (and the genuine all-done success / environment-exhaustion / no-queue stops listed in Step 1i) presents the operator an `AskUserQuestion` resolution path and continues the loop, rather than dead-ending. Outside Step 1g / 1h / 1i, the orchestrator MUST NOT call `AskUserQuestion`. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. Inside Step 1h, the orchestrator MUST `AskUserQuestion` for the resolution path against a `BLOCKED.md` (re-printing its body first), record the choice, dispatch the apply-resolution subagent to enact it, and **continue the loop** — `blocked` no longer halts the orchestrator either (except the operator-chosen "Halt for manual fix" path). (The legacy halt-on-needs-input behavior is gone; the user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.) **This constraint scopes the orchestrator, not subagents it dispatches.** A `/spec` subagent dispatched at state-machine Step 4.5 (stub-spec detected) is allowed and expected to call `AskUserQuestion` during Phase 1 brainstorming — that's the legitimate design-conversation channel for a SPEC whose baseline doesn't exist yet. The orchestrator dispatches `/spec` exactly the same way it dispatches `/execute-plan` (one Agent call per cycle); whatever the dispatched skill does internally is its own contract. See "Stub specs vs structured-research-pending specs" below for the disambiguation rule.
+5. **Interactive prompts are scoped to the resolution modes — decision-resume (Step 1g), blocked-resolution (Step 1h), and operator-directed halt-resolution (Step 1i) — ONLY for the orchestrator itself.** The guiding rule: a halt for ANY reason other than `max-cycles` (and the genuine all-done success / environment-exhaustion / no-queue stops listed in Step 1i) presents the operator an `AskUserQuestion` resolution path and continues the loop, rather than dead-ending — except that scope-class decisions and sequencing-only blockers are auto-resolved per `~/.claude/skills/_components/completeness-policy.md` (D7), not asked: the standing policy reduces questions, never adds them, and the resolution modes ask only for what remains product-class. Outside Step 1g / 1h / 1i, the orchestrator MUST NOT call `AskUserQuestion` — with four additional permitted uses: (i) the one-time echo-back confirmation when a mid-run operator message implies a budget change, standing resolution mode, or early stop (Step 0 standing-directive protocol); (ii) the budget-and-queue guard question when the run would otherwise end with budget and queue both remaining; (iii) the Step 0.45 `--enqueue-adhoc` task-details prompt when `--adhoc` is supplied with no text and the task cannot be unambiguously inferred from the conversation; and (iv) the Step 5 in-session resume multi-feature disambiguation question when research arrives for an ambiguous feature ("which feature does this research belong to?"). Uses (i) and (ii) are orchestrator-level confirmations of operator intent; uses (iii) and (iv) are bounded single-question disambiguation prompts at well-defined pre-loop and resume boundaries. None are resolution-mode decisions about feature/bug content. Inside Step 1g, the orchestrator MUST `AskUserQuestion` against a well-formed `NEEDS_INPUT.md` (rich body per `~/.claude/skills/_components/sentinel-frontmatter.md`), append a `## Resolution` section, dispatch the apply-resolution subagent, and then **continue the loop** — Step 1g no longer halts the orchestrator. Inside Step 1h, the orchestrator MUST `AskUserQuestion` for the resolution path against a `BLOCKED.md` (re-printing its body first), record the choice, dispatch the apply-resolution subagent to enact it, and **continue the loop** — `blocked` no longer halts the orchestrator either (except the operator-chosen "Halt for manual fix" path). (The legacy halt-on-needs-input behavior is gone; the user retains decision-making autonomy via `AskUserQuestion`, the apply step is mechanical propagation.) **This constraint scopes the orchestrator, not subagents it dispatches.** A `/spec` subagent dispatched at state-machine Step 4.5 (stub-spec detected) is allowed and expected to call `AskUserQuestion` during Phase 1 brainstorming — that's the legitimate design-conversation channel for a SPEC whose baseline doesn't exist yet. The orchestrator dispatches `/spec` exactly the same way it dispatches `/execute-plan` (one Agent call per cycle); whatever the dispatched skill does internally is its own contract. See "Stub specs vs structured-research-pending specs" below for the disambiguation rule.
 6. **The orchestrator MUST print a Zero-Context Operator Briefing AND re-print the load-bearing context to chat BEFORE calling `AskUserQuestion`.** The operator may have been away for hours and retains NO session context (and may be reading on mobile, where `AskUserQuestion` truncates). In **Step 1g** the briefing (step 2a of the decision-resume component) catches them up from zero — what's being worked, why we halted, every option with pros/cons and fit against the original requirements, and a recommendation — followed by the verbatim `## Decision Context` re-print (step 2b); the `AskUserQuestion` option set MUST exactly match the options presented in the briefing (same labels, 1:1 — no option may appear in the UI that wasn't explained in chat first). Never call `AskUserQuestion` against a malformed `NEEDS_INPUT.md` (one missing the `## Decision Context` H2 with H3 subsections matching `decisions:` 1:1) — surface the malformation as a quality issue and halt instead (see Step 1g.1). In **Step 1h** the load-bearing context is the `BLOCKED.md` body verbatim (no mandated rich-body schema — a thin body is NOT a malformation halt; re-print whatever is there and note in chat if it is sparse); in **Step 1i** it is the obstacle context the shared `halt-resolution.md` mandates. The same zero-context briefing discipline (catch the away operator up from zero before asking) applies to Step 1h/1i.
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
-8. **The `cycle` counter is session-global and monotonic across feature transitions.** It is initialized to 0 in Step 0 *once per `/lazy-batch` invocation* and incremented at the end of every cycle (Step 1c.5 step 5, Step 1e step 5, Step 1g step 7, Step 1h step 7, Step 1i per the halt-resolution component). It MUST NOT be reset when `lazy-state.py` returns a different `feature_id` from one cycle to the next — i.e., when the queue advances from one feature to the next via `__mark_complete__` (or because the prior feature hit a terminal state and a later queue entry became current). Cycle N's status line — `"Cycle N/{max_cycles}: {sub_skill} on {feature_name} → ..."` — always refers to the N-th subagent dispatch in this `/lazy-batch` invocation, regardless of which feature it operated on. A feature transition is **not** a fresh batch; the orchestrator runs ONE cycle log across every feature it touches. The per-cycle status line's `{feature_name}` segment changes across the boundary; the `N` does not.
+8. **TWO session-global monotonic counters replace the single `cycle` counter.** Both are initialized once in Step 0 and NEITHER is ever reset on feature transitions.
+   - **`forward_cycles`** — counts pipeline-advancing work. Ceiling: `max_cycles`. Incremented by: (a) real-skill dispatch cycles (Step 1e step 5) and (b) pipeline-advancing pseudo-skills at Step 1c.5 (`__mark_complete__`, `__mark_fixed__`, `__write_deferred_non_cloud__` (cloud variant only — workstation `lazy-state.py` never emits this), `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`). **Capped at Step 1c** (`if forward_cycles >= max_cycles` → the existing max-cycles halt).
+   - **`meta_cycles`** — counts resolution / recovery / audit / cleanup work. Ceiling: `2 * max_cycles`. Incremented by: Step 1g (decision-resume), Step 1h (blocked-resolution), Step 1i (operator-directed halt-resolution), LOOP-DETECTED / Step 1e.4a recovery dispatches, the input-audit cycle at Step 1d.5, and the stale-plan flip pseudo-skill `__flip_plan_complete_stale__`. **Capped at the TOP of every resolution mode**: the `if meta_cycles >= 2 * max_cycles:` check is inserted at the START of Step 1g, Step 1h, and Step 1i, which halts with a clear "meta-cycle cap (2× max_cycles) reached" message + PushNotification + final report. This cap check is what makes the resolution-path loop BOUNDED — without it, a Defer→same-terminal re-prompt cycle is unbounded.
+   - **Input-audit (Step 1d.5):** audits are NOT counted as separate cycles (they share the real-skill cycle's slot in `cycle_log` and do NOT increment either counter). This keeps audit costs outside the budget. The meta cap still bounds the surrounding loop.
+   - **Running total for cycle_log index:** use `forward_cycles + meta_cycles` as the monotonic `N` in cycle-log entries and per-cycle headings (i.e., the N-th action in this invocation regardless of type). `prev_cycle_signature` is a tuple of ids, unaffected.
+   - Cycle N's per-cycle heading always refers to the N-th action in this invocation, regardless of which feature it operated on. A feature transition is NOT a fresh batch; the orchestrator runs ONE log across every feature it touches.
 
 9. **Dispatch ONLY against the feature `lazy-state.py` returned THIS cycle; never fabricate a feature.** The orchestrator dispatches a cycle subagent against exactly the `feature_id` + `spec_path` from the current cycle's `lazy-state.py` output, verbatim. It MUST NOT invent, infer, or hand-edit a `feature_id`/slug that the state script did not emit. The state script (Step 2) already skips any queue entry whose `spec_dir` does not resolve on disk (emitting a `dangling queue entry` diagnostic) — so a real feature ALWAYS has an on-disk `spec_path` before dispatch. The cycle subagent prompt MUST forbid the subagent from CREATING a feature's `SPEC.md`/`RESEARCH.md`/`queue.json`/`ROADMAP.md` entries from a bare slug: the only sanctioned dir-creating paths are the `--enqueue-adhoc` bootstrap (Step 0.45) and a `/spec` dispatch against an already-seeded directory. If a cycle's `feature_id` does not correspond to an on-disk `spec_path`, that is a bug to surface (halt + report) — NEVER a cue to manufacture the feature. (This guards the observed failure where a hallucinated slug caused a subagent to fabricate an entire feature.)
 
@@ -34,38 +39,88 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 > **Known limitation — TDD agent-separation is traded away.** Collapsing `/execute-plan`'s test-agent→impl-agent split into ONE inline cycle subagent means the *structural* test-first guarantee (a separate agent writes failing tests before a separate agent implements — the `R-EP-2`/`R-EP-3` separation) is GONE: it cannot be enforced from sub-subagent dispatch evidence when there is no dispatch. This is an intentional tradeoff given the no-recursive-dispatch reality, not a defect. Compensating controls: (1) per-batch **quality gates** (`R-EP-6`) still run and must pass 100%; (2) the **`/retro`** pass audits the landed work; (3) the **MCP-validation** pass (which writes `VALIDATED.md`) gates final completion. The inline cycle subagent SHOULD still write **tests-before-impl within each batch** — read the test expectations, write the failing tests, confirm they fail for the right reason, THEN implement — even though the ordering can't be structurally verified. `/lazy-batch-retro`'s cloud branch already grades `R-EP-2`/`R-EP-3` as `n/a (cloud-override)`; the same grading applies to inline workstation cycles.
 
+## OUTPUT CONTRACT — orchestrator voice (read at run start)
+
+**ALL orchestrator chat output MUST follow `~/.claude/skills/_components/orchestrator-voice.md`** — the turn-template contract (T1 run banner, T2 dispatch / T3 return / T4 inline-gate cycle blocks, T5 park line, T6 rich zones, T7 final report; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). **ZERO-TEXT RULE:** Claude Code's general "say what you're about to do before tool calls / give brief updates" guidance is OVERRIDDEN for this run — the UI already prints every tool call; between tool calls emit NOTHING unless it is byte-shaped as a template (sanctioned output starts with `## `, `### Cycle `, a template field line, `⏸`/`⚖`/`⚠`, or a T6/T7 body — anything else, don't type it). No transition sentences, no "reading X", no "preflight passed", no "composing the dispatch". **Read it at run start, and RE-READ it after any compaction boundary** (alongside `lazy-dispatch-template.md` — see Step 1d's compaction discipline); the contract survives summarization by re-read, not by memory. Where an older passage in this skill prescribes a different chat-output shape, the contract's Precedence clause wins; the verbatim re-print / Zero-Context Operator Briefing requirements (HARD CONSTRAINT 6, `decision-resume.md`, `blocked-resolution.md`, `parked-flush.md`, `halt-resolution.md`) are sanctioned T6 rich zones and are never overridden. Graded by `/lazy-batch-retro`'s R-V-* rules.
+
+**STANDING POLICY — completeness-first (D7).** Read `~/.claude/skills/_components/completeness-policy.md` at run start, and RE-READ it after any compaction boundary (it is on the Step 1d compaction re-read list). It is pre-authorized: decisions whose options differ only in effort / sizing / sequencing / completeness (`class: scope`) are auto-resolved to the MOST COMPLETE option in BOTH modes — logged (`⚖ policy:` line, `resolved_by: completeness-policy`, run-end D7 digest in the T7 report), never asked. It governs the cycle and input-audit subagent prompts (source suppression), Step 1g (scope-class sentinel resolution runs first), Step 1h (sequencing-only blockers auto-resolve; spin-offs pre-authorized, notify + log), and the Gate-1 coverage outcome at Step 1c.5 (author coverage / test-exempt, never ask). D7 only REMOVES questions — product-class decisions still ask exactly as before. Graded by `/lazy-batch-retro`'s R-D7-* rules.
+
 `$ARGUMENTS` is tokenized on whitespace. Recognized tokens:
 
 - **Positive integer** → `max_cycles`. If absent, default to `10`. If a non-numeric / `< 1` integer is supplied, refuse with:
 
-  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip]`. Default: 10.
+  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park]`. Default: 10.
+
+  **Ambiguous max-cycles (Deliverable D — clarify, never silently coerce):** if the token is present but non-integer in a way that suggests a _quantity_ the user had in mind — e.g. `"infinity"`, `"lots"`, `"max"`, `"all"`, `"unlimited"` — do NOT silently translate it to a hard-coded default. Instead, ask ONE clarifying `AskUserQuestion` before proceeding:
+
+  > You passed `'{token}'` for max-cycles — how many cycles should I run? (e.g. `10` / `30` / `100`)
 
 - **`--allow-research-skip`** (optional flag) → sets `allow_research_skip = true`. Default `false`. When set, the orchestrator restores the legacy "batch the research backlog" behavior: `lazy-state.py` is called with `--skip-needs-research`, Step 4 drops a `NEEDS_RESEARCH.md` sentinel for each research-pending feature without halting, and the loop halts on `queue-blocked-on-research` once every remaining feature is research-pending. This flag is for sessions where you have manually verified the remaining queue is independent — i.e., starting work on a downstream feature is safe even though an upstream feature is awaiting research. **Use case is rare.** The DEFAULT (flag absent) is to halt strictly on the FIRST `needs-research` so an ordered queue with dependencies cannot leak work onto unsafe downstream features.
 
 - **`--adhoc`** (optional flag) → sets `adhoc_task` to the remainder of `$ARGUMENTS` after the `--adhoc` token (everything following it, verbatim). If `--adhoc` is the last token with no trailing text, `adhoc_task` is empty and the task is inferred from the conversation (see Step 0.45). When `adhoc_task` is set (flag present), the orchestrator runs **Step 0.45 (Ad-hoc Enqueue)** before the main loop so the referenced work is enqueued at the top of the queue. Off by default (flag absent → no ad-hoc enqueue). Because `--adhoc` consumes the rest of the string, place `<N>` and `--allow-research-skip` BEFORE it.
 
+- **`--park`** (optional flag) → sets `park_mode = true`. Default `false`. Enables "park-and-continue" mode. **This flag is opt-in and off by default. Without it, the orchestrator's behavior is byte-for-byte the existing one** — a `NEEDS_INPUT.md` halts the loop into the existing Step 1g resolution-and-wait. The `--park` flag may appear in any position relative to the cycle-count arg (e.g. `/lazy-batch --park 30` and `/lazy-batch 30 --park` are equivalent). The full park/flush/auto-accept semantics (what happens when park mode is active) are defined in Steps 1g, 1h, and 1i of this skill — this token purely enables the mode.
+
 Unknown tokens are an error:
 
-> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"]`.
+> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park]`.
+
+**Standing-directive echo-back protocol (Deliverable C):** mid-run operator messages that imply a change to the orchestrator's operating mode MUST be acknowledged with a single `AskUserQuestion` echo-back BEFORE the mode takes effect. A "standing directive" is any message that implies one of:
+
+- **(a) Budget change** — the operator wants to extend or reduce `max_cycles` (e.g. "run 20 more cycles", "stop after this feature").
+- **(b) Standing resolution mode** — the operator wants a recurring resolution policy applied automatically until some condition (e.g. "auto-resolve all blockers as add-phase-and-fix until feature X completes").
+- **(c) Early stop** — the operator wants to terminate the current run sooner than `max_cycles` (e.g. "stop after this cycle", "pause after the next commit").
+
+Echo-back format (one `AskUserQuestion`, phrased in active terms):
+
+> `{Interpretation of the directive in active terms, e.g. "Extend to N cycles and auto-resolve blockers as add-phase-and-fix until X completes — confirm?"}` — Yes / No (adjust: ...)
+
+Only enter the new mode after the operator confirms. If they say No or provide a correction, re-parse and echo again.
+
+**Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`forward_cycles < max_cycles`) AND active queue items remaining (features that are neither complete, deferred, nor blocked on research) without first asking the operator (one `AskUserQuestion`) whether to continue into a new run or stop now. This prevents silent early exits where the orchestrator halts mid-queue without the operator realising.
 
 Initialize counters and per-session state:
-- `cycle = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py` returns a new `feature_id`).
+- `forward_cycles = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py` returns a new `feature_id`). Counts pipeline-advancing work; ceiling is `max_cycles`.
+- `meta_cycles = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset on feature transitions). Counts resolution/recovery/cleanup work; ceiling is `2 * max_cycles`.
 - `max_cycles = <parsed>`
 - `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
-- `cycle_log = []` — each entry: `{cycle, feature, action, subagent_summary}`
+- `cycle_log = []` — each entry: `{forward_cycles + meta_cycles, feature, action, subagent_summary}` (the running total is the monotonic N-th action in this invocation).
 - `research_pending = set()` — feature_ids whose `RESEARCH.md` is missing and a `NEEDS_RESEARCH.md` sentinel was dropped this session. Only used when `allow_research_skip == true`. In the default (strict-halt) path this set never accumulates because Step 4 halts on the first feature; it stays empty.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. In the default path this stays `false` for the entire session because Step 4 halts before the loop continues.
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched. **`sub_skill_args` is part of the tuple deliberately:** a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3) returns the same `(feature_id, sub_skill, current_step)` on every part but a *different* `sub_skill_args` (the plan-part path), which is real forward progress, not a loop. Omitting `sub_skill_args` made the loop-guard false-trigger on every multi-part plan. Including it lets the guard fire only on a genuine no-progress repeat (identical part re-returned).
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if the flag was absent). See Step 0.45.
+- `park_mode = <parsed>` — `true` if `--park` was present, `false` otherwise. When `false`, all halt behavior is byte-for-byte the existing one.
 
-Print the start bookend:
+---
+
+## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)
+
+**Read and follow `~/.claude/skills/_components/lazy-preflight.md` as the very first action of this
+invocation — before the start banner, before Step 0.4 remote sync, before the first state probe.**
+Run its read-only check block (skills symlink resolves, `~/.claude/scripts/lazy-state.py` exists,
+`python3` runs, node resolvable — prepending `/c/nvm4w/nodejs` if needed). If any check fails, print the
+component's setup recipe and **STOP — zero cycles consumed** (do not print the banner, do not call the
+state script, do not enter the loop). On success, node is on PATH for the whole session (no per-call
+`export PATH`), and you continue to the banner / Step 0.4 as normal.
+
+**The entire run-start sequence is SILENT (zero-text rule):** the preflight, the contract/policy
+reads, Step 0.4 remote sync, and the queue read for the banner are executed back-to-back with NO
+text between the tool calls — no "I'll start by…", no "preflight passed", no "let me read…", no
+"sync clean". The FIRST text this invocation emits is the T1 banner (preflight failure and sync
+divergence are the T6 exceptions).
+
+---
+
+Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-voice.md`** (≤4 lines; nothing else before the first cycle block):
 
 ```
-## /lazy-batch — Starting
-**Max cycles:** {max_cycles}
-**Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
-**Repo root:** {cwd}
+## /lazy-batch — run start
+mode   workstation · park {on|off} · research {strict|batched}
+budget fwd {max_cycles} · meta {2*max_cycles}
+queue  {N} feature(s) · first: {first queue entry id}
 ```
+
+The `queue` line is best-effort (one `Bash` read of `docs/features/queue.json` for the entry count — a banner fact, not state inference; state inference remains exclusively `lazy-state.py` per HARD CONSTRAINT 3); omit the line if the queue file can't be read cheaply. The repo root and flag parsing are mechanics — not announced.
 
 ---
 
@@ -112,11 +167,7 @@ Print the start bookend:
 
    PushNotification with the same one-line summary, then STOP. Do NOT run `lazy-state.py`.
 
-5. On a clean fast-forward (or when local was already up to date / the branch was unpushed), print a one-line confirmation and continue to Step 0.5:
-
-   ```
-   🔄 Synced local {branch} to origin tip ({short-sha}) before resuming.
-   ```
+5. On a clean fast-forward (or when local was already up to date / the branch was unpushed), continue to Step 0.5 **silently** — a successful sync is mechanics per the orchestrator-voice contract (silence means the machinery worked). Only the step-4 divergence halt is announced (a T6 error — recipe printed in full).
 
 ---
 
@@ -186,8 +237,8 @@ Before entering the main loop, check whether the user staged Gemini research upl
    ```
 
 3. After dispatch:
-   - Append to `cycle_log`: `{1, "—", "/ingest-research (pre-loop)", "<subagent summary>"}`.
-   - Increment `cycle` to 1.
+   - Append to `cycle_log`: `{forward_cycles + meta_cycles + 1, "—", "/ingest-research (pre-loop)", "<subagent summary>"}`.
+   - Increment `forward_cycles` to 1 (ingesting research is pipeline-advancing work).
    - Enter the main loop (Step 1).
 
 Direct `RESEARCH.md` drops into canonical feature directories don't require ingestion — `lazy-state.py` sees them at Step 5 and routes to `/spec` Phase 3 naturally. Step 0.5 is specifically for the staged `.txt` upload path.
@@ -208,6 +259,18 @@ python3 ~/.claude/scripts/lazy-state.py [--skip-needs-research]
 
 Pass `--skip-needs-research` **only when `allow_research_skip == true` AND `skip_needs_research == true`**. The double-gate matters: in the default (strict-halt) path, `skip_needs_research` never flips to `true` because Step 4 halts the loop on the first `needs-research`, so the script is always called without the flag and returns `terminal_reason: needs-research` for the first research-pending feature in queue order. Only the `--allow-research-skip` path arms the legacy batching behavior.
 
+**Probe enrichment (optional — folds repeat-count, git guards, and cycle header into one payload).** The orchestrator MAY call the probe with additional flags to fold `repeat_count`, `git_guards`, and `cycle_header` into the JSON in a single invocation:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --repeat-count --emit-prompt --probe \
+  --forward-cycles {forward_cycles} --meta-cycles {meta_cycles} --max-cycles {max_cycles} \
+  [--skip-needs-research]
+```
+
+`--repeat-count` enriches the output with a `repeat_count` field (how many consecutive cycles returned the same `(feature_id, sub_skill, sub_skill_args, current_step)` tuple) for mechanical loop detection. **Probe hygiene:** `--repeat-count` ADVANCES the persisted streak, so it is reserved for the SINGLE dispatch-bound probe per cycle (the one whose result you actually dispatch on). Any diagnostic / inspection probe — re-checking state out of band, sanity-reading the routing — MUST use `--repeat-count-peek` instead (it reads the would-be streak WITHOUT advancing the persisted state). The streak is HEAD-aware: the same tuple plus new commits since the last probe RESETS it to 1 (a re-validation after landed commits is forward progress, not a loop). Never redirect probe or diagnostic output into the repo tree — write to the OS temp dir (`$TMPDIR` / `%TEMP%`) if you must capture it. `--probe` (combined with the three counter flags) folds `git_guards` (clean-tree + origin-parity) and a pre-formatted `cycle_header` string into the response. `--emit-prompt` (composed with `--repeat-count`) folds the fully-assembled cycle dispatch prompt into the JSON: `cycle_prompt` (the complete, token-bound prompt — the loop block already appended when `repeat_count >= 2`, the mcp-test runtime variant already selected from the spec's PHASES.md `**MCP runtime:**` line) and `cycle_model` (`"opus"`, or `"sonnet"` when the loop block was appended). Both are `null` on pseudo-skill (`__*`) and terminal/idle probes; on an assembly failure for a real skill `cycle_prompt_refused` carries the reason instead. These flags are purely additive — the base JSON fields are unchanged. **`--emit-prompt` SHOULD be passed on EVERY probe** — it is `null` on pseudo-skill/terminal probes, so it is always safe to request, and folding prompt assembly into the same probe call is what makes Step 1d a pure consume-and-dispatch.
+
+**Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation flag), append `--park-needs-input` to EVERY `lazy-state.py` probe invocation in this step (base or enriched form alike). With the flag, the script skips features carrying an unresolved `NEEDS_INPUT.md` instead of halting on `needs-input` and reports them in a `parked[]` array on the JSON output — the input to the Step 1g park path and the §1c.6 park notifications. When `park_mode == false`, call the script plain (no `--park-needs-input`) — existing behavior, byte-for-byte; the `parked[]` key never appears.
+
 If the script exits non-zero, surface the error, push a PushNotification, print the final batch report (see Step 2), and STOP.
 
 Parse the JSON output. Extract: `feature_id`, `feature_name`, `spec_path`, `current_step`, `sub_skill`, `sub_skill_args`, `terminal_reason`, `notify_message`, `diagnostics`.
@@ -216,23 +279,23 @@ Parse the JSON output. Extract: `feature_id`, `feature_name`, `spec_path`, `curr
 
 If `terminal_reason` is set:
 
-- **`blocked`**: see Step 1h (blocked-resolution mode). **Not a terminal halt anymore.** Step 1h re-prints the `BLOCKED.md` body verbatim, runs `AskUserQuestion` for the resolution path (add a phase / defer to queue tail / halt-for-manual / custom), records the choice, dispatches the Opus apply-resolution subagent to enact it (neutralizing `BLOCKED.md` via rename), and returns to Step 1a. The loop continues; do NOT print the final batch report — UNLESS the operator chooses "Halt for manual fix", which keeps `BLOCKED.md` untouched and STOPs (the legacy behavior, now one option among several).
-- **`needs-input`**: see Step 1g (decision-resume mode). **Not a terminal state for the orchestrator anymore.** Step 1g re-prints the rich `## Decision Context`, runs `AskUserQuestion`, appends `## Resolution`, dispatches the Sonnet apply-resolution subagent (which edits SPEC.md / PHASES.md and neutralizes the sentinel), and returns to Step 1a. The loop continues; do NOT print the final batch report.
+- **`blocked`**: see Step 1h (blocked-resolution mode). **Not a terminal halt anymore — and most blockers no longer ask.** Step 1h classifies the blocker FIRST per `completeness-policy.md` §3: a sequencing-only blocker (every resolution path converges on the same product behavior) is auto-resolved — add-phase + fix now, or `/spec-bug` / ad-hoc spin-off + dependency-gate + requeue-to-tail — logged + push-notified, no question. Only a genuine product fork takes the operator path: re-print the `BLOCKED.md` body verbatim, run `AskUserQuestion` for the resolution path (add a phase / defer to queue tail / halt-for-manual / custom), record the choice, dispatch the Opus apply-resolution subagent to enact it (neutralizing `BLOCKED.md` via rename), and return to Step 1a. The loop continues; do NOT print the final batch report — UNLESS the operator chooses "Halt for manual fix", which keeps `BLOCKED.md` untouched and STOPs (the legacy behavior, now one option among several).
+- **`needs-input`**: see Step 1g (decision-resume mode). **Not a terminal state for the orchestrator anymore.** Step 1g first auto-resolves any scope-class decisions per `completeness-policy.md` (D7 — step 1b of the component, both modes, never asked); for the remaining product-class decisions it re-prints the rich `## Decision Context`, runs `AskUserQuestion`, appends `## Resolution`, dispatches the Sonnet apply-resolution subagent (which edits SPEC.md / PHASES.md and neutralizes the sentinel), and returns to Step 1a. The loop continues; do NOT print the final batch report.
 - **`needs-research`**: see Step 4 (research halt). Behavior depends on `allow_research_skip`:
   - **Default (`allow_research_skip == false`)**: Step 4 writes `NEEDS_RESEARCH.md`, prints the inline-prompt halt announcement, PushNotifications, prints the final batch report, and STOPs. The orchestrator does NOT advance past the research-pending feature — this is critical for ordered queues where downstream features depend on upstream work.
-  - **Opt-in (`allow_research_skip == true`)**: legacy batching behavior — Step 4 writes `NEEDS_RESEARCH.md`, adds `feature_id` to `research_pending`, **DOES NOT increment cycle**, flips `skip_needs_research = true`, and returns to Step 1a so the next state-script call passes `--skip-needs-research` and either advances to a ready feature or returns `queue-blocked-on-research`.
+  - **Opt-in (`allow_research_skip == true`)**: legacy batching behavior — Step 4 writes `NEEDS_RESEARCH.md`, adds `feature_id` to `research_pending`, **DOES NOT increment either counter**, flips `skip_needs_research = true`, and returns to Step 1a so the next state-script call passes `--skip-needs-research` and either advances to a ready feature or returns `queue-blocked-on-research`.
 - **`queue-blocked-on-research`**: see Step 1f (research-wait mode). **Only reachable when `allow_research_skip == true`** — in the default path Step 4 halts before this terminal can fire.
 - **`needs-spec-input`**: see Step 1i (operator-directed halt-resolution) — the orchestrator re-prints what the dir contains and `AskUserQuestion`s the path (provide spec direction → seed the baseline / defer & continue queue / halt). It no longer bare-STOPs "cannot start from nothing".
 - **`queue-missing`**: PushNotification with `notify_message`, print final batch report, STOP. (There is no queue to continue — the operator must create `queue.json` first; NOT routed to Step 1i per the halt-resolution component's exclusion list.)
 - **`completion-unverified`**: a feature's SPEC/ROADMAP claims `Complete` but no `COMPLETED.md` receipt exists — it was flipped OUTSIDE the validation gate (a cycle subagent or hand edit bypassing `/retro` + `/mcp-test`). See Step 1i (operator-directed halt-resolution): re-print the gap and `AskUserQuestion` the path — reopen & re-validate (`**Status:** In-progress` → let the pipeline re-run retro + MCP) / grandfather the receipt (`lazy-state.py --backfill-receipts`, only if genuinely validated before the gate) / defer & continue / halt. Do NOT auto-flip, auto-reopen, or auto-backfill — that judgment is the operator's, now surfaced as a choice rather than a bare halt. (This is the terminal that makes failure mode 1 self-announcing instead of silent.)
 - **`stale_upstream`**: an upstream feature/work-item this feature was materialized from changed since materialize. See Step 1i (operator-directed halt-resolution): re-print the gap and `AskUserQuestion` the path (re-materialize/absorb → re-run materialize or `/realign-spec` / reject the change / defer & continue / halt). `lazy-state.py` emits this (Step 2.9); do NOT auto-resolve.
-- **`all-features-complete`**: PushNotification `"ALL FEATURES COMPLETE — roadmap finished after {cycle} /lazy-batch cycle(s)."`, print final batch report, STOP.
+- **`all-features-complete`**: PushNotification `"ALL FEATURES COMPLETE — roadmap finished after {forward_cycles} forward + {meta_cycles} meta /lazy-batch cycle(s)."`, print final batch report, STOP.
 - **`cloud-queue-exhausted`**: Unreachable for `/lazy-batch` (workstation variant); treat as `all-features-complete` defensively.
 - **`device-queue-exhausted`**: Reachable only on a **no-real-device** workstation (WSL2/CI, where the audio backend is the HeadlessPumpDriver). Every remaining feature carries `DEFERRED_REQUIRES_DEVICE.md` (real-device-only MCP assertions that cannot be certified here). PushNotification with `notify_message`, print final batch report, STOP. The honest resume is a real-device host: tell the user to set `ALGOBOOTH_REAL_AUDIO_DEVICE=1` (or run on native hardware) and re-run `/lazy-batch` — there the same features RE-OPEN (Step 9 dispatches `/mcp-test` scoped to the deferred scenario IDs as ordinary cycles) and complete. This is the device-axis mirror of `cloud-queue-exhausted`. Note: the **re-open dispatch itself needs no special handling** — on a real-device host the state script emits `sub_skill: mcp-test` for the deferred scenarios, which runs as a normal cycle.
 
 ### 1c. Check the max-cycles cap
 
-If `cycle >= max_cycles`:
+If `forward_cycles >= max_cycles`:
 
 ```
 PushNotification({ message: "lazy-batch hit max-cycles ({max_cycles}). Restart from a fresh session to continue." })
@@ -240,249 +303,130 @@ PushNotification({ message: "lazy-batch hit max-cycles ({max_cycles}). Restart f
 
 Print final batch report, STOP. Do NOT try to renew the cap automatically — the cap exists to bound runaway costs.
 
+### 1c.6. PushNotification policy (park / halt / flush / run-end)
+
+The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
+
+1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) Message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
+2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `queue-missing`, `all-features-complete`, `max-cycles`, `meta-cap`, `device-queue-exhausted`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
+3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-batch flush — {N} parked decision(s) ready for your input"`.
+4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
+
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
 If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** — a small sentinel-file write + commit, NOT a real skill that performs implementation work. Perform the action inline (orchestrator session) instead of dispatching a subagent. This is the spirit-preserving relaxation of HARD CONSTRAINT 1: sentinel files are documentation, and dispatching an Opus subagent to write a 10-line YAML block + run `git commit` wastes a full subagent's worth of context.
 
 Follow `~/.claude/skills/lazy/SKILL.md` Step 3's protocol for each pseudo-skill exactly (the wrapper and orchestrator do the same thing here):
 
-- **`__write_validated_from_skip__`** — read `<spec_path>/SKIP_MCP_TEST.md` frontmatter, write `<spec_path>/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body note about the prior skip), then commit per the project's commit policy.
-- **`__write_validated_from_results__`** — read `<spec_path>/MCP_TEST_RESULTS.md` frontmatter, extract `scenarios`, write `<spec_path>/VALIDATED.md` with those scenarios, then commit.
-- **`__mark_complete__`** — **gated by TWO inline docs-only gates, in order, BEFORE the flip runs.** **Gate 1 — MCP-coverage audit** per the shared `~/.claude/skills/_components/mcp-coverage-audit.md` component (read SPEC.md's `## Locked Decisions` / `## Resolved by Research` / numbered key-decisions surface; grep each `<spec_path>/mcp-tests/*.md` for each decision's id + keywords). If any decision is uncovered, the orchestrator (still inline, sentinel-write only — HARD CONSTRAINT 1 holds) writes `<spec_path>/NEEDS_INPUT.md` per the audit component's schema and commits it with `{feature_id}: mcp-coverage audit surfaced N uncovered locked decision(s) for user confirmation`. **Gate 2 — completion-integrity gate** per the shared `~/.claude/skills/_components/completion-integrity-gate.md` component (runs ONLY after gate 1 returns `clean`): verify phase-coherence (zero non-verification unchecked deliverables in PHASES.md) and that a validation sentinel (`VALIDATED.md`, or `SKIP_MCP_TEST.md`; workstation does NOT accept a bare `DEFERRED_NON_CLOUD.md`) plus `RETRO_DONE.md` exist. If a precondition fails, the orchestrator writes `<spec_path>/NEEDS_INPUT.md` (`written_by: completion-integrity-gate`) describing the gap and commits it. On EITHER gate halting: append `{cycle+1, feature_name, "__mark_complete__ (gate halted)", "<reason> → NEEDS_INPUT.md"}` to `cycle_log`, increment `cycle`, return to Step 1a — the next state-script call returns `terminal_reason: needs-input`, Step 1g surfaces it, and the apply-resolution Sonnet subagent reconciles before the next mark-complete attempt. Only when BOTH gates pass does the orchestrator proceed: **first WRITE `<spec_path>/COMPLETED.md`** (`kind: completed`, `provenance: gated`, folding the validation evidence from VALIDATED.md/MCP_TEST_RESULTS.md into the receipt body — this is the durable proof the feature passed the gate, and `lazy-state.py` Step 2 hard-halts on a `Complete` claim that lacks it), then update `docs/features/ROADMAP.md` (strikethrough + COMPLETE token), delete `VALIDATED.md`/`RETRO_DONE.md`/`DEFERRED_NON_CLOUD.md` sentinels (evidence now folded into the receipt; KEEP `COMPLETED.md`/`SKIP_MCP_TEST.md`/`MCP_TEST_RESULTS.md`), set `<spec_path>/SPEC.md` (and PHASES.md top-level) `**Status:**` to `Complete`, then commit per project policy. See the component files for the full algorithms. **Both gates are docs-only** (read SPEC.md / PHASES.md / `mcp-tests/*.md` / sentinels, no Tauri / no MCP server) — they run identically in workstation and cloud. Writing `COMPLETED.md` (a sentinel) and SPEC/ROADMAP status lines is within HARD CONSTRAINT 1's allowance.
-- **`__flip_plan_complete_cloud_saturated__`** — emitted only by `lazy-state.py --cloud` at Step 7a when an `In-progress` plan's only unchecked WUs (scoped to the plan's `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. `sub_skill_args` is the absolute plan-file path. Read the plan's YAML frontmatter, edit ONLY the `status:` line in place (`In-progress` → `Complete`) — leave every other field and the markdown body untouched. Derive the plan part number from the plan's `phases:` field (e.g. `phases: [6]` → part 6); fall back to the plan filename's leading `part-N` / `phase-N` token if `phases:` is missing. Stage the plan file and commit per project policy with message `chore(<feature_id>): mark plan part N Complete (cloud-saturated)`. Do NOT touch SPEC.md, ROADMAP.md, or any sentinel — this is a frontmatter-only flip. Editing style: match the conservative single-field rewrite already used by `__write_deferred_non_cloud__` (idempotent if the line is already `Complete`).
+- **`__write_validated_from_skip__`** — run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __write_validated_from_skip__ <spec_path>` (the script is the single author of the VALIDATED.md write — it reads SKIP_MCP_TEST.md, writes VALIDATED.md, and is idempotent), then commit + push per policy.
+- **`__write_validated_from_results__`** — run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __write_validated_from_results__ <spec_path>` (the script reads MCP_TEST_RESULTS.md, writes VALIDATED.md with the extracted scenarios, and is idempotent), then commit + push per policy.
+- **`__mark_complete__`** — **gated by TWO inline docs-only gates, in order, BEFORE the flip runs.** **Gate 1 — MCP-coverage audit** per the shared `~/.claude/skills/_components/mcp-coverage-audit.md` component (read SPEC.md's `## Locked Decisions` / `## Resolved by Research` / numbered key-decisions surface; grep each `<spec_path>/mcp-tests/*.md` for each decision's id + keywords). If any decision is uncovered, follow the component's D7 outcome (`completeness-policy.md` §4 — Gate 1 never asks, no NEEDS_INPUT.md): documented-MCP-untestable decisions get an inline SPEC test-exempt note (a docs-level `__mark_complete__` edit — HARD CONSTRAINT 1 holds); the rest route to a **corrective coverage cycle** — dispatch a cycle subagent to author the `mcp-tests/` scenario(s) and run them (meta cycle), emit the `⚖ policy:` line(s) + D7-digest entries, then on Gate-1 halt: append `{forward_cycles + meta_cycles + 1, feature_name, "__mark_complete__ (gate 1 halted)", "{N} uncovered → corrective coverage cycle"}` to `cycle_log`, increment `forward_cycles` (gate-halted mark-complete is still a forward-advancing attempt), and return to Step 1a — the next mark-complete attempt re-audits `clean`. **Gate 2 — completion-integrity gate** per the shared `~/.claude/skills/_components/completion-integrity-gate.md` component (runs ONLY after gate 1 returns `clean`): verify phase-coherence (zero non-verification unchecked deliverables in PHASES.md) and that a validation sentinel (`VALIDATED.md`, or `SKIP_MCP_TEST.md`; workstation does NOT accept a bare `DEFERRED_NON_CLOUD.md`) plus `RETRO_DONE.md` exist. If a precondition fails, the orchestrator writes `<spec_path>/NEEDS_INPUT.md` (`written_by: completion-integrity-gate`) describing the gap and commits it; append `{forward_cycles + meta_cycles + 1, feature_name, "__mark_complete__ (gate 2 halted)", "<reason> → NEEDS_INPUT.md"}` to `cycle_log`, increment `forward_cycles`, return to Step 1a — the next state-script call returns `terminal_reason: needs-input` and Step 1g handles it before the next mark-complete attempt (Gate 2's integrity gaps are NOT scope decisions; they keep the needs-input path). Only when BOTH gates pass does the orchestrator proceed: run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __mark_complete__ <spec_path>` — the script is the single author of COMPLETED.md (kind: completed, provenance: gated, folding the validation evidence from VALIDATED.md/MCP_TEST_RESULTS.md into the receipt body — the durable proof `lazy-state.py` Step 2 keys on), the SPEC.md/PHASES.md `**Status:** Complete` flip, and the deletion of the consumed VALIDATED.md/RETRO_DONE.md/DEFERRED_NON_CLOUD.md sentinels (COMPLETED.md/SKIP_MCP_TEST.md/MCP_TEST_RESULTS.md are kept). **Mechanical third gate:** `--apply-pseudo` itself ALSO enforces per-phase coherence before writing — it auto-flips all-ticked phases to Complete and REFUSES (`refused:<reason>`, zero writes) if any phase retains an unchecked box (verification rows included) or a non-Complete/Superseded Status. On `ok: false` + this refusal, do NOT retry blindly — route a corrective coherence cycle (dispatch a cycle subagent to reconcile PHASES.md honestly — tick-with-evidence or re-scope, never blind-tick — then return to Step 1a), exactly as a Gate-1 halt routes. After the script returns, update `docs/features/ROADMAP.md` (strikethrough + COMPLETE token) — this is the one remaining orchestrator step. Then commit + push per project policy. See the component files for the full gate algorithms. **Both gates are docs-only** (read SPEC.md / PHASES.md / `mcp-tests/*.md` / sentinels, no Tauri / no MCP server) — they run identically in workstation and cloud.
+- **`__flip_plan_complete_cloud_saturated__`** — emitted only by `lazy-state.py --cloud` at Step 7a when an `In-progress` plan's only unchecked WUs (scoped to the plan's `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. `sub_skill_args` is the absolute plan-file path. Run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __flip_plan_complete_cloud_saturated__ <spec_path> --plan <plan_file_path>` (the script edits only the `status:` line in the plan frontmatter → `Complete`, is idempotent, and does NOT touch SPEC.md, ROADMAP.md, or any sentinel). Derive the plan part number from the plan's `phases:` field for the commit message (e.g. `phases: [6]` → part 6; fall back to the plan filename's leading `part-N` / `phase-N` token). Commit per project policy with message `chore(<feature_id>): mark plan part N Complete (cloud-saturated)`, then push. This is a **forward cycle** — increment `forward_cycles`.
+- **`__flip_plan_complete_stale__`** — emitted by `lazy-state.py` at Step 7a (in both cloud and workstation mode) when EVERY work-unit a Ready/In-progress plan references is already `[x]` — the plan is stale/already-applied but the frontmatter `status:` was never flipped. `sub_skill_args` is the absolute plan-file path. **Action (stays inline — `--apply-pseudo` does NOT implement stale):** read the plan's YAML frontmatter, edit ONLY the `status:` line in place (`Ready` or `In-progress` → `Complete`) — leave every other field and the markdown body untouched. Derive the plan part number from the plan's `phases:` field; fall back to the plan filename's leading `part-N` / `phase-N` token if `phases:` is missing. Stage the plan file and commit per project policy with message `chore(<feature_id>): mark plan part N Complete (stale — already applied)`. Do NOT touch SPEC.md, ROADMAP.md, or any other sentinel. **Distinction from `__flip_plan_complete_cloud_saturated__`:** stale fires in BOTH cloud and workstation (it is not cloud-only) and means every WU was already `[x]` — not deferred to workstation, genuinely done. Without this flip the `Step 7a: execute plan` probe would return an In-progress plan with all WUs done, the orchestrator would dispatch `/execute-plan` against it, the subagent would find no work, make no commit, and the next cycle would return the same state — a no-op loop. This is a **meta cycle** — increment `meta_cycles` (flipping a stale plan is cleanup, not forward implementation work).
 
 After the inline action:
 
-1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, "inline: <one-line summary>"}`.
+1. Append to `cycle_log`: `{forward_cycles + meta_cycles, feature_name, sub_skill, "inline: <one-line summary>"}` (use the UPDATED total after the increment in step 5 below, i.e. the N-th total action completed this invocation).
 2. **Push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** The inline pseudo-skill committed a sentinel / plan-frontmatter change locally; push it now — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This backstops inline cycles the orchestrator owns directly — a `git push` of an already-committed change, NOT a Write/Edit, so HARD CONSTRAINT 1 still holds. "Up to date" is a fine result (a prior cycle's push already carried it).
-3. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the inline outcome, `**Commit:**` = the sentinel/plan commit sha. Nothing else.
+3. Emit the T4 inline pseudo-skill block (Step 3 / orchestrator-voice.md): the canonical step heading (`### {Step name} — {work summary} [x/y]`), an `act` line (`{sub_skill} → {feature_id}`), a `gates` line when gates ran (`__mark_complete__`), a `done` line (inline outcome), and a `next` line. Nothing else. A gate REFUSAL switches to T6-refusal (rich) — the refusal evidence and the NEEDS_INPUT routing deserve full detail.
 4. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` (same uniform post-cycle update as Step 1e — keeps loop-guard accurate across mixed pseudo-skill / real-skill cycles).
-5. Increment `cycle`. Return to Step 1a — DO NOT fall through to Step 1d.
+5. Increment the appropriate counter: `forward_cycles` for pipeline-advancing pseudo-skills (`__mark_complete__`, `__mark_fixed__`, `__write_deferred_non_cloud__` (cloud variant only — workstation `lazy-state.py` never emits this), `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`); `meta_cycles` for cleanup pseudo-skills (`__flip_plan_complete_stale__`). Return to Step 1a — DO NOT fall through to Step 1d.
 
 This saves one Opus dispatch per pseudo-skill action. On a typical feature lifecycle (workstation: 1 × `__write_validated_*` + 1 × `__mark_complete__` = 2 dispatches reclaimed; cloud: 1 × `__write_deferred_non_cloud__` minimum) the savings compound across a multi-feature queue pass.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
+**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`, `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics), AND `~/.claude/skills/_components/completeness-policy.md` (the D7 standing policy — its auto-resolve rules likewise survive compaction by re-read, not memory). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt **envelope**) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. The prompt **contents** are NOT reconstructed by hand — they arrive pre-bound from the probe's `cycle_prompt` (the `--emit-prompt` field); the template governs only the dispatch ENVELOPE (which fields, which model). 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch, and copying `cycle_model` into it rather than reconstructing prompts from memory, is what prevents that.
+
+**Long-build ownership (harness-tracked).** Any build or test that may exceed a single subagent turn is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends (a `tauri build` backgrounded that way once silently vanished). Before committing to a 20–40 min packaged `tauri build`, run `cargo check --release` first to catch compile errors in minutes. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
+
 If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else.
 
-**Loop-guard check (BEFORE composing the prompt):** Compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, the state script has returned the same tuple two cycles in a row — almost always a sign that a terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) is missing or that a plan/sentinel write the previous cycle was supposed to perform did not actually land. **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3, same `feature_id`/`sub_skill`/`current_step` but a different plan-part path in `sub_skill_args`) false-triggers the guard on every part despite genuine forward progress. The orchestrator MUST append the **LOOP DETECTED** block below to the subagent prompt so the subagent diagnoses the missing sentinel rather than producing yet another plan / running the same skill against unchanged state.
+#### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY — runs BEFORE prompt composition)
 
-Base prompt template:
+**Applies ONLY when `sub_skill == "mcp-test"`.** Skip this sub-step entirely for every other `sub_skill`. (This sub-step does not exist in `/lazy-batch-cloud` — cloud's Step 9 returns `__write_deferred_non_cloud__`, never `mcp-test`, so the cloud orchestrator never reaches it.)
 
-```
-You are advancing one cycle of the autonomous feature pipeline.
+**Why this exists (the failure it fixes).** The cycle subagent has NO `Agent` tool (HARD CONSTRAINT block above) and runs `/mcp-test` INLINE. The mcp-test SKILL.md Step 2 boots `npm run tauri:dev` as a **background** task, then Step 4 waits for readiness. Empirically, an inline cycle subagent that started a background build and then ENDED ITS TURN waiting on it produced a premature, resultless return: the background build process did NOT survive the subagent's turn boundary, and the orchestrator (SendMessage unavailable in this workstation environment) could not resume the dead subagent. Net: a validation cycle that wrote no result and no sentinel, burning the whole cycle. The structural fix is for the **orchestrator's own session** — which is long-lived and persists across subagent turns — to OWN the dev-runtime background process, so the runtime is already up and MCP-ready when the mcp-test subagent connects to it.
 
-Feature: {feature_name} ({feature_id})
-Working directory: {cwd}
-State script said: {current_step}
+**Procedure (orchestrator session, all `Bash` — NOT file edits):**
 
-Action for this cycle:
-  Invoke the {sub_skill} skill with args: {sub_skill_args} --batch
+0. **Plan-declared structural untestability — skip the boot entirely (routing only, NOT a waiver).** Check the feature's PHASES.md for an `**MCP runtime:**` header line (authored by `/spec-phases` at decomposition time):
 
-Operating mode: batch
-  - Do NOT ask interactive questions. Skills accept --batch and either auto-accept
-    a recommended option or write NEEDS_INPUT.md and halt.
-  - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the decision —
-    that's a halt for a human.
+   ```bash
+   grep -m1 '^\*\*MCP runtime:\*\*' "{spec_path}/PHASES.md"
+   ```
 
-Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
-  This subagent does NOT have the `Agent` tool — you CANNOT spawn further
-  sub-subagents from inside this cycle. Any Agent() call you attempt will fail
-  (tool unavailable) and waste the cycle. (Recursive sub-subagent dispatch is
-  not supported from inside a dispatched subagent, on workstation as in cloud.)
+   - Line says `not-required` → **skip steps 1–3 entirely** (no probe, no `dev:restart`, no readiness block — the ~3–7.5 min boot is pure waste when the deliverable has no MCP surface). The mcp-test prompt VARIANT (runtime-up vs no-runtime, with `{untestability_reason}` bound) is chosen by the SCRIPT — `emit_cycle_prompt` reads the same PHASES.md `**MCP runtime:**` line and selects the matching section, so the orchestrator does NOT swap any prompt block by hand here; the script-assembled `cycle_prompt` already carries the correct variant. The skip AUTHORITY stays with the mcp-test cycle (it verifies the plan's claim against `docs/features/mcp-testing/SPEC.md` and writes the `granted_by: mcp-test` + `spec_class` sentinel only if it concurs) — the plan field is routing, never a grant.
+   - Line absent or `required` → proceed with steps 1–3 as written.
 
-  Therefore, regardless of what the dispatched skill's SKILL.md says about
-  spawning sub-subagents (test-agent, impl-agent, research subagents A–G,
-  etc.), you MUST perform that work INLINE in this subagent session using
-  Edit / Write / Read directly. The cycle subagent SUPERSEDES the dispatched
-  skill's sub-subagent dispatch contract — this is the documented inline
-  override, not a hard contract violation. The only prohibition you still
-  carry is "no parallel pipeline orchestrators" (do NOT invoke another /lazy
-  or /lazy-batch).
+   **NEEDS_RUNTIME recovery:** if a no-runtime mcp-test cycle returns the single line `NEEDS_RUNTIME` (it found an MCP-testable surface the plan missed), run steps 1–3 NOW and re-dispatch the same cycle with the standard "RUNTIME IS ALREADY UP" block. The failed attempt + re-dispatch together consume ONE forward cycle (increment once, after the re-dispatched cycle returns); tag the re-dispatch `disp` line `(opus, recovery)`. A disagreement costs one extra dispatch round-trip — never correctness.
 
-  Per-skill inline overrides (override the SKILL.md dispatch contract):
-    • /execute-plan — IGNORE Step 3's "Execution Model Enforcement". Do NOT
-      attempt Agent({model: "sonnet"}) test-agent / impl-agent dispatches.
-      Perform each batch's test additions and implementation edits INLINE
-      with Edit / Write / Read on source/test files directly
-      (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files included).
-      Follow the rest of /execute-plan as written (batch ordering, commits,
-      plan-file checkbox flips, sentinel emissions). Zero sub-subagent
-      dispatches in an /execute-plan cycle is the EXPECTED state — NOT a
-      contract violation.
-      ATOMIC GATE+COMMIT (HARD): per /execute-plan's "Atomic gate+commit"
-      rule, the FINAL action of each batch AND of plan-part completion MUST be
-      ONE chained Bash command — `<gate> && git add -A && git commit -m "..."
-      && git push` — so the auto-backgrounded gate job commits + pushes itself.
-      This closes the turn-loss gap (the recurring failure where the cycle ends
-      between "gates passed" and "commit", leaving the tree dirty or the dual
-      ledger half-flipped). Before reporting, tick EVERY PHASES.md verification
-      box for the completed phase(s) and confirm `git status --short` is empty.
-      SKIP THE GROUND-TRUTH RE-RUN: subagent-review.md Step 1.5 exists to
-      detect a *separate* untrusted subagent falsifying its report by
-      re-running every command (git status / wc -l / grep / test runner) and
-      diffing. In this inline path YOU wrote both the tests and the
-      implementation in this same session — there is no separate subagent
-      report to police, so that mechanical re-run is pure redundant work. Do
-      NOT re-run-and-diff your own commands. Still perform the SUBSTANTIVE
-      correctness review (spec alignment, deliverable coverage, logic/edge-case
-      check, propagation check per subagent-review.md Step 2.5) and still run
-      the quality gates — only the falsification-detection re-run is dropped.
-      KNOWN LIMITATION: collapsing the test-agent/impl-agent split into one
-      inline session trades away the STRUCTURAL test-first guarantee. You MUST
-      still preserve test-first DISCIPLINE within each batch: write the failing
-      tests FIRST (per the plan's test expectations), confirm they fail for the
-      right reason, THEN implement until they pass.
-    • /retro — IGNORE Step 3's parallel research-subagent fanout (A–G). Do the
-      research INLINE: read each input serially, synthesize, and write the
-      retro plan + RETRO_DONE.md directly. The deliverable is identical; only
-      the parallelism is dropped.
-    • /mcp-test — perform the Step 5 test work INLINE (read the MCP usage
-      guide, run the MCP HTTP tools yourself, analyze the session logs) rather
-      than dispatching a Sonnet test subagent. Workstation retains the Tauri
-      runtime + MCP HTTP server, so the runtime work itself is unchanged — only
-      the sub-subagent dispatch is replaced with inline execution.
-    • retro-feature — composed orchestrator; same override — perform all
-      internal work inline rather than dispatching nested sub-subagents.
-    • plan-feature — composed orchestrator; runs /spec-phases THEN /write-plan
-      via the Skill tool (in-context, NOT Agent dispatch). Both sub-skills are
-      docs-only (PHASES.md + plan files) and orchestrator-only, so no recursive
-      Agent dispatch is needed — invoke /plan-feature once and let it run its
-      two sub-skills in your context. This is what lazy-state.py emits at
-      Step 6 (replacing the separate /spec-phases dispatch).
-    • /spec, /spec-phases, /write-plan, /add-phase, /ingest-research —
-      already orchestrator-only; no change.
+1. **Probe whether the dev runtime + MCP HTTP server are already up.** Per the AlgoBooth canonical reference (`docs/development/CLAUDE.md`, referenced from the root CLAUDE.md), the MCP HTTP server listens on **TCP 3333** and `GET http://localhost:3333/health` returns 200 when ready:
 
-  If you find yourself about to write Agent({...}) inside this cycle, STOP and
-  replace it with the equivalent Edit / Write / Read sequence. Do NOT write
-  BLOCKED.md because of the recursive-dispatch limit — that limit is exactly
-  what this override exists to handle.
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health
+   ```
 
-  The dispatched skill's own SKILL.md remains authoritative for everything
-  else: batch ordering, sentinel emissions, commit policy, file-shape
-  invariants, plan-checkbox semantics. Re-read it from disk if any
-  non-dispatch detail is unclear — do NOT rely on memory.
+   If this prints `200`, the runtime is already up — skip to step 4 (amend the prompt only).
 
-Source/test file edits:
-  - All paths: perform Edit / Write on source/test files
-    (.ts, .js, .cs, .vue, .py, .rs, .tsx, .jsx, test files) DIRECTLY in this
-    subagent session. The inline override above removes the /execute-plan
-    sub-subagent dispatch requirement and replaces it with inline edits.
+2. **If not up, start it (orchestrator-owned background process).** Use the canonical full-restart command (handles all three process types — Vite :1420, MCP :3333, sidecar named-pipe — per `docs/development/CLAUDE.md`):
 
-No premature Complete (PIPELINE-GATE HONESTY — HARD REQUIREMENT):
-  - You MUST NOT set the top-level `**Status:**` of SPEC.md or PHASES.md to
-    `Complete`. That flip is reserved EXCLUSIVELY for the orchestrator's
-    `__mark_complete__` pseudo-skill, which runs ONLY after the feature has
-    passed the full downstream tail: /retro (writes RETRO_DONE.md) → /mcp-test
-    (writes VALIDATED.md or a justified SKIP_MCP_TEST.md) → the __mark_complete__
-    MCP-coverage audit. If a phase-implementation cycle flips SPEC/PHASES
-    `**Status:** Complete` itself, the feature has NO COMPLETED.md receipt, so
-    lazy-state.py Step 2 now HARD-HALTS on `completion-unverified` instead of
-    advancing — your rogue flip does not skip the tail, it stops the whole loop
-    until a human reconciles. (Previously this silently skipped /retro +
-    /mcp-test + the coverage audit; the receipt gate is the mechanism that makes
-    this guard self-enforcing rather than honor-system.) Do NOT write a
-    COMPLETED.md yourself either — only the orchestrator's __mark_complete__
-    integrity gate may, after the validation tail passes.
-  - What you MAY flip when an /execute-plan part finishes: the PLAN-PART
-    frontmatter `status:` (Ready → In-progress → Complete) and the per-PHASE
-    checkboxes/`Status:` line for the phase you just implemented (e.g. Phase 3
-    deliverables → checked, that phase → Complete). When the last phase's work
-    lands, set the top-level PHASES `**Status:**` to `In-progress` (NOT
-    `Complete`) — implementation is done but validation is still pending. The
-    feature reaches `Complete` only through __mark_complete__.
-  - If you believe the feature is genuinely finished and validated, STILL do not
-    flip the top-level Status — let the state machine route to /retro and
-    /mcp-test next. Those passes are cheap insurance, and __mark_complete__'s
-    coverage audit is the single authorized place the SPEC flips to Complete.
+   ```bash
+   npm run dev:restart
+   ```
 
-Plan-part status + per-WU granularity (RESUME SAFETY):
-  To make an interrupted cycle resume cleanly instead of redoing a whole plan
-  part, keep the plan part's on-disk status and per-WU checkboxes accurate AS
-  THE WORK LANDS, not only at end-of-cycle:
-    • For /execute-plan (and any /retro / realign cycle that mutates a plan
-      part): the dispatched skill MUST flip the plan part frontmatter `status:`
-      `Ready` → `In-progress` and commit it BEFORE starting work-unit work, and
-      tick each `- [ ]` → `- [x]` checkbox + commit as that work-unit lands. An
-      interrupted session then resumes at the first still-unchecked box with
-      accurate In-progress state instead of redoing the part from a stale
-      `Ready`.
-    • Prefer plan work-units authored as parseable `- [ ]` markdown checkboxes
-      (one per WU) so resume granularity is per-WU, not per-part. If a part is
-      prose-only, note it in your summary so it can be re-authored with
-      checkboxes.
-  (On workstation, local commits survive an interrupted session, so the
-  end-of-cycle push in the commit step below is sufficient durability — pushing
-  each flip/tick immediately is a cloud-only requirement in /lazy-batch-cloud.)
+   Start this with `Bash` `run_in_background: true`. The process is now owned by the **orchestrator** session, so it survives the upcoming subagent's turn boundary.
 
-After the skill returns:
-  1. If a commit policy file exists at .claude/skill-config/commit-policy.md,
-     follow it. Otherwise commit per the standard pattern and push to the
-     current branch. Skip commit only if the skill produced no file changes.
-  2. Report a one-paragraph summary: what state was advanced, files modified,
-     commit hash (or "no commit"), and any issues. Keep it under 8 lines so the
-     orchestrator's per-cycle log stays compact. If you ran /execute-plan,
-     CONFIRM you performed the test + implementation edits INLINE (zero Agent()
-     calls) — this is the inline-override audit signal, and note for each batch
-     that you wrote the failing tests before implementing (test-first
-     discipline).
-```
+3. **BLOCK on an MCP-readiness probe (foreground `until`-loop — NOT a forbidden active wait).** This is a single bounded readiness gate the orchestrator runs synchronously before dispatch, not a poll for filesystem/research events — HARD CONSTRAINT 7 (never actively wait for *filesystem/research* events) is about waiting on the user's research upload, which is a different thing. A bounded readiness gate on a process the orchestrator just started is the same shape as the Step 0.4 single-turn git reconciliation: permitted, mechanical, bounded.
 
-**LOOP DETECTED block (append only when the loop-guard fires):**
+   ```bash
+   for i in $(seq 1 90); do
+     code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health 2>/dev/null)
+     if [ "$code" = "200" ]; then echo "MCP-READY"; break; fi
+     sleep 5
+   done
+   curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health
+   ```
 
-```
-⚠️  LOOP DETECTED: The state script returned this exact
-(feature_id={feature_id}, sub_skill={sub_skill}, sub_skill_args={sub_skill_args}, current_step={current_step})
-tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
-(RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
-missing — the skill that was supposed to write it on the prior cycle did not.
+   (`tauri dev` takes ~3–5 min to compile + boot; 90 × 5s ≈ 7.5 min ceiling.) Health-200 is the readiness signal AlgoBooth's reference defines. Do NOT cache or reuse any `logs/session-{ts}/` path here — re-resolve the session dir from the live server if you ever need it (HARD REQUIREMENT in `docs/development/CLAUDE.md`); the readiness gate above is keyed on the stable health endpoint, not on any session-log path. If health never reaches 200 within the ceiling, surface a `BLOCKED.md` (blocker_kind: mcp-runtime-unready) rather than dispatching a subagent against a dead runtime — a subagent cannot recover a runtime the orchestrator failed to boot.
 
-Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
-  1. Read the canonical schemas in
-     ~/.claude/skills/_components/sentinel-frontmatter.md.
-  2. Inspect {spec_path}/ for existing sentinels and plan files.
-  3. Determine which sentinel SHOULD exist given the feature's current state
-     (e.g. all phases complete + validated + retro plan present with no
-     significant divergences → RETRO_DONE.md should already exist; if it
-     doesn't, the previous retro round failed to write it).
-  4. If you can write the missing sentinel directly (its preconditions are
-     unambiguously met), DO SO instead of re-running {sub_skill}. Then commit
-     the sentinel and report the loop-break in your summary.
-  5. If the preconditions are NOT unambiguously met, run {sub_skill} as
-     instructed but explicitly emit the appropriate terminal sentinel as part
-     of its completion (e.g. /retro Step 6c writes RETRO_DONE.md when no
-     significant divergences). Report which sentinel you emitted.
-  6. If no sentinel applies (genuine ambiguity), write BLOCKED.md with
-     blocker_kind: loop-detected and a clear description so the next cycle
-     surfaces it as a terminal halt.
+4. **No prompt amendment by hand — the script owns the runtime variant.** The mcp-test prompt variant (RUNTIME IS ALREADY UP vs RUNTIME NOT PRE-BOOTED) is selected by `emit_cycle_prompt` from the PHASES.md `**MCP runtime:**` line (step 0 above), so the probe's `cycle_prompt` already carries the right block — the orchestrator does NOT splice in a runtime paragraph. The orchestrator's ONLY job in this sub-step is the BOOT decision (steps 0–3): skip the boot on `not-required`, otherwise pre-boot the orchestrator-owned runtime so it is MCP-ready when the subagent connects. (NEEDS_RUNTIME re-dispatch handling is above in step 0.)
 
-The orchestrator will halt on the next cycle's max-cycles cap if this loop
-persists — your job here is to break it.
-```
+**HARD CONSTRAINT 1 is NOT relaxed by this.** Step 1d.0 is `Bash` only — a `run_in_background` process plus a `curl`/`sleep` readiness loop. It performs ZERO `Write`/`Edit` on any file (the orchestrator's sentinel-only edit scope is untouched). Owning a background process and polling a health endpoint are not file edits, exactly as Step 0.4's git reconciliation (also `Bash`-only) does not expand the edit scope.
 
-Append the LOOP DETECTED block after the base prompt's final paragraph (after "follow the skill's internal subagent-vs-orchestrator rules.") when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle.
+**Consume the script-assembled prompt — do NOT hand-bind the template.** The probe's `cycle_prompt` field (from `--emit-prompt`) is the FULLY ASSEMBLED, token-bound cycle dispatch prompt: `emit_cycle_prompt` parsed the sectioned `cycle-base-prompt.md`, selected the right per-skill / per-pipeline / per-mode sections, bound every token (`{item_name}`, `{item_id}`, `{cwd}`, `{current_step}`, `{sub_skill}`, `{sub_skill_args}`, `{work_branch}`, … — the full 14-token list is in the component's header), appended the loop block when warranted, and chose the model. Use `cycle_prompt` **VERBATIM** as the Agent `prompt:` and `cycle_model` as the Agent `model:` — the orchestrator no longer reads `cycle-base-prompt.md` or `loop-block.md` by hand, and no longer substitutes `{tokens}`. **Loop-block inclusion and the opus/sonnet selection are SCRIPT-OWNED**, driven by the persisted per-pipeline `repeat_count` the script reads itself (loop block appended + `cycle_model: "sonnet"` when `repeat_count >= 2`, else `cycle_model: "opus"`).
+
+**In-session loop-guard — the orchestrator's CROSS-CHECK (retained):** Independently of the script, compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, the state returned the same tuple two cycles in a row — almost always a missing terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) or a plan/sentinel write the previous cycle should have made but didn't. **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3, same `feature_id`/`sub_skill`/`current_step` but a different plan-part path in `sub_skill_args`) false-triggers on every part despite genuine forward progress. This in-session guard still drives the T2 `(sonnet, loop-resolution)` `disp` tag. The guard and the script normally agree (the persisted `repeat_count` and the in-session signature track the same streak). **If the in-session guard fires but `cycle_model` came back `"opus"`** — e.g. the probe was run WITHOUT `--repeat-count` so the script saw no streak — **re-run the probe WITH `--repeat-count --emit-prompt`** so the script re-assembles `cycle_prompt` with the loop block appended and flips `cycle_model` to `"sonnet"`. Do NOT hand-append the loop block or hand-flip the model — let the script own both.
+
+The loop-guard evaluation itself is silent — never announce "no loop-guard fires" (orchestrator-voice.md hard ban); the only visible trace of a fired guard is the `(sonnet, loop-resolution)` tag on the T2 `disp` line.
+
+**Fallback (degraded path, NOT the norm):** if `cycle_prompt` is `null`/refused for a REAL (non-pseudo, non-terminal) skill — the probe returned `cycle_prompt_refused` with a reason (e.g. unbound-token residue or an unknown section reference) — surface it as a T6 deviation line (`⚠ cycle_prompt refused: <reason> — falling back to hand-binding`) and fall back to reading `~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (+ `loop-block.md` when the in-session guard fires) and binding the tokens by hand per the component's header comment. This is a degraded recovery path for an assembly bug, not the normal flow — the normal flow is consume `cycle_prompt` verbatim.
+
+**Emit the T2 cycle-dispatch block (Step 3 / orchestrator-voice.md) immediately before the Agent call:** the canonical step heading (`### {Step name} — {work summary, ≤12 words} [x/y]`) + the `disp` line (`{sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])`). Nothing else between the block and the dispatch.
 
 Dispatch:
 
 ```
 Agent({
-  description: "lazy-batch cycle {cycle+1}: {sub_skill} for {feature_name}",
+  description: "lazy-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {feature_name}",
   subagent_type: "general-purpose",
-  model: <"sonnet" if LOOP DETECTED else "opus">,
-  prompt: <the prompt above>
+  model: <the probe's cycle_model>,
+  prompt: <the probe's cycle_prompt, verbatim>
 })
 ```
 
-**Model selection.** Normal cycles dispatch on Opus because real-skill cycles can involve novel implementation decisions. The loop-resolution cycle (LOOP DETECTED branch) is mechanical — the prompt already contains the diagnosis (which sentinels to inspect, what conditions warrant which write) and the work is "read the canonical sentinel schema, identify which sentinel preconditions are met, write it, commit". Sonnet is sufficient at roughly 5× the cost-efficiency. Use `model: "sonnet"` when the LOOP DETECTED block was appended, `model: "opus"` otherwise.
+**Model selection — script-owned.** The orchestrator no longer chooses the model: copy `cycle_model` from the probe into the `model:` field (never omit it — see the dispatch template). The script makes the choice — `"sonnet"` ONLY when it appended the loop block (persisted `repeat_count >= 2`), `"opus"` otherwise. The rationale is unchanged: normal real-skill cycles run Opus because they can involve novel implementation decisions, while the loop-resolution cycle is mechanical (the prompt already carries the diagnosis — read the canonical sentinel schema, identify which sentinel's preconditions are met, write it, commit), so Sonnet suffices at roughly 5× the cost-efficiency. Because loop-resolution selection is mechanical and driven by the persisted streak, the script can own it deterministically.
 
 ### 1d.5. Post-cycle input audit (Opus — runs only on `/spec` and `plan-feature` cycles)
 
 **Why this step exists.** The dispatched cycle subagent that ran `/spec` (or `plan-feature`, which composes `/spec-phases` + `/write-plan`) self-classifies its own decisions as product-behavior vs mechanical-internal and self-decides whether to halt via `NEEDS_INPUT.md`. In practice that self-classification gets short-shrift — the subagent juggles competing pressures (integrate research, draft updates, finalize SPEC, produce summary) and the classification step is biased toward "make progress". Across ~75 observed lazy-batch cycles, zero `NEEDS_INPUT.md` sentinels fired from `/spec`'s self-audit despite multiple cycles having surfaceable product-behavior calls. This step is the independent Opus second-opinion focused on one question: did any product-behavior decision get baked into SPEC.md / PHASES.md without surfacing to the user?
 
+**Ordering (Deliverable A — close the routing-order gap):** Step 1d.5 runs IMMEDIATELY after the cycle subagent returns (i.e., after Step 1d dispatch completes), BEFORE the orchestrator performs the next state probe at Step 1a. This means the audit executes after EVERY `/spec` or `plan-feature` cycle — regardless of what the NEXT state probe will return. In particular, if the next probe routes to `needs-input` (Step 1g) or `blocked` (Step 1h), that routing does NOT retroactively exempt the just-completed cycle's audit. The audit fires first; Step 1g / 1h fires afterward (on the same cycle or the subsequent one). This closes the observed gap where product-behavior decisions baked into a `/spec` cycle escaped audit because the orchestrator jumped directly to needs-input/blocked resolution.
+
 **Skip when ANY of:**
 - `sub_skill` is NOT in {`/spec`, `plan-feature`}. (Most cycles — `/execute-plan`, `/retro`, `/mcp-test`, pseudo-skills — skip the audit; they don't author SPEC content.)
 - The cycle was a pseudo-skill (Step 1c.5 already ran inline; no `/spec`-shaped decisions to audit).
-- The cycle subagent already wrote `NEEDS_INPUT.md` for this feature this cycle (the cycle correctly surfaced; re-auditing would double-fire). Probe: `test -f {spec_path}/NEEDS_INPUT.md` AND `git diff HEAD~1 --name-only` lists it.
+- The cycle subagent already wrote `NEEDS_INPUT.md` for this feature this cycle (the cycle correctly surfaced; re-auditing would double-fire). Probe: `test -f {spec_path}/NEEDS_INPUT.md` AND `git diff HEAD~1 --name-only` lists it. **This double-fire guard is preserved** — a subsequent `needs-input` routing in Step 1g does NOT exempt the audit (different concern), but the cycle subagent itself having already written the sentinel for THIS cycle does.
 - The cycle subagent returned a hard failure with no SPEC/PHASES delta (nothing to audit).
 
 **Inputs to gather before dispatch:**
@@ -495,7 +439,7 @@ Agent({
 
 ```
 Agent({
-  description: "lazy-batch cycle {cycle+1}: input-audit for {feature_name}",
+  description: "lazy-batch input-audit (cycle {forward_cycles + meta_cycles}): {feature_name}",
   subagent_type: "general-purpose",
   model: "opus",
   prompt: <audit prompt below>
@@ -504,116 +448,12 @@ Agent({
 
 **Audit prompt:**
 
-```
-You are the lazy-batch INPUT-AUDIT subagent — an independent Opus second-opinion
-that runs after a /spec or plan-feature cycle. Your sole job is to verify that
-no product-behavior decision was silently baked into SPEC.md / PHASES.md
-without surfacing to the user via NEEDS_INPUT.md.
-
-Scope (HARD): you MUST NOT edit source code, tests, plan files, or any file
-except {spec_path}/NEEDS_INPUT.md. You MAY commit that sentinel and push the
-work branch. You MUST NOT call the Skill tool, MUST NOT dispatch further
-subagents, and MUST NOT modify SPEC.md / PHASES.md (the cycle subagent's
-content stands until the user resolves the surfaced decisions via Step 1g).
-
-Inputs:
-  - Feature: {feature_name} ({feature_id})
-  - Spec path: {spec_path}
-  - Sub-skill that just ran: {sub_skill}
-  - Cycle commit (for diff): {cycle_commit_sha or "HEAD~1"}
-  - Cycle subagent's return summary, INCLUDING its Decision-Classification
-    Ledger section (or a note that the ledger was missing/malformed):
-    ---
-    {cycle_summary}
-    ---
-
-Bias: AGGRESSIVE — when in doubt, surface. Any decision that even *touches* a
-user-visible surface is `product-behavior` unless it has an unambiguous single
-defensible answer that the user could not reasonably want to override. The
-canonical product-behavior smells checklist lives in
-~/.claude/skills/spec/SKILL.md ("Product-behavior smells — concrete
-checklist"); read it and apply each smell to every decision visible in this
-cycle's diff. Examples that ALWAYS qualify as product-behavior regardless of
-recommendation strength:
-  - v1 default values the user sees on first run.
-  - "Ship continuous vs quantized" / "configurable vs fixed" toggles.
-  - Scope-of-v1 calls (ship subfeature now vs defer).
-  - Workflow shape and surface placement.
-  - Copy / labels / names visible to the user.
-  - Research-surfaced multi-option calls at the user-visible level.
-
-Audit algorithm:
-1. Read SPEC.md (and RESEARCH.md if it exists) from {spec_path}.
-2. Read the diff: `git show {cycle_commit_sha} -- {spec_path}/SPEC.md
-   {spec_path}/PHASES.md` (or `git diff HEAD~1 -- ...` if no sha was given).
-3. Cross-reference the cycle subagent's Decision-Classification Ledger against
-   the diff:
-   a. For each ledger row: independently re-classify per the smells checklist.
-      Flag any row classified `mechanical-internal` by the cycle subagent that
-      your independent classification says is `product-behavior`.
-   b. For each user-visible change in the diff NOT covered by a ledger row:
-      treat it as a hidden decision the cycle subagent failed to disclose;
-      classify and flag accordingly.
-   c. If the ledger was missing or malformed entirely, perform a diff-only
-      audit: identify every user-visible change in the diff, classify each.
-4. Compile the list of `product-behavior` decisions that were baked in without
-   surfacing (i.e. `Surfaced via: auto-accept` rather than `NEEDS_INPUT.md`).
-   These are the misclassifications you must surface.
-5. If the list is EMPTY: return a one-line summary
-   `clean — no product-behavior decisions baked in; cycle subagent's
-   auto-accepts were all mechanical-internal`. Write nothing. STOP.
-6. If the list is NON-EMPTY:
-   a. Cap at the top 4 by user-visibility impact (the sentinel schema's
-      `AskUserQuestion` 4-question cap). Note the rest in the body as
-      "## Open Questions" for a follow-up audit cycle.
-   b. Write {spec_path}/NEEDS_INPUT.md per the canonical schema in
-      ~/.claude/skills/_components/sentinel-frontmatter.md:
-        ---
-        kind: needs-input
-        feature_id: {feature_id}
-        written_by: lazy-batch-input-audit
-        decisions:
-          - <one-line decision 1>
-          - ...
-        date: <today>
-        next_skill: spec
-        ---
-      Body MUST follow the rich-body convention (## Decision Context H2,
-      one H3 per decision). For EACH surfaced decision:
-        - **Problem:** cite the exact SPEC.md section / line where it was
-          baked in, and (if Phase 3) the RESEARCH.md finding that frames the
-          tradeoff.
-        - **Options:** list (at minimum) the baked-in answer labeled
-          "Auto-accepted by cycle subagent: <option>" PLUS at least 2
-          alternatives the user might reasonably prefer (drawn from research
-          where possible). Include concrete tradeoffs per option.
-        - **Recommendation:** <strongest option, often the baked-in one if
-          it's defensible> — <one-sentence justification>. The user can
-          confirm the baked-in answer in one click via AskUserQuestion.
-   c. Commit the sentinel with a clear message:
-        git add {spec_path}/NEEDS_INPUT.md
-        git commit -m "{feature_id}: input-audit surfaced N product-behavior
-        decision(s) for user confirmation"
-      Push the work branch (`git push origin $(git rev-parse --abbrev-ref
-      HEAD)`, 4× backoff retry on network error; never main, never force).
-7. Return a one-paragraph summary (≤ 8 lines) covering:
-   - Decisions reviewed (count) and how many you classified as
-     product-behavior.
-   - Whether the cycle subagent's Decision-Classification Ledger was present
-     and well-formed; if missing/malformed, flag the contract violation by
-     skill name.
-   - The one-line titles of the surfaced decisions.
-   - Whether you wrote NEEDS_INPUT.md (and the commit sha if so).
-
-Do NOT halt the loop. The NEEDS_INPUT.md sentinel you write is picked up by
-lazy-state.py on the next cycle and resolved via Step 1g (decision-resume
-mode) inline — no orchestrator-side halt fires.
-```
+**Read `~/.claude/skills/_components/lazy-batch-prompts/input-audit-prompt.md` now** and use its verbatim fenced block as the audit dispatch prompt, binding {feature_name}, {feature_id}, {spec_path}, {sub_skill}, {cycle_commit_sha or "HEAD~1"}, and {cycle_summary} before dispatch.
 
 **After the audit subagent returns:**
-1. If it wrote `NEEDS_INPUT.md`, append a `**Audit:**` bullet to the per-cycle output block (Step 3): `**Audit:** {N} product-behavior decision(s) surfaced` (one line, no further prose).
-2. If it returned "clean — no product-behavior decisions baked in", append no audit bullet — the audit is silent on clean cycles to keep cycle output lean.
-3. If it flagged a missing/malformed Decision-Classification Ledger, append a `**Note:**` bullet: `**Note:** /spec --batch cycle returned no Decision-Classification Ledger (contract violation)`. This surfaces the contract issue without halting.
+1. If it wrote `NEEDS_INPUT.md`, carry it on the cycle's T3 `audit` line (Step 3 / orchestrator-voice.md): `audit  {N} product-behavior decision(s) surfaced → NEEDS_INPUT.md` (one line, no further prose).
+2. If it returned "clean — no product-behavior decisions baked in", emit no audit line — the audit is silent on clean cycles to keep cycle output lean.
+3. If it flagged a missing/malformed Decision-Classification Ledger, surface it as a T6 deviation line: `⚠ /spec --batch cycle returned no Decision-Classification Ledger (contract violation)`. This surfaces the contract issue without halting.
 4. Audit costs are NOT separate cycles — the audit shares the cycle's slot in `cycle_log` and does not increment the cycle counter. The audit subagent is bounded (read SPEC/RESEARCH/diff, classify, optionally write one sentinel), so its context footprint is small.
 5. Proceed to Step 1e. The next state-script call at Step 1a will surface `needs-input` if the audit wrote `NEEDS_INPUT.md`, and Step 1g handles resolution inline (no loop halt).
 
@@ -621,19 +461,35 @@ mode) inline — no orchestrator-side halt fires.
 
 After the subagent returns:
 
-1. Append to `cycle_log`: `{cycle+1, feature_name, sub_skill, subagent's one-paragraph summary}`.
-2. Emit the canonical per-cycle update block (Step 3): heading `### Cycle {cycle+1}/{max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the first line of the subagent summary, `**Commit:**` = the cycle's commit sha (or `—`). For an `/execute-plan` cycle, add the `**Inline:**` bullet confirming the subagent performed the edits inline (zero Agent() calls) with test-first discipline per batch — the inline-override audit signal. No other prose.
+1. Append to `cycle_log`: `{forward_cycles + meta_cycles + 1, feature_name, sub_skill, subagent's one-paragraph summary}` (use the total BEFORE the increment below, so the entry matches the in-flight cycle number).
+2. Emit the T3 cycle-return block (Step 3 / orchestrator-voice.md) under the cycle's T2 heading: a `done` line (ONE line — duration + the load-bearing outcome); on an `/execute-plan` cycle an `audit` line — REQUIRED, this is the inline-override audit signal `/lazy-batch-retro` grades: confirm the subagent performed the edits inline (zero Agent() calls) with test-first discipline per batch plus the gate outcome (e.g. `audit  RED→GREEN 33/33 · gates qg:ts green · inline, zero Agent()`); a `ledger` line (the step 4/4a guard outcome — `clean · pushed` when healthy); and a `next` line (the fresh probe's routing, or `terminal: <reason>`). The retired 3–5-bullet cycle summary must NOT reappear — details live in the commit and the docs the subagent wrote.
 3. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
 4. **Post-cycle push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** Verify the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). The cycle subagent's Step 1d already commits and pushes to the current branch at end-of-cycle, so this normally reports "up to date" — it is the backstop for any cycle that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds.
-4a. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard (guardrail D — codifies the previously-ad-hoc operator check).** When the cycle that just returned was `/execute-plan` or `/mcp-test`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a). This is one git/grep check fired on the cycle's completion notification — NOT polling, so HARD CONSTRAINT 7 (no active waiting) holds; these are `Bash` reads, so HARD CONSTRAINT 1 holds too. The cycle subagent is supposed to leave a clean, consistent ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically loses its turn between gates and commit — this guard catches the residue deterministically instead of relying on operator memory. Checks:
-   - `git status --short` is empty (clean tree — nothing written-but-uncommitted).
-   - `HEAD == origin/<branch>` (`git rev-parse HEAD` == `git rev-parse origin/<branch>` — nothing committed-but-unpushed; run `git fetch origin <branch>` first).
-   - **(`/execute-plan` only)** the plan part's frontmatter is `status: Complete` AND `grep -c "- \[ \]" {spec_path}/PHASES.md` returns `0` (zero unchecked boxes — the dual ledger is consistent, not half-flipped).
+4a. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard (guardrail D — codifies the previously-ad-hoc operator check).** When the cycle that just returned was `/execute-plan` or `/mcp-test`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a). This is one scripted check fired on the cycle's completion notification — NOT polling, so HARD CONSTRAINT 7 (no active waiting) holds; these are `Bash` reads, so HARD CONSTRAINT 1 holds too. The cycle subagent is supposed to leave a clean, consistent ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically loses its turn between gates and commit — this guard catches the residue deterministically instead of relying on operator memory.
 
-   If ALL checks pass, continue to step 5. If ANY check FAILS, the orchestrator auto-dispatches a recovery cycle subagent (an allowed corrective dispatch — NOT a numbered cycle, does NOT increment `cycle`) whose sole job is to reconcile: stage + commit + push any residue, tick the remaining PHASES.md verification boxes, and re-flip the plan status if needed, then re-run this guard. Recovery dispatch prompt MUST name the specific failed check(s) and the `{spec_path}`. Append a `**Recovery:**` bullet to the per-cycle output block noting which check failed. Do NOT advance to Step 1a until the guard passes.
-5. Increment `cycle`. Return to Step 1a. **Cycle counter is monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the cycle counter continues counting from the value just produced here. Do NOT reset to 0 or 1 on the boundary; cycle N+1 is always the next cycle regardless of which feature it lands on.
+   First fetch so `@{u}` is current (the `--verify-ledger` `head_matches_origin` check compares HEAD to `@{u}` and does NOT fetch itself):
+   ```bash
+   git fetch origin $(git rev-parse --abbrev-ref HEAD)
+   ```
+   Then run — **plan-scoped on `/execute-plan` cycles, feature-level on `/mcp-test` cycles:**
+   ```bash
+   # /execute-plan cycle — scope the guard to the plan part this cycle just executed
+   # ({plan_file} = the probe's sub_skill_args, the absolute plan-file path):
+   python3 ~/.claude/scripts/lazy-state.py --repo-root <repo_root> --verify-ledger {spec_path} --plan {plan_file}
+   # /mcp-test cycle (no plan part) — feature-level call, unchanged:
+   python3 ~/.claude/scripts/lazy-state.py --repo-root <repo_root> --verify-ledger {spec_path}
+   ```
+   With `--plan`, `plan_complete` checks THIS plan part's frontmatter flipped `Complete` and `deliverables_done` checks only THIS part's in-scope WUs are ticked — so a still-pending LATER plan part no longer false-fails the guard (cite: live-run false alarm 2026-06-11). Read the JSON `ok`/`failing_check`/`checks` fields. (`--cloud` is NOT needed for `--verify-ledger`; the plan-Complete check is the same in both modes.)
 
-**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, sub_skill_args, current_step)` tuple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the cycle-counter increment: it is a uniform post-cycle action that happens once per cycle (real, pseudo, or decision-resume) and never resets.
+   If `ok` is true → continue to step 5. If `ok` is false → reconcile per the named `failing_check`:
+   - `clean_tree` or `head_matches_origin` failing → auto-dispatch a recovery cycle subagent (NOT a numbered cycle, does NOT increment `forward_cycles`) whose sole job is to stage + commit + push any uncommitted/unpushed residue, then re-run `--verify-ledger` until ok.
+   - `plan_complete` failing (`/execute-plan` only) → the recovery subagent re-flips the plan-part frontmatter `status:` to `Complete`, then re-runs the guard.
+   - `deliverables_done` failing → the recovery subagent may tick a verification box ONLY when there is on-disk evidence that verification actually ran for that row (e.g. `VALIDATED.md` or `MCP_TEST_RESULTS.md` present in `{spec_path}/` and covering that row). If verification boxes are unticked AND no such evidence exists on disk, the recovery subagent MUST NOT tick them; instead it writes `{spec_path}/NEEDS_INPUT.md` describing the gap (which boxes are unticked, which evidence is missing) and surfaces it — do not silently tick unverified boxes. Note: `--verify-ledger`'s `deliverables_done` check already exempts verification-only rows (rows under "Runtime Verification / MCP Integration Test" subsections), so it will not false-fail on legitimately-pending Runtime-Verification boxes.
+
+   Recovery dispatch prompt MUST name the specific `failing_check` and `{spec_path}`, and MUST carry the work-branch-only clause (commit and push to the current branch only — `git rev-parse --abbrev-ref HEAD` at start — never a new branch, never --force). Surface the failed check per T6 (`⚠ verify-ledger {failing_check} failed` → evidence → recovery action taken), and record the post-recovery outcome on the cycle's T3 `ledger` line. Do NOT advance to Step 1a until the guard passes.
+5. Increment `forward_cycles`. Return to Step 1a. **Both counters are monotonic across feature transitions (HARD CONSTRAINT 8).** If the next state-script call returns a different `feature_id` — e.g. because this cycle's `__mark_complete__` finished the prior feature, or the queue rolled forward to the next ready feature for any other reason — the counters continue from where they were. Do NOT reset either counter on the boundary.
+
+**Note:** Step 1c.5 (pseudo-skill inline handling) MUST also update `prev_cycle_signature` to the cycle's `(feature_id, sub_skill, sub_skill_args, current_step)` tuple before returning to Step 1a. Otherwise a real-skill cycle following a pseudo-skill cycle would compare against a stale signature and miss loops that span both kinds. The orchestrator should treat the prev-signature update as a uniform post-cycle action regardless of whether the cycle dispatched a subagent or ran inline. The same applies to the counter increments: they are uniform post-cycle actions that happen once per cycle (real, pseudo, or decision-resume) and never reset.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
@@ -645,75 +501,7 @@ After the subagent returns:
 
 1. **Read every pending feature's RESEARCH_PROMPT.md.** For each `feature_id` in `research_pending`, locate the prompt file (the path is recorded in the just-written `NEEDS_RESEARCH.md` sentinel's `research_prompt_path` field, resolved relative to that feature's `spec_path`). Read its content; measure its character count.
 
-2. **Announce the halt with inline prompts.** The mobile-friendliness goal: every prompt the user needs to paste into Gemini is in chat, in a fenced code block, ready for long-press-copy. No GitHub UI navigation required. Print:
-
-   ```
-   ⏸  /lazy-batch paused — {N} feature(s) awaiting Gemini research.
-
-   Pending: {comma-separated feature_ids from research_pending}
-
-   ───────────────────────────────────────────────────────────────────────────
-   ```
-
-   Then, for EACH pending feature in order, print:
-
-   ```
-   ### {feature_id} — {feature_name}
-
-   Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
-
-   **Research prompt** (copy this entire block into Gemini Deep Research):
-
-   ```text
-   {full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present}
-   ```
-
-   [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
-
-   ───────────────────────────────────────────────────────────────────────────
-   ```
-
-   The `[length: ...]` line is a soft indicator. When over cap, append the addendum `(may need manual trimming before paste)` so the operator notices on mobile without scrolling back. Do NOT refuse to print — over-cap prompts are still printed in full; the warning is informational.
-
-   After all per-feature blocks, print the unified upload instructions:
-
-   ```
-   When you have research result(s), the fastest path is to upload them in your
-   NEXT MESSAGE in this conversation — I will dispatch /ingest-research
-   IN-SESSION and re-invoke /lazy-batch automatically (see Step 5: In-Session
-   Resume Protocol). You do NOT need to re-run /lazy-batch manually.
-
-   Supported upload shapes for your next message:
-     • File attachment (Claude Code path or chat-uploaded file)
-     • Pasted text — the research content in a fenced code block or quoted
-     • An absolute file path on the machine running this session (e.g.
-       ~/Downloads/<file>.txt or a phone-synced folder)
-
-   Or, if you prefer to stage the file and resume later, any of these paths
-   still work:
-
-     ① Staged (gemini-sprint workflow):
-        Save each Gemini output as docs/gemini-sprint/results/<feature-id>.txt
-        (one file per feature). NOTE: this path is gitignored in AlgoBooth —
-        fine for a workstation session that resumes locally, but a bare .txt
-        stage WILL NOT persist across a cloud-container reclaim. Path ② is
-        durable; the in-session resume above is durable AND immediate.
-
-     ② Canonical drop (skip ingestion, durable):
-        Write the research directly as
-        docs/features/.../<feature-id>/RESEARCH.md
-        On your next /lazy-batch run, lazy-state.py routes straight to Step 5
-        (integrate research → /spec Phase 3) — no ingestion step needed.
-
-     ③ One-off file path (workstation only):
-        Run /ingest-research <absolute-or-relative-path-to-the-file> first.
-        That skill copies the file into the staging dir, correlates it, and
-        writes RESEARCH.md + RESEARCH_SUMMARY.md. Then re-run /lazy-batch
-        to resume the pipeline.
-
-   Re-invoke with /lazy-batch {max_cycles} [--allow-research-skip] when ready
-   (only required if you did NOT use the in-session resume path above).
-   ```
+2. **Announce the halt with inline prompts (a sanctioned T6 rich zone — print in full).** The mobile-friendliness goal: every prompt the user needs to paste into Gemini is in chat, in a fenced code block, ready for long-press-copy. No GitHub UI navigation required. **Read `~/.claude/skills/_components/lazy-batch-prompts/research-halt-announcement.md` now** and use **Variant B** (the `queue-blocked-on-research` multi-feature path). Print the opening block, then the per-feature block for EACH `feature_id` in `research_pending` (binding {feature_id}, {feature_name}, {spec_path}, {RESEARCH_PROMPT content}, {NNNN chars}, {within|over}), then the unified upload instructions (binding {max_cycles}). The `[length: ...]` line is a soft indicator. When over cap, append the addendum `(may need manual trimming before paste)` so the operator notices on mobile without scrolling back. Do NOT refuse to print — over-cap prompts are still printed in full; the warning is informational.
 
 3. **PushNotification:**
 
@@ -721,7 +509,7 @@ After the subagent returns:
    PushNotification({ message: "lazy-batch paused — {N} feature(s) awaiting Gemini research. Upload research and re-invoke /lazy-batch." })
    ```
 
-4. **Append to `cycle_log`:** `{cycle+1, "—", "⏸ research-wait (halt)", "{N} feature(s) pending: {feature_ids}"}`. DO NOT increment `cycle` — the halt is not a real cycle.
+4. **Append to `cycle_log`:** `{forward_cycles + meta_cycles + 1, "—", "⏸ research-wait (halt)", "{N} feature(s) pending: {feature_ids}"}`. DO NOT increment either counter — the halt is not a real cycle.
 
 5. **Print the final batch report (Step 2)** with `terminal_reason = "queue-blocked-on-research"` and STOP. The orchestrator's turn ends; the user's next invocation re-enters via Step 0 → Step 0.5 → Step 1.
 
@@ -739,15 +527,60 @@ No special resume detection is needed in `/lazy-batch`'s main loop — every upl
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{PUSH_RULE}` = workstation (the apply subagent's standard end-of-work push suffices). Then read and apply the shared decision-resume handler exactly (single source across the feature / bug / cloud batch orchestrators):
+**Meta-cap check (FIRST — before any other action in Step 1g):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"lazy-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP. This is what guarantees a Defer→same-terminal re-prompt loop is bounded.
+
+**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{PUSH_RULE}` = workstation (the apply subagent's standard end-of-work push suffices). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then read and apply the shared decision-resume handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
 `~/.claude/skills/_components/decision-resume.md`
+
+**Park mode — processing `parked[]` output (Phase 4, `--park` only):** When `park_mode == true` and the probe returns a non-empty `parked[]` array, the orchestrator skips the `AskUserQuestion` resolution flow for each item in that array and instead parks it: for each newly-parked `feature_name`, increment `parked_count` and fire `PushNotification({ message: "parked {feature_name} — {parked_count} decision(s) parked so far this run" })` (per the §1c.6 park policy). Continue the queue walk without halting. The batched flush of all parked decisions occurs later via the WU-4 flush protocol (see §1g-flush below).
+
+---
+
+### 1g-flush. Parked-decision flush (`--park` only)
+
+**Guard:** runs only when `park_mode == true`. When `park_mode == false` this step is entirely
+skipped — behavior is byte-for-byte the existing one.
+
+**Pipeline binding for the shared flush component below** — `{SKILL}` = `/lazy-batch`,
+`{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{PUSH_RULE}` = workstation (standard
+end-of-work push; the apply subagent's standard push suffices). The meta-cycle accounting
+translates to **increment `meta_cycles`** per applied decision, matching every other resolution
+mode.
+
+**Three flush triggers (fire at the FIRST of):**
+
+- **(a) Operator message mid-run:** any mid-run operator message while `park_mode == true` and
+  unresolved parked items exist triggers an immediate flush before processing the message further
+  (after echo-back if the message implies a standing-directive change).
+- **(b) No unparked work remains:** when `lazy-state.py` returns `all-features-complete` (or any
+  queue-exhausted terminal) and unresolved parked items still exist, flush FIRST — do NOT treat
+  all-complete as a real STOP while unresolved parked items remain.
+- **(c) Run end:** flush before printing the final batch report whenever `parked_count > 0` with
+  unresolved sentinels still present.
+
+**Cache-boundary note:** Triggers **(b)** and **(c)** are also the natural Anthropic prompt-cache
+rebuild boundaries — the orchestrator was already going to pause or stop, so the ≈5-minute TTL
+lapses anyway. Batching parked decisions to flush at those points adds **no extra cache cost**.
+Trigger **(a)** (operator message mid-run) is itself a natural interaction boundary — flush there
+too rather than accumulating further. Consequence: **do not interleave unrelated long waits (or
+unrelated blocking halts) between a park and its flush.** Parking is for advancing past a decision
+so forward work continues; the flush should land at the next natural cache boundary ((b)/(c)) or
+interaction point ((a)) — inserting idle time in between forces repeated cache rebuilds for no
+benefit.
+
+Then read and apply the shared parked-flush handler exactly (single source across all three batch
+orchestrators):
+
+`~/.claude/skills/_components/parked-flush.md`
 
 ---
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{SPEC_ROOT}` = `docs/features`, `{ADD_PHASE}` = `/add-phase`, `{PUSH_RULE}` = workstation (standard push). Then read and apply the shared blocked-resolution handler exactly (single source across the feature / bug / cloud batch orchestrators):
+**Meta-cap check (FIRST — before any other action in Step 1h):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"lazy-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+
+**Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{SPEC_ROOT}` = `docs/features`, `{ADD_PHASE}` = `/add-phase`, `{PUSH_RULE}` = workstation (standard push). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (blocked-resolution is a meta cycle). Then read and apply the shared blocked-resolution handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
 `~/.claude/skills/_components/blocked-resolution.md`
 
@@ -755,13 +588,15 @@ No special resume detection is needed in `/lazy-batch`'s main loop — every upl
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
+**Meta-cap check (FIRST — before any other action in Step 1i):** `if meta_cycles >= 2 * max_cycles:` → halt with message `"lazy-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+
 For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified`, `needs-spec-input`, `stale_upstream` (and any future obstacle terminal) — the orchestrator routes here instead of halting. Rather than dead-ending, it re-prints the obstacle context, `AskUserQuestion`s a resolution path (reopen & re-validate / provide direction / defer & continue / halt-for-manual / custom), enacts the choice via an Opus apply-resolution subagent, and continues the loop. Follow the shared component (read and apply it exactly):
 
 `~/.claude/skills/_components/halt-resolution.md`
 
 Per that component's exclusion list, these terminals are NOT routed here and keep their existing behavior: `max-cycles` (cost bound — hard stop), `all-features-complete` (genuine success), `cloud-queue-exhausted` / `device-queue-exhausted` (environment — re-run on the right host), and `queue-missing` (no queue to continue). The research-pending terminals (`needs-research` / `queue-blocked-on-research`) keep their specialized Step 4 / Step 1f handling, which already lets the operator continue (in-session chat upload or re-invoke) rather than dead-ending; the component's "defer this research-pending feature & continue" option is available there as an enhancement when the queue has independent downstream work.
 
-The Step 1i cycle records like any other (cycle_log entry, per-cycle block, `prev_cycle_signature = (feature_id, "__resolve_halt__", sub_skill_args, current_step)`, increment `cycle`), and only the operator-chosen "Halt for manual fix" path stops the run.
+The Step 1i cycle records like any other (cycle_log entry, per-cycle block, `prev_cycle_signature = (feature_id, "__resolve_halt__", sub_skill_args, current_step)`, **increment `meta_cycles`**), and only the operator-chosen "Halt for manual fix" path stops the run.
 
 ---
 
@@ -833,9 +668,11 @@ When the loop exits (terminal state or max-cycles), print:
 ```
 ## /lazy-batch — Done
 
-**Cycles completed:** {cycle}/{max_cycles}
-**Terminal reason:** {terminal_reason or "max-cycles"}
+**Forward cycles used:** {forward_cycles}/{max_cycles}
+**Meta cycles used:** {meta_cycles}/{2*max_cycles}
+**Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
+**Park mode:** {on | off}
 
 ### Cycle log
 | # | Feature | Action | Summary |
@@ -849,33 +686,64 @@ When the loop exits (terminal state or max-cycles), print:
   - If terminal_reason is "needs-research" (DEFAULT path, strict halt): the fastest resume path is to upload Gemini research in your NEXT MESSAGE in this conversation — the in-session resume protocol (Step 5) will dispatch /ingest-research and re-invoke /lazy-batch automatically. Otherwise, stage/drop the research per Step 4's halt announcement and re-run `/lazy-batch {max_cycles}` manually.
   - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): same as needs-research — upload research in chat for fastest resume, or use one of the staged/drop paths and re-run `/lazy-batch {max_cycles} [--allow-research-skip]`.
   - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch invocation.)
-  - If max-cycles: re-run `/lazy-batch {max_cycles}` from a fresh session
+  - If forward-cycles-cap: re-run `/lazy-batch {max_cycles}` from a fresh session
+  - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
 ```
+
+*(Print the following table ONLY when `park_mode == true` AND `auto_accepted[]` is non-empty. Omit entirely otherwise — no change to default reports.)*
+
+```
+### Auto-accepted decisions (`--park` two-key)
+
+| Feature | Decision | Chosen option | Resolved sentinel |
+|---------|----------|---------------|-------------------|
+| {feature_name} ({feature_id}) | {decision title} | {chosen option label} | `{resolved_sentinel_path}` |
+| ... | ... | ... | ... |
+```
+
+*(One row per auto-accepted decision across all features. If a single sentinel carried multiple decisions, emit one row per decision with the same feature column repeated. This table is the run-end audit trail for all D2 two-key auto-accepted choices.)*
+
+*(Print the following table whenever the run applied the completeness-first standing policy at least once — BOTH modes, alongside the park auto-accept digest above when both fired. Omit entirely when no D7 applications occurred.)*
+
+```
+### Completeness-policy applications (D7)
+
+| Feature | Decision / blocker | Chosen path | Spin-off | Link |
+|---------|--------------------|-------------|----------|------|
+| {feature_name} ({feature_id}) | {≤8-word summary} | {most-complete path taken} | {spun-off id or —} | `{resolved sentinel / SPEC note / scenario path}` |
+| ... | ... | ... | ... | ... |
+```
+
+*(One row per `⚖ policy:` application across the run — Step 1g scope resolutions, Step 1h sequencing-only blocker resolutions, parked-flush Step 2.4 backstop resolutions, Gate-1 coverage routings, and cycle-subagent in-cycle applications disclosed in their summaries. This table is the run-end audit trail required by `completeness-policy.md` Logging; an application with no row here is an R-D7-2 fail.)*
+
+Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, parked/auto-accept/D7 digests, terminal reason, and Next-step lines carry all required content.
 
 STOP.
 
 ---
 
-## Step 3: Cycle Output Discipline (lean · consistent · scannable)
+## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)
 
-Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), decision-resume (Step 1g), blocked-resolution (Step 1h), or halt-resolution (Step 1i) — emits **EXACTLY ONE update block** in this shape, and nothing else:
+Per-cycle chat output follows the turn templates in `~/.claude/skills/_components/orchestrator-voice.md` — re-read it after any compaction boundary. Every cycle — real-skill (Step 1e), inline pseudo-skill (Step 1c.5), decision-resume (Step 1g), blocked-resolution (Step 1h), or halt-resolution (Step 1i) — emits exactly its template blocks under the canonical step heading, and nothing else:
 
 ```
-### Cycle {N}/{max_cycles} · {feature_name} · {sub_skill}
-- **Result:** {one-line outcome}
-- **Commit:** {short-sha | "—"}
+### {Step name} — {work summary, ≤12 words} [{n}/{max}]                   ← T2 heading
+disp   {sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])   ← T2, at dispatch
+done   {duration} · {load-bearing outcome}                                 ← T3, at return
+audit  {…}                                                                ← only where Steps 1e / 1d.5 require it
+ledger {clean · pushed | …}                                               ← post-cycle guard outcome
+next   {fresh probe routing | terminal: <reason>}
 ```
 
-`{sub_skill}` is the real skill name, the `__pseudo_skill__` token, or `needs-input` for a decision-resume cycle. `**Result:**` is the first line of the subagent summary, the inline action's effect, or the resolved decision — ONE line. `**Commit:**` is the cycle's commit sha (or `—` when nothing was committed).
+The heading leads with the **pipeline step being advanced to** (T2's canonical names: Spec / Investigate / Plan / Implement / Retro / Validate / Realign / Research / Mark Complete / Mark Fixed), then a **≤12-word summary of the work this cycle is about to do** (specific to the item, not a restatement of the step name), then the **counter**: `[{forward_cycles}/{max_cycles}]` for forward cycles (post-increment), `[meta {meta_cycles}/{2*max_cycles}]` for meta cycles (decision-resume 1g, blocked-resolution 1h, halt-resolution 1i, stale-plan flip). Both counters are still tracked and both appear in the T7 final report. Inline pseudo-skill cycles emit T4 (`act` / `gates` / `done` / `next`) instead of T2+T3, under the same heading shape. The retired formats — the `### Cycle fwd N/M · meta K/L` heading, the `· {feature_name} · {sub_skill}` heading suffix, the `**Result:**`/`**Commit:**` bullet block, and any 3–5-line cycle summary — must NOT reappear; the contract's Precedence clause governs.
 
-**Rules (so many cycles stay scannable on a phone):**
+**Rules (all follow from the contract's "mechanics are silent" principle):**
 
-- **ONE block per cycle.** The heading + bullets ARE the cycle's entire chat footprint. Do not precede or follow it with prose.
-- **No dispatch narration.** Do NOT write "dispatching the subagent", "running in the background", "waiting on the completion notification before advancing", or similar. The loop mechanics are a fixed contract, not per-cycle news.
-- **No commit-strategy narration.** Do NOT explain commit ownership or in-flight races ("these uncommitted changes are the agent's in-flight work", "committing now would race the agent", "I'll let it own the commits"). Commits are owned by the cycle subagent (real skills) or by the inline action (pseudo-skills) — a fixed rule, never re-explained per cycle.
+- **The template blocks ARE the cycle's entire chat footprint.** No prose before, between, or after them.
+- **No dispatch narration, no commit-strategy narration, no probe restating.** Loop mechanics, commit ownership, and probe JSON are a fixed contract, never per-cycle news — the cycle block's fields already carry `feature_id` / `sub_skill` / step.
 - **Ignore commit prompts silently.** If a Stop hook or any other prompt asks whether to commit between cycles, do NOT answer with prose. The commit policy is already fixed; proceed to the next state probe without narration.
-- **At most 2–3 bullets, one line each.** Add a third bullet ONLY for a genuinely notable signal — e.g. `**Inline:** edits performed inline, test-first per batch` on an `/execute-plan` cycle (the inline-override audit signal), `**Audit:** {N} product-behavior decision(s) surfaced` on a `/spec` or `plan-feature` cycle whose Step 1d.5 input-audit fired, or `**Note:** {flag}` for an issue worth surfacing.
-- **Halt/terminal announcements are exempt.** The Step 4 research halt, Step 1f research-wait, Step 1g malformed-sentinel halt, the Step 1h blocked-resolution prompt (rich blocker re-print + AskUserQuestion) and its "Halt for manual fix" stop, the Step 1i halt-resolution prompt (obstacle re-print + AskUserQuestion) and its Halt stop, and the Step 2 final report keep their own templated shapes — those are functional (copy-paste prompts, decision context, next-step guidance), not per-cycle narration.
+- **Deviations are T6, not extra bullets.** A failed guard, a gate refusal, a contract violation: `⚠ <symptom>` → evidence (quoted output, ≤10 lines) → action taken → the rule violated, cited here and only here.
+- **Halt/terminal announcements, resolution briefings, and echo-backs are T6 rich zones; the final report is T7.** The Step 4 research halt, Step 1f research-wait, Step 1g malformed-sentinel halt, the Step 1g/1h/1i resolution briefings (verbatim sentinel re-prints + 1:1 AskUserQuestion option sets — HARD CONSTRAINT 6 stands in full), the standing-directive echo-back, and the Step 2 final report keep their own functional templated shapes — those are sanctioned rich output, not per-cycle narration.
 
 ---
 
@@ -899,7 +767,7 @@ Detection happens inside `lazy-state.py::is_stub_spec(spec_text, queue_entry)`. 
 | Stub spec | `> Draft (pre-Gemini)` OR `queue.json "stub": true` OR legacy marker | Step 4.5 | Dispatch `/spec` as a normal cycle subagent; the subagent calls `AskUserQuestion` during Phase 1 brainstorming | Answer design questions inside the cycle (conversation) |
 | Structured + research-pending | No stub markers; `RESEARCH.md` / `RESEARCH_SUMMARY.md` missing; `RESEARCH_PROMPT.md` present | Step 5 → terminal `needs-research` | Halt per Step 4 below (or batch per `--allow-research-skip`); the orchestrator does NOT dispatch `/spec` interactively | Upload Gemini research (single-turn action) |
 
-HARD CONSTRAINT 5 scopes the orchestrator's `AskUserQuestion` to Step 1g — that constraint does NOT bind subagents the orchestrator dispatches. A `/spec` cycle subagent at Step 4.5 is allowed and expected to call `AskUserQuestion` during Phase 1; that's the legitimate design-conversation channel.
+HARD CONSTRAINT 5 scopes the orchestrator's `AskUserQuestion` to the resolution modes (Steps 1g / 1h / 1i) plus the four enumerated exceptions (i)–(iv) listed there (standing-directive echo-back, budget-and-queue guard, Step 0.45 `--adhoc` task-details prompt, Step 5 resume disambiguation) — that constraint does NOT bind subagents the orchestrator dispatches. A `/spec` cycle subagent at Step 4.5 is allowed and expected to call `AskUserQuestion` during Phase 1; that's the legitimate design-conversation channel.
 
 The `--allow-research-skip` flag described below applies to the STRUCTURED-research-pending case only. Stub specs never reach this step (they're dispatched at Step 4.5 before Step 5 fires).
 
@@ -951,48 +819,7 @@ This is the new default. The orchestrator halts on the FIRST `needs-research` it
 
 1. **Read the prompt content.** Open `{spec_path}/RESEARCH_PROMPT.md` and measure its character count. (If the file is somehow missing — the state script should never emit `needs-research` without it — print a defensive warning and fall through to the announcement with `<RESEARCH_PROMPT.md not found at expected path>` as the body.)
 
-2. **Print the halt announcement to chat.** Same shape as Step 1f's per-feature block but for a single feature:
-
-   ```
-   ⏸  /lazy-batch paused — {feature_name} needs Gemini research.
-
-   Feature: {feature_id}
-   Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
-
-   **Research prompt** (copy this entire block into Gemini Deep Research):
-
-   ```text
-   {full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present}
-   ```
-
-   [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
-
-   FASTEST RESUME — upload the research in your NEXT MESSAGE in this
-   conversation (file attachment, pasted text, or absolute path). I will
-   dispatch /ingest-research IN-SESSION (writing the tracked RESEARCH.md +
-   RESEARCH_SUMMARY.md into the feature directory) and re-invoke /lazy-batch
-   automatically. No manual re-run required. See Step 5: In-Session Resume
-   Protocol.
-
-   Alternative upload paths (use these if you prefer to stage and resume
-   later):
-     ① Save as docs/gemini-sprint/results/{feature_id}.txt. The next
-        /lazy-batch run auto-ingests via Step 0.5. NOTE: this path is
-        gitignored — a bare .txt stage is non-durable across cloud-container
-        reclaim. Use the in-session path above or path ② if cloud durability
-        matters.
-     ② Drop directly as {spec_path}/RESEARCH.md (skips ingestion;
-        lazy-state.py routes to /spec Phase 3 on next run). This file IS
-        tracked, so it survives cloud reclaim.
-     ③ /ingest-research <path> for a one-off file outside the repo
-        (workstation only — cloud cannot see file paths outside the
-        container's repo working tree). Then re-run /lazy-batch.
-
-   Re-invoke with /lazy-batch {max_cycles} when ready (only required if you
-   did NOT use the in-session resume path above).
-   ```
-
-   `{within | over}` is chosen by comparing the measured char count to 24,000 (Gemini's practical web-UI character cap; see `~/.claude/skills/spec/SKILL.md` Phase 2 for source notes). When over, append `(may need manual trimming before paste)` to that line — informational only, do NOT refuse to print.
+2. **Print the halt announcement to chat (a sanctioned T6 rich zone — print in full).** **Read `~/.claude/skills/_components/lazy-batch-prompts/research-halt-announcement.md` now** and use **Variant A** (the single-feature `needs-research` halt path), binding {feature_name}, {feature_id}, {spec_path}, {RESEARCH_PROMPT content}, {NNNN chars}, {within|over}, {max_cycles}. `{within | over}` is chosen by comparing the measured char count to 24,000 (Gemini's practical web-UI character cap; see `~/.claude/skills/spec/SKILL.md` Phase 2 for source notes). When over, append `(may need manual trimming before paste)` to that line — informational only, do NOT refuse to print.
 
 3. **PushNotification:**
 
@@ -1000,7 +827,7 @@ This is the new default. The orchestrator halts on the FIRST `needs-research` it
    PushNotification({ message: "lazy-batch paused — {feature_name} awaiting Gemini research. Upload research and re-invoke /lazy-batch." })
    ```
 
-4. **Append to `cycle_log`:** `{cycle+1, feature_name, "⏸ needs-research (strict halt)", "NEEDS_RESEARCH.md written; prompt printed inline ({NNNN} chars)"}`. DO NOT increment `cycle` — the halt is not a real cycle.
+4. **Append to `cycle_log`:** `{forward_cycles + meta_cycles + 1, feature_name, "⏸ needs-research (strict halt)", "NEEDS_RESEARCH.md written; prompt printed inline ({NNNN} chars)"}`. DO NOT increment either counter — the halt is not a real cycle.
 
 5. **Print the final batch report (Step 2)** with `terminal_reason = "needs-research"` and STOP. Do NOT call the state script again. Do NOT touch `skip_needs_research` — it stays `false`. Do NOT add the feature to `research_pending` — it stays empty. The user's next `/lazy-batch` invocation re-enters via Step 0 → Step 0.5 → Step 1 and either ingests the uploaded research or hits this same halt again.
 
@@ -1009,7 +836,7 @@ This is the new default. The orchestrator halts on the FIRST `needs-research` it
 This restores the pre-default-flip behavior. The orchestrator drops a sentinel, records the feature, flips `skip_needs_research = true`, and returns to Step 1a so the loop advances past this feature. The actual wait happens in Step 1f when `queue-blocked-on-research` fires.
 
 1. Add `feature_id` to `research_pending`. Set `skip_needs_research = true`.
-2. Append to `cycle_log`: `{cycle+1, feature_name, "needs-research (sentinel drop, --allow-research-skip)", "NEEDS_RESEARCH.md written; flagging for Step 1f research-wait"}`. **DO NOT increment `cycle`** — this is a no-op state transition, not a real cycle. Sentinel writes here don't count against `max_cycles` either; cost discipline is preserved because the actual work of generating the prompt and running Gemini happens elsewhere.
+2. Append to `cycle_log`: `{forward_cycles + meta_cycles + 1, feature_name, "needs-research (sentinel drop, --allow-research-skip)", "NEEDS_RESEARCH.md written; flagging for Step 1f research-wait"}`. **DO NOT increment either counter** — this is a no-op state transition, not a real cycle. Sentinel writes here don't count against `max_cycles` either; cost discipline is preserved because the actual work of generating the prompt and running Gemini happens elsewhere.
 3. Return to Step 1a. The next `lazy-state.py --skip-needs-research` call will either advance to the next feature in the queue (if any are ready) or return `queue-blocked-on-research` — at which point Step 1f's research-wait fires.
 
 **Special pre-step (both paths):** if the state script returns `sub_skill: "spec"` with args that include "skip to Phase 2", the orchestrator dispatches it normally (this generates the RESEARCH_PROMPT.md). On the next cycle, the state script returns `needs-research` and this Step 4 fires. That's the intended two-cycle handoff for a feature with no research at all.
@@ -1038,7 +865,7 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
    - An absolute file path (e.g. `~/Downloads/<file>.txt`, a phone-synced folder path).
    - Multiple of the above mixed in one message (e.g., one file per feature).
 
-   Correlate each piece of content to a pending feature via the most recently halted invocation's pending list (the `Pending: <feature_ids>` line from Step 1f, or the single `feature_id` from Step 4). When the upload is unambiguously for one feature (only one was pending, or the user named the feature in the message), proceed directly. When multiple features were pending and the correlation is ambiguous, ask ONE `AskUserQuestion` clarifying "which feature does this research belong to?" before continuing — this is the only AskUserQuestion call permitted outside Step 1g, and only at the in-session resume boundary.
+   Correlate each piece of content to a pending feature via the most recently halted invocation's pending list (the `Pending: <feature_ids>` line from Step 1f, or the single `feature_id` from Step 4). When the upload is unambiguously for one feature (only one was pending, or the user named the feature in the message), proceed directly. When multiple features were pending and the correlation is ambiguous, ask ONE `AskUserQuestion` clarifying "which feature does this research belong to?" before continuing — this is permitted use (iv) under HARD CONSTRAINT 5 (the Step 5 in-session-resume disambiguation), surfaced only at the resume boundary.
 
 2. **Materialize the research into the staging dir.**
    - For file attachments / absolute paths: copy the file to `docs/gemini-sprint/results/<feature_id>.txt` (rename to match the feature_id for clean correlation by `/ingest-research`). Use `Bash` `cp` — do NOT move (the source file may be in a synced folder).
@@ -1092,7 +919,7 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
    You may NOT spawn further subagents.
    ```
 
-4. **Re-invoke `/lazy-batch` automatically.** After the subagent reports success, immediately invoke `/lazy-batch <N>` where `<N>` is the original `max_cycles` from the halted invocation (or the remaining budget if the user prefers — default to the original cap; surface the choice in the resume status line so the user can interject before the next halt). The re-invocation re-enters via Step 0 → Step 0.5 (which is now a no-op because the .txt has been moved to `_consumed/` by `/ingest-research`) → Step 1, and the previously research-pending feature is now ready for `/spec` Phase 3.
+4. **Re-invoke `/lazy-batch` automatically.** After the subagent reports success, immediately invoke `/lazy-batch <N>` where `<N>` is the original `max_cycles` from the halted invocation (or the remaining budget if the user prefers — default to the original cap; the default is mechanics and is not announced, and the operator can adjust the budget at any time via a standing directive). The re-invocation re-enters via Step 0 → Step 0.5 (which is now a no-op because the .txt has been moved to `_consumed/` by `/ingest-research`) → Step 1, and the previously research-pending feature is now ready for `/spec` Phase 3.
 
 5. **Print a brief resume status line BEFORE the re-invocation, so the user sees the bridge:**
 
@@ -1115,4 +942,4 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
 
 - This skill never invokes the work-log MCP tool. Each sub-skill invoked by the cycle subagents logs its own work.
 - The orchestrator is single-session by design — there is no persistence layer. State lives in the filesystem sentinels; restart is free.
-- Commit policy is delegated to the cycle subagent (which follows the project's `.claude/skill-config/commit-policy.md` or standard pattern). The orchestrator does not commit anything itself except the NEEDS_RESEARCH.md sentinel, which is committed by the next sub-skill cycle's subagent (since the loop has already exited by the time it's written) — under the default strict-halt path, the user's next `/lazy-batch` run is what commits it (the first subagent dispatched against the now-research-ready feature picks up the unstaged sentinel and stages it alongside its own work, or the sentinel becomes stale and is overwritten when ingestion happens).
+- Commit policy: the orchestrator's direct commits are its sentinel and plan-frontmatter writes — Step 1c.5 pseudo-skill actions (`__mark_complete__`, `__write_deferred_non_cloud__`, `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`, `__flip_plan_complete_stale__`), resolution-mode sentinel renames (BLOCKED.md → BLOCKED_RESOLVED_<date>.md, NEEDS_INPUT.md → NEEDS_INPUT_RESOLVED_<date>.md), gate-written NEEDS_INPUT.md (from the completion-integrity gate), and Gate-1 D7 routings (SPEC test-exempt notes per mcp-coverage-audit's completeness-policy outcome — Gate 1 no longer writes NEEDS_INPUT.md). NEEDS_RESEARCH.md is written inline (loop has already exited) and committed by the user's next `/lazy-batch` run or the first cycle subagent that picks it up. All cycle source/test commits are delegated to the cycle subagent (which follows the project's `.claude/skill-config/commit-policy.md` or standard pattern).

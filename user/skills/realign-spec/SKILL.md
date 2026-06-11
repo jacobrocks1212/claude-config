@@ -102,6 +102,8 @@ Create `<plans-dir>` if it doesn't exist: `mkdir -p <feature-dir>/plans`.
 
 Template (write verbatim, filling in bracketed values). The YAML frontmatter at the top is REQUIRED — see `~/.claude/skills/_components/plan-frontmatter.md` for the full schema. Realign plans use `kind: realign-plan`, default to `status: Ready`, and list the phase numbers (or `["all"]`) that the drift assessment touches.
 
+**`upstream_phases_hashes` is REQUIRED** (WU-8): for each filtered hard-complete upstream in the dep list, compute `sha256(<upstream-dir>/PHASES.md bytes)` and record it as `upstream_phases_hashes: { <upstream-dir-name>: <hex> }`. `lazy-state.py`'s `realign_is_fresh` gate reads these recorded hashes to decide whether a re-realign is needed — comparing them against each upstream's current `PHASES.md` content rather than relying on file mtimes (which reset on git checkout/clone and are therefore unreliable). A realign plan without `upstream_phases_hashes` falls back to the old mtime comparison; always write it for new plans.
+
 ```markdown
 ---
 kind: realign-plan
@@ -109,6 +111,9 @@ feature_id: <feature-id>
 status: Ready
 created: <YYYY-MM-DD>
 phases: [<phase-numbers-touched-by-drift>, or "all"]
+upstream_phases_hashes:
+  <upstream-dir-name-1>: <sha256-hex-of-upstream-dir-1/PHASES.md>
+  <upstream-dir-name-2>: <sha256-hex-of-upstream-dir-2/PHASES.md>
 ---
 
 # Realign — <feature-id> (<YYYY-MM-DD>)
