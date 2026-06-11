@@ -5,8 +5,9 @@
         @{ Live = '~\.claude\hooks';             Repo = 'user\hooks';             Type = 'Directory' }
         @{ Live = '~\.claude\scripts';           Repo = 'user\scripts';           Type = 'Directory' }
         @{ Live = '~\.claude\templates';         Repo = 'user\templates';         Type = 'Directory' }
-        # Local-tools plugin (Cognito PR review) — source tracked here, symlinked into the local-tools marketplace
-        @{ Live = '~\.claude\plugins\local-tools\plugins\cognito-pr-review'; Repo = 'user\plugins\local-tools\plugins\cognito-pr-review'; Type = 'Directory' }
+        # Local-tools plugins — source tracked here, symlinked into the local-tools marketplace
+        @{ Live = '~\.claude\plugins\local-tools\plugins\cognito-pr-review';   Repo = 'user\plugins\local-tools\plugins\cognito-pr-review';   Type = 'Directory' }
+        @{ Live = '~\.claude\plugins\local-tools\plugins\work-logging-plugin'; Repo = 'user\plugins\local-tools\plugins\work-logging-plugin'; Type = 'Directory' }
         # File symlinks
         @{ Live = '~\.claude\CLAUDE.md';           Repo = 'user\CLAUDE.md';           Type = 'File' }
         @{ Live = '~\.claude\CLAUDE.local.md';     Repo = 'user\CLAUDE.local.md';     Type = 'File' }

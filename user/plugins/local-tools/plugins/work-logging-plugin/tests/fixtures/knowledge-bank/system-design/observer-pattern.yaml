@@ -1,0 +1,13 @@
+slug: observer-pattern
+name: Observer Pattern
+domain: system-design
+tags: [observer, pub-sub, event-driven, decoupling, notifications]
+description: "Publish-subscribe pattern for decoupled event notification"
+interview_questions:
+  - "How would you design a notification system?"
+  - "Explain the observer pattern and when you'd use it"
+talking_points:
+  - "Decouples producers from consumers"
+  - "Enables event-driven architectures"
+related_topics: [pub-sub, event-sourcing]
+difficulty: intermediate

@@ -1,21 +1,21 @@
 ---
 name: log
-description: Manually trigger interview-prep work logging for a Cognito Forms session if not already done
+description: Manually trigger work logging for a Cognito Forms session if not already done
 argument-hint: [optional: skill name to log as]
 model: haiku
 ---
 
 # Log Work
 
-Manually trigger the interview-prep work log for the current session. Use when a session produced meaningful engineering output but the work log wasn't called automatically.
+Manually trigger the work log for the current session. Use when a session produced meaningful engineering output but the work log wasn't called automatically.
 
-> **Scoped to Cognito Forms sessions only (2026-06-11).** This skill now lives under the Cognito Forms repo's `.claude/skills/` and is invocable only there — other repos no longer log interview-prep work.
+> **Scoped to Cognito Forms sessions only (2026-06-11).** This skill now lives under the Cognito Forms repo's `.claude/skills/` and is invocable only there — other repos no longer log work.
 
 ---
 
 ## Step 1: Check If Already Logged
 
-Review the full conversation history for any prior call to `mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append`.
+Review the full conversation history for any prior call to `mcp__plugin_work-logging-plugin_work-logging__work_log_append`.
 
 - **If found:** Tell the user work was already logged this session. Show the `title` and `project` that were recorded. Stop here.
 - **If not found:** Continue to Step 2.
@@ -54,6 +54,6 @@ Construct the parameters following the work-log reference:
 
 ## Step 4: Call the Tool
 
-Call `mcp__plugin_interview-prep-plugin_interview-prep__interview_work_log_append` with the constructed parameters.
+Call `mcp__plugin_work-logging-plugin_work-logging__work_log_append` with the constructed parameters.
 
 Report the result to the user: title logged, project, and persisted path.

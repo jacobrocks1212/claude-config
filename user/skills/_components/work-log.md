@@ -1,6 +1,6 @@
-**THIS STEP IS NON-NEGOTIABLE.** You MUST call `interview_work_log_append` before ending this skill. Do not skip this step due to context pressure, compaction, or perceived irrelevance. If you are about to produce a final message without having called this tool, STOP and call it first.
+**THIS STEP IS NON-NEGOTIABLE.** You MUST call `work_log_append` before ending this skill. Do not skip this step due to context pressure, compaction, or perceived irrelevance. If you are about to produce a final message without having called this tool, STOP and call it first.
 
-Call the `interview_work_log_append` MCP tool (interview-prep server) to record this session's work. This is the authoritative record for tracking all skill-driven work across projects over time. Do NOT use Bash file writes or store this data in project-local files.
+Call the `work_log_append` MCP tool (work-logging server) to record this session's work. This is the authoritative record for tracking all skill-driven work across projects over time. Do NOT use Bash file writes or store this data in project-local files.
 
 **`timestamp` is auto-generated** — the tool sets it to UTC ISO-8601. Do not pass a timestamp.
 

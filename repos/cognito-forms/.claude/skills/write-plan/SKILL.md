@@ -364,7 +364,7 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 
 > ## Append to Work Log (MANDATORY)
 >
-> Read `~/.claude/skills/_components/work-log.md` and follow it. Call interview_work_log_append with skill, project (`cognito-forms`), title, summary, files_modified, and technical_context.
+> Read `~/.claude/skills/_components/work-log.md` and follow it. Call work_log_append with skill, project (`cognito-forms`), title, summary, files_modified, and technical_context.
 
 ---
 

@@ -1,6 +1,6 @@
 ### Interview Relevance Evaluation (FINAL STEP)
 
-Evaluate whether the work completed in this skill invocation has interview relevance. Use the interview-prep MCP server as a source of topics and questions.
+Evaluate whether the work completed in this skill invocation has interview relevance. Use the work-logging MCP server as a source of topics and questions.
 
 #### Step 1: Summarize Work Context
 
@@ -11,7 +11,7 @@ In 2-3 sentences, summarize what was accomplished:
 
 #### Step 2: Fetch Knowledge Bank Index
 
-Call `interview_kb_index` (interview-prep MCP) to retrieve the compact topic index.
+Call `get_kb_index` (work-logging MCP) to retrieve the compact topic index.
 
 #### Step 3: Evaluate Relevance
 

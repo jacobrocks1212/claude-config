@@ -1,0 +1,12 @@
+slug: two-pointer
+name: Two Pointer Technique
+domain: algorithms
+tags: [two-pointer, arrays, sorting, linear-scan, optimization]
+description: "Using two pointers to solve array problems efficiently"
+interview_questions:
+  - "How would you find a pair that sums to a target?"
+talking_points:
+  - "O(n) time complexity"
+  - "Requires sorted input or specific structure"
+related_topics: [sliding-window, binary-search]
+difficulty: beginner

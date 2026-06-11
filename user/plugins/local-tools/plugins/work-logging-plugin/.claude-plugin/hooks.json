@@ -1,0 +1,14 @@
+{
+  "PostToolUse": [
+    {
+      "matcher": "mcp__plugin_work-logging-plugin_work-logging__work_log_append",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/evaluate-surfacing.sh\"",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}

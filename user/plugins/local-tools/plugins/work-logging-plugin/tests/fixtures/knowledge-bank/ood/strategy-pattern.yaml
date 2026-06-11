@@ -1,0 +1,12 @@
+slug: strategy-pattern
+name: Strategy Pattern
+domain: ood
+tags: [strategy, polymorphism, composition, dependency-injection, adapters]
+description: "Encapsulate interchangeable algorithms behind a common interface"
+interview_questions:
+  - "How would you design a system with pluggable algorithms?"
+talking_points:
+  - "Composition over inheritance"
+  - "Open-closed principle"
+related_topics: [adapter-pattern, factory-pattern]
+difficulty: intermediate

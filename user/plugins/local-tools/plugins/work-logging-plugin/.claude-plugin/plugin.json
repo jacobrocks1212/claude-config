@@ -1,0 +1,9 @@
+{
+  "name": "work-logging-plugin",
+  "version": "0.1.0",
+  "description": "Passive work logging that grounds interview-prep reinforcement during daily engineering work",
+  "author": {
+    "name": "Jacob Madsen"
+  },
+  "skills": "./skills/"
+}

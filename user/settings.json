@@ -89,7 +89,7 @@
     "csharp-lsp@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true,
     "cognito-pr-review@local-tools": true,
-    "interview-prep-plugin@local-tools": true,
+    "work-logging-plugin@local-tools": true,
     "context7-plugin@context7-marketplace": true,
     "warp@claude-code-warp": true,
     "notion@claude-plugins-official": true

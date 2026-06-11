@@ -1,0 +1,14 @@
+{
+  "work-logging": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--directory",
+      "${CLAUDE_PLUGIN_ROOT}",
+      "python",
+      "-u",
+      "-m",
+      "servers.work_logging_mcp.server"
+    ]
+  }
+}

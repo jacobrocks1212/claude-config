@@ -25,7 +25,7 @@ Projects use `.claude/skill-config/` for project-specific quality gates and skil
 - **algobooth/** — Tauri desktop app for DJ workflow with Strudel live coding.
 - **work-dashboard/** — Tauri desktop app for Azure DevOps task integration.
 - **zen-mcp-server/** — MCP server project.
-- **interview-prep-plugin/** — Claude Code plugin for passive SWE interview prep.
+- **interview-prep-plugin/** — (archived) original standalone repo of the work-logging plugin (passive SWE interview-prep / work-logging). The active plugin now lives in `claude-config/user/plugins/local-tools/plugins/work-logging-plugin`.
 - **scene-remixer/** — Node.js project.
 - **housing-locator/** — Node.js project.
 - **semantic-docs/** — Semantic document processing pipeline with Gemini support.
