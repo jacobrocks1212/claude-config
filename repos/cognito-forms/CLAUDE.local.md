@@ -195,16 +195,16 @@ Options:
 </frontend-workflow>
 
 <work-logging>
-  ## Interview Prep Work Log
+  ## Work Logging
 
   Scoped to Cognito Forms sessions only (2026-06-11) — other repos no longer log.
 
-  The `interview-prep-plugin` MCP server exposes `interview_work_log_append` — an append-only JSONL logger
+  The `work-logging-plugin` MCP server exposes `work_log_append` — an append-only JSONL logger
   that captures significant engineering work for future interview prep, portfolio generation, and career analysis.
   Records are persisted to `~/.interview-prep/work-log.jsonl`.
 
   ### When to call it
-  Call `interview_work_log_append` at the **end** of any session that produces meaningful engineering output.
+  Call `work_log_append` at the **end** of any session that produces meaningful engineering output.
   This includes completing a `/write-plan`, or any other skill-driven work that results in real code changes.
   Skip it for trivial edits, config tweaks, or exploratory research that doesn't produce artifacts.
 
@@ -231,7 +231,7 @@ Options:
 
   ### Example
   ```
-  interview_work_log_append(
+  work_log_append(
     skill="write-plan",
     project="cognito-forms",
     title="DC bias regression in voice synthesis",
@@ -244,6 +244,27 @@ Options:
   )
   ```
 </work-logging>
+
+## Backend Gotchas
+
+### Reading entry field values from a `GetFieldPath` result
+
+Never use `ModelInstance.GetValue(string)` or `instance.GetReference(leafProperty)` to read a value resolved from `form.GetFieldPath(...)`. Field paths can be nested (e.g. a field inside a Section, path `"Section.Email"`), but:
+
+- `ModelInstance.GetValue(string property)` does a direct property-name lookup (`Type.Values[property]`) — it does NOT walk dotted paths, so nested paths silently return nothing.
+- `instance.GetReference(leafProp)` against the root instance is wrong when the leaf property is declared on a nested child type.
+
+Always resolve through `ModelSource`, which walks the full dotted path:
+
+```csharp
+var formType = form.ToModelType(registerRules: true, useLookupSourceTypes: false, organization: Organization);
+if (ModelSource.TryGetSource(formType, fieldPath.Value, out var source))
+{
+    var value = source.GetValue(instance);     // or source.GetReference(instance)
+}
+```
+
+Canonical example: `EntryIndexService.ResolveCustomerEntryIdAsync` (PersonField case, `Cognito.Core/Services/Forms/EntryIndexService.cs`). See also `IndexBuilder.cs` and `AutoCreateEntriesService.cs`. (Mistake originally shipped in PR #16543.)
 
 ## Branch-aware doc context
 
