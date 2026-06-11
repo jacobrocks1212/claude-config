@@ -127,6 +127,13 @@ result: all-passing
 ---
 ```
 
+Optional:
+- `validated_commit: <git-sha>` — HEAD sha at the time the MCP validation run
+  completed. The same sha-freshness anchor `MCP_TEST_RESULTS.md` carries; the
+  `/mcp-test` orchestrator override mandates capturing it so the certification is
+  matched to the exact code it ran against. Optional for back-compat with
+  pre-anchor `VALIDATED.md` files.
+
 Body keeps the human-readable summary of which scenarios ran.
 
 #### `RETRO_DONE.md` — `kind: retro-done`

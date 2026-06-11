@@ -761,6 +761,87 @@ WU-2 binding-completeness tests which read the REAL template file).
 
 ---
 
+## Phase 9 — Completion coherence + streak accuracy + dispatch-prompt parity
+
+**Scope:** Close the structural gaps surfaced by the 2026-06-11 live `/lazy-batch` run
+(transcript `5c33b6ba`, observed from a parallel session): (1) the validation→completion
+ownership gap that leaves PHASES.md incoherent at `__mark_complete__` time (top-level
+`Complete` + per-phase `In-progress` + unchecked verification rows — guaranteed for any
+feature whose final phases carry Runtime Verification rows, caught only by AlgoBooth's
+`qg:docs-consistency` after the flip lands); (2) `repeat_count` false positives (inspection
+probes inflate the persisted streak; legitimate re-validation repeats misdiagnosed as stalls,
+forcing a documented model-override deviation); (3) `--verify-ledger` false alarms on
+multi-part plans (feature-level checks fire while later parts are legitimately pending);
+(4) resolution/recovery subagents missing the git contract (a blocked-resolution apply
+subagent committed to a stray branch); (5) probe-output hygiene.
+
+**Why each is structural (evidence):** transcript blocks 371/392 (Recover meta-cycle: the
+orchestrator itself identified "check-docs-consistency.ts counts ALL phase checkboxes with no
+verification carve-out, but lazy_core's completion gate exempts verification-only rows");
+`check-docs-consistency.ts:1454-1516` (`spec-complete-phases-not`, `complete-but-unchecked`,
+`all-checked-but-not-complete`); `apply_pseudo __mark_complete__` flips ONLY top-level Status
+lines; transcript block 269 (streak hit 5 with 1 real dispatch; ⚠ deviation override of the
+script's sonnet/loop-block selection); block 112 (verify-ledger plan_complete/deliverables_done
+false for a genuinely-pending part-2 — "NOT residue"); block 73 (apply subagent landed work on
+`track-filestream-blocker-resolution` side branch — resolution prompts carry no work-branch
+clause); block 269 (`cycle_prompt_5.txt` accidentally written into the repo tree).
+
+**Entry criteria:** Phase 8 complete (sectioned template + emitter are the surfaces WU-4 edits).
+
+**Validated Assumptions:**
+
+| assumption | how-confirmed (`grep` / `runtime` / `spike`) | evidence |
+|---|---|---|
+| `apply_pseudo __mark_complete__` writes only top-level Status lines (no per-phase flips, no checkbox writes) | grep + transcript | `lazy_core.apply_pseudo` (Phase 5 WU-2 notes: "flips SPEC.md + PHASES.md first `**Status:**` line"); live-run block 371 confirms the resulting incoherence in production |
+| the repo checker counts ALL checkboxes per phase (no verification carve-out) and requires per-phase Complete/Superseded under a Complete SPEC | grep | `check-docs-consistency.ts:1454-1500` (`stragglers` filter on per-phase canonical; `deliverablesUnchecked` undifferentiated) |
+| `_unchecked_wus_in_plan_scope` exists and is fence-aware (reusable for plan-scoped verify-ledger) | grep | `lazy_core.py` (Phase 3 WU-2) |
+| persisted streak file stores `{signature, count}` only (no HEAD) and increments on every `--repeat-count` probe | grep + runtime | Phase 5 WU-4 notes; live-run block 269 (REPEAT=5 from inspection probes); my own 2026-06-10 verification probe required manual neutralization |
+| the `--plan` CLI flag already exists on both scripts (shared with `--apply-pseudo`, no dest collision) | grep | `lazy-state.py` / `bug-state.py` argparse |
+
+**Deliverables:**
+- [ ] WU-1 (TDD, scripts) — **completion-coherence enforcement in `apply_pseudo`** (`__mark_complete__` AND `__mark_fixed__`): new fence-aware per-phase parser in `lazy_core` (`### Phase` headings → per-phase `**Status:**` + checked/unchecked counts); BEFORE any write, (a) AUTO-FLIP any phase with ≥1 checkbox, zero unchecked, and a non-Complete/non-Superseded Status line → `Complete` (mirrors the checker's `all-checked-but-not-complete` rule — deterministic, safe); (b) REFUSE (existing `refused:` convention, zero writes incl. no receipt) when any phase would remain incoherent after (a): any unchecked checkbox in any phase (verification rows included — by completion time the exemption's job is done), or any phase Status not Complete/Superseded (zero-checkbox non-Complete phases refuse too — no mechanical signal to flip on). Refusal message names the offending phases/rows so the orchestrator can route a corrective coherence cycle. Existing apply_pseudo fixtures with incoherent PHASES updated intent-preservingly (make them coherent OR assert the new refusal — whichever the test's intent was).
+- [ ] WU-2 (TDD, scripts) — **streak accuracy**: `update_repeat_count` persists HEAD alongside `{signature, count}`; identical signature + ADVANCED head → reset to 1 (commits landing between probes are mechanical proof of forward progress — the live run's "partial → re-certify" repeat was exactly this); identical signature + same head → increment; legacy file without `head` → increment (backward-compat) + store head. New `peek` mode (`--repeat-count-peek` on both scripts): computes the would-be count WITHOUT writing the state file (diagnostic probes stop inflating the streak; `--emit-prompt` composes with either flag). `loop-block.md` gains one line: the streak is HEAD-aware, so this block firing means NO commits landed between identical probes — a genuine stall.
+- [ ] WU-3 (TDD, scripts) — **plan-scoped verify-ledger**: `verify_ledger(repo_root, spec_path, plan_path=None)`; with `plan_path`: `plan_complete` = THIS plan's frontmatter `status: Complete`, `deliverables_done` = `_unchecked_wus_in_plan_scope(phases, plan's phase set)` empty (verification-only rows in scope still exempt — mid-feature semantics unchanged); `clean_tree`/`head_matches_origin` unchanged. CLI: `--verify-ledger SPEC --plan PLAN` (reuses the existing `--plan` flag). Feature-level mode byte-identical when `--plan` absent.
+- [ ] WU-4 (prose) — **prompt/component parity**: (a) `cycle-base-prompt.md` mcp-test-common section (R14) + `repos/algobooth/.claude/skills/mcp-test/SKILL.md`: after writing VALIDATED.md, the validation cycle RECONCILES PHASES.md — tick each unchecked Runtime Verification row the validation evidence covers (with an evidence annotation), re-scope rows it does not cover (follow-up note or MCP_TEST_RESULTS partial, `⚖`-disclosed), and flip per-phase Status lines whose boxes are now all ticked (R7 already permits per-phase flips); (b) work-branch clause (commit/push to the current work branch ONLY; never create a branch; never force-push) added to `blocked-resolution.md`, `decision-resume.md`, `halt-resolution.md`, and the Step 1e.4a recovery-dispatch spec in `lazy-batch/SKILL.md` (+ cloud mirror) — every prompt that can lead to a commit carries the git contract; (c) `completion-integrity-gate.md` + the `__mark_complete__`/`__mark_fixed__` handler prose in `lazy-batch`/`lazy-bug-batch`/`lazy-batch-cloud`: document the new apply-pseudo coherence refusal as the mechanical third gate (refusal → corrective coherence cycle, mirroring Gate-1 halt handling); (d) Step 1e.4a (+ cloud guard) passes `--plan {plan_file}` to `--verify-ledger` after `/execute-plan` cycles and keys recovery on the scoped result; (e) probe-hygiene line in the three batch SKILLs' probe guidance: diagnostic probe output goes to the OS temp dir, never the repo tree; diagnostic probes use `--repeat-count-peek` (never `--repeat-count`, which is reserved for the single dispatch-bound probe).
+
+**Files likely modified:**
+- `user/scripts/lazy_core.py`, `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`, `user/scripts/test_lazy_core.py` — WU-1/2/3
+- `user/skills/_components/lazy-batch-prompts/{cycle-base-prompt,loop-block}.md` — WU-2/4
+- `user/skills/_components/{blocked-resolution,decision-resume,halt-resolution,completion-integrity-gate}.md` — WU-4
+- `user/skills/{lazy-batch,lazy-bug-batch}/SKILL.md`, `repos/algobooth/.claude/skills/{lazy-batch-cloud,mcp-test}/SKILL.md` — WU-4
+- `user/scripts/tests/baselines/*` — only if a smoke fixture legitimately shifts (expected: none; apply_pseudo/verify_ledger/update_repeat_count are unit-tested, not smoke-fixtured on these paths)
+
+**Testing Strategy:** WU-1/2/3 are TDD in `test_lazy_core.py` (RED→GREEN, `_TESTS` registry).
+Key discriminators: WU-1 refusal proves ZERO writes (no receipt, no status flip, sentinels
+untouched); WU-1 auto-flip proves body-byte-stability outside the flipped Status lines; WU-2
+head-advance test makes a real commit in the git fixture between calls; WU-2 peek test proves
+two peeks + one advance yields count 2, not 4; WU-3 part-1-complete/part-2-pending fixture
+proves feature-level fails while plan-scoped passes. Flag-gating discipline: all three gates
+green with baselines UNREGENERATED.
+
+**Integration Notes for Next Phase:**
+- After WU-1, `lazy_core`'s and `check-docs-consistency.ts`'s definitions of a completable
+  feature are equivalent (the checker's three coherence rules are enforced pre-flip by the
+  script). A future AlgoBooth-side change could have `qg:docs-consistency` import the same
+  semantics rather than re-deriving them.
+- After WU-2, the loop block fires only on same-tuple + same-HEAD — `prev_cycle_signature`
+  retirement (Phase 8 carried follow-up) becomes safer.
+
+**Context from prior phases:**
+- Phase 5 WU-2 established `apply_pseudo` as the single receipt author with the `refused:`
+  convention — WU-1 extends, never bypasses, that gate.
+- Phase 5 WU-4 + the pre-test polish (f7f8bb3) established the per-pipeline persisted streak —
+  WU-2 changes its payload shape (add `head`) with explicit legacy fallback.
+- Phase 8 established the sectioned template + emitter — WU-4(a) edits the R14 section ONLY in
+  the component (never SKILL-inlined), and the binding-completeness matrix tests are the
+  tripwire for token mistakes.
+
+**Implementation Notes:**
+
+_(pending)_
+
+---
+
 ## Post-implementation adversarial review (2026-06-10, separate session)
 
 Three independent adversarial reviewers (scripts / batch orchestrators / components+wrappers+retro)
