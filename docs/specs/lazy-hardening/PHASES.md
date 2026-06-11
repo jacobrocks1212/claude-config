@@ -955,6 +955,112 @@ baselines unregenerated; AlgoBooth `qg:docs-consistency` rc=0 repo-wide + checke
 
 ---
 
+## Phase 11 — Serial-validation-discovery hardening: escalation, capability audit, tracer coverage, spike evidence, retro staleness
+
+**Scope:** Close the five structural gaps behind the d8-live-looping "implementation is not
+actually done yet" pattern (2026-06-11 third live-run review, transcript `5c33b6ba`): three
+consecutive mcp-validation BLOCKED → add-phase rounds (commits `11200639` API unreachable via
+`track()` → `0c97aee1` engine explicitly rejects the SPEC's live-input source → `30e6bdf6`
+audio-thread command-apply silent; a fourth is being drafted by the in-flight cycle), each
+costing ~850k–1M subagent tokens and ~70 min wall, each discovering exactly ONE more layer.
+(S1) nothing in the pipeline escalates on repeated validation failure — `retry_count` is
+required BLOCKED.md frontmatter but no script or skill keys ANY policy on it, so round N+1
+fixes only the layer round N found; (S2) the SPEC consumed an engine capability with a
+literal, greppable rejection (`pipe_consumer.rs:1160` — `"Live input from sidecar IPC is not
+a supported track source"`, present since d7) and no planning step reconciles SPEC code
+examples against target-system capability; (S3) decomposition stacked ALL integration behind
+one terminal phase (5 of 6 original d8 phases say `MCP: N/A`, built in cloud sessions) so
+defects could only be discovered serially at end-of-feature validation; (S4) a "runtime
+spike" deliverable (d8 WU-9.0) was satisfied by a static code trace that concluded "no broken
+seam" and was wrong twice — nothing distinguishes a code-read from a live probe at tick time;
+(S5) `RETRO_DONE.md` predated all three rounds — retro graded a 0/16-functional feature and
+the Step-8 routing (pure existence check, `lazy-state.py:1588`) never re-runs it after
+corrective phases land.
+
+**Why each is structural (evidence):** retry_count grep across `user/scripts/*.py` = fixture
+hits only (bug-state.py:1222/3293, lazy-state.py:1854/4670); `blocked-resolution.md:29`
+parses it for display only; live round 3 carried `retry_count: 3` with no behavior change.
+Round-2 BLOCKED.md verbatim: prior cycle's Gap 2 was "hand-waved as 'downstream of Gap 1'" —
+"Live evidence DISPROVES that assumption." d8 PHASES.md:1142: "Phase 9 WU-9.0 did a full
+STATIC code trace of this exact chain and concluded 'no broken seam' — and was wrong."
+Neither loop guard fires on the pattern (each BLOCKED→add-phase round legitimately advances
+the state machine; Phase-10's `step_repeat_count` sees different steps each cycle).
+
+**Circuit-breaker note:** ⚠ Phase-count circuit breaker OVERRIDDEN by operator (2026-06-11,
+"ignore the circuit breaker"). This phase brings expansion to **+57%** over the original
+7-phase plan (threshold +50%). Recorded per the add-phase override protocol; further
+additions after this phase should go through `/realign-spec` + a fresh decomposition.
+
+**Entry criteria:** Phase 9 complete (`parse_phases`, `apply_pseudo` refusal convention) +
+Phase 10 complete (`phases-runtime-verification.md` is the canonical row-authoring component).
+
+**Validated Assumptions:**
+
+| assumption | how-confirmed (`grep` / `runtime` / `spike`) | evidence |
+|---|---|---|
+| `retry_count` is required BLOCKED.md frontmatter, reaches ≥2 in real runs, and nothing keys policy on it | grep + runtime | `sentinel-frontmatter.md:31`; scripts grep = fixture-only; `blocked-resolution.md:29/47` display-only; live d8 round-3 BLOCKED carried `retry_count: 3` (transcript L728) |
+| the Step-3 blocked terminal already parses the sentinel — escalation fields are a payload extension, not new parsing | grep | `lazy-state.py:1300-1309` (`parse_sentinel(blocked_file)`, extracts `phase` only) |
+| Step-8 retro routing is a pure existence check; `parse_phases` counts `### Phase` sections fence-aware | grep | `lazy-state.py:1588`; `lazy_core.parse_phases` (Phase 9 WU-1) |
+| AlgoBooth `SENTINEL_SCHEMAS` supports per-sentinel `optional`/`intFields`; RETRO_DONE entry has none yet; unknown keys warn → lockstep edit required | grep | `check-docs-consistency.ts:566-572`; `validated_commit` optional precedent at `:544` |
+| the serial-discovery pattern is real and both loop guards are blind to it | runtime (live transcript) | three mcp-validation BLOCKED rounds (`11200639`/`0c97aee1`/`30e6bdf6`); no guard fired; round-2 BLOCKED explicitly disproves round-1's unverified downstream claim |
+| a spike deliverable was satisfied by a static trace and was wrong twice | runtime (live transcript + repo) | d8 PHASES.md:1142; WU-9.2 declared a no-op on the trace's strength |
+| the round-2 capability gap was greppable at spec time | grep | `pipe_consumer.rs:1160-1163` explicit `return Err("Live input from sidecar IPC is not a supported track source")`; d8 SPEC.md documents `input(1)` as the canonical record source |
+
+All load-bearing assumptions are grep/transcript-confirmed above; no unvalidated
+runtime-coupled assumption remains (this phase modifies the pipeline's own scripts/prose,
+which carry the TDD harness as their runtime).
+
+**Deliverables:**
+- [ ] WU-1 (TDD scripts + prose) — **validation-escalation at `retry_count >= 2`**: (a) scripts: the Step-3 blocked terminal (lazy-state + bug-state mirror) additionally extracts `blocker_kind` and `retry_count` from BLOCKED.md; when `blocker_kind == "mcp-validation"` and `retry_count >= 2`, the emitted state gains `validation_escalation: true` and the `notify_message` appends "ESCALATION: 2+ validation failures — corrective phase requires a full-chain seam audit, not a single-layer fix." Existing fixtures (retry_count 0) byte-identical; new fixture proves the escalation payload. (b) `blocked-resolution.md`: when the parsed sentinel shows that combination, EVERY resolution path that enacts a corrective phase MUST give the corrective phase a **full-chain seam audit** deliverable — enumerate every boundary in the failing path (producer→consumer, user surface → final observable) and live-probe each one post-fix BEFORE re-dispatching full validation; a single-layer corrective phase is a drafting error at retry_count ≥ 2. (c) mcp-test SKILL + the cycle-base-prompt mcp-test section: when writing/updating BLOCKED.md at `retry_count >= 2`, the body MUST include a `## Seam Enumeration` section — every boundary in the failing chain with per-seam status `probed-OK | probed-FAIL | unprobed` (the validation cycle is already inside the runtime; it is the cheapest enumeration point). (d) `add-phase` Step 3.5 cross-ref: a corrective phase enacted from an escalated BLOCKED carries the seam-audit deliverable and consumes the sentinel's Seam Enumeration as its checklist.
+- [ ] WU-2 (prose) — **SPEC-example capability audit**: `phases-runtime-validation.md` (canonical, generic) + `spec-phases/SKILL.md` surface: before drafting phases, enumerate every API surface, source type, and language construct the SPEC's code examples consume; for each, confirm the target system actually supports it TODAY — including a mandatory **negative-evidence grep** (`unimplemented!`, `todo!`, `return Err`, "not supported", "unsupported" near the construct's name/type) with a ledger row per construct. A SPEC example consuming an explicitly-rejected capability is a planning-time halt (spec correction or NEEDS_INPUT), never a late validation discovery. Cite d8 round 2 (one line).
+- [ ] WU-3 (prose) — **terminal-MCP-stacking ban**: `phases-runtime-verification.md` (canonical) + `spec-phases/SKILL.md`: decomposition red flag when MORE THAN TWO consecutive phases declare `MCP Integration Test Assertions: N/A` AND all integration assertions land in one terminal phase — the breakdown must place a **vertical tracer-bullet smoke** (drive the SPEC's canonical code example end-to-end live, ≥1 assertion, tagged `(reachability-smoke — workstation-eligible)` like Phase-10 smokes) at the earliest phase where the user-surface → engine → observable chain exists. Cite d8 (5 of 6 phases N/A, cloud-built, every defect discovered serially at terminal validation).
+- [ ] WU-4 (prose + AlgoBooth lint) — **runtime-spike evidence enforcement**: (a) `execute-plan/SKILL.md` tick discipline: a deliverable or ledger row claiming `runtime`/`spike` confirmation may be ticked ONLY with a cited runtime artifact (MCP tool result, session-log line, or a test driving the REAL component — e.g. the actual rtrb ring, not a mock); a static code trace cannot satisfy it; if a live probe is impossible this cycle, the row stays unticked with an explicit NEEDS_RUNTIME note. (b) `write-plan/SKILL.md`: spike WUs are authored WITH their evidence requirement stated in the WU text. (c) `phases-runtime-validation.md` anti-pattern sharpened: a spike deliverable executed as a static trace is a violation of the gate, naming d8 WU-9.0 (one line). (d) AlgoBooth `check-docs-consistency.ts`: new **warning-level** rule (`phases.validated-assumptions.static-confirmation`) flagging `code-read` / `static` / `code read` tokens in the how-confirmed column of `## Validated Assumptions` ledger tables (`grep`/`runtime`/`spike`/`code-provable` pass); vitest positive/negative cases; corpus check (expected: existing ledgers clean — d8's all say grep/runtime/spike).
+- [ ] WU-5 (TDD scripts + schema lockstep + prose) — **retro staleness**: (a) `retro/SKILL.md` + `retro-feature/SKILL.md`: RETRO_DONE.md frontmatter gains `phase_count_at_retro: <int>` (count of `### Phase` sections in PHASES.md at retro-conclusion time). (b) schema lockstep: `sentinel-frontmatter.md` documents the field (optional, int); AlgoBooth `SENTINEL_SCHEMAS['RETRO_DONE.md']` gains `optional: ['phase_count_at_retro']` + intFields entry (avoids the unknown-keys warning). (c) scripts (TDD): Step-8 routing — RETRO_DONE.md present AND carries `phase_count_at_retro` AND `parse_phases` count is GREATER → route `retro-feature` again (stale retro: corrective phases landed after the retro concluded); missing field = grandfathered (current behavior, baselines byte-identical). (d) backstop: `apply_pseudo __mark_complete__` refuses (zero writes, existing `refused:` convention) on the same staleness condition — routing is the primary, the gate is the mechanical second key, mirroring the Phase-9 ownership split. Bug pipeline out of scope (bugs have no retro step).
+
+**Files likely modified:**
+- claude-config scripts: `user/scripts/{lazy_core,lazy-state,bug-state,test_lazy_core}.py` — WU-1a/WU-5c/WU-5d
+- claude-config prose: `user/skills/_components/{blocked-resolution,phases-runtime-validation,phases-runtime-verification,sentinel-frontmatter}.md`, `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`, `user/skills/{spec-phases,write-plan,execute-plan,add-phase,retro,retro-feature}/SKILL.md`, `repos/algobooth/.claude/skills/mcp-test/SKILL.md` — WU-1b/c/d, WU-2, WU-3, WU-4a/b/c, WU-5a/b
+- AlgoBooth: `scripts/check-docs-consistency.ts`, `scripts/__tests__/check-docs-consistency.test.ts` — WU-4d, WU-5b (one atomic explicit-path commit; live-session co-tenancy rules apply)
+
+**Testing Strategy:** WU-1a/WU-5c/WU-5d TDD in `test_lazy_core.py` (RED→GREEN, `_TESTS`
+registry). Key discriminators: escalation fixture proves `retry_count: 1` does NOT escalate
+while `2` does and a non-mcp-validation `blocker_kind` at `retry_count: 3` does NOT;
+retro-staleness fixture proves equal counts route Step 9+ while greater count routes retro
+and a field-less RETRO_DONE keeps current routing byte-identical; backstop fixture proves
+refusal performs zero writes. WU-4d TDD in the checker vitest suite. All three claude-config
+gates green with baselines UNREGENERATED (existing fixtures carry `retry_count: 0` and
+field-less RETRO_DONE files — both paths byte-identical by design); AlgoBooth
+`qg:docs-consistency` rc=0 repo-wide.
+
+**Integration Notes for Next Phase:**
+- After WU-1, `validation_escalation` gives orchestrators a mechanical signal for the
+  serial-discovery pattern that neither streak counter can see; if it proves reliable, a
+  future track could make the state script require a seam-audit attestation in the corrective
+  phase before routing write-plan (mechanical enforcement of WU-1b).
+- WU-5's `phase_count_at_retro` is the first sentinel field comparing on-disk doc structure
+  against sentinel-recorded history; the same pattern could anchor VALIDATED.md against
+  later-added phases if validation staleness ever shows up in live runs.
+
+**Context from prior phases:**
+- ⚠ Phase-count circuit breaker overridden by operator. Expansion is **57%** over the
+  original 7-phase count (O=7, T=11). Operator instruction 2026-06-11: "(ignore the circuit
+  breaker), and implement these fixes."
+- Phase 9 WU-1 established `parse_phases` + the `refused:` zero-writes convention — WU-5c/d
+  reuse both; the coherence gate's placement AFTER the receipt-noop must not be disturbed.
+- Phase 10 WU-1/WU-5 made `phases-runtime-verification.md` the single source of truth for row
+  authoring — WU-3 extends that component, never inlines the rule into SKILLs.
+- Phase 8's emitter contract: WU-1c edits the mcp-test SECTION of `cycle-base-prompt.md` only
+  (template + emitter in lockstep; binding-completeness matrix tests are the tripwire).
+- Phase 10's Carried follow-up "state-script refusal to emit the same routing a 4th time"
+  remains OPEN and distinct from WU-1 (that one keys on `step_repeat_count`, this one on
+  BLOCKED `retry_count`).
+
+**Implementation Notes:**
+
+_(pending)_
+
+---
+
 ## Post-implementation adversarial review (2026-06-10, separate session)
 
 Three independent adversarial reviewers (scripts / batch orchestrators / components+wrappers+retro)
