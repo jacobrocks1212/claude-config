@@ -3367,7 +3367,12 @@ def main() -> int:
     # remains byte-identical when the flag is absent. No state file is written
     # and no field is injected unless --repeat-count is explicitly passed.
     if args.repeat_count:
-        state["repeat_count"] = lazy_core.update_repeat_count(Path(args.repo_root), state)
+        # pipeline="bug" namespaces the persisted signature file so a parallel
+        # /lazy-batch session's lazy-state.py probes (which share the repo
+        # root) cannot reset this pipeline's repeat streak — and vice versa.
+        state["repeat_count"] = lazy_core.update_repeat_count(
+            Path(args.repo_root), state, pipeline="bug"
+        )
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).

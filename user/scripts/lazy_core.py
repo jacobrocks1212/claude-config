@@ -1760,6 +1760,7 @@ def update_repeat_count(
     state: dict,
     *,
     signature_path: Path | None = None,
+    pipeline: str = "feature",
 ) -> int:
     """Persist the current probe signature and return the consecutive-repeat count.
 
@@ -1782,9 +1783,14 @@ def update_repeat_count(
     6. Returns the (int >= 1) count.
 
     Default ``signature_path`` (when None):
-        ``<tempdir>/lazy-state-last-<sha1_of_repo_root[:16]>.json``
+        feature pipeline: ``<tempdir>/lazy-state-last-<sha1_of_repo_root[:16]>.json``
+        bug pipeline:     ``<tempdir>/bug-state-last-<sha1_of_repo_root[:16]>.json``
     This keeps the state file outside the repo tree — it is never committed
-    and never triggers gitignore concerns.
+    and never triggers gitignore concerns. The per-``pipeline`` filename keeps
+    the feature and bug resolvers from sharing one signature file: the operator
+    runs /lazy-batch and /lazy-bug-batch in parallel sessions against the same
+    repo, and interleaved probes through a shared file would reset each other's
+    repeat streaks, silently defeating mechanical loop detection.
     """
     # --- Derive default path from a stable hash of the resolved repo root ----
     # The hash keeps per-repo state separate even when multiple repos live on
@@ -1793,7 +1799,10 @@ def update_repeat_count(
         repo_hash = hashlib.sha1(
             str(repo_root.resolve()).encode("utf-8")
         ).hexdigest()[:16]
-        signature_path = Path(tempfile.gettempdir()) / f"lazy-state-last-{repo_hash}.json"
+        # "feature" keeps the historical filename so existing state files
+        # carry over; any other pipeline gets its own namespaced file.
+        prefix = "lazy-state-last" if pipeline == "feature" else f"{pipeline}-state-last"
+        signature_path = Path(tempfile.gettempdir()) / f"{prefix}-{repo_hash}.json"
 
     # --- Build the new signature from the current state ----------------------
     new_sig = (

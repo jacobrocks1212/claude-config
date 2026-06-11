@@ -3401,6 +3401,47 @@ def test_update_repeat_count_corrupt_file_resets():
     )
 
 
+def test_update_repeat_count_pipelines_are_isolated():
+    """Interleaved feature/bug probes against the SAME repo_root must not reset
+    each other's repeat streaks (the operator runs /lazy-batch and
+    /lazy-bug-batch in parallel sessions against one repo).
+
+    Exercises the DEFAULT signature_path derivation (pipeline-namespaced
+    filenames in the OS tempdir) rather than an explicit path — that is where
+    the isolation lives. The state files are cleaned up afterward.
+    RED: shared default path → the bug probe resets the feature streak to 1.
+    """
+    _guard()
+    import hashlib as _hashlib
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        repo_hash = _hashlib.sha1(str(repo.resolve()).encode("utf-8")).hexdigest()[:16]
+        feature_file = Path(tempfile.gettempdir()) / f"lazy-state-last-{repo_hash}.json"
+        bug_file = Path(tempfile.gettempdir()) / f"bug-state-last-{repo_hash}.json"
+        try:
+            f1 = lazy_core.update_repeat_count(repo, _STATE_A)  # feature default
+            b1 = lazy_core.update_repeat_count(repo, _STATE_A, pipeline="bug")
+            f2 = lazy_core.update_repeat_count(repo, _STATE_A)
+            b2 = lazy_core.update_repeat_count(repo, _STATE_A, pipeline="bug")
+            f3 = lazy_core.update_repeat_count(repo, _STATE_A)
+            files_distinct = feature_file.exists() and bug_file.exists()
+        finally:
+            for leftover in (feature_file, bug_file):
+                try:
+                    leftover.unlink()
+                except OSError:
+                    pass
+    assert files_distinct, "feature and bug pipelines must persist to DISTINCT default files"
+    assert (f1, f2, f3) == (1, 2, 3), (
+        f"feature streak must survive interleaved bug probes: expected (1, 2, 3), "
+        f"got {(f1, f2, f3)!r}"
+    )
+    assert (b1, b2) == (1, 2), (
+        f"bug streak must survive interleaved feature probes: expected (1, 2), got {(b1, b2)!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests: git_guard_status — WU-5 single-probe payload (git guards)
 # ---------------------------------------------------------------------------
@@ -3718,6 +3759,7 @@ _TESTS = [
     ("test_update_repeat_count_resets_on_signature_change", test_update_repeat_count_resets_on_signature_change),
     ("test_update_repeat_count_args_distinguish_signature", test_update_repeat_count_args_distinguish_signature),
     ("test_update_repeat_count_corrupt_file_resets", test_update_repeat_count_corrupt_file_resets),
+    ("test_update_repeat_count_pipelines_are_isolated", test_update_repeat_count_pipelines_are_isolated),
     # git_guard_status — WU-5 single-probe payload (git guards)
     ("test_git_guard_status_clean_and_pushed", test_git_guard_status_clean_and_pushed),
     ("test_git_guard_status_dirty_tree", test_git_guard_status_dirty_tree),
