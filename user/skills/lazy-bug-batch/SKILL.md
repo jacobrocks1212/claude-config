@@ -181,7 +181,11 @@ python3 ~/.claude/scripts/bug-state.py --repeat-count --emit-prompt --probe \
 ```
 
 These flags are purely additive (base JSON fields unchanged) — see
-`~/.claude/skills/lazy-batch/SKILL.md` Step 1a for their semantics. `--emit-prompt` folds the
+`~/.claude/skills/lazy-batch/SKILL.md` Step 1a for their semantics, INCLUDING probe hygiene:
+`--repeat-count` advances the persisted (HEAD-aware) streak and is reserved for the SINGLE
+dispatch-bound probe per cycle; diagnostic / inspection probes use `--repeat-count-peek` (reads
+the would-be streak without advancing it); never redirect probe or diagnostic output into the
+repo tree (use the OS temp dir). `--emit-prompt` folds the
 script-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assembly failure) into
 the JSON, with the `pipelines=bug` sections selected and the bug tokens bound; SHOULD be passed on
 every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consumes it verbatim.
@@ -290,6 +294,12 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   evidence from VALIDATED.md / MCP_TEST_RESULTS.md into the receipt body), the SPEC.md/PHASES.md
   `**Status:** Fixed` flip, and the deletion of the consumed VALIDATED.md / RETRO_DONE.md /
   DEFERRED_NON_CLOUD.md sentinels (FIXED.md / SKIP_MCP_TEST.md / MCP_TEST_RESULTS.md are kept).
+  **Mechanical third gate inside `--apply-pseudo __mark_fixed__`:** the script auto-flips
+  all-ticked phases to Complete and REFUSES (`refused:<reason>`, zero writes) if any phase
+  retains an unchecked box (verification rows included) or a non-Complete/Superseded Status. On
+  `ok: false` + this refusal, do NOT retry blindly — route a corrective coherence cycle
+  (dispatch a cycle subagent to reconcile PHASES.md honestly — tick-with-evidence or re-scope,
+  never blind-tick — then return to Step 1a), exactly as a Gate-1 halt routes.
   The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
   After the script returns, the orchestrator runs ONE more script call — the **archive
   mechanics** are also script-owned per `~/.claude/skills/_components/mark-fixed-archive.md`:
@@ -418,9 +428,14 @@ bindings:
 - Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### {Step name} — {work summary} [{n}/{max}]` (forward: `[{forward_cycles+1}/{max_cycles}]`; meta: `[meta {meta_cycles}/{2*max_cycles}]`); the `disp` line carries `{sub_skill} → {bug_id}`.
 - **Post-`/execute-plan` and `/mcp-test` ledger-consistency guard (guardrail D):** see
   `~/.claude/skills/lazy-batch/SKILL.md` Step 1e item 4a for the full guard algorithm. Runs
-  identically for the bug pipeline:
+  identically for the bug pipeline — including the plan-scoping rule: pass `--plan {plan_file}`
+  (the probe's `sub_skill_args`) on `/execute-plan` cycles so a pending later plan part does not
+  false-fail the guard; use the feature-level call on `/mcp-test` cycles (no plan part):
   ```bash
   git fetch origin $(git rev-parse --abbrev-ref HEAD)
+  # /execute-plan cycle (plan-scoped):
+  python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --verify-ledger {spec_path} --plan {plan_file}
+  # /mcp-test cycle (feature-level):
   python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --verify-ledger {spec_path}
   ```
   Recovery guidance per `failing_check` is identical to lazy-batch's Step 1e 4a.

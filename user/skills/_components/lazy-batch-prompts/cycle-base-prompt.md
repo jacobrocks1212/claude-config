@@ -205,6 +205,15 @@ Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
     that omits either field and halt for operator confirmation. Audio IS
     MCP-testable (load_test_tone + get_audio_buffer), so audio untestability
     claims are usually WRONG — cross-check the SPEC before claiming a class.
+  - RECONCILE PHASES (after VALIDATED.md): walk {spec_path}'s PHASES.md and, for
+    EVERY unchecked Runtime Verification row, either tick it with a brief evidence
+    annotation when THIS validation run covers it, or — when it does NOT — re-scope
+    it honestly (convert to a non-checkbox follow-up note, or downgrade your result
+    to an MCP_TEST_RESULTS.md partial if it is genuinely a blocking gap) under a
+    `⚖` disclosure line. Then flip each phase's `**Status:**` to Complete once
+    nothing in it remains unchecked (per-phase flips are permitted — R7). WHY: the
+    completion gate refuses an incoherent flip, so an unreconciled PHASES strands
+    the feature at mark-complete.
 
 <!-- @section mcp-test-runtime pipelines=feature,bug modes=workstation skills=mcp-test variant=runtime-up -->
 RUNTIME IS ALREADY UP (orchestrator-managed): the orchestrator pre-booted the

@@ -1081,6 +1081,173 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     return saw_unchecked
 
 
+# A phase heading in PHASES.md: ``## Phase ...`` or ``### Phase ...`` (two or
+# three leading hashes, then the literal word "Phase" on a word boundary). This
+# mirrors the AlgoBooth repo checker's PHASE_HEADER_RE so lazy_core's notion of
+# "a phase" stays equivalent to check-docs-consistency.ts.
+_PHASE_HEADING_RE = re.compile(r"^#{2,3}\s+Phase\b")
+
+# A per-phase / top-level bold status line: ``**Status:** <value>``.
+_BOLD_STATUS_RE = re.compile(r"^\*\*Status:\*\*\s*(.+?)\s*$")
+
+
+def parse_phases(phases_text: str) -> list[dict]:
+    """Parse PHASES.md into one record per phase section (Phase 9 WU-1).
+
+    A phase starts at a heading matching ``^##{1,2} Phase\\b`` (i.e. ``## Phase
+    ...`` or ``### Phase ...``) and runs to the next phase heading or EOF.
+
+    For each phase the record captures:
+      - ``heading``   – the full heading line text (stripped of a trailing
+                        newline; leading/trailing whitespace stripped).
+      - ``status``    – the value of the FIRST ``**Status:**`` line inside the
+                        section, stripped; ``None`` when the section has no
+                        status line. A top-level (pre-first-phase) Status line is
+                        NEVER captured — content before the first phase heading
+                        is not a phase.
+      - ``unchecked`` – count of ``- [ ]`` rows in the section, FENCE-AWARE.
+      - ``checked``   – count of ``- [x]`` / ``- [X]`` rows in the section,
+                        FENCE-AWARE.
+
+    Fence-awareness reuses the established ``in_fence`` toggle pattern (see
+    ``count_deliverables``): a line whose stripped form starts with ``` (a fence
+    open/close, including a ```lang opener) toggles fence state, and checkbox
+    rows inside a fence are illustrative examples that do NOT count.
+
+    Returns an empty list when ``phases_text`` contains no phase heading.
+    """
+    phases: list[dict] = []
+    current: dict | None = None
+    in_fence = False
+    for line in phases_text.splitlines():
+        stripped = line.strip()
+        # Fence markers are never headings, status lines, or deliverables.
+        # Toggle the fence and skip — but note that a fence opened/closed inside
+        # a phase still belongs to that phase, so we keep ``current`` as-is.
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            # Inside a fenced block: nothing counts (examples only). We still do
+            # NOT start/stop phases here — fence content is opaque body.
+            continue
+        # A phase heading starts a new section (and closes the previous one).
+        if _PHASE_HEADING_RE.match(line):
+            current = {
+                "heading": stripped,
+                "status": None,
+                "unchecked": 0,
+                "checked": 0,
+            }
+            phases.append(current)
+            continue
+        # Everything below only matters once we are inside a phase section.
+        # Content before the first phase heading (top-level Status, preamble,
+        # stray checkboxes) is intentionally ignored.
+        if current is None:
+            continue
+        # First **Status:** line inside the section wins; later ones (e.g. inside
+        # an Implementation Notes block describing prior state) are ignored.
+        if current["status"] is None:
+            sm = _BOLD_STATUS_RE.match(stripped)
+            if sm:
+                current["status"] = sm.group(1).strip()
+                continue
+        # Checkbox accounting (fence-aware — fenced rows already skipped above).
+        if re.match(r"^-\s*\[\s*\]", stripped):
+            current["unchecked"] += 1
+        elif re.match(r"^-\s*\[[xX]\]", stripped):
+            current["checked"] += 1
+    return phases
+
+
+# Canonical terminal phase statuses (case-insensitive). A phase whose status is
+# one of these is "done" and never refuses / auto-flips at completion time.
+# Mirrors check-docs-consistency.ts's Complete/Superseded acceptance in the
+# spec-complete-phases-not and complete-but-unchecked coherence rules.
+_TERMINAL_PHASE_STATUSES = frozenset({"complete", "superseded"})
+
+
+def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
+    """Compute the auto-flip set and residual-incoherence refusals for completion.
+
+    Given the parsed ``phases`` (from ``parse_phases``), this mirrors the three
+    coherence rules check-docs-consistency.ts enforces under a Complete SPEC —
+    but evaluated PRE-flip at ``__mark_complete__`` / ``__mark_fixed__`` time:
+
+      (auto-flip) a phase with >=1 checkbox, zero unchecked, and a PRESENT
+        Status not in {Complete, Superseded} → flip to ``Complete`` (mirrors the
+        checker's ``all-checked-but-not-complete`` rule; deterministic + safe).
+
+      (refuse) AFTER hypothetically applying the auto-flips, a phase is residually
+        incoherent — and the whole completion refuses — when, for a phase that is
+        NOT Superseded:
+          * it has >=1 unchecked checkbox (verification rows INCLUDED — by
+            completion time the verification exemption's job is done), OR
+          * its (post-flip) Status is PRESENT but not Complete/Superseded
+            (this catches zero-checkbox non-Complete phases too: no mechanical
+            signal to flip on → refuse).
+
+        Null-status handling (deliberate, completeness-first / D7): the
+        status-straggler check (the second bullet) exempts a phase with NO
+        Status line — canonical-null is a non-straggler exactly as the repo
+        checker's ``spec-complete-phases-not`` rule (which filters
+        ``canonical !== null``) treats it. The unchecked-box check (the first
+        bullet) is NOT exempted for null-status phases: the deliverable's box
+        rule is "any phase with >=1 unchecked checkbox", so a status-less phase
+        with visibly-unfinished work still refuses (the stricter, safer option —
+        a feature must not complete with unfinished deliverables hiding under a
+        status-less phase).
+
+    Returns ``(flip, refusals)`` where ``flip`` is the list of phase records to
+    auto-flip and ``refusals`` is a list of human-readable per-phase reasons
+    (empty ⇒ coherent, proceed).
+    """
+    flip: list[dict] = []
+    refusals: list[str] = []
+    for ph in phases:
+        status = ph["status"]
+        status_norm = status.strip().lower() if status else None
+        is_superseded = status_norm == "superseded"
+        is_terminal = status_norm in _TERMINAL_PHASE_STATUSES
+        has_boxes = (ph["checked"] + ph["unchecked"]) > 0
+        all_checked = has_boxes and ph["unchecked"] == 0
+
+        # --- (a) auto-flip candidates ---
+        # A present, non-terminal status whose every box is checked → flip.
+        will_flip = (
+            status is not None
+            and not is_terminal
+            and all_checked
+        )
+        if will_flip:
+            flip.append(ph)
+
+        # --- (b/c) residual incoherence AFTER the hypothetical flip ---
+        # Superseded is terminal: its unchecked boxes and status are acceptable.
+        if is_superseded:
+            continue
+
+        # Unchecked boxes in a non-Superseded phase always block completion —
+        # the verification carve-out does not apply at completion time.
+        if ph["unchecked"] > 0:
+            refusals.append(
+                f'{ph["heading"]}: {ph["unchecked"]} unchecked box(es)'
+            )
+            continue
+
+        # No unchecked boxes. The phase is coherent iff, post-flip, its status is
+        # Complete/Superseded. A phase we just flipped lands at Complete → OK.
+        # A phase with a present non-terminal status that did NOT qualify for the
+        # flip (e.g. zero-checkbox In-progress) has no mechanical flip signal →
+        # refuse. A phase with no status line is ignored.
+        if status is not None and not is_terminal and not will_flip:
+            refusals.append(
+                f'{ph["heading"]}: status "{status}" not Complete/Superseded'
+            )
+    return flip, refusals
+
+
 # ---------------------------------------------------------------------------
 # Completion ledger verification
 # ---------------------------------------------------------------------------
@@ -1308,14 +1475,30 @@ def apply_pseudo(
     ``__mark_complete__``
         Gate: ``spec_path/VALIDATED.md`` OR ``spec_path/SKIP_MCP_TEST.md``
         must be present.  Writes COMPLETED.md (kind: completed, provenance:
-        gated), flips SPEC.md/PHASES.md ``**Status:**``, deletes VALIDATED.md /
-        RETRO_DONE.md / DEFERRED_NON_CLOUD.md.  Idempotent on existing
-        COMPLETED.md.
+        gated), flips SPEC.md/PHASES.md top-level ``**Status:**``, deletes
+        VALIDATED.md / RETRO_DONE.md / DEFERRED_NON_CLOUD.md.  Idempotent on
+        existing COMPLETED.md.
+
+        Completion-coherence gate (Phase 9 WU-1): when PHASES.md exists, BEFORE
+        any write the function makes PHASES.md coherent the way the AlgoBooth
+        ``check-docs-consistency.ts`` checker requires a Complete SPEC to be —
+        (a) AUTO-FLIPS every phase with >=1 checkbox, zero unchecked, and a
+        present non-Complete/non-Superseded ``**Status:**`` line to ``Complete``
+        (in place; only that line changes), then (b) REFUSES with ZERO writes
+        (no receipt, no status flips, no sentinel deletions) when any phase
+        would remain incoherent — any unchecked box in a non-Superseded phase
+        (verification rows INCLUDED at completion time) or any present
+        non-Complete/non-Superseded status with no flip signal. The refusal
+        message names each offending phase. Phases with no Status line are
+        ignored; PHASES.md absent → gate is a no-op. The returned dict carries an
+        extra ``flipped_phases`` key (list of the headings auto-flipped; ``[]``
+        when none).
 
     ``__mark_fixed__``
-        Same as ``__mark_complete__`` but receipt file is FIXED.md (kind: fixed)
-        and SPEC.md status is flipped to ``Fixed``.  Idempotent on existing
-        FIXED.md with kind=="fixed".
+        Same as ``__mark_complete__`` (including the completion-coherence gate
+        and ``flipped_phases`` key) but the receipt file is FIXED.md (kind:
+        fixed) and SPEC.md status is flipped to ``Fixed``.  Idempotent on
+        existing FIXED.md with kind=="fixed".
     """
     # Resolve defaults for optional keyword arguments.
     if date is None:
@@ -1616,10 +1799,84 @@ def apply_pseudo(
             )
 
         # Idempotency: if the receipt already exists and parses correct kind → noop.
+        # NOTE: this noop check runs BEFORE the completion-coherence gate below,
+        # so an already-receipted dir is a clean noop even if its PHASES.md is
+        # incoherent — re-completing a done feature must never re-refuse.
         receipt_path = spec_path / receipt_filename
         existing_receipt = parse_sentinel(receipt_path)
         if existing_receipt is not None and existing_receipt.get("kind") == receipt_kind:
             return _noop()
+
+        # --- Completion-coherence gate (Phase 9 WU-1) ---
+        # Before minting the receipt and flipping the top-level Status, make
+        # PHASES.md coherent the way AlgoBooth's check-docs-consistency.ts
+        # requires a Complete SPEC to be: every phase Complete/Superseded with no
+        # unchecked boxes. We (a) AUTO-FLIP all-ticked non-terminal phases to
+        # Complete (deterministic, mirrors the checker's all-checked-but-not-
+        # complete rule) and (b) REFUSE with ZERO writes when any phase would
+        # remain incoherent after that flip (unchecked boxes incl. verification
+        # rows, or a present non-Complete/non-Superseded status with no flip
+        # signal). When PHASES.md is absent the gate is a no-op (preserves the
+        # pre-Phase-9 behavior). ``flipped_phases`` records the headings flipped.
+        flipped_phases: list[str] = []
+        phases_md_path = spec_path / "PHASES.md"
+        if phases_md_path.exists():
+            phases_text = phases_md_path.read_text(encoding="utf-8")
+            parsed_phases = parse_phases(phases_text)
+            to_flip, refusals = _phase_completion_plan(parsed_phases)
+            if refusals:
+                # Residual incoherence → refuse with no filesystem writes at all
+                # (no receipt, no status flips, no sentinel deletions). Name each
+                # offending phase so the orchestrator can route a corrective
+                # coherence cycle (per the Phase 9 refusal contract).
+                return _refused(
+                    f"PHASES.md is incoherent for completion — "
+                    f"{len(refusals)} phase(s) block the receipt: "
+                    + "; ".join(refusals)
+                )
+            if to_flip:
+                # Apply the auto-flips IN PLACE: rewrite ONLY the first
+                # ``**Status:**`` line inside each to-be-flipped phase's section,
+                # leaving every other byte (including line endings) untouched.
+                flip_headings = {ph["heading"] for ph in to_flip}
+                src_lines = phases_text.splitlines(keepends=True)
+                out_lines: list[str] = []
+                in_phase_to_flip = False
+                status_flipped_this_phase = False
+                in_fence = False
+                for raw in src_lines:
+                    stripped = raw.strip()
+                    if stripped.startswith("```"):
+                        in_fence = not in_fence
+                        out_lines.append(raw)
+                        continue
+                    if not in_fence and _PHASE_HEADING_RE.match(raw):
+                        # Entering a new phase section — decide if it's a flip target.
+                        in_phase_to_flip = stripped in flip_headings
+                        status_flipped_this_phase = False
+                        out_lines.append(raw)
+                        continue
+                    if (
+                        not in_fence
+                        and in_phase_to_flip
+                        and not status_flipped_this_phase
+                        and _BOLD_STATUS_RE.match(stripped)
+                    ):
+                        # Flip ONLY this line's value to Complete; preserve the
+                        # original line ending so byte-stability holds elsewhere.
+                        ending = ""
+                        if raw.endswith("\r\n"):
+                            ending = "\r\n"
+                        elif raw.endswith("\n"):
+                            ending = "\n"
+                        elif raw.endswith("\r"):
+                            ending = "\r"
+                        out_lines.append("**Status:** Complete" + ending)
+                        status_flipped_this_phase = True
+                        continue
+                    out_lines.append(raw)
+                _atomic_write(phases_md_path, "".join(out_lines))
+                flipped_phases = [ph["heading"] for ph in to_flip]
 
         # --- (a) Fold evidence ---
         validated_via = "mcp" if has_validated else "skip-mcp-test"
@@ -1690,7 +1947,12 @@ def apply_pseudo(
                 cleanup_path.unlink()
                 deleted.append(cleanup_name)
 
-        return _ok(wrote, deleted)
+        # Attach the Phase 9 WU-1 ``flipped_phases`` key (the per-phase headings
+        # the completion-coherence gate auto-flipped to Complete this call).
+        # Empty list when nothing needed flipping; documented in the docstring.
+        result = _ok(wrote, deleted)
+        result["flipped_phases"] = flipped_phases
+        return result
 
     else:
         # Unknown pseudo-skill name — never crash, always refuse gracefully.

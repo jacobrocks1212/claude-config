@@ -134,6 +134,9 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
    Then commit per .claude/skill-config/commit-policy.md (or the standard
    pattern); message `docs({feature_id}): enact blocker resolution (<path>)`.
    {PUSH_RULE}
+   WORK-BRANCH-ONLY: commit and push to the CURRENT branch only
+   (`git rev-parse --abbrev-ref HEAD` at start); NEVER create a new branch,
+   NEVER --force.
 
    Report a one-paragraph summary (≤ 8 lines): what you enacted (the new phase
    title / the queue move / the custom edits), whether BLOCKED.md was neutralized

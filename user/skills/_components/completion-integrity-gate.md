@@ -77,6 +77,30 @@ identically in cloud and workstation.
 
    (For bugs, use `bug-state.py --apply-pseudo __mark_fixed__ {spec_path}`.)
 
+   **The script enforces per-phase coherence as a MECHANICAL THIRD GATE before any
+   write.** `apply_pseudo __mark_complete__` / `__mark_fixed__` parses PHASES.md
+   per-phase (fence-aware) and, BEFORE writing the receipt or flipping any status,
+   (a) AUTO-FLIPS any phase that has ≥1 checkbox, zero unchecked, and a
+   non-`Complete`/non-`Superseded` Status line → `Complete` (deterministic and
+   safe), then (b) REFUSES the whole operation (`refused:<reason>`, **zero writes —
+   no receipt, no status flip, sentinels untouched**) if any phase would remain
+   incoherent: any unchecked checkbox in any phase (verification rows included — by
+   completion time the verification-only carve-out's job is done), or any phase
+   Status that is not `Complete`/`Superseded` (a zero-checkbox non-Complete phase
+   refuses too — there is no mechanical signal to flip on). The refusal message
+   names the offending phases/rows. This is the structural backstop for the steps-1–2a
+   prose checks: even if the gate prose missed an incoherent phase, the script will
+   not write an incoherent completion.
+
+   **On `ok: false` + this script-level refusal, route a corrective coherence cycle.**
+   Treat it exactly like a Gate-1 uncovered-decision halt: do NOT flip, do NOT retry
+   the apply blindly — dispatch a cycle subagent to reconcile PHASES.md HONESTLY
+   (tick each unchecked verification row WITH on-disk evidence, or re-scope rows it
+   cannot prove — never blind-tick to satisfy the gate), then return to the loop so
+   the next `__mark_complete__`/`__mark_fixed__` attempt re-runs against a coherent
+   PHASES.md. A blind tick that makes the script pass without real verification is
+   the exact incoherence this gate exists to prevent.
+
    The script (`apply_pseudo` in `lazy_core.py`) is the **sole author** of the
    following writes — the gate and the consumer skill prose must NOT duplicate them:
 

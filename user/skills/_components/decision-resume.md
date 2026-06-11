@@ -191,6 +191,9 @@ Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (p
      4. Commit per .claude/skill-config/commit-policy.md (or standard pattern).
         Commit message: `docs({feature_id}): apply decision resolution to
         SPEC/PHASES`. {PUSH_RULE}
+        WORK-BRANCH-ONLY: commit and push to the CURRENT branch only
+        (`git rev-parse --abbrev-ref HEAD` at start); NEVER create a new
+        branch, NEVER --force.
      5. Report a one-paragraph summary (under 8 lines): which files were
         edited, which sections changed, how each choice was applied, commit
         hash. If any decision was a no-op against SPEC/PHASES, say so

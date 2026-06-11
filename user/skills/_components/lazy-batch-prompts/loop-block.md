@@ -15,6 +15,8 @@
 tuple on the PREVIOUS cycle as well. This usually means a terminal sentinel
 (RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md) is
 missing — the skill that was supposed to write it on the prior cycle did not.
+(The streak is HEAD-aware: commits landing between probes reset it — this block
+firing means NO commits landed between identical probes: a genuine stall.)
 
 Before invoking {sub_skill} again, DIAGNOSE THE MISSING SENTINEL:
   1. Read the canonical schemas in

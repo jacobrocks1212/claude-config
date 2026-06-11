@@ -3051,6 +3051,532 @@ def test_apply_pseudo_validated_from_results_escapes_special_scenarios():
 
 
 # ---------------------------------------------------------------------------
+# Tests: parse_phases — Phase 9 WU-1 per-phase PHASES.md parser
+#
+# parse_phases(phases_text) -> list[dict], one dict per phase section:
+#   {"heading": str, "status": str | None, "unchecked": int, "checked": int}
+# A phase starts at a heading matching ^##{1,2} Phase\b (## or ### Phase ...)
+# and runs to the next phase heading or EOF. status = the first **Status:**
+# line value inside the section (None if absent). Checkbox counts are
+# fence-aware. Content before the first phase heading is NOT a phase.
+# ---------------------------------------------------------------------------
+
+def test_parse_phases_basic_multi_phase():
+    """Two phases with Status lines + mixed checkbox counts are parsed into two
+    dicts with the right heading text, status, and per-section checkbox counts.
+    """
+    _guard()
+    text = (
+        "# PHASES — Feature\n"
+        "\n"
+        "**Status:** In-progress\n"
+        "\n"
+        "## Phase 1 — Foundations\n"
+        "\n"
+        "**Status:** Complete\n"
+        "\n"
+        "- [x] Build the thing\n"
+        "- [x] Wire it up\n"
+        "\n"
+        "## Phase 2 — Polish\n"
+        "\n"
+        "**Status:** In-progress\n"
+        "\n"
+        "- [x] Done item\n"
+        "- [ ] Pending item\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 2, f"expected 2 phases, got {len(phases)}: {phases!r}"
+    p1, p2 = phases
+    assert p1["heading"] == "## Phase 1 — Foundations", f"p1 heading: {p1['heading']!r}"
+    assert p1["status"] == "Complete", f"p1 status: {p1['status']!r}"
+    assert (p1["checked"], p1["unchecked"]) == (2, 0), f"p1 counts: {p1!r}"
+    assert p2["heading"] == "## Phase 2 — Polish", f"p2 heading: {p2['heading']!r}"
+    assert p2["status"] == "In-progress", f"p2 status: {p2['status']!r}"
+    assert (p2["checked"], p2["unchecked"]) == (1, 1), f"p2 counts: {p2!r}"
+
+
+def test_parse_phases_h3_headings_recognized():
+    """A ``### Phase N`` heading (three-hash) is recognized as a phase start
+    (the spec allows ## or ### Phase headings).
+    """
+    _guard()
+    text = (
+        "### Phase 1: Spike\n"
+        "**Status:** Complete\n"
+        "- [x] spike done\n"
+        "### Phase 2: Build\n"
+        "**Status:** Ready\n"
+        "- [ ] build it\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 2, f"expected 2 phases, got {len(phases)}: {phases!r}"
+    assert phases[0]["heading"] == "### Phase 1: Spike"
+    assert phases[0]["status"] == "Complete"
+    assert (phases[0]["checked"], phases[0]["unchecked"]) == (1, 0)
+    assert phases[1]["status"] == "Ready"
+    assert (phases[1]["checked"], phases[1]["unchecked"]) == (0, 1)
+
+
+def test_parse_phases_fence_aware():
+    """Checkbox lines inside a ``` code fence are illustrative examples and must
+    NOT be counted toward the enclosing phase's checked/unchecked totals.
+    """
+    _guard()
+    text = (
+        "## Phase 1 — Demo\n"
+        "**Status:** In-progress\n"
+        "- [x] real done item\n"
+        "\n"
+        "```md\n"
+        "- [ ] fenced example unchecked (must be ignored)\n"
+        "- [x] fenced example checked (must be ignored)\n"
+        "```\n"
+        "- [ ] real pending item\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 1, f"expected 1 phase, got {len(phases)}: {phases!r}"
+    p = phases[0]
+    # Only the two NON-fenced rows count: 1 checked, 1 unchecked.
+    assert (p["checked"], p["unchecked"]) == (1, 1), (
+        f"fenced rows leaked into counts: {p!r}"
+    )
+
+
+def test_parse_phases_fence_with_lang_tag():
+    """A fence opened with a language tag (```text) is still tracked so its rows
+    are excluded.
+    """
+    _guard()
+    text = (
+        "## Phase 1\n"
+        "**Status:** Complete\n"
+        "```text\n"
+        "- [ ] not a real deliverable\n"
+        "```\n"
+        "- [x] genuine deliverable\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 1
+    assert (phases[0]["checked"], phases[0]["unchecked"]) == (1, 0), phases[0]
+
+
+def test_parse_phases_phase_without_status_line():
+    """A phase section with no ``**Status:**`` line yields status=None (canonical
+    null — the caller ignores such phases for coherence purposes).
+    """
+    _guard()
+    text = (
+        "## Phase 1 — No status here\n"
+        "- [x] item one\n"
+        "- [ ] item two\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 1
+    assert phases[0]["status"] is None, f"expected status=None, got {phases[0]['status']!r}"
+    assert (phases[0]["checked"], phases[0]["unchecked"]) == (1, 1)
+
+
+def test_parse_phases_top_level_status_not_captured():
+    """A top-of-doc ``**Status:**`` line (before the first phase heading) must NOT
+    be captured as a phase, nor leak into the first phase's status.
+    """
+    _guard()
+    text = (
+        "# PHASES — Feature\n"
+        "\n"
+        "**Status:** Draft\n"
+        "\n"
+        "Some preamble prose.\n"
+        "- [ ] a stray top-level checkbox (not in any phase)\n"
+        "\n"
+        "## Phase 1 — First\n"
+        "**Status:** Complete\n"
+        "- [x] real item\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    # Exactly one phase — the top-level Status/checkbox are NOT a phase.
+    assert len(phases) == 1, f"top-level content captured as a phase: {phases!r}"
+    assert phases[0]["heading"] == "## Phase 1 — First"
+    # The phase's status must be its OWN Complete, not the top-level Draft.
+    assert phases[0]["status"] == "Complete", f"top-level Draft leaked: {phases[0]!r}"
+    assert (phases[0]["checked"], phases[0]["unchecked"]) == (1, 0)
+
+
+def test_parse_phases_empty_text_no_phases():
+    """Text with no phase headings yields an empty list."""
+    _guard()
+    text = "# A doc\n\n**Status:** Draft\n\nNo phases here.\n- [ ] orphan\n"
+    phases = lazy_core.parse_phases(text)
+    assert phases == [], f"expected no phases, got {phases!r}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: apply_pseudo completion-coherence enforcement — Phase 9 WU-1
+#
+# At __mark_complete__ / __mark_fixed__ time (AFTER the evidence gate and the
+# already-has-receipt noop check, BEFORE any write):
+#   (auto-flip) a phase with >=1 checkbox, zero unchecked, and a present
+#     non-Complete/non-Superseded Status line is flipped to Complete in place.
+#   (refuse) if any phase would remain incoherent after the auto-flips:
+#     - any unchecked checkbox in any non-Superseded phase, OR
+#     - any phase whose (post-flip) Status is present but not Complete/Superseded
+#       (incl. zero-checkbox phases — no mechanical signal to flip on),
+#   the action refuses with ZERO writes (no receipt, no status flips, no
+#   sentinel deletions) and a refusal message naming each offending phase.
+# Phases with NO Status line are ignored.
+# ---------------------------------------------------------------------------
+
+def _write_phases_md(spec_dir: Path, body: str) -> Path:
+    """Write a PHASES.md with a top-of-doc Status line + the given phase body."""
+    p = spec_dir / "PHASES.md"
+    p.write_text(
+        "# PHASES — Test Feature\n"
+        "\n"
+        "**Status:** In-progress\n"
+        "\n" + body,
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_apply_pseudo_coherence_autoflips_all_ticked_phases():
+    """All-ticked phases carrying a non-Complete Status are auto-flipped to
+    Complete in place, the receipt is written, the top-level PHASES/SPEC Status
+    are flipped, and every byte OUTSIDE the flipped per-phase Status lines is
+    unchanged (byte-compared against the expected post-flip text).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        phase_body = (
+            "## Phase 1 — Foundations\n"
+            "\n"
+            "**Status:** In-progress\n"
+            "\n"
+            "- [x] Build the thing\n"
+            "- [x] Wire it up\n"
+            "\n"
+            "## Phase 2 — Polish\n"
+            "\n"
+            "**Status:** In-progress\n"
+            "\n"
+            "- [x] Finish polish\n"
+        )
+        phases_path = _write_phases_md(spec_dir, phase_body)
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+
+        # Receipt written.
+        assert (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md was not written"
+        # Top-level flips happened.
+        assert "**Status:** Complete" in (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+
+        # The flipped phases are reported.
+        flipped = result.get("flipped_phases")
+        assert flipped is not None, f"expected flipped_phases key in result: {result!r}"
+        assert any("Phase 1" in h for h in flipped), f"Phase 1 not reported flipped: {flipped!r}"
+        assert any("Phase 2" in h for h in flipped), f"Phase 2 not reported flipped: {flipped!r}"
+
+        # Byte-exact post-flip PHASES body: ONLY the two per-phase Status lines
+        # changed In-progress -> Complete; the top-level Status line ALSO flips
+        # (existing __mark_complete__ behavior). Every other byte is identical.
+        expected_phases_text = (
+            "# PHASES — Test Feature\n"
+            "\n"
+            "**Status:** Complete\n"   # top-level flip (count=1 sub)
+            "\n"
+            "## Phase 1 — Foundations\n"
+            "\n"
+            "**Status:** Complete\n"   # auto-flip
+            "\n"
+            "- [x] Build the thing\n"
+            "- [x] Wire it up\n"
+            "\n"
+            "## Phase 2 — Polish\n"
+            "\n"
+            "**Status:** Complete\n"   # auto-flip
+            "\n"
+            "- [x] Finish polish\n"
+        )
+        actual = phases_path.read_text(encoding="utf-8")
+        assert actual == expected_phases_text, (
+            "PHASES.md body diverged from the expected per-phase-flip-only result:\n"
+            f"--- expected ---\n{expected_phases_text!r}\n--- actual ---\n{actual!r}"
+        )
+
+
+def test_apply_pseudo_coherence_refuses_unchecked_verification_row():
+    """A phase whose Runtime Verification row is still unchecked at completion
+    time → REFUSE: no COMPLETED.md, no top-level Status flip, and VALIDATED.md
+    (a sentinel that would normally be deleted) is left untouched. The refusal
+    message names the offending phase.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        phase_body = (
+            "## Phase 1 — Foundations\n"
+            "\n"
+            "**Status:** Complete\n"
+            "\n"
+            "- [x] Build the thing\n"
+            "\n"
+            "**Runtime Verification:**\n"
+            "- [ ] mcp dropout check (still pending)\n"
+        )
+        _write_phases_md(spec_dir, phase_body)
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, f"expected ok=False (refused), got {result}"
+        assert result["refused"] is not None, f"expected non-None refused, got {result!r}"
+        assert "Phase 1" in result["refused"], (
+            f"refusal should name the offending phase, got: {result['refused']!r}"
+        )
+        assert result["wrote"] == [], f"expected wrote=[], got {result['wrote']}"
+        assert result["deleted"] == [], f"expected deleted=[], got {result['deleted']}"
+        # ZERO writes: no receipt, no top-level flip, no sentinel deletion.
+        assert not (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md written despite refusal"
+        assert "**Status:** In-progress" in (spec_dir / "SPEC.md").read_text(encoding="utf-8"), (
+            "SPEC.md status flipped despite the refusal"
+        )
+        assert (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was deleted despite the refusal — must be untouched"
+        )
+
+
+def test_apply_pseudo_coherence_refuses_zero_checkbox_in_progress_phase():
+    """A zero-checkbox phase carrying ``**Status:** In-progress`` has no mechanical
+    flip signal → REFUSE (the refusal names the phase + the bad status).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        phase_body = (
+            "## Phase 1 — Empty but in-progress\n"
+            "\n"
+            "**Status:** In-progress\n"
+            "\n"
+            "Some prose, no checkboxes.\n"
+        )
+        _write_phases_md(spec_dir, phase_body)
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, f"expected ok=False (refused), got {result}"
+        assert result["refused"] is not None, f"expected non-None refused, got {result!r}"
+        assert "Phase 1" in result["refused"], (
+            f"refusal should name the offending phase, got: {result['refused']!r}"
+        )
+        assert not (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md written despite refusal"
+
+
+def test_apply_pseudo_coherence_superseded_phase_with_unchecked_not_refused():
+    """A Superseded phase is terminal: its unchecked boxes are acceptable (the
+    repo checker's complete-but-unchecked / spec-complete-phases-not rules accept
+    Superseded). So a Superseded phase with unchecked rows does NOT refuse and is
+    NOT flipped — completion proceeds.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        phase_body = (
+            "## Phase 1 — Done\n"
+            "\n"
+            "**Status:** Complete\n"
+            "\n"
+            "- [x] real item\n"
+            "\n"
+            "## Phase 2 — Abandoned\n"
+            "\n"
+            "**Status:** Superseded\n"
+            "\n"
+            "- [ ] never finished, superseded by Phase 1\n"
+        )
+        phases_path = _write_phases_md(spec_dir, phase_body)
+        before = phases_path.read_text(encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True (Superseded is terminal), got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result!r}"
+        assert (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md not written"
+        # The Superseded phase's Status line must NOT have been flipped to Complete.
+        after = phases_path.read_text(encoding="utf-8")
+        assert "**Status:** Superseded" in after, (
+            "Superseded phase status was altered — it must remain Superseded"
+        )
+        # No phase should be reported as flipped (Phase 1 already Complete; Phase 2
+        # Superseded and untouched).
+        assert not result.get("flipped_phases"), (
+            f"no phase should have been flipped, got: {result.get('flipped_phases')!r}"
+        )
+        # Sanity: only the top-level Status flipped relative to `before`.
+        assert before.replace("**Status:** In-progress", "**Status:** Complete", 1) == after, (
+            "more than the top-level Status line changed"
+        )
+
+
+def test_apply_pseudo_coherence_mark_fixed_refuses_on_unchecked():
+    """The same coherence refusal applies to the bug pipeline's __mark_fixed__:
+    an unchecked non-Superseded phase → refuse, no FIXED.md, no flips.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="Investigating")
+        phase_body = (
+            "## Phase 1 — Repro + fix\n"
+            "\n"
+            "**Status:** In-progress\n"
+            "\n"
+            "- [x] reproduce\n"
+            "- [ ] land the fix\n"
+        )
+        _write_phases_md(spec_dir, phase_body)
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_fixed__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, f"expected ok=False (refused), got {result}"
+        assert result["refused"] is not None and "Phase 1" in result["refused"], (
+            f"expected refusal naming Phase 1, got {result!r}"
+        )
+        assert not (spec_dir / "FIXED.md").exists(), "FIXED.md written despite refusal"
+        assert (spec_dir / "VALIDATED.md").exists(), "VALIDATED.md deleted despite refusal"
+
+
+def test_apply_pseudo_coherence_no_phases_md_preserves_behavior():
+    """When PHASES.md is ABSENT the coherence gate is a no-op — the existing
+    __mark_complete__ behavior (receipt + SPEC flip) is preserved.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Deliberately no PHASES.md.
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True (no PHASES.md), got {result}"
+        assert (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md not written"
+
+
+def test_apply_pseudo_coherence_no_status_phase_all_checked_proceeds():
+    """A phase with NO Status line whose boxes are all checked is ignored by the
+    status-straggler check (canonical-null = non-straggler, matching the repo
+    checker) — and having no unchecked boxes, it does not trip the box rule
+    either. Completion proceeds; the phase is NOT auto-flipped (no Status line to
+    flip).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — No status, all done\n\n- [x] item a\n- [x] item b\n",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md not written"
+        assert not result.get("flipped_phases"), (
+            f"no-status phase should not be flipped, got {result.get('flipped_phases')!r}"
+        )
+
+
+def test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses():
+    """JUDGMENT CALL (completeness-first / D7): a phase with NO Status line but an
+    UNCHECKED box still refuses. The deliverable's box rule says "any phase with
+    >=1 unchecked checkbox" refuses; the no-status "ignore" carve-out applies
+    only to the status-straggler check (canonical-null is a non-straggler), not
+    to genuinely-incomplete deliverables. The stricter option is chosen so a
+    feature cannot be completed with visibly-unfinished work hiding under a
+    status-less phase.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — No status, not done\n\n- [x] done\n- [ ] NOT done\n",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, f"expected ok=False (refused), got {result}"
+        assert "Phase 1" in (result["refused"] or ""), (
+            f"refusal should name the offending phase, got {result['refused']!r}"
+        )
+        assert not (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md written despite refusal"
+
+
+def test_apply_pseudo_coherence_idempotent_skips_check_when_receipted():
+    """Idempotency takes precedence over the coherence check: if a valid
+    COMPLETED.md already exists, the action is a noop EVEN IF PHASES.md is
+    incoherent (the check runs only on the receipt-minting path). This pins the
+    ordering: already-has-receipt noop BEFORE the coherence gate.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Pre-existing valid receipt.
+        lazy_core.write_completed_receipt(
+            spec_dir / "COMPLETED.md",
+            feature_id="test-feature",
+            date="2026-06-10",
+            provenance="gated",
+        )
+        _write_validated_md(spec_dir)
+        # An INCOHERENT PHASES.md (unchecked row) that WOULD refuse on a fresh run.
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1\n\n**Status:** In-progress\n\n- [ ] still pending\n",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True (noop), got {result}"
+        assert result["noop"] is True, (
+            f"expected noop=True (receipt present, coherence check skipped), got {result}"
+        )
+        assert result["refused"] is None, f"expected refused=None on noop, got {result!r}"
+
+
+# ---------------------------------------------------------------------------
 # Tests: neutralize_sentinel — WU-3 rename-to-resolved helper
 # ---------------------------------------------------------------------------
 
@@ -4467,6 +4993,24 @@ _TESTS = [
     ("test_apply_pseudo_unknown_name_refuses", test_apply_pseudo_unknown_name_refuses),
     ("test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status", test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status),
     ("test_apply_pseudo_validated_from_results_escapes_special_scenarios", test_apply_pseudo_validated_from_results_escapes_special_scenarios),
+    # Phase 9 WU-1: parse_phases per-phase PHASES.md parser
+    ("test_parse_phases_basic_multi_phase", test_parse_phases_basic_multi_phase),
+    ("test_parse_phases_h3_headings_recognized", test_parse_phases_h3_headings_recognized),
+    ("test_parse_phases_fence_aware", test_parse_phases_fence_aware),
+    ("test_parse_phases_fence_with_lang_tag", test_parse_phases_fence_with_lang_tag),
+    ("test_parse_phases_phase_without_status_line", test_parse_phases_phase_without_status_line),
+    ("test_parse_phases_top_level_status_not_captured", test_parse_phases_top_level_status_not_captured),
+    ("test_parse_phases_empty_text_no_phases", test_parse_phases_empty_text_no_phases),
+    # Phase 9 WU-1: apply_pseudo completion-coherence enforcement
+    ("test_apply_pseudo_coherence_autoflips_all_ticked_phases", test_apply_pseudo_coherence_autoflips_all_ticked_phases),
+    ("test_apply_pseudo_coherence_refuses_unchecked_verification_row", test_apply_pseudo_coherence_refuses_unchecked_verification_row),
+    ("test_apply_pseudo_coherence_refuses_zero_checkbox_in_progress_phase", test_apply_pseudo_coherence_refuses_zero_checkbox_in_progress_phase),
+    ("test_apply_pseudo_coherence_superseded_phase_with_unchecked_not_refused", test_apply_pseudo_coherence_superseded_phase_with_unchecked_not_refused),
+    ("test_apply_pseudo_coherence_mark_fixed_refuses_on_unchecked", test_apply_pseudo_coherence_mark_fixed_refuses_on_unchecked),
+    ("test_apply_pseudo_coherence_no_phases_md_preserves_behavior", test_apply_pseudo_coherence_no_phases_md_preserves_behavior),
+    ("test_apply_pseudo_coherence_no_status_phase_all_checked_proceeds", test_apply_pseudo_coherence_no_status_phase_all_checked_proceeds),
+    ("test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses", test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses),
+    ("test_apply_pseudo_coherence_idempotent_skips_check_when_receipted", test_apply_pseudo_coherence_idempotent_skips_check_when_receipted),
     # neutralize_sentinel — WU-3 rename-to-resolved helper
     ("test_neutralize_sentinel_basic_rename", test_neutralize_sentinel_basic_rename),
     ("test_neutralize_sentinel_refuses_when_absent", test_neutralize_sentinel_refuses_when_absent),

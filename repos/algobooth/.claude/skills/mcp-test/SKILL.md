@@ -489,6 +489,15 @@ When invoked under the lazy state machine (Step 9), `/mcp-test` writes a termina
 
 The intent: a future real-device run re-validates the deferred assertions instead of inheriting a permanent blanket exemption. A blanket whole-feature deferral is wrong — if the logic + signal-presence scenarios are MCP-testable here (they are), only the sustained-timing residual gets deferred, and only with the device-specific justification above.
 
+### Reconcile PHASES.md after writing VALIDATED.md (REQUIRED on a full pass)
+
+Immediately after writing `VALIDATED.md`, RECONCILE the feature's `PHASES.md` so it is coherent for the completion gate. Walk every phase and, for EACH unchecked Runtime Verification row:
+
+- **Covered by this validation run** → tick it (`- [ ]` → `- [x]`) with a brief evidence annotation naming the scenario / assertion that proved it.
+- **NOT covered by this run** → re-scope it honestly: convert the row to a non-checkbox follow-up note, OR — if the gap is genuinely blocking — downgrade the outcome to an `MCP_TEST_RESULTS.md` partial instead of `VALIDATED.md`. Disclose the re-scope with a `⚖` line in your Step 6 summary.
+
+Then flip each phase's `**Status:**` to `Complete` once nothing in that phase remains unchecked (per-phase flips are permitted — only the top-level `**Status:**` and the receipt are orchestrator-owned). **Why:** the completion-integrity gate refuses an incoherent flip (top-level `Complete` while a per-phase row stays unchecked or a per-phase Status is not `Complete`/`Superseded`), so an unreconciled `PHASES.md` strands the feature at `__mark_complete__`. Commit the reconciliation alongside the `VALIDATED.md` write.
+
 ---
 
 ## Step 5: Dispatch Sonnet Subagent

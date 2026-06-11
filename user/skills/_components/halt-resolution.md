@@ -167,8 +167,10 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 
       Commit per .claude/skill-config/commit-policy.md (or the standard pattern):
       `docs({feature_id}): enact {terminal_reason} resolution (<path>)`. Push the work
-      branch. Report a one-paragraph summary (≤ 8 lines): what you enacted, which
-      files/status/sentinels changed, and the commit hash.
+      branch. WORK-BRANCH-ONLY: commit and push to the CURRENT branch only
+      (`git rev-parse --abbrev-ref HEAD` at start); NEVER create a new branch,
+      NEVER --force. Report a one-paragraph summary (≤ 8 lines): what you enacted,
+      which files/status/sentinels changed, and the commit hash.
 
       You may NOT spawn further subagents (no Agent). You MAY use the Skill tool and
       Edit/Write/Read/Bash.
