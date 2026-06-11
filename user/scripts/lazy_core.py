@@ -1296,8 +1296,22 @@ def apply_pseudo(
     if name == "__write_validated_from_skip__":
         # Gate: SKIP_MCP_TEST.md must be present and parseable.
         skip_path = spec_path / "SKIP_MCP_TEST.md"
-        if not skip_path.exists() or parse_sentinel(skip_path) is None:
+        skip_meta = parse_sentinel(skip_path)
+        if not skip_path.exists() or skip_meta is None:
             return _refused("SKIP_MCP_TEST.md absent")
+        # Provenance gate — mirrors compute_state's Step-9 gate in
+        # lazy-state.py / bug-state.py: a pipeline-self-granted skip must NOT
+        # vacuously validate, because the pipeline cannot waive its own MCP
+        # requirement. Only operator-granted values are accepted as a
+        # legitimate waiver; an absent granted_by is legacy and treated as
+        # operator-granted (matches the compute_state semantics).
+        if skip_meta.get("granted_by") == "pipeline":
+            return _refused(
+                "SKIP_MCP_TEST.md is granted_by: pipeline (self-granted) — a "
+                "pipeline-granted MCP skip needs operator confirmation before "
+                "it can vacuously validate. Update granted_by to 'operator' "
+                "(or resolve via NEEDS_INPUT) and re-run."
+            )
         # Idempotency: if VALIDATED.md already exists as kind=validated → noop.
         validated_path = spec_path / "VALIDATED.md"
         existing = parse_sentinel(validated_path)
@@ -1496,18 +1510,44 @@ def apply_pseudo(
         receipt_kind = "fixed" if is_fixed else "completed"
         status_value = "Fixed" if is_fixed else "Complete"
 
-        # Gate: validation evidence must be present.
+        # Gate: validation evidence must be present AND carry the correct
+        # sentinel kind. parse_sentinel returns {} (which is `not None`) for a
+        # file with NO frontmatter, so a bare existence-plus-parse check would
+        # let a content-less `touch VALIDATED.md` satisfy the gate and mint a
+        # provenance: gated receipt. Require kind: validated (VALIDATED.md) /
+        # kind: skip-mcp-test (SKIP_MCP_TEST.md) — consistent with the
+        # idempotency check below that already requires kind == receipt_kind.
         validated_path = spec_path / "VALIDATED.md"
         skip_path = spec_path / "SKIP_MCP_TEST.md"
+        validated_meta = parse_sentinel(validated_path)
         has_validated = (
-            validated_path.exists()
-            and parse_sentinel(validated_path) is not None
+            validated_meta is not None
+            and validated_meta.get("kind") == "validated"
         )
+        skip_meta = parse_sentinel(skip_path)
         has_skip = (
-            skip_path.exists()
-            and parse_sentinel(skip_path) is not None
+            skip_meta is not None
+            and skip_meta.get("kind") == "skip-mcp-test"
         )
         if not has_validated and not has_skip:
+            # Distinguish "evidence file present but malformed/content-less"
+            # from "evidence absent" so the operator sees exactly why the gate
+            # refused (and what kind: field the file must carry).
+            malformed: list[str] = []
+            if validated_meta is not None:
+                malformed.append(
+                    "VALIDATED.md exists but lacks 'kind: validated' "
+                    f"frontmatter (parsed kind: {validated_meta.get('kind')!r})"
+                )
+            if skip_meta is not None:
+                malformed.append(
+                    "SKIP_MCP_TEST.md exists but lacks 'kind: skip-mcp-test' "
+                    f"frontmatter (parsed kind: {skip_meta.get('kind')!r})"
+                )
+            if malformed:
+                return _refused(
+                    "validation evidence rejected — " + "; ".join(malformed)
+                )
             return _refused(
                 "no validation evidence (VALIDATED.md/SKIP_MCP_TEST.md) present "
                 "to fold into receipt"

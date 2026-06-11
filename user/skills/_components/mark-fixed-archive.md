@@ -26,12 +26,21 @@ or `{cloud}=true` (cloud). The gate verifies:
 - `RETRO_DONE.md` exists (retro ran).
 - `DEFERRED_REQUIRES_DEVICE.md` is NOT present (device-deferral blocks completion).
 
-The gate writes the **`FIXED.md` receipt** (`kind: fixed`, `provenance: gated`) — this is the
-equivalent of the feature pipeline's `COMPLETED.md`. For bugs, the gate should use:
-- `kind: fixed` (not `completed`).
-- `validated_via`: `mcp` / `skip-mcp-test` / `deferred-non-cloud` per the validation sentinel.
-- Body: paste the validation summary from `VALIDATED.md` / skip rationale / deferral note so
-  evidence survives the sentinel deletion below.
+On pass, the gate delegates the receipt write to the script — run
+`python3 ~/.claude/scripts/bug-state.py --apply-pseudo __mark_fixed__ {spec_path}` per the
+gate component. The script is the **sole author** of:
+- the **`FIXED.md` receipt** (`kind: fixed`, `provenance: gated`) — the equivalent of the
+  feature pipeline's `COMPLETED.md` — with `validated_via`: `mcp` (VALIDATED.md present) or
+  `skip-mcp-test` (only SKIP_MCP_TEST.md present), and the validation evidence folded into the
+  receipt body so it survives the sentinel deletion. (The script refuses when neither
+  VALIDATED.md nor SKIP_MCP_TEST.md is present, so `validated_via` can never be a bare
+  deferral.)
+- the SPEC.md/PHASES.md `**Status:** Fixed` flip (first `**Status:**` line in each).
+- the deletion of the consumed `VALIDATED.md` / `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md`
+  sentinels.
+
+The consumer skill MUST NOT hand-write the receipt, the status flip, or the sentinel
+deletions — its job after the script returns is the archive mechanics below.
 
 If the gate returns `refused:<reason>`, write `NEEDS_INPUT.md` per the gate's refusal protocol,
 print a one-line halt note, and STOP. Do NOT proceed to the archive steps.
@@ -46,14 +55,18 @@ steps below. Won't-fix bugs are still archived; they just carry no receipt.
 
 ### Algorithm (runs after the integrity gate returns `gated`)
 
-At this point, `FIXED.md` has been written by the gate. Proceed:
+At this point, `bug-state.py --apply-pseudo __mark_fixed__ {spec_path}` (invoked by the gate
+in the precondition step) has already written `FIXED.md`, flipped the SPEC.md/PHASES.md
+`**Status:**` lines to `Fixed`, and deleted the consumed `VALIDATED.md` / `RETRO_DONE.md` /
+`DEFERRED_NON_CLOUD.md` sentinels. Do NOT re-perform any of those writes. Proceed with the
+archive mechanics:
 
-#### Step 1: Update SPEC.md header lines
+#### Step 1: Add the SPEC.md evidence header lines (the script does NOT write these)
 
-Edit `{spec_path}/SPEC.md`:
-1. Change the `**Status:**` line to `Fixed` (bare canonical token).
-2. Add a `**Fixed:** <YYYY-MM-DD>` header line immediately after (or update it if already present).
-3. Add a `**Fix commit:** <sha>` header line after `**Fixed:**`. Use the most recent commit SHA at
+Edit `{spec_path}/SPEC.md` (the `**Status:** Fixed` flip is already done — script-authored):
+1. Add a `**Fixed:** <YYYY-MM-DD>` header line immediately after the `**Status:**` line (or
+   update it if already present).
+2. Add a `**Fix commit:** <sha>` header line after `**Fixed:**`. Use the most recent commit SHA at
    this point in the flow (before the archive commit; the archive commit SHA is known only after
    the `git mv` commits, so use the last feature-work commit SHA — it is the load-bearing evidence
    of when the fix landed).
@@ -61,26 +74,24 @@ Edit `{spec_path}/SPEC.md`:
 These header lines must be in the SPEC's header block (the cluster of `**Key:**` lines near the
 top, before the first `##` section).
 
-#### Step 2: Delete cleared sentinels
+#### Step 2: Verify the sentinel state the script left behind
 
-Delete (remove) these sentinel files from `{spec_path}/` — their evidence is now folded into
-`FIXED.md`:
-- `VALIDATED.md`
-- `RETRO_DONE.md`
-- `DEFERRED_NON_CLOUD.md` (if present — cloud-deferred bugs that completed on workstation)
-
-Keep these permanently (audit trail):
-- `FIXED.md` (the receipt — written by the gate in the precondition step)
-- `SKIP_MCP_TEST.md` (permanent waiver record)
-- `MCP_TEST_RESULTS.md` (permanent test evidence)
-- `plans/` directory and all plan files
-- `NEEDS_INPUT_RESOLVED.md` (if a decision was resolved — keep as audit trail). NOTE:
-  a resolved decision is neutralized by RENAME (`git mv NEEDS_INPUT.md
-  NEEDS_INPUT_RESOLVED.md`), NOT a `kind:` frontmatter flip — `bug-state.py` keys the
-  `needs-input` halt on the FILENAME `NEEDS_INPUT.md` (file existence), so a file still
-  named `NEEDS_INPUT.md` re-fires the halt every probe regardless of its `kind:`. By the
-  time `__mark_fixed__` runs, the Step 1g decision-resume should already have renamed it;
-  if a stray `NEEDS_INPUT.md` remains, rename it before archiving.
+The receipt write and sentinel deletions are script-authored — verify rather than re-perform:
+- Gone (deleted by `--apply-pseudo __mark_fixed__`): `VALIDATED.md`, `RETRO_DONE.md`,
+  `DEFERRED_NON_CLOUD.md` (their evidence is folded into `FIXED.md`).
+- Kept permanently (audit trail):
+  - `FIXED.md` (the receipt — script-authored in the precondition step)
+  - `SKIP_MCP_TEST.md` (permanent waiver record)
+  - `MCP_TEST_RESULTS.md` (permanent test evidence)
+  - `plans/` directory and all plan files
+  - `NEEDS_INPUT_RESOLVED_<date>.md` (if a decision was resolved — keep as audit trail). NOTE:
+    a resolved decision is neutralized by RENAME to the canonical `*_RESOLVED_<date>` form
+    (`bug-state.py --neutralize-sentinel {spec_path}/NEEDS_INPUT.md`), NOT a `kind:`
+    frontmatter flip — `bug-state.py` keys the `needs-input` halt on the FILENAME
+    `NEEDS_INPUT.md` (file existence), so a file still named `NEEDS_INPUT.md` re-fires the
+    halt every probe regardless of its `kind:`. By the time `__mark_fixed__` runs, the Step 1g
+    decision-resume should already have renamed it; if a stray `NEEDS_INPUT.md` remains,
+    neutralize it (same script call) before archiving.
 
 #### Step 3: `git mv` the bug directory to `_archive/`
 

@@ -662,3 +662,57 @@ behavior stays byte-for-byte the existing halt-and-wait.**
 #### Post-Phase (Phase 7 — part close = SERIES FINAL)
 **Part-end full quality gate (MANDATORY, all exit 0):** `python3 ~/.claude/scripts/lazy-state.py --test` (0), `python3 ~/.claude/scripts/bug-state.py --test` (0), `python3 ~/.claude/scripts/test_lazy_core.py` ("All tests passed", 0) — run as the final chained command before the part-close commit. Scripts were untouched across all of Phase 7 (prose/config only), so every batch's gates were byte-identical green.
 **Series status:** Phase 7 is the FINAL part (7 of 7) of the lazy-hardening series. With all Phase 7 deliverables + both runtime-verification rows ticked and Phases 1-6 already complete, the entire 7-part series is DONE. Plan part-7 frontmatter flipped `Ready` → `Complete`.
+
+---
+
+## Post-implementation adversarial review (2026-06-10, separate session)
+
+Three independent adversarial reviewers (scripts / batch orchestrators / components+wrappers+retro)
+audited the full `63f9415..ef5b223` range against the plan. Verdict: **implementation largely real
+and well-tested, with 3 blockers + 5 gate-weakening defects + ~15 text defects**, all fixed in the
+follow-up commit(s) after this section. All three regression gates re-verified green after fixes
+(147/147 core; both smoke suites).
+
+**Blockers fixed:**
+- **B1 — `--park` was dead text:** all 3 orchestrators parsed the flag but none ever passed
+  `--park-needs-input` to the state script, so `parked[]` was always empty and the entire D1/D2
+  protocol was unreachable. Fixed: Step 1a park-mode probe wiring in all 3 + `[--park]`
+  argument-hints + usage strings.
+- **B2 — three conflicting FIXED.md authors:** lazy-bug-batch §1c.5 hand-wrote the receipt while
+  the completion-integrity gate named `--apply-pseudo __mark_fixed__` sole author and
+  mark-fixed-archive.md said "the gate writes it". Fixed: §1c.5 + mark-fixed-archive.md now
+  delegate to `bug-state.py --apply-pseudo __mark_fixed__`; impossible
+  `validated_via: deferred-non-cloud` option removed.
+- **B3 — `NEEDS_INPUT_FOLLOWUP_{N}.md` was invisible:** input-audit-prompt claimed the script
+  re-surfaces it (false — filename-keyed on `NEEDS_INPUT.md`). Fixed: promote-on-resolve rule in
+  decision-resume.md + parked-flush.md (lowest-numbered FOLLOWUP renamed to NEEDS_INPUT.md after
+  neutralization); false claim corrected.
+
+**Gate-weakening script defects fixed (each with RED→GREEN fixture):**
+- D-1: `apply_pseudo __mark_complete__/__mark_fixed__` accepted a content-less (`touch`'d)
+  VALIDATED.md — now requires `kind: validated` / `kind: skip-mcp-test`.
+- D-2: `apply_pseudo __write_validated_from_skip__` ignored `granted_by: pipeline` — now refuses.
+- D-3: bug-state Step 9 lacked both the `granted_by` gate and the `validated_commit` freshness
+  gate lazy-state has — both mirrored in (+4 fixtures).
+- D-4: nothing ever WROTE `validated_commit` (freshness gate production-inert) — producer added
+  to the /mcp-test override in cycle-base-prompt.md + mcp-test SKILL (required going forward).
+- D-5: bug-state malformed-queue diagnostic was dead code (load_bug_queue dropped entries before
+  the walk-loop diag) — diagnostic now emitted at load time (+fixture).
+
+**Text defects fixed:** cloud HC-numbering residue (line 27 + 2 citations), cloud HC5 exception
+list, lazy-bug-batch §1a false "no --probe support" claim, stale 1d.0 anchor,
+`--neutralize-sentinel` wired into decision-resume/blocked-resolution/parked-flush (had zero
+consumers), swapped Differences-table row, cloud description named the wrong script
+(bug-state→lazy-state), wrapper flip-step duplication (lazy/lazy-cloud now defer to
+`--apply-pseudo`), retro inline-override branch false rationale, retro P4-4 gating made it
+unreachable, lazy-bug routing table missing plan-bug, bad "Step 0" anchor, stale HC5 summary,
+NEEDS_RESEARCH owner row, pre-D3 cycle-format rows in cloud Differences table.
+
+**Known accepted follow-ups (not fixed, deliberate):** malformed-YAML receipt still `_die`s
+(exit 2) instead of diagnostic+treated-missing; lazy-state and bug-state share one persisted
+signature file (interleaved feature/bug probes reset the repeat streak — fails safe); bold-marker
+verification heuristic has a latent false-positive window in heading-less docs + stale docstring;
+`~~~` tilde fences not fence-tracked; cloud retains hand-synced inline copies of
+cycle-base-prompt/loop-block (manual mirror burden); D2's "recorded in the receipt" is
+implemented as resolved-sentinel + run-end digest only (not folded into COMPLETED/FIXED.md);
+plan-bug dispatch reuses the "Step 4: investigate bug" step label (cosmetic).

@@ -451,9 +451,11 @@ When invoked under the lazy state machine (Step 9), `/mcp-test` writes a termina
 | Outcome | Sentinel | When |
 |---------|----------|------|
 | Every scenario passed | `VALIDATED.md` (`kind: validated`, `result: all-passing`) | Full pass — nothing environment-blocked |
-| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
+| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`, `validated_commit`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
 | Residual failures are real-device-only but **certifiable on a real device** | `DEFERRED_REQUIRES_DEVICE.md` (`kind: deferred-requires-device`) **scoped to the specific scenario IDs** | The default for sustained-timing / dropout / jitter assertions that fail only under the headless pump. DEFERS to a real-device host — does NOT complete the feature here. |
 | Residual failures are un-testable on **ANY** host (genuinely no MCP path) | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`) **scoped to the specific scenario IDs** | Permanent waiver. The ONLY genuinely any-host-untestable path is raw-PCM injection into the Rust callback thread (per `docs/features/mcp-testing/SPEC.md`). Almost never the right call for a timing assertion. |
+
+**`validated_commit` is REQUIRED in every `MCP_TEST_RESULTS.md` (going forward).** When writing `MCP_TEST_RESULTS.md`, include the frontmatter field `validated_commit: <git rev-parse HEAD at validation time>` — capture the sha when the MCP run completes, BEFORE any further commits. The state scripts' Step-9 sha-freshness gate compares this field to the current HEAD so stale results (validated against older code) trigger a re-verify instead of silently certifying current code. Legacy files without the field skip the check — new writes MUST carry it. Schema: `~/.claude/skills/_components/sentinel-frontmatter.md` (`kind: mcp-test-results`).
 
 **Deferral vs skip — pick by re-testability (this is the load-bearing distinction):**
 

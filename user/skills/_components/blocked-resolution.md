@@ -111,11 +111,15 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
 
    NEUTRALIZING BLOCKED.md (for every path EXCEPT "Defer"): {STATE_SCRIPT} keys the
    `blocked` halt on the FILENAME `BLOCKED.md` (NOT a frontmatter field), so a
-   `kind:` edit does NOT clear the halt. RENAME the file:
-   `git mv {spec_path}/BLOCKED.md {spec_path}/BLOCKED_RESOLVED_<YYYY-MM-DD>.md`
-   (preserves the audit trail including the `## Resolution`). If that name already
-   exists, add a short disambiguating suffix. NEVER just flip a frontmatter field
-   (this is a real bug that was hit in practice — the rename is mandatory).
+   `kind:` edit does NOT clear the halt. Run:
+     python3 ~/.claude/scripts/{STATE_SCRIPT} --neutralize-sentinel {spec_path}/BLOCKED.md
+   The script performs the canonical rename to BLOCKED_RESOLVED_<YYYY-MM-DD>.md
+   (git-mv-aware, collision-safe — it appends a numeric suffix if the target
+   name already exists), preserving the audit trail including the `## Resolution`.
+   Manual fallback (only if the script is unavailable):
+   `git mv {spec_path}/BLOCKED.md {spec_path}/BLOCKED_RESOLVED_<YYYY-MM-DD>.md`.
+   NEVER just flip a frontmatter field (this is a real bug that was hit in
+   practice — the rename is mandatory).
 
    Then commit per .claude/skill-config/commit-policy.md (or the standard
    pattern); message `docs({feature_id}): enact blocker resolution (<path>)`.

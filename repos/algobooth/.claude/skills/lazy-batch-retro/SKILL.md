@@ -293,9 +293,9 @@ For each cycle, walk the relevant skill's instructions verbatim and grade compli
 
 ### 4a-P4. PHASE-4 PARK/AUTO-ACCEPT PROTOCOL (`--park` mode only)
 
-These checks are N/A for runs that did NOT pass `--park`. Detect `--park` from the start-bookend ("Park mode: on") or from the presence of any `parked_count` increment in the parent session. Grade all four as `n/a` when `park_mode == false`.
+Detect `--park` from the start-bookend ("Park mode: on") or from the presence of any `parked_count` increment in the parent session. Gating is split by check: **P4-1 through P4-3 apply only to `--park` runs** — grade them `n/a` when `park_mode == false`. **P4-4 is the inverse**: it verifies that NO park/auto-accept activity fired in a no-flag run, so it is graded ONLY when `park_mode == false` and is `n/a` when `park_mode == true`.
 
-When `park_mode == true`, grade the following checklist:
+Grade the following checklist per that gating:
 
 - [ ] **P4-1 Park → PushNotification** Every park event (each item in a `parked[]` probe output) fired a `PushNotification` call visible in the parent session. Match each increment of `parked_count` against a `PushNotification` tool_use carrying the message `"parked {feature_name} — {N} decision(s) parked so far this run"` (per §1c.6 park policy). **Fail** if any park fired without a corresponding notification, or if the notification message does not carry the running parked-count.
 
@@ -303,7 +303,7 @@ When `park_mode == true`, grade the following checklist:
 
 - [ ] **P4-3 Auto-accept two-key contract** Every auto-accepted decision carried BOTH required keys in its sentinel frontmatter: `class: mechanical` AND `audit_concurs: true`. Verify by checking the `auto_accepted[]` entries recorded in the parent session against the sentinel file on disk (from 2d artifact snapshot). A sentinel auto-accepted with only ONE key (e.g. `class: mechanical` but `audit_concurs` absent or `false`) is a **fail** — the two-key gate was bypassed. Additionally, the run-end batch report MUST include the auto-accept digest table (`### Auto-accepted decisions (--park two-key)`) listing every auto-accepted decision. **Fail** if the digest table is absent and `auto_accepted[]` is non-empty.
 
-- [ ] **P4-4 Zero parks without `--park`** When `park_mode == false`, the parent session MUST contain zero `PushNotification` calls with a park-style message (`"parked ... decision(s) parked so far"`), zero `parked_count` increments, and zero auto-accept digest table entries. Any park/auto-accept activity in a non-`--park` run is a **fail** — it means the park code-path fired outside its guard.
+- [ ] **P4-4 Zero parks without `--park`** (graded ONLY when `park_mode == false`; `n/a` when `park_mode == true`) The parent session MUST contain zero `PushNotification` calls with a park-style message (`"parked ... decision(s) parked so far"`), zero `parked_count` increments, and zero auto-accept digest table entries. Any park/auto-accept activity in a non-`--park` run is a **fail** — it means the park code-path fired outside its guard.
 
 ### 4b. DOWNSTREAM-SKILL RULES
 
@@ -346,7 +346,7 @@ For each cycle whose `description` or prompt resolves to a downstream skill, gra
    - the parent jsonl's `/lazy-batch[-cloud]` invocation (from 2a `user_typed` / `command_names`) was `/lazy-batch-cloud`, OR
    - the dispatched cycle prompt text (`agent_dispatch.prompt` from 2a) contains the cloud-override block — match on the marker phrases `"CLOUD OVERRIDE — LOAD-BEARING"`, `"perform ... INLINE"`, or `"Zero sub-subagent dispatches in a cloud /execute-plan cycle is the EXPECTED state"`.
 
-2. **Workstation inline-override branch** — iff the dispatched cycle prompt contains the phrase `"INLINE OVERRIDE — LOAD-BEARING"` (the workstation runtime emits this block when it inline-implements a workstation-gated work unit instead of dispatching a nested Agent). This is DISTINCT from the cloud branch: the subagent in this case DID have the `Agent` tool available but the orchestrator made a deliberate inline-override decision (e.g. a mechanical pseudo-skill or a recovery dispatch). Grade these cycles against the inline-override contract: inline Edit/Write is EXPECTED (not a violation of R-EP-1), and zero sub-subagents is EXPECTED (R-EP-2 → `n/a (workstation-inline-override)`). Do NOT falsely flag them as "missing sub-subagent dispatches" — that would penalize the orchestrator for following its own contract.
+2. **Workstation inline-override branch** — iff the dispatched cycle prompt contains the phrase `"INLINE OVERRIDE — LOAD-BEARING"`. This marker is UNCONDITIONAL in the workstation cycle dispatch template (`~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` — every `/lazy-batch` cycle prompt composed from it carries the block), because the workstation cycle subagent — exactly like the cloud one — does NOT have the `Agent` tool: recursive sub-subagent dispatch is unavailable from inside a dispatched subagent, so all nominally-fanned-out work is performed inline. Grade these cycles against the inline-override contract: inline Edit/Write is EXPECTED (not a violation of R-EP-1), and zero sub-subagents is EXPECTED (R-EP-2 → `n/a (workstation-inline-override)`). Do NOT falsely flag them as "missing sub-subagent dispatches" — that would penalize the cycle subagent for following its own contract.
 
 3. **Workstation standard** — all other workstation cycles. Full R-EP-1 through R-EP-8 workstation contract applies.
 

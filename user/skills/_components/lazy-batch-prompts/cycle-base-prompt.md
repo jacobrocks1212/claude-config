@@ -93,6 +93,14 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
       Re-resolve any session-log dir from the live server (GET
       /tools/get_session_meta → log_dir); NEVER reuse a cached `logs/session-*`
       path (HARD REQUIREMENT, docs/development/CLAUDE.md).
+      MCP_TEST_RESULTS.md MUST carry `validated_commit` (REQUIRED): any
+      MCP_TEST_RESULTS.md you write MUST include the frontmatter field
+      `validated_commit: <git rev-parse HEAD at validation time>` (run
+      `git rev-parse HEAD` when the MCP run completes, BEFORE any further
+      commits). The state scripts' sha-freshness gate compares this field to
+      the current HEAD — a results file without it (or with a stale sha)
+      cannot certify the current code. Schema:
+      ~/.claude/skills/_components/sentinel-frontmatter.md.
       INLINE-FIX POLICY (D5 — LOCKED): while validating you MAY fix a
       production-code bug inline, but ONLY test-first and fully disclosed:
         1. Write the failing test FIRST — confirm it reproduces the bug and
@@ -212,7 +220,11 @@ Sentinel + git hygiene (HARD — prevents the recurring subagent deviations):
     Re-read ~/.claude/skills/_components/sentinel-frontmatter.md for the exact
     name + frontmatter schema before writing any sentinel — do NOT rely on
     memory of the filename. (FIXED.md is bug-pipeline only; COMPLETED.md is
-    feature-pipeline only — use the one for your pipeline.)
+    feature-pipeline only — use the one for your pipeline.) ONE sanctioned
+    exception to the canonical-name rule: NEEDS_INPUT_FOLLOWUP_{N}.md, authored
+    ONLY by the orchestrator's input-audit subagent for >4-decision overflow —
+    it is deliberately invisible to the state scripts until promoted to
+    NEEDS_INPUT.md on resolve. Cycle subagents never write it.
   - WORK-BRANCH-ONLY COMMITS: every commit and push goes to the CURRENT work
     branch ONLY. NEVER commit or push to main / master, NEVER --force /
     --force-with-lease, NEVER create a new branch. If `git rev-parse

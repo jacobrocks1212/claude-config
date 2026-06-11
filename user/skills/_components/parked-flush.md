@@ -158,12 +158,17 @@ These are processed by the existing batched `AskUserQuestion` flow in Step 3.
      container-reclaim durability).
 
   4. **Dispatch the Sonnet apply-resolution subagent** — SAME machinery as `decision-resume.md`
-     steps 4–6. The subagent propagates each auto-accepted choice into SPEC.md / PHASES.md and
-     renames `NEEDS_INPUT.md` → `NEEDS_INPUT_RESOLVED*.md` via `git mv` (FILENAME rename, NOT a
-     `kind:` flip — see `decision-resume.md` step 6 for the exact rename rule and the
-     "kind-flip is a real bug" note). The subagent prompt is the same shape as
-     `decision-resume.md` step 6, with the additional note that the choices were auto-accepted
-     via the two-key mechanical path and the operator was not asked. Use:
+     steps 4–6. The subagent propagates each auto-accepted choice into SPEC.md / PHASES.md,
+     neutralizes the sentinel via `python3 ~/.claude/scripts/{STATE_SCRIPT} --neutralize-sentinel
+     {spec_path}/NEEDS_INPUT.md` (canonical `NEEDS_INPUT_RESOLVED_<date>.md` rename with
+     collision handling — a FILENAME rename, NOT a `kind:` flip; see `decision-resume.md` step 6
+     for the exact rename rule and the "kind-flip is a real bug" note), and then applies the
+     promote-on-resolve rule (`decision-resume.md` step 6 prompt step 3b): if any
+     `NEEDS_INPUT_FOLLOWUP_*.md` exists in the spec dir, `git mv` the lowest-numbered one to
+     `NEEDS_INPUT.md` and note it in the cycle summary — the next probe re-surfaces it. The
+     subagent prompt is the same shape as `decision-resume.md` step 6, with the additional note
+     that the choices were auto-accepted via the two-key mechanical path and the operator was
+     not asked. Use:
 
      ```
      Agent({
@@ -239,10 +244,15 @@ follow `~/.claude/skills/_components/decision-resume.md` steps 4–6 exactly:
     `decision-resume.md` step 6 specifies — same subagent prompt shape, same
     `Agent({ description: "{SKILL} decision-apply: {feature_name}", subagent_type:
     "general-purpose", model: "sonnet", prompt: <step-6-prompt> })` dispatch. The subagent
-    propagates the choice into SPEC.md / PHASES.md and renames `NEEDS_INPUT.md` →
-    `NEEDS_INPUT_RESOLVED*.md` (FILENAME rename via `git mv` — NOT a `kind:` flip, which
-    leaves the halt firing on the next state-script call; see `decision-resume.md` step 6
-    for the exact rename rule and the "kind-flip is a real bug" note).
+    propagates the choice into SPEC.md / PHASES.md and neutralizes the sentinel via
+    `python3 ~/.claude/scripts/{STATE_SCRIPT} --neutralize-sentinel {spec_path}/NEEDS_INPUT.md`
+    (canonical `NEEDS_INPUT_RESOLVED_<date>.md` rename with collision handling — a FILENAME
+    rename, NOT a `kind:` flip, which leaves the halt firing on the next state-script call;
+    see `decision-resume.md` step 6 for the exact rename rule and the "kind-flip is a real
+    bug" note). After the neutralization, the same promote-on-resolve rule applies
+    (`decision-resume.md` step 6 prompt step 3b): if any `NEEDS_INPUT_FOLLOWUP_*.md` exists
+    in the spec dir, `git mv` the lowest-numbered one to `NEEDS_INPUT.md` and note it in the
+    cycle summary — the next probe re-surfaces it.
 
 **Step 5 — Fire the flush PushNotification.** After all `AskUserQuestion` calls and their
 apply-resolution dispatches are issued, fire one PushNotification per §1c.6 flush policy:

@@ -226,6 +226,8 @@ validated_commit: <git-sha>  # HEAD sha at the time the MCP run completed; consu
 
 Body keeps the per-scenario pass/fail breakdown.
 
+`validated_commit` is **required going forward** for every new `MCP_TEST_RESULTS.md`: producers (`/mcp-test`, and the inline `/mcp-test` cycle override in `lazy-batch-prompts/cycle-base-prompt.md`) MUST capture `git rev-parse HEAD` when the MCP run completes and write it here. The state scripts' Step-9 sha-freshness gate compares it to the current HEAD; legacy files without the field skip the check (lenient for backward compatibility), but a new results file written without it leaves the freshness gate inert for that feature.
+
 #### `NEEDS_RESEARCH.md` — `kind: needs-research`  *(new)*
 
 Written by `/lazy-batch` or `/lazy-batch-cloud` when a feature is missing `RESEARCH.md` and the orchestrator has just ensured a `RESEARCH_PROMPT.md` exists. Halts the autonomous tail and surfaces the prompt path so a human can run Gemini and drop the results in place.
@@ -352,7 +354,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
 | SKIP_MCP_TEST.md | /lazy assessment: not testable | Persists permanently |
 | MCP_TEST_RESULTS.md | /lazy after mcp-test runs | Persists permanently (audit) |
-| NEEDS_RESEARCH.md | `/lazy-batch` Step 5 (needs-research halt) when RESEARCH.md absent | Human drops RESEARCH.md, then next `/lazy-batch` run ingests it and proceeds; file may be left stale or overwritten on ingestion |
+| NEEDS_RESEARCH.md | `/lazy-batch` or `/lazy-batch-cloud` Step 4 (research halt), fired when the state machine's Step 5 returns `needs-research` (RESEARCH.md absent) — `written_by` is the writing orchestrator per the schema enum above | Human drops RESEARCH.md, then next `/lazy-batch` (or `/lazy-batch-cloud`) run ingests it and proceeds; file may be left stale or overwritten on ingestion |
 | NEEDS_INPUT.md | A `--batch` skill hits an ambiguous decision | Resolution-mode neutralizes by **rename** → `NEEDS_INPUT_RESOLVED_<date>.md` (`--neutralize-sentinel`), not deleted; resolved sentinel persists as audit trail |
 
 ### Producer rules

@@ -23,6 +23,11 @@
   PASS [unqueued-fixed-no-receipt-halt] cloud=False real_device=True: Step 2: completion claimed without receipt
   PASS [concluded-investigation-plan-bug] cloud=False real_device=True: Step 4: investigate bug
   PASS [concluded-investigation-guard-still-spec-bug] cloud=False real_device=True: Step 4: investigate bug
+  PASS [step9-skip-pipeline-granted] cloud=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
+  PASS [step9-skip-operator-granted] cloud=False real_device=True: Step 9: skip-mcp-test → validated
+  PASS [step9-stale-mcp-results] cloud=False real_device=True: Step 9: stale MCP results — re-verify
+  PASS [step9-fresh-mcp-results] cloud=False real_device=True: Step 9b: write validated
+  PASS [malformed-queue-entry-diagnostic] cloud=False real_device=True: Step 4: investigate bug
   PASS [enqueue-adhoc-writes-entry] entry written with correct fields
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'

@@ -236,6 +236,7 @@ Sub-skill routing table (from `bug-state.py`'s `SKILL_*` constants):
 | `sub_skill` from script | Dispatches to |
 |------------------------|--------------|
 | `spec-bug` | `/spec-bug` — root-cause investigation |
+| `plan-bug` | `/plan-bug` — consolidated planning round-trip (emitted when SPEC.md is `**Status:** Concluded` and no PHASES.md exists; authors PHASES.md from the concluded investigation, then runs `/write-plan`) |
 | `spec-phases` | `/spec-phases` — decompose bug SPEC into PHASES |
 | `write-plan` | `/write-plan` — write implementation plan |
 | `execute-plan` | `/execute-plan` — run the next ready plan |

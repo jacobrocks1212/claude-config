@@ -70,13 +70,20 @@ Audit algorithm:
       `AskUserQuestion` 4-question cap). The first ≤4 highest-visibility
       decisions go into the primary `NEEDS_INPUT.md` (see step b). If there
       are MORE than 4 decisions, the remainder MUST be written as a DURABLE
-      follow-up `NEEDS_INPUT.md` — a second sentinel committed alongside the
-      primary one, named `NEEDS_INPUT_FOLLOWUP_{N}.md` (where N is a sequence
-      number, starting at 1) — so that `lazy-state.py` can re-surface it on a
-      future cycle via Step 1g. Do NOT bury overflow decisions in a prose
-      `## Open Questions` body section that will be lost when the primary
-      sentinel is renamed/resolved. Each follow-up sentinel uses the same
-      schema (kind: needs-input, decisions: [...], ## Decision Context body)
+      follow-up sentinel — a second file committed alongside the primary one,
+      named `NEEDS_INPUT_FOLLOWUP_{N}.md` (where N is a sequence number,
+      starting at 1). NOTE: the state scripts key the needs-input halt on the
+      EXACT filename `NEEDS_INPUT.md`, so a FOLLOWUP file is NOT probed
+      directly. It re-surfaces via promote-on-resolve: when the primary
+      NEEDS_INPUT.md is resolved and neutralized (renamed to
+      NEEDS_INPUT_RESOLVED_<date>.md), the apply-resolution step renames the
+      lowest-numbered NEEDS_INPUT_FOLLOWUP_*.md to NEEDS_INPUT.md (git mv) —
+      see _components/decision-resume.md step 6 prompt step 3b and
+      _components/parked-flush.md — and the NEXT probe re-surfaces it via
+      Step 1g. Do NOT bury overflow decisions in a prose `## Open Questions`
+      body section that will be lost when the primary sentinel is
+      renamed/resolved. Each follow-up sentinel uses the same schema
+      (kind: needs-input, decisions: [...], ## Decision Context body)
       and is committed in the same commit as the primary sentinel.
    b. Write {spec_path}/NEEDS_INPUT.md per the canonical schema in
       ~/.claude/skills/_components/sentinel-frontmatter.md:

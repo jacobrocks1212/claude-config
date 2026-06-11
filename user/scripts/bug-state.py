@@ -64,6 +64,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from datetime import datetime
@@ -130,6 +131,14 @@ STEP_EXECUTE_PLAN = "Step 7a: execute plan"
 STEP_RETRO = "Step 8: retro phase"
 STEP_MCP = "Step 9: run MCP tests"
 STEP_MCP_SKIP = "Step 9: skip-mcp-test → validated"
+# Provenance gate: a SKIP_MCP_TEST.md with granted_by: pipeline (self-granted)
+# halts for operator confirmation instead of vacuously validating.
+# Mirrors lazy-state.py's identical Step-9 step string.
+STEP_MCP_SKIP_PIPELINE_GRANTED = "Step 9: pipeline-granted skip needs operator confirmation"
+# Freshness gate: MCP_TEST_RESULTS.md whose validated_commit does not match the
+# current HEAD must re-verify rather than auto-validate stale results.
+# Mirrors lazy-state.py's identical Step-9 step string.
+STEP_MCP_STALE_RESULTS = "Step 9: stale MCP results — re-verify"
 STEP_MARK_FIXED = "Step 10: mark fixed"
 STEP_CLOUD_DEFER_MCP = "Step 9: cloud defers MCP test"
 STEP_DEVICE_DEFERRED_GUARD = "Step 9: device-deferred (no real device on this host)"
@@ -246,6 +255,25 @@ def resolve_real_device(flag_value: str) -> bool:
     return raw == "1" or raw.strip().lower() == "true"
 
 
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a
+    git repo / git is unavailable. Best-effort — the MCP-results freshness
+    check is SKIPPED (legacy-permissive) when this returns None.
+
+    Mirrors lazy-state.py's _current_head() exactly.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
     """Load docs/bugs/queue.json.  Returns [] if the file is absent.
 
@@ -282,6 +310,16 @@ def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
             name = entry.get("name")
             spec_subdir = entry.get("spec_dir", bug_id)
             if not bug_id or not name:
+                # Malformed entry — diagnose HERE (not in the compute_state
+                # walk loop): load_bug_queue normalizes entries before the
+                # walk ever sees them, so this is the only place the drop is
+                # observable. Mirrors lazy-state.py's walk-loop diagnostic
+                # wording for queue entries missing id/name.
+                missing = [k for k, v in (("id", bug_id), ("name", name)) if not v]
+                _diag(
+                    f"bug queue entry skipped — missing {', '.join(missing)} "
+                    f"(entry: {str(entry)[:120]!r})"
+                )
                 continue
             spec_path = (bugs_dir / spec_subdir).resolve() if spec_subdir else None
             if spec_path is None or not spec_path.exists():
@@ -868,6 +906,23 @@ def compute_state(
             )
         # SKIP_MCP_TEST.md from a prior workstation assessment → write VALIDATED.md
         if skip_mcp_file.exists() and not validated_file.exists():
+            # Provenance gate (mirrors lazy-state.py's Step 9): a pipeline-
+            # self-granted skip must NOT vacuously validate — the pipeline
+            # cannot waive its own MCP requirement. Only operator-granted (or
+            # legacy absent) granted_by values are accepted as a waiver.
+            _skip_meta = parse_sentinel(skip_mcp_file) or {}
+            if _skip_meta.get("granted_by") == "pipeline":
+                return _bug_state(
+                    **common,
+                    current_step=STEP_MCP_SKIP_PIPELINE_GRANTED,
+                    terminal_reason=TR_NEEDS_INPUT,
+                    notify_message=(
+                        f"{bug_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
+                        "(self-granted) — a pipeline-granted MCP skip needs operator "
+                        "confirmation before it can vacuously validate. Reconcile via "
+                        "NEEDS_INPUT or update granted_by to 'operator'."
+                    ),
+                )
             return _bug_state(
                 **common,
                 current_step=STEP_MCP_SKIP,
@@ -878,6 +933,23 @@ def compute_state(
         # Workstation Step 9: run MCP tests (or use existing results / skip marker).
         if not validated_file.exists():
             if skip_mcp_file.exists():
+                # Provenance gate (mirrors lazy-state.py's Step 9): a pipeline-
+                # self-granted skip must NOT vacuously validate — the pipeline
+                # cannot waive its own MCP requirement. Only operator-granted
+                # (or legacy absent) granted_by values are accepted as a waiver.
+                _skip_meta = parse_sentinel(skip_mcp_file) or {}
+                if _skip_meta.get("granted_by") == "pipeline":
+                    return _bug_state(
+                        **common,
+                        current_step=STEP_MCP_SKIP_PIPELINE_GRANTED,
+                        terminal_reason=TR_NEEDS_INPUT,
+                        notify_message=(
+                            f"{bug_name}: SKIP_MCP_TEST.md was granted_by: pipeline "
+                            "(self-granted) — a pipeline-granted MCP skip needs operator "
+                            "confirmation before it can vacuously validate. Reconcile via "
+                            "NEEDS_INPUT or update granted_by to 'operator'."
+                        ),
+                    )
                 return _bug_state(
                     **common,
                     current_step=STEP_MCP_SKIP,
@@ -888,6 +960,26 @@ def compute_state(
             if mcp_results_file.exists():
                 meta = parse_sentinel(mcp_results_file) or {}
                 if meta.get("result") == "all-passing":
+                    # Freshness gate (mirrors lazy-state.py's Step 9): the
+                    # results must have been validated against the CURRENT
+                    # HEAD commit. If validated_commit is present and doesn't
+                    # match HEAD, the results are stale and we must re-run MCP
+                    # tests against the current code before writing
+                    # VALIDATED.md. When _current_head returns None (not a
+                    # git repo) or validated_commit is absent (legacy
+                    # results), skip the check — legacy permissive.
+                    head = _current_head(repo_root)
+                    validated_commit = meta.get("validated_commit")
+                    if head and validated_commit and str(validated_commit) != head:
+                        return _bug_state(
+                            **common,
+                            current_step=STEP_MCP_STALE_RESULTS,
+                            sub_skill=SKILL_MCP_TEST,
+                            sub_skill_args=(
+                                f"re-validate {bug_name} — MCP_TEST_RESULTS.md was "
+                                f"validated against a stale commit; see {spec_dir_str}/SPEC.md"
+                            ),
+                        )
                     return _bug_state(
                         **common,
                         current_step="Step 9b: write validated",
@@ -1920,6 +2012,245 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         )
         # Intentionally NO PHASES.md.
 
+    elif name == "step9-skip-pipeline-granted":
+        # D-3(a) provenance gate: SKIP_MCP_TEST.md carrying granted_by: pipeline
+        # must NOT vacuously validate — the pipeline cannot self-waive its own
+        # MCP requirement. Workstation host (cloud=False).
+        # Expected: terminal_reason == TR_NEEDS_INPUT,
+        #           current_step == STEP_MCP_SKIP_PIPELINE_GRANTED,
+        #           sub_skill is NOT "__write_validated_from_skip__".
+        # RED against pre-fix code (which ignored granted_by and always emitted
+        # __write_validated_from_skip__); GREEN after the gate mirrors lazy-state.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spg", "name": "Skip Pipeline Granted Bug",
+                 "spec_dir": "bug-spg"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spg"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip Pipeline Granted Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-spg", date="2026-06-05", rounds=1,
+        )
+        # Self-granted skip — must be refused (needs-input), not validated.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-spg",
+            reason="pipeline self-asserted skip to avoid MCP test",
+            date="2026-06-05", skipped_by="pipeline",
+            granted_by="pipeline",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-skip-operator-granted":
+        # D-3(a) positive guard: SKIP_MCP_TEST.md with granted_by: operator is a
+        # legitimate human-authored waiver — must continue to emit
+        # __write_validated_from_skip__ (same as the legacy absent-granted_by path
+        # pinned by the step9-skip-mcp fixture).
+        # Expected: current_step == STEP_MCP_SKIP,
+        #           sub_skill == "__write_validated_from_skip__".
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-sog", "name": "Skip Operator Granted Bug",
+                 "spec_dir": "bug-sog"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-sog"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Skip Operator Granted Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-02\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-sog", date="2026-06-06", rounds=1,
+        )
+        # Operator-granted skip — legitimate human waiver.
+        _write_yaml_sentinel(
+            bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
+            bug_id="bug-sog",
+            reason="pure docs/config fix — no runtime MCP surface",
+            date="2026-06-06", skipped_by="operator",
+            granted_by="operator",
+        )
+        # Intentionally no VALIDATED.md.
+
+    elif name == "step9-stale-mcp-results":
+        # D-3(b) freshness gate: MCP_TEST_RESULTS.md claims all-passing but its
+        # validated_commit (all-zeros sha) cannot equal the fixture's actual git
+        # HEAD. The fixture root is a real git repo so `git rev-parse HEAD`
+        # resolves to a non-zero sha; the mismatch must route to re-verify
+        # (sub_skill=mcp-test), NOT __write_validated_from_results__.
+        # RED against pre-fix code (which ignored validated_commit entirely).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-smr", "name": "Stale MCP Results Bug",
+                 "spec_dir": "bug-smr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-smr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Stale MCP Results Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-03\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-smr", date="2026-06-07", rounds=1,
+        )
+        # Stale results: all-passing but validated against the all-zeros sha
+        # (which cannot equal any real git HEAD).
+        _write_yaml_sentinel(
+            bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            bug_id="bug-smr", result="all-passing",
+            validated_commit="0000000000000000000000000000000000000000",
+            date="2026-06-07",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md.
+        # Make the fixture root a real git repo so `git rev-parse HEAD`
+        # resolves to a genuine (non-zero) sha (mirrors lazy-state.py's
+        # stale-mcp-results-reverify fixture setup).
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"step9-stale-mcp-results git setup failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+
+    elif name == "step9-fresh-mcp-results":
+        # D-3(b) positive guard: MCP_TEST_RESULTS.md whose validated_commit
+        # EQUALS the fixture's actual git HEAD is fresh — must auto-validate via
+        # __write_validated_from_results__ (Step 9b), not re-verify.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-fmr", "name": "Fresh MCP Results Bug",
+                 "spec_dir": "bug-fmr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-fmr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Fresh MCP Results Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-04\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-fmr", date="2026-06-08", rounds=1,
+        )
+        # Commit the tree FIRST so HEAD exists, then write the results file
+        # carrying that exact sha. The post-commit write dirties the working
+        # tree but `git rev-parse HEAD` is unaffected.
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"step9-fresh-mcp-results git setup failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+        head_proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        )
+        if head_proc.returncode != 0:
+            raise RuntimeError(
+                f"step9-fresh-mcp-results rev-parse failed: {head_proc.stderr.strip()}"
+            )
+        fresh_sha = head_proc.stdout.strip()
+        _write_yaml_sentinel(
+            bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            bug_id="bug-fmr", result="all-passing",
+            validated_commit=fresh_sha,
+            date="2026-06-08",
+        )
+        # Intentionally no VALIDATED.md, no SKIP_MCP_TEST.md.
+
+    elif name == "malformed-queue-entry-diagnostic":
+        # D-5: a queue entry missing `name` (or `id`) is dropped inside
+        # load_bug_queue BEFORE the compute_state walk loop ever sees it, so
+        # the walk-loop diagnostic can never fire. load_bug_queue itself must
+        # emit a diagnostic naming the dropped entry. The fixture also carries
+        # a dangling-spec_dir entry so the PRE-EXISTING dangling diagnostic is
+        # pinned alongside the new one, plus one valid bug that must still be
+        # selected normally.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                # Missing `name` → must produce the new load_bug_queue diagnostic.
+                {"id": "bug-no-name", "spec_dir": "bug-no-name"},
+                # Dangling spec_dir → must keep producing the existing diagnostic.
+                {"id": "bug-dangling", "name": "Dangling Bug",
+                 "spec_dir": "does-not-exist"},
+                # Valid entry → must be selected despite the malformed siblings.
+                {"id": "bug-valid", "name": "Valid Bug", "spec_dir": "bug-valid"},
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-valid"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Valid Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-05\n",
+            encoding="utf-8",
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -2207,6 +2538,89 @@ def run_smoke_tests() -> int:
                 "sub_skill": SKILL_INVESTIGATE,
                 "current_step": STEP_INVESTIGATE,
             },
+        ),
+        # 26. D-3(a) provenance gate: pipeline-self-granted SKIP_MCP_TEST.md must
+        #     NOT vacuously validate — halt with needs-input for operator review.
+        #     RED against pre-fix code (which emitted __write_validated_from_skip__).
+        (
+            "step9-skip-pipeline-granted", False, True,
+            {
+                "feature_id": "bug-spg",
+                "terminal_reason": TR_NEEDS_INPUT,
+                "current_step": STEP_MCP_SKIP_PIPELINE_GRANTED,
+            },
+            # Extra: must NOT route to the vacuous-validate write.
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] sub_skill must NOT be '__write_validated_from_skip__'; "
+                    f"got sub_skill={got.get('sub_skill')!r}"
+                )
+                if got.get("sub_skill") == "__write_validated_from_skip__"
+                else None
+            ),
+        ),
+        # 27. D-3(a) positive guard: operator-granted SKIP_MCP_TEST.md remains a
+        #     legitimate waiver → __write_validated_from_skip__ (non-regression).
+        (
+            "step9-skip-operator-granted", False, True,
+            {
+                "feature_id": "bug-sog",
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 28. D-3(b) freshness gate: all-passing MCP_TEST_RESULTS.md with a stale
+        #     validated_commit (all-zeros ≠ real HEAD) must re-verify via mcp-test,
+        #     NOT auto-validate. RED against pre-fix code.
+        (
+            "step9-stale-mcp-results", False, True,
+            {
+                "feature_id": "bug-smr",
+                "current_step": STEP_MCP_STALE_RESULTS,
+                "sub_skill": SKILL_MCP_TEST,
+            },
+        ),
+        # 29. D-3(b) positive guard: validated_commit == actual HEAD is fresh →
+        #     Step 9b auto-validate via __write_validated_from_results__.
+        (
+            "step9-fresh-mcp-results", False, True,
+            {
+                "feature_id": "bug-fmr",
+                "current_step": "Step 9b: write validated",
+                "sub_skill": "__write_validated_from_results__",
+            },
+        ),
+        # 30. D-5: queue entry missing `name` is dropped by load_bug_queue and
+        #     must be DIAGNOSED there (the walk-loop diagnostic is unreachable
+        #     for it). The dangling-spec_dir diagnostic must keep firing, and
+        #     the valid sibling bug must still be dispatched normally.
+        #     RED against pre-fix code (load_bug_queue dropped silently →
+        #     diagnostics empty).
+        (
+            "malformed-queue-entry-diagnostic", False, True,
+            {
+                "feature_id": "bug-valid",
+                "current_step": STEP_INVESTIGATE,
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] expected a load_bug_queue diagnostic naming the "
+                    f"entry missing 'name' (id 'bug-no-name') AND the dangling "
+                    f"'bug-dangling' diagnostic; got diagnostics="
+                    f"{got.get('diagnostics')!r}"
+                )
+                if not (
+                    any(
+                        "missing name" in d and "bug-no-name" in d
+                        for d in got.get("diagnostics") or []
+                    )
+                    and any(
+                        "dangling" in d and "bug-dangling" in d
+                        for d in got.get("diagnostics") or []
+                    )
+                )
+                else None
+            ),
         ),
     ]
 

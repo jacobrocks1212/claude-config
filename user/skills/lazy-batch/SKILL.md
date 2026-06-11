@@ -1,7 +1,7 @@
 ---
 name: lazy-batch
 description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py, spawns one Opus subagent per cycle, and drives the full tail (/spec → /plan-feature → /execute-plan → /retro → /mcp-test → __mark_complete__). A halt for any reason other than max-cycles presents an AskUserQuestion resolution path and resumes — only max-cycles, all-features-complete, environment-exhaustion, and missing-queue remain clean stops. Terminal action is __mark_complete__, gated by the MCP-coverage audit + completion-integrity gate.
-argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue]
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -43,7 +43,7 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 - **Positive integer** → `max_cycles`. If absent, default to `10`. If a non-numeric / `< 1` integer is supplied, refuse with:
 
-  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip]`. Default: 10.
+  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park]`. Default: 10.
 
   **Ambiguous max-cycles (Deliverable D — clarify, never silently coerce):** if the token is present but non-integer in a way that suggests a _quantity_ the user had in mind — e.g. `"infinity"`, `"lots"`, `"max"`, `"all"`, `"unlimited"` — do NOT silently translate it to a hard-coded default. Instead, ask ONE clarifying `AskUserQuestion` before proceeding:
 
@@ -260,6 +260,8 @@ python3 ~/.claude/scripts/lazy-state.py --repeat-count --probe \
 
 `--repeat-count` enriches the output with a `repeat_count` field (how many consecutive cycles returned the same `(feature_id, sub_skill, sub_skill_args, current_step)` tuple) for mechanical loop detection. `--probe` (combined with the three counter flags) folds `git_guards` (clean-tree + origin-parity) and a pre-formatted `cycle_header` string into the response. These flags are purely additive — the base JSON fields are unchanged.
 
+**Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation flag), append `--park-needs-input` to EVERY `lazy-state.py` probe invocation in this step (base or enriched form alike). With the flag, the script skips features carrying an unresolved `NEEDS_INPUT.md` instead of halting on `needs-input` and reports them in a `parked[]` array on the JSON output — the input to the Step 1g park path and the §1c.6 park notifications. When `park_mode == false`, call the script plain (no `--park-needs-input`) — existing behavior, byte-for-byte; the `parked[]` key never appears.
+
 If the script exits non-zero, surface the error, push a PushNotification, print the final batch report (see Step 2), and STOP.
 
 Parse the JSON output. Extract: `feature_id`, `feature_name`, `spec_path`, `current_step`, `sub_skill`, `sub_skill_args`, `terminal_reason`, `notify_message`, `diagnostics`.
@@ -368,7 +370,7 @@ If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, n
 
    (`tauri dev` takes ~3–5 min to compile + boot; 90 × 5s ≈ 7.5 min ceiling.) Health-200 is the readiness signal AlgoBooth's reference defines. Do NOT cache or reuse any `logs/session-{ts}/` path here — re-resolve the session dir from the live server if you ever need it (HARD REQUIREMENT in `docs/development/CLAUDE.md`); the readiness gate above is keyed on the stable health endpoint, not on any session-log path. If health never reaches 200 within the ceiling, surface a `BLOCKED.md` (blocker_kind: mcp-runtime-unready) rather than dispatching a subagent against a dead runtime — a subagent cannot recover a runtime the orchestrator failed to boot.
 
-4. **Amend the mcp-test subagent prompt** (the dispatch in Step 1e) to state that the runtime is already orchestrator-managed — see the `/mcp-test` per-skill inline override below for the exact prompt language.
+4. **Amend the mcp-test subagent prompt** (the dispatch later in this Step 1d) to state that the runtime is already orchestrator-managed — see the `/mcp-test` per-skill inline override in `~/.claude/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (the "RUNTIME IS ALREADY UP (orchestrator-managed)" block) for the exact prompt language.
 
 **HARD CONSTRAINT 1 is NOT relaxed by this.** Step 1d.0 is `Bash` only — a `run_in_background` process plus a `curl`/`sleep` readiness loop. It performs ZERO `Write`/`Edit` on any file (the orchestrator's sentinel-only edit scope is untouched). Owning a background process and polling a health endpoint are not file edits, exactly as Step 0.4's git reconciliation (also `Bash`-only) does not expand the edit scope.
 
@@ -722,7 +724,7 @@ Detection happens inside `lazy-state.py::is_stub_spec(spec_text, queue_entry)`. 
 | Stub spec | `> Draft (pre-Gemini)` OR `queue.json "stub": true` OR legacy marker | Step 4.5 | Dispatch `/spec` as a normal cycle subagent; the subagent calls `AskUserQuestion` during Phase 1 brainstorming | Answer design questions inside the cycle (conversation) |
 | Structured + research-pending | No stub markers; `RESEARCH.md` / `RESEARCH_SUMMARY.md` missing; `RESEARCH_PROMPT.md` present | Step 5 → terminal `needs-research` | Halt per Step 4 below (or batch per `--allow-research-skip`); the orchestrator does NOT dispatch `/spec` interactively | Upload Gemini research (single-turn action) |
 
-HARD CONSTRAINT 5 scopes the orchestrator's `AskUserQuestion` to Step 1g — that constraint does NOT bind subagents the orchestrator dispatches. A `/spec` cycle subagent at Step 4.5 is allowed and expected to call `AskUserQuestion` during Phase 1; that's the legitimate design-conversation channel.
+HARD CONSTRAINT 5 scopes the orchestrator's `AskUserQuestion` to the resolution modes (Steps 1g / 1h / 1i) plus the four enumerated exceptions (i)–(iv) listed there (standing-directive echo-back, budget-and-queue guard, Step 0.45 `--adhoc` task-details prompt, Step 5 resume disambiguation) — that constraint does NOT bind subagents the orchestrator dispatches. A `/spec` cycle subagent at Step 4.5 is allowed and expected to call `AskUserQuestion` during Phase 1; that's the legitimate design-conversation channel.
 
 The `--allow-research-skip` flag described below applies to the STRUCTURED-research-pending case only. Stub specs never reach this step (they're dispatched at Step 4.5 before Step 5 fires).
 

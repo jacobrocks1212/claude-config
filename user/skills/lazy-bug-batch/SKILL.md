@@ -48,7 +48,7 @@ bug-state.py).
 | `research_pending` var | accumulates research-pending feature_ids | N/A |
 | Step 0.5 pre-loop ingest | probes staged `.txt` files, dispatches `/ingest-research` | Skipped entirely (N/A to bugs) |
 | LOOP DETECTED sentinel guidance | mentions `RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md` | same set, substituting `FIXED.md` for `COMPLETED.md`; DEFERRED_NON_CLOUD.md applies to bugs too |
-| `completion-unverified` description | bug's SPEC claims Fixed but no FIXED.md receipt | feature claims Complete but no COMPLETED.md |
+| `completion-unverified` description | feature's SPEC claims Complete but no COMPLETED.md receipt | bug's SPEC claims Fixed but no FIXED.md receipt |
 | Step 1.5 probe command | `python3 ~/.claude/scripts/lazy-state.py` | `python3 ~/.claude/scripts/bug-state.py` |
 | `scoped-id-not-found` terminal | via `--feature-id` / `TR_SCOPED_ID_NOT_FOUND` | via `--bug-id` / `TR_SCOPED_ID_NOT_FOUND` |
 | Final report header | `## /lazy-batch — Done` | `## /lazy-bug-batch — Done` |
@@ -56,7 +56,7 @@ bug-state.py).
 | Start bookend | `## /lazy-batch — Starting` | `## /lazy-bug-batch — Starting` |
 | HARD CONSTRAINT 1 sentinel allowlist | `docs/features/` sentinels | `docs/bugs/` sentinels (same filenames; FIXED.md replaces COMPLETED.md) |
 | HARD CONSTRAINT 9 | dispatch against `feature_id` the script returned | dispatch against `bug_id` / `feature_id` the script returned |
-| `__mark_fixed__` (vs `__mark_complete__`) gate parity | `__mark_complete__` runs TWO gates (MCP-coverage audit + completion-integrity gate), then `--apply-pseudo __mark_complete__` | `__mark_fixed__` runs the SAME TWO gates, then writes FIXED.md + `mark-fixed-archive` procedure. **The gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both run the same two gates.** |
+| `__mark_fixed__` (vs `__mark_complete__`) gate parity | `__mark_complete__` runs TWO gates (MCP-coverage audit + completion-integrity gate), then `--apply-pseudo __mark_complete__` | `__mark_fixed__` runs the SAME TWO gates, then `bug-state.py --apply-pseudo __mark_fixed__` (sole author of the FIXED.md receipt, status flip, and sentinel deletions) + the `mark-fixed-archive` mechanics (git mv, ref repoint, queue trim, commit). **The gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both run the same two gates.** |
 
 All other behavior is identical to `/lazy-batch` — the shared algorithm, hard constraints, counter
 semantics, resolution modes, cycle output discipline, park mode, and pseudo-skill post-actions are
@@ -94,8 +94,9 @@ state script, do not enter the loop). On success, node is on PATH for the whole 
 
 ## Step 0: Parse Arguments
 
-See `~/.claude/skills/lazy-batch/SKILL.md` Step 0 for the full flag-parsing algorithm.
-Bug-pipeline token substitutions:
+See `~/.claude/skills/lazy-batch/SKILL.md`'s argument-parsing section (the `$ARGUMENTS`
+tokenization rules between the HARD CONSTRAINTS block and Step 0.0) for the full flag-parsing
+algorithm. Bug-pipeline token substitutions:
 
 - Error message: `/lazy-bug-batch requires a positive integer max-cycles.`
 - Ambiguous max-cycles question: same shape, prefix `/lazy-bug-batch`.
@@ -162,8 +163,28 @@ Parse the JSON output. Extract: `feature_id` (used as `bug_id`), `feature_name` 
 `bug_name`), `spec_path`, `current_step`, `sub_skill`, `sub_skill_args`, `terminal_reason`,
 `notify_message`, `diagnostics`.
 
-**Note:** `bug-state.py` does not support `--skip-needs-research` (no research in bug pipeline)
-and does not support `--probe` enrichment flags. Call it plain.
+**Probe enrichment (optional — same flags as `lazy-state.py`).** The orchestrator MAY call the
+probe with the enrichment flags to fold `repeat_count`, `git_guards`, and `cycle_header` into
+the JSON in a single invocation:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py --repeat-count --probe \
+  --forward-cycles {forward_cycles} --meta-cycles {meta_cycles} --max-cycles {max_cycles}
+```
+
+These flags are purely additive (base JSON fields unchanged) — see
+`~/.claude/skills/lazy-batch/SKILL.md` Step 1a for their semantics.
+
+**Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation
+flag), append `--park-needs-input` to EVERY `bug-state.py` probe invocation in this step (base
+or enriched form alike). With the flag, the script skips bugs carrying an unresolved
+`NEEDS_INPUT.md` instead of halting on `needs-input` and reports them in a `parked[]` array on
+the JSON output — the input to the Step 1g park path and the §1c.6 park notifications. When
+`park_mode == false`, call the script plain (no `--park-needs-input`) — existing behavior,
+byte-for-byte; the `parked[]` key never appears.
+
+**Note:** `bug-state.py` does not support `--skip-needs-research` (no research in the bug
+pipeline — never pass it).
 
 ### 1b. Handle terminal states
 
@@ -243,12 +264,18 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   If a precondition fails, write `{spec_path}/NEEDS_INPUT.md` (`written_by: completion-integrity-gate`),
   commit it, and return `refused:<reason>` — same halt-cycle-and-surface-via-Step-1g pattern as gate 1.
 
-  Only when BOTH gates pass: **write `{spec_path}/FIXED.md`** (`kind: fixed`, `provenance: gated`,
-  folding validation evidence from VALIDATED.md / MCP_TEST_RESULTS.md into the receipt body).
-  Then perform the **archive-on-fix procedure** per
+  Only when BOTH gates pass: run
+  `python3 ~/.claude/scripts/bug-state.py --apply-pseudo __mark_fixed__ {spec_path}`
+  per `~/.claude/skills/_components/completion-integrity-gate.md` — the script is the **single
+  author** of the `FIXED.md` receipt write (`kind: fixed`, `provenance: gated`, folding validation
+  evidence from VALIDATED.md / MCP_TEST_RESULTS.md into the receipt body), the SPEC.md/PHASES.md
+  `**Status:** Fixed` flip, and the deletion of the consumed VALIDATED.md / RETRO_DONE.md /
+  DEFERRED_NON_CLOUD.md sentinels (FIXED.md / SKIP_MCP_TEST.md / MCP_TEST_RESULTS.md are kept).
+  The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
+  After the script returns, the orchestrator performs ONLY the **archive mechanics** per
   `~/.claude/skills/_components/mark-fixed-archive.md`
-  (SPEC.md header updates, sentinel deletions, `git mv` to `_archive/`, inbound-reference repoint,
-  queue.json update, atomic commit). Writing FIXED.md (a sentinel) and SPEC header lines is within
+  (`**Fixed:**`/`**Fix commit:**` SPEC header lines, `git mv` to `_archive/`, inbound-reference
+  repoint, queue.json trim, atomic commit). Those remaining docs-level edits are within
   HARD CONSTRAINT 1's allowance.
 
 - **`__flip_plan_complete_cloud_saturated__`** — emitted only by `bug-state.py --cloud` when an

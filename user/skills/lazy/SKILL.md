@@ -182,7 +182,7 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 Run the audit per the component above with `{spec_path}` and `{feature_id}`. If the audit returns:
 
 - `clean` — proceed to the completion-integrity gate (Gate 2 below).
-- `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the flip steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
+- `uncovered:N` — the audit just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "MCP-coverage audit halted mark-complete — {N} locked decision(s) need coverage", Next `/lazy` will: "Surface NEEDS_INPUT.md decisions and either author MCP coverage or accept test-exempt for each"), call work-log, STOP.
 
 **Gate 2 — Completion-integrity gate (runs after Gate 1 returns `clean`, before the flip).**
 
@@ -190,17 +190,17 @@ Run the audit per the component above with `{spec_path}` and `{feature_id}`. If 
 
 Run the gate per the component above with `{spec_path}`, `{feature_id}`, and `{cloud}=false` (workstation). If it returns:
 
-- `gated` — the gate has already written `{spec_path}/COMPLETED.md` (folding in the validation evidence) and verified phase-coherence + validation-sentinel preconditions. Proceed to the flip steps below.
-- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the flip steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), call work-log, STOP.
+- `gated` — the gate has already written `{spec_path}/COMPLETED.md` (folding in the validation evidence) and verified phase-coherence + validation-sentinel preconditions. Proceed to the finalize steps below.
+- `refused:<reason>` — the gate just wrote `{spec_path}/NEEDS_INPUT.md`. Do NOT run the finalize steps. Print the after-status bookend (Completed: "completion-integrity gate halted mark-complete — {reason}", Next `/lazy` will: "Surface NEEDS_INPUT.md and reconcile the completion gap"), call work-log, STOP.
 
-**Flip steps (only when BOTH gates passed — coverage `clean` AND integrity `gated`):**
+**Finalize steps (only when BOTH gates passed — coverage `clean` AND integrity `gated`):**
 
-1. Update `docs/features/ROADMAP.md` — find the feature row, wrap name+description in `~~ ... ~~`, append `**COMPLETE**`.
-2. Delete sentinels: `VALIDATED.md`, `RETRO_DONE.md`, `DEFERRED_NON_CLOUD.md` if present (their evidence is now folded into `COMPLETED.md`). Keep `COMPLETED.md`, `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`, `plans/`.
-3. Update `{spec_path}/SPEC.md` — change `**Status:**` line to `Complete` (and `PHASES.md` top-level `**Status:**` to `Complete`).
-4. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
-5. PushNotification: `"{feature_name} COMPLETE. Run /lazy to continue."`
-6. Print the after-status bookend, call work-log, STOP.
+On `gated`, the gate has already run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __mark_complete__ {spec_path}` — the script is the **sole author** of the `COMPLETED.md` receipt (validation evidence folded in), the SPEC.md/PHASES.md `**Status:** Complete` flips, and the deletion of the consumed `VALIDATED.md` / `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md` sentinels (`COMPLETED.md` / `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` / `plans/` are kept). Do NOT re-perform any of those writes by hand. The remaining mechanics are:
+
+1. Update `docs/features/ROADMAP.md` — find the feature row, wrap name+description in `~~ ... ~~`, append `**COMPLETE**` (the one docs write the script does not perform).
+2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
+3. PushNotification: `"{feature_name} COMPLETE. Run /lazy to continue."`
+4. Print the after-status bookend, call work-log, STOP.
 
 ### Any other `__*__` action
 

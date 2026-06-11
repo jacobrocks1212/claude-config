@@ -2411,6 +2411,82 @@ def test_apply_pseudo_validated_from_skip_idempotent():
         )
 
 
+# ---- Test 3b (D-2: granted_by provenance gate) ----
+
+def test_apply_pseudo_validated_from_skip_refuses_pipeline_granted():
+    """SKIP_MCP_TEST.md carrying granted_by: pipeline → apply_pseudo must REFUSE
+    (ok=False, non-None refused) and write nothing. The CLI write path must
+    mirror compute_state's Step-9 gate: the pipeline cannot self-waive its own
+    MCP requirement, so a pipeline-granted skip needs operator confirmation.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # Self-granted skip: granted_by: pipeline.
+        (spec_dir / "SKIP_MCP_TEST.md").write_text(
+            "---\n"
+            "kind: skip-mcp-test\n"
+            "feature_id: test-feature\n"
+            "reason: pipeline self-asserted skip\n"
+            "date: 2026-06-10\n"
+            "granted_by: pipeline\n"
+            "---\n\n"
+            "# Skip MCP Test\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for granted_by: pipeline, got {result}"
+        )
+        assert result["refused"] is not None and "pipeline" in result["refused"], (
+            f"expected refusal naming the pipeline grant, got {result!r}"
+        )
+        assert result["wrote"] == [], f"expected wrote=[], got {result['wrote']}"
+        # Nothing must have been written — the vacuous validation must not land.
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was written despite granted_by: pipeline — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_skip_operator_granted_writes():
+    """SKIP_MCP_TEST.md carrying granted_by: operator is a legitimate
+    human-authored waiver → apply_pseudo writes VALIDATED.md (non-regression
+    guard for the positive path; absent granted_by = legacy = operator is
+    already covered by test_apply_pseudo_validated_from_skip_writes).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "SKIP_MCP_TEST.md").write_text(
+            "---\n"
+            "kind: skip-mcp-test\n"
+            "feature_id: test-feature\n"
+            "reason: docs-only change, no runtime surface\n"
+            "date: 2026-06-10\n"
+            "granted_by: operator\n"
+            "---\n\n"
+            "# Skip MCP Test\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, (
+            f"expected ok=True for granted_by: operator, got {result}"
+        )
+        assert (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was NOT written for an operator-granted skip"
+        )
+        parsed = lazy_core.parse_sentinel(spec_dir / "VALIDATED.md")
+        assert parsed is not None and parsed.get("kind") == "validated", (
+            f"expected kind='validated' in written VALIDATED.md, got {parsed!r}"
+        )
+
+
 # ---- Test 4 ----
 
 def test_apply_pseudo_validated_from_results_copies_scenarios():
@@ -2678,6 +2754,66 @@ def test_apply_pseudo_mark_complete_refuses_without_validation_evidence():
     assert not (spec_dir / "COMPLETED.md").exists(), (
         "COMPLETED.md was written despite no validation evidence — unsafe!"
     )
+
+
+# ---- Test 11b (D-1: content-less evidence must not satisfy the gate) ----
+
+def test_apply_pseudo_mark_complete_refuses_contentless_validated():
+    """An empty (touch-created) VALIDATED.md has no frontmatter, so
+    parse_sentinel returns {} — which is `not None` but carries no
+    kind: validated. The __mark_complete__ gate must REFUSE such a file
+    (ok=False, non-None refused) and write NO COMPLETED.md, instead of
+    minting a provenance: gated receipt off content-less evidence.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_spec_md(spec_dir, status="In-progress")
+        # Content-less evidence: `touch VALIDATED.md` equivalent.
+        (spec_dir / "VALIDATED.md").write_text("", encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for content-less VALIDATED.md, got {result}"
+        )
+        assert result["refused"] is not None and "VALIDATED.md" in result["refused"], (
+            f"expected refusal naming VALIDATED.md, got {result!r}"
+        )
+        assert result["wrote"] == [], f"expected wrote=[], got {result['wrote']}"
+        assert not (spec_dir / "COMPLETED.md").exists(), (
+            "COMPLETED.md was written despite content-less VALIDATED.md — unsafe!"
+        )
+        # SPEC.md status must NOT have been flipped either.
+        spec_text = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Status:** In-progress" in spec_text, (
+            f"SPEC.md status was flipped despite the refusal:\n{spec_text}"
+        )
+
+
+def test_apply_pseudo_mark_complete_refuses_contentless_skip():
+    """Same D-1 gate via the SKIP_MCP_TEST.md leg: an empty SKIP_MCP_TEST.md
+    (no frontmatter → parse_sentinel returns {}) lacks kind: skip-mcp-test and
+    must NOT satisfy the __mark_complete__ evidence gate.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "SKIP_MCP_TEST.md").write_text("", encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for content-less SKIP_MCP_TEST.md, got {result}"
+        )
+        assert result["refused"] is not None and "SKIP_MCP_TEST.md" in result["refused"], (
+            f"expected refusal naming SKIP_MCP_TEST.md, got {result!r}"
+        )
+        assert not (spec_dir / "COMPLETED.md").exists(), (
+            "COMPLETED.md was written despite content-less SKIP_MCP_TEST.md — unsafe!"
+        )
 
 
 # ---- Test 12 ----
@@ -3550,6 +3686,9 @@ _TESTS = [
     ("test_apply_pseudo_validated_from_skip_writes", test_apply_pseudo_validated_from_skip_writes),
     ("test_apply_pseudo_validated_from_skip_refuses_when_skip_absent", test_apply_pseudo_validated_from_skip_refuses_when_skip_absent),
     ("test_apply_pseudo_validated_from_skip_idempotent", test_apply_pseudo_validated_from_skip_idempotent),
+    # D-2: granted_by provenance gate on the CLI write path
+    ("test_apply_pseudo_validated_from_skip_refuses_pipeline_granted", test_apply_pseudo_validated_from_skip_refuses_pipeline_granted),
+    ("test_apply_pseudo_validated_from_skip_operator_granted_writes", test_apply_pseudo_validated_from_skip_operator_granted_writes),
     ("test_apply_pseudo_validated_from_results_copies_scenarios", test_apply_pseudo_validated_from_results_copies_scenarios),
     ("test_apply_pseudo_validated_from_results_refuses_when_results_absent", test_apply_pseudo_validated_from_results_refuses_when_results_absent),
     ("test_apply_pseudo_deferred_non_cloud_writes_and_idempotent", test_apply_pseudo_deferred_non_cloud_writes_and_idempotent),
@@ -3558,6 +3697,9 @@ _TESTS = [
     ("test_apply_pseudo_flip_cloud_saturated_refuses_no_plan", test_apply_pseudo_flip_cloud_saturated_refuses_no_plan),
     ("test_apply_pseudo_mark_complete_writes_receipt_flips_and_cleans", test_apply_pseudo_mark_complete_writes_receipt_flips_and_cleans),
     ("test_apply_pseudo_mark_complete_refuses_without_validation_evidence", test_apply_pseudo_mark_complete_refuses_without_validation_evidence),
+    # D-1: content-less (touch-created) evidence must not satisfy the receipt gate
+    ("test_apply_pseudo_mark_complete_refuses_contentless_validated", test_apply_pseudo_mark_complete_refuses_contentless_validated),
+    ("test_apply_pseudo_mark_complete_refuses_contentless_skip", test_apply_pseudo_mark_complete_refuses_contentless_skip),
     ("test_apply_pseudo_mark_complete_idempotent", test_apply_pseudo_mark_complete_idempotent),
     ("test_apply_pseudo_mark_fixed_writes_fixed_receipt", test_apply_pseudo_mark_fixed_writes_fixed_receipt),
     ("test_apply_pseudo_unknown_name_refuses", test_apply_pseudo_unknown_name_refuses),
