@@ -54,6 +54,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/load-branch-docs-context.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "statusLine": {

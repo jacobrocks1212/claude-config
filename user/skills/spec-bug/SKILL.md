@@ -163,7 +163,7 @@ For bugs, also create the standard bug doc header fields alongside the investiga
 
 ## Step 5: Write the Investigation SPEC
 
-Write the SPEC.md with this structure:
+Write the SPEC.md with this structure. Before writing, run `git branch --show-current`: if the result matches `^p/`, stamp `**Branch:** \`<branch>\`` into the header (after `**Related:**`); if on `main`/`master` or any non-`p/` branch, omit the `**Branch:**` line — the branch may not yet exist at spec time, and `/spec-phases` is the primary stamp point.
 
 ```markdown
 # {Title} — Investigation Spec
@@ -175,6 +175,7 @@ Write the SPEC.md with this structure:
 **Discovered:** {today's date}
 **Placement:** {docs/bugs or docs/features path}
 **Related:** {links to related specs, bugs, or phases}
+**Branch:** `{p/* branch — omit if not yet on a work branch}`
 
 <!-- Status lifecycle:
   - Investigating → active investigation in progress; bug-state.py routes to /spec-bug.

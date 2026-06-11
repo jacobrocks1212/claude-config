@@ -31,14 +31,13 @@
     - Never reference personal/planning documentation (SPEC, PHASES, WU, work-item docs, etc.) in
       code, test names, comments, commit messages, or anything checked into the repo. These are
       local artifacts that mean nothing to other contributors.
-    - Use comments sparingly — only for non-obvious behavior (intent, invariants, contracts, or
-      subtle edge cases). When a comment is warranted, keep it short and to the point: one line is
-      the norm, multi-line is the rare exception. Do not narrate straightforward code.
-    - Never reference the implementation process in comments, doc comments, or assert messages —
-      no TDD state ("RED before fix", "PASS before and after fix"), no "currently fails because...",
-      no "this fails before the fix...", no test-ordering labels like "(a)/(b)/(c)". Describe only
-      the required behavior; these artifacts go stale the moment the fix lands.
-    - Do not duplicate an assert message in an adjacent comment — keep one or the other.
+    - Do not write code comments. The only exception is a doc comment on a public/service interface
+      definition where genuinely warranted. Never delete a human's existing comment just to satisfy
+      this rule.
+    - Never reference the implementation process in assert messages or test names — no TDD state
+      ("RED before fix", "PASS before and after fix"), no "currently fails because...", no test-ordering
+      labels like "(a)/(b)/(c)". Describe only the required behavior; these artifacts go stale the
+      moment the fix lands.
   </coding-conventions>
 
   <claude-config>
@@ -245,3 +244,11 @@ Options:
   )
   ```
 </work-logging>
+
+## Branch-aware doc context
+
+Most `p/*` work branches are backed by a docs directory under `../cog-docs/docs/bugs/<id>-<slug>/` or `../cog-docs/docs/features/<slug>/` (SPEC.md, PHASES.md, plans/). A `SessionStart` hook (`load-branch-docs-context.sh`) resolves the current branch to that directory via a `**Branch:**` field in its SPEC.md or PHASES.md and injects a pointer at session start.
+
+- **When the hook surfaces a pointer:** before doing any work on the branch, read that directory's SPEC.md and PHASES.md to re-familiarize yourself with the in-progress work.
+- **When the hook is silent but branch docs likely exist** (an un-stamped dir): list `../cog-docs/docs/{bugs,features}`, resolve the directory by slug or work-item id, review it, and add a `**Branch:** <current-branch>` line to that SPEC.md or PHASES.md so future sessions resolve automatically (self-heal/backfill).
+- The field format the hook matches: a line `**Branch:** <branch>` (the value may be backticked and may carry a trailing parenthetical note).

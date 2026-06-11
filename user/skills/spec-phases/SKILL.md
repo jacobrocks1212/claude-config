@@ -243,6 +243,8 @@ Launch a Sonnet subagent with:
 
 This line is **routing, not a waiver**: the batch orchestrators use it to skip the ~3–7.5 min dev-runtime pre-boot before an `/mcp-test` cycle (lazy-batch Step 1d.0 step 0). The mcp-test cycle still owns the actual skip decision — a wrong `not-required` costs one recovery dispatch, not correctness.
 
+**Branch stamp (REQUIRED when on a work branch):** before writing PHASES.md, run `git branch --show-current`. If the result matches `^p/`, add a `**Branch:** \`<branch>\`` line immediately after `**MCP runtime:**`. If the current branch is `main`, `master`, or any non-`p/` branch, omit the `**Branch:**` line entirely and leave it for later backfill. Never stamp `main` or `master`.
+
 **PHASES.md Output Format:**
 
 ```markdown
@@ -251,6 +253,7 @@ This line is **routing, not a waiver**: the batch orchestrators use it to skip t
 > Phases for [`SPEC.md`](./SPEC.md)
 
 **MCP runtime:** {required | not-required — reason citing the mcp-testing SPEC class}
+**Branch:** `{current p/* branch from git branch --show-current — omit if on main/master}`
 
 ## Cross-feature Integration Notes
 

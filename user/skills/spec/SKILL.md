@@ -485,7 +485,7 @@ After the decomposition, proceed with iterative brainstorming below.
 
    **HARD REQUIREMENT — the "Open Decisions" chat block and the picker MUST match 1:1.** The decisions and options in the chat block correspond verbatim (modulo picker-label truncation) to the questions and options passed to `AskUserQuestion`: same number of questions, same number of options per question, same option labels in the same order, same recommendation (the chat block's **My recommendation** must be the flagged option in the picker). The picker `label` may only be a length-truncated shortening of the chat option's bolded label, and the picker `description` may only be a truncation of the chat's full pros/cons. If you add, drop, reword, or re-recommend any decision/option after writing the chat block, rewrite the "Open Decisions" block to match before calling `AskUserQuestion`. See the **Global Rule** at the top of this skill.
 6. Continue refining until the user is satisfied. On each new round of decisions, repeat the "surface context in chat first, then ask" pattern — re-applying the 1:1 match requirement on every round.
-7. Write the final `{spec-dir}/{feature-slug}/SPEC.md` with this structure:
+7. Write the final `{spec-dir}/{feature-slug}/SPEC.md` with this structure. Before writing, run `git branch --show-current`: if the result matches `^p/`, stamp `**Branch:** \`<branch>\`` into the header (after `**Last updated:**`); if on `main`/`master` or any non-`p/` branch, omit the `**Branch:**` line — the branch usually does not exist yet at spec time, and `/spec-phases` is the primary stamp point.
 
 ```markdown
 # {Feature Name} — Feature Specification
@@ -495,6 +495,7 @@ After the decomposition, proceed with iterative brainstorming below.
 **Status:** Draft
 **Priority:** {P0-P3}
 **Last updated:** {today's date}
+**Branch:** `{p/* branch — omit if not yet on a work branch}`
 
 **Depends on:**
 
