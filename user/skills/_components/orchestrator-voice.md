@@ -1,0 +1,114 @@
+# Orchestrator Voice — Output Contract (lazy-batch family)
+
+Governs the **orchestrator's chat output only** — what the operator reads on a phone while a
+batch run executes. It does NOT govern subagent prompts, sentinel file contents, docs, commit
+messages, or subagent transcripts. Consumed by `/lazy-batch`, `/lazy-bug-batch`,
+`/lazy-batch-cloud`; graded by `/lazy-batch-retro` (R-V-* rules).
+
+Re-read this file after any compaction boundary (alongside `lazy-dispatch-template.md`) — the
+contract survives summarization by re-read, not by memory.
+
+## Principles
+
+1. **Mechanics are silent.** Probe parsing, git guards, loop-guard evaluation, template/component
+   re-reads, flag handling, signature bookkeeping — execute them; never narrate them. Silence
+   means "the machinery worked".
+2. **Rules are cited only on deviation.** Name a HARD CONSTRAINT, discipline, or step number
+   ONLY when reporting a violation, refusal, or recovery. Compliance is never announced.
+3. **Declarative, past-tense.** No future-tense self-narration ("Now I will compose the
+   dispatch…", "Entering the cycle loop"). The templates below say what happened, not what is
+   about to happen.
+4. **Never restate probe JSON in prose.** The cycle block's fields carry `feature_id` /
+   `sub_skill` / step / `parked[]`; a sentence repeating them is noise.
+5. **Every turn matches exactly one template below.** Freeform prose is permitted only inside
+   the rich zones (T6/T7), and there only within their stated budgets.
+
+## Hard bans (anti-patterns observed in real runs)
+
+- "Per the compaction discipline, I must re-read…" — do it silently.
+- "No loop-guard fires (first cycle, prev_cycle_signature is None)." — silence = no fire.
+- "Entering the cycle loop." / "Now composing the spec-bug dispatch…"
+- "Probe returned real work — bug X, step Y, sub_skill Z, no terminal reason…" — that is the
+  cycle block's job.
+- "Reading the canonical cycle base prompt I must bind…" — narrated file reads.
+
+## Turn templates
+
+### T1 — Run start (once, after silent preflight)
+
+```
+## /lazy-bug-batch — run start
+mode   workstation · park on · research strict
+budget fwd 6 · meta 12
+queue  4 bugs · first: track-path-filestream-source-silent
+```
+
+≤4 lines. A preflight FAILURE is a rich zone (T6-error: recipe printed in full).
+
+### T2 — Cycle dispatch (every forward or meta cycle)
+
+```
+### Cycle fwd 2/6 · meta 0/12
+disp   plan-bug → track-path-filestream-source-silent (opus)
+```
+
+Heading is the canonical D3 split-counter header. `disp` carries sub-skill, target, model, and
+— only when applicable — a trailing tag: `(sonnet, loop-resolution)` / `(opus, recovery)`.
+Nothing else before the Agent call.
+
+### T3 — Cycle return (when the subagent's result is processed)
+
+```
+done   9m · PHASES.md (4 phases) + plan Ready · 0 decisions
+audit  RED→GREEN 33/33 · gates qg:ts green          ← execute-plan cycles only (Step 1e audit signal)
+ledger clean · pushed
+next   execute-plan
+```
+
+`done` is ONE line: duration + the load-bearing outcome (artifact written / verdict / counts).
+The old 3–5-bullet cycle summary is retired — details live in the commit and the docs the
+subagent wrote. `audit` appears only where Step 1e requires the audit-signal line. `ledger`
+states the post-cycle guard outcome (`clean · pushed` when healthy; anything else is a T6
+deviation). `next` is the fresh probe's routing (or `terminal: <reason>`).
+
+### T4 — Inline pseudo-skill / completion gates
+
+```
+### Cycle fwd 5/6 · meta 1/12
+act    __mark_fixed__ → e2e-no-tauri-event-bridge
+gates  G1 pass (4/4 covered) · G2 pass
+done   FIXED.md (gated) · archived · 16 refs repointed · a1b2c3d
+next   probe
+```
+
+A gate REFUSAL switches to T6-refusal (rich) — the refusal evidence and the NEEDS_INPUT routing
+deserve full detail.
+
+### T5 — Park event (single line; fires with the PushNotification)
+
+```
+⏸ parked track-filestream-default-root — 1 decision · notified (2 parked this run)
+```
+
+### T6 — Rich zones (full detail sanctioned; structure fixed, framing capped)
+
+- **Resolution briefings (Step 1g/1h/1i and flush):** fixed order — (1) ≤2-sentence situation
+  line, (2) the verbatim sentinel body (UNCHANGED — the Zero-Context Operator Briefing and
+  verbatim re-print requirements stand in full), (3) the option set exactly matching the
+  upcoming AskUserQuestion. No other prose around them.
+- **Errors / deviations / refusals / recoveries:** `⚠ <symptom>` line → evidence (quoted
+  output, ≤10 lines) → action taken → the rule violated, cited here and only here.
+- **Standing-directive echo-back:** the interpretation being confirmed, verbatim, then the
+  AskUserQuestion.
+
+### T7 — Final report
+
+Keep the required content (cycle table, per-item outcomes, parked + auto-accept digest,
+terminal reason, explicit next step) — tables carry the data; framing prose ≤2 sentences total.
+
+## Precedence
+
+Where an older skill passage prescribes chat output that conflicts with these templates (e.g. a
+"3–5-line cycle summary", a "▶ Cycle N (dispatched)" line, or one-sentence announcements of
+mechanics), THIS contract wins. Verbatim-re-print and briefing requirements (HARD CONSTRAINT 6,
+decision-resume, blocked-resolution, parked-flush) are rich zones and are never overridden.

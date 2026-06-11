@@ -48,6 +48,10 @@ Constraints 1-9 mirror `/lazy-batch`'s HARD CONSTRAINTS 1-9; constraint 10 is cl
 
 > **Known cloud limitation — TDD agent-separation is traded away.** On workstation, `/execute-plan` enforces test-first discipline *structurally*: a dedicated Sonnet test-agent writes failing tests, then a separate impl-agent makes them pass (the separation `R-EP-2`/`R-EP-3` exist to enforce). The cloud override collapses this into ONE inline cycle subagent that writes both tests and implementation, so that structural test-first guarantee is GONE in cloud — it cannot be enforced from sub-subagent dispatch evidence. This is an intentional tradeoff, not a defect. The compensating controls are: (1) per-batch **quality gates** (`R-EP-6`) still run and must pass 100%; (2) the workstation **`/retro`** pass audits the landed work; (3) the deferred **MCP-validation** pass on workstation (which writes `VALIDATED.md`) gates final completion. The inline cycle subagent SHOULD still write **tests-before-impl within each batch** — read the test expectations, write the failing tests, then implement — even though the ordering can't be structurally verified. `/lazy-batch-retro` knows this: its Step 4b cloud branch grades `R-EP-2`/`R-EP-3` as `n/a (cloud-override)` rather than `fail`.
 
+## OUTPUT CONTRACT — orchestrator voice (read at run start)
+
+**ALL orchestrator chat output MUST follow `~/.claude/skills/_components/orchestrator-voice.md`** — the turn-template contract (T1 run banner, T2 dispatch / T3 return / T4 inline-gate cycle blocks, T5 park line, T6 rich zones, T7 final report; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). **Read it at run start, and RE-READ it after any compaction boundary** (alongside `lazy-dispatch-template.md` — Step 1d's compaction discipline); the contract survives summarization by re-read, not by memory. Where an older passage in this skill prescribes a different chat-output shape (e.g. the retired `▶ … (dispatched)` background-dispatch line), the contract's Precedence clause wins; the verbatim re-print / Zero-Context Operator Briefing requirements (HARD CONSTRAINT 6, `decision-resume.md`, `blocked-resolution.md`, `parked-flush.md`, `halt-resolution.md`) are sanctioned T6 rich zones and are never overridden. Graded by `/lazy-batch-retro`'s R-V-* rules.
+
 ---
 
 ## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)
@@ -72,16 +76,16 @@ Same shape as `/lazy-batch` Step 0. `$ARGUMENTS` is tokenized:
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 0 for the full flag semantics and rationale. The cloud variant inherits the same default-strict / opt-in-batched dichotomy — research-pending features halt the loop immediately by default; pass `--allow-research-skip` only when the remaining queue is known to be independent.
 
-Print the start bookend:
+Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-voice.md`** (≤4 lines; nothing else before the first cycle block):
 
 ```
-## /lazy-batch-cloud — Starting
-**Environment:** Cloud Linux (no Tauri/MCP)
-**Max cycles:** {max_cycles}
-**Research mode:** {strict halt on first needs-research (default) | batched (--allow-research-skip)}
-**Park mode:** {on (--park) | off (default)}
-**Repo root:** {cwd}
+## /lazy-batch-cloud — run start
+mode   cloud (no Tauri/MCP) · park {on|off} · research {strict|batched}
+budget fwd {max_cycles} · meta {2*max_cycles}
+queue  {N} feature(s) · first: {first queue entry id}
 ```
+
+The `queue` line is best-effort (one `Bash` read of `docs/features/queue.json` for the entry count — a banner fact, not state inference); omit the line if the queue file can't be read cheaply. The repo root and flag parsing are mechanics — not announced.
 
 ---
 
@@ -129,11 +133,7 @@ Print the start bookend:
 
    PushNotification with the same one-line summary, then STOP. Do NOT run `lazy-state.py`.
 
-5. On a clean fast-forward (or when local was already up to date / the branch was unpushed), print a one-line confirmation and continue to Step 0.5:
-
-   ```
-   🔄 Synced local {branch} to origin tip ({short-sha}) before resuming.
-   ```
+5. On a clean fast-forward (or when local was already up to date / the branch was unpushed), continue to Step 0.5 **silently** — a successful sync is mechanics per the orchestrator-voice contract (silence means the machinery worked). Only the step-4 divergence halt is announced (a T6 error — recipe printed in full).
 
 ---
 
@@ -187,13 +187,7 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 0.5 for the full algorithm. Clou
 
 4. **Reconcile a dirty working tree.** If `git status --porcelain` is non-empty, a killed agent left uncommitted partial work. Do NOT blindly `git checkout` / `git reset` it away — discarding work as a shortcut is forbidden. Read the diff (`git diff` + `git status`) and decide: if the partial work is correct-but-uncommitted, KEEP it and finish it (dispatch a bounded continue/finalize subagent, since source edits require a subagent per HARD CONSTRAINT 1 — the orchestrator must not edit source files itself); if a hunk is genuinely corrupt/half-applied, surface that diff to chat first and revert ONLY the broken hunk, never the whole tree. When in doubt, dispatch the bounded subagent to read the diff and either complete the in-flight WU or cleanly revert just the broken portion.
 
-After steps 1-4, print a one-line reconciliation summary and enter the Step 1 loop:
-
-```
-🔧 Resume-reconciliation: pushed {N} commit(s); {finalized plan part X | no finalize needed}; {reconciled dirty tree | clean tree}.
-```
-
-When steps 2-4 find nothing to reconcile (clean tree, no finished-but-not-finalized part), Step 0.6 is a fast no-op beyond the step-1 push — the normal fresh-start case.
+After steps 1-4: if anything was actually reconciled (unpushed commits pushed, a part finalized, a dirty tree handled), surface it as a one-line T6 recovery note — `🔧 Resume-reconciliation: pushed {N} commit(s); finalized plan part {X}; reconciled dirty tree.` (recoveries are a sanctioned rich zone per orchestrator-voice.md) — then enter the Step 1 loop. When steps 1-4 find nothing to reconcile (clean tree, nothing unpushed, no finished-but-not-finalized part), Step 0.6 is a **silent** fast no-op — mechanics are not announced. This is the normal fresh-start case.
 
 ---
 
@@ -261,7 +255,7 @@ Print final batch report, STOP.
 
 The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
 
-1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) Message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`.
+1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) Message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
 2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `cloud-queue-exhausted`, `device-queue-exhausted`, `queue-missing`, `all-features-complete`, `max-cycles`, `meta-cap`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
 3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-batch-cloud flush — {N} parked decision(s) ready for your input"`.
 4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
@@ -282,13 +276,13 @@ After the inline action:
 
 1. Append to `cycle_log`: `{forward_cycles + meta_cycles, feature_name, sub_skill, "inline: <one-line summary>"}` (use the UPDATED total after the increment in step 5 below).
 2. **Push backstop (HARD REQUIREMENT — cloud reclaim safety).** The inline pseudo-skill committed a sentinel / plan-frontmatter change locally; push it now so it survives container reclaim — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). This is the backstop for inline cycles that the orchestrator owns directly — a `git push` of an already-committed change, NOT a Write/Edit, so HARD CONSTRAINT 1 still holds. If the push reports "up to date," that is fine (a prior cycle's push already carried it).
-3. Emit the canonical per-cycle update block (Step 3): heading `### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill}`, `**Result:**` = the inline outcome, `**Commit:**` = the sentinel/plan commit sha. Nothing else.
+3. Emit the T4 inline pseudo-skill block (Step 3 / orchestrator-voice.md): the canonical split-counter heading, an `act` line (`{sub_skill} → {feature_id}`), a `gates` line when gates ran (`__mark_complete__`), a `done` line (inline outcome + the sentinel/plan commit short-sha), and a `next` line. Nothing else. A gate REFUSAL switches to T6-refusal (rich) — the refusal evidence and the NEEDS_INPUT routing deserve full detail.
 4. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` (same uniform post-cycle update as Step 1e — keeps the loop-guard accurate across mixed pseudo-skill / real-skill cycles).
 5. Increment the appropriate counter: `forward_cycles` for pipeline-advancing pseudo-skills (`__mark_complete__`, `__write_deferred_non_cloud__`, `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`); `meta_cycles` for cleanup pseudo-skills (`__flip_plan_complete_stale__`). Return to Step 1a — DO NOT fall through to Step 1d.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-**Compaction discipline — re-read the dispatch template first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`. It is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
+**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md` AND `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
 
 **Long-build ownership (harness-tracked).** Cloud has no Tauri runtime, so packaged `tauri build` does not run here — but the ownership rule is universal: any build or test that may exceed a single subagent turn (e.g. a multi-minute `cargo` run inside a long `/execute-plan` cycle) is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
@@ -552,7 +546,9 @@ The orchestrator will halt on the next cycle's max-cycles cap if this loop
 persists — your job here is to break it.
 ```
 
-Append the LOOP DETECTED block after the base prompt's final paragraph when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle.
+Append the LOOP DETECTED block after the base prompt's final paragraph when and ONLY when the loop-guard condition holds. Do NOT include it on the first cycle (when `prev_cycle_signature is None`) or when the signature differs from the previous cycle. The loop-guard evaluation itself is silent — never announce "no loop-guard fires" (orchestrator-voice.md hard ban); the only visible trace of a fired guard is the `(sonnet, loop-resolution)` tag on the T2 `disp` line.
+
+**Emit the T2 cycle-dispatch block (Step 3 / orchestrator-voice.md) immediately before the Agent call:** the canonical split-counter heading + the `disp` line (`{sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])`). Nothing else between the block and the dispatch.
 
 Dispatch:
 
@@ -579,7 +575,7 @@ Agent({
 
 ### 1e. Record cycle outcome and loop
 
-Append to `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, sub_skill, subagent's one-paragraph summary}`, emit the canonical per-cycle update block (Step 3 — heading `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill}` + `**Result:**` / `**Commit:**` bullets, no other prose; add the `**Audit:**` bullet on `/spec` / `plan-feature` cycles whose Step 1d.5 surfaced product-behavior decisions), update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)`, increment `forward_cycles`, loop. **Post-cycle push backstop (HARD REQUIREMENT — cloud reclaim safety):** after the cycle subagent returns, the orchestrator verifies the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). Under guardrail B the cycle subagent already pushed every batch commit, so this normally reports "up to date" — it is the backstop for any cycle (or future skill) that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles. **The `forward_cycles` increment is also a uniform post-cycle action that NEVER resets on feature transitions (HARD CONSTRAINT 8) — when the next `lazy-state.py --cloud` call returns a different `feature_id` (e.g. after `__mark_complete__`, after `__write_deferred_non_cloud__` rolls the queue to the next ready feature, or any other queue-advance), `forward_cycles` continues incrementing from where it was.**
+Append to `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, sub_skill, subagent's one-paragraph summary}`, emit the T3 cycle-return block (Step 3 / orchestrator-voice.md) under the cycle's T2 heading — a `done` line (duration + load-bearing outcome + commit short-sha, or `—`); an `audit` line where required (the `/execute-plan` inline/test-first audit signal — REQUIRED on `/execute-plan` cycles, mirroring `/lazy-batch` Step 1e item 2 — or `audit  {N} product-behavior decision(s) surfaced → NEEDS_INPUT.md` on `/spec` / `plan-feature` cycles whose Step 1d.5 fired); a `ledger` line (post-cycle guard outcome); a `next` line (the fresh probe's routing) — no other prose. Then update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)`, increment `forward_cycles`, loop. **Post-cycle push backstop (HARD REQUIREMENT — cloud reclaim safety):** after the cycle subagent returns, the orchestrator verifies the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). Under guardrail B the cycle subagent already pushed every batch commit, so this normally reports "up to date" — it is the backstop for any cycle (or future skill) that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds. The prev-signature update is the uniform post-cycle action that keeps the Step 1d loop-guard accurate across both real-skill and pseudo-skill cycles. **The `forward_cycles` increment is also a uniform post-cycle action that NEVER resets on feature transitions (HARD CONSTRAINT 8) — when the next `lazy-state.py --cloud` call returns a different `feature_id` (e.g. after `__mark_complete__`, after `__write_deferred_non_cloud__` rolls the queue to the next ready feature, or any other queue-advance), `forward_cycles` continues incrementing from where it was.**
 
 **Post-`/execute-plan` ledger-consistency guard (guardrail D — mirrored from `/lazy-batch` Step 1e item 4a).** When the cycle that just returned was `/execute-plan`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a). This is NOT polling (HARD CONSTRAINT 7 holds); these are `Bash` reads + one script call, so HARD CONSTRAINT 1 (sentinel-only Write/Edit) holds too. The cycle subagent is supposed to leave a clean, consistent ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically loses its turn between gates and commit — and under cloud reclaim that residue is doubly dangerous. This guard catches it deterministically instead of relying on operator memory. `/mcp-test` defers in cloud, so this guard fires on `/execute-plan` cycles only.
 
@@ -598,7 +594,7 @@ Append to `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, sub_skil
    - `plan_complete` failing → the recovery subagent re-flips the plan-part frontmatter `status:` → `Complete` and ticks any still-unchecked PHASES.md non-verification boxes that have on-disk evidence of completion, then commits + pushes.
    - `deliverables_done` failing → the recovery subagent may tick a verification box ONLY when there is on-disk evidence that verification actually ran for that row (e.g. `VALIDATED.md` or `MCP_TEST_RESULTS.md` present in `{spec_path}/` and covering that row). If verification boxes are unticked AND no such evidence exists on disk, the recovery subagent MUST NOT tick them; instead it writes `{spec_path}/NEEDS_INPUT.md` describing the gap (which boxes are unticked, which evidence is missing) and surfaces it — do not silently tick unverified boxes. Note: `--verify-ledger`'s `deliverables_done` check already exempts verification-only rows (rows under "Runtime Verification / MCP Integration Test" subsections), so it will not false-fail on legitimately-pending Runtime-Verification boxes.
 
-   Append a `**Recovery:**` bullet to the per-cycle output block. Do NOT advance to Step 1a until the guard passes.
+   Surface the failed check per T6 (`⚠ verify-ledger {failing_check} failed` → evidence → recovery action taken), and record the post-recovery outcome on the cycle's T3 `ledger` line. Do NOT advance to Step 1a until the guard passes.
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
@@ -779,23 +775,28 @@ Header is `## /lazy-batch-cloud — Done`. Cloud-specific "Next step" guidance:
 
 *(One row per auto-accepted decision across all features. If a single sentinel carried multiple decisions, emit one row per decision with the same feature column repeated. This table is the run-end audit trail for all D2 two-key auto-accepted choices.)*
 
+Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, parked/auto-accept digest, terminal reason, and Next-step lines carry all required content.
+
 STOP.
 
 ---
 
-## Step 3: Cycle Output Discipline (lean · consistent · scannable)
+## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)
 
-**Identical to `/lazy-batch` Step 3** — every cycle (real-skill Step 1e, inline pseudo-skill Step 1c.5, decision-resume Step 1g, blocked-resolution Step 1h, or halt-resolution Step 1i) emits EXACTLY ONE update block in this shape, and nothing else:
+**Identical contract to `/lazy-batch` Step 3** — per-cycle chat output for every cycle (real-skill Step 1e, inline pseudo-skill Step 1c.5, decision-resume Step 1g, blocked-resolution Step 1h, or halt-resolution Step 1i) is the T2 dispatch block + T3 return block (or T4 for inline pseudo-skills) from `~/.claude/skills/_components/orchestrator-voice.md`, under the canonical split-counter heading, and nothing else:
 
 ```
-### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill}
-- **Result:** {one-line outcome}
-- **Commit:** {short-sha | "—"}
+### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}
+disp   {sub_skill} → {feature_id} ({model}[, loop-resolution|recovery])   ← T2, at dispatch
+done   {duration} · {load-bearing outcome} · {short-sha | —}              ← T3, at return
+audit  {…}                                                                ← only where Steps 1e / 1d.5 require it
+ledger {clean · pushed | …}                                               ← post-cycle guard outcome
+next   {fresh probe routing | terminal: <reason>}
 ```
 
-(Use `forward_cycles` and `meta_cycles` values AFTER incrementing — so the heading reads the completed state, not the in-flight index. The `/lazy-batch` reference uses the same convention.) All suppression rules carry over verbatim: no dispatch narration, no commit-strategy narration, ignore between-cycle commit prompts silently, at most 2–3 one-line bullets, halt/terminal announcements exempt (including the Step 1h blocked-resolution prompt + its "Halt for manual fix" stop, and the Step 1i halt-resolution prompt + its Halt stop). See `~/.claude/skills/lazy-batch/SKILL.md` Step 3 for the full rules.
+(Use `forward_cycles` and `meta_cycles` values AFTER incrementing — so the heading reads the completed state, not the in-flight index. The `/lazy-batch` reference uses the same convention.) All contract rules carry over verbatim: mechanics silent (no dispatch narration, no commit-strategy narration, no probe restating), between-cycle commit prompts ignored silently, deviations surfaced as T6 (`⚠` → evidence → action → rule), halt/terminal announcements and resolution briefings (including the Step 1h blocked-resolution prompt + its "Halt for manual fix" stop, and the Step 1i halt-resolution prompt + its Halt stop) are T6 rich zones, final report is T7. The retired formats — the `· {feature_name} · {sub_skill}` heading suffix and the `**Result:**`/`**Commit:**` bullet block — must NOT reappear. See `~/.claude/skills/lazy-batch/SKILL.md` Step 3 for the full rules.
 
-**Cloud nuance (background dispatch).** A cloud cycle subagent may be dispatched to run in the background (HARD CONSTRAINT 10 references in-flight background cycle agents). When it is, the ONLY output permitted before the result block is a SINGLE terse line — `▶ Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill} (dispatched)` — with no following prose. Specifically do NOT narrate "running in the background", "waiting on the completion notification", or any commit-race reasoning while it runs (this is exactly the noise the discipline removes). When the cycle completes, emit the canonical result block.
+**Cloud nuance (background dispatch).** A cloud cycle subagent may be dispatched to run in the background (HARD CONSTRAINT 10 references in-flight background cycle agents). The T2 block emitted at dispatch is the ONLY output permitted before the result — the former `▶ … (dispatched)` line format is retired (T2 already marks the dispatch; the contract's Precedence clause governs). Specifically do NOT narrate "running in the background", "waiting on the completion notification", or any commit-race reasoning while it runs (this is exactly the noise the discipline removes). When the cycle completes, emit the T3 return block.
 
 ---
 
@@ -867,7 +868,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Ground-truth re-run (subagent-review.md Step 1.5) | **performed** — the orchestrator/review subagent re-runs each Sonnet sub-subagent's reported commands (git status / wc -l / grep / test runner) and diffs to detect falsified reports. Valuable because the implementer is a *separate* untrusted subagent. | **CLOUD-SCOPED DIVERGENCE — skipped.** In the inline path the cycle subagent wrote both tests and implementation itself, so there is no separate subagent report to police — the mechanical re-run is pure redundant work. The cloud /execute-plan override drops it (substantive correctness + propagation review still run). Consistent with `/lazy-batch-retro` already grading R-EP-4 as `n/a (cloud-override)` for cloud cycles. |
 | Cycle subagent prompt — loop-guard (LOOP DETECTED block) | appended when prev_cycle_signature matches current (feature_id, sub_skill, sub_skill_args, current_step). **Same shape** in both. | appended on same condition; same block text — both orchestrators share the loop-break protocol. |
 | Cycle subagent model selection | normal cycles → `model: "opus"`. LOOP DETECTED branch → `model: "sonnet"`. **Same in both** — the loop-resolution work is mechanical (read sentinel schema, identify which sentinel preconditions are met, write it, commit), and the diagnosis is already in the prompt. Sonnet handles it at ~5× the cost-efficiency. | same as workstation. |
-| Cycle output discipline (Step 3) | **MIRRORED** — every cycle emits exactly ONE `### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill}` heading + `**Result:**` / `**Commit:**` bullet block; no dispatch- or commit-strategy narration; between-cycle commit prompts ignored silently; halt/terminal announcements exempt. **Same shape** in both. | same block + rules, PLUS one cloud-only allowance: a backgrounded cycle may print a SINGLE terse `▶ Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {feature_name} · {sub_skill} (dispatched)` line before its result block — still no "running in the background" / "waiting on notification" / commit-race prose. |
+| Cycle output discipline (Step 3) | **MIRRORED** — per-cycle chat output is the T2 dispatch block + T3 return block (T4 for inline pseudo-skills) per `~/.claude/skills/_components/orchestrator-voice.md`, under the canonical `### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}` heading; mechanics silent; deviations/briefings are T6; final report T7. **Same shape** in both. | same contract; one cloud nuance: a backgrounded cycle emits its T2 block at dispatch and the T3 block on completion — the former `▶ … (dispatched)` line format is retired; still no "running in the background" / "waiting on notification" / commit-race prose. |
 | Forward-progress verification (Step 1.5 / "Step 2.5") | after loop exit, before final batch report. One additional read-only `lazy-state.py` invocation; compares probe tuple to `prev_cycle_signature`; prepends ✅ or ⚠ block to Step 2 report. Skipped on `blocked` / `needs-input` / `queue-missing`. **Same shape** in both. | same as workstation, but the WARNING block lists cloud-specific likely-cause bullets (notably the cloud-saturated In-progress → Complete plan-flip that `__flip_plan_complete_cloud_saturated__` exists to perform). |
 | NEEDS_RESEARCH.md `written_by` | `lazy-batch` | `lazy-batch-cloud` |
 | `--allow-research-skip` argument | parsed in Step 0; gates Step 4 path + Step 1a `--skip-needs-research` flag. **Same semantics** in both. | same as workstation — strict halt on first `needs-research` by default; opt in to batched-research via the flag. |

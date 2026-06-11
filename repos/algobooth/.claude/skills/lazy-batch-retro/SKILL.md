@@ -106,6 +106,7 @@ events = {
     "task_notifications": [], # task-notification user messages
     "stop_hook_feedback": [], # stop-hook signals
     "command_names": [],   # <command-name> tags
+    "orchestrator_text": [], # assistant text blocks — the orchestrator's own chat output (feeds the R-V-* voice rules)
 }
 
 for lineno, line in enumerate(jsonl.read_text().splitlines(), start=1):
@@ -146,6 +147,8 @@ for lineno, line in enumerate(jsonl.read_text().splitlines(), start=1):
         content = ev.get("message", {}).get("content", [])
         if isinstance(content, list):
             for block in content:
+                if block.get("type") == "text" and block.get("text", "").strip():
+                    events["orchestrator_text"].append({"line": lineno, "text": block["text"]})
                 if block.get("type") == "tool_use" and block.get("name") == "Agent":
                     inp = block.get("input", {})
                     events["agent_dispatches"].append({
@@ -233,6 +236,7 @@ Read each skill in full and cache the contents:
   - `~/.claude/skills/add-phase/SKILL.md`
   - `.claude/skills/mcp-test/SKILL.md` (repo-scoped)
 - Every `_components/*.md` referenced inline by those skills (via `!cat ~/.claude/skills/_components/<name>.md`): `task-tracking.md`, `tdd-protocol.md`, `subagent-launch.md`, `subagent-review.md`, `quality-gates.md`, `commit-and-push.md`, `sentinel-frontmatter.md`, `implementation-agent.md`, `tdd-test-agent.md`, `phases-update.md`, `plan-file-output.md`.
+- `~/.claude/skills/_components/orchestrator-voice.md` — the chat-output contract graded by the R-V-* rules (Step 4a-V). If this file does not exist (or did not exist at the run's time), record its absence — that is the R-V group's `n/a (pre-contract)` gate signal.
 - The state script: `~/.claude/scripts/lazy-state.py` (cache the source for citing state-machine rules).
 
 For each cached skill, also record the file's git SHA at HEAD (`git log -1 --format=%H -- <path>` if tracked) so the artifact's "skill versions" footer reflects exactly which revision was graded.
@@ -284,7 +288,7 @@ For each cycle, walk the relevant skill's instructions verbatim and grade compli
 | Rule | What to check |
 |------|---------------|
 | **R-O-1** Cycle cadence | The orchestrator called `lazy-state.py` before each cycle. Check the parent jsonl for Bash tool_uses matching `python3.*lazy-state.py` immediately preceding each cycle's Agent dispatch. |
-| **R-O-2** Cycle count | `cycle_count ≤ --max-cycles` (default 10 unless `$ARGUMENTS` overrode). Read the orchestrator's start-bookend from the first assistant message in the parent jsonl to recover `max_cycles`. |
+| **R-O-2** Cycle count | `cycle_count ≤ --max-cycles` (default 10 unless `$ARGUMENTS` overrode). Read the orchestrator's start banner from the first assistant message in the parent jsonl to recover `max_cycles` — the T1 banner's `budget fwd {max_cycles} · meta {2*max_cycles}` line on post-contract runs, or the legacy bookend's `**Max cycles:**` line on pre-contract runs. |
 | **R-O-3** Subagent model | Every real-skill cycle dispatched with `model: "opus"` per the skill's HARD CONSTRAINTS. Exceptions explicitly permitted: `/ingest-research` (Sonnet), Step 1g apply-resolution (Sonnet), Step 0.5 pre-loop ingest (Sonnet), LOOP-DETECTED recovery dispatch (Sonnet — lazy-batch Step 1e LOOP DETECTED branch explicitly selects `model: "sonnet"` for mechanical sentinel-recovery cycles), Step 1e.4a recovery dispatch (Sonnet — the post-`/execute-plan` ledger-consistency guard recovery subagent is a mechanical backstop, not a novel-decision cycle). |
 | **R-O-4** Prompt template compliance | Compare each cycle's dispatched `prompt` against the lazy-batch skill's base template (capture verbatim). Produce a unified diff. Flag missing load-bearing clauses: "Operating mode: batch", the "Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING)" block including "This subagent does NOT have the `Agent` tool", and the per-skill inline overrides. (The legacy "follow the skill's internal subagent-vs-orchestrator rules" wording was replaced by the inline-override block — grade against the CURRENT template, captured verbatim, not a remembered older phrasing.) |
 | **R-O-5** Resolution-on-sentinel honored | Look for cycles whose state script returned a problem terminal (`blocked` / `needs-input` / `completion-unverified` / `needs-spec-input` / `stale_upstream` / `needs-research`). Verify the orchestrator did NOT bare-STOP but instead ran the appropriate resolution path and resumed: Step 1g (needs-input decision-resume), Step 1h (blocked-resolution), or Step 1i (operator-directed halt-resolution per the shared component) — each `AskUserQuestion` → enact → continue. A clean STOP is correct ONLY for `max-cycles`, genuine success (`all-features-complete`), environment-exhaustion, `queue-missing`, or the operator-chosen "Halt for manual fix". A bare halt on a resolvable terminal is a FAIL. |
@@ -293,7 +297,7 @@ For each cycle, walk the relevant skill's instructions verbatim and grade compli
 
 ### 4a-P4. PHASE-4 PARK/AUTO-ACCEPT PROTOCOL (`--park` mode only)
 
-Detect `--park` from the start-bookend ("Park mode: on") or from the presence of any `parked_count` increment in the parent session. Gating is split by check: **P4-1 through P4-3 apply only to `--park` runs** — grade them `n/a` when `park_mode == false`. **P4-4 is the inverse**: it verifies that NO park/auto-accept activity fired in a no-flag run, so it is graded ONLY when `park_mode == false` and is `n/a` when `park_mode == true`.
+Detect `--park` from the start banner (`park on` in the T1 `mode` line on post-contract runs; `**Park mode:** on` in the legacy bookend on pre-contract runs) or from the presence of any `parked_count` increment in the parent session. Gating is split by check: **P4-1 through P4-3 apply only to `--park` runs** — grade them `n/a` when `park_mode == false`. **P4-4 is the inverse**: it verifies that NO park/auto-accept activity fired in a no-flag run, so it is graded ONLY when `park_mode == false` and is `n/a` when `park_mode == true`.
 
 Grade the following checklist per that gating:
 
@@ -304,6 +308,20 @@ Grade the following checklist per that gating:
 - [ ] **P4-3 Auto-accept two-key contract** Every auto-accepted decision carried BOTH required keys in its sentinel frontmatter: `class: mechanical` AND `audit_concurs: true`. Verify by checking the `auto_accepted[]` entries recorded in the parent session against the sentinel file on disk (from 2d artifact snapshot). A sentinel auto-accepted with only ONE key (e.g. `class: mechanical` but `audit_concurs` absent or `false`) is a **fail** — the two-key gate was bypassed. Additionally, the run-end batch report MUST include the auto-accept digest table (`### Auto-accepted decisions (--park two-key)`) listing every auto-accepted decision. **Fail** if the digest table is absent and `auto_accepted[]` is non-empty.
 
 - [ ] **P4-4 Zero parks without `--park`** (graded ONLY when `park_mode == false`; `n/a` when `park_mode == true`) The parent session MUST contain zero `PushNotification` calls with a park-style message (`"parked ... decision(s) parked so far"`), zero `parked_count` increments, and zero auto-accept digest table entries. Any park/auto-accept activity in a non-`--park` run is a **fail** — it means the park code-path fired outside its guard.
+
+### 4a-V. ORCHESTRATOR-VOICE RULES (R-V-* — graded from the orchestrator's chat output)
+
+These rules grade the orchestrator's own chat turns — the `orchestrator_text` events from 2a (parent-session assistant text blocks, NOT subagent transcripts) — against the output contract `~/.claude/skills/_components/orchestrator-voice.md` (turn templates T1–T7; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). Re-read the contract from disk before grading (Step 2e caches it).
+
+**Group gate — `n/a (pre-contract)`.** Grade the ENTIRE R-V group `n/a (pre-contract)` when the audited run predates the contract: the run's first jsonl event timestamp is earlier than **2026-06-10**, OR `~/.claude/skills/_components/orchestrator-voice.md` did not exist at the run's HEAD (absent from disk / from the Step 2e cache when the run executed — e.g. the orchestrator skill revision recorded in the skill-versions footer predates the contract reference). Never grade a pre-contract run `fail` for output the contract did not yet govern.
+
+| Rule | What to check |
+|------|---------------|
+| **R-V-1** Mechanics-silent | No procedural narration in orchestrator turns. Detection heuristics (case-insensitive match over `orchestrator_text`, EXCLUDING text inside sanctioned T6 rich zones and the T7 final report): `"Per the"`, `"I must"`, `"Now I will"` / `"Now composing"`, `"Entering the"`, `"no loop-guard"`, and sentences restating probe-JSON fields in prose (a sentence outside a cycle block that repeats ≥2 of the probe's `feature_id` / `sub_skill` / `current_step` / `terminal_reason` values). **Fail on ≥3 distinct instances; `partial` (warn) on 1–2; `pass` on 0.** Cite each instance's jsonl line + the matched phrase. |
+| **R-V-2** Cycle blocks | Every dispatched cycle — each real-skill Agent dispatch AND each inline pseudo-skill action from the Step 3 ledger — has a **T2 dispatch block** (canonical `### Cycle fwd N/M · meta K/L` split-counter heading + `disp` line) and a **T3 return block** (`done` / `ledger` / `next`; `audit` where the orchestrator skill requires it), or a **T4 block** (`act` / `gates` / `done` / `next`) for inline pseudo-skill / gate cycles. A cycle missing its canonical heading, missing its dispatch block, or reported via a retired shape (the `**Result:**`/`**Commit:**` bullet block, a `▶ … (dispatched)` line, a multi-line cycle summary) fails for that cycle. Roll up: `pass` (all cycles conform) / `partial` (1–2 nonconforming cycles) / `fail` (≥3). Cite the jsonl line of each nonconforming cycle. |
+| **R-V-3** Rich-zone containment | Verbose output (multi-paragraph freeform prose) appears ONLY at sanctioned T6/T7 points: resolution briefings (Step 1g / 1h / 1i and parked-flush — including the verbatim sentinel re-prints HARD CONSTRAINT 6 mandates), research-halt announcements, errors / deviations / refusals / recoveries (`⚠` blocks), standing-directive echo-back, and the T7 final report. Any multi-paragraph prose turn outside those points (narrated preflight, re-explained commit policy, restated probe output, dispatch commentary) is a violation. `fail` on ≥3 distinct violations; `partial` on 1–2; `pass` on 0. NOTE: long Step 1g/1h/1i briefings are REQUIRED rich output — never count a verbatim re-print briefing as a violation. |
+
+**Scoring integration.** R-V verdicts enter the Step 5 compliance arithmetic exactly like the R-O-* rows (`pass`/`fail`/`partial` counted; `n/a (pre-contract)` and `unverifiable` excluded from the denominator) and appear in the Step 6 Compliance Matrix with per-instance citations. R-V rules NEVER trigger the Step 5c force-cap — that cap remains scoped to genuine workstation R-EP-1/R-EP-2 failures. R-V grading needs only the parent jsonl (always available), so transcript reclaim never makes an R-V grade `unverifiable`.
 
 ### 4b. DOWNSTREAM-SKILL RULES
 

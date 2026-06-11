@@ -53,7 +53,7 @@ bug-state.py).
 | `scoped-id-not-found` terminal | via `--feature-id` / `TR_SCOPED_ID_NOT_FOUND` | via `--bug-id` / `TR_SCOPED_ID_NOT_FOUND` |
 | Final report header | `## /lazy-batch — Done` | `## /lazy-bug-batch — Done` |
 | Cycle log label | `Bug` column header | `Bug` (not Feature) |
-| Start bookend | `## /lazy-batch — Starting` | `## /lazy-bug-batch — Starting` |
+| Start banner (T1 per orchestrator-voice.md) | `## /lazy-batch — run start` | `## /lazy-bug-batch — run start` (no research field) |
 | HARD CONSTRAINT 1 sentinel allowlist | `docs/features/` sentinels | `docs/bugs/` sentinels (same filenames; FIXED.md replaces COMPLETED.md) |
 | HARD CONSTRAINT 9 | dispatch against `feature_id` the script returned | dispatch against `bug_id` / `feature_id` the script returned |
 | `__mark_fixed__` (vs `__mark_complete__`) gate parity | `__mark_complete__` runs TWO gates (MCP-coverage audit + completion-integrity gate), then `--apply-pseudo __mark_complete__` | `__mark_fixed__` runs the SAME TWO gates, then `bug-state.py --apply-pseudo __mark_fixed__` (sole author of the FIXED.md receipt, status flip, and sentinel deletions) + the `mark-fixed-archive` mechanics (git mv, ref repoint, queue trim, commit). **The gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both run the same two gates.** |
@@ -77,6 +77,10 @@ See `~/.claude/skills/lazy-batch/SKILL.md` HARD CONSTRAINTS for the full text of
 
 **Cycle-subagent execution model:** Same as `/lazy-batch` — no `Agent` tool inside the dispatched
 cycle subagent; all skills run inline using `Edit`/`Write`/`Read`.
+
+## OUTPUT CONTRACT — orchestrator voice (read at run start)
+
+**ALL orchestrator chat output MUST follow `~/.claude/skills/_components/orchestrator-voice.md`** — the turn-template contract (T1 run banner, T2 dispatch / T3 return / T4 inline-gate cycle blocks, T5 park line, T6 rich zones, T7 final report; mechanics silent; rules cited only on deviation; probe JSON never restated in prose). **Read it at run start, and RE-READ it after any compaction boundary** (alongside `lazy-dispatch-template.md` — Step 1d's compaction discipline); the contract survives summarization by re-read, not by memory. Where an older passage (here or in the inherited `/lazy-batch` text) prescribes a different chat-output shape, the contract's Precedence clause wins; the verbatim re-print / Zero-Context Operator Briefing requirements (HARD CONSTRAINT 6, `decision-resume.md`, `blocked-resolution.md`, `parked-flush.md`, `halt-resolution.md`) are sanctioned T6 rich zones and are never overridden. Graded by `/lazy-batch-retro`'s R-V-* rules.
 
 ---
 
@@ -117,14 +121,16 @@ Initialize counters and per-session state (bug-pipeline bindings):
 - `adhoc_task = <parsed>` — from `--adhoc`
 - `park_mode = <parsed>` — `true` if `--park`
 
-Print the start bookend:
+Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-voice.md`** (≤4 lines; this skill is the contract's own T1 example):
 
 ```
-## /lazy-bug-batch — Starting
-**Max cycles:** {max_cycles}
-**Park mode:** {on (--park) | off (default)}
-**Repo root:** {cwd}
+## /lazy-bug-batch — run start
+mode   workstation · park {on|off}
+budget fwd {max_cycles} · meta {2*max_cycles}
+queue  {N} bug(s) · first: {first open bug id}
 ```
+
+The `queue` line is best-effort (one `Bash` read of `docs/bugs/queue.json` / directory listing — a banner fact, not state inference); omit it if unavailable. No research field (the bug pipeline has no research mode); the repo root and flag parsing are mechanics — not announced.
 
 ---
 
@@ -227,7 +233,7 @@ Print final batch report, STOP.
 
 Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline token bindings:
 
-1. **park** — message: `"parked {bug_name} — {N} decision(s) parked so far this run"`.
+1. **park** — message: `"parked {bug_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {bug_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (per `/lazy-batch` §1c.6 item 1).
 2. **halt** — on every terminal/halt: `all-bugs-fixed`, `all-remaining-deferred`,
    `queue-missing`, `BLOCKED` halt-for-manual, `NEEDS_INPUT` halt, `max-cycles`, `meta-cap`,
    `device-queue-exhausted`, script-error, and any future obstacle terminal.
@@ -301,7 +307,7 @@ fall through to Step 1d.
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-**Compaction discipline — re-read the dispatch template first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`. It is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
+**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md` AND `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
 
 **Long-build ownership (harness-tracked).** Any build or test that may exceed a single subagent turn is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends (a `tauri build` backgrounded that way once silently vanished). Before committing to a 20–40 min packaged `tauri build`, run `cargo check --release` first to catch compile errors in minutes. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
@@ -396,7 +402,7 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 1e for the full post-cycle proce
 bindings:
 
 - `cycle_log` entry uses `bug_name` instead of `feature_name`.
-- Per-cycle update block heading: `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {bug_name} · {sub_skill}`.
+- Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### Cycle fwd {forward_cycles+1}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}`; the `disp` line carries `{sub_skill} → {bug_id}`.
 - **Post-`/execute-plan` and `/mcp-test` ledger-consistency guard (guardrail D):** see
   `~/.claude/skills/lazy-batch/SKILL.md` Step 1e item 4a for the full guard algorithm. Runs
   identically for the bug pipeline:
@@ -533,26 +539,36 @@ Omit entirely otherwise.)*
 | {bug_name} ({bug_id}) | {decision title} | {chosen option label} | `{resolved_sentinel_path}` |
 ```
 
+Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, digest, terminal reason, and Next-step lines carry all required content.
+
 STOP.
 
 ---
 
-## Step 3: Cycle Output Discipline (lean · consistent · scannable)
+## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)
 
-Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 3 with bug-pipeline token substitutions.
-Every cycle emits EXACTLY ONE update block:
+Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 3 with bug-pipeline token substitutions:
+per-cycle chat output is the T2 dispatch block + T3 return block (or T4 for inline pseudo-skills)
+from `~/.claude/skills/_components/orchestrator-voice.md`, under the canonical split-counter
+heading:
 
 ```
-### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles} · {bug_name} · {sub_skill}
-- **Result:** {one-line outcome}
-- **Commit:** {short-sha | "—"}
+### Cycle fwd {forward_cycles}/{max_cycles} · meta {meta_cycles}/{2*max_cycles}
+disp   {sub_skill} → {bug_id} ({model}[, loop-resolution|recovery])
+done   {duration} · {load-bearing outcome} · {short-sha | —}
+audit  {…}        ← only where required (see below)
+ledger {clean · pushed | …}
+next   {fresh probe routing | terminal: <reason>}
 ```
 
-For a forward cycle, `forward_cycles` is the post-increment value. For a meta cycle,
-`meta_cycles` is the post-increment value. Rules (suppression, bullet limit, halt exemption) are
-inherited verbatim from `/lazy-batch` Step 3. Additional third-bullet label for the bug pipeline:
-`**Audit:** {N} product-behavior decision(s) surfaced` on a `spec-bug` cycle where Step 1d.5
-fired.
+For a forward cycle, `forward_cycles` in the heading is the post-increment value. For a meta
+cycle, `meta_cycles` is the post-increment value. All contract rules are inherited verbatim from
+`/lazy-batch` Step 3 (mechanics silent; deviations are T6; halt/resolution briefings are T6 rich
+zones; final report is T7; the retired `**Result:**`/`**Commit:**` bullets, `· {bug_name} ·
+{sub_skill}` heading suffix, and any multi-line cycle summary must NOT reappear). Bug-pipeline
+`audit`-line bindings: the `/execute-plan` inline/test-first audit signal (REQUIRED — `/lazy-batch`
+Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS_INPUT.md` on a
+`spec-bug`/`spec-phases` cycle where Step 1d.5 fired.
 
 ---
 
