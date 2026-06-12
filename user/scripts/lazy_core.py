@@ -53,6 +53,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -3542,3 +3543,616 @@ def _strip_loop_fence(loop_text: str) -> str:
     while inner and not inner[-1].strip():
         inner.pop()
     return "\n".join(inner)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Run-state core: claude_state_dir, run marker, prompt registry,
+#            persisted run counters
+#
+# All writes use _atomic_write (defined above) to prevent partial-write
+# corruption across platforms.  All new behavior is gated on an explicit
+# --run-start / marker-present path so the default (no-marker) output of
+# both state scripts remains byte-identical.
+# ---------------------------------------------------------------------------
+
+# Registry TTL: unconsumed entries older than this are not dispatchable.
+# 30 minutes is a deliberate approximation of "current turn window" — hooks
+# have no reliable turn counter, so we use two complementary controls:
+#   1. Single-use nonce + TTL (REGISTRY_ENTRY_TTL_SECONDS): entries expire 30
+#      minutes after emission regardless of run marker state.
+#   2. Run-start freshness gate (belt-and-braces): when a valid run marker is
+#      present, lookup_emission additionally requires emitted_at >= marker's
+#      started_at epoch — entries that predate the current run are never
+#      dispatchable even if they are within the TTL window.  When no marker is
+#      present the gate is skipped and only nonce+TTL semantics apply.
+# SPEC deviation (recorded): the spec §Validate-deny step 2 says "emitted_at
+# within the current turn window"; we approximate that as nonce + TTL +
+# emitted_at-vs-started_at rather than a per-turn counter that hooks cannot
+# observe.
+REGISTRY_ENTRY_TTL_SECONDS: int = 1800  # 30 minutes
+
+# Maximum number of entries kept in the prompt registry (ring cap).
+# When a new entry would exceed the cap, the oldest entry is evicted first.
+_REGISTRY_RING_CAP: int = 64
+
+# Marker filename inside the state dir.
+_MARKER_FILENAME = "lazy-run-marker.json"
+
+# Registry filename inside the state dir.
+_REGISTRY_FILENAME = "lazy-prompt-registry.json"
+
+# Staleness threshold: markers older than this (in seconds) are deleted.
+_MARKER_STALE_SECONDS: float = 24 * 3600  # 24 hours
+
+
+def claude_state_dir(create: bool = True) -> Path:
+    """Return the Claude state directory, optionally creating it on demand.
+
+    Default resolution: ``~/.claude/state/``.
+
+    Override: set the ``LAZY_STATE_DIR`` environment variable to any absolute
+    path — the function will use that directory instead of the default.  This
+    env-var override exists for two purposes:
+      1. **Hermetic unit tests** (test_lazy_core.py): each test that touches
+         the state dir sets ``LAZY_STATE_DIR`` to a ``tempfile.TemporaryDirectory``
+         and clears it afterward, so tests never touch ``~/.claude/state/``.
+      2. **Hook pipe-tests** (Phase 2): the inject/validate hooks can point at a
+         fixture state dir via env var for scriptable, reproducible pipe-test runs
+         on both Windows (git-bash) and WSL without affecting the live session.
+
+    Args:
+        create: when True (default) create the directory if absent — used by
+                write paths (write_run_marker, register_emission, etc.).
+                Pass ``create=False`` from read-only paths (read_run_marker,
+                _load_registry, lookup_emission, delete_run_marker, etc.) so a
+                probe that finds no marker never creates ``~/.claude/state/``
+                as a side-effect.  A missing directory on a read path simply
+                means "no state" — callers treat a missing path the same as an
+                empty result.
+    """
+    override = os.environ.get("LAZY_STATE_DIR")
+    if override:
+        d = Path(override)
+    else:
+        d = Path.home() / ".claude" / "state"
+    if create:
+        d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Run-marker API
+# ---------------------------------------------------------------------------
+
+def write_run_marker(
+    pipeline: str,
+    cloud: bool,
+    repo_root: str,
+    *,
+    max_cycles: int | None = None,
+    session_id: str | None = None,
+    nonce_seed: str | None = None,
+    now: float | None = None,
+) -> dict:
+    """Write (or overwrite) the run marker to the state dir.
+
+    The marker signals that an orchestrator run is active.  Both state scripts'
+    ``--run-start`` flag calls this function after preflight passes.  The marker
+    is the gating signal for all Phase 1 side effects: without it, registry
+    writes, counter advances, and hook injections are all no-ops.
+
+    Fields written:
+      - pipeline (str): "feature" | "bug"
+      - cloud (bool): whether the run targets cloud mode
+      - repo_root (str): absolute path to the project root
+      - session_id (str|None): the orchestrator's Claude Code session id.
+        None means "bind-on-first-hook-firing" — the inject hook stamps it.
+      - started_at (str): ISO-8601 UTC timestamp ending in 'Z'
+      - max_cycles (int|None): hard cap for the run
+      - nonce_seed (str|None): seed used by nonce derivation (optional — callers
+        may omit for fully random nonces)
+      - forward_cycles (int): number of real-skill dispatch cycles so far (0)
+      - meta_cycles (int): number of meta/pseudo-skill cycles so far (0)
+
+    Args:
+        pipeline: "feature" or "bug"
+        cloud: True when the run is a cloud run
+        repo_root: absolute path to the project root as a string
+        max_cycles: optional hard cap (stored for inject hook / cycle headers)
+        session_id: optional Claude Code session id; None = bind-pending
+        nonce_seed: optional nonce seed string
+        now: epoch float for started_at (injectable for hermetic tests;
+             defaults to time.time())
+
+    Returns:
+        The marker dict that was written.
+    """
+    if now is None:
+        now = time.time()
+    # Convert the epoch float to an ISO-8601 UTC string ending in 'Z' —
+    # the spec's exact format requirement for the started_at field.
+    # Use fromtimestamp(tz=utc) — the deprecated utcfromtimestamp() produces a
+    # naive datetime that is ambiguous in Python ≥3.12 deprecation warnings.
+    started_at = (
+        datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+    )
+    marker: dict = {
+        "pipeline": pipeline,
+        "cloud": cloud,
+        "repo_root": str(repo_root),
+        "session_id": session_id,
+        "started_at": started_at,
+        "max_cycles": max_cycles,
+        "nonce_seed": nonce_seed,
+        "forward_cycles": 0,
+        "meta_cycles": 0,
+    }
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
+def read_run_marker(
+    now: float | None = None,
+    session_id: str | None = None,
+) -> dict | None:
+    """Read the run marker from the state dir, or return None if absent/stale.
+
+    Staleness rules (both cause delete-on-read and return None):
+      A) Age staleness: the marker's ``started_at`` is more than 24 hours
+         before ``now`` (injectable epoch float; defaults to time.time()).
+         A crashed run must not haunt the next interactive session.
+      B) Session-id mismatch: BOTH of the following must be true for the
+         marker to be session-stale:
+           * The caller passes a non-None ``session_id`` argument.
+           * The marker's ``session_id`` field is also non-None (i.e. the
+             marker is "bound", not "bind-pending").
+         If the marker's session_id is None, it is bind-pending and is NEVER
+         stale on session-id alone — the inject hook has not yet stamped it.
+
+    Corrupt or unparseable marker files are treated as stale (deleted, None
+    returned) so a partial write from a crash never bricks subsequent sessions.
+
+    Args:
+        now: epoch float for age comparison (injectable; defaults to time.time())
+        session_id: caller's session id for session-binding staleness check;
+                    None disables the session-id staleness path
+
+    Returns:
+        The marker dict if fresh and valid, otherwise None.
+    """
+    if now is None:
+        now = time.time()
+    # Read-only path: do NOT create the directory if it doesn't exist — a
+    # missing dir simply means "no marker".
+    marker_path = claude_state_dir(create=False) / _MARKER_FILENAME
+    if not marker_path.exists():
+        return None
+
+    # Load — treat any parse/OS error as stale (crashed write protection).
+    try:
+        raw = marker_path.read_text(encoding="utf-8")
+        marker = json.loads(raw)
+        if not isinstance(marker, dict):
+            raise ValueError("marker root is not a dict")
+    except (OSError, json.JSONDecodeError, ValueError):
+        # Corrupt / unparseable — delete and return None.
+        try:
+            marker_path.unlink()
+        except OSError:
+            pass
+        return None
+
+    # --- Staleness path A: age > 24h ----------------------------------------
+    started_at_str = marker.get("started_at", "")
+    try:
+        # Parse the ISO-8601 UTC 'Z' format we write.
+        started_dt = datetime.datetime.strptime(started_at_str, "%Y-%m-%dT%H:%M:%SZ")
+        started_epoch = (
+            started_dt - datetime.datetime(1970, 1, 1)
+        ).total_seconds()
+    except (ValueError, TypeError):
+        # Unrecognized format — treat as stale.
+        started_epoch = 0.0
+    if now - started_epoch > _MARKER_STALE_SECONDS:
+        try:
+            marker_path.unlink()
+        except OSError:
+            pass
+        return None
+
+    # --- Staleness path B: session_id mismatch --------------------------------
+    # Only fires when BOTH the caller supplies a session_id AND the marker has
+    # a non-None session_id (bound, not bind-pending).
+    marker_session = marker.get("session_id")
+    if session_id is not None and marker_session is not None:
+        if session_id != marker_session:
+            try:
+                marker_path.unlink()
+            except OSError:
+                pass
+            return None
+
+    return marker
+
+
+def delete_run_marker(clear_registry: bool = False) -> bool:
+    """Delete the run marker file from the state dir.
+
+    Called by both state scripts' ``--run-end`` flag and by every terminal path
+    in the orchestrator SKILLs (the 1c.6 PushNotification enumeration doubles
+    as the deletion checklist: all-features-complete, cloud/device-queue-exhausted,
+    queue-missing, max-cycles, meta-cap, operator-chosen halt, script-error).
+
+    Args:
+        clear_registry: when True, also delete ``lazy-prompt-registry.json`` from
+                        the state dir.  Pass ``True`` from the ``--run-end`` path
+                        of both state scripts — the registry is run-scoped state and
+                        must not bleed across runs.  Default False preserves the
+                        existing behaviour for all other callers (terminal paths in
+                        orchestrator skills that only need to retire the marker).
+
+    Returns:
+        True if the marker file existed and was deleted; False if it was already
+        absent (idempotent — safe to call on every terminal path without checking
+        first).
+    """
+    # Read-only directory probe — do not create the dir just to see it's empty.
+    state_dir = claude_state_dir(create=False)
+    marker_path = state_dir / _MARKER_FILENAME
+    deleted = False
+    if marker_path.exists():
+        try:
+            marker_path.unlink()
+            deleted = True
+        except OSError:
+            pass
+    if clear_registry:
+        registry_path = state_dir / _REGISTRY_FILENAME
+        if registry_path.exists():
+            try:
+                registry_path.unlink()
+            except OSError:
+                pass
+    return deleted
+
+
+# ---------------------------------------------------------------------------
+# Prompt-registry API
+# ---------------------------------------------------------------------------
+
+def normalize_prompt_for_hash(prompt: str) -> str:
+    """Normalize line endings in a prompt before hashing.
+
+    Two transforms, applied in order:
+      1. CRLF (\\r\\n) → LF (\\n)
+      2. Lone CR (\\r not followed by \\n) → LF (\\n)
+
+    This ensures that a prompt registered on Windows (with CRLF line endings)
+    produces the same sha256 as the same prompt on POSIX (with LF endings),
+    so Windows/WSL round-trips cannot defeat the registry match.  The SPEC
+    explicitly requires this normalization in §Validate-deny step 1.
+    """
+    # Step 1: collapse CRLF → LF
+    normalized = prompt.replace("\r\n", "\n")
+    # Step 2: replace any remaining lone CRs with LF
+    normalized = normalized.replace("\r", "\n")
+    return normalized
+
+
+def prompt_sha256(prompt: str) -> str:
+    """Return the hex sha256 of a prompt after normalizing line endings.
+
+    Uses normalize_prompt_for_hash() before hashing so CRLF and LF variants
+    of the same prompt produce identical digests.
+    """
+    normalized = normalize_prompt_for_hash(prompt)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _load_registry() -> dict:
+    """Load the prompt registry from disk.  Returns ``{"entries": []}`` on any
+    read/parse error (fail-open — the validate hook also fails open separately).
+
+    Corrupt registry → start fresh so a bad write never bricks subsequent
+    sessions.  The old file is left in place; the next write (via
+    register_emission) will atomically replace it with a clean copy.
+
+    Read-only path: passes ``create=False`` to ``claude_state_dir()`` so a
+    registry probe never creates ``~/.claude/state/`` as a side-effect.
+    """
+    # Read-only — do not create the directory if absent; treat as empty.
+    registry_path = claude_state_dir(create=False) / _REGISTRY_FILENAME
+    if not registry_path.exists():
+        return {"entries": []}
+    try:
+        raw = registry_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if isinstance(data, dict) and isinstance(data.get("entries"), list):
+            return data
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    # Corrupt / wrong shape — start fresh.
+    return {"entries": []}
+
+
+def _save_registry(data: dict) -> None:
+    """Persist the registry dict to disk atomically."""
+    registry_path = claude_state_dir() / _REGISTRY_FILENAME
+    _atomic_write(registry_path, json.dumps(data, indent=2) + "\n")
+
+
+def register_emission(
+    prompt: str,
+    cls: str,
+    item_id: str | None = None,
+    now: float | None = None,
+) -> dict:
+    """Register a prompt emission in the prompt registry.
+
+    Each registration creates one entry in ``lazy-prompt-registry.json`` with:
+      - nonce (str): unique uuid4 hex string — single-use control
+      - prompt_sha256 (str): sha256 of the normalized prompt
+      - emitted_at (float): epoch timestamp of the emission
+      - class (str): dispatch class tag (e.g. "cycle", "recovery", "hardening")
+      - item_id (str|None): the feature/bug id for context (optional)
+      - consumed (bool): False until consume_nonce() is called
+
+    Ring cap: when the registry would exceed ``_REGISTRY_RING_CAP`` (64) entries,
+    the oldest entry (lowest index, earliest emitted_at) is evicted first.  This
+    keeps the registry bounded regardless of run length.
+
+    Args:
+        prompt: the dispatch prompt text (normalized before hashing)
+        cls: the dispatch class tag (e.g. "cycle")
+        item_id: the feature or bug id associated with this dispatch (optional)
+        now: epoch float for emitted_at (injectable for hermetic tests;
+             defaults to time.time())
+
+    Returns:
+        The newly created entry dict.
+    """
+    if now is None:
+        now = time.time()
+
+    entry: dict = {
+        "nonce": uuid.uuid4().hex,
+        "prompt_sha256": prompt_sha256(prompt),
+        "emitted_at": now,
+        "class": cls,
+        "item_id": item_id,
+        "consumed": False,
+    }
+
+    data = _load_registry()
+    entries: list = data["entries"]
+    entries.append(entry)
+
+    # Ring cap: evict the oldest entry (index 0) when over the cap.
+    # The list is ordered by insertion time; oldest is always index 0.
+    while len(entries) > _REGISTRY_RING_CAP:
+        entries.pop(0)
+
+    data["entries"] = entries
+    _save_registry(data)
+    return entry
+
+
+def lookup_emission(
+    prompt: str,
+    now: float | None = None,
+) -> dict | None:
+    """Look up an unconsumed, fresh registry entry by prompt hash.
+
+    Freshness has two components (belt-and-braces):
+      1. Nonce + TTL: entry must be unconsumed AND within
+         REGISTRY_ENTRY_TTL_SECONDS (1800 s) of ``emitted_at``.
+      2. Run-start gate (when a non-stale run marker exists): additionally
+         require ``emitted_at`` >= marker's ``started_at`` epoch — entries
+         that were written before the current run started are never
+         dispatchable even if they are within the TTL.  When no run marker is
+         present this gate is skipped and only nonce+TTL semantics apply.
+
+    Returns the first matching entry, or None when:
+      - no entry with this prompt's sha256 exists, OR
+      - all matching entries are consumed, beyond the TTL, OR predate the
+        current run's started_at.
+
+    Args:
+        prompt: the prompt text to look up (normalized before hashing)
+        now: epoch float for TTL comparison (injectable; defaults to time.time())
+
+    Returns:
+        The matching entry dict, or None.
+    """
+    if now is None:
+        now = time.time()
+    target_sha = prompt_sha256(prompt)
+
+    # Compute the run-start epoch once for all entry comparisons.
+    # read_run_marker is a read-only path (no mkdir) and returns None when
+    # there is no active (or non-stale) run — in that case the freshness gate
+    # is skipped and only nonce+TTL semantics apply.
+    marker = read_run_marker(now=now)
+    run_started_epoch: float | None = None
+    if marker is not None:
+        started_at_str = marker.get("started_at", "")
+        try:
+            started_dt = datetime.datetime.strptime(
+                started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+            )
+            run_started_epoch = (
+                started_dt - datetime.datetime(1970, 1, 1)
+            ).total_seconds()
+        except (ValueError, TypeError):
+            # Unrecognised format — skip the run-start gate for safety.
+            run_started_epoch = None
+
+    data = _load_registry()
+    for entry in data["entries"]:
+        if entry.get("prompt_sha256") != target_sha:
+            continue
+        if entry.get("consumed", True):
+            # Already consumed — not dispatchable.
+            continue
+        emitted_at = entry.get("emitted_at", 0.0)
+        if now - emitted_at > REGISTRY_ENTRY_TTL_SECONDS:
+            # Beyond TTL — not dispatchable (re-probe required).
+            continue
+        if run_started_epoch is not None and emitted_at < run_started_epoch:
+            # Entry predates the current run — not dispatchable.  A re-probe
+            # (new register_emission call) is required to get a fresh entry.
+            continue
+        return entry
+    return None
+
+
+def consume_nonce(nonce: str) -> bool:
+    """Mark a registry entry's nonce as consumed (one dispatch per emission).
+
+    After consumption, ``lookup_emission`` will no longer return this entry,
+    enforcing the single-use constraint: a re-dispatch requires a re-probe,
+    which is the continuation-cycles-must-re-emit rule made mechanical.
+
+    Args:
+        nonce: the nonce string from a previously registered entry
+
+    Returns:
+        True if the nonce was found and consumed; False if not found or already
+        consumed.
+    """
+    data = _load_registry()
+    changed = False
+    for entry in data["entries"]:
+        if entry.get("nonce") == nonce:
+            if entry.get("consumed", False):
+                # Already consumed — idempotent False.
+                return False
+            entry["consumed"] = True
+            changed = True
+            break
+    if not changed:
+        return False
+    _save_registry(data)
+    return True
+
+
+def register_emission_if_marked(
+    prompt: str,
+    cls: str,
+    item_id: str | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """Register a prompt emission only when a valid run marker is present.
+
+    This is the primary integration point for both state scripts' --emit-prompt
+    handling: after computing a cycle_prompt, the script calls this function.
+    If no marker is active → no-op (returns None, writes nothing).  This
+    ensures default (no-marker) invocations remain byte-identical and the
+    registry file is never created by accident.
+
+    SPEC: all new Phase 1 behavior is unreachable without an explicit --run-start
+    call (A10: byte-identical default output guarantee).
+
+    Args:
+        prompt: the dispatch prompt text
+        cls: the dispatch class (e.g. "cycle")
+        item_id: the feature or bug id (optional)
+        now: epoch float (injectable; defaults to time.time())
+
+    Returns:
+        The registry entry dict if a marker is present and the registration
+        succeeded; None otherwise (no marker = no write).
+    """
+    if now is None:
+        now = time.time()
+    # read_run_marker applies all staleness guards — if it returns None there
+    # is no active run and we must not write.
+    marker = read_run_marker(now=now)
+    if marker is None:
+        return None
+    return register_emission(prompt, cls=cls, item_id=item_id, now=now)
+
+
+# ---------------------------------------------------------------------------
+# Script-persisted run counters
+# ---------------------------------------------------------------------------
+
+def fold_run_counters(
+    forward_flag: int | None,
+    meta_flag: int | None,
+    marker: dict | None,
+) -> tuple[int | None, int | None]:
+    """Fold explicit CLI flags with marker-persisted counters.
+
+    Priority: explicit flag wins over marker value wins over None.
+    When both a flag and a marker value exist, the flag wins (backward compat:
+    callers that pass --forward-cycles / --meta-cycles explicitly still get
+    exactly those values; the marker fill-in is only for the post-compaction
+    case where the flags are absent).
+
+    Returns:
+        (forward_cycles, meta_cycles) tuple where each element is:
+          - the explicit flag value when it is not None, else
+          - the marker's persisted value when marker is not None, else
+          - None (no flag, no marker)
+    """
+    if marker is not None:
+        # Marker exists: use its stored counters as fallback for absent flags.
+        forward = (
+            forward_flag
+            if forward_flag is not None
+            else marker.get("forward_cycles")
+        )
+        meta = (
+            meta_flag
+            if meta_flag is not None
+            else marker.get("meta_cycles")
+        )
+    else:
+        # No marker: only use explicit flag values; absent flags stay None.
+        forward = forward_flag
+        meta = meta_flag
+    return (forward, meta)
+
+
+def advance_run_counters(state: dict) -> dict | None:
+    """Advance the persisted forward_cycles or meta_cycles counter in the marker.
+
+    Classification rule (mirrors the emit_cycle_prompt None-return logic):
+      - Real sub_skill: sub_skill is truthy AND does NOT start with ``"__"``
+        → forward_cycles += 1  (a real dispatch cycle)
+      - Pseudo/meta sub_skill: sub_skill starts with ``"__"``, OR sub_skill is
+        falsy (None / empty) → meta_cycles += 1
+
+    The updated marker is written atomically (via _atomic_write) and returned.
+    When no marker is present (read_run_marker returns None), this function
+    returns None without writing anything — marker-gated, no-op when inactive.
+
+    This function is called at dispatch-bound probe time (--repeat-count, NOT
+    --repeat-count-peek) so only the actual dispatch probe advances the counters.
+    The peek probe reads state without side effects; this mirrors the peek
+    discipline already established for update_repeat_counts.
+
+    Args:
+        state: the probe state dict (must contain "sub_skill")
+
+    Returns:
+        The updated marker dict with incremented counters; None when no marker.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+
+    sub_skill = state.get("sub_skill")
+    # Real sub_skill: truthy and does not start with "__"
+    if sub_skill and not str(sub_skill).startswith("__"):
+        marker["forward_cycles"] = marker.get("forward_cycles", 0) + 1
+    else:
+        # Pseudo or absent sub_skill → meta cycle
+        marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
+
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker

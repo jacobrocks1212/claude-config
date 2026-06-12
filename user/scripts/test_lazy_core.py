@@ -6907,6 +6907,893 @@ def test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro():
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Tests: Phase 1 — Run-state core (marker, prompt registry, persisted counters)
+# ---------------------------------------------------------------------------
+#
+# ALL tests in this section are RED until lazy_core.py gains the Phase 1
+# symbols.  The failure reason for each test is documented inline.
+#
+# Isolation discipline: every test that touches the state dir MUST set
+# LAZY_STATE_DIR in os.environ to a temp dir and delete it afterward so that
+# tests are hermetically isolated and never touch ~/.claude/state/.
+
+
+import os as _os_env  # alias to avoid shadowing the existing `_os` alias
+
+
+def _set_state_dir(path: "Path") -> None:
+    """Point LAZY_STATE_DIR at the given temp dir for hermetic test isolation."""
+    _os_env.environ["LAZY_STATE_DIR"] = str(path)
+
+
+def _clear_state_dir() -> None:
+    """Remove the LAZY_STATE_DIR override so subsequent tests are unaffected."""
+    _os_env.environ.pop("LAZY_STATE_DIR", None)
+
+
+# ---------------------------------------------------------------------------
+# Test 1: all Phase 1 symbols are present on lazy_core
+# ---------------------------------------------------------------------------
+
+def test_run_state_symbols_present():
+    """All Phase 1 public symbols exist on lazy_core.
+
+    RED state: none of these attributes exist yet — every name will be missing,
+    producing a clear 'missing symbols' AssertionError rather than an AttributeError
+    deep in the test body.
+    """
+    _guard()
+    expected = [
+        "claude_state_dir",
+        "write_run_marker",
+        "read_run_marker",
+        "delete_run_marker",
+        "normalize_prompt_for_hash",
+        "prompt_sha256",
+        "register_emission",
+        "lookup_emission",
+        "consume_nonce",
+        "register_emission_if_marked",
+        "fold_run_counters",
+        "advance_run_counters",
+        "REGISTRY_ENTRY_TTL_SECONDS",
+    ]
+    missing = [sym for sym in expected if not hasattr(lazy_core, sym)]
+    assert not missing, f"missing Phase 1 symbols: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# Test 2: marker lifecycle — write→read round-trip, ISO-Z, delete idempotent
+# ---------------------------------------------------------------------------
+
+def test_marker_write_read_roundtrip():
+    """write_run_marker→read_run_marker round-trip preserves all fields;
+    started_at is ISO-8601 UTC with trailing 'Z'; delete_run_marker is True
+    on first call and idempotent (False) on second.
+
+    RED state: write_run_marker / read_run_marker / delete_run_marker missing.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now_epoch = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature",
+                cloud=False,
+                repo_root="/tmp/repo",
+                max_cycles=10,
+                session_id="ses-abc",
+                nonce_seed="seed-xyz",
+                now=now_epoch,
+            )
+            marker = lazy_core.read_run_marker(now=now_epoch)
+            assert marker is not None, "read_run_marker returned None immediately after write"
+            assert marker["pipeline"] == "feature", f"pipeline mismatch: {marker}"
+            assert marker["cloud"] is False, f"cloud mismatch: {marker}"
+            assert marker["repo_root"] == "/tmp/repo", f"repo_root mismatch: {marker}"
+            assert marker["max_cycles"] == 10, f"max_cycles mismatch: {marker}"
+            assert marker["session_id"] == "ses-abc", f"session_id mismatch: {marker}"
+            assert marker["nonce_seed"] == "seed-xyz", f"nonce_seed mismatch: {marker}"
+            assert marker["forward_cycles"] == 0, f"forward_cycles should init at 0: {marker}"
+            assert marker["meta_cycles"] == 0, f"meta_cycles should init at 0: {marker}"
+            # started_at must be ISO-8601 UTC ending in 'Z'
+            started = marker.get("started_at", "")
+            assert started.endswith("Z"), (
+                f"started_at must end with 'Z' (UTC ISO-8601), got {started!r}"
+            )
+            # Delete returns True on first call (marker existed)
+            first_delete = lazy_core.delete_run_marker()
+            assert first_delete is True, (
+                f"delete_run_marker must return True when marker exists, got {first_delete!r}"
+            )
+            # Idempotent: second delete returns False (file already gone)
+            second_delete = lazy_core.delete_run_marker()
+            assert second_delete is False, (
+                f"delete_run_marker must return False when already absent, got {second_delete!r}"
+            )
+            # read_run_marker after deletion returns None
+            after = lazy_core.read_run_marker(now=now_epoch)
+            assert after is None, f"read_run_marker must return None after deletion, got {after!r}"
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 3: marker staleness path A — started_at > 24 h → None + file deleted
+# ---------------------------------------------------------------------------
+
+def test_marker_staleness_age():
+    """A marker whose started_at is 25h before the injected 'now' → read
+    returns None AND the marker file is deleted from the state dir.
+
+    RED state: read_run_marker staleness logic not implemented.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            base_epoch = _time.time()
+            # Write a marker with now = base_epoch
+            lazy_core.write_run_marker(
+                pipeline="feature",
+                cloud=False,
+                repo_root="/tmp/repo",
+                max_cycles=5,
+                now=base_epoch,
+            )
+            # Read it 25 hours later — must be stale
+            future_now = base_epoch + 25 * 3600
+            result = lazy_core.read_run_marker(now=future_now)
+            assert result is None, (
+                f"read_run_marker must return None for a 25h-old marker, got {result!r}"
+            )
+            # The file must also be gone (delete-on-stale)
+            state_dir = lazy_core.claude_state_dir()
+            marker_file = state_dir / "lazy-run-marker.json"
+            assert not marker_file.exists(), (
+                "marker file must be deleted when stale (age > 24h)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 4: marker staleness path B — session_id mismatch / match / bind-pending
+# ---------------------------------------------------------------------------
+
+def test_marker_staleness_session_id():
+    """Session-id staleness: mismatching session_id → None + deleted; matching
+    session_id → returned; marker with session_id=None + any session arg →
+    returned (bind-pending markers are never session-stale).
+
+    RED state: read_run_marker session-id staleness not implemented.
+    """
+    _guard()
+    import time as _time
+    base_epoch = _time.time()
+
+    # -- Path B1: bound session_id mismatch → None + file deleted
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, session_id="ses-aaa", now=base_epoch,
+            )
+            result = lazy_core.read_run_marker(now=base_epoch, session_id="ses-bbb")
+            assert result is None, (
+                f"session_id mismatch must return None, got {result!r}"
+            )
+            state_dir = lazy_core.claude_state_dir()
+            assert not (state_dir / "lazy-run-marker.json").exists(), (
+                "marker file must be deleted on session_id mismatch"
+            )
+        finally:
+            _clear_state_dir()
+
+    # -- Path B2: matching session_id → returned
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, session_id="ses-aaa", now=base_epoch,
+            )
+            result = lazy_core.read_run_marker(now=base_epoch, session_id="ses-aaa")
+            assert result is not None, (
+                "matching session_id must return the marker, got None"
+            )
+            assert result["session_id"] == "ses-aaa", f"session_id mismatch in result: {result}"
+        finally:
+            _clear_state_dir()
+
+    # -- Path B3: marker with session_id=None + any session arg → returned (bind-pending)
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # session_id=None means bind-on-first-hook-firing; never stale on session
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, session_id=None, now=base_epoch,
+            )
+            result = lazy_core.read_run_marker(now=base_epoch, session_id="any-session")
+            assert result is not None, (
+                "bind-pending marker (session_id=None) must never be session-stale; got None"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 5: registry register→lookup→consume round-trip
+# ---------------------------------------------------------------------------
+
+def test_registry_register_lookup_consume():
+    """register_emission → lookup_emission returns the entry with correct
+    prompt_sha256; consume_nonce → True; subsequent lookup → None (consumed);
+    second consume_nonce → False (already consumed).
+
+    RED state: register_emission / lookup_emission / consume_nonce missing.
+    """
+    _guard()
+    import time as _time
+    prompt = "dispatch Feature X via /execute-plan"
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            entry = lazy_core.register_emission(prompt, cls="cycle", now=now)
+            assert entry is not None, "register_emission must return the entry dict"
+            expected_sha = lazy_core.prompt_sha256(prompt)
+            assert entry["prompt_sha256"] == expected_sha, (
+                f"prompt_sha256 mismatch: expected {expected_sha!r}, got {entry['prompt_sha256']!r}"
+            )
+            assert entry["class"] == "cycle", f"class mismatch: {entry}"
+            assert entry["consumed"] is False, f"entry must start unconsumed: {entry}"
+
+            # lookup returns the entry
+            found = lazy_core.lookup_emission(prompt, now=now)
+            assert found is not None, "lookup_emission must return entry after registration"
+            assert found["prompt_sha256"] == expected_sha, f"lookup sha mismatch: {found}"
+
+            # consume_nonce: first call True, then lookup returns None
+            nonce = entry["nonce"]
+            consumed_ok = lazy_core.consume_nonce(nonce)
+            assert consumed_ok is True, (
+                f"consume_nonce must return True on first consumption, got {consumed_ok!r}"
+            )
+            after_consume = lazy_core.lookup_emission(prompt, now=now)
+            assert after_consume is None, (
+                "lookup_emission must return None after nonce consumed"
+            )
+
+            # second consume → False
+            second = lazy_core.consume_nonce(nonce)
+            assert second is False, (
+                f"consume_nonce must return False when already consumed, got {second!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 6: registry TTL — stale entry not dispatchable; fresh entry is
+# ---------------------------------------------------------------------------
+
+def test_registry_ttl():
+    """Entry registered at 'now'; lookup at now+1801 → None (stale, TTL=1800s);
+    lookup at now+100 → hit.
+
+    RED state: REGISTRY_ENTRY_TTL_SECONDS / TTL logic not implemented.
+    """
+    _guard()
+    import time as _time
+    prompt = "ttl-test dispatch"
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            lazy_core.register_emission(prompt, cls="cycle", now=now)
+
+            # Beyond TTL → None
+            stale_result = lazy_core.lookup_emission(prompt, now=now + 1801)
+            assert stale_result is None, (
+                f"lookup_emission must return None when entry is beyond TTL "
+                f"(now+1801 > TTL={lazy_core.REGISTRY_ENTRY_TTL_SECONDS}s), "
+                f"got {stale_result!r}"
+            )
+
+            # Within TTL → hit
+            fresh_result = lazy_core.lookup_emission(prompt, now=now + 100)
+            assert fresh_result is not None, (
+                "lookup_emission must return entry when within TTL (now+100 < 1800s)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 7: ring cap — 65 entries → 64 kept, oldest evicted
+# ---------------------------------------------------------------------------
+
+def test_registry_ring_cap():
+    """Registering 65 entries → the registry file holds exactly 64 entries;
+    the first-registered entry's nonce is absent (oldest evicted by ring cap).
+
+    RED state: ring-cap eviction not implemented.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            first_nonce = None
+            for i in range(65):
+                prompt = f"ring-cap dispatch prompt number {i}"
+                entry = lazy_core.register_emission(prompt, cls="cycle", now=now + i)
+                if i == 0:
+                    first_nonce = entry["nonce"]
+
+            # Read the registry file directly to count entries
+            state_dir = lazy_core.claude_state_dir()
+            registry_file = state_dir / "lazy-prompt-registry.json"
+            assert registry_file.exists(), "lazy-prompt-registry.json must exist after 65 writes"
+            data = json.loads(registry_file.read_text(encoding="utf-8"))
+            entries = data.get("entries", [])
+            assert len(entries) == 64, (
+                f"ring cap is 64 — expected 64 entries after 65 writes, got {len(entries)}"
+            )
+
+            # The first entry's nonce must have been evicted
+            remaining_nonces = {e["nonce"] for e in entries}
+            assert first_nonce not in remaining_nonces, (
+                f"oldest entry (nonce={first_nonce!r}) must be evicted by ring cap"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 8: CRLF/LF normalization — same hash across line-ending variants
+# ---------------------------------------------------------------------------
+
+def test_crlf_lf_normalization():
+    """prompt_sha256('a\\r\\nb') == prompt_sha256('a\\nb') — CRLF is normalized
+    to LF before hashing so Windows round-trips cannot defeat the registry match.
+
+    Also: register with CRLF prompt then lookup with LF variant → hit.
+
+    RED state: normalize_prompt_for_hash / CRLF normalization not implemented.
+    """
+    _guard()
+    import time as _time
+
+    # Hash equality
+    crlf_hash = lazy_core.prompt_sha256("a\r\nb")
+    lf_hash = lazy_core.prompt_sha256("a\nb")
+    assert crlf_hash == lf_hash, (
+        f"CRLF and LF prompts must produce the same sha256 "
+        f"(crlf={crlf_hash!r} vs lf={lf_hash!r})"
+    )
+
+    # Also test lone CR → LF
+    cr_hash = lazy_core.prompt_sha256("a\rb")
+    lf_hash2 = lazy_core.prompt_sha256("a\nb")
+    assert cr_hash == lf_hash2, (
+        f"lone CR and LF prompts must produce the same sha256 "
+        f"(cr={cr_hash!r} vs lf={lf_hash2!r})"
+    )
+
+    # Registry cross-variant lookup
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            crlf_prompt = "dispatch with windows line endings\r\nSecond line"
+            lf_prompt = "dispatch with windows line endings\nSecond line"
+            lazy_core.register_emission(crlf_prompt, cls="cycle", now=now)
+
+            # Lookup with the LF variant must hit
+            found = lazy_core.lookup_emission(lf_prompt, now=now)
+            assert found is not None, (
+                "lookup with LF variant must find the CRLF-registered entry "
+                "(normalization makes them the same hash)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 9: marker gating — register_emission_if_marked no-ops without marker
+# ---------------------------------------------------------------------------
+
+def test_register_emission_if_marked_gating():
+    """register_emission_if_marked with NO marker present → returns None and
+    lazy-prompt-registry.json does NOT exist; with marker → entry written with
+    the given class.
+
+    RED state: register_emission_if_marked not implemented.
+    """
+    _guard()
+    import time as _time
+
+    # Without a marker: must return None and write nothing
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            result = lazy_core.register_emission_if_marked(
+                "some cycle prompt", cls="cycle", now=now
+            )
+            assert result is None, (
+                f"register_emission_if_marked must return None when no marker present, "
+                f"got {result!r}"
+            )
+            registry_file = lazy_core.claude_state_dir() / "lazy-prompt-registry.json"
+            assert not registry_file.exists(), (
+                "lazy-prompt-registry.json must NOT exist when register_emission_if_marked "
+                "is called without a marker"
+            )
+        finally:
+            _clear_state_dir()
+
+    # With a marker: must write an entry with the given class
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, now=now,
+            )
+            entry = lazy_core.register_emission_if_marked(
+                "a real cycle dispatch prompt", cls="cycle", now=now
+            )
+            assert entry is not None, (
+                "register_emission_if_marked must return an entry when marker is present"
+            )
+            assert entry["class"] == "cycle", f"class mismatch: {entry}"
+            registry_file = lazy_core.claude_state_dir() / "lazy-prompt-registry.json"
+            assert registry_file.exists(), (
+                "lazy-prompt-registry.json must exist after register_emission_if_marked "
+                "with marker present"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 10: fold_run_counters and advance_run_counters
+# ---------------------------------------------------------------------------
+
+def test_fold_and_advance_run_counters():
+    """fold_run_counters: explicit flags win; fallback to marker values; both
+    None when no flags and no marker.
+
+    advance_run_counters: truthy sub_skill not starting with '__' → increments
+    forward_cycles only; '__*' or None sub_skill → increments meta_cycles only;
+    no marker → returns None.
+
+    RED state: fold_run_counters / advance_run_counters not implemented.
+    """
+    _guard()
+    import time as _time
+
+    # --- fold_run_counters ---
+    # (1) Explicit flag wins over marker value
+    marker_with_counters = {"forward_cycles": 1, "meta_cycles": 2}
+    f, m = lazy_core.fold_run_counters(3, None, marker_with_counters)
+    assert f == 3, (
+        f"explicit forward_flag=3 must win over marker's forward_cycles=1, got f={f!r}"
+    )
+    assert m == 2, (
+        f"meta_flag=None must fall back to marker's meta_cycles=2, got m={m!r}"
+    )
+
+    # (2) No flags → use marker values
+    f2, m2 = lazy_core.fold_run_counters(None, None, marker_with_counters)
+    assert f2 == 1, f"fold with None flags must use marker forward_cycles=1, got {f2!r}"
+    assert m2 == 2, f"fold with None flags must use marker meta_cycles=2, got {m2!r}"
+
+    # (3) No flags, no marker → (None, None)
+    f3, m3 = lazy_core.fold_run_counters(None, None, None)
+    assert f3 is None, f"fold with no marker must return (None, None), got f3={f3!r}"
+    assert m3 is None, f"fold with no marker must return (None, None), got m3={m3!r}"
+
+    # --- advance_run_counters ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=10, now=now,
+            )
+            # Real sub_skill (forward cycle)
+            state_forward = {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
+            updated = lazy_core.advance_run_counters(state_forward)
+            assert updated is not None, (
+                "advance_run_counters must return updated marker for real sub_skill"
+            )
+            assert updated["forward_cycles"] == 1, (
+                f"forward_cycles must increment to 1 after a real sub_skill cycle, "
+                f"got {updated['forward_cycles']!r}"
+            )
+            assert updated["meta_cycles"] == 0, (
+                f"meta_cycles must stay 0 for a forward cycle, got {updated['meta_cycles']!r}"
+            )
+
+            # Pseudo sub_skill (__mark_complete__) → meta cycle
+            state_meta = {"sub_skill": "__mark_complete__", "feature_id": "feat-x"}
+            updated2 = lazy_core.advance_run_counters(state_meta)
+            assert updated2 is not None, (
+                "advance_run_counters must return updated marker for meta sub_skill"
+            )
+            assert updated2["forward_cycles"] == 1, (
+                f"forward_cycles must stay 1 for a meta cycle, got {updated2['forward_cycles']!r}"
+            )
+            assert updated2["meta_cycles"] == 1, (
+                f"meta_cycles must increment to 1 after __mark_complete__, "
+                f"got {updated2['meta_cycles']!r}"
+            )
+
+            # sub_skill=None → meta
+            state_none_skill = {"sub_skill": None, "feature_id": "feat-x"}
+            updated3 = lazy_core.advance_run_counters(state_none_skill)
+            assert updated3 is not None, "advance_run_counters must return marker"
+            assert updated3["meta_cycles"] == 2, (
+                f"sub_skill=None must increment meta_cycles (now 2), got {updated3!r}"
+            )
+
+        finally:
+            _clear_state_dir()
+
+    # No marker → returns None
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            result_no_marker = lazy_core.advance_run_counters(
+                {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
+            )
+            assert result_no_marker is None, (
+                f"advance_run_counters must return None when no marker present, "
+                f"got {result_no_marker!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 11: subprocess MVB — lazy-state.py --repeat-count --probe --emit-prompt
+#          with marker present writes a registry entry with matching sha256
+# ---------------------------------------------------------------------------
+
+def test_subprocess_emit_prompt_with_marker_writes_registry():
+    """Minimum Verifiable Behavior: a real subprocess invocation of
+    lazy-state.py --repeat-count --probe --emit-prompt --repo-root <fixture>
+    with LAZY_STATE_DIR set and a marker written writes a registry entry whose
+    prompt_sha256 == lazy_core.prompt_sha256(cycle_prompt from the probe stdout),
+    and entry class == 'cycle'.
+
+    The SAME invocation WITHOUT a marker writes NO registry file.
+
+    This test crosses the script↔state-dir I/O boundary and is the ground-truth
+    literal-hash comparison required by the Phase 1 Testing Strategy.
+
+    RED state: --emit-prompt integration in lazy-state.py not yet wired; the
+    symbols used here (write_run_marker, register_emission, prompt_sha256) will
+    raise AttributeError immediately after _guard() until Phase 1 lands.
+    """
+    _guard()
+    # Assert early on the key symbols so the failure message names the missing
+    # symbol rather than producing an opaque TypeError later.
+    assert hasattr(lazy_core, "write_run_marker"), (
+        "lazy_core.write_run_marker missing — Phase 1 not yet implemented"
+    )
+    assert hasattr(lazy_core, "prompt_sha256"), (
+        "lazy_core.prompt_sha256 missing — Phase 1 not yet implemented"
+    )
+
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    # Build the minimal "mid-implementation" fixture (yields sub_skill=execute-plan
+    # + non-null cycle_prompt on --emit-prompt).  The fixture structure mirrors
+    # _build_fixture("mid-implementation") from lazy-state.py's own smoke harness.
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        # Fixture repo: docs/features/queue.json + feat-c/ with SPEC/RESEARCH/PHASES/plans
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8",
+        )
+        (fdir / "plans").mkdir()
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        # --- Run WITHOUT a marker: no registry file must be written ---
+        env_no_marker = dict(_os_env.environ)
+        env_no_marker["LAZY_STATE_DIR"] = str(state_dir)
+        result_no_marker = subprocess.run(
+            [
+                sys.executable, str(lazy_state_script),
+                "--repeat-count", "--probe", "--emit-prompt",
+                "--repo-root", str(fixture_repo),
+            ],
+            capture_output=True,
+            text=True,
+            env=env_no_marker,
+        )
+        registry_file = state_dir / "lazy-prompt-registry.json"
+        assert not registry_file.exists(), (
+            "lazy-prompt-registry.json must NOT be written when no marker is present; "
+            f"script stdout: {result_no_marker.stdout[:400]!r}"
+        )
+
+        # --- Run WITH a marker: registry file must appear with correct sha ---
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            now = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=now,
+            )
+        finally:
+            _clear_state_dir()
+
+        env_with_marker = dict(_os_env.environ)
+        env_with_marker["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [
+                sys.executable, str(lazy_state_script),
+                "--repeat-count", "--probe", "--emit-prompt",
+                "--repo-root", str(fixture_repo),
+            ],
+            capture_output=True,
+            text=True,
+            env=env_with_marker,
+        )
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; "
+            f"stderr: {result.stderr[:400]!r}; "
+            f"stdout: {result.stdout[:400]!r}"
+        )
+        try:
+            state_json = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"lazy-state.py stdout is not valid JSON: {exc}\n"
+                f"stdout: {result.stdout[:400]!r}"
+            ) from exc
+
+        cycle_prompt = state_json.get("cycle_prompt")
+        assert cycle_prompt is not None and cycle_prompt != "", (
+            f"cycle_prompt must be non-null for a DISPATCHABLE state; "
+            f"state: sub_skill={state_json.get('sub_skill')!r}, "
+            f"terminal_reason={state_json.get('terminal_reason')!r}"
+        )
+
+        # Registry must exist and hold exactly one entry matching the cycle_prompt
+        assert registry_file.exists(), (
+            "lazy-prompt-registry.json must be written when marker is present "
+            "and --emit-prompt is passed"
+        )
+        registry_data = json.loads(registry_file.read_text(encoding="utf-8"))
+        entries = registry_data.get("entries", [])
+        expected_sha = lazy_core.prompt_sha256(cycle_prompt)
+        matching = [e for e in entries if e["prompt_sha256"] == expected_sha]
+        assert len(matching) == 1, (
+            f"expected exactly 1 registry entry whose prompt_sha256 == "
+            f"sha256(cycle_prompt); found {len(matching)} matching entries. "
+            f"expected sha={expected_sha!r}; "
+            f"entries={[e['prompt_sha256'] for e in entries]!r}"
+        )
+        assert matching[0]["class"] == "cycle", (
+            f"registry entry class must be 'cycle', got {matching[0]['class']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 12: corrupt marker on disk → read_run_marker returns None + file deleted
+# ---------------------------------------------------------------------------
+
+def test_corrupt_marker_returns_none_and_deletes():
+    """A corrupt (non-JSON) marker file on disk → read_run_marker returns None
+    AND the corrupt file is deleted so subsequent calls start clean.
+
+    This test exercises the 'crashed write protection' path documented in
+    read_run_marker's docstring.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Write garbage (not valid JSON) directly into the marker file.
+            state_dir = lazy_core.claude_state_dir()
+            marker_path = state_dir / "lazy-run-marker.json"
+            marker_path.write_text("{ this is not valid JSON !!!", encoding="utf-8")
+            assert marker_path.exists(), "pre-condition: corrupt marker must exist before read"
+
+            now = _time.time()
+            result = lazy_core.read_run_marker(now=now)
+
+            assert result is None, (
+                f"read_run_marker must return None for a corrupt marker file, got {result!r}"
+            )
+            assert not marker_path.exists(), (
+                "corrupt marker file must be deleted by read_run_marker "
+                "(delete-on-corrupt protection)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Test 13: --repeat-count-peek does NOT advance marker counters
+#          + freshness-leg assertion for lookup_emission
+# ---------------------------------------------------------------------------
+
+def test_repeat_count_peek_does_not_advance_marker_counters():
+    """--repeat-count-peek must NOT advance forward_cycles or meta_cycles in the
+    run marker.  Additionally, an entry with emitted_at BEFORE the marker's
+    started_at → lookup_emission returns None (freshness gate); a post-start
+    entry is returned normally.
+
+    Subprocess part mirrors the fixture pattern from
+    test_subprocess_emit_prompt_with_marker_writes_registry.
+    """
+    _guard()
+    import time as _time
+
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    # --- Sub-test A: --repeat-count-peek does not advance marker counters ---
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        # Build the same mid-implementation fixture used in Test 11.
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-peek", "name": "Feature Peek", "spec_dir": "feat-peek", "tier": 1}
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-peek"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8",
+        )
+        (fdir / "plans").mkdir()
+        (fdir / "plans" / "all-phases-peek.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        state_dir = td_path / "peek-state-dir"
+        state_dir.mkdir()
+
+        # Write a marker (forward_cycles=0, meta_cycles=0) via lazy_core
+        now = _time.time()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=now,
+            )
+        finally:
+            _clear_state_dir()
+
+        # Invoke the script with --repeat-count-peek (not --repeat-count)
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [
+                sys.executable, str(lazy_state_script),
+                "--repeat-count-peek", "--probe",
+                "--repo-root", str(fixture_repo),
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, (
+            f"lazy-state.py --repeat-count-peek exited {result.returncode}; "
+            f"stderr: {result.stderr[:400]!r}; stdout: {result.stdout[:400]!r}"
+        )
+
+        # Re-read the marker and assert counters are UNCHANGED (still 0/0)
+        _set_state_dir(state_dir)
+        try:
+            marker_after = lazy_core.read_run_marker(now=now + 1)
+        finally:
+            _clear_state_dir()
+
+        assert marker_after is not None, (
+            "run marker must still be present after --repeat-count-peek"
+        )
+        assert marker_after["forward_cycles"] == 0, (
+            f"--repeat-count-peek must NOT advance forward_cycles; "
+            f"got forward_cycles={marker_after['forward_cycles']!r}"
+        )
+        assert marker_after["meta_cycles"] == 0, (
+            f"--repeat-count-peek must NOT advance meta_cycles; "
+            f"got meta_cycles={marker_after['meta_cycles']!r}"
+        )
+
+    # --- Sub-test B: freshness-leg — emitted_at before started_at → None ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            base = _time.time()
+
+            # Write a marker with started_at = base + 10 (10 seconds in the future)
+            # so that entries registered at `base` predate the run.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, now=base + 10,
+            )
+
+            # Register an entry BEFORE the marker's started_at
+            prompt = "freshness-leg-test prompt"
+            lazy_core.register_emission(prompt, cls="cycle", now=base)
+
+            # lookup at base + 20 (within TTL, but before started_at epoch)
+            stale_result = lazy_core.lookup_emission(prompt, now=base + 20)
+            assert stale_result is None, (
+                "lookup_emission must return None when emitted_at is before "
+                f"the marker's started_at (freshness gate); got {stale_result!r}"
+            )
+
+            # Register a FRESH entry (after the marker's started_at)
+            lazy_core.register_emission(prompt, cls="cycle", now=base + 15)
+            fresh_result = lazy_core.lookup_emission(prompt, now=base + 20)
+            assert fresh_result is not None, (
+                "lookup_emission must return the entry when emitted_at >= "
+                f"marker's started_at; got None"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# End of Phase 1 test definitions
+# ---------------------------------------------------------------------------
+
 _TESTS = [
     ("test_symbols_present", test_symbols_present),
     # count_deliverables
@@ -7206,6 +8093,21 @@ _TESTS = [
     ("test_apply_pseudo_mark_fixed_refuses_stale_retro_zero_writes", test_apply_pseudo_mark_fixed_refuses_stale_retro_zero_writes),
     ("test_apply_pseudo_mark_fixed_grandfathered_retro_completes", test_apply_pseudo_mark_fixed_grandfathered_retro_completes),
     ("test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro", test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro),
+    # Phase 1 — run-state core (marker, registry, counters)
+    ("test_run_state_symbols_present", test_run_state_symbols_present),
+    ("test_marker_write_read_roundtrip", test_marker_write_read_roundtrip),
+    ("test_marker_staleness_age", test_marker_staleness_age),
+    ("test_marker_staleness_session_id", test_marker_staleness_session_id),
+    ("test_registry_register_lookup_consume", test_registry_register_lookup_consume),
+    ("test_registry_ttl", test_registry_ttl),
+    ("test_registry_ring_cap", test_registry_ring_cap),
+    ("test_crlf_lf_normalization", test_crlf_lf_normalization),
+    ("test_register_emission_if_marked_gating", test_register_emission_if_marked_gating),
+    ("test_fold_and_advance_run_counters", test_fold_and_advance_run_counters),
+    ("test_subprocess_emit_prompt_with_marker_writes_registry", test_subprocess_emit_prompt_with_marker_writes_registry),
+    # Phase 1 review fixes: corrupt-marker delete + peek-no-advance + freshness-leg
+    ("test_corrupt_marker_returns_none_and_deletes", test_corrupt_marker_returns_none_and_deletes),
+    ("test_repeat_count_peek_does_not_advance_marker_counters", test_repeat_count_peek_does_not_advance_marker_counters),
 ]
 
 

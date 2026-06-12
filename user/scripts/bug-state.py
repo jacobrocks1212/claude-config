@@ -54,8 +54,11 @@ Exit codes:
 Usage:
     python3 bug-state.py [--cloud] [--real-device {yes,no,auto}]
                          [--repo-root <path>]
-    python3 bug-state.py --test               # run fixture smoke tests
-    python3 bug-state.py --backfill-receipts  # write FIXED.md for archived bugs
+    python3 bug-state.py --test                     # run fixture smoke tests
+    python3 bug-state.py --backfill-receipts        # write FIXED.md for archived bugs
+    python3 bug-state.py --run-start                # write run marker (pipeline=bug); gates registry/counter side-effects
+    python3 bug-state.py --run-end                  # delete marker + registry (run-scoped teardown)
+    python3 bug-state.py --probe [--repeat-count]   # --probe/--repeat-count fold/advance marker-persisted counters when a run marker is present; --repeat-count-peek reads without advancing
 """
 
 from __future__ import annotations
@@ -3545,6 +3548,28 @@ def main() -> int:
         "--max-cycles", type=int, default=None,
         help="Orchestrator max-cycles ceiling (for --probe cycle header).",
     )
+    # Phase 1 run-lifecycle flags: --run-start writes the marker (pipeline=bug
+    # for this script), --run-end deletes it.  Both print a JSON result and exit
+    # immediately, like other action flags.  All new Phase 1 behavior (registry
+    # writes, counter advances) is unreachable without first calling --run-start.
+    parser.add_argument(
+        "--run-start", action="store_true",
+        help=(
+            "Write the run marker to the state dir (pipeline=bug), "
+            "gating registry and counter side-effects for this run. "
+            "Uses --cloud, --repo-root, and --max-cycles when present. "
+            "Prints the marker JSON and exits."
+        ),
+    )
+    parser.add_argument(
+        "--run-end", action="store_true",
+        help=(
+            "Delete the run marker from the state dir. "
+            "Call on every terminal run path to avoid haunting the "
+            "next session. Prints {\"run_marker_deleted\": true|false} "
+            "and exits."
+        ),
+    )
     args = parser.parse_args()
 
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
@@ -3552,6 +3577,31 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
+    # like all other action flags so they compose cleanly with orchestrator
+    # scripting (e.g. ``python bug-state.py --run-start --cloud --max-cycles 20``).
+    if args.run_start:
+        # Write the marker for the bug pipeline.  cloud, repo_root, and
+        # max_cycles are taken from the matching existing flags so no new flags
+        # are needed for those values.
+        marker = lazy_core.write_run_marker(
+            pipeline="bug",
+            cloud=args.cloud,
+            repo_root=args.repo_root,
+            max_cycles=args.max_cycles,
+        )
+        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        return 0
+
+    if args.run_end:
+        # Delete the marker AND the registry (both are run-scoped state).
+        # clear_registry=True ensures the prompt registry does not bleed
+        # across runs — entries from a previous run must never be dispatchable
+        # in the next run's fresh startup.
+        deleted = lazy_core.delete_run_marker(clear_registry=True)
+        sys.stdout.write(json.dumps({"run_marker_deleted": deleted}, indent=2) + "\n")
+        return 0
 
     if args.neutralize_sentinel is not None:
         result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
@@ -3633,6 +3683,13 @@ def main() -> int:
         )
         state["repeat_count"] = _counts["repeat_count"]
         state["step_repeat_count"] = _counts["step_repeat_count"]
+    # Counter advance (Phase 1): at dispatch-bound probe time (--repeat-count,
+    # NOT --repeat-count-peek) advance the marker-persisted forward/meta counters.
+    # Mirror of the peek discipline for update_repeat_counts: only the one
+    # dispatch-bound probe per cycle advances any persisted state.
+    # No marker present → no-op (advance_run_counters returns None).
+    if args.repeat_count:
+        lazy_core.advance_run_counters(state)
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or
@@ -3657,14 +3714,32 @@ def main() -> int:
             state["cycle_prompt"] = None
             state["cycle_model"] = None
             state["cycle_prompt_refused"] = emitted.get("refused")
+        # Registry integration (Phase 1): when a marker is active and the emission
+        # produced a non-null cycle_prompt, register it so the validate hook can
+        # check it.  No marker → no-op (zero writes, byte-identical output).
+        # Bug pipeline: feature_id in state holds the bug id (same key name).
+        cycle_prompt = state.get("cycle_prompt")
+        if cycle_prompt:
+            lazy_core.register_emission_if_marked(
+                cycle_prompt, "cycle",
+                item_id=state.get("feature_id"),
+            )
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).
     if args.probe:
         state["git_guards"] = lazy_core.git_guard_status(Path(args.repo_root))
+        # Counter fold (Phase 1): when a marker is present, fill in absent
+        # --forward-cycles / --meta-cycles from the marker's persisted values.
+        # Explicit flag values win over marker values (backward compat).
+        # When no marker is present, behavior is byte-identical to before.
+        _fwd, _meta = lazy_core.fold_run_counters(
+            args.forward_cycles, args.meta_cycles,
+            lazy_core.read_run_marker(),
+        )
         state["cycle_header"] = lazy_core.format_cycle_header(
-            state, forward_cycles=args.forward_cycles,
-            max_cycles=args.max_cycles, meta_cycles=args.meta_cycles,
+            state, forward_cycles=_fwd,
+            max_cycles=args.max_cycles, meta_cycles=_meta,
         )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
