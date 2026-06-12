@@ -7838,11 +7838,16 @@ _REQUIRES_LINE_RE = re.compile(r'^<!-- @requires [a-z0-9_,]+ -->$')
 
 def test_emit_dispatch_symbols_present():
     """DISPATCH_CLASSES, DISPATCH_MODELS, and emit_dispatch_prompt must exist
-    on lazy_core.  The six Phase 3 classes must match exactly; 'hardening' must
-    NOT be present (Phase 4).  Every class must map to 'opus' or 'sonnet' per
-    the spec contract.
+    on lazy_core.  The six Phase 3 classes must all be present (Phase 4 adds
+    'hardening' as the 7th entry — exact-set check updated to subset check so
+    the test remains green after Phase 4).  Every class must map to 'opus' or
+    'sonnet' per the spec contract.
 
     RED: all three names missing → AttributeError / AssertionError.
+
+    Phase 4 note: 'hardening' is now a valid 7th class (added by Phase 4 per
+    test_hardening_dispatch_class_present).  This test verifies the 6 Phase 3
+    classes remain present in order; the Phase 4 test verifies the full 7-tuple.
     """
     _guard()
 
@@ -7857,32 +7862,26 @@ def test_emit_dispatch_symbols_present():
         "lazy_core.emit_dispatch_prompt missing — Phase 3 not yet implemented"
     )
 
-    # --- DISPATCH_CLASSES exact membership ---
+    # --- DISPATCH_CLASSES: all 6 Phase 3 classes must be present as the first 6 ---
     classes = lazy_core.DISPATCH_CLASSES
     # Must be a tuple (ordered, hashable).
     assert isinstance(classes, tuple), (
         f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
     )
-    # Exact set equality first for clear diff.
-    assert set(classes) == set(_EXPECTED_DISPATCH_CLASSES), (
-        f"DISPATCH_CLASSES set mismatch.\n"
-        f"  expected: {sorted(_EXPECTED_DISPATCH_CLASSES)}\n"
-        f"  got:      {sorted(classes)}"
+    # All 6 Phase 3 classes must be a subset (Phase 4 may add more entries).
+    missing = set(_EXPECTED_DISPATCH_CLASSES) - set(classes)
+    assert not missing, (
+        f"DISPATCH_CLASSES is missing Phase 3 classes: {sorted(missing)}\n"
+        f"  current tuple: {classes}"
     )
-    # Exact ordering.
-    assert classes == _EXPECTED_DISPATCH_CLASSES, (
-        f"DISPATCH_CLASSES ordering mismatch.\n"
-        f"  expected: {_EXPECTED_DISPATCH_CLASSES}\n"
-        f"  got:      {classes}"
-    )
-
-    # --- 'hardening' must NOT be in Phase 3 tuple ---
-    assert "hardening" not in classes, (
-        "'hardening' must NOT be in DISPATCH_CLASSES for Phase 3 — "
-        "it arrives in Phase 4 after the /harden-harness skill is authored"
+    # The first 6 entries must match the Phase 3 classes in order.
+    assert classes[:6] == _EXPECTED_DISPATCH_CLASSES, (
+        f"DISPATCH_CLASSES first-6 ordering mismatch.\n"
+        f"  expected first 6: {_EXPECTED_DISPATCH_CLASSES}\n"
+        f"  got first 6:      {classes[:6]}"
     )
 
-    # --- DISPATCH_MODELS maps every class to a valid model ---
+    # --- DISPATCH_MODELS maps every Phase 3 class to a valid model ---
     models = lazy_core.DISPATCH_MODELS
     assert isinstance(models, dict), (
         f"DISPATCH_MODELS must be a dict, got {type(models).__name__}"
@@ -8177,8 +8176,10 @@ def test_emit_dispatch_section_filtering():
 
 
 def test_emit_dispatch_unknown_class_raises():
-    """emit_dispatch_prompt raises ValueError for unknown classes: 'hardening'
-    (Phase 4 — not yet in DISPATCH_CLASSES) and 'nonsense'.
+    """emit_dispatch_prompt raises ValueError for unknown classes (e.g. 'nonsense').
+    'hardening' was listed here in Phase 3 as a future unknown class; it is now
+    a registered Phase 4 class and has been removed from this test's bad-class list
+    (covered by test_hardening_dispatch_class_present instead).
 
     RED: emit_dispatch_prompt missing → AttributeError.
     """
@@ -8186,7 +8187,7 @@ def test_emit_dispatch_unknown_class_raises():
     assert hasattr(lazy_core, "emit_dispatch_prompt"), (
         "lazy_core.emit_dispatch_prompt missing"
     )
-    for bad_cls in ("hardening", "nonsense"):
+    for bad_cls in ("nonsense",):
         raised = False
         try:
             lazy_core.emit_dispatch_prompt(
@@ -8560,6 +8561,593 @@ def test_emit_dispatch_cli_bug_state_mirror():
 # End of Phase 3 test definitions
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Phase 4 test definitions — /harden-harness skill + hardening dispatch class
+# ---------------------------------------------------------------------------
+#
+# RED STATE for all tests below: "hardening" is not yet in DISPATCH_CLASSES
+# (the tuple has 6 entries, Phase 3 only), DISPATCH_MODELS has no "hardening"
+# key, the dispatch-hardening.md template does not exist, and the
+# harden-harness SKILL.md file does not exist.
+#
+# Each test fails for a specific, meaningful reason rather than a confusing
+# AttributeError or file-not-found traceback.
+#
+# Isolation discipline: subprocess tests set LAZY_STATE_DIR via the env dict.
+#
+# The 7 @requires keys the hardening dispatch template MUST declare (spec
+# §"The harness-hardening stage" full contract + PHASES.md Phase 4
+# deliverables).  Read dynamically from the real template where possible;
+# this tuple is used as the ground-truth set to assert against.
+_HARDENING_REQUIRED_KEYS: frozenset[str] = frozenset({
+    "denied_prompt_summary",
+    "denial_reason",
+    "probe_json",
+    "registry_state",
+    "trigger_kind",
+    "item_id",
+    "cwd",
+})
+
+# Resolve the harden-harness SKILL.md path relative to the repo root inferred
+# from _SCRIPTS_DIR (user/scripts).
+_HARDEN_SKILL_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "skills" / "harden-harness" / "SKILL.md"
+)
+
+
+def test_hardening_dispatch_class_present():
+    """Phase 4 contract: DISPATCH_CLASSES is a 7-tuple with 'hardening' as the
+    last entry; DISPATCH_MODELS['hardening'] == 'opus'; calling
+    emit_dispatch_prompt('hardening', ...) does NOT raise ValueError.
+
+    RED reasons:
+      - DISPATCH_CLASSES is a 6-tuple (Phase 3) → set-mismatch AssertionError.
+      - DISPATCH_MODELS['hardening'] absent → KeyError.
+      - emit_dispatch_prompt('hardening') raises ValueError → AssertionError.
+    """
+    _guard()
+
+    assert hasattr(lazy_core, "DISPATCH_CLASSES"), (
+        "lazy_core.DISPATCH_CLASSES missing"
+    )
+    assert hasattr(lazy_core, "DISPATCH_MODELS"), (
+        "lazy_core.DISPATCH_MODELS missing"
+    )
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+
+    classes = lazy_core.DISPATCH_CLASSES
+
+    # Must be a tuple (ordered) and contain exactly 7 entries after Phase 4.
+    assert isinstance(classes, tuple), (
+        f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
+    )
+    assert len(classes) == 7, (
+        f"DISPATCH_CLASSES must have 7 entries after Phase 4 adds 'hardening'; "
+        f"got {len(classes)}: {classes}"
+    )
+
+    # 'hardening' must be present.
+    assert "hardening" in classes, (
+        f"'hardening' must be in DISPATCH_CLASSES (Phase 4 deliverable); "
+        f"current classes: {classes}"
+    )
+
+    # 'hardening' must be the last entry (appended after the 6 Phase 3 classes).
+    assert classes[-1] == "hardening", (
+        f"'hardening' must be the last entry in DISPATCH_CLASSES; "
+        f"got last={classes[-1]!r}, full tuple={classes}"
+    )
+
+    # All 6 Phase 3 classes must still be present in order.
+    phase3_classes = (
+        "apply-resolution",
+        "input-audit",
+        "investigation",
+        "recovery",
+        "coherence-recovery",
+        "needs-runtime-redispatch",
+    )
+    assert classes[:6] == phase3_classes, (
+        f"The first 6 entries of DISPATCH_CLASSES must be the Phase 3 classes "
+        f"in order; got {classes[:6]!r}"
+    )
+
+    # DISPATCH_MODELS must include 'hardening' mapped to 'opus'.
+    models = lazy_core.DISPATCH_MODELS
+    assert "hardening" in models, (
+        "DISPATCH_MODELS must include 'hardening' (Phase 4 deliverable)"
+    )
+    assert models["hardening"] == "opus", (
+        f"DISPATCH_MODELS['hardening'] must be 'opus' (Opus judgment work — "
+        f"root-cause analysis + mechanical fixes); got {models['hardening']!r}"
+    )
+
+    # emit_dispatch_prompt('hardening', ...) must NOT raise ValueError now that
+    # 'hardening' is a registered class.  It may return ok=False if the template
+    # or context is missing — that is acceptable here; we only verify the
+    # ValueError for unknown-class no longer fires.
+    raised_value_error = False
+    try:
+        lazy_core.emit_dispatch_prompt(
+            "hardening",
+            # Supply dummy values for all 7 required keys so binding can proceed
+            # if the template exists; if the template is missing, ok=False is
+            # returned without ValueError — that is fine for this test.
+            {k: f"dummy-{k}" for k in _HARDENING_REQUIRED_KEYS},
+            pipeline="feature",
+            cloud=False,
+            template_dir=_REAL_TEMPLATE_DIR,
+        )
+    except ValueError:
+        raised_value_error = True
+    except Exception:
+        # Any other exception (e.g. FileNotFoundError if template absent,
+        # caught internally and returned as ok=False) is not our concern here —
+        # the test only guards against ValueError.
+        pass
+
+    assert not raised_value_error, (
+        "emit_dispatch_prompt('hardening', ...) must NOT raise ValueError after "
+        "Phase 4 adds 'hardening' to DISPATCH_CLASSES; "
+        "currently raises ValueError because 'hardening' is not yet registered"
+    )
+
+
+def test_hardening_template_binding():
+    """Phase 4 contract: the real dispatch-hardening.md template file exists,
+    declares all 7 required @requires keys, binds cleanly for feature and bug
+    pipelines, and the emitted prompt satisfies the content contract.
+
+    @requires contract (all 7 must appear in the declared set):
+      denied_prompt_summary, denial_reason, probe_json, registry_state,
+      trigger_kind, item_id, cwd
+
+    Prompt content contract:
+      - contains '/harden-harness' (the skill invocation instruction)
+      - contains the literal commit prefix 'harden(' (log discipline)
+      - contains 'never edits the registry' OR 'never edits the registry/marker'
+        (prohibition phrase — phrasing variant allowed)
+      - contains 'never weakens a gate' (prohibition phrase)
+      - does NOT contain 'You do not run `git commit`' (the hardening stage
+        DOES commit under full gates — it works on claude-config itself)
+
+    RED reasons:
+      - dispatch-hardening.md does not exist → template file missing
+        AssertionError (file-existence check fires first).
+      - @requires set incomplete → AssertionError naming missing keys.
+      - emit ok=False → AssertionError naming the refusal.
+      - Prompt content missing required phrase → AssertionError.
+    """
+    _guard()
+
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+
+    tpl_path = _REAL_TEMPLATE_DIR / "dispatch-hardening.md"
+    assert tpl_path.exists(), (
+        f"dispatch-hardening.md does not exist at {tpl_path}; "
+        f"Phase 4 must create this template under "
+        f"user/skills/_components/lazy-batch-prompts/"
+    )
+
+    # Read the @requires line dynamically (line 1 of the template).
+    text = tpl_path.read_text(encoding="utf-8")
+    first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+    m = re.match(r"^<!-- @requires ([a-z0-9_,]+) -->$", first_line)
+    assert m, (
+        f"dispatch-hardening.md first non-empty line must be "
+        f"'<!-- @requires key1,key2,... -->' (only [a-z0-9_,] chars); "
+        f"got: {first_line!r}"
+    )
+
+    declared_keys = frozenset(k.strip() for k in m.group(1).split(",") if k.strip())
+
+    # Assert all 7 required keys are declared.
+    missing_from_declared = _HARDENING_REQUIRED_KEYS - declared_keys
+    assert not missing_from_declared, (
+        f"dispatch-hardening.md @requires must declare all 7 required keys; "
+        f"missing from declared set: {sorted(missing_from_declared)}\n"
+        f"  declared: {sorted(declared_keys)}\n"
+        f"  required: {sorted(_HARDENING_REQUIRED_KEYS)}"
+    )
+
+    # Build a context that supplies every declared @requires key with a dummy value.
+    context = {k: f"test-{k}" for k in declared_keys}
+    context["item_id"] = "feat-hardening-test"
+    context["cwd"] = "/tmp/hardening-test"
+
+    for pipeline in ("feature", "bug"):
+        for cloud in (False, True):
+            mode = "cloud" if cloud else "workstation"
+            ctx_label = f"pipeline={pipeline} mode={mode}"
+
+            result = lazy_core.emit_dispatch_prompt(
+                "hardening",
+                context,
+                pipeline=pipeline,
+                cloud=cloud,
+                template_dir=_REAL_TEMPLATE_DIR,
+            )
+
+            assert isinstance(result, dict), (
+                f"{ctx_label}: emit_dispatch_prompt must return a dict; "
+                f"got {result!r}"
+            )
+            assert result.get("ok") is True, (
+                f"{ctx_label}: expected ok=True; got {result!r}"
+            )
+
+            prompt = result["prompt"]
+
+            # Residue check.
+            residue = _TOKEN_RESIDUE_RE.findall(prompt)
+            assert not residue, (
+                f"{ctx_label}: unbound token residue {residue} in hardening prompt"
+            )
+
+            # Model must be 'opus'.
+            assert result.get("model") == "opus", (
+                f"{ctx_label}: hardening dispatch model must be 'opus'; "
+                f"got {result.get('model')!r}"
+            )
+
+            # Prompt must be substantial (not a stub).
+            assert len(prompt) > 400, (
+                f"{ctx_label}: hardening dispatch prompt suspiciously short "
+                f"({len(prompt)} chars); must be > 400 chars"
+            )
+
+            # --- Content contract checks ---
+
+            # Must reference the /harden-harness skill.
+            assert "/harden-harness" in prompt, (
+                f"{ctx_label}: hardening prompt must contain '/harden-harness' "
+                f"(the skill invocation instruction); not found in:\n{prompt[:500]!r}"
+            )
+
+            # Must contain the commit prefix 'harden(' (HARDENING.md log discipline).
+            assert "harden(" in prompt, (
+                f"{ctx_label}: hardening prompt must contain the commit prefix "
+                f"'harden(' (per SPEC §The harness-hardening stage, Deliverable 4); "
+                f"not found in:\n{prompt[:500]!r}"
+            )
+
+            # Must contain the 'never edits the registry' prohibition phrase.
+            # Accept either the short form or the 'registry/marker' expanded form.
+            assert (
+                "never edits the registry" in prompt
+                or "never edits the registry/marker" in prompt
+            ), (
+                f"{ctx_label}: hardening prompt must contain the prohibition phrase "
+                f"'never edits the registry' (or 'registry/marker' variant); "
+                f"not found in:\n{prompt[:500]!r}"
+            )
+
+            # Must contain the 'never weakens a gate' prohibition phrase.
+            assert "never weakens a gate" in prompt, (
+                f"{ctx_label}: hardening prompt must contain the prohibition phrase "
+                f"'never weakens a gate'; not found in:\n{prompt[:500]!r}"
+            )
+
+            # Must NOT contain the standard no-commit clause.
+            # The hardening stage DOES commit (it works on claude-config under full
+            # gates); the standard dispatch template no-commit clause must be absent.
+            assert "You do not run `git commit`" not in prompt, (
+                f"{ctx_label}: hardening prompt must NOT contain "
+                f"'You do not run `git commit`' — the hardening stage commits "
+                f"under full gates on claude-config (it is NOT the standard "
+                f"no-commit dispatch); found in:\n{prompt[:500]!r}"
+            )
+
+
+def test_hardening_skill_file_contract():
+    """Phase 4 contract: user/skills/harden-harness/SKILL.md exists with:
+      - YAML frontmatter containing 'name: harden-harness'
+      - Body containing all four trigger descriptions (validate-deny/denied,
+        no-route, inject, manual)
+      - NEEDS_INPUT escalation path
+      - Full gate list (lint-skills.py, --check-projected, test_lazy_core.py,
+        test_hooks.py, bug-state.py --test)
+      - Hardening-log path 'hardening-log'
+      - Cadence clause 'unbounded' (per locked decision 4)
+      - Prohibition 'never weakens a gate'
+      - Depth/recursion cap wording containing 'depth'
+
+    RED reason: user/skills/harden-harness/SKILL.md does not exist →
+    file-existence AssertionError fires immediately.
+    """
+    _guard()  # Ensure lazy_core is importable (not strictly needed here but
+               # mirrors harness conventions so the failure is consistent).
+
+    assert _HARDEN_SKILL_PATH.exists(), (
+        f"user/skills/harden-harness/SKILL.md does not exist at "
+        f"{_HARDEN_SKILL_PATH}; Phase 4 must create this file"
+    )
+
+    skill_text = _HARDEN_SKILL_PATH.read_text(encoding="utf-8")
+
+    # --- Frontmatter: name: harden-harness ---
+    # YAML frontmatter is delimited by '---' lines.  The 'name: harden-harness'
+    # field must appear inside the frontmatter block.
+    assert "name: harden-harness" in skill_text, (
+        f"SKILL.md frontmatter must contain 'name: harden-harness'; "
+        f"not found in first 500 chars: {skill_text[:500]!r}"
+    )
+
+    # Convenience: case-insensitive search helper.
+    lower = skill_text.lower()
+
+    # --- Trigger descriptions (all four must appear) ---
+    # Trigger 1: validate-deny fired (misroute).
+    assert any(phrase in lower for phrase in ("validate-deny", "denied")), (
+        "SKILL.md must describe trigger 1 (validate-deny / denied dispatch); "
+        "neither 'validate-deny' nor 'denied' found"
+    )
+    # Trigger 2: no-route.
+    assert "no-route" in lower, (
+        "SKILL.md must describe trigger 2 (no-route); 'no-route' not found"
+    )
+    # Trigger 3: inject hook error.
+    assert "inject" in lower, (
+        "SKILL.md must describe trigger 3 (inject hook error); 'inject' not found"
+    )
+    # Trigger 4: manual invocation.
+    assert "manual" in lower, (
+        "SKILL.md must describe trigger 4 (manual invocation); 'manual' not found"
+    )
+
+    # --- Tiered authority: NEEDS_INPUT escalation ---
+    assert "NEEDS_INPUT" in skill_text, (
+        "SKILL.md must describe the NEEDS_INPUT escalation path for "
+        "contract/policy/design-fork decisions (tiered authority); "
+        "'NEEDS_INPUT' not found"
+    )
+
+    # --- Full gate list ---
+    # Every gate from the SPEC must be named.
+    for gate_phrase in (
+        "lint-skills.py",
+        "--check-projected",
+        "test_lazy_core.py",
+        "test_hooks.py",
+        "bug-state.py --test",
+    ):
+        assert gate_phrase in skill_text, (
+            f"SKILL.md must list the gate {gate_phrase!r} in the full gates "
+            f"section (per SPEC §The harness-hardening stage, Act by decision "
+            f"class — mechanical autonomous path); not found"
+        )
+
+    # --- Hardening-log path ---
+    assert "hardening-log" in skill_text, (
+        "SKILL.md must reference the hardening-log directory "
+        "('docs/specs/turn-routing-enforcement/hardening-log/'); "
+        "'hardening-log' not found"
+    )
+
+    # --- Cadence clause: unbounded (per locked decision 4) ---
+    assert "unbounded" in lower, (
+        "SKILL.md must contain the cadence clause 'unbounded' (inline unbounded "
+        "per-run dispatch count — locked decision 4); not found"
+    )
+
+    # --- Prohibition: never weakens a gate ---
+    assert "never weakens a gate" in lower, (
+        "SKILL.md must state the prohibition 'never weakens a gate' "
+        "(per SPEC §The harness-hardening stage, Prohibitions); not found"
+    )
+
+    # --- Recursion / depth cap ---
+    assert "depth" in lower, (
+        "SKILL.md must describe the recursion/depth cap ('depth' ... '1'); "
+        "'depth' not found"
+    )
+
+
+def _read_hardening_requires_keys():
+    """Return the @requires keys declared in dispatch-hardening.md line 1,
+    or None if the file doesn't exist (so callers can skip gracefully).
+
+    Mirrors _read_recovery_requires_keys() from the Phase 3 test section.
+    """
+    tpl_path = _REAL_TEMPLATE_DIR / "dispatch-hardening.md"
+    if not tpl_path.exists():
+        return None
+    text = tpl_path.read_text(encoding="utf-8")
+    first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+    m = re.match(r"^<!-- @requires ([a-z0-9_,]+) -->", first_line)
+    if not m:
+        return None
+    return [k.strip() for k in m.group(1).split(",") if k.strip()]
+
+
+def test_hardening_cli_emit_and_register():
+    """Phase 4 contract: real CLI subprocess — lazy-state.py --emit-dispatch
+    hardening with a marker present → exit 0, JSON output, registry entry with
+    class == 'hardening', sha matches the stdout prompt.
+
+    Sub-scenarios:
+      (a) Marker present: exit 0, dispatch_prompt non-null,
+          dispatch_model == 'opus', dispatch_class == 'hardening'; registry
+          entry class == 'hardening', prompt_sha256 matches.
+      (b) No-marker (peek): exit 0, dispatch_prompt non-null; NO registry write.
+
+    RED reasons:
+      - 'hardening' not in DISPATCH_CLASSES → argparse accepts the class but
+        emit_dispatch_prompt raises ValueError → lazy-state.py exits 1; or
+      - dispatch-hardening.md template missing → ok=False → exit 1; or
+      - DISPATCH_MODELS missing 'hardening' → KeyError → exit 1.
+      Any of these produce a non-zero exit code checked by sub-scenario (a).
+    """
+    _guard()
+    assert hasattr(lazy_core, "write_run_marker"), (
+        "lazy_core.write_run_marker missing — Phase 1 not yet implemented"
+    )
+    assert hasattr(lazy_core, "prompt_sha256"), (
+        "lazy_core.prompt_sha256 missing — Phase 1 not yet implemented"
+    )
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing — Phase 3 not yet implemented"
+    )
+
+    # Read the real @requires keys for 'hardening' so the context is exactly right.
+    requires_keys = _read_hardening_requires_keys()
+    if requires_keys is None:
+        # Template not yet written — fail explicitly rather than skip silently.
+        assert False, (
+            "dispatch-hardening.md does not exist or has no valid @requires on "
+            "line 1; Phase 4 template authoring is incomplete"
+        )
+
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    # Build context flags: one --context KEY=VALUE per @requires key + item_id.
+    context_flags: list[str] = []
+    for k in requires_keys:
+        context_flags += ["--context", f"{k}=test-{k}"]
+    # Ensure item_id is present (it is always in @requires for hardening,
+    # but add it explicitly in case a test-k value collision occurs).
+    if "item_id" not in requires_keys:
+        context_flags += ["--context", "item_id=feat-hardening"]
+
+    import time as _time_mod
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        # Minimal fixture repo so the state script can resolve its paths.
+        fixture_repo = _build_dispatch_registry_fixture(td_path)
+        state_dir = td_path / "hardening-state-dir"
+        state_dir.mkdir()
+
+        # === Sub-scenario (a): marker present → registry entry written ===
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature",
+                cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=_time_mod.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        env_with_marker = dict(_os_env.environ)
+        env_with_marker["LAZY_STATE_DIR"] = str(state_dir)
+
+        cmd = [
+            sys.executable, str(lazy_state_script),
+            "--emit-dispatch", "hardening",
+        ] + context_flags
+
+        result_a = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env_with_marker,
+        )
+
+        # Explicit argparse-unknown-flag check (clearer RED reason).
+        assert result_a.returncode != 2, (
+            "--emit-dispatch hardening: flag not recognized by lazy-state.py "
+            f"(argparse exit 2).\nstderr: {result_a.stderr[:400]!r}"
+        )
+        assert result_a.returncode == 0, (
+            f"lazy-state.py --emit-dispatch hardening (with marker) exited "
+            f"{result_a.returncode}; stderr: {result_a.stderr[:400]!r}; "
+            f"stdout: {result_a.stdout[:400]!r}"
+        )
+
+        try:
+            out_a = json.loads(result_a.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"stdout is not valid JSON: {exc}\nstdout: {result_a.stdout[:400]!r}"
+            ) from exc
+
+        dispatch_prompt_a = out_a.get("dispatch_prompt")
+        assert dispatch_prompt_a is not None, (
+            f"dispatch_prompt must be non-null in marker run; got {out_a!r}"
+        )
+        assert out_a.get("dispatch_model") == "opus", (
+            f"dispatch_model must be 'opus' for 'hardening' class; "
+            f"got {out_a.get('dispatch_model')!r}"
+        )
+        assert out_a.get("dispatch_class") == "hardening", (
+            f"dispatch_class must be 'hardening'; "
+            f"got {out_a.get('dispatch_class')!r}"
+        )
+
+        # Registry entry must exist with class == 'hardening'.
+        registry_file = state_dir / "lazy-prompt-registry.json"
+        assert registry_file.exists(), (
+            "Registry file must be written when a marker is present and "
+            "--emit-dispatch hardening succeeds"
+        )
+        registry_data = json.loads(registry_file.read_text(encoding="utf-8"))
+        entries = registry_data.get("entries", [])
+        expected_sha = lazy_core.prompt_sha256(dispatch_prompt_a)
+        matching = [e for e in entries if e.get("prompt_sha256") == expected_sha]
+        assert len(matching) >= 1, (
+            f"Expected at least 1 registry entry with sha matching the stdout "
+            f"dispatch_prompt; found {len(matching)}.\n"
+            f"expected sha={expected_sha!r}\n"
+            f"entry shas={[e.get('prompt_sha256') for e in entries]!r}"
+        )
+        assert matching[-1].get("class") == "hardening", (
+            f"Registry entry class must be 'hardening'; "
+            f"got {matching[-1].get('class')!r}"
+        )
+
+        # === Sub-scenario (b): no marker → peek semantics, no registry write ===
+        state_dir_b = td_path / "hardening-state-dir-b"
+        state_dir_b.mkdir()
+        env_no_marker = dict(_os_env.environ)
+        env_no_marker["LAZY_STATE_DIR"] = str(state_dir_b)
+
+        cmd_b = [
+            sys.executable, str(lazy_state_script),
+            "--emit-dispatch", "hardening",
+        ] + context_flags
+
+        result_b = subprocess.run(
+            cmd_b,
+            capture_output=True,
+            text=True,
+            env=env_no_marker,
+        )
+        assert result_b.returncode == 0, (
+            f"lazy-state.py --emit-dispatch hardening (no marker) exited "
+            f"{result_b.returncode}; stderr: {result_b.stderr[:400]!r}; "
+            f"stdout: {result_b.stdout[:400]!r}"
+        )
+        try:
+            out_b = json.loads(result_b.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"stdout not valid JSON (no-marker run): {exc}\n"
+                f"stdout: {result_b.stdout[:400]!r}"
+            ) from exc
+
+        assert out_b.get("dispatch_prompt") is not None, (
+            f"dispatch_prompt must be non-null in no-marker peek run; got {out_b!r}"
+        )
+        registry_b = state_dir_b / "lazy-prompt-registry.json"
+        assert not registry_b.exists(), (
+            "Registry file must NOT be written when no marker is present "
+            "(peek semantics for hardening class, same as other classes)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# End of Phase 4 test definitions
+# ---------------------------------------------------------------------------
+
 _TESTS = [
     ("test_symbols_present", test_symbols_present),
     # count_deliverables
@@ -8884,6 +9472,11 @@ _TESTS = [
     ("test_emit_dispatch_unknown_class_raises", test_emit_dispatch_unknown_class_raises),
     ("test_emit_dispatch_cli_registry_gating", test_emit_dispatch_cli_registry_gating),
     ("test_emit_dispatch_cli_bug_state_mirror", test_emit_dispatch_cli_bug_state_mirror),
+    # Phase 4 — /harden-harness skill + hardening dispatch class
+    ("test_hardening_dispatch_class_present", test_hardening_dispatch_class_present),
+    ("test_hardening_template_binding", test_hardening_template_binding),
+    ("test_hardening_skill_file_contract", test_hardening_skill_file_contract),
+    ("test_hardening_cli_emit_and_register", test_hardening_cli_emit_and_register),
 ]
 
 

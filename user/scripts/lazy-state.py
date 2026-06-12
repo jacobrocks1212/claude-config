@@ -4881,8 +4881,9 @@ def main() -> int:
                             "next session. Prints {\"run_marker_deleted\": true|false} "
                             "and exits."
                         ))
-    # Phase 3: --emit-dispatch <class> assembles and registers a fully-bound
-    # dispatch prompt for one of the six Phase 3 dispatch classes.  It is an
+    # Phase 3/4: --emit-dispatch <class> assembles and registers a fully-bound
+    # dispatch prompt for one of the seven dispatch classes (six from Phase 3
+    # plus the Phase 4 'hardening' class).  It is an
     # action flag like --run-start: it exits immediately, does NOT run the
     # normal state computation, and does NOT require --repo-root.
     # Success → JSON {dispatch_prompt, dispatch_model, dispatch_class}, exit 0.
@@ -4895,7 +4896,7 @@ def main() -> int:
                             "Emit a fully-bound dispatch prompt for the named "
                             "dispatch class (apply-resolution, input-audit, "
                             "investigation, recovery, coherence-recovery, "
-                            "needs-runtime-redispatch). Outputs JSON and exits. "
+                            "needs-runtime-redispatch, hardening). Outputs JSON and exits. "
                             "Marker present → registers the emission. "
                             "Marker absent → peek only (no registry write). "
                             "Use --context KEY=VALUE (repeatable) to supply "

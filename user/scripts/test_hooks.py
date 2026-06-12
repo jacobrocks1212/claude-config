@@ -1656,6 +1656,234 @@ def test_guard_hardening_depth_cap_stale_unconsumed():
 
 
 # ---------------------------------------------------------------------------
+# Phase 4 — hardening depth-cap integration test against a REAL emitted entry
+# ---------------------------------------------------------------------------
+#
+# RED STATE: 'hardening' is not yet in lazy_core.DISPATCH_CLASSES (Phase 3 only),
+# so the --emit-dispatch hardening CLI invocation will fail (ValueError or
+# argparse exit 2), causing the subprocess to exit non-zero → the fixture-setup
+# assertion fires before any guard logic is reached.
+#
+# Resolve the scripts dir path for the subprocess invocation.
+_LAZY_STATE_SCRIPT = _SCRIPTS_DIR / "lazy-state.py"
+
+# Resolve the real dispatch-hardening.md template dir to read @requires keys
+# dynamically — mirrors the pattern in test_lazy_core.py's matrix tests.
+_HARDENING_TEMPLATE_DIR = _SCRIPTS_DIR.parent / "skills" / "_components" / "lazy-batch-prompts"
+if not _HARDENING_TEMPLATE_DIR.exists():
+    _HARDENING_TEMPLATE_DIR = _SCRIPTS_DIR.parent.parent / "skills" / "_components" / "lazy-batch-prompts"
+
+
+def _read_hardening_requires_keys_hooks() -> list[str] | None:
+    """Return the @requires keys declared in dispatch-hardening.md, or None."""
+    tpl_path = _HARDENING_TEMPLATE_DIR / "dispatch-hardening.md"
+    if not tpl_path.exists():
+        return None
+    text = tpl_path.read_text(encoding="utf-8")
+    first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+    import re as _re
+    m = _re.match(r"^<!-- @requires ([a-z0-9_,]+) -->", first_line)
+    if not m:
+        return None
+    return [k.strip() for k in m.group(1).split(",") if k.strip()]
+
+
+def test_guard_depth_cap_real_hardening_entry():
+    """Phase 4 integration test: register a REAL emitted hardening prompt via
+    the actual --emit-dispatch hardening CLI subprocess (with a marker present),
+    then:
+      (a) Pipe a PreToolUse JSON with the exact prompt → ALLOW (depth-0
+          dispatch works; nonce is unconsumed at this point).
+      (b) Pipe the same prompt with a DIFFERENT tool_use_id (simulating a
+          second dispatch attempt after the nonce was consumed by (a)) →
+          DENY with a reason that contains 'halt' and 'PushNotification' and
+          does NOT contain '--emit-dispatch hardening' (depth-cap on a real
+          hardening entry, not a synthetic one).
+
+    This test is the Phase 4 analog of test_guard_hardening_depth_cap (Phase 2)
+    and test_guard_hardening_depth_cap_stale_unconsumed (Phase 2 review fix),
+    but uses a REAL script-emitted hardening registry entry rather than a
+    synthetically registered one.
+
+    RED reasons:
+      - 'hardening' not in DISPATCH_CLASSES → lazy-state.py --emit-dispatch
+        hardening exits non-zero → fixture-setup assertion fires.
+      - dispatch-hardening.md template missing → exit 1 → same path.
+      - Guard py missing → AssertionError on _GUARD_PY.exists() check.
+    """
+    _guard()
+    assert _GUARD_PY.exists(), (
+        f"lazy_guard.py missing — Phase 2 not yet implemented: {_GUARD_PY}"
+    )
+
+    # Read @requires keys for hardening template so we can build the context
+    # flags.  If the template doesn't exist we let the subprocess failure below
+    # produce the actual RED reason (missing template → exit 1).
+    requires_keys = _read_hardening_requires_keys_hooks()
+    context_flags: list[str] = []
+    if requires_keys:
+        for k in requires_keys:
+            context_flags += ["--context", f"{k}=test-{k}"]
+        if "item_id" not in requires_keys:
+            context_flags += ["--context", "item_id=feat-hardening-test"]
+    else:
+        # Template absent: use generic context flags; the subprocess will fail
+        # with a meaningful error about the missing template or class, which is
+        # the correct RED failure reason.
+        context_flags = [
+            "--context", "denied_prompt_summary=test-dps",
+            "--context", "denial_reason=test-dr",
+            "--context", "probe_json=test-pj",
+            "--context", "registry_state=test-rs",
+            "--context", "trigger_kind=test-tk",
+            "--context", "item_id=feat-hardening-test",
+            "--context", "cwd=/tmp/test",
+        ]
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # Write a marker so --emit-dispatch hardening registers in the registry.
+        _write_marker_in_dir(state_dir)
+
+        # --- Emit a REAL hardening dispatch prompt via the actual CLI. ---
+        cmd = [
+            sys.executable, str(_LAZY_STATE_SCRIPT),
+            "--emit-dispatch", "hardening",
+        ] + context_flags
+
+        emit_result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        # Argparse exit 2 = flag not recognized → 'hardening' not in DISPATCH_CLASSES.
+        assert emit_result.returncode != 2, (
+            "--emit-dispatch hardening: flag not recognized or class unknown "
+            f"(argparse exit 2 — 'hardening' not yet in DISPATCH_CLASSES).\n"
+            f"stderr: {emit_result.stderr[:400]!r}"
+        )
+        assert emit_result.returncode == 0, (
+            f"lazy-state.py --emit-dispatch hardening failed with exit "
+            f"{emit_result.returncode}; "
+            f"stderr: {emit_result.stderr[:400]!r}; "
+            f"stdout: {emit_result.stdout[:400]!r}"
+        )
+
+        try:
+            emit_out = json.loads(emit_result.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"--emit-dispatch hardening stdout must be valid JSON; "
+                f"got: {emit_result.stdout[:400]!r}; error: {exc}"
+            ) from exc
+
+        hardening_prompt = emit_out.get("dispatch_prompt")
+        assert hardening_prompt, (
+            f"--emit-dispatch hardening must emit a non-null dispatch_prompt; "
+            f"got: {emit_out!r}"
+        )
+        assert emit_out.get("dispatch_class") == "hardening", (
+            f"dispatch_class must be 'hardening'; got {emit_out.get('dispatch_class')!r}"
+        )
+
+        # Verify the registry entry exists (sanity check before guard tests).
+        registry_path = state_dir / "lazy-prompt-registry.json"
+        assert registry_path.exists(), (
+            "Registry file must exist after --emit-dispatch hardening with marker"
+        )
+        registry_data = json.loads(registry_path.read_text(encoding="utf-8"))
+        entries = registry_data.get("entries", [])
+        hardening_entries = [e for e in entries if e.get("class") == "hardening"]
+        assert len(hardening_entries) >= 1, (
+            f"Registry must contain at least one entry with class='hardening'; "
+            f"found entries: {[(e.get('class'), e.get('prompt_sha256', '')[:8]) for e in entries]}"
+        )
+
+        # --- (a) Depth-0: pipe the real hardening prompt → ALLOW. ---
+        tool_use_id_original = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_allow = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_original)
+        result_allow = _run_guard_py(stdin_allow, env)
+
+        assert result_allow.returncode == 0, (
+            f"guard must exit 0 for depth-0 hardening dispatch; "
+            f"stderr: {result_allow.stderr!r}"
+        )
+        allow_output = result_allow.stdout.strip()
+        assert allow_output != "", (
+            "guard must produce allow JSON for depth-0 hardening dispatch "
+            "(unconsumed real registry entry)"
+        )
+        try:
+            allow_payload = json.loads(allow_output)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"guard output must be valid JSON; got: {allow_output[:200]!r}; "
+                f"error: {exc}"
+            ) from exc
+
+        allow_decision = allow_payload["hookSpecificOutput"]["permissionDecision"]
+        assert allow_decision == "allow", (
+            f"depth-0 hardening dispatch must be ALLOWED; got {allow_decision!r}.\n"
+            f"Full payload: {allow_payload}"
+        )
+
+        # --- (b) Depth-1: same prompt, different tool_use_id → depth-cap DENY. ---
+        # The nonce was consumed by (a); a different tool_use_id now tries the
+        # same hardening prompt — this is the depth-1 deny case on a REAL entry.
+        tool_use_id_other = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_deny = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_other)
+        result_deny = _run_guard_py(stdin_deny, env)
+
+        assert result_deny.returncode == 0, (
+            f"guard must exit 0 for depth-1 hardening deny; "
+            f"stderr: {result_deny.stderr!r}"
+        )
+        deny_output = result_deny.stdout.strip()
+        assert deny_output != "", (
+            "guard must produce deny JSON for depth-1 hardening dispatch "
+            "(real consumed registry entry, different tool_use_id)"
+        )
+        try:
+            deny_payload = json.loads(deny_output)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"guard output must be valid JSON; got: {deny_output[:200]!r}; "
+                f"error: {exc}"
+            ) from exc
+
+        hso = deny_payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"depth-1 hardening dispatch must be DENIED; "
+            f"got {hso.get('permissionDecision')!r}.\nFull payload: {deny_payload}"
+        )
+
+        reason = hso.get("permissionDecisionReason", "")
+
+        # Reason must contain 'halt' (halt instruction per SPEC depth-cap rule).
+        assert "halt" in reason, (
+            f"depth-1 hardening depth-cap deny reason must contain 'halt'; "
+            f"got: {reason!r}"
+        )
+        # Reason must contain 'PushNotification' (operator notification required).
+        assert "PushNotification" in reason, (
+            f"depth-1 hardening depth-cap deny reason must contain "
+            f"'PushNotification'; got: {reason!r}"
+        )
+        # Reason must NOT contain '--emit-dispatch hardening' — no recursion.
+        assert "--emit-dispatch hardening" not in reason, (
+            f"depth-1 hardening depth-cap deny reason must NOT contain "
+            f"'--emit-dispatch hardening' (no recursion at depth 1); "
+            f"got: {reason!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test registry
 # ---------------------------------------------------------------------------
 
@@ -1692,6 +1920,9 @@ _TESTS = [
      test_guard_no_prompt_key_silent_allow),
     ("test_guard_hardening_depth_cap_stale_unconsumed",
      test_guard_hardening_depth_cap_stale_unconsumed),
+    # Phase 4 — hardening depth-cap integration test (real emitted entry)
+    ("test_guard_depth_cap_real_hardening_entry",
+     test_guard_depth_cap_real_hardening_entry),
 ]
 
 

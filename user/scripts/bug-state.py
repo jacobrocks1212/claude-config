@@ -3577,7 +3577,7 @@ def main() -> int:
         help=(
             "Emit a fully-bound dispatch prompt for the named dispatch class "
             "(apply-resolution, input-audit, investigation, recovery, "
-            "coherence-recovery, needs-runtime-redispatch). Outputs JSON and "
+            "coherence-recovery, needs-runtime-redispatch, hardening). Outputs JSON and "
             "exits. Marker present → registers the emission. Marker absent → "
             "peek only (no registry write). Use --context KEY=VALUE "
             "(repeatable) to supply class-specific token bindings."

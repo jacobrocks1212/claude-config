@@ -3593,7 +3593,8 @@ def _strip_loop_fence(loop_text: str) -> str:
 #   input-audit / investigation / needs-runtime-redispatch → opus (judgment)
 # ---------------------------------------------------------------------------
 
-# The ordered tuple of Phase 3 dispatch classes (Phase 4 will append 'hardening').
+# The ordered tuple of dispatch classes.  Phase 3 added the first 6; Phase 4
+# appends 'hardening' as the 7th entry (the harness-hardening stage class).
 DISPATCH_CLASSES: tuple[str, ...] = (
     "apply-resolution",
     "input-audit",
@@ -3601,6 +3602,7 @@ DISPATCH_CLASSES: tuple[str, ...] = (
     "recovery",
     "coherence-recovery",
     "needs-runtime-redispatch",
+    "hardening",          # Phase 4 — harness-hardening stage (always Opus)
 )
 
 # Model to use when dispatching each class.  'opus' for judgment work;
@@ -3613,6 +3615,7 @@ DISPATCH_MODELS: dict[str, str] = {
     "recovery":                "sonnet",
     "coherence-recovery":      "sonnet",
     "needs-runtime-redispatch": "opus",
+    "hardening":               "opus",   # Phase 4 — root-cause + mechanical fixes = Opus
 }
 
 # Regex to extract @requires keys from the first non-empty line of a dispatch
