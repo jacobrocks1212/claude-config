@@ -7131,8 +7131,17 @@ def test_guard_deny_ledger_failure_is_fail_open():
 
 def test_run_end_refuses_on_unacked_deny():
     """Subprocess: marked run + 1 unacked deny → --run-end exits 1 with the
-    marker still present; after --emit-dispatch hardening acks it, --run-end
-    succeeds; --ack-unhardened overrides and notes the override."""
+    marker still present; after the GUARD-ALLOW ack retires it, --run-end
+    succeeds; --ack-unhardened overrides and notes the override.
+
+    REVISED for Phase 8 WU-8.2: the debt is now acked at GUARD-ALLOW time (a
+    hardening dispatch reaching execution), NOT at --emit-dispatch hardening
+    emission time.  The middle leg of this test previously called
+    `--emit-dispatch hardening` to drain the ledger; under Phase 8 that emission
+    no longer acks, so the ack is now driven via lazy_core.ack_oldest_deny()
+    in-process — exactly what lazy_guard.py's _ack_if_hardening does on a
+    hardening-class allow.  (A separate test, test_emit_dispatch_hardening_no_
+    longer_acks, pins that the emission itself does NOT ack.)"""
     _guard()
     lazy_state = _SCRIPTS_DIR / "lazy-state.py"
     with tempfile.TemporaryDirectory() as td:
@@ -7167,18 +7176,15 @@ def test_run_end_refuses_on_unacked_deny():
         assert "refused" in out and out["pending_hardening"] == 1, out
         assert (state_dir / "lazy-run-marker.json").exists(), "marker must remain"
 
-        # Ack via --emit-dispatch hardening (FIFO ack on a marked run).
-        rd = run([
-            "--emit-dispatch", "hardening",
-            "--context", "denied_prompt_summary=x",
-            "--context", "denial_reason=y",
-            "--context", "probe_json={}",
-            "--context", "registry_state={}",
-            "--context", "trigger_kind=validate-deny",
-            "--context", "item_id=feat-x",
-            "--context", "cwd=/r",
-        ])
-        assert rd.returncode == 0, f"emit hardening failed: {rd.stdout}{rd.stderr}"
+        # Ack via the GUARD-ALLOW path (Phase 8): a hardening dispatch reaching
+        # execution acks the oldest unacked deny.  Simulated in-process by the
+        # same lazy_core.ack_oldest_deny() call lazy_guard.py makes.
+        _set_state_dir(state_dir)
+        try:
+            acked = lazy_core.ack_oldest_deny()
+            assert acked is not None, "guard-allow ack must retire the pending deny"
+        finally:
+            _clear_state_dir()
 
         # Now run-end SUCCEEDS (ledger empty).
         r2 = run(["--run-end"])
@@ -7399,6 +7405,444 @@ def _dispatch_requires(cls: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Tests: Phase 8 — concurrent-session safety
+#   (non-destructive path B is tested in the Phase 1 section above;
+#    routed hardening debt + guard-allow ack + stderr line live here)
+# ---------------------------------------------------------------------------
+#
+# Hermetic via LAZY_STATE_DIR temp dirs (same discipline as Phase 1/7).
+
+
+def _build_phase8_fixture_repo(parent: "Path") -> "Path":
+    """Build a minimal mid-implementation fixture repo (yields a non-null
+    cycle_prompt on --emit-prompt when NOT withholding).  Mirrors the fixture
+    built inline by test_subprocess_emit_prompt_with_marker_writes_registry."""
+    features = parent / "fixture-repo" / "docs" / "features"
+    features.mkdir(parents=True)
+    (features / "queue.json").write_text(json.dumps({
+        "queue": [{"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}]
+    }), encoding="utf-8")
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-c"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n", encoding="utf-8")
+    (fdir / "plans").mkdir()
+    (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+    return parent / "fixture-repo"
+
+
+def test_probe_withholds_forward_route_on_pending_debt():
+    """Phase 8 WU-8.2/8.3: a marked run + 1 unacked deny → a real
+    `--repeat-count --probe --emit-prompt` subprocess returns probe JSON with:
+      - route_overridden_by == 'pending-hardening-debt'
+      - NO 'cycle_prompt' key (forward route withheld)
+      - a hardening_emit_command embedding trigger_kind=validate-deny, the
+        item_id, and the shell-quoted denial reason_head
+      - the '⚠ pending_hardening' warning on STDERR (not stdout)
+    With debt but NO marker → no withholding, no new fields."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def probe():
+            return subprocess.run(
+                [sys.executable, str(lazy_state),
+                 "--repeat-count", "--probe", "--emit-prompt",
+                 "--repo-root", str(fixture_repo)],
+                capture_output=True, text=True, env=env,
+            )
+
+        # --- (1) marker present but NO debt → normal forward route emitted ---
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+        r0 = probe()
+        assert r0.returncode == 0, f"probe failed: {r0.stderr[:400]!r}"
+        out0 = json.loads(r0.stdout)
+        assert "cycle_prompt" in out0, (
+            "with no debt the probe must emit the forward route (cycle_prompt)"
+        )
+        assert "route_overridden_by" not in out0, out0.get("route_overridden_by")
+        assert out0.get("pending_hardening") == 0, out0
+
+        # --- (2) seed one unacked deny, re-probe → withheld ---
+        # Snapshot the cycle-entry count from step (1) so we can assert the
+        # WITHHELD probe adds NO new cycle registration (step 1 legitimately
+        # registered one — the SAME state dir is reused here).
+        reg_path = state_dir / "lazy-prompt-registry.json"
+        def _cycle_count():
+            if not reg_path.exists():
+                return 0
+            reg = json.loads(reg_path.read_text(encoding="utf-8"))
+            return sum(1 for e in reg.get("entries", []) if e.get("class") == "cycle")
+        cycle_before = _cycle_count()
+
+        weird_reason = "deny because the prompt had a 'quote' and spaces"
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-x", denied_sha12="a" * 12,
+                reason_head=weird_reason, prompt_head="HAND-COMPOSED dispatch",
+                now=1.0,
+            )
+        finally:
+            _clear_state_dir()
+
+        r1 = probe()
+        assert r1.returncode == 0, f"probe failed: {r1.stderr[:400]!r}"
+        out1 = json.loads(r1.stdout)
+        assert out1.get("route_overridden_by") == "pending-hardening-debt", out1
+        assert "cycle_prompt" not in out1, (
+            "withheld probe must NOT carry a cycle_prompt key"
+        )
+        assert "cycle_model" not in out1, (
+            "withheld probe must NOT carry a cycle_model key"
+        )
+        cmd = out1.get("hardening_emit_command", "")
+        assert "--emit-dispatch hardening" in cmd, cmd
+        assert "trigger_kind=validate-deny" in cmd, cmd
+        assert "item_id=feat-c" in cmd, cmd
+        # The reason_head is shell-quoted in the command (contains a single quote
+        # so shlex.quote produces the '"'"' escape sequence).
+        import shlex as _shlex
+        assert _shlex.quote(weird_reason) in cmd, (
+            f"reason_head must appear shell-quoted in the command.\ncmd={cmd!r}"
+        )
+        # No NEW forward-route registration happened during the withheld probe.
+        assert _cycle_count() == cycle_before, (
+            "withheld probe must not register a new cycle emission "
+            f"(before={cycle_before}, after={_cycle_count()})"
+        )
+        # STDERR carries the debt warning; stdout stayed parseable (asserted above).
+        assert "pending_hardening" in r1.stderr and "withheld" in r1.stderr, (
+            f"⚠ debt line must go to STDERR; got stderr={r1.stderr!r}"
+        )
+
+        # --- (3) debt present but NO marker → no withholding, no new fields ---
+        state_dir_b = td_path / "state-b"
+        state_dir_b.mkdir()
+        env_b = dict(_os_env.environ)
+        env_b["LAZY_STATE_DIR"] = str(state_dir_b)
+        # Seed a deny in the no-marker dir (debt is marked-run scoped: without a
+        # marker the probe never surfaces or withholds).
+        _set_state_dir(state_dir_b)
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-y", denied_sha12="b" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+        finally:
+            _clear_state_dir()
+        r2 = subprocess.run(
+            [sys.executable, str(lazy_state),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env_b,
+        )
+        assert r2.returncode == 0, f"no-marker probe failed: {r2.stderr[:400]!r}"
+        out2 = json.loads(r2.stdout)
+        assert "route_overridden_by" not in out2, out2
+        assert "hardening_emit_command" not in out2, out2
+        assert "pending_hardening" not in out2, (
+            "no-marker probe must stay byte-identical — no debt enrichment"
+        )
+        assert "cycle_prompt" in out2, "no-marker probe must still emit forward route"
+        assert r2.stderr.strip() == "", (
+            f"no-marker probe must not emit the debt warning; stderr={r2.stderr!r}"
+        )
+
+
+def test_emit_dispatch_hardening_no_longer_acks():
+    """Phase 8 WU-8.2: `--emit-dispatch hardening` no longer acks the deny
+    ledger.  Subprocess: marked run + 1 unacked deny → emit hardening → the
+    ledger entry remains UNACKED (pending_hardening stays 1)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            assert lazy_core.pending_hardening() == 1
+        finally:
+            _clear_state_dir()
+
+        # Emit a hardening dispatch (registers, but must NOT ack).
+        keys = _dispatch_requires("hardening")
+        ctx_flags = []
+        for k in keys:
+            ctx_flags += ["--context", f"{k}=test-{k}"]
+        if "item_id" not in keys:
+            ctx_flags += ["--context", "item_id=feat-x"]
+        r = subprocess.run(
+            [sys.executable, str(lazy_state), "--emit-dispatch", "hardening"] + ctx_flags,
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 0, f"emit hardening failed: {r.stdout}{r.stderr}"
+
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 1, (
+                "emission must NOT ack the ledger (Phase 8 moves ack to guard-allow)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_allow_acks_on_hardening_class():
+    """Phase 8 WU-8.2: simulate the guard ALLOW path on a hardening-class entry
+    → oldest deny acked; a cycle-class allow → no ack; allow with empty ledger →
+    no error; an internal ack failure → allow output unchanged (fail-open).
+
+    Drives lazy_guard.guard() in-process (it imports lazy_core directly) so the
+    allow paths are exercised without spawning bash."""
+    _guard()
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    lazy_guard = importlib.import_module("lazy_guard")
+    import time as _time
+
+    def _hook_input(prompt, tool_use_id):
+        return json.dumps({
+            "tool_use_id": tool_use_id,
+            "tool_input": {"prompt": prompt},
+        })
+
+    # --- hardening-class allow → oldest deny acked ---
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="d", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            prompt = "REAL hardening dispatch prompt"
+            lazy_core.register_emission(prompt, cls="hardening")
+            assert lazy_core.pending_hardening() == 1
+            out = lazy_guard.guard(_hook_input(prompt, "tu-h"))
+            decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+            assert decision == "allow", out
+            assert lazy_core.pending_hardening() == 0, (
+                "a hardening-class allow must ack the oldest deny"
+            )
+        finally:
+            _clear_state_dir()
+
+    # --- cycle-class allow → no ack ---
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="d", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            prompt = "REAL cycle dispatch prompt"
+            lazy_core.register_emission(prompt, cls="cycle")
+            out = lazy_guard.guard(_hook_input(prompt, "tu-c"))
+            assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "allow"
+            assert lazy_core.pending_hardening() == 1, (
+                "a cycle-class allow must NOT ack the deny ledger"
+            )
+        finally:
+            _clear_state_dir()
+
+    # --- hardening allow with EMPTY ledger → no error, allow unchanged ---
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            prompt = "hardening with no debt"
+            lazy_core.register_emission(prompt, cls="hardening")
+            out = lazy_guard.guard(_hook_input(prompt, "tu-e"))
+            assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "allow", (
+                "hardening allow with empty ledger must still allow (no error)"
+            )
+            assert lazy_core.pending_hardening() == 0
+        finally:
+            _clear_state_dir()
+
+    # --- ack raising internally → allow output unchanged (fail-open) ---
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="d", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            prompt = "hardening with a poisoned ack"
+            lazy_core.register_emission(prompt, cls="hardening")
+            # Monkeypatch ack_oldest_deny to raise — _ack_if_hardening must swallow.
+            original = lazy_core.ack_oldest_deny
+            def _boom(*a, **k):
+                raise RuntimeError("ack exploded")
+            lazy_core.ack_oldest_deny = _boom  # type: ignore[assignment]
+            try:
+                out = lazy_guard.guard(_hook_input(prompt, "tu-boom"))
+            finally:
+                lazy_core.ack_oldest_deny = original  # type: ignore[assignment]
+            decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+            assert decision == "allow", (
+                "an ack failure must NEVER change the allow output (fail-open)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_phase8_mvb_chain():
+    """Phase 8 MVB integration chain (the PHASES.md MVB paragraph as one test):
+    marked run + 1 unacked deny → `--probe --emit-prompt` returns
+    route_overridden_by with NO cycle_prompt and a bound hardening_emit_command;
+    running that command registers a hardening-class entry WITHOUT acking; a
+    simulated guard ALLOW of that entry acks the ledger; the next probe returns a
+    normal forward route.  Separately: read_run_marker(session_id='other')
+    returns None while the marker file remains and the owner still reads it."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    lazy_guard = importlib.import_module("lazy_guard")
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def probe():
+            return subprocess.run(
+                [sys.executable, str(lazy_state),
+                 "--repeat-count", "--probe", "--emit-prompt",
+                 "--repo-root", str(fixture_repo)],
+                capture_output=True, text=True, env=env,
+            )
+
+        # Marked run bound to 'owner', + 1 unacked deny.
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, session_id="owner", now=_time.time(),
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="d", denied_sha12="a" * 12,
+                reason_head="reason head", prompt_head="prompt head", now=1.0,
+            )
+        finally:
+            _clear_state_dir()
+
+        # Probe withholds.
+        out1 = json.loads(probe().stdout)
+        assert out1.get("route_overridden_by") == "pending-hardening-debt", out1
+        assert "cycle_prompt" not in out1, out1
+        cmd = out1["hardening_emit_command"]
+
+        # Run the emitted command (parse out the args after the script name).
+        # The command is bash-shaped; re-derive the arg list for a direct call.
+        keys = _dispatch_requires("hardening")
+        ctx_flags = []
+        for k in keys:
+            ctx_flags += ["--context", f"{k}=test-{k}"]
+        if "item_id" not in keys:
+            ctx_flags += ["--context", "item_id=feat-c"]
+        emit = subprocess.run(
+            [sys.executable, str(lazy_state), "--emit-dispatch", "hardening"] + ctx_flags,
+            capture_output=True, text=True, env=env,
+        )
+        assert emit.returncode == 0, emit.stderr
+        hardening_prompt = json.loads(emit.stdout)["dispatch_prompt"]
+
+        # Emission registered the entry but did NOT ack.
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 1, "emission must not ack"
+        finally:
+            _clear_state_dir()
+
+        # Simulated guard ALLOW of that hardening entry → acks the ledger.
+        _set_state_dir(state_dir)
+        try:
+            out = lazy_guard.guard(json.dumps({
+                "tool_use_id": "tu-h",
+                "tool_input": {"prompt": hardening_prompt},
+            }))
+            assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "allow"
+            assert lazy_core.pending_hardening() == 0, "guard allow must ack the debt"
+        finally:
+            _clear_state_dir()
+
+        # Next probe returns a NORMAL forward route again.
+        out2 = json.loads(probe().stdout)
+        assert "route_overridden_by" not in out2, out2
+        assert "cycle_prompt" in out2, "debt cleared → forward route restored"
+
+        # Concurrent-session leg: non-owner read → None + file survives; owner reads.
+        marker_path = state_dir / "lazy-run-marker.json"
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.read_run_marker(session_id="other") is None
+            assert marker_path.exists(), "non-owner read must not delete the marker"
+            owner = lazy_core.read_run_marker(session_id="owner")
+            assert owner is not None and owner["session_id"] == "owner", owner
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -7561,17 +8005,21 @@ def test_marker_staleness_age():
 # ---------------------------------------------------------------------------
 
 def test_marker_staleness_session_id():
-    """Session-id staleness: mismatching session_id → None + deleted; matching
-    session_id → returned; marker with session_id=None + any session arg →
-    returned (bind-pending markers are never session-stale).
+    """Session-id staleness: mismatching session_id → None but file SURVIVES
+    (Phase 8 WU-8.1 non-destructive path B); matching session_id → returned;
+    marker with session_id=None + any session arg → returned (bind-pending
+    markers are never session-stale).
 
-    RED state: read_run_marker session-id staleness not implemented.
+    REVISED for Phase 8 WU-8.1: path B was previously delete-on-read; it is now
+    NON-DESTRUCTIVE so a concurrent non-owner session never disarms the owner's
+    live run.  The owner-still-reads and file-survives legs are asserted in
+    test_marker_staleness_session_id_non_destructive below.
     """
     _guard()
     import time as _time
     base_epoch = _time.time()
 
-    # -- Path B1: bound session_id mismatch → None + file deleted
+    # -- Path B1: bound session_id mismatch → None, but file LEFT IN PLACE
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
@@ -7584,8 +8032,9 @@ def test_marker_staleness_session_id():
                 f"session_id mismatch must return None, got {result!r}"
             )
             state_dir = lazy_core.claude_state_dir()
-            assert not (state_dir / "lazy-run-marker.json").exists(), (
-                "marker file must be deleted on session_id mismatch"
+            assert (state_dir / "lazy-run-marker.json").exists(), (
+                "Phase 8 WU-8.1: marker file must SURVIVE a non-owner session "
+                "mismatch read (non-destructive path B)"
             )
         finally:
             _clear_state_dir()
@@ -7619,6 +8068,82 @@ def test_marker_staleness_session_id():
             assert result is not None, (
                 "bind-pending marker (session_id=None) must never be session-stale; got None"
             )
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_staleness_session_id_non_destructive():
+    """Phase 8 WU-8.1: a non-owner read (session mismatch) returns None AND
+    leaves the marker on disk; afterwards the OWNER session_id still reads the
+    marker successfully.  This is the concurrent-session safety guarantee — an
+    interactive session firing the inject/guard hook must never disarm a live
+    marked run owned by a different session.
+    """
+    _guard()
+    import time as _time
+    base_epoch = _time.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, session_id="owner-ses", now=base_epoch,
+            )
+            marker_path = lazy_core.claude_state_dir() / "lazy-run-marker.json"
+
+            # (a) Non-owner read → None AND file still exists.
+            non_owner = lazy_core.read_run_marker(now=base_epoch, session_id="other-ses")
+            assert non_owner is None, f"non-owner read must be None, got {non_owner!r}"
+            assert marker_path.exists(), (
+                "non-owner read must NOT delete the marker (non-destructive path B)"
+            )
+
+            # (b) After the non-owner read, the OWNER still reads successfully.
+            owner = lazy_core.read_run_marker(now=base_epoch, session_id="owner-ses")
+            assert owner is not None, (
+                "owner session must still read the marker after a non-owner read"
+            )
+            assert owner["session_id"] == "owner-ses", owner
+
+            # A second non-owner read is still non-destructive (idempotent).
+            assert lazy_core.read_run_marker(now=base_epoch, session_id="x") is None
+            assert marker_path.exists(), "repeated non-owner reads must not delete"
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_age_and_corrupt_still_delete():
+    """Phase 8 WU-8.1 regression guard: path A (age > 24h) and the corrupt-file
+    path KEEP delete-on-read — only path B (session mismatch) became
+    non-destructive.  This pins the asymmetry so a future edit cannot silently
+    make age/corrupt non-destructive too.
+    """
+    _guard()
+    import time as _time
+    base_epoch = _time.time()
+
+    # Age-stale (path A) → deleted.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=5, session_id="owner", now=base_epoch,
+            )
+            mp = lazy_core.claude_state_dir() / "lazy-run-marker.json"
+            assert lazy_core.read_run_marker(now=base_epoch + 25 * 3600) is None
+            assert not mp.exists(), "age-stale marker (path A) must still be deleted"
+        finally:
+            _clear_state_dir()
+
+    # Corrupt → deleted.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            mp = lazy_core.claude_state_dir() / "lazy-run-marker.json"
+            mp.write_text("{ not valid json", encoding="utf-8")
+            assert lazy_core.read_run_marker(now=base_epoch) is None
+            assert not mp.exists(), "corrupt marker must still be deleted"
         finally:
             _clear_state_dir()
 
@@ -9947,6 +10472,9 @@ _TESTS = [
     ("test_marker_write_read_roundtrip", test_marker_write_read_roundtrip),
     ("test_marker_staleness_age", test_marker_staleness_age),
     ("test_marker_staleness_session_id", test_marker_staleness_session_id),
+    # Phase 8 WU-8.1 — non-destructive session-mismatch + age/corrupt still delete
+    ("test_marker_staleness_session_id_non_destructive", test_marker_staleness_session_id_non_destructive),
+    ("test_marker_age_and_corrupt_still_delete", test_marker_age_and_corrupt_still_delete),
     ("test_registry_register_lookup_consume", test_registry_register_lookup_consume),
     ("test_registry_ttl", test_registry_ttl),
     ("test_registry_ring_cap", test_registry_ring_cap),
@@ -9988,6 +10516,11 @@ _TESTS = [
     ("test_single_slot_dispatch_templates", test_single_slot_dispatch_templates),
     ("test_emit_dispatch_cycle_header_marker_gated", test_emit_dispatch_cycle_header_marker_gated),
     ("test_emit_dispatch_cycle_header_summary_fallback", test_emit_dispatch_cycle_header_summary_fallback),
+    # Phase 8 WU-8.2/8.3 — routed hardening debt, guard-allow ack, stderr line, MVB chain
+    ("test_probe_withholds_forward_route_on_pending_debt", test_probe_withholds_forward_route_on_pending_debt),
+    ("test_emit_dispatch_hardening_no_longer_acks", test_emit_dispatch_hardening_no_longer_acks),
+    ("test_guard_allow_acks_on_hardening_class", test_guard_allow_acks_on_hardening_class),
+    ("test_phase8_mvb_chain", test_phase8_mvb_chain),
 ]
 
 

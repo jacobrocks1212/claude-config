@@ -491,7 +491,7 @@ Agent({
 
 Mirrors `/lazy-batch` Step 1d.1 exactly, with `bug-state.py` in place of `lazy-state.py` and `bug_id`/`bug_name` in place of `feature_id`/`feature_name`:
 
-**Pending hardening debt (consume FIRST — probe-surfaced).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`); a marker-gated probe surfaces `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). When a probe (or the run-start output) shows `pending_hardening > 0`, the orchestrator MUST emit + dispatch the hardening stage — one per pending denial, FIFO (each `--emit-dispatch hardening` acks the OLDEST unacked ledger entry) — BEFORE dispatching any forward route, looping until `pending_hardening` is 0. `--run-end` REFUSES (exit 1) while any unacked denial remains; the `--ack-unhardened` override is operator-authorization-ONLY (it prints into the run-end message for retro grading) — never passed autonomously.
+**Pending hardening debt (script-routed — the probe WITHHOLDS the forward route).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`); a marker-gated probe surfaces `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). While debt is pending, the probe emits NO `cycle_prompt` — it returns `route_overridden_by: "pending-hardening-debt"` plus `hardening_emit_command`, a pre-composed `bug-state.py --emit-dispatch hardening` command bound from the oldest unacked denial. Run it verbatim and dispatch its `dispatch_prompt`; the entry is acked when the GUARD ALLOWS the hardening dispatch (not at emission — emitting without dispatching clears nothing). Repeat probe → hardening until a normal forward route returns. **Consume the FULL probe JSON** — piping probe output through field-extractors is BANNED (it blinds the orchestrator to `route_overridden_by`); the probe also warns on stderr while debt is live. `--run-end` REFUSES (exit 1) while any unacked denial remains; the `--ack-unhardened` override is operator-authorization-ONLY (it prints into the run-end message for retro grading) — never passed autonomously.
 
 **Trigger 1 — validate-deny (denied dispatch):**
 1. Re-run `python3 ~/.claude/scripts/bug-state.py --repeat-count --probe --emit-prompt --max-cycles {max_cycles}`. The fresh `cycle_prompt` carries a newly registered nonce.
@@ -849,4 +849,11 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
          checkpoint --next-route + PushNotification + T7 trigger); Step 0.55 surfaces resumed_from_checkpoint.
        - WU-7.5c: Step 1e binding — PushNotification("spun off {id} — {reason}") + D7 digest on any cycle
          return reporting a spin-off. -->
+<!-- Phase 8 (turn-routing-enforcement, 2026-06-12) — coupled-pair mirror note:
+       - WU-8.2/8.3: §1d.1 "Pending hardening debt" rewritten — probe WITHHOLDS the forward route
+         (route_overridden_by + hardening_emit_command); ack moved to guard-allow time (emission
+         no longer acks); full-probe-JSON consumption rule (field-extractor piping BANNED).
+       Mirrored verbatim across lazy-batch / lazy-bug-batch / lazy-batch-cloud (cloud keeps
+       lazy-state.py --cloud paths). Script contract: lazy_core.py read_run_marker path B is now
+       non-destructive (concurrent interactive sessions never delete a live run's marker). -->
 

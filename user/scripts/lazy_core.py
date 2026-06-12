@@ -49,6 +49,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -3985,20 +3986,32 @@ def read_run_marker(
 ) -> dict | None:
     """Read the run marker from the state dir, or return None if absent/stale.
 
-    Staleness rules (both cause delete-on-read and return None):
-      A) Age staleness: the marker's ``started_at`` is more than 24 hours
-         before ``now`` (injectable epoch float; defaults to time.time()).
-         A crashed run must not haunt the next interactive session.
-      B) Session-id mismatch: BOTH of the following must be true for the
-         marker to be session-stale:
+    Staleness rules — note the ASYMMETRY between paths A and B (Phase 8 WU-8.1):
+      A) Age staleness (DELETE-ON-READ): the marker's ``started_at`` is more
+         than 24 hours before ``now`` (injectable epoch float; defaults to
+         time.time()).  The marker is DELETED and None is returned.  A crashed
+         run must not haunt the next interactive session, and after 24h the
+         owning run is presumed dead — destroying its marker is safe.
+      B) Session-id mismatch (NON-DESTRUCTIVE — returns None WITHOUT deleting):
+         BOTH of the following must be true for the marker to be session-stale:
            * The caller passes a non-None ``session_id`` argument.
            * The marker's ``session_id`` field is also non-None (i.e. the
              marker is "bound", not "bind-pending").
-         If the marker's session_id is None, it is bind-pending and is NEVER
-         stale on session-id alone — the inject hook has not yet stamped it.
+         When that mismatch holds, this function returns None but LEAVES THE
+         MARKER FILE ON DISK.  Rationale (Phase 8): a concurrent NON-owner
+         session (e.g. an interactive session running while a marked /lazy-batch
+         run is live) must see "no marker" (no banner, fast-path allow) but must
+         NEVER destroy the OWNING session's live run state.  Deleting here
+         silently disarmed enforcement mid-run on 2026-06-12 (~14:53Z, session
+         e076ed30).  The owner session_id still reads the marker successfully on
+         its own subsequent calls.  If the marker's session_id is None, it is
+         bind-pending and is NEVER stale on session-id alone — the inject hook
+         has not yet stamped it.
 
-    Corrupt or unparseable marker files are treated as stale (deleted, None
+    Corrupt or unparseable marker files are treated as stale (DELETED, None
     returned) so a partial write from a crash never bricks subsequent sessions.
+    Corruption deletion is retained (like path A) because a corrupt marker
+    belongs to no readable session — there is no owner to protect.
 
     Args:
         now: epoch float for age comparison (injectable; defaults to time.time())
@@ -4048,16 +4061,17 @@ def read_run_marker(
             pass
         return None
 
-    # --- Staleness path B: session_id mismatch --------------------------------
+    # --- Staleness path B: session_id mismatch (NON-DESTRUCTIVE) --------------
     # Only fires when BOTH the caller supplies a session_id AND the marker has
     # a non-None session_id (bound, not bind-pending).
+    #
+    # Phase 8 WU-8.1: this path returns None WITHOUT deleting the marker.  A
+    # non-owner session sees "no marker" but must not destroy the owner's run
+    # state.  Unlike path A (age) and the corrupt-file path above, NO unlink()
+    # happens here — the owning session's next read still succeeds.
     marker_session = marker.get("session_id")
     if session_id is not None and marker_session is not None:
         if session_id != marker_session:
-            try:
-                marker_path.unlink()
-            except OSError:
-                pass
             return None
 
     return marker
@@ -4221,6 +4235,24 @@ def _load_registry() -> dict:
         pass
     # Corrupt / wrong shape — start fresh.
     return {"entries": []}
+
+
+def registry_summary() -> str:
+    """Return a short one-line summary of the prompt-registry state.
+
+    Phase 8 WU-8.2: bound into the routed-hardening-debt ``hardening_emit_command``
+    as ``--context registry_state=...`` so the dispatched hardening subagent has
+    a snapshot of how many emissions are outstanding.  Read-only.
+
+    Returns:
+        ``"empty"`` when there are no entries, otherwise
+        ``"<N> entries, <M> unconsumed"``.
+    """
+    entries = _load_registry().get("entries", [])
+    if not entries:
+        return "empty"
+    unconsumed = sum(1 for e in entries if not e.get("consumed", False))
+    return f"{len(entries)} entries, {unconsumed} unconsumed"
 
 
 def _save_registry(data: dict) -> None:
@@ -4643,6 +4675,78 @@ def pending_denial_reasons() -> list[str]:
         for e in read_deny_ledger()
         if not e.get("acked", False)
     ]
+
+
+def oldest_unacked_deny() -> dict | None:
+    """Return the OLDEST (FIFO) unacked deny-ledger entry, or None when there is
+    no pending debt.
+
+    Phase 8 WU-8.2: the probe's routed-hardening-debt override pre-composes a
+    ``--emit-dispatch hardening`` command whose ``--context`` bindings are derived
+    from this entry (``prompt_head`` → denied_prompt_summary, ``reason_head`` →
+    denial_reason).  Read-only — does NOT mutate the ledger (the guard's
+    allow-time ack is the only mutator now).
+    """
+    for entry in read_deny_ledger():
+        if not entry.get("acked", False):
+            return entry
+    return None
+
+
+def build_hardening_emit_command(
+    state_script_name: str,
+    *,
+    item_id: str,
+    oldest_deny: dict | None,
+    probe_summary: str,
+    registry_summary: str,
+    cwd: str,
+) -> str:
+    """Pre-compose the single-line shell command that dispatches the routed
+    hardening debt (Phase 8 WU-8.2).
+
+    The returned string is meant to be pasted verbatim into bash by the
+    orchestrator when the probe withholds the forward route over pending
+    hardening debt.  Every ``--context`` VALUE is shell-quoted via ``shlex.quote``
+    (POSIX single-quote escaping) so embedded spaces, quotes, and newlines round-
+    trip safely regardless of the host platform — the command targets ``bash`` /
+    ``python3`` on the operator's machine, not the Windows host that emits it.
+
+    Args:
+        state_script_name: ``"lazy-state.py"`` or ``"bug-state.py"`` — the script
+            whose ``--emit-dispatch hardening`` retires this debt.
+        item_id: the current feature/bug id (becomes ``--context item_id=...``).
+        oldest_deny: the oldest unacked deny-ledger entry (from
+            ``oldest_unacked_deny()``), or None.  Its ``prompt_head`` /
+            ``reason_head`` bind denied_prompt_summary / denial_reason; absent →
+            empty strings.
+        probe_summary: a compact one-line summary of the withholding probe.
+        registry_summary: a short registry-state summary (e.g. "N entries, M
+            unconsumed" or "empty").
+        cwd: the repo root the dispatch should run against.
+
+    Returns:
+        A single shell command string, safe to paste into bash.
+    """
+    denied_prompt_summary = (oldest_deny or {}).get("prompt_head", "") or ""
+    denial_reason = (oldest_deny or {}).get("reason_head", "") or ""
+
+    def _ctx(key: str, value: str) -> str:
+        # shlex.quote escapes the VALUE only; the key=value join stays literal.
+        return f"--context {key}={shlex.quote(value)}"
+
+    parts = [
+        f"python3 ~/.claude/scripts/{state_script_name}",
+        "--emit-dispatch hardening",
+        _ctx("trigger_kind", "validate-deny"),
+        _ctx("item_id", item_id or ""),
+        _ctx("denied_prompt_summary", denied_prompt_summary),
+        _ctx("denial_reason", denial_reason),
+        _ctx("probe_json", probe_summary),
+        _ctx("registry_state", registry_summary),
+        _ctx("cwd", cwd or ""),
+    ]
+    return " ".join(parts)
 
 
 def ack_oldest_deny(now: float | None = None) -> dict | None:

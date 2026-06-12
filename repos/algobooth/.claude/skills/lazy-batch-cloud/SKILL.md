@@ -378,7 +378,7 @@ Agent({
 
 If the `Agent` dispatch of `cycle_prompt` is **DENIED** by the validate-deny guard (`lazy-dispatch-guard.sh`):
 
-**Pending hardening debt (consume FIRST — probe-surfaced).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`); a marker-gated probe surfaces `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). When a probe (or the run-start output) shows `pending_hardening > 0`, the orchestrator MUST emit + dispatch the hardening stage — one per pending denial, FIFO (each `--emit-dispatch hardening` acks the OLDEST unacked ledger entry) — BEFORE dispatching any forward route, looping until `pending_hardening` is 0. `python3 ~/.claude/scripts/lazy-state.py --run-end` REFUSES (exit 1) while any unacked denial remains; the `--ack-unhardened` override is operator-authorization-ONLY (printed into the run-end message for retro grading) — never passed autonomously.
+**Pending hardening debt (script-routed — the probe WITHHOLDS the forward route).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`); a marker-gated probe surfaces `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). While debt is pending, the probe emits NO `cycle_prompt` — it returns `route_overridden_by: "pending-hardening-debt"` plus `hardening_emit_command`, a pre-composed `--emit-dispatch hardening` command bound from the oldest unacked denial. Run it verbatim and dispatch its `dispatch_prompt`; the entry is acked when the GUARD ALLOWS the hardening dispatch (not at emission — emitting without dispatching clears nothing). Repeat probe → hardening until a normal forward route returns. **Consume the FULL probe JSON** — piping probe output through field-extractors is BANNED (it blinds the orchestrator to `route_overridden_by`); the probe also warns on stderr while debt is live. `python3 ~/.claude/scripts/lazy-state.py --run-end` REFUSES (exit 1) while any unacked denial remains; the `--ack-unhardened` override is operator-authorization-ONLY (printed into the run-end message for retro grading) — never passed autonomously.
 
 **Trigger 1 — validate-deny on a cycle prompt:** The guard denied the prompt (nonce mismatch, stale registry entry, or prompt was re-composed rather than used verbatim). Recovery steps:
 1. Re-run the dispatch-bound probe in the same turn: `python3 ~/.claude/scripts/lazy-state.py --cloud --repeat-count --emit-prompt --probe --max-cycles {max_cycles}`. This emits a fresh `cycle_prompt` registered with a new nonce.
@@ -877,4 +877,11 @@ All other behavior is identical — coupling is enforced by the state script (on
          (--cloud --run-end --reason checkpoint --next-route + PushNotification + T7 trigger).
        - WU-7.5c: Step 1e — PushNotification("spun off {id} — {reason}") + D7 digest on any cycle return
          reporting a spin-off. -->
+<!-- Phase 8 (turn-routing-enforcement, 2026-06-12) — coupled-pair mirror note:
+       - WU-8.2/8.3: §1d.1 "Pending hardening debt" rewritten — probe WITHHOLDS the forward route
+         (route_overridden_by + hardening_emit_command); ack moved to guard-allow time (emission
+         no longer acks); full-probe-JSON consumption rule (field-extractor piping BANNED).
+       Mirrored verbatim across lazy-batch / lazy-bug-batch / lazy-batch-cloud (cloud keeps
+       lazy-state.py --cloud paths). Script contract: lazy_core.py read_run_marker path B is now
+       non-destructive (concurrent interactive sessions never delete a live run's marker). -->
 

@@ -3727,16 +3727,14 @@ def main() -> int:
         if result.get("ok"):
             prompt = result["prompt"]
             model = result["model"]
-            registered = lazy_core.register_emission_if_marked(
+            lazy_core.register_emission_if_marked(
                 prompt, cls,
                 item_id=context.get("item_id"),
             )
-            # Phase 7 WU-7.1: the hardening class retires one unit of routed
-            # hardening debt per emission — ack the OLDEST unacked deny-ledger
-            # entry (FIFO, one per emission), but ONLY when the emission actually
-            # registered (marker present).  No marker → peek, no ack.
-            if cls == "hardening" and registered is not None:
-                lazy_core.ack_oldest_deny()
+            # Phase 8 WU-8.2: emission no longer acks the deny ledger.  The ack
+            # moves to GUARD-ALLOW time (lazy_guard.py, on allowing a hardening-
+            # class entry) so the debt clears only when a hardening dispatch
+            # actually reaches execution.  Mirror of lazy-state.py.
             out: dict = {
                 "dispatch_prompt": prompt,
                 "dispatch_model": model,
@@ -3853,31 +3851,54 @@ def main() -> int:
     # cycle_prompt: null, cycle_model: null (so the orchestrator's one probe
     # call is uniform); on refusal it also adds cycle_prompt_refused.
     if args.emit_prompt:
-        rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
-        emitted = lazy_core.emit_cycle_prompt(
-            Path(args.repo_root), state,
-            pipeline="bug", cloud=args.cloud, repeat_count=rc,
-        )
-        if emitted is None:
-            state["cycle_prompt"] = None
-            state["cycle_model"] = None
-        elif emitted.get("ok"):
-            state["cycle_prompt"] = emitted["prompt"]
-            state["cycle_model"] = emitted["model"]
-        else:
-            state["cycle_prompt"] = None
-            state["cycle_model"] = None
-            state["cycle_prompt_refused"] = emitted.get("refused")
-        # Registry integration (Phase 1): when a marker is active and the emission
-        # produced a non-null cycle_prompt, register it so the validate hook can
-        # check it.  No marker → no-op (zero writes, byte-identical output).
-        # Bug pipeline: feature_id in state holds the bug id (same key name).
-        cycle_prompt = state.get("cycle_prompt")
-        if cycle_prompt:
-            lazy_core.register_emission_if_marked(
-                cycle_prompt, "cycle",
-                item_id=state.get("feature_id"),
+        # Phase 8 WU-8.2: routed hardening debt WITHHOLDS the forward route.
+        # When (marker present AND pending_hardening() > 0) the probe must NOT
+        # emit/register a cycle_prompt — the orchestrator owes a hardening
+        # dispatch first.  Mirror of lazy-state.py (coupled-pair).
+        _emit_marker = lazy_core.read_run_marker()
+        _emit_debt = lazy_core.pending_hardening() if _emit_marker is not None else 0
+        if _emit_marker is not None and _emit_debt > 0:
+            # Withhold: no cycle_prompt, no cycle_model, no registration.
+            _oldest = lazy_core.oldest_unacked_deny()
+            state["route_overridden_by"] = "pending-hardening-debt"
+            _probe_summary = (
+                f"step={state.get('current_step')} sub_skill={state.get('sub_skill')} "
+                f"feature_id={state.get('feature_id')} pending_hardening={_emit_debt}"
             )
+            state["hardening_emit_command"] = lazy_core.build_hardening_emit_command(
+                "bug-state.py",
+                item_id=state.get("feature_id") or "",
+                oldest_deny=_oldest,
+                probe_summary=_probe_summary,
+                registry_summary=lazy_core.registry_summary(),
+                cwd=str(args.repo_root),
+            )
+        else:
+            rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
+            emitted = lazy_core.emit_cycle_prompt(
+                Path(args.repo_root), state,
+                pipeline="bug", cloud=args.cloud, repeat_count=rc,
+            )
+            if emitted is None:
+                state["cycle_prompt"] = None
+                state["cycle_model"] = None
+            elif emitted.get("ok"):
+                state["cycle_prompt"] = emitted["prompt"]
+                state["cycle_model"] = emitted["model"]
+            else:
+                state["cycle_prompt"] = None
+                state["cycle_model"] = None
+                state["cycle_prompt_refused"] = emitted.get("refused")
+            # Registry integration (Phase 1): when a marker is active and the
+            # emission produced a non-null cycle_prompt, register it so the
+            # validate hook can check it.  No marker → no-op (byte-identical).
+            # Bug pipeline: feature_id in state holds the bug id (same key name).
+            cycle_prompt = state.get("cycle_prompt")
+            if cycle_prompt:
+                lazy_core.register_emission_if_marked(
+                    cycle_prompt, "cycle",
+                    item_id=state.get("feature_id"),
+                )
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).
@@ -3906,6 +3927,12 @@ def main() -> int:
             state["pending_hardening"] = _pending
             if _pending > 0:
                 state["pending_denials"] = lazy_core.pending_denial_reasons()
+                # Phase 8 WU-8.3: warn to STDERR only (stdout must stay parseable
+                # JSON; lazy_inject.py's _run_probe captures stderr separately).
+                sys.stderr.write(
+                    f"⚠ pending_hardening: {_pending} — forward route withheld; "
+                    f"run hardening_emit_command first\n"
+                )
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

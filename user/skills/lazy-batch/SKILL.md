@@ -499,7 +499,7 @@ Agent({
 
 The validate-deny guard (`lazy-dispatch-guard.sh`) fires on every `Agent` tool call when the run marker is present. If the guard denies the dispatch (the `permissionDecisionReason` contains a corrective recipe — prompt hash mismatch or stale/consumed nonce), follow this recovery sequence:
 
-**Pending hardening debt (consume FIRST — probe-surfaced).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`), and a marker-gated probe surfaces the outstanding count as `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). When a probe (or the run-start output) shows `pending_hardening > 0`, the orchestrator MUST emit + dispatch the hardening stage — one per pending denial, FIFO — BEFORE dispatching any forward route this cycle: each `--emit-dispatch hardening` acks the OLDEST unacked ledger entry, so loop until `pending_hardening` returns to 0. Hardening debt is also a run-end gate: `--run-end` REFUSES (exit 1) while any unacked denial remains. The `--ack-unhardened` override exists for operator authorization ONLY (it forces a clean run-end and prints the override into the run-end message, which retros grade) — the orchestrator never passes it autonomously.
+**Pending hardening debt (script-routed — the probe WITHHOLDS the forward route).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`), and a marker-gated probe surfaces the outstanding count as `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). While debt is pending, the probe does NOT emit a `cycle_prompt` at all — it returns `route_overridden_by: "pending-hardening-debt"` plus `hardening_emit_command`, a pre-composed `--emit-dispatch hardening` command with the `--context` bindings auto-derived from the oldest unacked denial. Run that command verbatim and dispatch its `dispatch_prompt`; the ledger entry is acked when the GUARD ALLOWS the hardening dispatch (not at emission — emitting without dispatching clears nothing). Repeat probe → hardening until the probe returns a normal forward route. **Consume the FULL probe JSON:** piping probe output through field-extractors (e.g. `python3 -c "...print(d['cycle_model'])"`) is BANNED — it blinds the orchestrator to `route_overridden_by` and any future routing field; read the whole JSON object every probe (the probe also prints a `⚠ pending_hardening` warning to stderr while debt is live). Hardening debt is also a run-end gate: `--run-end` REFUSES (exit 1) while any unacked denial remains. The `--ack-unhardened` override exists for operator authorization ONLY (it forces a clean run-end and prints the override into the run-end message, which retros grade) — the orchestrator never passes it autonomously.
 
 **Trigger 1 — validate-deny (denied dispatch):**
 1. Re-run the dispatch-bound probe: `python3 ~/.claude/scripts/lazy-state.py --repeat-count --probe --emit-prompt --max-cycles {max_cycles}`. The fresh `cycle_prompt` carries a newly registered nonce.
@@ -1182,4 +1182,11 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
        - WU-7.5c: Step 1e gained step 3a — fire PushNotification("spun off {id} — {reason}") + D7 digest
          entry on any cycle return reporting a spin-off. (cloud mirrors at its Step 1e equivalent.)
        Bug-pipeline (lazy-bug-batch) keeps bug-state.py / bug_id|bug_name bindings; cloud keeps --cloud. -->
+<!-- Phase 8 (turn-routing-enforcement, 2026-06-12) — coupled-pair mirror note:
+       - WU-8.2/8.3: §1d.1 "Pending hardening debt" rewritten — probe WITHHOLDS the forward route
+         (route_overridden_by + hardening_emit_command); ack moved to guard-allow time (emission
+         no longer acks); full-probe-JSON consumption rule (field-extractor piping BANNED).
+       Mirrored verbatim across lazy-batch / lazy-bug-batch / lazy-batch-cloud (cloud keeps
+       lazy-state.py --cloud paths). Script contract: lazy_core.py read_run_marker path B is now
+       non-destructive (concurrent interactive sessions never delete a live run's marker). -->
 

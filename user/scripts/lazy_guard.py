@@ -17,7 +17,10 @@ Decision logic (all paths require a valid run marker; no marker → exit 0):
      unregistered prompt stays on the deny path.
   2. ALLOW path:
        - Unconsumed fresh hit: consume nonce recording the consumer tool_use_id;
-         print allow JSON.
+         print allow JSON.  Phase 8 WU-8.2: if the matched entry's class is
+         "hardening", best-effort ack the oldest unacked deny-ledger entry here
+         (debt clears only when a hardening dispatch actually reaches execution;
+         ack moved from emission-time).  An ack failure never changes the allow.
        - Idempotent re-fire: hit already consumed BY THE SAME tool_use_id.
          This is a deliberate defensive extension beyond the E4 spike note
          (RUNTIME_SPIKE.md E4 observed double-fire on a DENIED call and noted
@@ -235,6 +238,29 @@ def _assert_registry_readable() -> None:
         ) from None
 
 
+def _ack_if_hardening(entry: dict) -> None:
+    """Phase 8 WU-8.2: when the guard ALLOWS a hardening-class dispatch for the
+    FIRST time, retire one unit of routed hardening debt (FIFO ack of the oldest
+    unacked deny-ledger entry).
+
+    Ack moved here from emission-time (Phase 7) so the debt clears only when a
+    hardening dispatch actually reaches execution — a repeated --emit-dispatch
+    hardening can no longer drain the ledger without a dispatch occurring.
+
+    Best-effort / fail-open: any failure is swallowed.  An ack failure must NEVER
+    change the allow output (the dispatch still proceeds).
+
+    Caller contract: invoke ONLY on a first-time consumption of a hardening
+    entry, never on an idempotent re-fire of an already-consumed entry (that
+    would double-ack — the re-fire is the SAME logical dispatch).
+    """
+    try:
+        if entry.get("class") == "hardening":
+            lazy_core.ack_oldest_deny()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _deny_and_ledger(
     reason: str,
     *,
@@ -291,9 +317,11 @@ def guard(stdin_text: str) -> str | None:
 
     # Check whether a valid run marker is present.
     # Pass the hook-input session_id so staleness path B (session mismatch) can
-    # fire in production: if the marker is bound to a different session_id (e.g.
-    # a leftover from a crashed previous run), read_run_marker deletes it and
-    # returns None — allowing the current (non-orchestrator) session through.
+    # fire in production: if the marker is bound to a different session_id (a
+    # concurrent NON-owner session), read_run_marker returns None — allowing the
+    # current (non-orchestrator) session through. Phase 8 WU-8.1: path B is
+    # NON-DESTRUCTIVE — the marker is LEFT ON DISK so the owning run stays armed
+    # (this guard firing from a non-owner session must never disarm the owner).
     marker = lazy_core.read_run_marker(session_id=session_id)
     if marker is None:
         # No active run — fast path allow (marker-absent path is handled by the
@@ -315,8 +343,14 @@ def guard(stdin_text: str) -> str | None:
 
     if entry is not None:
         # Unconsumed fresh hit → allow, consume recording the consumer.
+        # This is the ONLY first-time-consumption allow path (the idempotent
+        # re-fire path below is a re-fire of an ALREADY-consumed entry, so it
+        # must NOT ack — that would double-ack the same logical dispatch).
         nonce = entry["nonce"]
         lazy_core.consume_nonce(nonce, consumer=tool_use_id)
+        # Phase 8 WU-8.2: if this is a hardening-class dispatch reaching
+        # execution, retire one unit of routed hardening debt (best-effort).
+        _ack_if_hardening(entry)
         reason = f"dispatch allowed — nonce {nonce} consumed by {tool_use_id}"
         return _allow_json(reason)
 

@@ -1279,9 +1279,14 @@ def test_inject_stamps_session_id_when_unbound():
 # ---------------------------------------------------------------------------
 
 def test_guard_different_session_id_silent_allow():
-    """Item 2: when the marker is bound to a different session_id, the guard
-    must treat the marker as stale (path B), delete it, and silently allow
-    (exit 0, no output) — as if no marker were present.
+    """Item 2 (REVISED for Phase 8 WU-8.1): when the marker is bound to a
+    different session_id, the guard must treat the marker as stale (path B) and
+    silently allow (exit 0, no output) — as if no marker were present — BUT must
+    LEAVE THE MARKER ON DISK (non-destructive path B).  A concurrent non-owner
+    session's guard firing must never disarm the owning session's live run.
+
+    Previously this test asserted the guard DELETED the stale marker; that
+    delete-on-read-B behavior is exactly what Phase 8 WU-8.1 removed.
     """
     _guard()
     assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
@@ -1329,10 +1334,22 @@ def test_guard_different_session_id_silent_allow():
             f"got: {output!r}"
         )
 
-        # The marker file must have been deleted (stale cleanup).
+        # Phase 8 WU-8.1: the marker file must SURVIVE — a non-owner guard firing
+        # must NOT disarm the owner's live run (non-destructive path B).
         marker_path = state_dir / "lazy-run-marker.json"
-        assert not marker_path.exists(), (
-            "guard must delete the stale marker (different session_id path B cleanup)"
+        assert marker_path.exists(), (
+            "Phase 8 WU-8.1: guard must LEAVE the marker on disk on a non-owner "
+            "session mismatch (non-destructive path B) — the owning session's "
+            "live run must stay armed"
+        )
+        # And the owning session must still read it.
+        _set_state_dir(state_dir)
+        try:
+            owner_marker = lazy_core.read_run_marker(session_id=session_a)
+        finally:
+            _clear_state_dir()
+        assert owner_marker is not None and owner_marker.get("session_id") == session_a, (
+            "owner session must still read the marker after a non-owner guard firing"
         )
 
 
@@ -1936,6 +1953,76 @@ def test_guard_bash_deny_writes_deny_ledger():
 
 
 # ---------------------------------------------------------------------------
+# Phase 8 — inject is non-destructive against a marker bound to another session
+# ---------------------------------------------------------------------------
+
+def test_inject_non_owner_session_leaves_marker_intact():
+    """Phase 8 WU-8.1: the REAL bash lazy-route-inject.sh, fired with a hook-input
+    session_id DIFFERENT from the marker's bound session_id, must:
+      - exit 0,
+      - inject nothing (no LAZY-ROUTE banner / empty stdout),
+      - AND leave the marker file on disk (non-destructive path B).
+
+    This is the concurrent-session safety guarantee at the hook level: an
+    interactive session firing the inject hook during a live marked run must not
+    disarm the owning run.
+    """
+    _guard()
+    assert _INJECT_SH.exists(), f"lazy-route-inject.sh missing: {_INJECT_SH}"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        fixture_repo = _build_fixture_repo(td_path)
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature",
+                cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=time.time(),
+                session_id=owner_session,  # bound to the OWNER
+            )
+        finally:
+            _clear_state_dir()
+
+        marker_path = state_dir / "lazy-run-marker.json"
+        assert marker_path.exists(), "pre-condition: marker must exist"
+
+        # Fire the inject hook from a DIFFERENT (non-owner) session.
+        other_session = str(uuid.uuid4())
+        stdin_text = _userPromptSubmit_json(session_id=other_session)
+        result = _run_bash(_INJECT_SH, stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"inject must exit 0 for a non-owner session; stderr: {result.stderr!r}"
+        )
+        assert result.stdout.strip() == "", (
+            f"inject must produce NO banner for a non-owner session; "
+            f"got: {result.stdout!r}"
+        )
+        # The marker must SURVIVE (Phase 8 non-destructive path B).
+        assert marker_path.exists(), (
+            "Phase 8 WU-8.1: a non-owner inject firing must LEAVE the marker on "
+            "disk so the owning run stays armed"
+        )
+        # And the owner still reads it.
+        _set_state_dir(state_dir)
+        try:
+            owner_marker = lazy_core.read_run_marker(session_id=owner_session)
+        finally:
+            _clear_state_dir()
+        assert owner_marker is not None and owner_marker.get("session_id") == owner_session, (
+            "owner session must still read the marker after a non-owner inject firing"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test registry
 # ---------------------------------------------------------------------------
 
@@ -1978,6 +2065,9 @@ _TESTS = [
     # Phase 7 — deny-ledger write through the real bash hook path
     ("test_guard_bash_deny_writes_deny_ledger",
      test_guard_bash_deny_writes_deny_ledger),
+    # Phase 8 — inject non-destructive against a marker bound to another session
+    ("test_inject_non_owner_session_leaves_marker_intact",
+     test_inject_non_owner_session_leaves_marker_intact),
 ]
 
 

@@ -211,7 +211,12 @@ def inject(stdin_text: str) -> str | None:
 
     # Read the run marker — this is the primary gate.
     # Pass the hook-input session_id so staleness path B (session-id mismatch)
-    # can fire in production when a leftover marker from a crashed run is present.
+    # can fire in production. Phase 8 WU-8.1: path B is NON-DESTRUCTIVE — when a
+    # concurrent NON-owner session (e.g. an interactive session running while a
+    # marked /lazy-batch run is live) fires this hook, read_run_marker returns
+    # None (this hook injects nothing, fast-path) but LEAVES the owner's marker
+    # on disk so the live run stays armed. (Pre-Phase-8 this deleted the marker,
+    # silently disarming enforcement mid-run when a concurrent session fired.)
     marker = lazy_core.read_run_marker(session_id=session_id)
     if marker is None:
         # No active run → silent exit (bash wrapper handles this, but guard here too).
