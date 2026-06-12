@@ -497,6 +497,50 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 
 ---
 
+### Phase 9: Bind-at-guard — eliminate the bind-on-first-inject race
+
+> ⚠ Phase-count circuit breaker acknowledged: (10−6)/6 = 67% > +50%. Overridden by operator direction 2026-06-12 ("Rebind and fix this issue") — Phases 7–9 are operator-directed hardening rounds consuming live incident evidence, not corrective decomposition drift.
+
+**Scope:** Close the marker bind race observed live 2026-06-12 ~19:33Z: run-start writes a bind-pending marker, the inject hook fires BEFORE a turn's work, so the orchestrator's own invocation turn cannot bind — the first hook firing anywhere wins. A concurrent interactive session's message bound the live run's marker to the WRONG session (incident: marker `started_at 19:22:43Z` bound to the interactive session at 19:33), silently disarming the batch run's guard (non-owner fast-path) while spraying banners, spurious registry emissions, and repeat-counter inflation (3→4, 10→11 across two bystander messages) into the interactive session. Operator hand-rebind applied 19:38Z as immediate remediation (authorized; marker is otherwise a script-owned surface).
+
+**Validated Assumptions (Phase 9 additions):**
+
+| assumption | how-confirmed | evidence |
+|---|---|---|
+| Inject fires before the turn's work, so the invocation turn cannot bind | runtime | live marker `session_id: 2899da98…` (interactive session) on a run started from `e076ed30` at 19:22:43Z |
+| Bystander injects advance the run's persisted repeat counters and register emissions | runtime | `repeat_count` 3→4, `step_repeat_count` 10→11, `turn` 3→4 across two interactive-session messages with the batch session idle-in-cycle |
+| Only the orchestrator session can produce a guard ALLOW of a registered prompt (binding anchor is unforgeable by bystanders) | code-provable (no runtime smell: allow requires a registry hit; only the orchestrator dispatches emitted prompts — the property enforcement itself guarantees) | `lazy_guard.py` lookup path; Phase 6 E2E assertions 2–3 |
+
+**Interface contract:**
+- `lazy_inject.py` NEVER binds. Unbound marker (`session_id: null`) → silent exit: no banner, no probe, no emission registration, no counter advance. Bound non-owner → silent (Phase 8, unchanged). Bound owner → full banner (unchanged).
+- `lazy_guard.py` binds on ALLOW: when the marker is unbound and validation produces an ALLOW (registered-prompt hit — fresh consumption or idempotent re-fire), stamp the marker with the caller's `session_id` (best-effort/fail-open: a bind failure never changes the allow) then allow. A DENY never binds. Bound-owner and bound-non-owner guard behavior unchanged (Phase 8).
+- Accepted edge (documented, not fixed): during the unbound window (run-start → orchestrator's first dispatch, typically seconds), a bystander session's Agent dispatch is still validated and denied on lookup-miss, writing ledger debt. Rare; preserves enforcement of the run's own FIRST dispatch, which is the priority.
+
+**Deliverables:**
+- [ ] **WU-9.1 Inject never binds:** remove the bind-on-first-hook-firing stamp from `lazy_inject.py`; unbound → silent exit before any probe/registration side effect; comments updated.
+- [ ] **WU-9.2 Guard binds on allow:** `lazy_guard.py` stamps the unbound marker on ALLOW (both allow paths), fail-open; deny paths never bind.
+- [ ] Tests: inject unbound → no output AND no registry/counter/marker mutation; guard unbound+hit → allow AND marker bound to caller; guard unbound+miss → deny AND marker stays unbound; bound-owner/non-owner behavior unchanged; revise the Phase 1/2 pins of bind-on-first-inject to the new contract; pipe-test: inject with unbound marker → exit 0, no stdout, marker file unchanged. ALL standing gates green, baselines byte-identical.
+
+**Minimum Verifiable Behavior:** Fixture sequence: `--run-start` (unbound) → simulated inject firing from session A → no banner, marker still unbound → guard ALLOW of a registered prompt from session B → marker bound to B → inject from session B → banner; inject from session A → silent, marker intact.
+
+**Runtime Verification** *(next live marked run):*
+- [ ] Marker binds to the batch session at its first dispatch (inspect `session_id` mid-run) even when interactive messages arrive first.
+- [ ] Interactive-session messages during the run produce no banner, no registry growth, and no counter movement.
+
+**MCP Integration Test Assertions:** N/A — no MCP runtime in claude-config.
+
+**Prerequisites:** Phase 8 (non-destructive non-owner semantics are the substrate). Origin evidence: live incident 2026-06-12 19:33Z (this session's hook-context captures).
+
+**Files likely modified:** `user/scripts/lazy_inject.py`, `user/scripts/lazy_guard.py`, `user/scripts/test_lazy_core.py`, `user/scripts/test_hooks.py` (+ `lazy_core.py` only if `bind_marker_session` needs a caller tweak).
+
+**Testing Strategy:** `test_lazy_core.py` Phase 9 section (hermetic `LAZY_STATE_DIR`) + one `test_hooks.py` pipe-test; both `--test` smokes; `lint-skills.py` full flags. Boundary coverage: bind failure during allow (fail-open), unbound guard deny leaves marker unbound, owner-bound inject unchanged.
+
+**Integration Notes for Next Phase:** With bind-at-guard, the marker's `session_id` is proof the bound session dispatched a registered prompt — retros can treat it as the orchestrator-session identifier. The accepted unbound-window edge is the remaining theoretical gap if a future round wants it.
+
+**Context from prior phases:** Phase 8's non-owner semantics (invisible-not-deleted) make wrong-binds recoverable; this phase prevents them. Live-run safety: bound-owner code paths are untouched, so landing mid-run is safe (same rationale as Phase 8's mid-run-edit assumption row).
+
+---
+
 ## Review Notes
 
 **2026-06-11 — /spec-phases authoring review.** Ground-truth verified: yes (git status, line count 326, phase-heading grep all matched the drafting subagent's pasted block). **Review verdict: PASS-WITH-FIXES** — full SPEC coverage confirmed (all components land in exactly one phase; all four Locked Decisions intact; deny hook genuinely unarmed until Phase 6; failure-mode containments reflected). Nine localized fixes applied by the orchestrator post-review: (1) Phase 6 MVB section added; (2) E2E assertions 6–7 added covering Success Criteria 2 and 4; (3) turn-window freshness recorded as an explicit SPEC deviation with a compensating 30-min registry-entry TTL; (4) session-id-mismatch staleness test rows added to Phase 1; (5) spike item (e) added for the UserPromptSubmit task-notification limitation; (6) SessionStart(compact) payload enumerated (re-entry protocol + counters); (7) depth-guard ownership clarified (Phase 2 implements vs Phase 4 integration-tests); (8) locked-decision-4 cadence clause made explicit in the /harden-harness SKILL deliverable; (9) HOOK_ERROR breadcrumb surfacing added to inject-hook behavior and pipe-tests.
