@@ -2516,23 +2516,86 @@ def _write_skip_mcp_test(spec_dir: Path) -> Path:
     return p
 
 
-def _write_mcp_test_results(spec_dir: Path, scenarios: list) -> Path:
-    """Write a minimal valid MCP_TEST_RESULTS.md (kind: mcp-test-results) with the
-    given scenarios list.  The YAML list is serialised inline for simplicity.
+def _write_mcp_test_results(
+    spec_dir: Path,
+    scenarios: list,
+    *,
+    kind: str = "mcp-test-results",
+    result: str | None = "all-passing",
+    pass_count="auto",
+    total_count="auto",
+    validated_commit: str | None = None,
+) -> Path:
+    """Write an MCP_TEST_RESULTS.md per the sentinel-frontmatter.md schema.
+
+    Defaults produce a canonical PASSING run (``result: all-passing``,
+    ``pass_count == total_count == len(scenarios)``) so happy-path fixtures
+    satisfy the ``__write_validated_from_results__`` result-literal and count
+    gates.  Keyword overrides shape the refusal fixtures:
+
+    - ``kind`` — frontmatter ``kind:`` value (wrong-kind gate fixtures).
+    - ``result=None`` / ``pass_count=None`` / ``total_count=None`` — OMIT the
+      corresponding frontmatter line entirely (missing-field fixtures).
+    - ``pass_count`` / ``total_count`` default to the sentinel string
+      ``"auto"`` meaning ``len(scenarios)``.
+    - ``validated_commit`` — omitted unless given (legacy results files
+      predate the sha-freshness anchor; the schema requires it going forward).
     """
     p = spec_dir / "MCP_TEST_RESULTS.md"
     scenarios_yaml = "".join(f"  - {s}\n" for s in scenarios)
-    p.write_text(
-        "---\n"
-        "kind: mcp-test-results\n"
-        "feature_id: test-feature\n"
-        f"scenarios:\n{scenarios_yaml}"
-        "date: 2026-06-10\n"
-        "---\n\n"
-        "# MCP Test Results\n",
-        encoding="utf-8",
-    )
+    if pass_count == "auto":
+        pass_count = len(scenarios)
+    if total_count == "auto":
+        total_count = len(scenarios)
+    lines = [
+        "---",
+        f"kind: {kind}",
+        "feature_id: test-feature",
+        f"scenarios:\n{scenarios_yaml.rstrip()}".rstrip(),
+        "date: 2026-06-10",
+    ]
+    if result is not None:
+        lines.append(f"result: {result}")
+    if pass_count is not None:
+        lines.append(f"pass_count: {pass_count}")
+    if total_count is not None:
+        lines.append(f"total_count: {total_count}")
+    if validated_commit is not None:
+        # Quoted: an UNQUOTED all-zeros sha would YAML-parse as int 0 (falsy),
+        # silently downgrading freshness fixtures to the legacy-absent path.
+        lines.append(f'validated_commit: "{validated_commit}"')
+    lines += ["---", "", "# MCP Test Results"]
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p
+
+
+def _git_fixture_commit(root: Path) -> str:
+    """Init a git repo at ``root``, commit the current tree, return HEAD's sha.
+
+    Mirrors bug-state.py's ``step9-fresh-mcp-results`` fixture setup (init -q,
+    add -A, commit -q with inline identity; ``commit.gpgsign=false`` added for
+    robustness on hosts with global signing enabled) so the freshness-gate
+    tests run against a genuine ``git rev-parse HEAD`` resolution.
+    """
+    for cmd in [
+        ["git", "-C", str(root), "init", "-q"],
+        ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+         "add", "-A"],
+        ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+         "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"],
+    ]:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(
+                f"git fixture setup failed (cmd={cmd!r}): {r.stderr.strip()}"
+            )
+    head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True,
+    )
+    if head.returncode != 0 or not head.stdout.strip():
+        raise RuntimeError(f"git fixture rev-parse failed: {head.stderr.strip()}")
+    return head.stdout.strip()
 
 
 def _write_in_progress_plan(plans_dir: Path, filename: str = "plan-phase-1.md") -> Path:
@@ -2800,6 +2863,330 @@ def test_apply_pseudo_validated_from_results_refuses_when_results_absent():
     assert result["refused"] is not None, (
         f"expected non-None refused when results absent, got {result!r}"
     )
+
+
+# ---- Test 5b: __write_validated_from_results__ integrity gates ----
+# Hardening (2026-06-11): the last hand-written pseudo-skill became script-
+# executed with refusal gates — results-kind, result-literal (all-passing),
+# pass_count == total_count, and sha-freshness (validated_commit vs HEAD).
+# Gate ORDER under test (load-bearing, mirrors __mark_complete__):
+#   evidence gate (presence + kind + scenarios) → VALIDATED.md noop →
+#   result-literal + count gate → freshness backstop → write.
+
+
+def test_apply_pseudo_validated_from_results_refuses_wrong_kind():
+    """MCP_TEST_RESULTS.md whose frontmatter ``kind:`` is not
+    ``mcp-test-results`` → refused with ZERO writes.  A mis-kinded (or
+    frontmatter-less) file must not feed the VALIDATED.md derivation —
+    mirrors __mark_complete__'s evidence-kind gate, which rejects a
+    content-less ``touch`` satisfying a presence-only check.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(spec_dir, ["scenario-a"], kind="validated")
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for wrong kind, got {result}"
+        )
+        assert result["refused"] is not None and "mcp-test-results" in result["refused"], (
+            f"expected refusal naming the required 'mcp-test-results' kind, got {result!r}"
+        )
+        assert result["wrote"] == [], f"expected wrote=[], got {result['wrote']}"
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was written despite wrong results kind — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_non_passing_result():
+    """``result: partial`` (the real failing literal in AlgoBooth results
+    files) → refused; the message MUST name BOTH the expected literal
+    ('all-passing') and the found value ('partial') so the orchestrator
+    cannot guess-loop.  Zero writes.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a", "scenario-b"],
+            result="partial", pass_count=0, total_count=2,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for result: partial, got {result}"
+        )
+        refused = result["refused"] or ""
+        assert "all-passing" in refused, (
+            f"refusal must name the expected literal 'all-passing', got {refused!r}"
+        )
+        assert "partial" in refused, (
+            f"refusal must name the found literal 'partial', got {refused!r}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was minted from a partial (failing) run — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_missing_result_field():
+    """No ``result:`` field at all → refused (a results file that doesn't
+    declare its outcome cannot prove a passing run); message names the
+    expected literal and the found (None) value.  Zero writes.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(spec_dir, ["scenario-a"], result=None)
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for missing result field, got {result}"
+        )
+        refused = result["refused"] or ""
+        assert "all-passing" in refused and "None" in refused, (
+            f"refusal must name expected 'all-passing' vs found None, got {refused!r}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was minted without a result literal — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_count_mismatch():
+    """``result: all-passing`` but ``pass_count != total_count`` (13/14 —
+    the real hard-state-reload shape) → refused; the literal alone is not
+    trusted, the counts are the cross-check.  Message names both counts.
+    Zero writes.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"],
+            result="all-passing", pass_count=13, total_count=14,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for 13/14 counts, got {result}"
+        )
+        refused = result["refused"] or ""
+        assert "13" in refused and "14" in refused, (
+            f"refusal must name both counts (13 vs 14), got {refused!r}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was minted with pass_count != total_count — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_missing_counts():
+    """``result: all-passing`` but pass_count/total_count absent → refused.
+    The schema requires both counts; without them the literal has no
+    cross-check (None == None must NOT vacuously satisfy the equality gate).
+    Zero writes.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"], pass_count=None, total_count=None,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for missing counts, got {result}"
+        )
+        refused = result["refused"] or ""
+        assert "pass_count" in refused, (
+            f"refusal must name the missing pass_count/total_count, got {refused!r}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was minted without pass/total counts — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_stale_commit():
+    """``validated_commit`` (all-zeros sha) != current ``git rev-parse HEAD``
+    of repo_root → refused; stale results must not mint a fresh VALIDATED.md.
+    The message names both shas.  Zero writes.  Mirrors the state scripts'
+    Step-9 freshness gate (this is the apply-side second key).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        spec_dir = root / "spec"
+        spec_dir.mkdir()
+        stale_sha = "0" * 40
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"], validated_commit=stale_sha,
+        )
+        # Real git repo so rev-parse HEAD resolves to a genuine (non-zero) sha.
+        head = _git_fixture_commit(root)
+        assert head != stale_sha, "fixture error: HEAD cannot be the zeros sha"
+        result = lazy_core.apply_pseudo(
+            root, "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False for stale validated_commit, got {result}"
+        )
+        refused = result["refused"] or ""
+        assert stale_sha in refused and head in refused, (
+            f"refusal must name recorded sha vs current HEAD, got {refused!r}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was minted from stale results — unsafe!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_fresh_commit_writes():
+    """``validated_commit`` == current HEAD → the freshness gate passes and
+    VALIDATED.md is written (positive guard for the sha-anchor path); no
+    legacy warning is emitted.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        spec_dir = root / "spec"
+        spec_dir.mkdir()
+        # Commit the tree FIRST so HEAD exists, then write the results file
+        # carrying that exact sha (post-commit write dirties the working tree
+        # but rev-parse HEAD is unaffected — same shape as the bug-state
+        # step9-fresh-mcp-results fixture).
+        (spec_dir / "SPEC.md").write_text("# placeholder\n", encoding="utf-8")
+        head = _git_fixture_commit(root)
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"], validated_commit=head,
+        )
+        result = lazy_core.apply_pseudo(
+            root, "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, (
+            f"expected ok=True for fresh validated_commit, got {result}"
+        )
+        assert result["noop"] is False, f"expected noop=False, got {result}"
+        assert (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was not written for fresh results"
+        )
+        assert not result.get("warnings"), (
+            f"expected no warnings for a sha-anchored fresh run, got {result!r}"
+        )
+
+
+def test_apply_pseudo_validated_from_results_legacy_no_commit_warns():
+    """Legacy results file with NO ``validated_commit`` field → ALLOWED
+    (backward compatibility) but the result carries a warning line naming
+    the missing field, so the orchestrator surfaces the unverified freshness.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(spec_dir, ["scenario-a"])  # no validated_commit
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, (
+            f"expected ok=True for legacy commit-less results, got {result}"
+        )
+        assert (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md was not written for legacy results"
+        )
+        warnings = result.get("warnings")
+        assert isinstance(warnings, list) and len(warnings) >= 1, (
+            f"expected a non-empty warnings list, got {result!r}"
+        )
+        assert any("validated_commit" in w for w in warnings), (
+            f"warning must name the missing validated_commit field, got {warnings!r}"
+        )
+
+
+def test_apply_pseudo_validated_from_results_idempotent_noop():
+    """VALIDATED.md already present (kind: validated) → noop-success even when
+    the results file is FAILING — the receipt-noop check runs BEFORE the
+    result-literal/freshness backstops, mirroring the __mark_complete__
+    ordering rule (re-running against an already-validated dir never
+    re-refuses).  The existing VALIDATED.md is byte-unchanged.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"],
+            result="partial", pass_count=0, total_count=1,
+        )
+        validated_path = spec_dir / "VALIDATED.md"
+        original = (
+            "---\n"
+            "kind: validated\n"
+            "feature_id: test-feature\n"
+            "date: 2026-06-01\n"
+            "mcp_scenarios: [scenario-a]\n"
+            "result: all-passing\n"
+            "---\n\n"
+            "# Validated\n"
+        )
+        validated_path.write_text(original, encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True on noop, got {result}"
+        assert result["noop"] is True, f"expected noop=True, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        assert validated_path.read_text(encoding="utf-8") == original, (
+            "existing VALIDATED.md was modified during a noop — must be byte-unchanged"
+        )
+
+
+def test_apply_pseudo_validated_from_results_happy_writes_canonical_frontmatter():
+    """Happy path: canonical passing results → VALIDATED.md carries the full
+    sentinel-frontmatter.md schema (kind/feature_id/date/mcp_scenarios/result)
+    and a body noting it was derived from MCP_TEST_RESULTS.md by the gate.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(spec_dir, ["scenario-a", "scenario-b"])
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir,
+            date="2026-06-10", feature_id="my-feature",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["wrote"] == ["VALIDATED.md"], (
+            f"expected wrote=['VALIDATED.md'], got {result['wrote']}"
+        )
+        validated_path = spec_dir / "VALIDATED.md"
+        parsed = lazy_core.parse_sentinel(validated_path)
+        assert parsed is not None, "parse_sentinel returned None for VALIDATED.md"
+        assert parsed.get("kind") == "validated", f"kind: {parsed.get('kind')!r}"
+        assert parsed.get("feature_id") == "my-feature", (
+            f"feature_id: {parsed.get('feature_id')!r}"
+        )
+        assert str(parsed.get("date")) == "2026-06-10", f"date: {parsed.get('date')!r}"
+        assert parsed.get("mcp_scenarios") == ["scenario-a", "scenario-b"], (
+            f"mcp_scenarios: {parsed.get('mcp_scenarios')!r}"
+        )
+        assert parsed.get("result") == "all-passing", (
+            f"result: {parsed.get('result')!r}"
+        )
+        body = validated_path.read_text(encoding="utf-8")
+        assert "MCP_TEST_RESULTS.md" in body, (
+            "body must note derivation from MCP_TEST_RESULTS.md"
+        )
+        assert "__write_validated_from_results__" in body, (
+            "body must name the deriving gate (__write_validated_from_results__)"
+        )
 
 
 # ---- Test 6 ----
@@ -3267,6 +3654,11 @@ def test_apply_pseudo_validated_from_results_escapes_special_scenarios():
             "feature_id: test-feature\n"
             f"scenarios:\n{indented}"
             "date: 2026-06-10\n"
+            # Canonical passing fields so the hardened result-literal + count
+            # gates pass — this test is about YAML round-tripping, not gating.
+            "result: all-passing\n"
+            "pass_count: 2\n"
+            "total_count: 2\n"
             "---\n\n"
             "# MCP Test Results\n",
             encoding="utf-8",
@@ -6669,6 +7061,16 @@ _TESTS = [
     ("test_apply_pseudo_validated_from_skip_operator_granted_writes", test_apply_pseudo_validated_from_skip_operator_granted_writes),
     ("test_apply_pseudo_validated_from_results_copies_scenarios", test_apply_pseudo_validated_from_results_copies_scenarios),
     ("test_apply_pseudo_validated_from_results_refuses_when_results_absent", test_apply_pseudo_validated_from_results_refuses_when_results_absent),
+    ("test_apply_pseudo_validated_from_results_refuses_wrong_kind", test_apply_pseudo_validated_from_results_refuses_wrong_kind),
+    ("test_apply_pseudo_validated_from_results_refuses_non_passing_result", test_apply_pseudo_validated_from_results_refuses_non_passing_result),
+    ("test_apply_pseudo_validated_from_results_refuses_missing_result_field", test_apply_pseudo_validated_from_results_refuses_missing_result_field),
+    ("test_apply_pseudo_validated_from_results_refuses_count_mismatch", test_apply_pseudo_validated_from_results_refuses_count_mismatch),
+    ("test_apply_pseudo_validated_from_results_refuses_missing_counts", test_apply_pseudo_validated_from_results_refuses_missing_counts),
+    ("test_apply_pseudo_validated_from_results_refuses_stale_commit", test_apply_pseudo_validated_from_results_refuses_stale_commit),
+    ("test_apply_pseudo_validated_from_results_fresh_commit_writes", test_apply_pseudo_validated_from_results_fresh_commit_writes),
+    ("test_apply_pseudo_validated_from_results_legacy_no_commit_warns", test_apply_pseudo_validated_from_results_legacy_no_commit_warns),
+    ("test_apply_pseudo_validated_from_results_idempotent_noop", test_apply_pseudo_validated_from_results_idempotent_noop),
+    ("test_apply_pseudo_validated_from_results_happy_writes_canonical_frontmatter", test_apply_pseudo_validated_from_results_happy_writes_canonical_frontmatter),
     ("test_apply_pseudo_deferred_non_cloud_writes_and_idempotent", test_apply_pseudo_deferred_non_cloud_writes_and_idempotent),
     ("test_apply_pseudo_flip_cloud_saturated_flips_in_progress", test_apply_pseudo_flip_cloud_saturated_flips_in_progress),
     ("test_apply_pseudo_flip_cloud_saturated_idempotent_on_complete", test_apply_pseudo_flip_cloud_saturated_idempotent_on_complete),

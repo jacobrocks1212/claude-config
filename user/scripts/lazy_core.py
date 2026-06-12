@@ -1579,6 +1579,25 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
 # Pseudo-skill dispatcher — deterministic sentinel / receipt writes
 # ---------------------------------------------------------------------------
 
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a
+    git repo / git is unavailable.  Best-effort — mirrors the identically
+    named helpers in lazy-state.py and bug-state.py (which gate Step-9
+    routing on the same sha); consumed here by apply_pseudo's
+    ``__write_validated_from_results__`` freshness backstop.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def apply_pseudo(
     repo_root: Path,
     name: str,
@@ -1611,11 +1630,21 @@ def apply_pseudo(
             "noop":    bool,         # True iff the file(s) already existed exactly
         }
 
+    Extra keys some pseudo-skills attach (absent otherwise — callers may still
+    JSON-dump unconditionally):
+      - ``flipped_phases`` (``__mark_complete__`` / ``__mark_fixed__``): phase
+        headings the completion-coherence gate auto-flipped to Complete.
+      - ``warnings`` (``__write_validated_from_results__``): non-fatal
+        freshness caveats (legacy results without ``validated_commit``, or an
+        unresolvable HEAD); also echoed to stderr.
+
     Parameters
     ----------
     repo_root:
-        Root of the repository.  Used only by ``__flip_plan_complete_*`` when
-        building the relative path returned in ``wrote``.
+        Root of the repository.  Used by ``__flip_plan_complete_*`` when
+        building the relative path returned in ``wrote``, and by
+        ``__write_validated_from_results__`` to resolve the current
+        ``git rev-parse HEAD`` for the sha-freshness backstop.
     name:
         The pseudo-skill identifier dispatched by the orchestrator.  Recognised
         values are listed below; anything else returns ``refused``.
@@ -1646,10 +1675,17 @@ def apply_pseudo(
         if VALIDATED.md already exists and parses kind=="validated" → noop.
 
     ``__write_validated_from_results__``
-        Gate: ``spec_path/MCP_TEST_RESULTS.md`` must exist and parse a
-        ``scenarios`` list.  Writes VALIDATED.md copying ``mcp_scenarios`` from
-        the results file.  Idempotent on existing VALIDATED.md with
-        kind=="validated".
+        Gates (in order; see the branch comment for why the order is
+        load-bearing): (1) ``spec_path/MCP_TEST_RESULTS.md`` must exist,
+        carry ``kind: mcp-test-results``, and parse a ``scenarios`` list;
+        (2) noop on existing VALIDATED.md with kind=="validated";
+        (3) result-literal gate — ``result: all-passing`` AND
+        ``pass_count == total_count`` (ints; refusals name expected vs
+        found); (4) freshness backstop — ``validated_commit`` must match
+        repo_root's current HEAD (legacy field-less files and non-git roots
+        pass with a ``warnings`` entry instead).  Writes VALIDATED.md
+        copying ``mcp_scenarios`` (and the ``validated_commit`` anchor when
+        present) from the results file.
 
     ``__write_deferred_non_cloud__``
         No gate input.  Writes ``spec_path/DEFERRED_NON_CLOUD.md`` (kind:
@@ -1770,17 +1806,132 @@ def apply_pseudo(
         return _ok(["VALIDATED.md"])
 
     elif name == "__write_validated_from_results__":
-        # Gate: MCP_TEST_RESULTS.md must exist and parse a scenarios list.
+        # Script-executed VALIDATED.md derivation (2026-06-11 hardening): this
+        # was the LAST pseudo-skill the orchestrator hand-wrote, bypassing all
+        # integrity gates — a hand-authored VALIDATED.md could mint a passing
+        # certification from a failing or stale results file. The gates below
+        # make the derivation refuse instead.
+        #
+        # Gate ORDER (load-bearing — mirrors __mark_complete__'s ordering rule):
+        #   1. Evidence gate (presence + kind + scenarios) — BEFORE the noop,
+        #      exactly as __mark_complete__'s evidence-kind gate precedes its
+        #      receipt-noop: a content-less or mis-kinded results file is a
+        #      malformation to surface, not a state to noop over.
+        #   2. VALIDATED.md noop (idempotent) — BEFORE the result-literal and
+        #      freshness backstops, so re-running against an already-validated
+        #      dir never re-refuses (the Phase-9/11 receipt-noop rule).
+        #   3. Result-literal + count gate — the frontmatter must show a
+        #      genuinely passing run: result == "all-passing" (the canonical
+        #      passing literal per sentinel-frontmatter.md; failing runs carry
+        #      "partial") AND pass_count == total_count as integers.
+        #   4. Freshness backstop — validated_commit (the sha anchor the
+        #      /mcp-test producers record) must match repo_root's current
+        #      HEAD; stale results must not mint a fresh VALIDATED.md.
+        #      Legacy files without the field (and non-git roots) are allowed
+        #      with a warning, mirroring the state scripts' Step-9 leniency.
         results_path = spec_path / "MCP_TEST_RESULTS.md"
         results_meta = parse_sentinel(results_path)
-        if results_meta is None or not isinstance(results_meta.get("scenarios"), list):
-            return _refused("MCP_TEST_RESULTS.md absent or missing scenarios list")
+        if results_meta is None:
+            return _refused(
+                "MCP_TEST_RESULTS.md absent — run /mcp-test to produce a "
+                "results file before deriving VALIDATED.md"
+            )
+        if results_meta.get("kind") != "mcp-test-results":
+            return _refused(
+                "MCP_TEST_RESULTS.md exists but lacks 'kind: mcp-test-results' "
+                f"frontmatter (parsed kind: {results_meta.get('kind')!r}) — "
+                "refusing to derive VALIDATED.md from an unrecognized file"
+            )
+        if not isinstance(results_meta.get("scenarios"), list):
+            return _refused(
+                "MCP_TEST_RESULTS.md is missing its scenarios: list — "
+                "cannot derive mcp_scenarios for VALIDATED.md"
+            )
         scenarios = results_meta["scenarios"]
+
         # Idempotency: if VALIDATED.md already exists as kind=validated → noop.
+        # Runs BEFORE the result-literal/freshness backstops (see ORDER above).
         validated_path = spec_path / "VALIDATED.md"
         existing = parse_sentinel(validated_path)
         if existing is not None and existing.get("kind") == "validated":
             return _noop()
+
+        # Result-literal gate: only the canonical passing literal mints a
+        # VALIDATED.md. The refusal names expected vs found so the orchestrator
+        # can't guess-loop. (Real results files use "all-passing" / "partial";
+        # one legacy file carries "pass" — deliberately NOT accepted, the
+        # schema's passing literal is "all-passing".)
+        result_literal = results_meta.get("result")
+        if result_literal != "all-passing":
+            return _refused(
+                f"MCP_TEST_RESULTS.md result is {result_literal!r} — expected "
+                "'all-passing' (the canonical passing literal); a non-passing "
+                "run must not mint VALIDATED.md. Re-run /mcp-test until all "
+                "scenarios pass, or route the failure (BLOCKED/add-phase)."
+            )
+
+        # Count cross-check: the literal alone is not trusted — pass_count must
+        # equal total_count, both present as integers. YAML booleans are ints
+        # in Python (True == 1) but are NOT counts → rejected; digit strings
+        # (quoted YAML) are coerced, matching validation_escalation's tolerance.
+        def _coerce_count(raw):
+            if isinstance(raw, bool):
+                return None
+            if isinstance(raw, int):
+                return raw
+            if isinstance(raw, str) and raw.strip().isdigit():
+                return int(raw.strip())
+            return None
+
+        raw_pass = results_meta.get("pass_count")
+        raw_total = results_meta.get("total_count")
+        pass_count = _coerce_count(raw_pass)
+        total_count = _coerce_count(raw_total)
+        if pass_count is None or total_count is None:
+            return _refused(
+                "MCP_TEST_RESULTS.md pass_count/total_count missing or "
+                f"malformed (pass_count: {raw_pass!r}, total_count: "
+                f"{raw_total!r}) — expected both as integers; the counts are "
+                "the cross-check behind the result literal"
+            )
+        if pass_count != total_count:
+            return _refused(
+                f"MCP_TEST_RESULTS.md pass_count ({pass_count}) != total_count "
+                f"({total_count}) — expected pass_count == total_count for a "
+                "passing run; a partial pass must not mint VALIDATED.md"
+            )
+
+        # Freshness backstop: the results' validated_commit sha anchor must
+        # match the target repo's current HEAD. Legacy files without the field
+        # are allowed with a warning (the schema requires it going forward);
+        # a non-git repo_root (HEAD unresolvable) also warns rather than
+        # refusing, mirroring the state scripts' permissive Step-9 skip.
+        warnings: list[str] = []
+        recorded_commit = results_meta.get("validated_commit")
+        # Presence-based (not truthiness): an unquoted all-zeros sha YAML-parses
+        # as int 0 (falsy) — that file RECORDED a commit and must hit the
+        # freshness gate, not silently downgrade to the legacy-absent path.
+        if recorded_commit is not None:
+            head = _current_head(repo_root)
+            if head is None:
+                warnings.append(
+                    f"could not resolve HEAD for {repo_root} — "
+                    "validated_commit freshness UNVERIFIED"
+                )
+            elif str(recorded_commit) != head:
+                return _refused(
+                    f"MCP_TEST_RESULTS.md is stale: validated_commit "
+                    f"{recorded_commit} does not match current HEAD {head} — "
+                    "stale results must not mint a fresh VALIDATED.md; re-run "
+                    "/mcp-test against the current code"
+                )
+        else:
+            warnings.append(
+                "MCP_TEST_RESULTS.md has no validated_commit field (legacy) — "
+                "freshness UNVERIFIED; new results files MUST record `git "
+                "rev-parse HEAD` per sentinel-frontmatter.md"
+            )
+
         # Emit mcp_scenarios with yaml.safe_dump so that scenario strings
         # containing ":", ",", or "]" are properly quoted and round-trip
         # through parse_sentinel back to the original Python list unchanged.
@@ -1788,6 +1939,14 @@ def apply_pseudo(
         # flow-sequence like ['audio: no dropout', 'load, stress'].
         # .strip() removes the trailing newline that safe_dump appends.
         scenarios_inline = yaml.safe_dump(scenarios, default_flow_style=True).strip()
+        # Carry the results' sha anchor into VALIDATED.md's optional
+        # validated_commit field (sentinel-frontmatter.md documents it as the
+        # SAME freshness anchor) so downstream consumers keep the match
+        # between certification and the exact code it ran against.
+        commit_line = (
+            f"validated_commit: {recorded_commit}\n"
+            if recorded_commit is not None else ""
+        )
         content = (
             "---\n"
             "kind: validated\n"
@@ -1795,15 +1954,24 @@ def apply_pseudo(
             f"date: {date}\n"
             f"mcp_scenarios: {scenarios_inline}\n"
             "result: all-passing\n"
+            f"{commit_line}"
             "---\n"
             "\n"
             "# Validated\n"
             "\n"
-            "Validated from MCP_TEST_RESULTS.md — scenarios copied from results file "
-            "by apply_pseudo.\n"
+            "Derived from MCP_TEST_RESULTS.md by the "
+            "__write_validated_from_results__ gate (apply_pseudo): result "
+            f"all-passing, {pass_count}/{total_count} scenarios passing.\n"
         )
         _atomic_write(validated_path, content)
-        return _ok(["VALIDATED.md"])
+        result = _ok(["VALIDATED.md"])
+        if warnings:
+            # Surface in BOTH channels: the JSON result (for the orchestrator,
+            # like flipped_phases) and stderr (for a human watching the run).
+            result["warnings"] = warnings
+            for w in warnings:
+                sys.stderr.write(f"WARNING: {w}\n")
+        return result
 
     elif name == "__write_deferred_non_cloud__":
         # No gate input — this write is always permitted.
