@@ -359,6 +359,68 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 
 ---
 
+### Phase 7: Post-first-run hardening — deny ledger, depth-cap retry branch, transcription-surface reduction, checkpoint contract, meta cycle_header
+
+**Scope:** Harden the harness against the five failure modes observed in the first enforced production run (AlgoBooth session `2f6f27dc`, 2026-06-12, graded in AlgoBooth `docs/features/_index/LAZY_BATCH_REVIEW_2026-06-12_overview.md`): 3 validate-denies with 0 executed hardening rounds; the depth-cap halt protocol declined as too blunt for a transcription-slip denial; 3 self-inflicted prompt mutations; a self-elected early stop with no contract shape; and 0/8 meta cycles carrying canonical headings. Unifying principle: move each prose contract into the state script / guard where the orchestrator cannot drift from it under context pressure.
+
+**Validated Assumptions (Phase 7 additions):**
+
+| assumption | how-confirmed | evidence |
+|---|---|---|
+| Guard process can write files into the state dir from hook context | runtime | Phase 6 E2E: `hook-error.json` breadcrumb observed written by the fail-open path; deny path runs in the same process/permissions |
+| Deny reasons reach the orchestrator verbatim as Agent tool_result errors (so a ledger entry can capture what the orchestrator saw) | runtime | session `2f6f27dc` jsonl L201/L237/L503 — three live deny captures with full recipe text |
+| `--emit-dispatch` output JSON is consumed as-is by the orchestrators (a new `cycle_header` field will be seen) | runtime | session `2f6f27dc`: 18 allowed dispatches all consumed emit output; forward-cycle `cycle_header` echo already proven 9/9 conforming vs 0/8 for headerless meta dispatches |
+| Widening `normalize_prompt_for_hash` has no persistent-compat risk | code-provable (no runtime smell: pure script logic, registry entries are ephemeral with 30-min TTL; no cross-process shape involved) | `lazy_core.py` registry TTL + ring-cap design, Phase 1 tests |
+| Marker fold counters are readable at emit time (for `[meta m/2N]` in `cycle_header`) | code-provable (no runtime smell: same-process file read; functions test-covered) | `lazy_core.py` `read_run_marker`/`fold_run_counters` + Phase 1 test section |
+
+**Interface contract (fixed here so script-side and prose-side land coherently):**
+- Deny ledger file: `lazy-deny-ledger.jsonl` in the state dir (`claude_state_dir()`), one JSON object per line: `{ts, tool_use_id, denied_sha12, reason_head, prompt_head, acked: false}`. Written best-effort by `lazy_guard.py` on EVERY deny (fail-open preserved — a ledger write failure never blocks the deny response).
+- Probe enrichment (marker-gated — fields appear ONLY when a run marker is present, keeping `--test` baselines byte-identical): `pending_hardening: <int>` + `pending_denials: [<summaries>]` in `--probe` output.
+- Ack semantics: `--emit-dispatch hardening` acks the OLDEST unacked ledger entry (FIFO, one per emission — preserves locked decision 4's one-dispatch-per-deny cadence).
+- `--run-end` gains `--reason <terminal|checkpoint>` (default `terminal`) and refuses (exit 1, explanatory message) when unacked denials exist unless `--ack-unhardened` is passed (the override is recorded in the run-end message so retros can grade it).
+- `--run-end --reason checkpoint` additionally requires `--next-route "<text>"` and writes `lazy-run-checkpoint.json` (`{reason, next_route, counters, ts}`) to the state dir; the next `--run-start` consumes the file (deletes it) and echoes its content in the run-start output as resume context.
+- `emit_dispatch_prompt` output JSON gains `cycle_header`: `### {Step} — {work summary} [meta {m}/{2*max_cycles}]` where Step comes from a per-class map (investigation→`Investigate`, apply-resolution→`Resolve`, recovery/coherence-recovery→`Recover`, hardening→`Harden`, input-audit→`Audit`, needs-runtime-redispatch→`Validate`), work summary from `item_name` context (fallback `item_id`), and `m` from the marker's persisted meta counter.
+
+**Deliverables:**
+- [ ] **WU-7.1 Deny ledger + routed hardening debt (scripts):** `lazy_guard.py` appends a ledger entry on every deny; `lazy_core.py` gains `read_deny_ledger()` / `pending_hardening()` / `ack_oldest_deny()`; probe output marker-gated enrichment per the interface contract; `--emit-dispatch hardening` performs the FIFO ack; `--run-end` refuses on unacked denials without `--ack-unhardened`. Mirrored in `bug-state.py`.
+- [ ] **WU-7.2 Depth-cap retry branch (skill prose, ×3 mirrored):** §1d.1's depth-cap paragraph distinguishes the guard's two deny shapes: corrective-recipe denial of a hardening dispatch (hash mismatch — transcription slip) → re-emit + exactly ONE verbatim re-dispatch attempt; the full halt protocol (run-end → ⚠ → PushNotification → STOP) fires only on the guard's halt reason (registered hardening-class entry) or a SECOND recipe denial.
+- [ ] **WU-7.3 Transcription-surface reduction:** (a) single-slot rule — every `@requires` token appears exactly ONCE in each dispatch template body; templates fixed where they violate; enforced by a new test over all dispatch templates; (b) `normalize_prompt_for_hash` widened: per-line trailing-whitespace strip + Unicode NFC (pure copy artifacts pass; semantic edits still deny); (c) skill rule (×3 mirrored): never dispatch an emission from an earlier turn — re-emit fresh in the dispatching turn.
+- [ ] **WU-7.4 Checkpoint contract:** script-side per the interface contract; skill-side (×3 mirrored): the budget-and-queue guard gains a sanctioned unattended-checkpoint arm — allowed only when a reliability trigger holds (≥2 guard denials this run, or an operator message requesting pause), and requires the checkpoint `--run-end` + a PushNotification carrying the probed next route; `AskUserQuestion` remains the attended path.
+- [ ] **WU-7.5 Meta `cycle_header` + reporting templates:** `emit_dispatch_prompt` emits `cycle_header` per the interface contract; `orchestrator-voice.md` T7 template gains the `### Completeness-policy applications (D7)` digest-table skeleton; the bug-doc spin-off path in the cycle prompt template gains the missing legs (PushNotification `"spun off {id} — {reason}"` + reverse-reference from the origin feature doc).
+- [ ] Tests: new `test_lazy_core.py` sections (ledger lifecycle + FIFO ack, run-end refusal/override, checkpoint write→consume round-trip, widened normalization, single-slot template assertion, `cycle_header` emission); `test_hooks.py` pipe-test for the guard's deny-ledger write; ALL standing gates green with `--test` baselines byte-identical (NO regeneration).
+
+**Minimum Verifiable Behavior:** Scripted sequence on a fixture state dir: simulate a deny (invoke `lazy_guard.py` with a marked run + unregistered prompt) → ledger entry exists → `--probe` shows `pending_hardening: 1` → `--run-end` REFUSES → `--emit-dispatch hardening` acks → `--run-end --reason checkpoint --next-route "write-plan Phase 14"` writes the checkpoint file → next `--run-start` echoes and consumes it.
+
+**Runtime Verification** *(checked by live harness or the next marked run — NOT by the implementation agent):*
+- [ ] Next real marked run: a (natural or deliberate) guard deny produces a ledger entry and the next probe surfaces `pending_hardening ≥ 1`.
+- [ ] Next real marked run ends through `--run-end` cleanly with the ledger empty (all denials hardened or explicitly `--ack-unhardened`-overridden).
+- [ ] A meta dispatch in the next run prints the emitted `cycle_header` verbatim (retro R-V-2 grades it conforming).
+
+**MCP Integration Test Assertions:** N/A — no MCP runtime in claude-config; live verification rows above stand in (per the header's MCP-runtime line).
+
+**Prerequisites:** Phases 1–6 (complete). Consumes the audit evidence from AlgoBooth session `2f6f27dc` (the LAZY_BATCH_REVIEW_2026-06-12 artifacts).
+
+**Files likely modified:**
+- `user/scripts/lazy_guard.py`, `user/scripts/lazy_core.py`, `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`, `user/scripts/test_lazy_core.py`, `user/scripts/test_hooks.py`
+- `user/skills/_components/lazy-batch-prompts/dispatch-*.md` (single-slot fixes), `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (spin-off legs)
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`, `user/skills/_components/orchestrator-voice.md`
+
+**Testing Strategy:**
+- Entry point: `python user/scripts/test_lazy_core.py` (new Phase 7 section) + `python user/scripts/test_hooks.py` + both `--test` smokes + `lint-skills.py --check-projected --check-capabilities`.
+- Ground-truth assertion: the MVB scripted sequence passes against a `LAZY_STATE_DIR`-scoped fixture; default (no-marker) probe output remains byte-identical to baselines.
+- Boundary coverage: deny-ledger write failure (fail-open preserved); checkpoint file absent on plain `--run-end`; ack with empty ledger (no-op, not an error); NFC/trailing-whitespace normalization equivalence pairs + a semantic-mutation pair that still denies.
+- Runtime gate: the next real marked `/lazy-batch` run (Runtime Verification rows above).
+
+**Integration Notes for Next Phase:** The deny ledger is the new ground truth for retro R-O-9 grading (denials ↔ hardening rounds become mechanically auditable). The checkpoint file gives `/lazy-batch-retro` a sanctioned-vs-improvised signal for early stops. If a future phase adds park-event telemetry, follow the same marker-gated-enrichment pattern to keep baselines stable.
+
+**Context from prior phases:**
+- Marker-gated output enrichment (Phase 1 pattern) is the baseline-safety mechanism — reuse it for every new probe field.
+- The guard's two deny shapes (corrective recipe vs depth-cap halt reason) were established in Phase 2/4; WU-7.2 keys the skill branch off that existing discriminator rather than inventing a new one.
+- All `--test` baselines are byte-pinned and must NEVER be regenerated (standing rule since Phase 1).
+- Coupled-pair mirroring (lazy-batch ↔ lazy-bug-batch ↔ lazy-batch-cloud) is a hard gate (Phase 5 discipline).
+
+---
+
 ## Review Notes
 
 **2026-06-11 — /spec-phases authoring review.** Ground-truth verified: yes (git status, line count 326, phase-heading grep all matched the drafting subagent's pasted block). **Review verdict: PASS-WITH-FIXES** — full SPEC coverage confirmed (all components land in exactly one phase; all four Locked Decisions intact; deny hook genuinely unarmed until Phase 6; failure-mode containments reflected). Nine localized fixes applied by the orchestrator post-review: (1) Phase 6 MVB section added; (2) E2E assertions 6–7 added covering Success Criteria 2 and 4; (3) turn-window freshness recorded as an explicit SPEC deviation with a compensating 30-min registry-entry TTL; (4) session-id-mismatch staleness test rows added to Phase 1; (5) spike item (e) added for the UserPromptSubmit task-notification limitation; (6) SessionStart(compact) payload enumerated (re-entry protocol + counters); (7) depth-guard ownership clarified (Phase 2 implements vs Phase 4 integration-tests); (8) locked-decision-4 cadence clause made explicit in the /harden-harness SKILL deliverable; (9) HOOK_ERROR breadcrumb surfacing added to inject-hook behavior and pipe-tests.
