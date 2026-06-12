@@ -517,9 +517,9 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 - Accepted edge (documented, not fixed): during the unbound window (run-start → orchestrator's first dispatch, typically seconds), a bystander session's Agent dispatch is still validated and denied on lookup-miss, writing ledger debt. Rare; preserves enforcement of the run's own FIRST dispatch, which is the priority.
 
 **Deliverables:**
-- [ ] **WU-9.1 Inject never binds:** remove the bind-on-first-hook-firing stamp from `lazy_inject.py`; unbound → silent exit before any probe/registration side effect; comments updated.
-- [ ] **WU-9.2 Guard binds on allow:** `lazy_guard.py` stamps the unbound marker on ALLOW (both allow paths), fail-open; deny paths never bind.
-- [ ] Tests: inject unbound → no output AND no registry/counter/marker mutation; guard unbound+hit → allow AND marker bound to caller; guard unbound+miss → deny AND marker stays unbound; bound-owner/non-owner behavior unchanged; revise the Phase 1/2 pins of bind-on-first-inject to the new contract; pipe-test: inject with unbound marker → exit 0, no stdout, marker file unchanged. ALL standing gates green, baselines byte-identical.
+- [x] **WU-9.1 Inject never binds:** remove the bind-on-first-hook-firing stamp from `lazy_inject.py`; unbound → silent exit before any probe/registration side effect; comments updated.
+- [x] **WU-9.2 Guard binds on allow:** `lazy_guard.py` stamps the unbound marker on ALLOW (both allow paths), fail-open; deny paths never bind.
+- [x] Tests: inject unbound → no output AND no registry/counter/marker mutation; guard unbound+hit → allow AND marker bound to caller; guard unbound+miss → deny AND marker stays unbound; bound-owner/non-owner behavior unchanged; revise the Phase 1/2 pins of bind-on-first-inject to the new contract; pipe-test: inject with unbound marker → exit 0, no stdout, marker file unchanged. ALL standing gates green, baselines byte-identical.
 
 **Minimum Verifiable Behavior:** Fixture sequence: `--run-start` (unbound) → simulated inject firing from session A → no banner, marker still unbound → guard ALLOW of a registered prompt from session B → marker bound to B → inject from session B → banner; inject from session A → silent, marker intact.
 
@@ -538,6 +538,16 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 **Integration Notes for Next Phase:** With bind-at-guard, the marker's `session_id` is proof the bound session dispatched a registered prompt — retros can treat it as the orchestrator-session identifier. The accepted unbound-window edge is the remaining theoretical gap if a future round wants it.
 
 **Context from prior phases:** Phase 8's non-owner semantics (invisible-not-deleted) make wrong-binds recoverable; this phase prevents them. Live-run safety: bound-owner code paths are untouched, so landing mid-run is safe (same rationale as Phase 8's mid-run-edit assumption row).
+
+---
+
+#### Implementation Notes (Phase 9 — 2026-06-12)
+
+**Review/verification verdict:** PASS — one Opus subagent (scripts+tests), orchestrator re-ran all gates fresh: `test_lazy_core.py` **304/304** (+7), `test_hooks.py` **23/23** (1 pipe-test revised into the new unbound-silent contract; 6 preexisting tests re-pinned — 3 inject tests now use bound-owner markers, 3 multi-call guard tests thread one owner session id since bind-on-first-allow reclassifies later mismatched calls), both `--test` smokes byte-identical, lint + projection clean. Implementation commit: see git log (`feat(...): Phase 9 — bind-at-guard`). Live-run integrity verified post-implementation: real marker still bound to `e076ed30…`, untouched by the test suite (hermetic `LAZY_STATE_DIR` throughout).
+
+**Key decisions:** (1) guard binds on BOTH allow paths (fresh consumption + idempotent re-fire), fail-open via `_bind_marker_on_allow`; (2) `bind_marker_session` needed no change; (3) a bound-non-owner guard call can never overwrite a bind — Phase 8's non-owner read returns None and exits via fast-path before any bind code; (4) the unbound-window bystander-deny edge is accepted and documented in the interface contract.
+
+**Incident remediation record:** the 19:33Z wrong-bind was hand-repaired at 19:38Z by the operator-authorized rebind (marker `session_id` → `e076ed30…`) before this phase landed; bystander-inject counter inflation observed during the incident (repeat 3→4, step-repeat 10→11) stopped at rebind. Runtime Verification rows remain open for the next live marked run.
 
 ---
 
