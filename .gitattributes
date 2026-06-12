@@ -1,0 +1,5 @@
+# Ensure shell scripts always use LF line endings.
+# The repo has core.autocrlf=true; without this attribute, scripts checked
+# out on Windows get CRLF endings, which break bash execution under WSL and
+# git-bash (the shebang interpreter line must be LF-terminated).
+*.sh text eol=lf

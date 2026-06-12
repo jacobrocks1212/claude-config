@@ -3777,6 +3777,50 @@ def read_run_marker(
     return marker
 
 
+def bind_marker_session(session_id: str) -> bool:
+    """Stamp the run marker with the given session_id if it is currently unbound.
+
+    Called by the inject hook (lazy_inject.py) on the first firing for a new
+    run: when the marker has ``session_id: None`` (bind-pending), this function
+    atomically writes the provided session_id into the marker so subsequent hook
+    firings (and guard calls) can use staleness path B (session-id mismatch
+    cleanup) for proper isolation across runs.
+
+    Contract:
+      - If no valid marker exists → no-op, returns False.
+      - If the marker already has a non-None session_id → no-op (idempotent),
+        returns False.  The first hook firing wins; subsequent firings for the
+        same session are consistent.
+      - If the marker's session_id is None → stamp it atomically, returns True.
+
+    The write uses _atomic_write (temp file + os.replace) to avoid partial
+    writes under concurrent hook firings.
+
+    Args:
+        session_id: the Claude Code session id from the hook-input JSON.
+
+    Returns:
+        True if the marker was stamped (was unbound and is now bound); False
+        otherwise (no marker, already bound, or write failed).
+    """
+    try:
+        marker = read_run_marker()
+        if marker is None:
+            return False
+        if marker.get("session_id") is not None:
+            # Already bound — idempotent no-op.
+            return False
+        # Stamp the session_id.
+        marker["session_id"] = session_id
+        marker_path = claude_state_dir() / _MARKER_FILENAME
+        _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail silently — a bind failure is non-fatal; the inject hook proceeds
+        # and the marker simply remains unbound (staleness path B stays dormant).
+        return False
+
+
 def delete_run_marker(clear_registry: bool = False) -> bool:
     """Delete the run marker file from the state dir.
 
@@ -4008,15 +4052,28 @@ def lookup_emission(
     return None
 
 
-def consume_nonce(nonce: str) -> bool:
+def consume_nonce(nonce: str, consumer: str | None = None) -> bool:
     """Mark a registry entry's nonce as consumed (one dispatch per emission).
 
     After consumption, ``lookup_emission`` will no longer return this entry,
     enforcing the single-use constraint: a re-dispatch requires a re-probe,
     which is the continuation-cycles-must-re-emit rule made mechanical.
 
+    Phase 2 extension: when ``consumer`` is provided (non-None), the
+    ``consumed_by`` field is written onto the entry.  This enables the
+    idempotent re-fire logic in ``lazy_guard.py`` — when the PreToolUse hook
+    fires twice for the same denied dispatch (same tool_use_id, E4 spike
+    finding), the guard reads ``consumed_by`` and allows the second call if
+    the consumer matches.
+
+    Backward compatibility: ``consumer=None`` (the default) preserves Phase 1
+    behavior exactly — the entry is consumed but no ``consumed_by`` field is
+    written.  All 264 existing test_lazy_core.py tests rely on this.
+
     Args:
         nonce: the nonce string from a previously registered entry
+        consumer: optional string identifying the consumer (e.g. tool_use_id);
+                  stored as ``consumed_by`` on the entry when provided.
 
     Returns:
         True if the nonce was found and consumed; False if not found or already
@@ -4030,6 +4087,11 @@ def consume_nonce(nonce: str) -> bool:
                 # Already consumed — idempotent False.
                 return False
             entry["consumed"] = True
+            # Phase 2: record the consuming tool_use_id when provided so the
+            # guard can distinguish idempotent re-fire (same consumer) from a
+            # legitimately distinct second attempt (different consumer → deny).
+            if consumer is not None:
+                entry["consumed_by"] = consumer
             changed = True
             break
     if not changed:

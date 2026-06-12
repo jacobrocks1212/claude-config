@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""
+lazy_inject.py — UserPromptSubmit / SessionStart / PostCompact inject helper.
+
+Called by lazy-route-inject.sh when a run marker is present.  Reads the
+Claude Code hook-input JSON from stdin and emits a hookSpecificOutput JSON
+block with additionalContext containing:
+  - The LAZY-ROUTE banner
+  - The result of the full probe invocation (--repeat-count --probe --emit-prompt)
+  - The most recent nonce from the registry (if available)
+  - For SessionStart(compact) / PostCompact events: the post-compaction
+    re-entry protocol and marker counters (SPEC inject item 3)
+  - If a hook-error.json breadcrumb exists: its contents surfaced as
+    "HOOK_ERROR: <contents>" (self-announcing guard breakage)
+
+Exit code: always 0.  Internal errors write hook-error.json and exit 0
+(fail-open semantics, same as lazy_guard.py).
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Path resolution
+# ---------------------------------------------------------------------------
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPTS_DIR))
+
+try:
+    import lazy_core  # type: ignore[import]
+except ImportError:
+    sys.exit(0)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_HOOK_NAME = "lazy-route-inject"
+
+
+# ---------------------------------------------------------------------------
+# Breadcrumb helpers (mirrors lazy_guard.py)
+# ---------------------------------------------------------------------------
+
+def _write_breadcrumb(error_msg: str) -> None:
+    """Write a hook-error.json breadcrumb into the state dir (best-effort)."""
+    try:
+        state_dir = lazy_core.claude_state_dir(create=True)
+        breadcrumb = {
+            "hook": _HOOK_NAME,
+            "error": error_msg,
+            "at": datetime.datetime.now(tz=datetime.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        }
+        crumb_path = state_dir / "hook-error.json"
+        crumb_path.write_text(json.dumps(breadcrumb, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _read_and_clear_breadcrumb() -> str | None:
+    """Read hook-error.json if present, delete it, and return its raw text.
+
+    Returns None when the file is absent.  Deletes the breadcrumb after
+    reading so it is only surfaced once (the next inject turn will not see it
+    again unless a new error occurs).
+    """
+    try:
+        state_dir = lazy_core.claude_state_dir(create=False)
+        crumb_path = state_dir / "hook-error.json"
+        if not crumb_path.exists():
+            return None
+        content = crumb_path.read_text(encoding="utf-8")
+        try:
+            crumb_path.unlink()
+        except OSError:
+            pass
+        return content
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Probe runner
+# ---------------------------------------------------------------------------
+
+def _run_probe(marker: dict) -> dict | None:
+    """Run the full probe form of the appropriate state script.
+
+    Command: python <script> --repeat-count --probe --emit-prompt
+             --repo-root <marker.repo_root> [--cloud]
+
+    Returns the parsed JSON dict from the probe's stdout, or None on failure.
+    The probe registers the emitted prompt (nonce + hash) in the registry as a
+    side effect — this is the production entry point, same as the orchestrator
+    would call.
+    """
+    pipeline = marker.get("pipeline", "feature")
+    repo_root = marker.get("repo_root", "")
+    cloud = marker.get("cloud", False)
+
+    # Select the correct state script based on the pipeline type.
+    if pipeline == "bug":
+        script_name = "bug-state.py"
+    else:
+        script_name = "lazy-state.py"
+
+    script_path = _SCRIPTS_DIR / script_name
+
+    # Build the command list.
+    python_exe = sys.executable
+    cmd = [
+        python_exe, str(script_path),
+        "--repeat-count", "--probe", "--emit-prompt",
+        "--repo-root", repo_root,
+    ]
+    if cloud:
+        cmd.append("--cloud")
+
+    # Inherit the environment including LAZY_STATE_DIR so the probe writes into
+    # the same state dir as this hook.
+    env = dict(os.environ)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            # Probe failed — return whatever stdout we got (may still be usable JSON).
+            # Fall through to the JSON parse attempt below.
+            pass
+        stdout = result.stdout.strip()
+        if not stdout:
+            return None
+        probe_data = json.loads(stdout)
+        if isinstance(probe_data, dict):
+            return probe_data
+        return None
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Nonce resolver
+# ---------------------------------------------------------------------------
+
+def _latest_nonce() -> str | None:
+    """Return the most recent unconsumed nonce from the registry, or None.
+
+    This is the nonce that was just registered by the probe invocation.  We
+    read the raw registry rather than re-hashing (the probe already registered
+    the entry via register_emission_if_marked).
+    """
+    try:
+        data = lazy_core._load_registry()  # type: ignore[attr-defined]
+        entries = data.get("entries", [])
+        # Entries are appended in order; the last unconsumed one is the newest.
+        for entry in reversed(entries):
+            if not entry.get("consumed", True):
+                return entry.get("nonce")
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Turn counter
+# ---------------------------------------------------------------------------
+
+def _turn_n(marker: dict) -> int:
+    """Return a monotone turn counter from the marker's forward+meta counters.
+
+    The turn number is the sum of forward_cycles + meta_cycles + 1 (1-based,
+    matching the post-advance counter semantics from Phase 1: after the probe
+    increments the counter, the next turn is one higher).
+
+    This is intentionally a simple sum — it is a labeling aid for retro graders,
+    not a precise per-hook-invocation counter.  The comment in Phase 2 planning
+    says "pick one, comment it."
+    """
+    forward = marker.get("forward_cycles", 0) or 0
+    meta = marker.get("meta_cycles", 0) or 0
+    return forward + meta + 1
+
+
+# ---------------------------------------------------------------------------
+# Main inject logic
+# ---------------------------------------------------------------------------
+
+def inject(stdin_text: str) -> str | None:
+    """Core inject logic.  Returns the JSON string to emit, or None for silence.
+
+    Raises freely — caller wraps in try/except for fail-open handling.
+    """
+    # Parse the hook-input JSON to get the event name.
+    hook_input = json.loads(stdin_text)
+    hook_event_name = hook_input.get("hook_event_name", "UserPromptSubmit")
+    session_id: str | None = hook_input.get("session_id") or None
+
+    # Read the run marker — this is the primary gate.
+    # Pass the hook-input session_id so staleness path B (session-id mismatch)
+    # can fire in production when a leftover marker from a crashed run is present.
+    marker = lazy_core.read_run_marker(session_id=session_id)
+    if marker is None:
+        # No active run → silent exit (bash wrapper handles this, but guard here too).
+        return None
+
+    # Session-id bind-on-first-hook-firing: when the marker has session_id=None
+    # (bind-pending), stamp it now with the hook-input session_id so subsequent
+    # guard calls can use the session-id mismatch staleness path.  This is
+    # atomic (temp-file + os.replace via lazy_core._atomic_write) and idempotent
+    # (bind_marker_session is a no-op when the marker is already bound).
+    if session_id and marker.get("session_id") is None:
+        if lazy_core.bind_marker_session(session_id):
+            # Re-read the now-bound marker so marker dict reflects the update.
+            marker = lazy_core.read_run_marker(session_id=session_id) or marker
+
+    # Surface any existing breadcrumb from a previous hook error.
+    breadcrumb_text = _read_and_clear_breadcrumb()
+
+    # Run the full probe form.  The probe also registers the emitted prompt
+    # (nonce + hash) as a side effect so the guard can validate the next dispatch.
+    probe_data = _run_probe(marker)
+
+    # Retrieve the most recent nonce from the registry (registered by the probe).
+    nonce = _latest_nonce()
+
+    # Build the additionalContext string.
+    turn = _turn_n(marker)
+
+    # Start with the LAZY-ROUTE banner.
+    parts: list[str] = [f"LAZY-ROUTE (hook-injected, turn {turn}):"]
+
+    # Embed the probe JSON evidence.
+    if probe_data is not None:
+        parts.append(json.dumps(probe_data, separators=(", ", ": ")))
+    else:
+        parts.append("[probe failed — re-run manually: --repeat-count --probe --emit-prompt]")
+
+    # Include the nonce for the guard to validate the next dispatch.
+    if nonce is not None:
+        parts.append(f"nonce={nonce}")
+
+    # For SessionStart(compact) and PostCompact: inject the post-compaction
+    # re-entry protocol and marker counters (SPEC inject item 3).
+    # SessionStart with source=="compact" or any PostCompact event.
+    source = hook_input.get("source", "")
+    is_post_compact = (
+        hook_event_name == "PostCompact"
+        or (hook_event_name == "SessionStart" and source == "compact")
+    )
+    if is_post_compact:
+        forward = marker.get("forward_cycles", 0) or 0
+        meta = marker.get("meta_cycles", 0) or 0
+        parts.append(
+            f"POST-COMPACTION RE-ENTRY: the run marker is still active "
+            f"(forward_cycles={forward}, meta_cycles={meta}). "
+            f"Read the LAZY-ROUTE above for the current cycle state. "
+            f"Follow the Step 1d HARD rule: NEVER re-execute a step already "
+            f"marked complete in the transcript — resume from the current step only."
+        )
+
+    # Surface any previous guard error (self-announcing breakage).
+    if breadcrumb_text is not None:
+        parts.append(f"HOOK_ERROR: {breadcrumb_text}")
+
+    additional_context = " ".join(parts)
+
+    # Emit the hookSpecificOutput JSON.
+    payload = {
+        "hookSpecificOutput": {
+            "hookEventName": hook_event_name,
+            "additionalContext": additional_context,
+        }
+    }
+    return json.dumps(payload)
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    """Main entry point.  Reads stdin, runs inject logic, writes result to stdout."""
+    try:
+        stdin_text = sys.stdin.read()
+        result = inject(stdin_text)
+        if result is not None:
+            sys.stdout.write(result + "\n")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        _write_breadcrumb(str(exc))
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
