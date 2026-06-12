@@ -18,7 +18,7 @@ Gate refusal output: {gate_output}
 <!-- @section job-steps pipelines=feature,bug modes=workstation,cloud -->
 Coherence-recovery algorithm:
 
-1. Read {spec_path}/PHASES.md in full. Read the gate refusal output carefully to identify exactly which phases, WUs, or status fields are incoherent.
+1. Read PHASES.md (in the spec path shown above) in full. Read the gate refusal output carefully to identify exactly which phases, WUs, or status fields are incoherent.
 
 2. For each named incoherence, reconcile HONESTLY:
    - Unchecked WU boxes: tick ONLY when there is on-disk evidence that the work was actually done (code file exists, test passes, commit landed, sentinel written). If the evidence does not exist, DO NOT tick — instead add a brief note next to the box explaining what is missing and flag it for the next implementation cycle.
@@ -27,7 +27,7 @@ Coherence-recovery algorithm:
 
 3. Do NOT tick unverified boxes. Do NOT fabricate evidence. If work is genuinely incomplete, the honest outcome is an In-progress phase with unticked boxes — this is the correct signal that sends the pipeline back to implementation, not a gate defect to work around.
 
-4. After reconciling, commit the updated PHASES.md: chore({item_id}): coherence-recovery — reconcile PHASES.md for gate retry. WORK-BRANCH-ONLY: commit to the CURRENT branch only (git rev-parse --abbrev-ref HEAD at start); NEVER create a new branch, NEVER --force.
+4. After reconciling, commit the updated PHASES.md with message `chore(<item_id>): coherence-recovery — reconcile PHASES.md for gate retry` (use the item id shown above). WORK-BRANCH-ONLY: commit to the CURRENT branch only (git rev-parse --abbrev-ref HEAD at start); NEVER create a new branch, NEVER --force.
 
 <!-- @section constraints pipelines=feature,bug modes=workstation,cloud -->
 CONSTRAINTS:

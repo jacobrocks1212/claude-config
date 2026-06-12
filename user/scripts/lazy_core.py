@@ -53,6 +53,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any
@@ -3622,6 +3623,20 @@ DISPATCH_MODELS: dict[str, str] = {
 # template, e.g.: <!-- @requires item_id,spec_path,sentinel_path -->
 _DISPATCH_REQUIRES_RE = re.compile(r"^<!--\s*@requires\s+([a-z0-9_,]+)\s*-->")
 
+# Phase 7 WU-7.5a: per-class Step name for the meta cycle_header.  The header
+# the orchestrator echoes is `### {Step} — {summary} [meta {m}/{cap}]`; this map
+# pins {Step} per the PHASES.md Phase 7 interface contract so every meta dispatch
+# carries a canonical heading (0/8 meta cycles carried one before this WU).
+DISPATCH_STEP_NAMES: dict[str, str] = {
+    "investigation":            "Investigate",
+    "apply-resolution":         "Resolve",
+    "recovery":                 "Recover",
+    "coherence-recovery":       "Recover",
+    "hardening":                "Harden",
+    "input-audit":              "Audit",
+    "needs-runtime-redispatch": "Validate",
+}
+
 
 def emit_dispatch_prompt(
     cls: str,
@@ -3667,7 +3682,10 @@ def emit_dispatch_prompt(
                       emit_cycle_prompt.
 
     Returns:
-        On success: ``{"ok": True, "prompt": <str>, "model": <"opus"|"sonnet">}``
+        On success: ``{"ok": True, "prompt": <str>, "model": <"opus"|"sonnet">}``;
+          additionally ``"cycle_header"`` (Phase 7 WU-7.5a) when a run marker is
+          present (marker-gated — omitted entirely with no marker so no-marker
+          callers stay byte-identical).
         On refusal: ``{"ok": False, "refused": <reason_str>}``
 
     Raises:
@@ -3767,7 +3785,35 @@ def emit_dispatch_prompt(
 
     # --- Return assembled prompt + model assignment ----------------------------
     model = DISPATCH_MODELS.get(cls, "opus")
-    return {"ok": True, "prompt": prompt, "model": model}
+    result: dict = {"ok": True, "prompt": prompt, "model": model}
+
+    # --- Meta cycle_header (Phase 7 WU-7.5a — MARKER-GATED) --------------------
+    # When a run marker is present, attach a canonical cycle heading the
+    # orchestrator echoes verbatim:  ### {Step} — {summary} [meta {m}/{cap}]
+    #   Step    : from DISPATCH_STEP_NAMES (per the Phase 7 interface contract).
+    #   summary : the work summary — context item_name, fallback item_id, fallback
+    #             the class name.
+    #   m       : the marker's persisted meta counter + 1 — the cycle THIS dispatch
+    #             will consume (1-based current-cycle semantics, matching the
+    #             forward cycle_header's POST-advance convention noted in Phase 1).
+    #   cap     : 2 * max_cycles from the marker (the meta-cycle budget).
+    # No marker → no cycle_header key at all, so no-marker emissions remain
+    # byte-identical to the Phase 3/4 shape.
+    marker = read_run_marker()
+    if marker is not None:
+        step = DISPATCH_STEP_NAMES.get(cls, cls)
+        summary = (
+            context.get("item_name")
+            or context.get("item_id")
+            or cls
+        )
+        meta_now = marker.get("meta_cycles", 0) or 0
+        m = meta_now + 1
+        max_cycles = marker.get("max_cycles")
+        cap = str(2 * max_cycles) if isinstance(max_cycles, int) else "?"
+        result["cycle_header"] = f"### {step} — {summary} [meta {m}/{cap}]"
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -3805,6 +3851,21 @@ _MARKER_FILENAME = "lazy-run-marker.json"
 
 # Registry filename inside the state dir.
 _REGISTRY_FILENAME = "lazy-prompt-registry.json"
+
+# Phase 7 WU-7.1: deny-ledger filename (one JSON object per line; JSONL).
+# The guard appends one entry on EVERY deny; --emit-dispatch hardening acks the
+# oldest unacked entry (FIFO); --run-end refuses on unacked entries unless
+# --ack-unhardened is passed.
+_DENY_LEDGER_FILENAME = "lazy-deny-ledger.jsonl"
+
+# Phase 7 WU-7.4: run-checkpoint filename (single JSON object).  Written by
+# --run-end --reason checkpoint; consumed (echoed + deleted) by the next
+# --run-start.  Consume-once resume context across a sanctioned pause.
+_CHECKPOINT_FILENAME = "lazy-run-checkpoint.json"
+
+# Phase 7: max characters retained for the ledger's reason_head / prompt_head
+# summary fields (keeps the JSONL line bounded regardless of prompt size).
+_LEDGER_HEAD_CHARS: int = 200
 
 # Staleness threshold: markers older than this (in seconds) are deleted.
 _MARKER_STALE_SECONDS: float = 24 * 3600  # 24 hours
@@ -4092,21 +4153,37 @@ def delete_run_marker(clear_registry: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 
 def normalize_prompt_for_hash(prompt: str) -> str:
-    """Normalize line endings in a prompt before hashing.
+    """Normalize a prompt before hashing so cosmetic copy artifacts cannot defeat
+    the registry match while semantic edits still do.
 
-    Two transforms, applied in order:
+    Four transforms, applied in order (Phase 7 WU-7.3b widened the original
+    Phase 1 pair with two more — trailing-whitespace strip + Unicode NFC):
       1. CRLF (\\r\\n) → LF (\\n)
       2. Lone CR (\\r not followed by \\n) → LF (\\n)
+      3. Per-line trailing-whitespace strip (rstrip each line) — a copy/paste
+         that picks up trailing spaces or tabs on some lines must not change the
+         hash (observed in session 2f6f27dc as a transcription-slip deny source).
+      4. Unicode NFC normalization — a decomposed (NFD) variant of an accented
+         character (e.g. an editor that emits combining marks) must hash equal to
+         the composed (NFC) form.
 
-    This ensures that a prompt registered on Windows (with CRLF line endings)
-    produces the same sha256 as the same prompt on POSIX (with LF endings),
-    so Windows/WSL round-trips cannot defeat the registry match.  The SPEC
-    explicitly requires this normalization in §Validate-deny step 1.
+    This ensures that a prompt registered on Windows (with CRLF line endings,
+    trailing whitespace, or NFD text) produces the same sha256 as the same prompt
+    re-typed clean, so Windows/WSL round-trips and editor quirks cannot defeat the
+    registry match.  A genuine word change still alters the hash (the deny still
+    fires for a real edit).  The SPEC requires CRLF normalization in §Validate-deny
+    step 1; WU-7.3b adds the trailing-whitespace + NFC legs.
     """
     # Step 1: collapse CRLF → LF
     normalized = prompt.replace("\r\n", "\n")
     # Step 2: replace any remaining lone CRs with LF
     normalized = normalized.replace("\r", "\n")
+    # Step 3: strip trailing whitespace from each line (newlines preserved).
+    # Splitting on "\n" after steps 1+2 means every line boundary is a single LF.
+    normalized = "\n".join(line.rstrip() for line in normalized.split("\n"))
+    # Step 4: Unicode NFC — fold decomposed sequences into their composed form so
+    # an NFD copy hashes identically to the clean NFC form.
+    normalized = unicodedata.normalize("NFC", normalized)
     return normalized
 
 
@@ -4443,3 +4520,239 @@ def advance_run_counters(state: dict) -> dict | None:
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 WU-7.1 — Deny ledger (routed hardening debt)
+# ---------------------------------------------------------------------------
+#
+# Every guard deny appends one JSON line to lazy-deny-ledger.jsonl (best-effort,
+# fail-open — the guard's own writer wraps this in try/except so a ledger failure
+# never changes the deny response).  The ledger is the ground truth for "how many
+# denials this run still owe a hardening round": --emit-dispatch hardening acks
+# the OLDEST unacked entry (FIFO, one per emission), and --run-end refuses to
+# retire the marker while unacked entries remain unless --ack-unhardened is passed.
+#
+# The deny path is the ONLY writer of new entries; allows never write.  Reads and
+# acks tolerate a missing or partially-corrupt file: unparseable lines are skipped
+# rather than treated as a fatal error (a single bad append must not brick the
+# whole ledger).
+
+
+def append_deny_ledger_entry(
+    tool_use_id: str,
+    denied_sha12: str,
+    reason_head: str,
+    prompt_head: str,
+    now: float | None = None,
+) -> bool:
+    """Append one deny entry to the deny ledger (JSONL), best-effort.
+
+    Called by lazy_guard.py on EVERY deny.  The caller wraps this in its own
+    try/except so a ledger-write failure never changes the guard's deny output
+    or exit code (fail-open is sacred) — this function additionally swallows its
+    own write errors and returns False rather than raising, so it is safe to call
+    from any context.
+
+    Entry shape (one JSON object per line):
+        {"ts": <epoch float>, "tool_use_id": <str>, "denied_sha12": <12 hex>,
+         "reason_head": <≤200 chars>, "prompt_head": <≤200 chars>, "acked": false}
+
+    Args:
+        tool_use_id: the denied Agent dispatch's tool_use_id (may be "").
+        denied_sha12: the first 12 hex chars of the computed prompt sha256.
+        reason_head: the deny reason, truncated to the first ~200 chars.
+        prompt_head: the dispatched prompt, truncated to the first ~200 chars.
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "tool_use_id": tool_use_id,
+            "denied_sha12": denied_sha12,
+            "reason_head": (reason_head or "")[:_LEDGER_HEAD_CHARS],
+            "prompt_head": (prompt_head or "")[:_LEDGER_HEAD_CHARS],
+            "acked": False,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        # Append a single compact JSON line.  Plain append (not _atomic_write):
+        # the ledger is append-only and a torn final line is tolerated by the
+        # corrupt-line-skipping reader, so the atomic-rewrite ceremony would only
+        # add a read-modify-write race window with the ack path.
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def read_deny_ledger() -> list[dict]:
+    """Read all deny-ledger entries, skipping any unparseable lines.
+
+    A missing ledger file → empty list (no denials yet).  A corrupt line (e.g.
+    a torn final append) is skipped rather than aborting the whole read.
+
+    Returns:
+        The list of parsed entry dicts in file (FIFO insertion) order.
+    """
+    ledger_path = claude_state_dir(create=False) / _DENY_LEDGER_FILENAME
+    if not ledger_path.exists():
+        return []
+    entries: list[dict] = []
+    try:
+        raw = ledger_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            # Skip an unparseable line — a single torn append must not brick
+            # the whole ledger.
+            continue
+        if isinstance(obj, dict):
+            entries.append(obj)
+    return entries
+
+
+def pending_hardening() -> int:
+    """Return the count of unacked deny-ledger entries (the routed hardening debt).
+
+    An entry is "pending" when its ``acked`` field is falsy.  A missing or empty
+    ledger → 0.
+    """
+    return sum(1 for e in read_deny_ledger() if not e.get("acked", False))
+
+
+def pending_denial_reasons() -> list[str]:
+    """Return the ``reason_head`` strings of all unacked deny-ledger entries, in
+    FIFO order.  Used to surface ``pending_denials`` in the marker-gated probe
+    enrichment so the orchestrator sees WHAT it still owes a hardening round for.
+    """
+    return [
+        e.get("reason_head", "")
+        for e in read_deny_ledger()
+        if not e.get("acked", False)
+    ]
+
+
+def ack_oldest_deny(now: float | None = None) -> dict | None:
+    """Ack the OLDEST unacked deny-ledger entry (FIFO), rewriting the ledger.
+
+    Called once per successful ``--emit-dispatch hardening`` emission so the
+    one-dispatch-per-deny cadence (locked decision 4) is preserved: each hardening
+    dispatch retires exactly one unit of routed hardening debt.
+
+    The oldest unacked entry's ``acked`` flips to True and gains an ``acked_ts``.
+    The whole ledger is then rewritten atomically (the file is small — one line
+    per deny, bounded by run length).
+
+    Args:
+        now: epoch float for acked_ts (injectable for hermetic tests).
+
+    Returns:
+        The entry dict that was acked, or None when there were no pending
+        entries (no-op — not an error).
+    """
+    if now is None:
+        now = time.time()
+    entries = read_deny_ledger()
+    target: dict | None = None
+    for entry in entries:
+        if not entry.get("acked", False):
+            entry["acked"] = True
+            entry["acked_ts"] = now
+            target = entry
+            break
+    if target is None:
+        # Nothing pending — no-op, no rewrite.
+        return None
+    # Rewrite the whole ledger (one JSON object per line) atomically.
+    try:
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        body = "".join(json.dumps(e) + "\n" for e in entries)
+        _atomic_write(ledger_path, body)
+    except Exception:  # noqa: BLE001
+        # A rewrite failure leaves the on-disk ledger unchanged; report the ack
+        # as not-applied so callers do not over-count.  The next emission retries.
+        return None
+    return target
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 WU-7.4 — Run-checkpoint contract (sanctioned unattended pause)
+# ---------------------------------------------------------------------------
+#
+# A --run-end --reason checkpoint writes lazy-run-checkpoint.json carrying the
+# next route the orchestrator should resume with plus the marker's fold counters
+# at run end.  The next --run-start consumes it (echoes + deletes), giving the
+# resumed run its sanctioned-pause context.  This gives /lazy-batch-retro a
+# mechanical sanctioned-vs-improvised signal for an early stop.
+
+
+def write_run_checkpoint(
+    next_route: str,
+    counters: dict,
+    now: float | None = None,
+) -> dict:
+    """Write lazy-run-checkpoint.json to the state dir (checkpoint run-end).
+
+    Args:
+        next_route: the probed next route the resumed run should take.
+        counters: the marker's fold counters as folded at run end (e.g.
+                  {"forward_cycles": N, "meta_cycles": M, "max_cycles": K}).
+        now: epoch float for the ts field (injectable for hermetic tests).
+
+    Returns:
+        The checkpoint dict that was written.
+    """
+    if now is None:
+        now = time.time()
+    checkpoint = {
+        "reason": "checkpoint",
+        "next_route": next_route,
+        "counters": counters,
+        "ts": now,
+    }
+    checkpoint_path = claude_state_dir() / _CHECKPOINT_FILENAME
+    _atomic_write(checkpoint_path, json.dumps(checkpoint, indent=2) + "\n")
+    return checkpoint
+
+
+def consume_run_checkpoint() -> dict | None:
+    """Read and DELETE lazy-run-checkpoint.json (consume-once resume context).
+
+    Called by --run-start: if a checkpoint file exists, its content is returned
+    (so run-start can echo it as resume context) and the file is deleted so the
+    same checkpoint is never replayed twice.  A missing or corrupt file → None.
+
+    Returns:
+        The checkpoint dict, or None when no (valid) checkpoint is present.
+    """
+    checkpoint_path = claude_state_dir(create=False) / _CHECKPOINT_FILENAME
+    if not checkpoint_path.exists():
+        return None
+    data: dict | None = None
+    try:
+        raw = checkpoint_path.read_text(encoding="utf-8")
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            data = parsed
+    except (OSError, json.JSONDecodeError, ValueError):
+        data = None
+    # Delete regardless of parse outcome — a corrupt checkpoint must not haunt
+    # every subsequent run-start.
+    try:
+        checkpoint_path.unlink()
+    except OSError:
+        pass
+    return data

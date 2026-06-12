@@ -1884,6 +1884,58 @@ def test_guard_depth_cap_real_hardening_entry():
 
 
 # ---------------------------------------------------------------------------
+# Phase 7 — guard deny-ledger write through the real bash hook path
+# ---------------------------------------------------------------------------
+
+def test_guard_bash_deny_writes_deny_ledger():
+    """Phase 7 WU-7.1: a deny through the REAL bash lazy-dispatch-guard.sh hook
+    path (marked run + unregistered prompt) produces the deny JSON on stdout AND
+    creates the deny-ledger file in the scoped state dir.
+
+    Mirrors test_guard_bash_slow_path_allows_registered_prompt's structure, but
+    for the deny path and asserting the ledger side-effect.
+    """
+    _guard()
+    assert _GUARD_SH.exists(), f"lazy-dispatch-guard.sh missing: {_GUARD_SH}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # Marked run, but the prompt is NEVER registered → the guard must deny.
+        _write_marker_in_dir(state_dir)
+
+        the_prompt = "HAND-COMPOSED unregistered dispatch through bash guard."
+        stdin_text = _e1_preToolUse_json(the_prompt, tool_use_id="toolu_deny7")
+        result = _run_bash(_GUARD_SH, stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"bash guard deny-path must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", "bash guard must produce deny JSON for unregistered prompt"
+        payload = json.loads(output)
+        decision = payload["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "deny", f"bash guard must deny; got {decision!r}"
+
+        # The deny-ledger file must now exist in the SCOPED state dir with one
+        # unacked entry for this tool_use_id.
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger_path.exists(), (
+            "the bash guard deny path must create lazy-deny-ledger.jsonl in the "
+            "scoped state dir"
+        )
+        lines = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                 if ln.strip()]
+        assert len(lines) == 1, f"exactly one ledger entry expected, got {len(lines)}"
+        entry = json.loads(lines[0])
+        assert entry["tool_use_id"] == "toolu_deny7", entry
+        assert entry["acked"] is False, entry
+        assert len(entry["denied_sha12"]) == 12, entry
+
+
+# ---------------------------------------------------------------------------
 # Test registry
 # ---------------------------------------------------------------------------
 
@@ -1923,6 +1975,9 @@ _TESTS = [
     # Phase 4 — hardening depth-cap integration test (real emitted entry)
     ("test_guard_depth_cap_real_hardening_entry",
      test_guard_depth_cap_real_hardening_entry),
+    # Phase 7 — deny-ledger write through the real bash hook path
+    ("test_guard_bash_deny_writes_deny_ledger",
+     test_guard_bash_deny_writes_deny_ledger),
 ]
 
 

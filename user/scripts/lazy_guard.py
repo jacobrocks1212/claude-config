@@ -235,6 +235,37 @@ def _assert_registry_readable() -> None:
         ) from None
 
 
+def _deny_and_ledger(
+    reason: str,
+    *,
+    tool_use_id: str,
+    sha: str,
+    prompt: str,
+) -> str:
+    """Build the deny JSON AND best-effort append a deny-ledger entry.
+
+    Phase 7 WU-7.1: EVERY deny appends one JSON line to lazy-deny-ledger.jsonl in
+    the state dir so the routed hardening debt is mechanically auditable (the
+    probe surfaces pending_hardening; --emit-dispatch hardening FIFO-acks; --run-end
+    refuses on unacked entries).  The ledger append is wrapped in try/except AND
+    lazy_core.append_deny_ledger_entry is itself fail-open, so a ledger-write
+    failure can NEVER change the deny output or exit code — fail-open is sacred.
+
+    The deny path is the ONLY writer; the allow paths never touch the ledger.
+    """
+    try:
+        lazy_core.append_deny_ledger_entry(
+            tool_use_id=tool_use_id,
+            denied_sha12=sha[:12],
+            reason_head=reason,
+            prompt_head=prompt,
+        )
+    except Exception:  # noqa: BLE001
+        # A ledger failure must never affect the deny — swallow and proceed.
+        pass
+    return _deny_json(reason)
+
+
 def guard(stdin_text: str) -> str | None:
     """Core guard logic.  Returns a JSON string to print, or None to print nothing.
 
@@ -318,10 +349,16 @@ def guard(stdin_text: str) -> str | None:
             if entry_class == "hardening":
                 # Depth-1 hardening cap: a hardening dispatch consumed by another
                 # consumer must not trigger recursive hardening.
-                return _deny_json(_hardening_cap_deny_reason())
+                return _deny_and_ledger(
+                    _hardening_cap_deny_reason(),
+                    tool_use_id=tool_use_id, sha=sha, prompt=prompt,
+                )
 
             # Default deny for consumed-by-other (non-hardening).
-            return _deny_json(_default_deny_reason())
+            return _deny_and_ledger(
+                _default_deny_reason(),
+                tool_use_id=tool_use_id, sha=sha, prompt=prompt,
+            )
 
         else:
             # Entry exists but is NOT consumed — it failed the freshness/TTL
@@ -332,14 +369,23 @@ def guard(stdin_text: str) -> str | None:
             # stale/expired unconsumed (SPEC: "a denial of a hardening dispatch
             # must never recommend recursive hardening").
             if entry_class == "hardening":
-                return _deny_json(_hardening_cap_deny_reason())
+                return _deny_and_ledger(
+                    _hardening_cap_deny_reason(),
+                    tool_use_id=tool_use_id, sha=sha, prompt=prompt,
+                )
 
             # Non-hardening stale/expired entry → standard corrective deny.
-            return _deny_json(_default_deny_reason())
+            return _deny_and_ledger(
+                _default_deny_reason(),
+                tool_use_id=tool_use_id, sha=sha, prompt=prompt,
+            )
 
     # --- 3. No matching entry at all. ----------------------------------------
     # Standard deny with corrective recipe.
-    return _deny_json(_default_deny_reason())
+    return _deny_and_ledger(
+        _default_deny_reason(),
+        tool_use_id=tool_use_id, sha=sha, prompt=prompt,
+    )
 
 
 # ---------------------------------------------------------------------------

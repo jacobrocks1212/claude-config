@@ -64,7 +64,7 @@ When the skill determines a mechanical fix is appropriate and implements it unde
 commits MUST use the prefix format: `harden(<area>): <description>`
 
 Examples:
-  harden(dispatch-template): add missing {item_id} token binding to dispatch-investigation.md
+  harden(dispatch-template): add missing item_id token binding to dispatch-investigation.md
   harden(skill-prose): clarify validate-deny recovery in lazy-batch Step 1a
   harden(script): fix emit_dispatch_prompt residue guard for edge case with empty context
 

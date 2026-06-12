@@ -24,11 +24,11 @@ Resolution summary: {resolution_summary}
 
 Steps (decision-resume path — resolution_kind: needs-input):
 
-1. Read the sentinel file fully ({sentinel_path}) — frontmatter, Decision Context body, and
-   the appended ## Resolution section.
+1. Read the sentinel file fully (the sentinel path shown above) — frontmatter, Decision Context
+   body, and the appended ## Resolution section.
 
-2. For EACH decision in the ## Decision Context, locate the section(s) of {spec_path}/SPEC.md
-   and/or {spec_path}/PHASES.md that the choice impacts. Apply the choice surgically: update
+2. For EACH decision in the ## Decision Context, locate the section(s) of SPEC.md
+   and/or PHASES.md (in the spec path shown above) that the choice impacts. Apply the choice surgically: update
    the design narrative, the implementation plan, API shape, schema choice, dependency
    selection — whatever the decision touches. Keep edits scoped; the choice is the operator's,
    your job is mechanical propagation. If a decision has no impact on either doc (rare — e.g.,
@@ -39,10 +39,10 @@ Steps (decision-resume path — resolution_kind: needs-input):
    the next cycle:
 
 <!-- @section neutralize-feature pipelines=feature modes=workstation,cloud -->
-     python3 ~/.claude/scripts/lazy-state.py --neutralize-sentinel {sentinel_path}
+     python3 ~/.claude/scripts/lazy-state.py --neutralize-sentinel <sentinel_path>
 
 <!-- @section neutralize-bug pipelines=bug modes=workstation,cloud -->
-     python3 ~/.claude/scripts/bug-state.py --neutralize-sentinel {sentinel_path}
+     python3 ~/.claude/scripts/bug-state.py --neutralize-sentinel <sentinel_path>
 
 <!-- @section neutralize-note pipelines=feature,bug modes=workstation,cloud -->
    The script performs the canonical rename to *_RESOLVED_<YYYY-MM-DD>.md (git-mv-aware,
@@ -59,7 +59,7 @@ Steps (decision-resume path — resolution_kind: needs-input):
    promotion is what makes the next probe re-surface the follow-up decisions.
 
 4. Commit per .claude/skill-config/commit-policy.md (or the standard pattern).
-   Commit message: docs({item_id}): apply decision resolution to SPEC/PHASES.
+   Commit message (use the item id shown above): `docs(<item_id>): apply decision resolution to SPEC/PHASES`.
    WORK-BRANCH-ONLY: commit to the CURRENT branch only (git rev-parse --abbrev-ref HEAD at
    start); NEVER create a new branch, NEVER --force.
 
@@ -68,12 +68,12 @@ Steps (decision-resume path — resolution_kind: needs-input):
 
 Steps (blocked-resolution path — resolution_kind: blocked):
 
-Read BLOCKED.md ({sentinel_path}) fully — frontmatter, blocker body, and the appended
-## Resolution section (chosen path + operator notes). Then enact EXACTLY the chosen path:
+Read BLOCKED.md (the sentinel path shown above) fully — frontmatter, blocker body, and the
+appended ## Resolution section (chosen path + operator notes). Then enact EXACTLY the chosen path:
 
   "Add a phase to resolve the blocker":
     Invoke the /add-phase skill (via the Skill tool — you MAY use it; you may NOT use
-    Agent) against {item_id}, authoring a new phase whose scope is the blocker described
+    Agent) against this {item_label} (the item id shown above), authoring a new phase whose scope is the blocker described
     in BLOCKED.md (and any recovery the cycle subagent suggested). It appends the phase to
     PHASES.md (In-progress, with unchecked deliverables) per its own contract. Then
     NEUTRALIZE BLOCKED.md (see below). The next loop cycle's state script routes the
@@ -81,7 +81,7 @@ Read BLOCKED.md ({sentinel_path}) fully — frontmatter, blocker body, and the a
     ESCALATION (only when the orchestrator flagged validation-escalation — blocker_kind
     mcp-validation + retry_count >= 2): the new phase MUST carry a full-chain seam-audit
     deliverable — enumerate every boundary in the failing path and live-probe each seam
-    post-fix BEFORE full re-validation; consume {spec_path}/INVESTIGATION.md (if present)
+    post-fix BEFORE full re-validation; consume INVESTIGATION.md from the spec path shown above (if present)
     and BLOCKED.md's ## Seam Enumeration section as the seam checklist. Do NOT author a
     single-layer fix phase, and do NOT bake unproven narrative into the phase as fact.
 
@@ -101,10 +101,10 @@ Read BLOCKED.md ({sentinel_path}) fully — frontmatter, blocker body, and the a
   NOT clear the halt:
 
 <!-- @section neutralize-blocked-feature pipelines=feature modes=workstation,cloud -->
-     python3 ~/.claude/scripts/lazy-state.py --neutralize-sentinel {sentinel_path}
+     python3 ~/.claude/scripts/lazy-state.py --neutralize-sentinel <sentinel_path>
 
 <!-- @section neutralize-blocked-bug pipelines=bug modes=workstation,cloud -->
-     python3 ~/.claude/scripts/bug-state.py --neutralize-sentinel {sentinel_path}
+     python3 ~/.claude/scripts/bug-state.py --neutralize-sentinel <sentinel_path>
 
 <!-- @section neutralize-blocked-note pipelines=feature,bug modes=workstation,cloud -->
   The script performs the canonical rename to BLOCKED_RESOLVED_<YYYY-MM-DD>.md
@@ -113,8 +113,8 @@ Read BLOCKED.md ({sentinel_path}) fully — frontmatter, blocker body, and the a
   a frontmatter field (this is a real bug that was hit in practice — the rename is
   mandatory).
 
-  Then commit per .claude/skill-config/commit-policy.md (or the standard pattern);
-  message: docs({item_id}): enact blocker resolution ({chosen_path}).
+  Then commit per .claude/skill-config/commit-policy.md (or the standard pattern); message
+  (substitute the item id and chosen path shown above): `docs(<item_id>): enact blocker resolution (<chosen_path>)`.
   WORK-BRANCH-ONLY: commit to the CURRENT branch only (git rev-parse --abbrev-ref HEAD at
   start); NEVER create a new branch, NEVER --force.
 

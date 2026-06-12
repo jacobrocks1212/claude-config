@@ -117,6 +117,16 @@ Completeness-first (D7 — standing policy, pre-authorized, both modes):
   in user-visible behavior, UX, API, or data semantics, or conflict with a SPEC
   Locked Decision). Full policy: ~/.claude/skills/_components/completeness-policy.md.
 
+  SPIN-OFF LEGS (when this cycle spins off a bug doc or an --enqueue-adhoc
+  feature for discovered out-of-scope work): both directions are mandatory.
+  (1) Add a REVERSE-REFERENCE in the ORIGIN item's doc naming the spun-off
+  id/path — the PHASES.md Implementation Notes, or the blocker sentinel's
+  resolution body if the spin-off resolved a blocker. (2) REPORT the spin-off
+  in your return summary (its id + a one-line reason) so the orchestrator fires
+  a PushNotification ("spun off <id> — <reason>") and adds the D7 digest entry.
+  Cross-references in BOTH directions are the contract — the new doc names its
+  origin; the origin names the spin-off.
+
 <!-- @section inline-override pipelines=feature,bug modes=workstation skills=all -->
 Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
   This subagent does NOT have the `Agent` tool — any Agent() call fails and

@@ -77,7 +77,9 @@ Echo-back format (one `AskUserQuestion`, phrased in active terms):
 
 Only enter the new mode after the operator confirms. If they say No or provide a correction, re-parse and echo again.
 
-**Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`forward_cycles < max_cycles`) AND active queue items remaining (features that are neither complete, deferred, nor blocked on research) without first asking the operator (one `AskUserQuestion`) whether to continue into a new run or stop now. This prevents silent early exits where the orchestrator halts mid-queue without the operator realising.
+**Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`forward_cycles < max_cycles`) AND active queue items remaining (features that are neither complete, deferred, nor blocked on research) without first asking the operator (one `AskUserQuestion`) whether to continue into a new run or stop now. This prevents silent early exits where the orchestrator halts mid-queue without the operator realising. The `AskUserQuestion` path is the **attended default**.
+
+**Unattended-checkpoint arm (sanctioned early stop — no operator reply expected).** In an unattended run (scheduled / overnight — nobody is going to answer the `AskUserQuestion`), an early stop is sanctioned ONLY as a CHECKPOINT, and ONLY when a reliability trigger holds: **≥2 guard denials this run, OR an explicit operator message requesting a pause.** A checkpoint requires ALL THREE of: (1) `python3 ~/.claude/scripts/lazy-state.py --run-end --reason checkpoint --next-route "<the probed next route>"` (this writes `lazy-run-checkpoint.json` so the next `--run-start` resumes from it); (2) a PushNotification carrying the next route + the trigger reason; (3) the T7 final report naming the trigger. An early stop WITHOUT the checkpoint `--run-end` (or without a holding trigger) remains a contract violation — the unattended arm narrows, never widens, the silent-exit ban. **Resume side:** `--run-start` echoes `resumed_from_checkpoint` (and deletes the checkpoint file) when it consumes one; surface it on the T1 run-start block as one line (see Step 0.55 / orchestrator-voice.md T1).
 
 Initialize counters and per-session state:
 - `forward_cycles = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py` returns a new `feature_id`). Counts pipeline-advancing work; ceiling is `max_cycles`.
@@ -264,6 +266,8 @@ python3 ~/.claude/scripts/lazy-state.py \
 Interactive sessions (no marker) are **completely untouched** — both hooks exit instantly on the `test -f` fast path. The marker is script-owned: `--run-start` writes it; `--run-end` deletes it. The orchestrator never hand-writes the marker file.
 
 **Session state pinned in the marker:** `pipeline=feature`, `cloud=false`, `repo_root`, `max_cycles`, `session_id` (bound on first hook firing), `nonce_seed`. Counters (`forward_cycles`, `meta_cycles`) are persisted in the marker from this point forward — the inject hook reads them without needing CLI flags.
+
+**Resume from a checkpoint.** If a prior run ended via the unattended-checkpoint arm (Step 0 budget-and-queue guard), `--run-start` consumes `lazy-run-checkpoint.json` and echoes its content as `resumed_from_checkpoint` in the run-start output (then deletes the file — single-use). When the run-start output carries `resumed_from_checkpoint`, surface it on the T1 banner as one extra line — `resume <next_route> (checkpoint <date>)` (orchestrator-voice.md T1) — so the operator sees the run picked up where the checkpoint left off.
 
 **`--run-end` is MANDATORY on every terminal/halt path** — see §1c.6 for the enumeration. A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades.
 
@@ -468,6 +472,8 @@ Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys
 
 **Continuation cycles re-emit — there is NO hand-composed real-skill prompt, EVER (probe→emit→dispatch atomicity).** A real-skill dispatch is valid ONLY when its `prompt:` is the `cycle_prompt` produced by an `--emit-prompt` probe run in the SAME turn as the `Agent` call. There is no sanctioned "continuation prompt": when a cycle returns partial, needs a retry, or work "continues" on the same feature, return to Step 1a and RE-PROBE — the script re-assembles the correct prompt for the new on-disk state, including any continuation context the sentinels now carry. The 2026-06-11 run's only two measured protocol failures (an orphaned 227k-token return whose prompt lacked the turn-end contract; a `result: pass` schema miss whose prompt lacked the schema section) were both hand-composed continuation prompts — drift began at the first continuation need and ratcheted, while the emitted path ran 12 consecutive cycles with zero failures. The ONLY exception is the documented `cycle_prompt_refused` degraded fallback below, which must be announced with its T6 `⚠` line.
 
+**Freshness — never dispatch an emission from an earlier turn (applies to `cycle_prompt` AND every `--emit-dispatch <class>` output).** The emitted text is only dispatchable while it is verbatim in your context within the SAME turn it was emitted. If ANY turn boundary, compaction/summarization, or edit intervened since the emit, the in-context copy is no longer trustworthy — RE-EMIT fresh (a new probe / a new `--emit-dispatch`) and dispatch within that same turn. Hand-editing emitted text is the failure class this rule names: appending a note, "cleaning it up", re-typing it, or splicing in context all mutate the hash and trip the guard (the three self-inflicted prompt mutations in the first enforced run). The template's `--context key=value` slots are the ONLY sanctioned customization point — everything outside them is copied mechanically, byte-for-byte.
+
 **In-session loop-guard — the orchestrator's CROSS-CHECK (retained):** Independently of the script, compute the current cycle's signature as the tuple `(feature_id, sub_skill, sub_skill_args, current_step)`. If `prev_cycle_signature is not None` AND `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)`, the state returned the same tuple two cycles in a row — almost always a missing terminal sentinel (`RETRO_DONE.md`, `VALIDATED.md`, `DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`) or a plan/sentinel write the previous cycle should have made but didn't. **`sub_skill_args` MUST be part of the compared tuple** — otherwise a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3, same `feature_id`/`sub_skill`/`current_step` but a different plan-part path in `sub_skill_args`) false-triggers on every part despite genuine forward progress. This in-session guard still drives the T2 `(sonnet, loop-resolution)` `disp` tag. The guard and the script normally agree (the persisted `repeat_count` and the in-session signature track the same streak). **If the in-session guard fires but `cycle_model` came back `"opus"`** — e.g. the probe was run WITHOUT `--repeat-count` so the script saw no streak — **re-run the probe WITH `--repeat-count --emit-prompt --max-cycles {max_cycles}`** (no `--forward-cycles`/`--meta-cycles` — counters live in the marker) so the script re-assembles `cycle_prompt` with the loop block appended and flips `cycle_model` to `"sonnet"`. Do NOT hand-append the loop block or hand-flip the model — let the script own both.
 
 The loop-guard evaluation itself is silent — never announce "no loop-guard fires" (orchestrator-voice.md hard ban); the only visible trace of a fired guard is the `(sonnet, loop-resolution)` tag on the T2 `disp` line.
@@ -492,6 +498,8 @@ Agent({
 #### 1d.1. Denial recovery (validate-deny guard + hardening dispatch)
 
 The validate-deny guard (`lazy-dispatch-guard.sh`) fires on every `Agent` tool call when the run marker is present. If the guard denies the dispatch (the `permissionDecisionReason` contains a corrective recipe — prompt hash mismatch or stale/consumed nonce), follow this recovery sequence:
+
+**Pending hardening debt (consume FIRST — probe-surfaced).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`), and a marker-gated probe surfaces the outstanding count as `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). When a probe (or the run-start output) shows `pending_hardening > 0`, the orchestrator MUST emit + dispatch the hardening stage — one per pending denial, FIFO — BEFORE dispatching any forward route this cycle: each `--emit-dispatch hardening` acks the OLDEST unacked ledger entry, so loop until `pending_hardening` returns to 0. Hardening debt is also a run-end gate: `--run-end` REFUSES (exit 1) while any unacked denial remains. The `--ack-unhardened` override exists for operator authorization ONLY (it forces a clean run-end and prints the override into the run-end message, which retros grade) — the orchestrator never passes it autonomously.
 
 **Trigger 1 — validate-deny (denied dispatch):**
 1. Re-run the dispatch-bound probe: `python3 ~/.claude/scripts/lazy-state.py --repeat-count --probe --emit-prompt --max-cycles {max_cycles}`. The fresh `cycle_prompt` carries a newly registered nonce.
@@ -533,11 +541,14 @@ If a LAZY-ROUTE banner carries a `HOOK_ERROR` breadcrumb (the inject hook failed
 **All three triggers → hardening dispatch:**  
 Parse the `--emit-dispatch hardening` output JSON (`dispatch_prompt`, `dispatch_model`, `dispatch_class`) and dispatch `dispatch_prompt` VERBATIM as an `Agent` call using `dispatch_model` (always `"opus"`). The prompt was registered at emit time; the guard will ALLOW it. Reference: `~/.claude/skills/_components/hardening-dispatch.md` for the full seven required `--context` keys.
 
-**Depth cap (HARD — no recursion).** If a hardening dispatch is ITSELF denied (the nonce was already consumed or the registry entry is stale), the guard emits a halt reason containing "halt" and "PushNotification" instead of another corrective recipe. This is the depth-1 self-recursion guard. On this denial:
-1. Run `python3 ~/.claude/scripts/lazy-state.py --run-end`.
-2. Surface: `⚠ hardening dispatch denied — depth cap reached; halting run` (T6 rich zone).
-3. PushNotification: `"lazy-batch halted — hardening dispatch denied at depth cap; operator review required."`.
-4. Print final batch report, STOP. Do NOT attempt a second hardening dispatch under any circumstances.
+**Depth cap (HARD — no recursion).** A denial of a hardening dispatch has TWO shapes; the guard's reason text discriminates them, and the recovery branches differently.
+
+- **(a) Ordinary corrective recipe on the hardening dispatch (hash mismatch — a transcription slip on YOUR copy of the emitted `dispatch_prompt`).** The guard returns its normal corrective recipe (NOT a halt reason), meaning the prompt you dispatched did not byte-match the registered emission — you hand-edited it. This is NOT depth-1 recursion. Recovery: re-run `python3 ~/.claude/scripts/lazy-state.py --emit-dispatch hardening …` (fresh nonce, same `--context` keys) and make exactly ONE verbatim re-dispatch attempt, copying `dispatch_prompt` mechanically (no edits). A second recipe denial then falls through to the halt protocol below — never a third attempt.
+- **(b) The guard's HALT REASON (its text contains "halt" and "PushNotification") OR a SECOND recipe denial.** The halt reason fires when the denied prompt matched a registered hardening-class entry — genuine depth-1 recursion (the depth-1 self-recursion guard). On this denial — OR after the single re-dispatch in (a) is itself denied — run the 4-step halt protocol (unchanged):
+  1. Run `python3 ~/.claude/scripts/lazy-state.py --run-end`.
+  2. Surface: `⚠ hardening dispatch denied — depth cap reached; halting run` (T6 rich zone).
+  3. PushNotification: `"lazy-batch halted — hardening dispatch denied at depth cap; operator review required."`.
+  4. Print final batch report, STOP. Do NOT attempt a hardening dispatch beyond the single (a) re-attempt under any circumstances.
 
 ### 1d.5. Post-cycle input audit (Opus — runs only on `/spec` and `plan-feature` cycles)
 
@@ -600,6 +611,7 @@ After the subagent returns:
 1. Append to `cycle_log`: `{forward_cycles + meta_cycles + 1, feature_name, sub_skill, subagent's one-paragraph summary}` (use the total BEFORE the increment below, so the entry matches the in-flight cycle number).
 2. Emit the T3 cycle-return block (Step 3 / orchestrator-voice.md) under the cycle's T2 heading: a `done` line (ONE line — duration + the load-bearing outcome); on an `/execute-plan` cycle an `audit` line — REQUIRED, this is the inline-override audit signal `/lazy-batch-retro` grades: confirm the subagent performed the edits inline (zero Agent() calls) with test-first discipline per batch plus the gate outcome (e.g. `audit  RED→GREEN 33/33 · gates qg:ts green · inline, zero Agent()`); a `ledger` line (the step 4/4a guard outcome — `clean · pushed` when healthy); and a `next` line (the fresh probe's routing, or `terminal: <reason>`). The retired 3–5-bullet cycle summary must NOT reappear — details live in the commit and the docs the subagent wrote.
 3. Update `prev_cycle_signature = (feature_id, sub_skill, sub_skill_args, current_step)` so the next cycle's Step 1d loop-guard can compare against this cycle.
+3a. **Spin-off notification (any cycle return reporting a spin-off).** If the returned summary reports that the cycle spun off a bug doc or an `--enqueue-adhoc` feature (the cycle owns the reverse-reference in the origin feature's doc per `cycle-base-prompt.md`), the orchestrator fires `PushNotification("spun off {id} — {reason}")` and adds a D7 digest entry (`completeness-policy.md` §Logging — the run-end T7 digest table). Spin-offs are pre-authorized (`completeness-policy.md` §5); this is notify + log, never a question.
 4. **Post-cycle push backstop (guardrail C — mirrored from `/lazy-batch-cloud`).** Verify the work branch is pushed — `git push origin $(git rev-parse --abbrev-ref HEAD)` (retry up to 4× with exponential backoff 2s/4s/8s/16s on network error; WORK BRANCH only, never main, never force). The cycle subagent's Step 1d already commits and pushes to the current branch at end-of-cycle, so this normally reports "up to date" — it is the backstop for any cycle that did not push itself. A `git push` of already-committed work is not a Write/Edit, so HARD CONSTRAINT 1 still holds.
 4a. **Post-`/execute-plan` (and `/mcp-test`) ledger-consistency guard (guardrail D — codifies the previously-ad-hoc operator check).** When the cycle that just returned was `/execute-plan` or `/mcp-test`, run a SINGLE-TURN consistency check BEFORE the next state probe (Step 1a). This is one scripted check fired on the cycle's completion notification — NOT polling, so HARD CONSTRAINT 7 (no active waiting) holds; these are `Bash` reads, so HARD CONSTRAINT 1 holds too. The cycle subagent is supposed to leave a clean, consistent ledger via the atomic gate+commit (Step 1d `/execute-plan` override), but it empirically loses its turn between gates and commit — this guard catches the residue deterministically instead of relying on operator memory.
 
@@ -1155,4 +1167,19 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
      All three: structurally identical for Changes A–G (hook activation, run-end on terminals,
        LAZY-ROUTE banner consumption, denial recovery, emit-dispatch dispatch sites,
        post-compaction counter from marker, coupled-pair diff comment). -->
+
+<!-- COUPLED-PAIR DIFF (lazy-batch ↔ lazy-bug-batch ↔ lazy-batch-cloud) — Phase 7 turn-routing-enforcement
+     Mirrored identically across all three SKILL.mds (cloud keeps its --cloud / unattended-default deltas):
+       - WU-7.1: §1d.1 "Pending hardening debt" block — pending_hardening>0 ⇒ FIFO emit+dispatch before
+         any forward route; --run-end refuses on unacked denials; --ack-unhardened is operator-only.
+       - WU-7.2: §1d.1 Depth-cap paragraph split into shape-(a) recipe denial (one verbatim re-dispatch,
+         fresh nonce) vs shape-(b) halt-reason / second-recipe denial (existing 4-step halt). Never a 3rd.
+       - WU-7.3c: §1d "Continuation cycles re-emit" gained the Freshness rule — never dispatch an emission
+         from an earlier turn; re-emit fresh same-turn; --context slots are the only customization point.
+       - WU-7.4: Budget-and-queue guard gained the unattended-checkpoint arm (reliability-triggered,
+         --run-end --reason checkpoint --next-route + PushNotification + T7 trigger). Step 0.55 surfaces
+         resumed_from_checkpoint on T1.
+       - WU-7.5c: Step 1e gained step 3a — fire PushNotification("spun off {id} — {reason}") + D7 digest
+         entry on any cycle return reporting a spin-off. (cloud mirrors at its Step 1e equivalent.)
+       Bug-pipeline (lazy-bug-batch) keeps bug-state.py / bug_id|bug_name bindings; cloud keeps --cloud. -->
 

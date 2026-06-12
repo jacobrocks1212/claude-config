@@ -23,7 +23,7 @@ refute them as readily as you confirm them):
 
 <!-- @section contract-reminders pipelines=feature,bug modes=workstation,cloud -->
 Contract reminders (the skill carries the full rules — these are the ones that void the cycle if violated):
-- NO production fixes. Allowed commits: INVESTIGATION.md, diag({item_id}): off-hot-path instrumentation (revert or disclose-retained), tests driving REAL components.
+- NO production fixes. Allowed commits: INVESTIGATION.md, `diag(<item_id>):` off-hot-path instrumentation (use the item id shown above; revert or disclose-retained), tests driving REAL components.
 - NO fire-and-forget: blocking foreground waits; INVESTIGATION.md is on disk before you return, whatever the status.
 - Verify binary freshness before trusting any observation.
 - Every hypothesis verdict cites an evidence artifact; "inconclusive" with an honest seam table beats a confident guess.
@@ -48,4 +48,4 @@ GROUND-TRUTH OUTPUT — return the /investigate skill's structured summary conta
 - seam-table delta (which seams were probed, which were confirmed/refuted/inconclusive)
 - hypothesis verdicts (each labeled confirmed / refuted / inconclusive with cited evidence artifact)
 - instrumentation disposition (reverted / retained-disclosed / none)
-- artifact path ({spec_path}/INVESTIGATION.md or "deferred" for cloud runs)
+- artifact path (INVESTIGATION.md in the spec path shown above, or "deferred" for cloud runs)

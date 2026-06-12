@@ -83,6 +83,16 @@ queue  4 bugs · first: track-path-filestream-source-silent
 
 ≤4 lines. A preflight FAILURE is a rich zone (T6-error: recipe printed in full).
 
+When `--run-start` output carries `resumed_from_checkpoint` (the run picked up a prior
+unattended-checkpoint stop — see the budget-and-queue guard / Step 0.55), add ONE extra line:
+
+```
+resume write-plan Phase 14 (checkpoint 2026-06-12)
+```
+
+Format: `resume <next_route> (checkpoint <date>)`. Omit the line entirely when no checkpoint was
+consumed.
+
 ### T2 — Cycle dispatch (every forward or meta cycle)
 
 ```
@@ -111,7 +121,11 @@ Heading format: `### {Step name} — {work summary, ≤12 words} [{n}/{max}]`.
 **Probe-presence guard (applies to T2 AND T4 headings).** When the dispatch-bound probe carried
 a `cycle_header` field (the `--probe` enrichment emits it pre-formatted), the heading line is
 that string echoed **verbatim** — never re-typed, never composed from memory or a remembered
-earlier probe. A probe-shaped heading with no same-turn probe behind it is the gravest R-V
+earlier probe. **This now covers META dispatches too:** every `--emit-dispatch <class>` output
+carries its own pre-formatted `cycle_header` (`### {Step} — {summary} [meta m/cap]`) when a marker
+is present — echo it verbatim under the SAME probe-presence guard as forward cycles (the headerless
+meta dispatches graded 0/8 in the first enforced run; a meta heading with no same-turn emit behind
+it is the same R-V violation). A probe-shaped heading with no same-turn probe behind it is the gravest R-V
 violation: template-conforming narration over non-conforming behavior (2026-06-11 run: 12
 probe-shaped headings printed across a 5-hour zero-probe gap while every guard and counter ran
 blind). Graders cross-check heading text against same-turn probe output (R-V-2 × R-O-1).
@@ -167,6 +181,20 @@ deserve full detail.
 
 Keep the required content (cycle table, per-item outcomes, parked + auto-accept digest,
 terminal reason, explicit next step) — tables carry the data; framing prose ≤2 sentences total.
+
+When ≥1 D7 policy application occurred this run, the report MUST also include the
+completeness-policy digest table (matching `completeness-policy.md` §Logging) alongside the
+existing `--park` auto-accept digest:
+
+```
+### Completeness-policy applications (D7)
+| decision | chosen path | spin-offs | links |
+|----------|-------------|-----------|-------|
+```
+
+One row per `⚖ policy:` application; the `spin-offs` column names any spun-off id (each already
+push-notified at creation per `completeness-policy.md` §5), the `links` column the
+SPEC/PHASES/bug-doc paths touched.
 
 ## Precedence
 

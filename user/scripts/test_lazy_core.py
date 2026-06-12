@@ -6904,6 +6904,501 @@ def test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro():
 
 
 # ---------------------------------------------------------------------------
+# Tests: Phase 7 — deny ledger, run-end refusal/override, checkpoint round-trip,
+#                  widened normalization, single-slot templates, meta cycle_header
+# ---------------------------------------------------------------------------
+#
+# Hermetic via LAZY_STATE_DIR temp dirs (same discipline as Phase 1).  The
+# helpers _set_state_dir / _clear_state_dir are defined below in the Phase 1
+# section but resolve at call time (these functions only run from main()).
+
+
+def test_phase7_symbols_present():
+    """All Phase 7 public symbols exist on lazy_core."""
+    _guard()
+    expected = [
+        "append_deny_ledger_entry",
+        "read_deny_ledger",
+        "pending_hardening",
+        "pending_denial_reasons",
+        "ack_oldest_deny",
+        "write_run_checkpoint",
+        "consume_run_checkpoint",
+        "DISPATCH_STEP_NAMES",
+    ]
+    missing = [s for s in expected if not hasattr(lazy_core, s)]
+    assert not missing, f"missing Phase 7 symbols: {missing}"
+
+
+def test_deny_ledger_write_read_pending():
+    """append → read returns entries in FIFO order; pending counts unacked only."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.read_deny_ledger() == [], "empty ledger must read as []"
+            assert lazy_core.pending_hardening() == 0, "no ledger → 0 pending"
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-1", denied_sha12="abc123def456",
+                reason_head="reason one", prompt_head="prompt one", now=100.0,
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-2", denied_sha12="ffffffffffff",
+                reason_head="reason two", prompt_head="prompt two", now=200.0,
+            )
+            entries = lazy_core.read_deny_ledger()
+            assert len(entries) == 2, f"expected 2 entries, got {entries}"
+            # FIFO order preserved.
+            assert entries[0]["tool_use_id"] == "tu-1", entries
+            assert entries[1]["tool_use_id"] == "tu-2", entries
+            assert entries[0]["denied_sha12"] == "abc123def456", entries
+            assert entries[0]["acked"] is False, entries
+            assert lazy_core.pending_hardening() == 2, "both entries unacked"
+            reasons = lazy_core.pending_denial_reasons()
+            assert reasons == ["reason one", "reason two"], reasons
+        finally:
+            _clear_state_dir()
+
+
+def test_deny_ledger_head_truncation():
+    """reason_head / prompt_head are truncated to the head-char cap."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            long_reason = "R" * 500
+            long_prompt = "P" * 500
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="0" * 12,
+                reason_head=long_reason, prompt_head=long_prompt, now=1.0,
+            )
+            entry = lazy_core.read_deny_ledger()[0]
+            cap = lazy_core._LEDGER_HEAD_CHARS
+            assert len(entry["reason_head"]) == cap, len(entry["reason_head"])
+            assert len(entry["prompt_head"]) == cap, len(entry["prompt_head"])
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_oldest_deny_fifo():
+    """ack_oldest_deny flips the OLDEST unacked entry first (FIFO)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            for i in range(3):
+                lazy_core.append_deny_ledger_entry(
+                    tool_use_id=f"tu-{i}", denied_sha12=f"{i}" * 12,
+                    reason_head=f"reason {i}", prompt_head=f"prompt {i}",
+                    now=float(i),
+                )
+            assert lazy_core.pending_hardening() == 3
+            acked = lazy_core.ack_oldest_deny(now=999.0)
+            assert acked is not None, "ack returned None despite pending entries"
+            assert acked["tool_use_id"] == "tu-0", "must ack the OLDEST (tu-0)"
+            assert acked["acked"] is True and acked["acked_ts"] == 999.0, acked
+            assert lazy_core.pending_hardening() == 2, "one acked → 2 remain"
+            # Next ack takes tu-1 (the new oldest unacked).
+            acked2 = lazy_core.ack_oldest_deny(now=1000.0)
+            assert acked2["tool_use_id"] == "tu-1", acked2
+            assert lazy_core.pending_hardening() == 1
+            # The first entry stays acked across re-reads (persisted).
+            entries = lazy_core.read_deny_ledger()
+            assert entries[0]["acked"] is True, entries
+            assert entries[1]["acked"] is True, entries
+            assert entries[2]["acked"] is False, entries
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_oldest_deny_empty_is_noop():
+    """ack_oldest_deny with no pending entries returns None (no-op, not error)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # No ledger at all.
+            assert lazy_core.ack_oldest_deny() is None, "empty/absent ledger → None"
+            # Ledger with a single already-acked entry.
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            assert lazy_core.ack_oldest_deny(now=2.0) is not None  # acks it
+            assert lazy_core.ack_oldest_deny(now=3.0) is None, "all acked → no-op"
+        finally:
+            _clear_state_dir()
+
+
+def test_deny_ledger_corrupt_line_skipped():
+    """A corrupt (unparseable) line in the ledger is skipped, not fatal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ledger_path = Path(td) / "lazy-deny-ledger.jsonl"
+            good = json.dumps({
+                "ts": 1.0, "tool_use_id": "ok", "denied_sha12": "a" * 12,
+                "reason_head": "good", "prompt_head": "p", "acked": False,
+            })
+            # Mix a valid line, a torn/garbage line, and a blank line.
+            ledger_path.write_text(
+                good + "\n" + "{not valid json" + "\n" + "\n",
+                encoding="utf-8",
+            )
+            entries = lazy_core.read_deny_ledger()
+            assert len(entries) == 1, f"corrupt line must be skipped, got {entries}"
+            assert entries[0]["tool_use_id"] == "ok", entries
+            assert lazy_core.pending_hardening() == 1, "the one good entry counts"
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_deny_writes_ledger_entry():
+    """The guard's deny path (marked run + unregistered prompt) leaves the deny
+    output unchanged AND writes a deny-ledger entry in the scoped state dir."""
+    _guard()
+    assert hasattr(lazy_core, "write_run_marker"), "Phase 1 missing"
+    guard_script = _SCRIPTS_DIR / "lazy_guard.py"
+    assert guard_script.exists(), "lazy_guard.py missing (Phase 2)"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "guard-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=__import__("time").time(),
+            )
+        finally:
+            _clear_state_dir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        hook_input = json.dumps({
+            "tool_use_id": "tu-deny",
+            "tool_input": {"prompt": "HAND-COMPOSED unregistered dispatch"},
+        })
+        result = subprocess.run(
+            [sys.executable, str(guard_script)],
+            input=hook_input, capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 0, f"guard must exit 0; stderr={result.stderr[:300]!r}"
+        out = json.loads(result.stdout)
+        decision = out["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "deny", f"expected deny, got {decision}"
+        reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+        assert reason, "deny reason must be non-empty (unchanged corrective recipe)"
+        # The ledger entry must now exist.
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger_path.exists(), "deny must append a ledger entry"
+        lines = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert len(lines) == 1, f"exactly one ledger line expected, got {len(lines)}"
+        entry = json.loads(lines[0])
+        assert entry["tool_use_id"] == "tu-deny", entry
+        assert entry["acked"] is False, entry
+        assert len(entry["denied_sha12"]) == 12, entry
+
+
+def test_guard_deny_ledger_failure_is_fail_open():
+    """A ledger-write failure must NOT change the guard's deny output (fail-open).
+
+    Simulated by pointing LAZY_STATE_DIR at a path whose ledger location cannot
+    be written (a FILE exists where the ledger directory's append would land —
+    here we make the state dir itself a regular file so any state-dir write
+    raises, yet the in-process guard still returns its deny JSON)."""
+    _guard()
+    assert hasattr(lazy_core, "append_deny_ledger_entry"), "Phase 7 missing"
+    with tempfile.TemporaryDirectory() as td:
+        # Make a path that is a FILE, then point the ledger there: append will
+        # raise.  append_deny_ledger_entry must swallow it and return False.
+        bad_dir = Path(td) / "not-a-dir"
+        bad_dir.write_text("i am a file, not a directory\n", encoding="utf-8")
+        _set_state_dir(bad_dir)
+        try:
+            # claude_state_dir(create=True) would try to mkdir over a file →
+            # the writer swallows the error and returns False (fail-open).
+            ok = lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            assert ok is False, "unwritable ledger path must fail-open (return False)"
+            # Reading from the same broken path must also be non-fatal.
+            assert lazy_core.read_deny_ledger() == [], "broken read → [] not raise"
+            assert lazy_core.pending_hardening() == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_run_end_refuses_on_unacked_deny():
+    """Subprocess: marked run + 1 unacked deny → --run-end exits 1 with the
+    marker still present; after --emit-dispatch hardening acks it, --run-end
+    succeeds; --ack-unhardened overrides and notes the override."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "rend-state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # run-start
+        assert run(["--run-start", "--max-cycles", "5"]).returncode == 0
+        # seed one unacked deny directly into the ledger (scoped)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+        finally:
+            _clear_state_dir()
+
+        # run-end REFUSES (exit 1), marker LEFT IN PLACE.
+        r = run(["--run-end"])
+        assert r.returncode == 1, f"run-end must refuse (exit 1), got {r.returncode}"
+        out = json.loads(r.stdout)
+        assert out["run_marker_deleted"] is False, out
+        assert "refused" in out and out["pending_hardening"] == 1, out
+        assert (state_dir / "lazy-run-marker.json").exists(), "marker must remain"
+
+        # Ack via --emit-dispatch hardening (FIFO ack on a marked run).
+        rd = run([
+            "--emit-dispatch", "hardening",
+            "--context", "denied_prompt_summary=x",
+            "--context", "denial_reason=y",
+            "--context", "probe_json={}",
+            "--context", "registry_state={}",
+            "--context", "trigger_kind=validate-deny",
+            "--context", "item_id=feat-x",
+            "--context", "cwd=/r",
+        ])
+        assert rd.returncode == 0, f"emit hardening failed: {rd.stdout}{rd.stderr}"
+
+        # Now run-end SUCCEEDS (ledger empty).
+        r2 = run(["--run-end"])
+        assert r2.returncode == 0, f"run-end must succeed after ack: {r2.stdout}"
+        out2 = json.loads(r2.stdout)
+        assert out2["run_marker_deleted"] is True, out2
+        assert not (state_dir / "lazy-run-marker.json").exists(), "marker deleted"
+
+        # --- override path: fresh marked run + unacked deny + --ack-unhardened
+        assert run(["--run-start", "--max-cycles", "5"]).returncode == 0
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu2", denied_sha12="b" * 12,
+                reason_head="r2", prompt_head="p2", now=2.0,
+            )
+        finally:
+            _clear_state_dir()
+        r3 = run(["--run-end", "--ack-unhardened"])
+        assert r3.returncode == 0, f"override run-end must succeed: {r3.stdout}"
+        out3 = json.loads(r3.stdout)
+        assert out3["run_marker_deleted"] is True, out3
+        assert "override" in out3 and "OVERRIDE" in out3["override"], out3
+
+
+def test_checkpoint_round_trip():
+    """Subprocess: --run-end --reason checkpoint --next-route X writes the
+    checkpoint file (folding the marker counters); the next --run-start echoes
+    and consumes it; a plain terminal --run-end writes no checkpoint file."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "ckpt-state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        assert run(["--run-start", "--max-cycles", "7"]).returncode == 0
+        # checkpoint requires --next-route — missing → non-zero exit.
+        r_missing = run(["--run-end", "--reason", "checkpoint"])
+        assert r_missing.returncode != 0, "checkpoint without --next-route must fail"
+        assert (state_dir / "lazy-run-marker.json").exists(), "marker still present after failed checkpoint"
+
+        # Proper checkpoint run-end writes the file + retires the marker.
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "write-plan Phase 14"])
+        assert r.returncode == 0, f"checkpoint run-end failed: {r.stdout}{r.stderr}"
+        out = json.loads(r.stdout)
+        assert out["reason"] == "checkpoint", out
+        assert out["checkpoint"]["next_route"] == "write-plan Phase 14", out
+        ckpt_path = state_dir / "lazy-run-checkpoint.json"
+        assert ckpt_path.exists(), "checkpoint file must be written"
+        ckpt = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        assert ckpt["reason"] == "checkpoint", ckpt
+        assert ckpt["next_route"] == "write-plan Phase 14", ckpt
+        assert "counters" in ckpt and "max_cycles" in ckpt["counters"], ckpt
+        assert not (state_dir / "lazy-run-marker.json").exists(), "marker retired"
+
+        # Next run-start consumes + echoes it.
+        r2 = run(["--run-start", "--max-cycles", "7"])
+        assert r2.returncode == 0
+        out2 = json.loads(r2.stdout)
+        assert "resumed_from_checkpoint" in out2, out2
+        assert out2["resumed_from_checkpoint"]["next_route"] == "write-plan Phase 14", out2
+        assert not ckpt_path.exists(), "checkpoint must be consumed (deleted)"
+
+        # A plain terminal run-end writes NO checkpoint file.
+        r3 = run(["--run-end"])
+        assert r3.returncode == 0
+        assert not ckpt_path.exists(), "terminal run-end must not write a checkpoint"
+
+
+def test_normalize_widened_equivalence_pairs():
+    """Widened normalize_prompt_for_hash: CRLF + trailing-whitespace + NFD all
+    hash equal to the clean LF/NFC form; a semantic word change still differs."""
+    _guard()
+    import unicodedata as _ud
+    base = "first line\nsecond café line\nthird"
+    # CRLF variant
+    crlf = base.replace("\n", "\r\n")
+    # trailing-whitespace variant (spaces + tabs at line ends)
+    trailing = "first line   \nsecond café line\t\nthird  "
+    # NFD variant of the same text (decompose the accented é)
+    nfd = _ud.normalize("NFD", base)
+    # combined: CRLF + trailing ws + NFD
+    combined = _ud.normalize("NFD", trailing.replace("\n", "\r\n"))
+
+    h_base = lazy_core.prompt_sha256(base)
+    for label, variant in [("crlf", crlf), ("trailing", trailing),
+                           ("nfd", nfd), ("combined", combined)]:
+        assert lazy_core.prompt_sha256(variant) == h_base, (
+            f"{label} variant must hash equal to the clean form"
+        )
+    # The NFD variant must NOT be byte-identical pre-normalization (otherwise the
+    # test proves nothing) — confirm the inputs genuinely differed.
+    assert nfd != base, "NFD input must differ from NFC input pre-normalization"
+
+    # Semantic mutation: an appended word changes the hash.
+    mutated = base + " EXTRA"
+    assert lazy_core.prompt_sha256(mutated) != h_base, (
+        "a real word change must still change the hash (deny still fires)"
+    )
+
+
+def test_single_slot_dispatch_templates():
+    """Every @requires token appears EXACTLY ONCE as a {token} slot in each
+    dispatch template body (WU-7.3a transcription-surface reduction)."""
+    _guard()
+    templates = sorted(_REAL_TEMPLATE_DIR.glob("dispatch-*.md"))
+    assert templates, f"no dispatch templates found under {_REAL_TEMPLATE_DIR}"
+    for tpl in templates:
+        text = tpl.read_text(encoding="utf-8")
+        first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+        m = re.match(r"^<!--\s*@requires\s+([a-z0-9_,]+)\s*-->", first_line)
+        assert m, f"{tpl.name}: line 1 must declare @requires"
+        reqs = [k.strip() for k in m.group(1).split(",") if k.strip()]
+        for tok in reqs:
+            count = len(re.findall(r"\{" + re.escape(tok) + r"\}", text))
+            assert count == 1, (
+                f"{tpl.name}: @requires token {tok!r} must appear EXACTLY ONCE "
+                f"as a {{{tok}}} slot, found {count}"
+            )
+
+
+def test_emit_dispatch_cycle_header_marker_gated():
+    """emit_dispatch_prompt attaches cycle_header ONLY when a marker is present;
+    the header matches `### {Step} — {summary} [meta {m}/{cap}]` with the
+    class-map step name, item_name summary, m = meta+1, cap = 2*max_cycles."""
+    _guard()
+    requires_keys = _read_recovery_requires_keys()
+    assert requires_keys is not None, "dispatch-recovery.md missing"
+    ctx = {k: f"v-{k}" for k in requires_keys}
+    ctx["item_name"] = "My Feature"
+    ctx["item_id"] = "feat-z"
+
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # --- No marker → no cycle_header key at all (marker-gated). ---
+            r_nomarker = lazy_core.emit_dispatch_prompt(
+                "recovery", ctx, pipeline="feature",
+            )
+            assert r_nomarker["ok"], r_nomarker
+            assert "cycle_header" not in r_nomarker, (
+                "cycle_header must be ABSENT without a marker (baseline-safety)"
+            )
+
+            # --- Marker present (meta=3, max=5) → header present, exact format. ---
+            import time as _time
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            # Advance the meta counter to 3 via direct marker edit.
+            marker = lazy_core.read_run_marker()
+            marker["meta_cycles"] = 3
+            (Path(td) / "lazy-run-marker.json").write_text(
+                json.dumps(marker, indent=2) + "\n", encoding="utf-8"
+            )
+            r = lazy_core.emit_dispatch_prompt("recovery", ctx, pipeline="feature")
+            assert r["ok"], r
+            assert "cycle_header" in r, "cycle_header must be present with a marker"
+            # Step for 'recovery' is 'Recover'; m = meta(3)+1 = 4; cap = 2*5 = 10.
+            assert r["cycle_header"] == "### Recover — My Feature [meta 4/10]", (
+                f"unexpected cycle_header: {r['cycle_header']!r}"
+            )
+
+            # Step-name map covers investigation → 'Investigate'.
+            ri = lazy_core.emit_dispatch_prompt(
+                "investigation",
+                {k: f"v-{k}" for k in _dispatch_requires("investigation")}
+                | {"item_name": "Bug Q", "item_id": "bug-q"},
+                pipeline="feature",
+            )
+            assert ri["ok"], ri
+            assert ri["cycle_header"].startswith("### Investigate — Bug Q [meta 4/10]"), ri["cycle_header"]
+        finally:
+            _clear_state_dir()
+
+
+def test_emit_dispatch_cycle_header_summary_fallback():
+    """cycle_header summary falls back to item_id when item_name is absent."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            import time as _time
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=4, now=_time.time(),
+            )
+            ctx = {k: f"v-{k}" for k in _dispatch_requires("recovery")}
+            # Provide item_id but NOT item_name → summary should be item_id.
+            ctx["item_id"] = "feat-fallback"
+            ctx.pop("item_name", None)
+            ctx["item_name"] = ""  # falsy → fallback to item_id
+            r = lazy_core.emit_dispatch_prompt("recovery", ctx, pipeline="feature")
+            assert r["ok"], r
+            assert r["cycle_header"] == "### Recover — feat-fallback [meta 1/8]", (
+                r.get("cycle_header")
+            )
+        finally:
+            _clear_state_dir()
+
+
+def _dispatch_requires(cls: str) -> list[str]:
+    """Return the @requires keys for a dispatch class's real template."""
+    tpl = _REAL_TEMPLATE_DIR / f"dispatch-{cls}.md"
+    first = next((ln for ln in tpl.read_text(encoding="utf-8").splitlines() if ln.strip()), "")
+    m = re.match(r"^<!--\s*@requires\s+([a-z0-9_,]+)\s*-->", first)
+    return [k.strip() for k in m.group(1).split(",") if k.strip()]
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -9477,6 +9972,22 @@ _TESTS = [
     ("test_hardening_template_binding", test_hardening_template_binding),
     ("test_hardening_skill_file_contract", test_hardening_skill_file_contract),
     ("test_hardening_cli_emit_and_register", test_hardening_cli_emit_and_register),
+    # Phase 7 — deny ledger, run-end refusal/override, checkpoint, normalization,
+    #           single-slot templates, meta cycle_header
+    ("test_phase7_symbols_present", test_phase7_symbols_present),
+    ("test_deny_ledger_write_read_pending", test_deny_ledger_write_read_pending),
+    ("test_deny_ledger_head_truncation", test_deny_ledger_head_truncation),
+    ("test_ack_oldest_deny_fifo", test_ack_oldest_deny_fifo),
+    ("test_ack_oldest_deny_empty_is_noop", test_ack_oldest_deny_empty_is_noop),
+    ("test_deny_ledger_corrupt_line_skipped", test_deny_ledger_corrupt_line_skipped),
+    ("test_guard_deny_writes_ledger_entry", test_guard_deny_writes_ledger_entry),
+    ("test_guard_deny_ledger_failure_is_fail_open", test_guard_deny_ledger_failure_is_fail_open),
+    ("test_run_end_refuses_on_unacked_deny", test_run_end_refuses_on_unacked_deny),
+    ("test_checkpoint_round_trip", test_checkpoint_round_trip),
+    ("test_normalize_widened_equivalence_pairs", test_normalize_widened_equivalence_pairs),
+    ("test_single_slot_dispatch_templates", test_single_slot_dispatch_templates),
+    ("test_emit_dispatch_cycle_header_marker_gated", test_emit_dispatch_cycle_header_marker_gated),
+    ("test_emit_dispatch_cycle_header_summary_fallback", test_emit_dispatch_cycle_header_summary_fallback),
 ]
 
 

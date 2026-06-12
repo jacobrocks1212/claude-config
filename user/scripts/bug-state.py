@@ -3591,6 +3591,28 @@ def main() -> int:
             "Repeatable. Split on the first '=' only."
         ),
     )
+    # Phase 7 WU-7.1 / WU-7.4: --run-end behavior modifiers (mirror lazy-state.py).
+    #   --ack-unhardened : proceed with --run-end even when unacked guard denials
+    #                      remain in the deny ledger (override recorded in output).
+    #   --next-route TEXT: the probed next route, REQUIRED for a checkpoint
+    #                      run-end; written into lazy-run-checkpoint.json.
+    # The run-end reason ({terminal,checkpoint}) reuses the existing free-text
+    # --reason flag (default terminal) — see the run-end handler.
+    parser.add_argument(
+        "--ack-unhardened", action="store_true",
+        help=(
+            "With --run-end: proceed even when unacked guard denials remain in "
+            "the deny ledger. The override is recorded in the run-end output "
+            "for retro grading."
+        ),
+    )
+    parser.add_argument(
+        "--next-route", default=None, metavar="TEXT",
+        help=(
+            "With --run-end --reason checkpoint: the probed next route to resume "
+            "with (written into the checkpoint file and echoed by --run-start)."
+        ),
+    )
     args = parser.parse_args()
 
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
@@ -3612,16 +3634,71 @@ def main() -> int:
             repo_root=args.repo_root,
             max_cycles=args.max_cycles,
         )
-        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        out: dict = dict(marker)
+        # Phase 7 WU-7.4: consume any checkpoint left by a prior checkpoint
+        # run-end and echo it as resume context (consume-once — deleted on read).
+        checkpoint = lazy_core.consume_run_checkpoint()
+        if checkpoint is not None:
+            out["resumed_from_checkpoint"] = checkpoint
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
     if args.run_end:
+        # Phase 7: the run-end reason reuses the existing free-text --reason flag
+        # (default "terminal"; "checkpoint" triggers the WU-7.4 checkpoint write).
+        reason = args.reason or "terminal"
+        if reason not in ("terminal", "checkpoint"):
+            _die("--run-end --reason must be 'terminal' or 'checkpoint'")
+
+        # WU-7.1: refuse to retire the marker while unacked guard denials remain,
+        # unless --ack-unhardened was passed (the override is recorded for retros).
+        pending = lazy_core.pending_hardening()
+        override_note = None
+        if pending > 0:
+            if not args.ack_unhardened:
+                sys.stdout.write(json.dumps({
+                    "run_marker_deleted": False,
+                    "refused": (
+                        f"{pending} unacked guard denial(s) remain in the deny "
+                        f"ledger. Each denial owes a hardening round: re-run "
+                        f"`--emit-dispatch hardening` once per pending denial "
+                        f"(FIFO-acked), or pass --ack-unhardened to override. "
+                        f"The marker was NOT deleted."
+                    ),
+                    "pending_hardening": pending,
+                }, indent=2) + "\n")
+                return 1
+            override_note = (
+                f"OVERRIDE: --ack-unhardened retired the run with {pending} "
+                f"unacked guard denial(s) still pending in the deny ledger."
+            )
+
+        # WU-7.4 checkpoint: requires --next-route, written BEFORE teardown so it
+        # folds the marker's counters as they stand at run end.
+        checkpoint_written = None
+        if reason == "checkpoint":
+            if not args.next_route:
+                _die("--run-end --reason checkpoint requires --next-route")
+            marker_now = lazy_core.read_run_marker()
+            counters = {}
+            if marker_now is not None:
+                counters = {
+                    "forward_cycles": marker_now.get("forward_cycles"),
+                    "meta_cycles": marker_now.get("meta_cycles"),
+                    "max_cycles": marker_now.get("max_cycles"),
+                }
+            checkpoint_written = lazy_core.write_run_checkpoint(
+                args.next_route, counters,
+            )
+
         # Delete the marker AND the registry (both are run-scoped state).
-        # clear_registry=True ensures the prompt registry does not bleed
-        # across runs — entries from a previous run must never be dispatchable
-        # in the next run's fresh startup.
         deleted = lazy_core.delete_run_marker(clear_registry=True)
-        sys.stdout.write(json.dumps({"run_marker_deleted": deleted}, indent=2) + "\n")
+        result_out: dict = {"run_marker_deleted": deleted, "reason": reason}
+        if override_note is not None:
+            result_out["override"] = override_note
+        if checkpoint_written is not None:
+            result_out["checkpoint"] = checkpoint_written
+        sys.stdout.write(json.dumps(result_out, indent=2) + "\n")
         return 0
 
     # Phase 3: --emit-dispatch exits immediately like all other action flags.
@@ -3650,15 +3727,26 @@ def main() -> int:
         if result.get("ok"):
             prompt = result["prompt"]
             model = result["model"]
-            lazy_core.register_emission_if_marked(
+            registered = lazy_core.register_emission_if_marked(
                 prompt, cls,
                 item_id=context.get("item_id"),
             )
-            sys.stdout.write(json.dumps({
+            # Phase 7 WU-7.1: the hardening class retires one unit of routed
+            # hardening debt per emission — ack the OLDEST unacked deny-ledger
+            # entry (FIFO, one per emission), but ONLY when the emission actually
+            # registered (marker present).  No marker → peek, no ack.
+            if cls == "hardening" and registered is not None:
+                lazy_core.ack_oldest_deny()
+            out: dict = {
                 "dispatch_prompt": prompt,
                 "dispatch_model": model,
                 "dispatch_class": cls,
-            }, indent=2) + "\n")
+            }
+            # Phase 7 WU-7.5a: surface the marker-gated cycle_header when present
+            # (emit_dispatch_prompt only attaches it when a run marker is active).
+            if "cycle_header" in result:
+                out["cycle_header"] = result["cycle_header"]
+            sys.stdout.write(json.dumps(out, indent=2) + "\n")
             return 0
         else:
             sys.stdout.write(json.dumps({
@@ -3799,14 +3887,25 @@ def main() -> int:
         # --forward-cycles / --meta-cycles from the marker's persisted values.
         # Explicit flag values win over marker values (backward compat).
         # When no marker is present, behavior is byte-identical to before.
+        _marker = lazy_core.read_run_marker()
         _fwd, _meta = lazy_core.fold_run_counters(
             args.forward_cycles, args.meta_cycles,
-            lazy_core.read_run_marker(),
+            _marker,
         )
         state["cycle_header"] = lazy_core.format_cycle_header(
             state, forward_cycles=_fwd,
             max_cycles=args.max_cycles, meta_cycles=_meta,
         )
+        # Phase 7 WU-7.1: deny-ledger enrichment — MARKER-GATED so default
+        # (no-marker) probe output stays byte-identical to the committed
+        # baselines.  When a marker is present, surface the routed hardening
+        # debt: pending_hardening (count) always, pending_denials (reason heads)
+        # only when there is debt.
+        if _marker is not None:
+            _pending = lazy_core.pending_hardening()
+            state["pending_hardening"] = _pending
+            if _pending > 0:
+                state["pending_denials"] = lazy_core.pending_denial_reasons()
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

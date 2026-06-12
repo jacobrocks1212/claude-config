@@ -112,7 +112,7 @@ algorithm. Bug-pipeline token substitutions:
 
 **Standing-directive echo-back protocol:** same as `/lazy-batch` Step 0.
 
-**Budget-and-queue guard:** same as `/lazy-batch` Step 0 (MUST NOT end a run with budget remaining AND active queue items).
+**Budget-and-queue guard:** same as `/lazy-batch` Step 0 (MUST NOT end a run with budget remaining AND active queue items) — INCLUDING the unattended-checkpoint arm: in an unattended run, an early stop is sanctioned ONLY as a CHECKPOINT, permitted when a reliability trigger holds (≥2 guard denials this run, OR an operator pause message), and requires ALL of (1) `python3 ~/.claude/scripts/bug-state.py --run-end --reason checkpoint --next-route "<probed next route>"`, (2) a PushNotification carrying the next route + reason, (3) the T7 trigger naming. An early stop without the checkpoint `--run-end` is a contract violation. Resume side: `--run-start` echoes `resumed_from_checkpoint` (and deletes the checkpoint file) — surface it on T1 as one line (see Step 0.55).
 
 Initialize counters and per-session state (bug-pipeline bindings):
 - `forward_cycles = 0`
@@ -171,6 +171,8 @@ python3 ~/.claude/scripts/bug-state.py \
 Interactive sessions (no marker) are **completely untouched** — both hooks exit instantly on the `test -f` fast path. The marker is script-owned: `--run-start` writes it; `--run-end` deletes it. The orchestrator never hand-writes the marker file.
 
 **Session state pinned in the marker:** `pipeline=bug`, `cloud=false`, `repo_root`, `max_cycles`, `session_id` (bound on first hook firing), `nonce_seed`. Counters (`forward_cycles`, `meta_cycles`) are persisted in the marker from this point forward — the inject hook reads them without needing CLI flags.
+
+**Resume from a checkpoint.** If a prior run ended via the unattended-checkpoint arm (Step 0 budget-and-queue guard), `--run-start` consumes `lazy-run-checkpoint.json` and echoes its content as `resumed_from_checkpoint` in the run-start output (then deletes the file — single-use). When present, surface it on the T1 banner as one extra line — `resume <next_route> (checkpoint <date>)` (orchestrator-voice.md T1).
 
 **`--run-end` is MANDATORY on every terminal/halt path** — see §1c.6 for the enumeration. A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades.
 
@@ -414,9 +416,14 @@ both apply verbatim here).** A real-skill dispatch is valid ONLY when its `promp
 `cycle_prompt` produced by an `--emit-prompt` probe run in the SAME turn as the `Agent` call —
 when a cycle returns partial or needs a retry, return to Step 1a and RE-PROBE; never hand-compose
 a "continuation prompt" (both measured protocol failures in the 2026-06-11 run were hand-composed
-continuations). And the T2/T4 heading line MUST carry the dispatch-bound probe's `cycle_header`
-field VERBATIM — a probe-shaped heading with no same-turn probe behind it is graded as a
-probe-cadence violation.
+continuations). **Freshness — never dispatch an emission from an earlier turn** (applies to
+`cycle_prompt` AND every `--emit-dispatch <class>` output): the emitted text is dispatchable only
+while verbatim in context within the SAME turn it was emitted. If any turn boundary, summarization,
+or edit intervened since the emit, RE-EMIT fresh and dispatch within that same turn. Hand-editing
+emitted text (appending notes, "cleaning up", re-typing) is the failure class; the template's
+`--context` slots are the ONLY customization point. And the T2/T4 heading line MUST carry the
+dispatch-bound probe's `cycle_header` field VERBATIM — a probe-shaped heading with no same-turn
+probe behind it is graded as a probe-cadence violation.
 
 **Bug wording, the work branch, and the premature-status guard are now SCRIPT-BOUND via the
 sectioned template's tokens** (`{item_label}`/`{pipeline_phrase}`/`{receipt_name}` = FIXED.md /
@@ -484,6 +491,8 @@ Agent({
 
 Mirrors `/lazy-batch` Step 1d.1 exactly, with `bug-state.py` in place of `lazy-state.py` and `bug_id`/`bug_name` in place of `feature_id`/`feature_name`:
 
+**Pending hardening debt (consume FIRST — probe-surfaced).** Every guard deny is appended to the deny ledger (`lazy-deny-ledger.jsonl`); a marker-gated probe surfaces `pending_hardening: <int>` (with `pending_denials: [<reason summaries>]` when `> 0`). When a probe (or the run-start output) shows `pending_hardening > 0`, the orchestrator MUST emit + dispatch the hardening stage — one per pending denial, FIFO (each `--emit-dispatch hardening` acks the OLDEST unacked ledger entry) — BEFORE dispatching any forward route, looping until `pending_hardening` is 0. `--run-end` REFUSES (exit 1) while any unacked denial remains; the `--ack-unhardened` override is operator-authorization-ONLY (it prints into the run-end message for retro grading) — never passed autonomously.
+
 **Trigger 1 — validate-deny (denied dispatch):**
 1. Re-run `python3 ~/.claude/scripts/bug-state.py --repeat-count --probe --emit-prompt --max-cycles {max_cycles}`. The fresh `cycle_prompt` carries a newly registered nonce.
 2. Dispatch the fresh `cycle_prompt` **VERBATIM**.
@@ -522,7 +531,7 @@ python3 ~/.claude/scripts/bug-state.py \
 
 Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (`"opus"`). Reference: `~/.claude/skills/_components/hardening-dispatch.md`.
 
-**Depth cap:** if the hardening dispatch is itself denied (depth-1 self-recursion guard), the guard emits a halt reason containing "halt" and "PushNotification". On this denial: run `python3 ~/.claude/scripts/bug-state.py --run-end`; surface `⚠ hardening dispatch denied — depth cap reached; halting run` (T6); PushNotification `"lazy-bug-batch halted — hardening dispatch denied at depth cap; operator review required."`; print final batch report, STOP. Do NOT dispatch a second hardening stage.
+**Depth cap (two deny shapes — the guard's reason text discriminates):** **(a)** an ordinary corrective recipe on the hardening dispatch (hash mismatch — a transcription slip on YOUR copy of the emitted `dispatch_prompt`, NOT recursion) → re-run `python3 ~/.claude/scripts/bug-state.py --emit-dispatch hardening …` (fresh nonce, same `--context` keys) and make exactly ONE verbatim re-dispatch attempt, copying `dispatch_prompt` mechanically. **(b)** the guard's HALT REASON (text contains "halt" and "PushNotification" — the denied prompt matched a registered hardening-class entry, i.e. genuine depth-1 recursion) OR a SECOND recipe denial → run `python3 ~/.claude/scripts/bug-state.py --run-end`; surface `⚠ hardening dispatch denied — depth cap reached; halting run` (T6); PushNotification `"lazy-bug-batch halted — hardening dispatch denied at depth cap; operator review required."`; print final batch report, STOP. Never a hardening dispatch beyond the single (a) re-attempt.
 
 ### 1d.5. Post-cycle input audit (Opus — runs only on `spec-bug` and `spec-phases` cycles)
 
@@ -565,6 +574,7 @@ See `~/.claude/skills/lazy-batch/SKILL.md` Step 1e for the full post-cycle proce
 bindings:
 
 - `cycle_log` entry uses `bug_name` instead of `feature_name`.
+- **Spin-off notification (Step 1e step 3a):** if a cycle return reports spinning off a bug doc or an `--enqueue-adhoc` item (the cycle owns the reverse-reference in the origin doc per `cycle-base-prompt.md`), fire `PushNotification("spun off {id} — {reason}")` and add the D7 digest entry (`completeness-policy.md` §Logging / §5 — pre-authorized, notify + log, never a question).
 - Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### {Step name} — {work summary} [{n}/{max}]` (forward: `[{forward_cycles+1}/{max_cycles}]`; meta: `[meta {meta_cycles}/{2*max_cycles}]`); the `disp` line carries `{sub_skill} → {bug_id}`.
 - **Post-`/execute-plan` and `/mcp-test` ledger-consistency guard (guardrail D):** see
   `~/.claude/skills/lazy-batch/SKILL.md` Step 1e item 4a for the full guard algorithm. Runs
@@ -826,4 +836,17 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
      Structurally identical to lazy-batch for Changes A–G (hook activation, run-end on terminals,
        LAZY-ROUTE banner consumption, denial recovery, emit-dispatch dispatch sites,
        post-compaction counter from marker, coupled-pair diff comment). -->
+
+<!-- COUPLED-PAIR DIFF (lazy-bug-batch ↔ lazy-batch ↔ lazy-batch-cloud) — Phase 7 turn-routing-enforcement
+     Mirrored identically with lazy-batch (bug-state.py / bug_id|bug_name bindings):
+       - WU-7.1: §1d.1 "Pending hardening debt" — pending_hardening>0 ⇒ FIFO emit+dispatch before any
+         forward route; --run-end refuses on unacked denials; --ack-unhardened operator-only.
+       - WU-7.2: §1d.1 Depth-cap split into shape-(a) recipe denial (one verbatim re-dispatch, fresh
+         nonce) vs shape-(b) halt-reason / second-recipe denial (existing halt). Never a 3rd.
+       - WU-7.3c: §1d "Continuation cycles re-emit" gained the Freshness rule (no cross-turn dispatch;
+         re-emit fresh same-turn; --context slots the only customization point).
+       - WU-7.4: Budget-and-queue guard gained the unattended-checkpoint arm (--run-end --reason
+         checkpoint --next-route + PushNotification + T7 trigger); Step 0.55 surfaces resumed_from_checkpoint.
+       - WU-7.5c: Step 1e binding — PushNotification("spun off {id} — {reason}") + D7 digest on any cycle
+         return reporting a spin-off. -->
 
