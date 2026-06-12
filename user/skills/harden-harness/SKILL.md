@@ -149,8 +149,12 @@ the operator.
 
 ### Step 4: Deliverable — HARDENING.md round
 
-Append a round to:
-`docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md`
+Append a round to the CANONICAL log in the **claude-config repo** (NEVER under the target
+repo's working tree — a dispatched agent's cwd is usually the TARGET repo, so a relative
+path resolves into the wrong tree; this exact mistake produced a split-brain log on
+2026-06-12). Resolve the claude-config root via the `~/.claude/scripts` symlink target
+(`dirname` of `readlink -f ~/.claude/scripts` is `<claude-config>/user`), then append to:
+`<claude-config>/docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md`
 
 One file per calendar month; rounds are APPENDED (never overwrite). Each round follows this
 template (the harness's own hypothesis-ledger discipline):

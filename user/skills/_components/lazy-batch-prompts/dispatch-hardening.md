@@ -45,7 +45,11 @@ The skill will guide you through:
    change makes the misbehavior impossible or self-announcing.
 3. Acting by decision class — mechanical fixes autonomously under full gates; contract/policy
    forks via NEEDS_INPUT.md per sentinel-frontmatter.md rich-body convention.
-4. Appending a round to docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md.
+4. Appending a round to the CANONICAL hardening log in the claude-config repo —
+   resolve its root via the ~/.claude/scripts symlink target, then
+   <claude-config>/docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md.
+   NEVER write the log under the target repo's working tree (your cwd is the target
+   repo — a relative path is the wrong tree).
 
 <!-- @section depth-cap-notice pipelines=feature,bug modes=workstation,cloud -->
 ## Depth cap (HARD RULE)
