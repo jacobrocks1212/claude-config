@@ -120,6 +120,10 @@ The live `~/.claude/settings.json` on this laptop is **not** the claude-config-t
 - Cross-machine settings.json unification (surfaced as a follow-up decision, not solved here).
 - Retro-grader automation changes beyond consuming the new injected-route banner and registry (graders get strictly better evidence for free).
 
+## Implementation Phases
+
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown (6 phases; hooks are built in Phase 2 but deliberately not armed until Phase 6). Planning-time runtime probes recorded there as a Validated Assumptions ledger; two findings of note: `additionalContext` is not documented for `PostCompact`, so compaction re-injection targets `SessionStart` matcher `compact` with PostCompact supplementary; and whether PreToolUse fires for nested subagents' `Agent` calls (and what discriminates depth) is doc-ambiguous — resolved by a mandatory Phase 2 spike with a NEEDS_INPUT halt if no discriminator exists.
+
 ## Success criteria
 
 1. In the next graded batch run: **zero** hand-composed real-skill dispatches reach execution (denied count may be >0 — denials are the system working), zero probe-less probe-shaped headings, counters survive compaction.
