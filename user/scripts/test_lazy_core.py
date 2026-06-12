@@ -7843,6 +7843,337 @@ def test_phase8_mvb_chain():
 
 
 # ---------------------------------------------------------------------------
+# Phase 9 — Bind-at-guard: inject never binds; guard binds on allow
+# ---------------------------------------------------------------------------
+#
+# WU-9.1: lazy_inject.inject() on an UNBOUND marker is a silent no-op (no
+# banner, no probe, no registration, no counter advance, no marker mutation).
+# WU-9.2: lazy_guard.guard() binds an unbound marker to the caller's session_id
+# on ALLOW (both the fresh-consumption and idempotent re-fire paths); DENY never
+# binds; a bind failure never changes the allow output (fail-open).
+
+
+def _phase9_inject_module():
+    """Import lazy_inject in-process (it imports lazy_core directly)."""
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    return importlib.import_module("lazy_inject")
+
+
+def _phase9_guard_module():
+    """Import lazy_guard in-process (it imports lazy_core directly)."""
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    return importlib.import_module("lazy_guard")
+
+
+def test_inject_unbound_marker_is_silent_noop():
+    """WU-9.1: with an UNBOUND marker (session_id=None), lazy_inject.inject()
+    returns None (no banner) AND mutates nothing — the registry is never created,
+    the persisted counters never advance, and the marker file stays byte-identical
+    (still unbound).  Binding moved to the guard (WU-9.2); inject NEVER binds.
+    """
+    _guard()
+    lazy_inject = _phase9_inject_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, session_id=None, now=_time.time(),
+            )
+            marker_path = state_dir / "lazy-run-marker.json"
+            registry_path = state_dir / "lazy-prompt-registry.json"
+            marker_bytes_before = marker_path.read_bytes()
+            assert not registry_path.exists(), "pre-condition: no registry yet"
+
+            hook_input = json.dumps({
+                "session_id": "session-A",
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": "what is the current step?",
+            })
+            result = lazy_inject.inject(hook_input)
+
+            # No banner.
+            assert result is None, (
+                f"inject on an UNBOUND marker must return None (silent); got {result!r}"
+            )
+            # Marker byte-identical — no stamp, still unbound.
+            assert marker_path.read_bytes() == marker_bytes_before, (
+                "WU-9.1: inject must NOT mutate the unbound marker (byte-identical)"
+            )
+            reread = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert reread.get("session_id") is None, "marker must remain unbound"
+            assert reread.get("forward_cycles") == 0 and reread.get("meta_cycles") == 0, (
+                "WU-9.1: inject must NOT advance persisted run counters"
+            )
+            # No registry created — the probe must never have run.
+            assert not registry_path.exists(), (
+                "WU-9.1: inject must NOT run the probe / register any emission"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_inject_bound_owner_still_produces_banner():
+    """WU-9.1 regression guard: a BOUND-owner marker (session_id matches the
+    hook-input session_id) still produces the LAZY-ROUTE banner — the bound path
+    is unchanged.  Drives lazy_inject.inject() in-process against a real fixture
+    repo so the probe returns a usable cycle_prompt.
+    """
+    _guard()
+    lazy_inject = _phase9_inject_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, session_id="owner-session", now=_time.time(),
+            )
+            hook_input = json.dumps({
+                "session_id": "owner-session",  # MATCHES the bound marker
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": "what is the current step?",
+            })
+            result = lazy_inject.inject(hook_input)
+            assert result is not None, "bound-owner inject must produce a banner"
+            payload = json.loads(result)
+            ctx = payload["hookSpecificOutput"]["additionalContext"]
+            assert ctx.startswith("LAZY-ROUTE (hook-injected"), (
+                f"bound-owner inject must emit the LAZY-ROUTE banner; got {ctx[:120]!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_unbound_marker_binds_on_allow():
+    """WU-9.2: with an UNBOUND marker and a REGISTERED prompt, guard ALLOWs and
+    binds the marker to the caller's session_id (fresh-consumption path)."""
+    _guard()
+    lazy_guard = _phase9_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, session_id=None, now=_time.time(),  # UNBOUND
+            )
+            prompt = "Run the next cycle step exactly as specified."
+            lazy_core.register_emission(prompt, cls="cycle")
+
+            hook_input = json.dumps({
+                "session_id": "binder-session",
+                "tool_use_id": "tu-bind",
+                "tool_input": {"prompt": prompt},
+            })
+            out = lazy_guard.guard(hook_input)
+            decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+            assert decision == "allow", out
+
+            # The marker must now be bound to the caller's session_id.
+            marker = json.loads(
+                (state_dir / "lazy-run-marker.json").read_text(encoding="utf-8")
+            )
+            assert marker.get("session_id") == "binder-session", (
+                f"WU-9.2: guard ALLOW must bind the unbound marker to the caller; "
+                f"got session_id={marker.get('session_id')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_unbound_marker_binds_on_idempotent_refire():
+    """WU-9.2: the idempotent re-fire allow path also binds the unbound marker.
+    Two successive guard calls with the SAME tool_use_id: the first consumes
+    (fresh allow, binds), the second is the idempotent re-fire (allow) — both
+    bind paths land the same session_id.  To isolate the re-fire path, the marker
+    is reset to unbound between the two calls so the SECOND (re-fire) call is the
+    one observed performing the bind.
+    """
+    _guard()
+    lazy_guard = _phase9_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        marker_path = state_dir / "lazy-run-marker.json"
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, session_id=None, now=_time.time(),  # UNBOUND
+            )
+            prompt = "Execute the planned implementation step."
+            lazy_core.register_emission(prompt, cls="cycle")
+
+            hook_input = json.dumps({
+                "session_id": "refire-session",
+                "tool_use_id": "tu-refire",
+                "tool_input": {"prompt": prompt},
+            })
+            # First call — fresh consumption (allow, binds).
+            out1 = lazy_guard.guard(hook_input)
+            assert json.loads(out1)["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+            # Reset the marker to UNBOUND so the second (re-fire) call is the one
+            # observed binding — proves the idempotent re-fire path binds too.
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            marker["session_id"] = None
+            marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+
+            # Second call — idempotent re-fire (entry already consumed by tu-refire).
+            out2 = lazy_guard.guard(hook_input)
+            payload2 = json.loads(out2)["hookSpecificOutput"]
+            assert payload2["permissionDecision"] == "allow", out2
+            assert "idempotent re-fire" in payload2["permissionDecisionReason"], (
+                f"second call must take the idempotent re-fire path; got {payload2!r}"
+            )
+
+            rebound = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert rebound.get("session_id") == "refire-session", (
+                f"WU-9.2: the idempotent re-fire allow must also bind the unbound "
+                f"marker; got session_id={rebound.get('session_id')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_unbound_marker_deny_does_not_bind():
+    """WU-9.2: a DENY (lookup miss) on an UNBOUND marker must NOT bind — the
+    marker stays unbound (session_id=None).  Only an ALLOW binds."""
+    _guard()
+    lazy_guard = _phase9_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, session_id=None, now=_time.time(),  # UNBOUND
+            )
+            # Prompt is NEVER registered → guard must deny.
+            hook_input = json.dumps({
+                "session_id": "denier-session",
+                "tool_use_id": "tu-deny",
+                "tool_input": {"prompt": "HAND-COMPOSED unregistered prompt"},
+            })
+            out = lazy_guard.guard(hook_input)
+            decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+            assert decision == "deny", out
+
+            # Marker must STAY unbound — a deny never binds.
+            marker = json.loads(
+                (state_dir / "lazy-run-marker.json").read_text(encoding="utf-8")
+            )
+            assert marker.get("session_id") is None, (
+                f"WU-9.2: a DENY must NOT bind the marker; "
+                f"got session_id={marker.get('session_id')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_bind_failure_is_fail_open():
+    """WU-9.2: if bind_marker_session raises during an ALLOW, the allow output is
+    unchanged (fail-open).  Monkeypatch bind_marker_session to explode; the
+    guard must still ALLOW."""
+    _guard()
+    lazy_guard = _phase9_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, session_id=None, now=_time.time(),  # UNBOUND
+            )
+            prompt = "Run the next cycle step with a poisoned bind."
+            lazy_core.register_emission(prompt, cls="cycle")
+
+            original = lazy_core.bind_marker_session
+            def _boom(*a, **k):
+                raise RuntimeError("bind exploded")
+            lazy_core.bind_marker_session = _boom  # type: ignore[assignment]
+            try:
+                out = lazy_guard.guard(json.dumps({
+                    "session_id": "poison-session",
+                    "tool_use_id": "tu-poison",
+                    "tool_input": {"prompt": prompt},
+                }))
+            finally:
+                lazy_core.bind_marker_session = original  # type: ignore[assignment]
+
+            decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+            assert decision == "allow", (
+                "WU-9.2: a bind failure must NEVER change the allow output (fail-open)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_bound_non_owner_fast_path_unchanged():
+    """WU-9.2 regression guard (Phase 8 behavior preserved): when the marker is
+    bound to a DIFFERENT session, the guard sees no marker (path B non-owner),
+    fast-path allows with NO output, and the bound marker is untouched."""
+    _guard()
+    lazy_guard = _phase9_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        marker_path = state_dir / "lazy-run-marker.json"
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, session_id="owner-session", now=_time.time(),
+            )
+            prompt = "Execute the step from owner-session."
+            lazy_core.register_emission(prompt, cls="cycle")
+            marker_bytes_before = marker_path.read_bytes()
+
+            out = lazy_guard.guard(json.dumps({
+                "session_id": "non-owner-session",  # DIFFERENT from owner
+                "tool_use_id": "tu-nonowner",
+                "tool_input": {"prompt": prompt},
+            }))
+            # Non-owner sees no marker → fast-path allow returns None (no output).
+            assert out is None, (
+                f"bound-non-owner guard must fast-path allow with no output; got {out!r}"
+            )
+            # The owner's marker is untouched (still bound to owner, byte-identical).
+            assert marker_path.read_bytes() == marker_bytes_before, (
+                "bound-non-owner guard must not mutate the owner's marker"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -10521,6 +10852,14 @@ _TESTS = [
     ("test_emit_dispatch_hardening_no_longer_acks", test_emit_dispatch_hardening_no_longer_acks),
     ("test_guard_allow_acks_on_hardening_class", test_guard_allow_acks_on_hardening_class),
     ("test_phase8_mvb_chain", test_phase8_mvb_chain),
+    # Phase 9 — bind-at-guard: inject never binds; guard binds on allow
+    ("test_inject_unbound_marker_is_silent_noop", test_inject_unbound_marker_is_silent_noop),
+    ("test_inject_bound_owner_still_produces_banner", test_inject_bound_owner_still_produces_banner),
+    ("test_guard_unbound_marker_binds_on_allow", test_guard_unbound_marker_binds_on_allow),
+    ("test_guard_unbound_marker_binds_on_idempotent_refire", test_guard_unbound_marker_binds_on_idempotent_refire),
+    ("test_guard_unbound_marker_deny_does_not_bind", test_guard_unbound_marker_deny_does_not_bind),
+    ("test_guard_bind_failure_is_fail_open", test_guard_bind_failure_is_fail_open),
+    ("test_guard_bound_non_owner_fast_path_unchanged", test_guard_bound_non_owner_fast_path_unchanged),
 ]
 
 

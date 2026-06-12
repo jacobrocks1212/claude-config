@@ -13,6 +13,11 @@ block with additionalContext containing:
   - If a hook-error.json breadcrumb exists: its contents surfaced as
     "HOOK_ERROR: <contents>" (self-announcing guard breakage)
 
+An UNBOUND marker (session_id=None, bind-pending) yields a SILENT no-op:
+no banner, no probe, no registration, no counter advance, no marker mutation.
+Phase 9 WU-9.1 moved session binding OUT of inject entirely — the guard binds
+on its first ALLOW (lazy_guard.py), an anchor bystander sessions cannot forge.
+
 Exit code: always 0.  Internal errors write hook-error.json and exit 0
 (fail-open semantics, same as lazy_guard.py).
 """
@@ -222,15 +227,31 @@ def inject(stdin_text: str) -> str | None:
         # No active run → silent exit (bash wrapper handles this, but guard here too).
         return None
 
-    # Session-id bind-on-first-hook-firing: when the marker has session_id=None
-    # (bind-pending), stamp it now with the hook-input session_id so subsequent
-    # guard calls can use the session-id mismatch staleness path.  This is
-    # atomic (temp-file + os.replace via lazy_core._atomic_write) and idempotent
-    # (bind_marker_session is a no-op when the marker is already bound).
-    if session_id and marker.get("session_id") is None:
-        if lazy_core.bind_marker_session(session_id):
-            # Re-read the now-bound marker so marker dict reflects the update.
-            marker = lazy_core.read_run_marker(session_id=session_id) or marker
+    # Phase 9 WU-9.1 — INJECT NEVER BINDS.  When the marker is UNBOUND
+    # (session_id=None, "bind-pending"), exit SILENTLY before any side effect:
+    # no banner, no probe run, no emission registration, no counter advance, no
+    # marker mutation.  Binding now lives EXCLUSIVELY in the guard
+    # (lazy_guard.py binds on the first ALLOW of a registered prompt — Phase 9
+    # WU-9.2).
+    #
+    # Rationale (live incident 2026-06-12 ~19:33Z): the inject hook fires BEFORE
+    # a turn's work, so the orchestrator's own invocation turn cannot bind — the
+    # FIRST hook firing anywhere wins.  A concurrent interactive session's
+    # message therefore bound the live run's marker to the WRONG session,
+    # silently disarming the batch run's guard (non-owner fast-path) while
+    # spraying banners, spurious registry emissions, and repeat-counter
+    # inflation into the interactive session.  By making inject a pure no-op on
+    # an unbound marker and moving the bind to the guard's ALLOW path (which only
+    # the orchestrator can reach — an allow requires a registry hit, and only the
+    # orchestrator dispatches script-emitted prompts), the binding anchor becomes
+    # unforgeable by bystanders.
+    #
+    # Note: read_run_marker(session_id=...) treats a bind-pending marker as NOT
+    # session-stale (it is never stale on session-id alone — see read_run_marker
+    # path B), so it RETURNS the unbound marker here.  This explicit check is the
+    # gate that turns that returned-but-unbound marker into a silent no-op.
+    if marker.get("session_id") is None:
+        return None
 
     # Surface any existing breadcrumb from a previous hook error.
     breadcrumb_text = _read_and_clear_breadcrumb()

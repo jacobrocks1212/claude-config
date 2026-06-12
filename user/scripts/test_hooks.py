@@ -276,8 +276,22 @@ def _base_env(state_dir: Path) -> dict:
     return env
 
 
-def _write_marker_in_dir(state_dir: Path, repo_root: str | None = None) -> None:
-    """Write a fresh (non-stale) run marker into *state_dir* via lazy_core."""
+def _write_marker_in_dir(
+    state_dir: Path,
+    repo_root: str | None = None,
+    session_id: str | None = None,
+) -> None:
+    """Write a fresh (non-stale) run marker into *state_dir* via lazy_core.
+
+    Phase 9: pass ``session_id`` to write a BOUND marker.  Tests that fire the
+    guard or inject hook multiple times with a single owning session must bind
+    the marker up front and pass the SAME session_id in the hook-input JSON —
+    otherwise the guard's bind-on-first-allow (WU-9.2) would bind the marker to
+    the first random session and treat later calls as non-owner (fast-path
+    allow), or the inject hook (WU-9.1) would silently no-op on an unbound
+    marker.  Default None preserves the bind-pending marker for tests that
+    specifically exercise the unbound path.
+    """
     _set_state_dir(state_dir)
     try:
         lazy_core.write_run_marker(
@@ -286,6 +300,7 @@ def _write_marker_in_dir(state_dir: Path, repo_root: str | None = None) -> None:
             repo_root=repo_root or str(state_dir / "fixture-repo"),
             max_cycles=10,
             now=time.time(),
+            session_id=session_id,
         )
     finally:
         _clear_state_dir()
@@ -555,7 +570,11 @@ def test_guard_idempotent_refire_same_tool_use_id():
         state_dir.mkdir()
         env = _base_env(state_dir)
 
-        _write_marker_in_dir(state_dir)
+        # Phase 9: bind the marker to one owning session and pass that session_id
+        # on every guard call, so the bind-on-first-allow (WU-9.2) doesn't turn
+        # later calls into non-owner fast-path allows.
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
 
         the_prompt = "Execute the planned implementation step."
         tool_use_id_a = "toolu_" + uuid.uuid4().hex[:24]
@@ -567,7 +586,7 @@ def test_guard_idempotent_refire_same_tool_use_id():
             _clear_state_dir()
 
         # First call — allow and consume (establishes consumed_by = tool_use_id_a).
-        stdin_a = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_a)
+        stdin_a = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_a, session_id=owner_session)
         result_first = _run_guard_py(stdin_a, env)
         first_payload = json.loads(result_first.stdout.strip())
         assert first_payload["hookSpecificOutput"]["permissionDecision"] == "allow", (
@@ -588,9 +607,9 @@ def test_guard_idempotent_refire_same_tool_use_id():
             f"got {same_decision!r}"
         )
 
-        # Third call with a DIFFERENT tool_use_id — must deny.
+        # Third call with a DIFFERENT tool_use_id (same owning session) — must deny.
         tool_use_id_b = "toolu_" + uuid.uuid4().hex[:24]
-        stdin_b = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_b)
+        stdin_b = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_b, session_id=owner_session)
         result_diff = _run_guard_py(stdin_b, env)
         assert result_diff.returncode == 0
         diff_output = result_diff.stdout.strip()
@@ -675,7 +694,9 @@ def test_guard_hardening_depth_cap():
         state_dir.mkdir()
         env = _base_env(state_dir)
 
-        _write_marker_in_dir(state_dir)
+        # Phase 9: bind to one owning session so both guard calls are owner calls.
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
 
         hardening_prompt = "You are the harden-harness subagent.  Analyze and fix."
         tool_use_id_original = "toolu_" + uuid.uuid4().hex[:24]
@@ -691,7 +712,7 @@ def test_guard_hardening_depth_cap():
             _clear_state_dir()
 
         # First call — consume by tool_use_id_original (allow, establishes consumer).
-        stdin_orig = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_original)
+        stdin_orig = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_original, session_id=owner_session)
         result_first = _run_guard_py(stdin_orig, env)
         first_payload = json.loads(result_first.stdout.strip())
         assert first_payload["hookSpecificOutput"]["permissionDecision"] == "allow", (
@@ -700,7 +721,7 @@ def test_guard_hardening_depth_cap():
 
         # Now a DIFFERENT tool_use_id tries to dispatch the same (now-consumed)
         # hardening entry — this is depth-1 deny of a hardening-class entry.
-        stdin_other = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_other)
+        stdin_other = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_other, session_id=owner_session)
         result_depth = _run_guard_py(stdin_other, env)
         assert result_depth.returncode == 0
 
@@ -863,7 +884,9 @@ def test_inject_emits_lazy_route_banner():
         fixture_repo = _build_fixture_repo(td_path)
         env = _base_env(state_dir)
 
-        # Write marker pointing at the fixture repo.
+        # Phase 9: the marker must be BOUND to the hook-input session for inject
+        # to emit a banner (inject is a silent no-op on an UNBOUND marker — WU-9.1).
+        owner_session = str(uuid.uuid4())
         _set_state_dir(state_dir)
         try:
             lazy_core.write_run_marker(
@@ -872,11 +895,12 @@ def test_inject_emits_lazy_route_banner():
                 repo_root=str(fixture_repo),
                 max_cycles=10,
                 now=time.time(),
+                session_id=owner_session,
             )
         finally:
             _clear_state_dir()
 
-        stdin_text = _userPromptSubmit_json()
+        stdin_text = _userPromptSubmit_json(session_id=owner_session)
         result = _run_bash(_INJECT_SH, stdin_text, env)
 
         assert result.returncode == 0, (
@@ -938,7 +962,10 @@ def test_inject_surfaces_hook_error_breadcrumb():
         fixture_repo = _build_fixture_repo(td_path)
         env = _base_env(state_dir)
 
-        # Write marker.
+        # Phase 9: bind the marker to the hook-input session (inject is a silent
+        # no-op on an UNBOUND marker — WU-9.1 — so the breadcrumb surfacing only
+        # happens on the bound-owner path).
+        owner_session = str(uuid.uuid4())
         _set_state_dir(state_dir)
         try:
             lazy_core.write_run_marker(
@@ -947,6 +974,7 @@ def test_inject_surfaces_hook_error_breadcrumb():
                 repo_root=str(fixture_repo),
                 max_cycles=10,
                 now=time.time(),
+                session_id=owner_session,
             )
         finally:
             _clear_state_dir()
@@ -961,7 +989,7 @@ def test_inject_surfaces_hook_error_breadcrumb():
             json.dumps(breadcrumb), encoding="utf-8"
         )
 
-        stdin_text = _userPromptSubmit_json()
+        stdin_text = _userPromptSubmit_json(session_id=owner_session)
         result = _run_bash(_INJECT_SH, stdin_text, env)
 
         assert result.returncode == 0, (
@@ -1172,7 +1200,11 @@ def test_find_entry_by_sha_same_prompt_two_consumers():
         state_dir.mkdir()
         env = _base_env(state_dir)
 
-        _write_marker_in_dir(state_dir)
+        # Phase 9: one owning session for all three guard calls (A consume,
+        # B consume, B re-fire) so the bind-on-first-allow doesn't reclassify
+        # later calls as non-owner fast-path allows.
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
 
         the_prompt = "Run next cycle step — shared prompt text for two registrations."
         tool_use_id_a = "toolu_" + uuid.uuid4().hex[:24]
@@ -1184,7 +1216,7 @@ def test_find_entry_by_sha_same_prompt_two_consumers():
             lazy_core.register_emission(the_prompt, cls="cycle")
         finally:
             _clear_state_dir()
-        stdin_a = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_a)
+        stdin_a = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_a, session_id=owner_session)
         r1 = _run_guard_py(stdin_a, env)
         p1 = json.loads(r1.stdout.strip())
         assert p1["hookSpecificOutput"]["permissionDecision"] == "allow", (
@@ -1197,7 +1229,7 @@ def test_find_entry_by_sha_same_prompt_two_consumers():
             lazy_core.register_emission(the_prompt, cls="cycle")
         finally:
             _clear_state_dir()
-        stdin_b = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_b)
+        stdin_b = _e1_preToolUse_json(the_prompt, tool_use_id=tool_use_id_b, session_id=owner_session)
         r2 = _run_guard_py(stdin_b, env)
         p2 = json.loads(r2.stdout.strip())
         assert p2["hookSpecificOutput"]["permissionDecision"] == "allow", (
@@ -1221,10 +1253,16 @@ def test_find_entry_by_sha_same_prompt_two_consumers():
 # Test 14 — inject stamps session_id when marker is unbound
 # ---------------------------------------------------------------------------
 
-def test_inject_stamps_session_id_when_unbound():
-    """Item 2: when the run marker has session_id=None, the inject hook must
-    stamp it with the hook-input's session_id (bind-on-first-hook-firing).
-    Verified by reading the marker FILE after the inject hook runs.
+def test_inject_unbound_marker_silent_and_unchanged():
+    """Phase 9 WU-9.1 (REVISED from test_inject_stamps_session_id_when_unbound):
+    when the run marker has session_id=None (bind-pending), the inject hook must
+    be a SILENT NO-OP — exit 0, no stdout, AND the marker file must remain
+    BYTE-IDENTICAL (still unbound, no stamp).  Binding moved to the guard's
+    ALLOW path (WU-9.2); inject NEVER binds.
+
+    Previously (Phase 2) this test asserted inject STAMPED the marker with the
+    hook-input session_id (bind-on-first-hook-firing) — that is exactly the race
+    Phase 9 WU-9.1 removed.
     """
     _guard()
     assert _INJECT_SH.exists(), f"lazy-route-inject.sh missing: {_INJECT_SH}"
@@ -1250,12 +1288,17 @@ def test_inject_stamps_session_id_when_unbound():
         finally:
             _clear_state_dir()
 
-        # Verify the marker starts unbound.
+        # Capture the marker bytes BEFORE the inject hook fires.
         marker_path = state_dir / "lazy-run-marker.json"
-        marker_before = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker_bytes_before = marker_path.read_bytes()
+        marker_before = json.loads(marker_bytes_before)
         assert marker_before.get("session_id") is None, (
             f"marker must start with session_id=None; got {marker_before.get('session_id')!r}"
         )
+
+        # No registry should exist yet (the probe would create one if it ran).
+        registry_path = state_dir / "lazy-prompt-registry.json"
+        assert not registry_path.exists(), "pre-condition: no registry before inject"
 
         # Run the inject hook with a specific session_id.
         the_session_id = str(uuid.uuid4())
@@ -1265,12 +1308,23 @@ def test_inject_stamps_session_id_when_unbound():
         assert result.returncode == 0, (
             f"inject hook must exit 0; stderr: {result.stderr!r}"
         )
+        # No banner / no output — silent no-op on an unbound marker.
+        assert result.stdout.strip() == "", (
+            f"inject on an UNBOUND marker must produce NO output (silent no-op); "
+            f"got: {result.stdout!r}"
+        )
 
-        # Read the marker file and verify session_id was stamped.
-        marker_after = json.loads(marker_path.read_text(encoding="utf-8"))
-        assert marker_after.get("session_id") == the_session_id, (
-            f"inject hook must stamp marker with session_id {the_session_id!r}; "
-            f"got {marker_after.get('session_id')!r}"
+        # The marker file must be BYTE-IDENTICAL — no stamp, no mutation.
+        marker_bytes_after = marker_path.read_bytes()
+        assert marker_bytes_after == marker_bytes_before, (
+            "Phase 9 WU-9.1: inject must NOT mutate an unbound marker "
+            "(no bind-on-first-hook-firing); the marker file must be byte-identical"
+        )
+
+        # And NO registry was created — the probe must never have run.
+        assert not registry_path.exists(), (
+            "Phase 9 WU-9.1: inject on an unbound marker must NOT run the probe "
+            "or register any emission (no registry file should appear)"
         )
 
 
@@ -1422,6 +1476,9 @@ def test_inject_sessionstart_compact_includes_reentry_protocol():
         fixture_repo = _build_fixture_repo(td_path)
         env = _base_env(state_dir)
 
+        # Phase 9: bind the marker to the SessionStart session so inject emits
+        # (silent no-op on an UNBOUND marker — WU-9.1).
+        the_session_id = str(uuid.uuid4())
         _set_state_dir(state_dir)
         try:
             lazy_core.write_run_marker(
@@ -1430,12 +1487,12 @@ def test_inject_sessionstart_compact_includes_reentry_protocol():
                 repo_root=str(fixture_repo),
                 max_cycles=10,
                 now=time.time(),
+                session_id=the_session_id,
             )
         finally:
             _clear_state_dir()
 
         # Build a SessionStart with source=compact.
-        the_session_id = str(uuid.uuid4())
         stdin_text = _sessionStart_json(source="compact", session_id=the_session_id)
         result = _run_bash(_INJECT_SH, stdin_text, env)
 
@@ -1764,7 +1821,11 @@ def test_guard_depth_cap_real_hardening_entry():
         env = _base_env(state_dir)
 
         # Write a marker so --emit-dispatch hardening registers in the registry.
-        _write_marker_in_dir(state_dir)
+        # Phase 9: bind it so both guard calls below are owner calls (the second
+        # call's different tool_use_id must reach the depth-cap DENY, not a
+        # non-owner fast-path allow from a bind-on-first-allow side effect).
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
 
         # --- Emit a REAL hardening dispatch prompt via the actual CLI. ---
         cmd = [
@@ -1824,7 +1885,7 @@ def test_guard_depth_cap_real_hardening_entry():
 
         # --- (a) Depth-0: pipe the real hardening prompt → ALLOW. ---
         tool_use_id_original = "toolu_" + uuid.uuid4().hex[:24]
-        stdin_allow = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_original)
+        stdin_allow = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_original, session_id=owner_session)
         result_allow = _run_guard_py(stdin_allow, env)
 
         assert result_allow.returncode == 0, (
@@ -1854,7 +1915,7 @@ def test_guard_depth_cap_real_hardening_entry():
         # The nonce was consumed by (a); a different tool_use_id now tries the
         # same hardening prompt — this is the depth-1 deny case on a REAL entry.
         tool_use_id_other = "toolu_" + uuid.uuid4().hex[:24]
-        stdin_deny = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_other)
+        stdin_deny = _e1_preToolUse_json(hardening_prompt, tool_use_id=tool_use_id_other, session_id=owner_session)
         result_deny = _run_guard_py(stdin_deny, env)
 
         assert result_deny.returncode == 0, (
@@ -2045,8 +2106,8 @@ _TESTS = [
     # Phase 2 review items — new tests
     ("test_find_entry_by_sha_same_prompt_two_consumers",
      test_find_entry_by_sha_same_prompt_two_consumers),
-    ("test_inject_stamps_session_id_when_unbound",
-     test_inject_stamps_session_id_when_unbound),
+    ("test_inject_unbound_marker_silent_and_unchanged",
+     test_inject_unbound_marker_silent_and_unchanged),
     ("test_guard_different_session_id_silent_allow",
      test_guard_different_session_id_silent_allow),
     ("test_guard_bash_slow_path_allows_registered_prompt",

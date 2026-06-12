@@ -15,7 +15,10 @@ Decision logic (all paths require a valid run marker; no marker → exit 0):
      If tool_input has NO ``prompt`` key at all → silent allow (exit 0, no
      output); there is nothing to validate.  A present-but-empty or
      unregistered prompt stays on the deny path.
-  2. ALLOW path:
+  2. ALLOW path (Phase 9 WU-9.2: BOTH allow sub-paths bind an UNBOUND marker to
+     the caller's session_id, best-effort/fail-open — only the orchestrator can
+     produce an allow, so this is the unforgeable bind anchor that replaced
+     inject's bind-on-first-hook-firing; a DENY never binds):
        - Unconsumed fresh hit: consume nonce recording the consumer tool_use_id;
          print allow JSON.  Phase 8 WU-8.2: if the matched entry's class is
          "hardening", best-effort ack the oldest unacked deny-ledger entry here
@@ -261,6 +264,33 @@ def _ack_if_hardening(entry: dict) -> None:
         pass
 
 
+def _bind_marker_on_allow(session_id: str | None) -> None:
+    """Phase 9 WU-9.2: bind an UNBOUND run marker to the caller's session_id when
+    the guard reaches an ALLOW (a registered-prompt hit — fresh consumption OR
+    idempotent re-fire).
+
+    This is the bind anchor that replaced inject's bind-on-first-hook-firing
+    (Phase 9 WU-9.1): only the ORCHESTRATOR can produce an ALLOW (an allow
+    requires a registry hit, and only the orchestrator dispatches script-emitted
+    prompts), so binding here is unforgeable by a concurrent bystander session —
+    closing the wrong-session bind race (live incident 2026-06-12 ~19:33Z).
+
+    Best-effort / FAIL-OPEN: any failure is swallowed.  A bind failure must NEVER
+    change the allow output (the dispatch still proceeds).  bind_marker_session
+    is itself idempotent — a no-op when the marker is already bound — so calling
+    it on every allow (including the bound-owner re-fire) is safe and cheap.
+
+    Skips silently when the caller session_id is None/absent (nothing to bind to).
+
+    Deny paths never call this — only an ALLOW binds.
+    """
+    try:
+        if session_id:
+            lazy_core.bind_marker_session(session_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _deny_and_ledger(
     reason: str,
     *,
@@ -351,6 +381,9 @@ def guard(stdin_text: str) -> str | None:
         # Phase 8 WU-8.2: if this is a hardening-class dispatch reaching
         # execution, retire one unit of routed hardening debt (best-effort).
         _ack_if_hardening(entry)
+        # Phase 9 WU-9.2: bind an unbound marker to the orchestrator session on
+        # this ALLOW (best-effort / fail-open — never changes the allow output).
+        _bind_marker_on_allow(session_id)
         reason = f"dispatch allowed — nonce {nonce} consumed by {tool_use_id}"
         return _allow_json(reason)
 
@@ -373,6 +406,11 @@ def guard(stdin_text: str) -> str | None:
             # prior ALLOW, so the orchestrator never receives a spurious deny.
             if consumed_by is not None and consumed_by == tool_use_id:
                 nonce = any_entry["nonce"]
+                # Phase 9 WU-9.2: the idempotent re-fire is also an ALLOW of a
+                # registered-prompt hit, so it binds an unbound marker too (per
+                # the interface contract: BOTH allow paths bind).  Idempotent —
+                # if the first allow already bound the marker, this is a no-op.
+                _bind_marker_on_allow(session_id)
                 reason = (
                     f"idempotent re-fire — nonce {nonce} was already consumed by "
                     f"this tool_use_id ({tool_use_id}); allowing again."
