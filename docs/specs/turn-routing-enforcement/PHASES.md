@@ -392,9 +392,9 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 **Minimum Verifiable Behavior:** Scripted sequence on a fixture state dir: simulate a deny (invoke `lazy_guard.py` with a marked run + unregistered prompt) → ledger entry exists → `--probe` shows `pending_hardening: 1` → `--run-end` REFUSES → `--emit-dispatch hardening` acks → `--run-end --reason checkpoint --next-route "write-plan Phase 14"` writes the checkpoint file → next `--run-start` echoes and consumes it.
 
 **Runtime Verification** *(checked by live harness or the next marked run — NOT by the implementation agent):*
-- [ ] Next real marked run: a (natural or deliberate) guard deny produces a ledger entry and the next probe surfaces `pending_hardening ≥ 1`.
+- [x] Next real marked run: a (natural or deliberate) guard deny produces a ledger entry and the next probe surfaces `pending_hardening ≥ 1`. *(2026-06-12 live: denies 14:37Z + 19:43Z both ledgered; probe withheld route per Phase 8 — hardening-log Round 4)*
 - [ ] Next real marked run ends through `--run-end` cleanly with the ledger empty (all denials hardened or explicitly `--ack-unhardened`-overridden).
-- [ ] A meta dispatch in the next run prints the emitted `cycle_header` verbatim (retro R-V-2 grades it conforming).
+- [x] A meta dispatch in the next run prints the emitted `cycle_header` verbatim (retro R-V-2 grades it conforming). *(2026-06-12 live: session e076ed30 L124 `### Resolve — Stem Management (incl. .stem.mp4) [meta 1/100]` — emitted header echoed)*
 
 **MCP Integration Test Assertions:** N/A — no MCP runtime in claude-config; live verification rows above stand in (per the header's MCP-runtime line).
 
@@ -461,8 +461,8 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 **Minimum Verifiable Behavior:** Scripted sequence on a fixture state dir: marked run + 1 unacked deny → `--probe --emit-prompt` returns `route_overridden_by: pending-hardening-debt` with NO `cycle_prompt` and a bound `hardening_emit_command`; running that command registers a hardening-class entry WITHOUT acking; a simulated guard ALLOW of that entry acks the ledger; the next probe returns a normal forward route. Separately: `read_run_marker(session_id="other")` returns None while the marker file remains on disk and `read_run_marker(session_id="owner")` still succeeds.
 
 **Runtime Verification** *(checked by live runs — NOT by the implementation agent):*
-- [ ] An interactive session message during the next live marked run does NOT delete the marker (run ends with its own `--run-end`).
-- [ ] The next live deny → following probe withholds the forward route and the orchestrator dispatches hardening first (debt acked by the guard allow, visible in the ledger).
+- [x] An interactive session message during the next live marked run does NOT delete the marker (run ends with its own `--run-end`). *(2026-06-12 19:33Z incident: marker survived bystander injects — mis-BOUND (fixed by Phase 9) but never deleted)*
+- [x] The next live deny → following probe withholds the forward route and the orchestrator dispatches hardening first (debt acked by the guard allow, visible in the ledger). *(2026-06-12 19:23:37Z: withheld route → hardening dispatch → guard-allow FIFO ack — hardening-log Round 4; repeated autonomously for the 19:43Z deny, acked_ts confirms)*
 
 **MCP Integration Test Assertions:** N/A — no MCP runtime in claude-config; live verification rows above stand in.
 
