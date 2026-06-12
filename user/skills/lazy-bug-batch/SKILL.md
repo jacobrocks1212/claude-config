@@ -273,6 +273,11 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
 - **`__write_validated_from_results__`** — same as `/lazy-batch` Step 1c.5: run
   `python3 ~/.claude/scripts/bug-state.py --apply-pseudo __write_validated_from_results__ <spec_path>`
   (the script writes VALIDATED.md from MCP_TEST_RESULTS.md), then commit + push per policy.
+  **The script is the SINGLE author of VALIDATED.md — hand-writing it is banned.** The apply
+  refuses (zero writes) on missing/wrong-kind results, `result` ≠ `all-passing`,
+  `pass_count != total_count`, or a stale `validated_commit` vs HEAD. On refusal do NOT retry
+  blindly or hand-write the sentinel — route a fresh `/mcp-test` cycle (see `/lazy-batch`
+  Step 1c.5 for the full gate list and rationale).
 
 - **`__mark_fixed__`** — **gated by TWO inline docs-only gates, in order, BEFORE the archive
   runs.** Gate logic is IDENTICAL to the `/lazy-bug` wrapper's `__mark_fixed__` handler — both
