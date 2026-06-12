@@ -2,9 +2,9 @@
 
 > Mechanical, hook-enforced routing for orchestrator runs: every turn's route is injected from a state-script probe, every `Agent` dispatch is validated against the script-emitted prompt registry and denied otherwise, and every misroute (or no-route) dispatches a new harness-hardening stage — an Opus subagent specialized in improving claude-config itself.
 
-**Status:** Ready
+**Status:** Complete
 **Priority:** P0
-**Last updated:** 2026-06-11
+**Last updated:** 2026-06-12
 
 **Depends on:** (none)
 

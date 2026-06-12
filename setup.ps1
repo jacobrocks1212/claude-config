@@ -211,6 +211,53 @@ function Invoke-Check([array]$Mappings) {
     }
 
     Write-Host "`nCheck: $ok OK, $broken broken, $absent absent"
+
+    # Warn-only pass: verify that the marker-gated turn-routing hooks are registered
+    # in the live ~/.claude/settings.json.  This is a configuration advisory — it does
+    # NOT affect the exit code (broken count unchanged) because the hooks are per-machine
+    # and may legitimately be absent on machines that have not been armed yet (Phase 6).
+    $liveCfgPath = Expand-LivePath '~\.claude\settings.json'
+    $hookScripts = @('lazy-route-inject.sh', 'lazy-dispatch-guard.sh')
+    $missingHooks = [System.Collections.ArrayList]::new()
+
+    if (-not (Test-Path $liveCfgPath)) {
+        Write-Host '  WARN     turn-routing hooks: ~/.claude/settings.json absent - cannot verify hook registration' -ForegroundColor Yellow
+    } else {
+        try {
+            $cfgText = Get-Content $liveCfgPath -Raw -ErrorAction Stop
+            $cfg = $cfgText | ConvertFrom-Json -ErrorAction Stop
+            # Flatten all hook command strings from every event array.
+            $allCommands = [System.Collections.ArrayList]::new()
+            if ($cfg.PSObject.Properties['hooks']) {
+                foreach ($eventName in $cfg.hooks.PSObject.Properties.Name) {
+                    foreach ($entry in $cfg.hooks.$eventName) {
+                        if ($entry.PSObject.Properties['hooks']) {
+                            foreach ($h in $entry.hooks) {
+                                if ($h.PSObject.Properties['command']) {
+                                    [void]$allCommands.Add($h.command)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            foreach ($script in $hookScripts) {
+                $scriptName = $script
+                $found = $allCommands | Where-Object { $_ -like "*$scriptName*" }
+                if (-not $found) {
+                    [void]$missingHooks.Add($script)
+                }
+            }
+            if ($missingHooks.Count -gt 0) {
+                $missing = $missingHooks -join ', '
+                Write-Host "  WARN     marker-gated turn-routing hooks not registered in live settings.json ($missing) - see docs/specs/turn-routing-enforcement/REGISTRATION.md" -ForegroundColor Yellow
+            }
+        } catch {
+            $errMsg = $_.Exception.Message
+            Write-Host "  WARN     turn-routing hooks: ~/.claude/settings.json could not be parsed - cannot verify hook registration ($errMsg)" -ForegroundColor Yellow
+        }
+    }
+
     return ($broken -eq 0)
 }
 

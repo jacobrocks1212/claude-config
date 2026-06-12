@@ -305,11 +305,11 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 **Scope:** Arm the system on this machine (laptop, A9); prove all four success criteria live. This phase is the validation pass — it does NOT implement; it integrates, registers, and records evidence. All prior phases must be complete (and A6 resolved go) before this phase begins.
 
 **Deliverables:**
-- [ ] Repair `~/.claude/hooks` symlink on this laptop per setup.ps1 manifest.psd1 definition (A9 finding); `setup.ps1` updated to check for this symlink's presence as part of its verification pass.
-- [ ] Per-machine registration snippet documented in `docs/specs/turn-routing-enforcement/REGISTRATION.md`: UserPromptSubmit (≥30s timeout per spec), SessionStart matcher `compact`, PreToolUse matcher `Agent|Task` — exact JSON fragment ready to paste into `~/.claude/settings.json`. Applied to THIS laptop's live `~/.claude/settings.json`.
-- [ ] `setup.ps1 check` extension: parse live `~/.claude/settings.json`, warn (not fail) when the two hook script filenames (`lazy-route-inject.sh`, `lazy-dispatch-guard.sh`) are absent from the registered hooks list.
-- [ ] Cross-platform pipe-test run records: both Windows (git-bash) and WSL platforms — results appended to `E2E_VALIDATION.md` (or referenced artifact).
-- [ ] Live E2E via scripted `claude -p` marked-run harness (or a 1-cycle real `/lazy-batch` run in AlgoBooth): five assertions recorded in `docs/specs/turn-routing-enforcement/E2E_VALIDATION.md` mapping each spec Success Criterion 1–4 to observed evidence:
+- [x] Repair `~/.claude/hooks` symlink on this laptop per setup.ps1 manifest.psd1 definition (A9 finding); `setup.ps1` updated to check for this symlink's presence as part of its verification pass.
+- [x] Per-machine registration snippet documented in `docs/specs/turn-routing-enforcement/REGISTRATION.md`: UserPromptSubmit (≥30s timeout per spec), SessionStart matcher `compact`, PreToolUse matcher `Agent|Task` — exact JSON fragment ready to paste into `~/.claude/settings.json`. Applied to THIS laptop's live `~/.claude/settings.json`.
+- [x] `setup.ps1 check` extension: parse live `~/.claude/settings.json`, warn (not fail) when the two hook script filenames (`lazy-route-inject.sh`, `lazy-dispatch-guard.sh`) are absent from the registered hooks list.
+- [x] Cross-platform pipe-test run records: both Windows (git-bash) and WSL platforms — results appended to `E2E_VALIDATION.md` (or referenced artifact).
+- [x] Live E2E via scripted `claude -p` marked-run harness (or a 1-cycle real `/lazy-batch` run in AlgoBooth): five assertions recorded in `docs/specs/turn-routing-enforcement/E2E_VALIDATION.md` mapping each spec Success Criterion 1–4 to observed evidence:
   1. LAZY-ROUTE banner injected (Success Criterion 1: probe-shaped turns have injected route).
   2. A deliberately hand-composed Agent dispatch is DENIED with the corrective reason (Success Criterion 1: zero hand-composed real-skill dispatches reach execution).
   3. The registered emitted prompt is ALLOWED and its nonce consumed (mechanism working correctly).
@@ -323,15 +323,15 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 **Minimum Verifiable Behavior:** The live `claude -p` harness run produces `E2E_VALIDATION.md` containing at least one captured deny JSON (hand-composed dispatch) and one captured allow JSON (registered emitted prompt) from the ACTUALLY REGISTERED hooks on this laptop — raw captures, not "expected behavior" placeholders.
 
 **Runtime Verification** *(checked by live harness or manual testing — NOT by the implementation agent):*
-- [ ] `~/.claude/hooks` symlink resolves on this laptop.
-- [ ] Both hook filenames appear in live `~/.claude/settings.json` hooks registrations.
-- [ ] LAZY-ROUTE banner observed in `claude -p` harness session log.
-- [ ] Hand-composed Agent dispatch: deny JSON observed with corrective reason.
-- [ ] Registered emitted-prompt dispatch: allow JSON observed; registry entry `consumed: true` after.
-- [ ] Marker absent from `~/.claude/state/` at run end.
-- [ ] Interactive `claude` session (no marker): no hook output injected, no denials.
-- [ ] Deliberate-deny follow-through observed: hardening dispatch emitted + allowed, HARDENING.md round (or triaged NEEDS_INPUT.md) present in `hardening-log/` (SC2).
-- [ ] Harness transcript: cycle heading byte-matches injected `cycle_header`; every executed dispatch resolves to a registry lookup hit (SC4).
+- [x] `~/.claude/hooks` symlink resolves on this laptop. *(E2E_VALIDATION.md + orchestrator Get-Item verification, 2026-06-12)*
+- [x] Both hook filenames appear in live `~/.claude/settings.json` hooks registrations. *(verified post-WU-6a)*
+- [x] LAZY-ROUTE banner observed in `claude -p` harness session log. *(E2E assertion 1)*
+- [x] Hand-composed Agent dispatch: deny JSON observed with corrective reason. *(E2E assertion 2 — all four recipe substrings)*
+- [x] Registered emitted-prompt dispatch: allow JSON observed; registry entry `consumed: true` after. *(E2E assertion 3, consumed_by recorded)*
+- [x] Marker absent from `~/.claude/state/` at run end. *(E2E assertion 4 + final orchestrator ls)*
+- [x] Interactive `claude` session (no marker): no hook output injected, no denials. *(E2E assertion 5)*
+- [x] Deliberate-deny follow-through observed: hardening dispatch emitted + allowed, HARDENING.md round (or triaged NEEDS_INPUT.md) present in `hardening-log/` (SC2). *(E2E assertion 6 — live Opus /harden-harness run, commit 3109343)*
+- [x] Harness transcript: cycle heading byte-matches injected `cycle_header`; every executed dispatch resolves to a registry lookup hit (SC4). *(E2E assertions 1+7 — sha cross-artifact match)*
 
 **MCP Integration Test Assertions:** N/A — no MCP runtime in claude-config; live verification rows above stand in (per the header's MCP-runtime line).
 
@@ -350,6 +350,12 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 - Runtime gate: this IS the runtime gate — E2E_VALIDATION.md is the deliverable evidence for the feature Complete flip.
 
 **Integration Notes for Next Phase:** This is the final phase. Evidence in `E2E_VALIDATION.md` feeds the `/lazy-batch-retro` grading for R-O-1/R-O-4 (heading ↔ `cycle_header` byte-match, dispatch ↔ registry lookup — Success Criterion 4). The `hardening-log/` directory initialized here receives future `/harden-harness` round entries as the self-improvement loop runs.
+
+#### Implementation Notes (Phase 6 — 2026-06-12)
+
+**Review verdict:** PASS — live E2E ran against the ACTUALLY REGISTERED hooks on this laptop; all seven assertions PASS with raw captures in E2E_VALIDATION.md (558 lines). Highlights: the deny path returned the full corrective recipe including the locked-decision-4 trigger-1 clause; the allow path consumed the nonce with `consumed_by` recorded; the deliberate deny was followed through with a real `--emit-dispatch hardening` → live Opus `/harden-harness` run that appended Round 1 to `hardening-log/2026-06.md` and committed it (`3109343 harden(docs): ...`) — the self-improvement loop executed end-to-end on its first real trigger. WU-6a incidents: `setup.ps1 repair -Target User` briefly symlinked the live settings.json to the tracked (desktop-path) file — restored from `.bak` immediately; per-machine settings stay an untracked real file per SPEC §Settings placement (the check now reports it as the known A9 `REAL` condition). Cleanup: scoped state dirs/fixture deleted; a stale `hook-error.json` (fail-open breadcrumb from an E2E first-attempt empty-stdin firing) was found in the real state dir and removed — **design wrinkle for a future hardening round: a breadcrumb left after marker deletion is never surfaced (inject fast-path exits first)**. Phase 2's carried risk (nested-dispatch structural isolation under registered hooks) was probed live and recorded in E2E_VALIDATION.md §Carried risks resolved. Hook timeouts registered: inject 90s (> 60s probe subprocess ceiling), guard 30s.
+
+**Completion (gate-owned):** SPEC Status flip to Complete is the pipeline gate's action, not a checkbox here. All six phases implemented, reviewed (3× PASS-WITH-FIXES applied + re-verified, 3× clean), and live-validated; standing gates at close: test_lazy_core.py 277/277, test_hooks.py 21/21, both --test smokes (baselines byte-identical throughout), lint-skills.py full flags clean.
 
 ---
 
