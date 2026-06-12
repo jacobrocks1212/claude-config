@@ -2,6 +2,18 @@
 
 Canonical source for all Claude Code configuration. Files live here; symlinks at their expected locations (`~/.claude/`, `~/.claude-personal/`, per-repo `.claude/`) point back. Edits anywhere write through symlinks — `git status` in this repo shows changes immediately.
 
+## Mission
+
+This repo is the **harness for Jacob's autonomous agentic development system**. The end goal: the most **efficient, effective, and best-practice-aligned software builder** we can construct from Claude Code primitives (skills, components, state scripts, hooks, sentinels).
+
+Every change to this repo should be evaluated against that goal:
+
+- **Efficient** — minimize wasted tokens, redone work, and orchestrator boilerplate. Deterministic script-owned state (`lazy-state.py` / `bug-state.py`) over LLM-inferred state; script-emitted prompts over hand-composed ones; gates that refuse early over reviews that catch late.
+- **Effective** — features and fixes ship with real, certified evidence (gated receipts, MCP validation, runtime-spike artifacts), not narrative claims. Integrity gates are load-bearing: a bypass found in a retro is a defect in the harness, not an acceptable workaround.
+- **Best-practice-aligned** — TDD, spec-first development, distributed verification, honest BLOCKED/NEEDS_INPUT halts, and audit-grade provenance on every completion. When the harness and best practice conflict, fix the harness.
+
+The harness **self-improves**: retros (`/lazy-batch-retro`), investigations (`/investigate`), and the routing/hardening stage feed observed friction back into this repo as contract changes. Friction observed in a run is a bug report against this repo.
+
 ## Directory Layout
 
 ```

@@ -345,6 +345,8 @@ fall through to Step 1d.
 
 **Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`, `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics), AND `~/.claude/skills/_components/completeness-policy.md` (the D7 standing policy — its auto-resolve rules likewise survive compaction by re-read, not memory). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
 
+**Post-compaction re-entry protocol (HARD — the first post-compaction action is NEVER a dispatch; mirrored from `/lazy-batch` Step 1d).** Compaction is the measured protocol cliff (2026-06-11 run: counters never recovered, probes stopped, prompts went hand-authored post-boundary). On the first turn after any compaction boundary, BEFORE any `Agent` call: (1) re-read Step 1a of this SKILL plus the three components named above; (2) reconstruct the session state — `forward_cycles`, `meta_cycles`, `max_cycles`, `prev_cycle_signature`, and `cycle_log` — from the surviving context (T1 banner budget line, T2/T4 headings, `done` lines); where ambiguous, re-derive conservatively from on-disk evidence (`git log` since the run-start commit + sentinel mtimes) and record the reconstruction in a single T6 `⚠` line; (3) run the FULL Step 1a probe form (`bug-state.py --repeat-count --emit-prompt --probe --forward-cycles … --meta-cycles … --max-cycles …`) and proceed only from its output. Dispatching from a pre-compaction probe held in memory, or from a hand-reconstructed prompt, is a contract violation.
+
 **Long-build ownership (harness-tracked).** Any build or test that may exceed a single subagent turn is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends (a `tauri build` backgrounded that way once silently vanished). Before committing to a 20–40 min packaged `tauri build`, run `cargo check --release` first to catch compile errors in minutes. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
 If Step 1c.5 did not handle this cycle, build the dispatch by CONSUMING the script-assembled
@@ -354,6 +356,15 @@ as the Agent `prompt:` and `cycle_model` as the Agent `model:`. See
 `~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the shared consume-and-dispatch rules,
 in-session loop-guard cross-check, and the `cycle_prompt`-null/refused fallback — they apply
 identically to the bug pipeline.
+
+**Continuation cycles re-emit + probe-presence guard (mirrored from `/lazy-batch` Step 1d —
+both apply verbatim here).** A real-skill dispatch is valid ONLY when its `prompt:` is the
+`cycle_prompt` produced by an `--emit-prompt` probe run in the SAME turn as the `Agent` call —
+when a cycle returns partial or needs a retry, return to Step 1a and RE-PROBE; never hand-compose
+a "continuation prompt" (both measured protocol failures in the 2026-06-11 run were hand-composed
+continuations). And the T2/T4 heading line MUST carry the dispatch-bound probe's `cycle_header`
+field VERBATIM — a probe-shaped heading with no same-turn probe behind it is graded as a
+probe-cadence violation.
 
 **Bug wording, the work branch, and the premature-status guard are now SCRIPT-BOUND via the
 sectioned template's tokens** (`{item_label}`/`{pipeline_phrase}`/`{receipt_name}` = FIXED.md /

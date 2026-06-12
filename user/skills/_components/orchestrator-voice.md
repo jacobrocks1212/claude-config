@@ -108,6 +108,14 @@ Heading format: `### {Step name} — {work summary, ≤12 words} [{n}/{max}]`.
 `disp` carries sub-skill, target, model, and — only when applicable — a trailing tag:
 `(sonnet, loop-resolution)` / `(opus, recovery)`. Nothing else before the Agent call.
 
+**Probe-presence guard (applies to T2 AND T4 headings).** When the dispatch-bound probe carried
+a `cycle_header` field (the `--probe` enrichment emits it pre-formatted), the heading line is
+that string echoed **verbatim** — never re-typed, never composed from memory or a remembered
+earlier probe. A probe-shaped heading with no same-turn probe behind it is the gravest R-V
+violation: template-conforming narration over non-conforming behavior (2026-06-11 run: 12
+probe-shaped headings printed across a 5-hour zero-probe gap while every guard and counter ran
+blind). Graders cross-check heading text against same-turn probe output (R-V-2 × R-O-1).
+
 ### T3 — Cycle return (when the subagent's result is processed)
 
 ```

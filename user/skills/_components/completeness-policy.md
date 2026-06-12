@@ -62,6 +62,17 @@ Ask: **would the end-state product behavior differ between the options?**
 - Destructive/irreversible operations or outward-facing actions (pushing to shared infra,
   publishing, deleting user data) beyond the pipeline's normal commit/push discipline.
 - Genuine ambiguity about what "complete" means after the scope test — treat as product.
+- **Budget/cycle-exhaustion forks.** When the fork exists ONLY because a run resource the
+  operator set is exhausted or nearly so — max-cycles reached, the cycle budget about to run
+  out, an end-of-run "fix the remaining N items now vs defer to a follow-up run" — this is NOT
+  a scope decision the policy resolves. "Most complete" here means silently overspending a cap
+  the operator chose deliberately; spending past a budget is operator authority, exactly like a
+  product fork. Ask (default mode) or park (`--park`). The ordinary "fix now vs defer to queue
+  tail" shape stays scope-class when budget is NOT the driver — the carve-out keys on
+  exhaustion being the reason the fork exists, not on the words "fix vs defer". **Retro grading
+  note (R-D7-1):** an exhaustion-fork question asked to the operator is a CORRECT ask, not a
+  failure (the 2026-06-11 run's four fix-vs-defer asks at budget exhaustion fall under this
+  carve-out and should grade pass).
 
 ## Logging (mandatory — auto-resolved ≠ invisible)
 
