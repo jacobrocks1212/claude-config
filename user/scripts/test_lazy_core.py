@@ -7794,6 +7794,772 @@ def test_repeat_count_peek_does_not_advance_marker_counters():
 # End of Phase 1 test definitions
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Tests: Phase 3 — emit_dispatch_prompt (--emit-dispatch <class>)
+# ---------------------------------------------------------------------------
+#
+# RED STATE for all tests below: lazy_core lacks DISPATCH_CLASSES,
+# DISPATCH_MODELS, and emit_dispatch_prompt.  Tests 2 and 3 additionally
+# fail because the dispatch-<class>.md template files do not yet exist.
+# Tests 8 and 9 fail because lazy-state.py / bug-state.py do not yet
+# accept the --emit-dispatch CLI flag (argparse exits 2 — asserted explicitly
+# so the failure is meaningful rather than a confusing returncode mismatch).
+#
+# Isolation discipline: subprocess tests that touch the state dir set
+# LAZY_STATE_DIR via the env dict (NOT os.environ directly) so hermetic
+# isolation is preserved across all parallel-run scenarios.
+
+# The six Phase 3 dispatch classes, ordered as the spec defines them.
+# "hardening" arrives in Phase 4 and MUST NOT appear here.
+_EXPECTED_DISPATCH_CLASSES = (
+    "apply-resolution",
+    "input-audit",
+    "investigation",
+    "recovery",
+    "coherence-recovery",
+    "needs-runtime-redispatch",
+)
+
+# Model assignment per class — derived from the SOURCE COMPONENTS (not SPEC.md,
+# which pins no per-class models).  apply-resolution=opus because
+# blocked-resolution.md dispatches its apply subagent as Opus.
+_EXPECTED_DISPATCH_MODELS = {
+    "apply-resolution": "opus",   # blocked-resolution.md: Opus apply subagent
+    "input-audit": "opus",
+    "investigation": "opus",
+    "recovery": "sonnet",
+    "coherence-recovery": "sonnet",
+    "needs-runtime-redispatch": "opus",
+}
+
+# Compiled regex for @requires first-line marker (reused across tests).
+_REQUIRES_LINE_RE = re.compile(r'^<!-- @requires [a-z0-9_,]+ -->$')
+
+
+def test_emit_dispatch_symbols_present():
+    """DISPATCH_CLASSES, DISPATCH_MODELS, and emit_dispatch_prompt must exist
+    on lazy_core.  The six Phase 3 classes must match exactly; 'hardening' must
+    NOT be present (Phase 4).  Every class must map to 'opus' or 'sonnet' per
+    the spec contract.
+
+    RED: all three names missing → AttributeError / AssertionError.
+    """
+    _guard()
+
+    # --- Symbol presence ---
+    assert hasattr(lazy_core, "DISPATCH_CLASSES"), (
+        "lazy_core.DISPATCH_CLASSES missing — Phase 3 not yet implemented"
+    )
+    assert hasattr(lazy_core, "DISPATCH_MODELS"), (
+        "lazy_core.DISPATCH_MODELS missing — Phase 3 not yet implemented"
+    )
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing — Phase 3 not yet implemented"
+    )
+
+    # --- DISPATCH_CLASSES exact membership ---
+    classes = lazy_core.DISPATCH_CLASSES
+    # Must be a tuple (ordered, hashable).
+    assert isinstance(classes, tuple), (
+        f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
+    )
+    # Exact set equality first for clear diff.
+    assert set(classes) == set(_EXPECTED_DISPATCH_CLASSES), (
+        f"DISPATCH_CLASSES set mismatch.\n"
+        f"  expected: {sorted(_EXPECTED_DISPATCH_CLASSES)}\n"
+        f"  got:      {sorted(classes)}"
+    )
+    # Exact ordering.
+    assert classes == _EXPECTED_DISPATCH_CLASSES, (
+        f"DISPATCH_CLASSES ordering mismatch.\n"
+        f"  expected: {_EXPECTED_DISPATCH_CLASSES}\n"
+        f"  got:      {classes}"
+    )
+
+    # --- 'hardening' must NOT be in Phase 3 tuple ---
+    assert "hardening" not in classes, (
+        "'hardening' must NOT be in DISPATCH_CLASSES for Phase 3 — "
+        "it arrives in Phase 4 after the /harden-harness skill is authored"
+    )
+
+    # --- DISPATCH_MODELS maps every class to a valid model ---
+    models = lazy_core.DISPATCH_MODELS
+    assert isinstance(models, dict), (
+        f"DISPATCH_MODELS must be a dict, got {type(models).__name__}"
+    )
+    for cls in _EXPECTED_DISPATCH_CLASSES:
+        assert cls in models, f"DISPATCH_MODELS missing key: {cls!r}"
+        model = models[cls]
+        assert model in ("opus", "sonnet"), (
+            f"DISPATCH_MODELS[{cls!r}] must be 'opus' or 'sonnet', got {model!r}"
+        )
+        expected_model = _EXPECTED_DISPATCH_MODELS[cls]
+        assert model == expected_model, (
+            f"DISPATCH_MODELS[{cls!r}] = {model!r}; expected {expected_model!r} "
+            f"per the Phase 3 spec contract"
+        )
+
+
+def test_emit_dispatch_real_templates_exist_and_declare_requires():
+    """For each of the six Phase 3 classes, the template file
+    user/skills/_components/lazy-batch-prompts/dispatch-<class>.md must exist
+    and its first non-empty line must match '<!-- @requires [a-z0-9_,]+ -->'.
+
+    RED: template files do not yet exist → assertion fails naming the missing file.
+    """
+    _guard()
+    # DISPATCH_CLASSES must be present for this test to be meaningful.
+    assert hasattr(lazy_core, "DISPATCH_CLASSES"), (
+        "lazy_core.DISPATCH_CLASSES missing — cannot run template-existence test"
+    )
+
+    for cls in lazy_core.DISPATCH_CLASSES:
+        tpl_path = _REAL_TEMPLATE_DIR / f"dispatch-{cls}.md"
+        assert tpl_path.exists(), (
+            f"dispatch template missing: {tpl_path}\n"
+            f"  Phase 3 requires one dispatch-<class>.md per class in DISPATCH_CLASSES."
+        )
+        # First non-empty line must be the @requires marker.
+        text = tpl_path.read_text(encoding="utf-8")
+        first_line = next(
+            (ln for ln in text.splitlines() if ln.strip()),
+            ""
+        )
+        assert _REQUIRES_LINE_RE.match(first_line), (
+            f"dispatch-{cls}.md first non-empty line must be "
+            f"'<!-- @requires key1,key2,... -->' (only [a-z0-9_,] chars); "
+            f"got: {first_line!r}"
+        )
+
+
+def test_emit_dispatch_real_template_binding_matrix():
+    """Binding-completeness matrix over the REAL dispatch templates:
+    for each class × pipeline (feature, bug) × cloud (False, True),
+    emit_dispatch_prompt must return ok=True with zero {lower_snake} residue,
+    model == DISPATCH_MODELS[cls], and prompt length > 200 (real dispatch briefs,
+    not stubs).
+
+    The context dict is constructed from the @requires keys declared in the
+    template's first line plus 'item_id' and 'cwd' as standard extras.
+
+    RED: DISPATCH_CLASSES / emit_dispatch_prompt missing → AttributeError;
+         template files missing → ok=False or FileNotFoundError.
+    """
+    _guard()
+    assert hasattr(lazy_core, "DISPATCH_CLASSES"), (
+        "lazy_core.DISPATCH_CLASSES missing"
+    )
+    assert hasattr(lazy_core, "DISPATCH_MODELS"), (
+        "lazy_core.DISPATCH_MODELS missing"
+    )
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+
+    for cls in lazy_core.DISPATCH_CLASSES:
+        tpl_path = _REAL_TEMPLATE_DIR / f"dispatch-{cls}.md"
+        # Read @requires keys from line 1 of the template.
+        text = tpl_path.read_text(encoding="utf-8")
+        first_line = next(
+            (ln for ln in text.splitlines() if ln.strip()),
+            ""
+        )
+        m = re.match(r'^<!-- @requires ([a-z0-9_,]+) -->', first_line)
+        assert m, (
+            f"dispatch-{cls}.md has no valid @requires on line 1; got: {first_line!r}"
+        )
+        requires_keys = [k.strip() for k in m.group(1).split(",") if k.strip()]
+
+        # Build context: every @requires key → synthetic "test-<key>" value,
+        # plus standard extras.
+        context = {k: f"test-{k}" for k in requires_keys}
+        context["item_id"] = "feat-x"
+        context["cwd"] = "/tmp/x"
+
+        for pipeline in ("feature", "bug"):
+            for cloud in (False, True):
+                mode = "cloud" if cloud else "workstation"
+                ctx_label = f"cls={cls} pipeline={pipeline} mode={mode}"
+
+                result = lazy_core.emit_dispatch_prompt(
+                    cls, context,
+                    pipeline=pipeline,
+                    cloud=cloud,
+                    template_dir=_REAL_TEMPLATE_DIR,
+                )
+
+                assert isinstance(result, dict), (
+                    f"{ctx_label}: emit_dispatch_prompt must return a dict, got {result!r}"
+                )
+                assert result.get("ok") is True, (
+                    f"{ctx_label}: expected ok=True; got {result!r}"
+                )
+
+                prompt = result["prompt"]
+                residue = _TOKEN_RESIDUE_RE.findall(prompt)
+                assert not residue, (
+                    f"{ctx_label}: unbound token residue {residue} in dispatch prompt"
+                )
+
+                expected_model = lazy_core.DISPATCH_MODELS[cls]
+                assert result.get("model") == expected_model, (
+                    f"{ctx_label}: expected model={expected_model!r}; "
+                    f"got {result.get('model')!r}"
+                )
+
+                assert len(prompt) > 200, (
+                    f"{ctx_label}: dispatch prompt suspiciously short ({len(prompt)} chars); "
+                    f"real dispatch briefs must be > 200 chars (not a stub)"
+                )
+
+
+def test_emit_dispatch_refuses_missing_requires():
+    """Synthetic template with @requires foo,bar; context missing 'bar'
+    → ok=False, refusal message names 'bar'.
+
+    Uses a synthetic template dir so no real template file is needed.
+
+    RED: emit_dispatch_prompt missing → AttributeError.
+    """
+    _guard()
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+    # Use any known dispatch class as cls — 'recovery' is representative.
+    cls = "recovery"
+
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "synth-dispatch-tpl"
+        tdir.mkdir(parents=True, exist_ok=True)
+        # Minimal template: @requires foo,bar; body uses both tokens.
+        tpl_text = (
+            "<!-- @requires foo,bar -->\n"
+            "<!-- @section body pipelines=feature,bug modes=workstation,cloud -->\n"
+            "This dispatch requires {foo} and {bar}.\n"
+        )
+        (tdir / f"dispatch-{cls}.md").write_text(tpl_text, encoding="utf-8")
+
+        # Context provides 'foo' but NOT 'bar'.
+        context = {"foo": "foo-value", "item_id": "feat-x"}
+        result = lazy_core.emit_dispatch_prompt(
+            cls, context,
+            pipeline="feature",
+            cloud=False,
+            template_dir=tdir,
+        )
+
+        assert isinstance(result, dict), (
+            f"emit_dispatch_prompt must return a dict on @requires failure, got {result!r}"
+        )
+        assert result.get("ok") is False, (
+            f"expected ok=False when @requires key is missing; got {result!r}"
+        )
+        refused_msg = result.get("refused", "")
+        assert "bar" in refused_msg, (
+            f"refusal message must name the missing @requires key 'bar'; "
+            f"got: {refused_msg!r}"
+        )
+
+
+def test_emit_dispatch_refuses_unbound_residue():
+    """Synthetic template with a {not_supplied} token NOT declared in @requires
+    → ok=False, refusal message names the token.
+
+    Mirrors test_emit_cycle_prompt_refuses_unknown_token_synthetic.
+
+    RED: emit_dispatch_prompt missing → AttributeError.
+    """
+    _guard()
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+    cls = "recovery"
+
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "synth-dispatch-tpl"
+        tdir.mkdir(parents=True, exist_ok=True)
+        # @requires declares nothing; body has an unbound token.
+        tpl_text = (
+            "<!-- @requires item_id -->\n"
+            "<!-- @section body pipelines=feature,bug modes=workstation,cloud -->\n"
+            "Dispatching recovery for {item_id}.\n"
+            "This section references {not_supplied} which is not bindable.\n"
+        )
+        (tdir / f"dispatch-{cls}.md").write_text(tpl_text, encoding="utf-8")
+
+        context = {"item_id": "feat-x"}
+        result = lazy_core.emit_dispatch_prompt(
+            cls, context,
+            pipeline="feature",
+            cloud=False,
+            template_dir=tdir,
+        )
+
+        assert isinstance(result, dict), (
+            f"emit_dispatch_prompt must return a dict on residue failure, got {result!r}"
+        )
+        assert result.get("ok") is False, (
+            f"expected ok=False when unbound residue survives; got {result!r}"
+        )
+        refused_msg = result.get("refused", "")
+        assert "not_supplied" in refused_msg, (
+            f"refusal message must name the unbound token 'not_supplied'; "
+            f"got: {refused_msg!r}"
+        )
+
+
+def test_emit_dispatch_section_filtering():
+    """Section filtering on a synthetic dispatch template:
+    - A section gated pipelines=bug modes=cloud must appear only for bug+cloud.
+    - A section gated pipelines=feature modes=workstation must appear only for
+      feature+workstation.
+
+    Mirrors the section-selection logic in test_emit_cycle_prompt_section_selection_synthetic.
+
+    RED: emit_dispatch_prompt missing → AttributeError.
+    """
+    _guard()
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+    cls = "recovery"
+
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "synth-dispatch-tpl"
+        tdir.mkdir(parents=True, exist_ok=True)
+        # @requires one key; two filtered sections so every combo hits something.
+        tpl_text = (
+            "<!-- @requires item_id -->\n"
+            "<!-- @section always pipelines=feature,bug modes=workstation,cloud -->\n"
+            "SECTION_ALWAYS common content for {item_id}.\n"
+            "\n"
+            "<!-- @section bug_cloud pipelines=bug modes=cloud -->\n"
+            "SECTION_BUG_CLOUD — bug + cloud only.\n"
+            "\n"
+            "<!-- @section feature_ws pipelines=feature modes=workstation -->\n"
+            "SECTION_FEATURE_WS — feature + workstation only.\n"
+        )
+        (tdir / f"dispatch-{cls}.md").write_text(tpl_text, encoding="utf-8")
+
+        context = {"item_id": "feat-x"}
+
+        # feature + workstation → ALWAYS + FEATURE_WS, NOT BUG_CLOUD.
+        r_fw = lazy_core.emit_dispatch_prompt(
+            cls, context,
+            pipeline="feature",
+            cloud=False,
+            template_dir=tdir,
+        )
+        assert r_fw is not None and r_fw.get("ok") is True, (
+            f"feature/workstation emission failed: {r_fw!r}"
+        )
+        assert "SECTION_ALWAYS" in r_fw["prompt"]
+        assert "SECTION_FEATURE_WS" in r_fw["prompt"]
+        assert "SECTION_BUG_CLOUD" not in r_fw["prompt"], (
+            "bug+cloud section must NOT appear in feature+workstation emission"
+        )
+
+        # bug + cloud → ALWAYS + BUG_CLOUD, NOT FEATURE_WS.
+        r_bc = lazy_core.emit_dispatch_prompt(
+            cls, context,
+            pipeline="bug",
+            cloud=True,
+            template_dir=tdir,
+        )
+        assert r_bc is not None and r_bc.get("ok") is True, (
+            f"bug/cloud emission failed: {r_bc!r}"
+        )
+        assert "SECTION_ALWAYS" in r_bc["prompt"]
+        assert "SECTION_BUG_CLOUD" in r_bc["prompt"]
+        assert "SECTION_FEATURE_WS" not in r_bc["prompt"], (
+            "feature+workstation section must NOT appear in bug+cloud emission"
+        )
+
+
+def test_emit_dispatch_unknown_class_raises():
+    """emit_dispatch_prompt raises ValueError for unknown classes: 'hardening'
+    (Phase 4 — not yet in DISPATCH_CLASSES) and 'nonsense'.
+
+    RED: emit_dispatch_prompt missing → AttributeError.
+    """
+    _guard()
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing"
+    )
+    for bad_cls in ("hardening", "nonsense"):
+        raised = False
+        try:
+            lazy_core.emit_dispatch_prompt(
+                bad_cls, {},
+                pipeline="feature",
+                cloud=False,
+            )
+        except ValueError:
+            raised = True
+        except Exception as exc:
+            assert False, (
+                f"emit_dispatch_prompt({bad_cls!r}) raised {type(exc).__name__} "
+                f"instead of ValueError: {exc}"
+            )
+        assert raised, (
+            f"emit_dispatch_prompt({bad_cls!r}) must raise ValueError for an "
+            f"unknown dispatch class; it returned without raising"
+        )
+
+
+def _build_dispatch_registry_fixture(td_path):
+    """Build the minimal lazy-state.py fixture repo used by the dispatch CLI tests.
+
+    Returns the fixture_repo Path.  Mirrors the fixture layout from
+    test_subprocess_emit_prompt_with_marker_writes_registry.
+    """
+    features = td_path / "fixture-repo" / "docs" / "features"
+    features.mkdir(parents=True)
+    (features / "queue.json").write_text(json.dumps({
+        "queue": [
+            {"id": "feat-x", "name": "Feature X", "spec_dir": "feat-x", "tier": 1}
+        ]
+    }), encoding="utf-8")
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-x"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+        encoding="utf-8",
+    )
+    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+        encoding="utf-8",
+    )
+    (fdir / "plans").mkdir()
+    (fdir / "plans" / "all-phases-x.md").write_text("# Plan\n", encoding="utf-8")
+    return td_path / "fixture-repo"
+
+
+def _read_recovery_requires_keys():
+    """Return the @requires keys declared in dispatch-recovery.md line 1,
+    or None if the file doesn't exist (so callers can skip gracefully).
+    """
+    tpl_path = _REAL_TEMPLATE_DIR / "dispatch-recovery.md"
+    if not tpl_path.exists():
+        return None
+    text = tpl_path.read_text(encoding="utf-8")
+    first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+    m = re.match(r'^<!-- @requires ([a-z0-9_,]+) -->', first_line)
+    if not m:
+        return None
+    return [k.strip() for k in m.group(1).split(",") if k.strip()]
+
+
+def test_emit_dispatch_cli_registry_gating():
+    """Subprocess test against the REAL lazy-state.py with --emit-dispatch.
+
+    Three sub-scenarios for the 'recovery' class (model = 'sonnet'):
+
+    (a) NO marker present: --emit-dispatch recovery succeeds (exit 0), stdout
+        JSON has non-null dispatch_prompt, dispatch_model == 'sonnet'; the
+        registry file is NOT written (peek semantics without a marker).
+
+    (b) Marker present: same invocation writes a registry entry with
+        class == 'recovery', item_id == 'feat-x', and prompt_sha256 ==
+        lazy_core.prompt_sha256(dispatch_prompt from stdout).
+
+    (c) Refusal: a required @requires context key is dropped → exit 1, stdout
+        JSON has dispatch_prompt_refused non-empty, NO new registry entry added.
+
+    RED: --emit-dispatch flag not yet added to lazy-state.py → argparse exits 2
+    (unknown flag); the test asserts returncode == 2 when the flag is unknown so
+    the failure reason is explicit and meaningful rather than a confusing EOF.
+    """
+    _guard()
+    # Guard on Phase 1 symbols needed by this test.
+    assert hasattr(lazy_core, "write_run_marker"), (
+        "lazy_core.write_run_marker missing — Phase 1 not yet implemented"
+    )
+    assert hasattr(lazy_core, "prompt_sha256"), (
+        "lazy_core.prompt_sha256 missing — Phase 1 not yet implemented"
+    )
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing — Phase 3 not yet implemented"
+    )
+
+    # Read the real @requires keys for 'recovery' so the context is exactly right.
+    requires_keys = _read_recovery_requires_keys()
+    if requires_keys is None:
+        # Template not yet written — fail explicitly rather than skip silently.
+        assert False, (
+            "dispatch-recovery.md does not exist or has no valid @requires on line 1; "
+            "Phase 3 template authoring is incomplete"
+        )
+
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    import time as _time
+
+    # Build the context flags: one --context KEY=VALUE per @requires key + item_id.
+    context_flags = []
+    for k in requires_keys:
+        context_flags += ["--context", f"{k}=test-{k}"]
+    context_flags += ["--context", "item_id=feat-x"]
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_dispatch_registry_fixture(td_path)
+        state_dir = td_path / "dispatch-state-dir"
+        state_dir.mkdir()
+
+        # === Sub-scenario (a): NO marker — output produced, no registry write ===
+        env_no_marker = dict(_os_env.environ)
+        env_no_marker["LAZY_STATE_DIR"] = str(state_dir)
+        cmd = [
+            sys.executable, str(lazy_state_script),
+            "--emit-dispatch", "recovery",
+        ] + context_flags
+
+        result_a = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env_no_marker,
+        )
+
+        # If the flag is unknown, argparse exits 2 — fail with an explicit reason.
+        assert result_a.returncode != 2, (
+            "--emit-dispatch flag not recognized by lazy-state.py "
+            f"(argparse exit 2).\n"
+            f"stderr: {result_a.stderr[:400]!r}"
+        )
+        assert result_a.returncode == 0, (
+            f"lazy-state.py --emit-dispatch recovery (no marker) exited "
+            f"{result_a.returncode}; stderr: {result_a.stderr[:400]!r}; "
+            f"stdout: {result_a.stdout[:400]!r}"
+        )
+
+        try:
+            out_a = json.loads(result_a.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"stdout is not valid JSON: {exc}\nstdout: {result_a.stdout[:400]!r}"
+            ) from exc
+
+        dispatch_prompt_a = out_a.get("dispatch_prompt")
+        assert dispatch_prompt_a is not None, (
+            f"dispatch_prompt must be non-null in no-marker run; out={out_a!r}"
+        )
+        assert out_a.get("dispatch_model") == "sonnet", (
+            f"dispatch_model must be 'sonnet' for 'recovery' class; got {out_a.get('dispatch_model')!r}"
+        )
+        assert out_a.get("dispatch_class") == "recovery", (
+            f"dispatch_class must be 'recovery'; got {out_a.get('dispatch_class')!r}"
+        )
+
+        registry_file = state_dir / "lazy-prompt-registry.json"
+        assert not registry_file.exists(), (
+            "Registry file must NOT be written when no marker is present "
+            "(peek semantics). --emit-dispatch without a marker is output-only."
+        )
+
+        # === Sub-scenario (b): marker present — registry entry written ===
+        now = _time.time()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=now,
+            )
+        finally:
+            _clear_state_dir()
+
+        env_with_marker = dict(_os_env.environ)
+        env_with_marker["LAZY_STATE_DIR"] = str(state_dir)
+
+        result_b = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env_with_marker,
+        )
+        assert result_b.returncode == 0, (
+            f"lazy-state.py --emit-dispatch recovery (with marker) exited "
+            f"{result_b.returncode}; stderr: {result_b.stderr[:400]!r}; "
+            f"stdout: {result_b.stdout[:400]!r}"
+        )
+
+        try:
+            out_b = json.loads(result_b.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"stdout is not valid JSON (marker run): {exc}\nstdout: {result_b.stdout[:400]!r}"
+            ) from exc
+
+        dispatch_prompt_b = out_b.get("dispatch_prompt")
+        assert dispatch_prompt_b is not None, (
+            f"dispatch_prompt must be non-null in marker run; out={out_b!r}"
+        )
+
+        # Registry must now exist with exactly one matching entry.
+        assert registry_file.exists(), (
+            "Registry file must be written when a marker is present and "
+            "--emit-dispatch succeeds."
+        )
+        registry_data = json.loads(registry_file.read_text(encoding="utf-8"))
+        entries = registry_data.get("entries", [])
+        expected_sha = lazy_core.prompt_sha256(dispatch_prompt_b)
+        matching = [e for e in entries if e.get("prompt_sha256") == expected_sha]
+        assert len(matching) >= 1, (
+            f"Expected at least 1 registry entry with prompt_sha256 == "
+            f"sha256(dispatch_prompt); found {len(matching)} matching.\n"
+            f"expected sha={expected_sha!r}\n"
+            f"entries={[e.get('prompt_sha256') for e in entries]!r}"
+        )
+        assert matching[-1].get("class") == "recovery", (
+            f"Registry entry class must be 'recovery'; got {matching[-1].get('class')!r}"
+        )
+        assert matching[-1].get("item_id") == "feat-x", (
+            f"Registry entry item_id must be 'feat-x'; got {matching[-1].get('item_id')!r}"
+        )
+
+        # === Sub-scenario (c): refusal — drop one required key → exit 1 ===
+        if requires_keys:
+            # Build context flags with the FIRST required key dropped.
+            context_flags_missing = []
+            for k in requires_keys[1:]:  # drop index 0
+                context_flags_missing += ["--context", f"{k}=test-{k}"]
+            context_flags_missing += ["--context", "item_id=feat-x"]
+
+            cmd_refusal = [
+                sys.executable, str(lazy_state_script),
+                "--emit-dispatch", "recovery",
+            ] + context_flags_missing
+
+            entries_before = len(
+                json.loads(registry_file.read_text(encoding="utf-8")).get("entries", [])
+            )
+
+            result_c = subprocess.run(
+                cmd_refusal,
+                capture_output=True,
+                text=True,
+                env=env_with_marker,
+            )
+            assert result_c.returncode == 1, (
+                f"lazy-state.py --emit-dispatch with a missing @requires key must exit 1; "
+                f"got returncode={result_c.returncode}; "
+                f"stdout: {result_c.stdout[:400]!r}"
+            )
+
+            try:
+                out_c = json.loads(result_c.stdout)
+            except json.JSONDecodeError as exc:
+                raise AssertionError(
+                    f"stdout must be JSON even on refusal: {exc}\n"
+                    f"stdout: {result_c.stdout[:400]!r}"
+                ) from exc
+
+            assert out_c.get("dispatch_prompt") is None, (
+                f"dispatch_prompt must be null on refusal; got {out_c.get('dispatch_prompt')!r}"
+            )
+            refused_msg = out_c.get("dispatch_prompt_refused", "")
+            assert refused_msg, (
+                f"dispatch_prompt_refused must be non-empty on refusal; got {out_c!r}"
+            )
+
+            # No new registry entry must be added on refusal.
+            entries_after = len(
+                json.loads(registry_file.read_text(encoding="utf-8")).get("entries", [])
+            )
+            assert entries_after == entries_before, (
+                f"Registry must NOT grow on refusal; had {entries_before} entries, "
+                f"now have {entries_after}"
+            )
+
+
+def test_emit_dispatch_cli_bug_state_mirror():
+    """Coupled-pair mirror of test_emit_dispatch_cli_registry_gating sub-scenario (a):
+    bug-state.py --emit-dispatch recovery must also accept the flag and return
+    exit 0 with a non-null dispatch_prompt (no marker → peek semantics, no write).
+
+    RED: --emit-dispatch flag not yet added to bug-state.py → argparse exits 2;
+    the test asserts returncode == 2 explicitly so the failure is meaningful.
+    """
+    _guard()
+    assert hasattr(lazy_core, "emit_dispatch_prompt"), (
+        "lazy_core.emit_dispatch_prompt missing — Phase 3 not yet implemented"
+    )
+
+    requires_keys = _read_recovery_requires_keys()
+    if requires_keys is None:
+        assert False, (
+            "dispatch-recovery.md does not exist or has no valid @requires on line 1; "
+            "Phase 3 template authoring is incomplete"
+        )
+
+    bug_state_script = _SCRIPTS_DIR / "bug-state.py"
+    context_flags = []
+    for k in requires_keys:
+        context_flags += ["--context", f"{k}=test-{k}"]
+    context_flags += ["--context", "item_id=feat-x"]
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "dispatch-bug-state-dir"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        cmd = [
+            sys.executable, str(bug_state_script),
+            "--emit-dispatch", "recovery",
+        ] + context_flags
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        # Explicit argparse-unknown-flag check (RED reason).
+        assert result.returncode != 2, (
+            "--emit-dispatch flag not recognized by bug-state.py "
+            f"(argparse exit 2 — coupled-pair parity missing).\n"
+            f"stderr: {result.stderr[:400]!r}"
+        )
+        assert result.returncode == 0, (
+            f"bug-state.py --emit-dispatch recovery exited {result.returncode}; "
+            f"stderr: {result.stderr[:400]!r}; stdout: {result.stdout[:400]!r}"
+        )
+
+        try:
+            out = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"bug-state.py stdout is not valid JSON: {exc}\n"
+                f"stdout: {result.stdout[:400]!r}"
+            ) from exc
+
+        assert out.get("dispatch_prompt") is not None, (
+            f"bug-state.py --emit-dispatch recovery: dispatch_prompt must be "
+            f"non-null (no marker → peek); got {out!r}"
+        )
+        assert out.get("dispatch_class") == "recovery", (
+            f"bug-state.py dispatch_class must be 'recovery'; got {out.get('dispatch_class')!r}"
+        )
+
+        # No registry file without a marker.
+        registry_file = state_dir / "lazy-prompt-registry.json"
+        assert not registry_file.exists(), (
+            "bug-state.py must NOT write the registry without a marker "
+            "(peek semantics — coupled-pair mirror of lazy-state.py behavior)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# End of Phase 3 test definitions
+# ---------------------------------------------------------------------------
+
 _TESTS = [
     ("test_symbols_present", test_symbols_present),
     # count_deliverables
@@ -8108,6 +8874,16 @@ _TESTS = [
     # Phase 1 review fixes: corrupt-marker delete + peek-no-advance + freshness-leg
     ("test_corrupt_marker_returns_none_and_deletes", test_corrupt_marker_returns_none_and_deletes),
     ("test_repeat_count_peek_does_not_advance_marker_counters", test_repeat_count_peek_does_not_advance_marker_counters),
+    # Phase 3 — emit_dispatch_prompt (--emit-dispatch <class>)
+    ("test_emit_dispatch_symbols_present", test_emit_dispatch_symbols_present),
+    ("test_emit_dispatch_real_templates_exist_and_declare_requires", test_emit_dispatch_real_templates_exist_and_declare_requires),
+    ("test_emit_dispatch_real_template_binding_matrix", test_emit_dispatch_real_template_binding_matrix),
+    ("test_emit_dispatch_refuses_missing_requires", test_emit_dispatch_refuses_missing_requires),
+    ("test_emit_dispatch_refuses_unbound_residue", test_emit_dispatch_refuses_unbound_residue),
+    ("test_emit_dispatch_section_filtering", test_emit_dispatch_section_filtering),
+    ("test_emit_dispatch_unknown_class_raises", test_emit_dispatch_unknown_class_raises),
+    ("test_emit_dispatch_cli_registry_gating", test_emit_dispatch_cli_registry_gating),
+    ("test_emit_dispatch_cli_bug_state_mirror", test_emit_dispatch_cli_bug_state_mirror),
 ]
 
 

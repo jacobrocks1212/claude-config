@@ -3570,6 +3570,27 @@ def main() -> int:
             "and exits."
         ),
     )
+    # Phase 3: --emit-dispatch <class> — coupled-pair mirror of lazy-state.py.
+    # Pipeline is always "bug" for bug-state.py (the bug pipeline script).
+    parser.add_argument(
+        "--emit-dispatch", metavar="CLASS",
+        help=(
+            "Emit a fully-bound dispatch prompt for the named dispatch class "
+            "(apply-resolution, input-audit, investigation, recovery, "
+            "coherence-recovery, needs-runtime-redispatch). Outputs JSON and "
+            "exits. Marker present → registers the emission. Marker absent → "
+            "peek only (no registry write). Use --context KEY=VALUE "
+            "(repeatable) to supply class-specific token bindings."
+        ),
+    )
+    parser.add_argument(
+        "--context", action="append", metavar="KEY=VALUE",
+        default=[],
+        help=(
+            "Supply a context key=value for --emit-dispatch. "
+            "Repeatable. Split on the first '=' only."
+        ),
+    )
     args = parser.parse_args()
 
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
@@ -3602,6 +3623,51 @@ def main() -> int:
         deleted = lazy_core.delete_run_marker(clear_registry=True)
         sys.stdout.write(json.dumps({"run_marker_deleted": deleted}, indent=2) + "\n")
         return 0
+
+    # Phase 3: --emit-dispatch exits immediately like all other action flags.
+    # Pipeline is always "bug" for bug-state.py.
+    if args.emit_dispatch is not None:
+        cls = args.emit_dispatch
+        context: dict = {}
+        for kv in (args.context or []):
+            if "=" in kv:
+                key, _, value = kv.partition("=")
+                context[key] = value
+        try:
+            result = lazy_core.emit_dispatch_prompt(
+                cls, context,
+                pipeline="bug",
+                cloud=args.cloud,
+            )
+        except ValueError as exc:
+            sys.stdout.write(json.dumps({
+                "dispatch_prompt": None,
+                "dispatch_model": None,
+                "dispatch_class": cls,
+                "dispatch_prompt_refused": str(exc),
+            }, indent=2) + "\n")
+            return 1
+        if result.get("ok"):
+            prompt = result["prompt"]
+            model = result["model"]
+            lazy_core.register_emission_if_marked(
+                prompt, cls,
+                item_id=context.get("item_id"),
+            )
+            sys.stdout.write(json.dumps({
+                "dispatch_prompt": prompt,
+                "dispatch_model": model,
+                "dispatch_class": cls,
+            }, indent=2) + "\n")
+            return 0
+        else:
+            sys.stdout.write(json.dumps({
+                "dispatch_prompt": None,
+                "dispatch_model": None,
+                "dispatch_class": cls,
+                "dispatch_prompt_refused": result.get("refused", "unknown refusal"),
+            }, indent=2) + "\n")
+            return 1
 
     if args.neutralize_sentinel is not None:
         result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)

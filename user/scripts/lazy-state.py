@@ -4881,6 +4881,32 @@ def main() -> int:
                             "next session. Prints {\"run_marker_deleted\": true|false} "
                             "and exits."
                         ))
+    # Phase 3: --emit-dispatch <class> assembles and registers a fully-bound
+    # dispatch prompt for one of the six Phase 3 dispatch classes.  It is an
+    # action flag like --run-start: it exits immediately, does NOT run the
+    # normal state computation, and does NOT require --repo-root.
+    # Success → JSON {dispatch_prompt, dispatch_model, dispatch_class}, exit 0.
+    # Refusal → JSON {dispatch_prompt: null, dispatch_model: null,
+    #                  dispatch_class, dispatch_prompt_refused: <reason>}, exit 1.
+    # Marker present → registers the emission (write-through to registry).
+    # Marker absent  → peek semantics (prompt produced, no registry write).
+    parser.add_argument("--emit-dispatch", metavar="CLASS",
+                        help=(
+                            "Emit a fully-bound dispatch prompt for the named "
+                            "dispatch class (apply-resolution, input-audit, "
+                            "investigation, recovery, coherence-recovery, "
+                            "needs-runtime-redispatch). Outputs JSON and exits. "
+                            "Marker present → registers the emission. "
+                            "Marker absent → peek only (no registry write). "
+                            "Use --context KEY=VALUE (repeatable) to supply "
+                            "class-specific token bindings."
+                        ))
+    parser.add_argument("--context", action="append", metavar="KEY=VALUE",
+                        default=[],
+                        help=(
+                            "Supply a context key=value for --emit-dispatch. "
+                            "Repeatable. Split on the first '=' only."
+                        ))
     args = parser.parse_args()
 
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
@@ -4913,6 +4939,57 @@ def main() -> int:
         deleted = lazy_core.delete_run_marker(clear_registry=True)
         sys.stdout.write(json.dumps({"run_marker_deleted": deleted}, indent=2) + "\n")
         return 0
+
+    # Phase 3: --emit-dispatch exits immediately like all other action flags.
+    # Pipeline is always "feature" for lazy-state.py (the feature pipeline script).
+    if args.emit_dispatch is not None:
+        cls = args.emit_dispatch
+        # Parse repeatable --context KEY=VALUE flags into a dict (split on first =).
+        context: dict = {}
+        for kv in (args.context or []):
+            if "=" in kv:
+                key, _, value = kv.partition("=")
+                context[key] = value
+        # Validate the class before assembling — ValueError from emit_dispatch_prompt
+        # means an unknown class was passed; surface it cleanly.
+        try:
+            result = lazy_core.emit_dispatch_prompt(
+                cls, context,
+                pipeline="feature",
+                cloud=args.cloud,
+            )
+        except ValueError as exc:
+            sys.stdout.write(json.dumps({
+                "dispatch_prompt": None,
+                "dispatch_model": None,
+                "dispatch_class": cls,
+                "dispatch_prompt_refused": str(exc),
+            }, indent=2) + "\n")
+            return 1
+        if result.get("ok"):
+            prompt = result["prompt"]
+            model = result["model"]
+            # Marker present → register the emission (write-through to registry).
+            # Marker absent  → peek semantics (prompt produced, no registry write).
+            lazy_core.register_emission_if_marked(
+                prompt, cls,
+                item_id=context.get("item_id"),
+            )
+            sys.stdout.write(json.dumps({
+                "dispatch_prompt": prompt,
+                "dispatch_model": model,
+                "dispatch_class": cls,
+            }, indent=2) + "\n")
+            return 0
+        else:
+            # Refusal (missing @requires key or unbound residue).
+            sys.stdout.write(json.dumps({
+                "dispatch_prompt": None,
+                "dispatch_model": None,
+                "dispatch_class": cls,
+                "dispatch_prompt_refused": result.get("refused", "unknown refusal"),
+            }, indent=2) + "\n")
+            return 1
 
     if args.neutralize_sentinel is not None:
         result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)

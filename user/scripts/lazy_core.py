@@ -3178,14 +3178,54 @@ _CYCLE_TEMPLATE_DIRNAME = ("skills", "_components", "lazy-batch-prompts")
 # variant attribute's position in the file is not load-bearing.
 _SECTION_MARKER_RE = re.compile(r"^<!--\s*@section\s+(?P<rest>.*?)\s*-->\s*$")
 
-# Residue regex: any `{lower_snake}` token surviving the bind is an unbound
-# token the emitter REFUSES on (never emits a half-bound prompt).
-_PROMPT_RESIDUE_RE = re.compile(r"\{[a-z_]+\}")
+# Residue regex: any `{lower_snake_or_digit}` token surviving the bind is an
+# unbound token the emitter REFUSES on (never emits a half-bound prompt).
+# Widened to include digits so tokens like {item_id} and {item_id2} are caught —
+# previously `\{[a-z_]+\}` allowed digit-bearing tokens to pass through silently.
+_PROMPT_RESIDUE_RE = re.compile(r"\{[a-z0-9_]+\}")
 
 
 def _default_cycle_template_dir() -> Path:
     """Resolve the default cycle-prompt template dir from this module's path."""
     return Path(__file__).resolve().parent.parent.joinpath(*_CYCLE_TEMPLATE_DIRNAME)
+
+
+def _standard_dispatch_bindings(pipeline: str) -> dict[str, str]:
+    """Return the standard pipeline-token bindings shared by emit_cycle_prompt and
+    emit_dispatch_prompt.
+
+    These five tokens appear in every dispatch template and in the cycle base
+    template.  Factored out here so the two emitters stay byte-identical on the
+    same input without code duplication.
+
+    Args:
+        pipeline: ``"feature"`` or ``"bug"``.
+
+    Returns:
+        A fresh dict with the five standard pipeline tokens bound to their
+        pipeline-appropriate values.
+    """
+    is_bug = pipeline == "bug"
+    return {
+        "item_label":       "Bug" if is_bug else "Feature",
+        "pipeline_phrase":  "bug pipeline" if is_bug else "feature pipeline",
+        "receipt_name":     "FIXED.md" if is_bug else "COMPLETED.md",
+        "mark_pseudo":      "__mark_fixed__" if is_bug else "__mark_complete__",
+        "forbidden_status": "Fixed or Won't-fix" if is_bug else "Complete",
+    }
+
+
+def _dedup_residue(tokens: list[str]) -> list[str]:
+    """Return ``tokens`` deduplicated while preserving first-seen order.
+
+    Used by the residue guard in both emit_cycle_prompt and emit_dispatch_prompt
+    to produce a stable, human-readable list of unbound {token} names.
+    """
+    seen: list[str] = []
+    for tok in tokens:
+        if tok not in seen:
+            seen.append(tok)
+    return seen
 
 
 def _emit_work_branch(repo_root: Path) -> str:
@@ -3453,10 +3493,10 @@ def emit_cycle_prompt(
     selected.extend(addenda_selected)
 
     # --- Token bindings (per-pipeline + per-state) ----------------------------
-    is_bug = pipeline == "bug"
-    bindings = {
-        "item_label": "Bug" if is_bug else "Feature",
-        "pipeline_phrase": "bug pipeline" if is_bug else "feature pipeline",
+    # Standard pipeline tokens come from the shared helper; cycle-specific tokens
+    # are layered on top (context wins on collision, same as emit_dispatch_prompt).
+    bindings = _standard_dispatch_bindings(pipeline)
+    bindings.update({
         "item_name": state.get("feature_name") or "",
         "item_id": state.get("feature_id") or "",
         "cwd": str(repo_root),
@@ -3466,14 +3506,11 @@ def emit_cycle_prompt(
         "sub_skill_args": state.get("sub_skill_args") or "",
         "spec_path": state.get("spec_path") or "",
         "work_branch": _emit_work_branch(repo_root),
-        "receipt_name": "FIXED.md" if is_bug else "COMPLETED.md",
-        "mark_pseudo": "__mark_fixed__" if is_bug else "__mark_complete__",
-        "forbidden_status": "Fixed or Won't-fix" if is_bug else "Complete",
         # untestability_reason is only present in the no-runtime mcp-test section;
         # bind it whenever a reason was derived (fallback applies otherwise).
         "untestability_reason": untestability_reason
         or "the plan declares no MCP-reachable surface",
-    }
+    })
 
     prompt = "\n\n".join(selected)
 
@@ -3499,11 +3536,7 @@ def emit_cycle_prompt(
     # --- Residue guard: any surviving {token} → refuse (never half-bound) -----
     residue = _PROMPT_RESIDUE_RE.findall(prompt)
     if residue:
-        # De-duplicate while preserving first-seen order for a stable message.
-        seen: list[str] = []
-        for tok in residue:
-            if tok not in seen:
-                seen.append(tok)
+        seen = _dedup_residue(residue)
         # Attribute the residue to the addenda file when an unbound token traces
         # back to a (mis-authored) addenda section — so the operator knows which
         # file to fix. We bind the addenda blob in isolation and check whether
@@ -3543,6 +3576,195 @@ def _strip_loop_fence(loop_text: str) -> str:
     while inner and not inner[-1].strip():
         inner.pop()
     return "\n".join(inner)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — emit_dispatch_prompt: every remaining dispatch class becomes
+#            script-emitted.  Reuses the same template grammar and binding/
+#            residue machinery as emit_cycle_prompt — no reimplementation.
+#
+# Six classes (Phase 3); 'hardening' is deferred to Phase 4.
+# Model assignments derive from the SOURCE COMPONENTS (not the SPEC.md, which
+# pins no per-class models):
+#   apply-resolution → opus  (blocked-resolution.md dispatches its apply subagent
+#                             as Opus: judgment work — enacting Add-a-phase,
+#                             Defer, or custom operator directives)
+#   recovery / coherence-recovery → sonnet (bounded mechanical reconciliation)
+#   input-audit / investigation / needs-runtime-redispatch → opus (judgment)
+# ---------------------------------------------------------------------------
+
+# The ordered tuple of Phase 3 dispatch classes (Phase 4 will append 'hardening').
+DISPATCH_CLASSES: tuple[str, ...] = (
+    "apply-resolution",
+    "input-audit",
+    "investigation",
+    "recovery",
+    "coherence-recovery",
+    "needs-runtime-redispatch",
+)
+
+# Model to use when dispatching each class.  'opus' for judgment work;
+# 'sonnet' for bounded mechanical work.  Source: the dispatch SOURCE COMPONENTS
+# (blocked-resolution.md, decision-resume.md, investigation-dispatch.md, etc.).
+DISPATCH_MODELS: dict[str, str] = {
+    "apply-resolution":        "opus",    # blocked-resolution.md: Opus apply subagent
+    "input-audit":             "opus",
+    "investigation":           "opus",
+    "recovery":                "sonnet",
+    "coherence-recovery":      "sonnet",
+    "needs-runtime-redispatch": "opus",
+}
+
+# Regex to extract @requires keys from the first non-empty line of a dispatch
+# template, e.g.: <!-- @requires item_id,spec_path,sentinel_path -->
+_DISPATCH_REQUIRES_RE = re.compile(r"^<!--\s*@requires\s+([a-z0-9_,]+)\s*-->")
+
+
+def emit_dispatch_prompt(
+    cls: str,
+    context: dict,
+    *,
+    pipeline: str,
+    cloud: bool = False,
+    template_dir: "Path | None" = None,
+) -> dict:
+    """Assemble a fully-bound dispatch prompt for one of the Phase 3 dispatch
+    classes.
+
+    Unlike ``emit_cycle_prompt`` (which assembles cycle prompts from state-script
+    probe output), this assembler is called with an *explicit* context dict that
+    the orchestrator builds from probe output + sentinel paths.  The matched
+    template lives at ``dispatch-<cls>.md`` inside the same
+    ``lazy-batch-prompts/`` directory used by the cycle emitter.
+
+    The template grammar is identical to ``cycle-base-prompt.md``:
+      - First non-empty line MUST be ``<!-- @requires key1,key2,... -->``
+        declaring the *class-specific* context keys this template needs.
+      - Subsequent lines use ``<!-- @section name pipelines=... modes=... -->``
+        markers and ``{lower_snake}`` token placeholders.
+
+    Standard pipeline tokens are always bound (same set as emit_cycle_prompt):
+      {item_label}, {pipeline_phrase}, {receipt_name}, {mark_pseudo},
+      {forbidden_status}
+    Context dict values are overlaid on top (context wins on collision).
+
+    Refusal semantics (mirrors emit_cycle_prompt — never half-binds):
+      - Missing @requires key in context → refused, names the first missing key.
+      - Unbound {token} residue after binding → refused, names the residue.
+      - Unknown cls → ValueError (not a refusal dict — caller error).
+
+    Args:
+        cls: dispatch class name.  Must be in DISPATCH_CLASSES or DISPATCH_MODELS
+             (Phase 4 will add 'hardening' before that class's template exists).
+        context: dict of class-specific token values supplied by the caller.
+        pipeline: ``"feature"`` or ``"bug"`` — section filtering + standard tokens.
+        cloud: ``True`` → mode ``"cloud"``; ``False`` → mode ``"workstation"``.
+        template_dir: override the template directory (for tests and Phase 4).
+                      Defaults to the same ``lazy-batch-prompts/`` dir used by
+                      emit_cycle_prompt.
+
+    Returns:
+        On success: ``{"ok": True, "prompt": <str>, "model": <"opus"|"sonnet">}``
+        On refusal: ``{"ok": False, "refused": <reason_str>}``
+
+    Raises:
+        ValueError: when ``cls`` is not a known dispatch class.
+    """
+    # --- Unknown-class guard (caller error — must raise, not refuse) -----------
+    # Combine DISPATCH_CLASSES + DISPATCH_MODELS keys so Phase 4 can extend
+    # DISPATCH_MODELS before or after appending to DISPATCH_CLASSES without a gap.
+    all_known = set(DISPATCH_CLASSES) | set(DISPATCH_MODELS.keys())
+    if cls not in all_known:
+        raise ValueError(
+            f"emit_dispatch_prompt: unknown dispatch class {cls!r}. "
+            f"Known classes: {sorted(all_known)}"
+        )
+
+    if template_dir is None:
+        template_dir = _default_cycle_template_dir()
+
+    mode = "cloud" if cloud else "workstation"
+
+    # --- Read the dispatch template -------------------------------------------
+    tpl_path = template_dir / f"dispatch-{cls}.md"
+    try:
+        tpl_text = tpl_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "refused": f"cannot read dispatch-{cls}.md: {exc}"}
+
+    # --- Parse @requires from line 1 ------------------------------------------
+    # The first non-empty line must declare the class-specific required keys.
+    first_line = next((ln for ln in tpl_text.splitlines() if ln.strip()), "")
+    m = _DISPATCH_REQUIRES_RE.match(first_line)
+    if not m:
+        return {
+            "ok": False,
+            "refused": (
+                f"dispatch-{cls}.md: first non-empty line must be "
+                f"'<!-- @requires key1,key2,... -->' (only [a-z0-9_,] chars); "
+                f"got: {first_line!r}"
+            ),
+        }
+    requires_keys = [k.strip() for k in m.group(1).split(",") if k.strip()]
+
+    # --- Validate that all @requires keys are present in context ---------------
+    for key in requires_keys:
+        if key not in context:
+            return {
+                "ok": False,
+                "refused": (
+                    f"dispatch-{cls}.md requires context key {key!r} which is "
+                    f"absent from the supplied context dict. "
+                    f"All @requires keys: {requires_keys}"
+                ),
+            }
+
+    # --- Parse sections (reuse the same machinery as emit_cycle_prompt) --------
+    sections = _parse_cycle_template(tpl_text)
+
+    # --- Section selection by pipeline + mode (no skills= filtering needed) ---
+    selected: list[str] = []
+    for sec in sections:
+        attrs = sec["attrs"]
+        pipelines = _csv_set(attrs.get("pipelines"))
+        modes = _csv_set(attrs.get("modes"))
+        if pipeline not in pipelines:
+            continue
+        if mode not in modes:
+            continue
+        if sec["content"]:
+            selected.append(sec["content"])
+
+    prompt = "\n\n".join(selected)
+
+    # --- Build the binding map -------------------------------------------------
+    # Standard pipeline tokens come from the shared helper; context dict values
+    # are overlaid on top (context wins on collision — the caller provides the
+    # class-specific tokens; standard tokens above are the fallback defaults).
+    bindings: dict[str, str] = _standard_dispatch_bindings(pipeline)
+    for key, value in context.items():
+        bindings[key] = str(value) if value is not None else ""
+
+    # --- Bind all tokens -------------------------------------------------------
+    for token, value in bindings.items():
+        prompt = prompt.replace("{" + token + "}", value)
+
+    # --- Residue guard: any surviving {lower_snake_or_digit} → refuse ----------
+    residue = _PROMPT_RESIDUE_RE.findall(prompt)
+    if residue:
+        seen = _dedup_residue(residue)
+        return {
+            "ok": False,
+            "refused": (
+                f"dispatch-{cls}.md: unbound token(s) after binding: "
+                + ", ".join(seen)
+                + " — either add to @requires or remove from the template"
+            ),
+        }
+
+    # --- Return assembled prompt + model assignment ----------------------------
+    model = DISPATCH_MODELS.get(cls, "opus")
+    return {"ok": True, "prompt": prompt, "model": model}
 
 
 # ---------------------------------------------------------------------------
