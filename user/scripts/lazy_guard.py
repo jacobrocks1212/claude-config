@@ -125,7 +125,11 @@ _CORRECTIVE_RECIPE = (
     "dispatch prompt not script-emitted this turn — "
     "re-run the Step 1a probe (`--emit-prompt`) and dispatch its `cycle_prompt` verbatim; "
     "if the probe refuses or no route exists, dispatch the hardening stage via "
-    "`--emit-dispatch hardening`"
+    "`--emit-dispatch hardening`; "
+    "additionally, this denial itself must also be routed to the hardening stage "
+    "(`--emit-dispatch hardening`, trigger_kind=validate-deny) per the inline-unbounded cadence "
+    "(locked decision 4: a hand-composed prompt reaching the guard is a harness gap — "
+    "inline, unbounded, no dedup)"
 )
 
 _HARDENING_DEPTH_CAP_REASON = (

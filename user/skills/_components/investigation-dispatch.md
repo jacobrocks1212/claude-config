@@ -2,11 +2,11 @@
 
 **Why this component exists.** Root-cause investigation is a dispatched cycle, not orchestrator
 inline work and not a `lazy-state` cycle emission. This is the single dispatch template for it —
-the same **ad-hoc dispatch class** as blocked-resolution's apply-resolution subagent and the
-Step 1e.4a recovery dispatch: the orchestrator fills the placeholders from state-script JSON +
-its own context and dispatches directly. The state scripts are deliberately untouched (no
-routing step, no `--emit-prompt` section); dispatch is orchestrator judgment under the three
-triggers below.
+the same **registered dispatch class** as blocked-resolution's apply-resolution subagent and the
+Step 1e.4a recovery dispatch: the orchestrator emits via `--emit-dispatch investigation` (which
+registers the prompt in the prompt registry so the validate-deny guard will allow it) and
+dispatches the returned `dispatch_prompt` VERBATIM. Dispatch is orchestrator judgment under
+the three triggers below.
 
 ### Triggers (when an orchestrator dispatches this)
 
@@ -39,18 +39,29 @@ produced a wrong-variant fix.)
 
 ### Dispatch
 
-```
-Agent({
-  description: "investigate: {feature_name}",
-  subagent_type: "general-purpose",
-  model: "opus",
-  prompt: <the prompt below, placeholders filled>
-})
+**Operative path — `--emit-dispatch investigation` (registry-validated, guard allows it).**
+The orchestrator emits the dispatch via the script and uses the returned `dispatch_prompt`
+**VERBATIM**. Hand-composing the prompt bypasses the registry and will be denied by the
+validate-deny guard on any marked run:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py \
+  --emit-dispatch investigation \
+  --context item_name="{feature_name}" \
+  --context spec_path="{spec_path}" \
+  --context symptom="{symptom}" \
+  --context trigger="{trigger}" \
+  --context inherited_hypotheses="{inherited_hypotheses or '— none —'}" \
+  --context item_id="{feature_id}" \
+  --context cwd="{cwd}"
 ```
 
-Prompt template (placeholders from state-script JSON — `{feature_id}`, `{feature_name}`,
-`{spec_path}`, `{cwd}`, `{work_branch}` — and orchestrator context — `{trigger}`, `{symptom}`,
-`{inherited_hypotheses}`):
+Use the returned `dispatch_prompt` **VERBATIM** as the `Agent` `prompt:` and `dispatch_model`
+as the `model:`. The emit registers the prompt in the prompt registry; the guard will allow it.
+
+**Subagent-contract reference (read-only — do NOT reconstruct or hand-fill this as a dispatch
+prompt; use `--emit-dispatch investigation` above).**
+The emitted prompt instructs the subagent to:
 
 ```
 You are running an on-demand root-cause INVESTIGATION cycle for the autonomous

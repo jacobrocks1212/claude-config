@@ -149,8 +149,32 @@ procedure (fetch → ff-merge → halt-on-diverge). Divergence halt message uses
 
 See `~/.claude/skills/_components/adhoc-enqueue.md`
 
-After the enqueue returns, continue to Step 1. The bug queue carries no pre-loop ingest step
+After the enqueue returns, continue to Step 0.55. The bug queue carries no pre-loop ingest step
 (N/A to bugs).
+
+---
+
+## Step 0.55: Write the run marker (IMMEDIATELY before the T1 banner / loop entry)
+
+After Step 0.45 (or Step 0.4 if `--adhoc` was absent) completes — and before printing the T1 banner or entering the Step 1 loop — write the run marker:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --run-start --max-cycles {max_cycles} \
+  --repo-root {cwd}
+```
+
+**What this does.** The marker (`~/.claude/state/lazy-run-marker.json`) is the single on/off switch for the inject + validate-deny hooks. While the marker is present:
+- The inject hook (`lazy-route-inject.sh`) fires on every UserPromptSubmit turn, runs the full probe form, and injects the route (`LAZY-ROUTE (hook-injected, turn N): …`) into the model's context via `additionalContext`.
+- The validate-deny guard (`lazy-dispatch-guard.sh`) checks every `Agent` dispatch against the prompt registry; an unregistered prompt is denied with a corrective recipe.
+
+Interactive sessions (no marker) are **completely untouched** — both hooks exit instantly on the `test -f` fast path. The marker is script-owned: `--run-start` writes it; `--run-end` deletes it. The orchestrator never hand-writes the marker file.
+
+**Session state pinned in the marker:** `pipeline=bug`, `cloud=false`, `repo_root`, `max_cycles`, `session_id` (bound on first hook firing), `nonce_seed`. Counters (`forward_cycles`, `meta_cycles`) are persisted in the marker from this point forward — the inject hook reads them without needing CLI flags.
+
+**`--run-end` is MANDATORY on every terminal/halt path** — see §1c.6 for the enumeration. A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades.
+
+If `--run-start` fails (script error), surface a T6 `⚠` and STOP before printing the banner — a run with no marker degrades to pre-Phase-5 behavior (no hook enforcement) but should not silently proceed without the operator knowing enforcement is off.
 
 ---
 
@@ -160,12 +184,19 @@ Repeat:
 
 ### 1a. Run bug-state.py
 
+**LAZY-ROUTE banner check (FIRST — before deciding to run the probe).** The inject hook fires on every UserPromptSubmit turn while the run marker is present. When the hook fires, it runs the full probe form itself and injects the result into the turn context as a single `additionalContext` string:
+
+```
+LAZY-ROUTE (hook-injected, turn N): {"feature_id": "...", "sub_skill": "...", "cycle_prompt": "...", "cycle_model": "opus", ...} nonce=<hex-value>
+```
+
+On post-compaction re-entry, a `POST-COMPACTION RE-ENTRY:` paragraph follows the nonce. If the inject hook errored, a `HOOK_ERROR: <error text>` suffix appears at the end. **If the current turn carries this banner**, consume it directly — extract `feature_id`/`bug_id`, `sub_skill`, `cycle_prompt`, `cycle_model`, and all other probe fields from the injected JSON. **Do NOT run another `bug-state.py` probe on this turn.** Re-probing advances the persisted counters TWICE for one logical cycle — a protocol violation. If no LAZY-ROUTE banner is present, run the probe as below.
+
 ```bash
 python3 ~/.claude/scripts/bug-state.py
 ```
 
-If the script exits non-zero, surface the error, PushNotification, print the final batch report
-(Step 2), and STOP.
+If the script exits non-zero, run `python3 ~/.claude/scripts/bug-state.py --run-end` (idempotent), surface the error, PushNotification, print the final batch report (Step 2), and STOP.
 
 Parse the JSON output. Extract: `feature_id` (used as `bug_id`), `feature_name` (used as
 `bug_name`), `spec_path`, `current_step`, `sub_skill`, `sub_skill_args`, `terminal_reason`,
@@ -177,8 +208,10 @@ the JSON in a single invocation:
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py --repeat-count --emit-prompt --probe \
-  --forward-cycles {forward_cycles} --meta-cycles {meta_cycles} --max-cycles {max_cycles}
+  --max-cycles {max_cycles}
 ```
+
+The `--forward-cycles` and `--meta-cycles` flags are NO LONGER passed on probe invocations. The marker persists the counters from `--run-start`; the inject hook and probe read them from the marker without needing CLI flags. Passing them would override the marker's persisted state with stale in-memory values.
 
 These flags are purely additive (base JSON fields unchanged) — see
 `~/.claude/skills/lazy-batch/SKILL.md` Step 1a for their semantics, INCLUDING probe hygiene:
@@ -193,8 +226,7 @@ This catches "productive-looking" oscillation (each cycle commits → HEAD advan
 streak resets while routing never leaves the step). Full semantics: `/lazy-batch` Step 1a.
 The **investigation triggers, inline-diagnosis budget (~8 own diagnostic tool calls per issue),
 and no-narrative-as-fact rule apply identically** to the bug pipeline — see `/lazy-batch` Step 1a
-and `~/.claude/skills/_components/investigation-dispatch.md` (the bug id rides in `feature_id`;
-the artifact lives in the bug's `docs/bugs/<id>/` dir). `--emit-prompt` folds the
+and `~/.claude/skills/_components/investigation-dispatch.md` (the bug id rides in `feature_id`; the artifact lives in the bug's `docs/bugs/<id>/` dir; the orchestrator emits the dispatch via `python3 ~/.claude/scripts/bug-state.py --emit-dispatch investigation --context item_name=… --context spec_path=… --context symptom=… --context trigger=… --context inherited_hypotheses=… --context item_id=… --context cwd=…` and dispatches `dispatch_prompt` VERBATIM). `--emit-prompt` folds the
 script-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assembly failure) into
 the JSON, with the `pipelines=bug` sections selected and the bug tokens bound; SHOULD be passed on
 every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consumes it verbatim.
@@ -225,16 +257,16 @@ If `terminal_reason` is set:
   Step 1i — re-print the gap and `AskUserQuestion` the path (reopen & re-validate / grandfather
   receipt via `bug-state.py --backfill-receipts` / defer & continue / halt). Do NOT auto-flip.
 - **`stale_upstream`**: upstream item changed since materialize. See Step 1i.
-- **`all-bugs-fixed`**: PushNotification `"ALL BUGS FIXED — queue cleared after {forward_cycles} forward + {meta_cycles} meta /lazy-bug-batch cycle(s)."`, print final batch report, STOP.
-- **`all-remaining-deferred`**: every open bug has `DEFERRED.md` (a deliberate park). PushNotification with `notify_message`, print final batch report, STOP. (Not routed to Step 1i — re-include a bug by deleting its `DEFERRED.md`.)
+- **`all-bugs-fixed`**: Run `python3 ~/.claude/scripts/bug-state.py --run-end`, then PushNotification `"ALL BUGS FIXED — queue cleared after {forward_cycles} forward + {meta_cycles} meta /lazy-bug-batch cycle(s)."`, print final batch report, STOP.
+- **`all-remaining-deferred`**: every open bug has `DEFERRED.md` (a deliberate park). Run `--run-end`, then PushNotification with `notify_message`, print final batch report, STOP. (Not routed to Step 1i — re-include a bug by deleting its `DEFERRED.md`.)
 - **`queue-missing`**: `docs/bugs/queue.json` missing (the queue is optional; on-disk bugs are
-  auto-discovered — informational). PushNotification with `notify_message`, print final batch
-  report, STOP.
-- **`cloud-queue-exhausted`**: treat as `all-bugs-fixed` defensively.
-- **`device-queue-exhausted`**: remaining bugs carry `DEFERRED_REQUIRES_DEVICE.md`. PushNotification
-  with `notify_message`, print final batch report, STOP. Resume on a real-device host.
+  auto-discovered — informational). Run `--run-end`, then PushNotification with `notify_message`,
+  print final batch report, STOP.
+- **`cloud-queue-exhausted`**: treat as `all-bugs-fixed` defensively (run `--run-end` first).
+- **`device-queue-exhausted`**: remaining bugs carry `DEFERRED_REQUIRES_DEVICE.md`. Run `--run-end`,
+  then PushNotification with `notify_message`, print final batch report, STOP. Resume on a real-device host.
 - **`scoped-id-not-found`** (when `--bug-id` was supplied): the requested bug does not exist in
-  the queue. PushNotification with `notify_message`, print final batch report, STOP.
+  the queue. Run `--run-end`, then PushNotification with `notify_message`, print final batch report, STOP.
 
 > **Note — no `needs-spec-input` in the bug pipeline.** `bug-state.py` does not emit this
 > terminal. Step 1i's matrix covers only `completion-unverified` and `stale_upstream` for bugs.
@@ -244,6 +276,10 @@ If `terminal_reason` is set:
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 1c. Bug-pipeline binding: message uses
 `lazy-bug-batch`.
+
+```bash
+python3 ~/.claude/scripts/bug-state.py --run-end
+```
 
 ```
 PushNotification({ message: "lazy-bug-batch hit max-cycles ({max_cycles}). Restart from a fresh session to continue." })
@@ -259,6 +295,9 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
 2. **halt** — on every terminal/halt: `all-bugs-fixed`, `all-remaining-deferred`,
    `queue-missing`, `BLOCKED` halt-for-manual, `NEEDS_INPUT` halt, `max-cycles`, `meta-cap`,
    `device-queue-exhausted`, script-error, and any future obstacle terminal.
+
+   **`--run-end` is MANDATORY before EVERY terminal/halt PushNotification.** On every path listed above, call `python3 ~/.claude/scripts/bug-state.py --run-end` BEFORE the PushNotification fires. `--run-end` deletes the run marker AND the prompt registry (all run-scoped enforcement state). A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades. The call is idempotent — if the marker is already absent, `--run-end` exits cleanly.
+
 3. **flush** — message: `"lazy-bug-batch flush — {N} parked decision(s) ready for your input"`.
 4. **run-end** — every run termination.
 
@@ -311,9 +350,17 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   **Mechanical third gate inside `--apply-pseudo __mark_fixed__`:** the script auto-flips
   all-ticked phases to Complete and REFUSES (`refused:<reason>`, zero writes) if any phase
   retains an unchecked box (verification rows included) or a non-Complete/Superseded Status. On
-  `ok: false` + this refusal, do NOT retry blindly — route a corrective coherence cycle
-  (dispatch a cycle subagent to reconcile PHASES.md honestly — tick-with-evidence or re-scope,
-  never blind-tick — then return to Step 1a), exactly as a Gate-1 halt routes.
+  `ok: false` + this refusal, do NOT retry blindly — route a corrective coherence cycle. Emit the dispatch via the script:
+  ```bash
+  python3 ~/.claude/scripts/bug-state.py \
+    --emit-dispatch coherence-recovery \
+    --context item_name="{bug_name}" \
+    --context spec_path="{spec_path}" \
+    --context gate_output="<the --apply-pseudo refusal reason string>" \
+    --context item_id="{bug_id}" \
+    --context cwd="{cwd}"
+  ```
+  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The subagent reconciles PHASES.md honestly (tick-with-evidence or re-scope, never blind-tick) then returns to Step 1a. Exactly as a Gate-1 halt routes.
   The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
   After the script returns, the orchestrator runs ONE more script call — the **archive
   mechanics** are also script-owned per `~/.claude/skills/_components/mark-fixed-archive.md`:
@@ -350,7 +397,7 @@ fall through to Step 1d.
 
 **Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`, `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics), AND `~/.claude/skills/_components/completeness-policy.md` (the D7 standing policy — its auto-resolve rules likewise survive compaction by re-read, not memory). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt envelope) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch is what prevents that.
 
-**Post-compaction re-entry protocol (HARD — the first post-compaction action is NEVER a dispatch; mirrored from `/lazy-batch` Step 1d).** Compaction is the measured protocol cliff (2026-06-11 run: counters never recovered, probes stopped, prompts went hand-authored post-boundary). On the first turn after any compaction boundary, BEFORE any `Agent` call: (1) re-read Step 1a of this SKILL plus the three components named above; (2) reconstruct the session state — `forward_cycles`, `meta_cycles`, `max_cycles`, `prev_cycle_signature`, and `cycle_log` — from the surviving context (T1 banner budget line, T2/T4 headings, `done` lines); where ambiguous, re-derive conservatively from on-disk evidence (`git log` since the run-start commit + sentinel mtimes) and record the reconstruction in a single T6 `⚠` line; (3) run the FULL Step 1a probe form (`bug-state.py --repeat-count --emit-prompt --probe --forward-cycles … --meta-cycles … --max-cycles …`) and proceed only from its output. Dispatching from a pre-compaction probe held in memory, or from a hand-reconstructed prompt, is a contract violation.
+**Post-compaction re-entry protocol (HARD — the first post-compaction action is NEVER a dispatch; mirrored from `/lazy-batch` Step 1d).** Compaction is the measured protocol cliff (2026-06-11 run: counters never recovered, probes stopped, prompts went hand-authored post-boundary). On the first turn after any compaction boundary, BEFORE any `Agent` call: (1) re-read Step 1a of this SKILL plus the three components named above; (2) the session counters (`forward_cycles`, `meta_cycles`) are persisted in the run marker — the post-compaction probe reads them from the marker directly, so no manual reconstruction is needed. As a cross-check, verify the surviving T1/T2/T4 context broadly agrees with the marker's counters; if there is a discrepancy, trust the marker and record any divergence in a single T6 `⚠` line; (3) run the FULL Step 1a probe form (`bug-state.py --repeat-count --emit-prompt --probe --max-cycles …`) — note: `--forward-cycles`/`--meta-cycles` are NOT passed (the marker owns the counters); proceed only from its output. Dispatching from a pre-compaction probe held in memory, or from a hand-reconstructed prompt, is a contract violation.
 
 **Long-build ownership (harness-tracked).** Any build or test that may exceed a single subagent turn is **orchestrator-owned**: start it with `Bash` `run_in_background: true` from this (the orchestrator) session and track it via the harness — NEVER background it from inside a dispatched cycle subagent, whose process tree is torn down when its turn ends (a `tauri build` backgrounded that way once silently vanished). Before committing to a 20–40 min packaged `tauri build`, run `cargo check --release` first to catch compile errors in minutes. Full rule: `.claude/skill-config/long-build-ownership.md`. This is `Bash`-only process ownership — it does not expand the orchestrator's sentinel-only `Write`/`Edit` scope (HARD CONSTRAINT 1 holds).
 
@@ -395,8 +442,17 @@ when the bug's PHASES.md carries `**MCP runtime:** not-required`, skip the boot 
 mcp-test prompt VARIANT (runtime-up vs no-runtime) is script-owned** — `bug-state.py --emit-prompt`
 reads the same PHASES.md `**MCP runtime:**` line and selects the matching section, so `cycle_prompt`
 already carries the correct variant; the orchestrator does NOT swap a runtime block by hand (mirror of
-lazy-batch Step 1d.0 step 4). Honor the `NEEDS_RUNTIME` single-line return with a boot +
-`(opus, recovery)` re-dispatch. The NO FIRE-AND-FORGET clause (a resultless return is a violation)
+lazy-batch Step 1d.0 step 4). Honor the `NEEDS_RUNTIME` single-line return with a boot + registry-validated re-dispatch (emit via the script):
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch needs-runtime-redispatch \
+  --context item_name="{bug_name}" \
+  --context spec_path="{spec_path}" \
+  --context original_cycle_prompt_note="mcp-test cycle found MCP-testable surface; plan declared not-required" \
+  --context item_id="{bug_id}" \
+  --context cwd="{cwd}"
+```
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. Tag the re-dispatch `disp` line `(opus, recovery)`. The NO FIRE-AND-FORGET clause (a resultless return is a violation)
 carries over — the bug-pipeline token bindings (`{item_label}`/`{item_name}`/`{item_id}` =
 Bug/`{bug_name}`/`{bug_id}`) are bound by the script, not substituted in any orchestrator message.
 
@@ -410,7 +466,7 @@ inclusion and the opus/sonnet selection are SCRIPT-OWNED** (driven by the persis
 appended and `cycle_model` already flipped to `"sonnet"` when `repeat_count >= 2`. The in-session
 `prev_cycle_signature == (feature_id, sub_skill, sub_skill_args, current_step)` check is RETAINED as
 the orchestrator's cross-check (it still drives the T2 `(sonnet, loop-resolution)` `disp` tag); if it
-fires but `cycle_model` came back `"opus"`, re-run the probe WITH `--repeat-count --emit-prompt`
+fires but `cycle_model` came back `"opus"`, re-run the probe WITH `--repeat-count --emit-prompt --max-cycles {max_cycles}` (no `--forward-cycles`/`--meta-cycles` — counters live in the marker)
 rather than hand-appending the block.
 
 Dispatch:
@@ -424,6 +480,50 @@ Agent({
 })
 ```
 
+#### 1d.1. Denial recovery (validate-deny guard + hardening dispatch)
+
+Mirrors `/lazy-batch` Step 1d.1 exactly, with `bug-state.py` in place of `lazy-state.py` and `bug_id`/`bug_name` in place of `feature_id`/`feature_name`:
+
+**Trigger 1 — validate-deny (denied dispatch):**
+1. Re-run `python3 ~/.claude/scripts/bug-state.py --repeat-count --probe --emit-prompt --max-cycles {max_cycles}`. The fresh `cycle_prompt` carries a newly registered nonce.
+2. Dispatch the fresh `cycle_prompt` **VERBATIM**.
+3. **IN ADDITION**, on EVERY guard denial emit a hardening dispatch (locked decision 4: a denial means a hand-composed prompt reached the guard, which is a harness gap by definition — inline, unbounded, no dedup):
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch hardening \
+  --context trigger_kind=validate-deny \
+  --context item_id={bug_id} \
+  --context denied_prompt_summary="<one-line summary of the denied prompt>" \
+  --context denial_reason="<the permissionDecisionReason from the guard>" \
+  --context probe_json="<probe JSON from this turn>" \
+  --context registry_state="<relevant registry entries or 'empty'>" \
+  --context cwd="{cwd}"
+```
+
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The hardening dispatch is emitted REGARDLESS of whether the re-probe dispatch (step 2) succeeds or fails — the denial itself is the trigger. **Depth-cap exception:** a denial OF a hardening dispatch never dispatches another hardening stage (see Depth cap below). If the step-2 re-dispatch is also denied, proceed to trigger 2.
+
+**Trigger 2 — no-route (cycle_prompt_refused / unknown state / marker-state divergence):**
+Emit a hardening dispatch:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch hardening \
+  --context trigger_kind=no-route \
+  --context item_id={bug_id} \
+  --context denied_prompt_summary="<one-line summary>" \
+  --context denial_reason="<cycle_prompt_refused reason or no-route description>" \
+  --context probe_json="<probe JSON from this turn>" \
+  --context registry_state="<relevant registry entries or 'empty'>" \
+  --context cwd="{cwd}"
+```
+
+**Trigger 3 — HOOK_ERROR breadcrumb in an injected banner:** emit hardening dispatch with `trigger_kind=inject-hook-error` and `denial_reason` set to the breadcrumb text.
+
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (`"opus"`). Reference: `~/.claude/skills/_components/hardening-dispatch.md`.
+
+**Depth cap:** if the hardening dispatch is itself denied (depth-1 self-recursion guard), the guard emits a halt reason containing "halt" and "PushNotification". On this denial: run `python3 ~/.claude/scripts/bug-state.py --run-end`; surface `⚠ hardening dispatch denied — depth cap reached; halting run` (T6); PushNotification `"lazy-bug-batch halted — hardening dispatch denied at depth cap; operator review required."`; print final batch report, STOP. Do NOT dispatch a second hardening stage.
+
 ### 1d.5. Post-cycle input audit (Opus — runs only on `spec-bug` and `spec-phases` cycles)
 
 **Skip conditions (bug-pipeline bindings):**
@@ -433,8 +533,23 @@ Agent({
 - The cycle subagent already wrote `NEEDS_INPUT.md` for this bug this cycle (double-fire guard).
 - The cycle subagent returned a hard failure with no SPEC/PHASES delta.
 
-For the full audit dispatch, prompt shape, `audit_concurs` recording, and post-return handling
-see `~/.claude/skills/lazy-batch/SKILL.md` Step 1d.5. Bug-pipeline token substitutions:
+Emit the input-audit dispatch via the script (registry-registered, guard allows it):
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch input-audit \
+  --context item_name="{bug_name}" \
+  --context spec_path="{spec_path}" \
+  --context cycle_kind="{sub_skill}" \
+  --context cycle_summary="{cycle_summary}" \
+  --context cycle_commit_sha="{cycle_commit_sha or HEAD~1}" \
+  --context item_id="{bug_id}" \
+  --context cwd="{cwd}"
+```
+
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys for `--emit-dispatch input-audit` are: `item_name`, `spec_path`, `cycle_kind`, `cycle_summary`, `cycle_commit_sha`, `item_id`, `cwd`.
+
+For post-return handling and `audit_concurs` recording see `~/.claude/skills/lazy-batch/SKILL.md` Step 1d.5. Bug-pipeline token substitutions:
 - `written_by: lazy-batch-input-audit` → `written_by: lazy-bug-batch-input-audit`
 - `feature_id`/`feature_name` → `bug_id`/`bug_name`
 - `next_skill: spec` → `next_skill: spec-bug`
@@ -463,7 +578,17 @@ bindings:
   # /mcp-test cycle (feature-level):
   python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --verify-ledger {spec_path}
   ```
-  Recovery guidance per `failing_check` is identical to lazy-batch's Step 1e 4a.
+  Recovery dispatch (emit-dispatch — registry-registered, guard allows it):
+  ```bash
+  python3 ~/.claude/scripts/bug-state.py \
+    --emit-dispatch recovery \
+    --context item_name="{bug_name}" \
+    --context spec_path="{spec_path}" \
+    --context failure_summary="<failing_check name: <description>>" \
+    --context item_id="{bug_id}" \
+    --context cwd="{cwd}"
+  ```
+  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys for `--emit-dispatch recovery` are: `item_name`, `spec_path`, `failure_summary`, `cwd`, `item_id`.
 - Increment `forward_cycles`. Return to Step 1a.
 
 ### 1f. Research-wait mode
@@ -473,13 +598,30 @@ NOT APPLICABLE to the bug pipeline. `bug-state.py` never emits `needs-research` 
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Meta-cap check (FIRST):** `if meta_cycles >= 2 * max_cycles:` → halt with message
+**Meta-cap check (FIRST):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/bug-state.py --run-end`, then halt with message
 `"lazy-bug-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification, print final batch report, STOP.
 
 **Pipeline binding for the shared handler** — `{SKILL}` = `/lazy-bug-batch`,
 `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{PUSH_RULE}` = workstation (standard push).
 The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`**. The
 per-cycle update block heading uses the two-counter format (Step 3 template).
+
+**Apply-resolution dispatch (emit-dispatch — registry-validated).** When the shared handler instructs you to dispatch the apply-resolution subagent, emit it via the script:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch apply-resolution \
+  --context item_name="{bug_name}" \
+  --context spec_path="{spec_path}" \
+  --context sentinel_path="{spec_path}/NEEDS_INPUT.md" \
+  --context resolution_summary="<one-line summary of the chosen resolution>" \
+  --context resolution_kind="needs-input" \
+  --context chosen_path="<the option label the operator chose>" \
+  --context item_id="{bug_id}" \
+  --context cwd="{cwd}"
+```
+
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`.
 
 See `~/.claude/skills/_components/decision-resume.md`
 
@@ -510,11 +652,28 @@ See `~/.claude/skills/_components/parked-flush.md`
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-**Meta-cap check (FIRST):** same as Step 1g meta-cap check, using `lazy-bug-batch` in message.
+**Meta-cap check (FIRST):** same as Step 1g meta-cap check (run `--run-end` before PushNotification + final report).
 
 **Pipeline binding** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`,
 `{ITEM}` = bug, `{SPEC_ROOT}` = `docs/bugs`, `{ADD_PHASE}` = `/add-phase` (or `/plan-bug` if
 PHASES.md is absent), `{PUSH_RULE}` = workstation (standard push). Increment `meta_cycles`.
+
+**Apply-resolution dispatch (emit-dispatch — registry-validated).** When the shared handler instructs you to dispatch the apply-resolution subagent, emit it via the script:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch apply-resolution \
+  --context item_name="{bug_name}" \
+  --context spec_path="{spec_path}" \
+  --context sentinel_path="{spec_path}/BLOCKED.md" \
+  --context resolution_summary="<one-line summary of the chosen resolution>" \
+  --context resolution_kind="blocked" \
+  --context chosen_path="<the option label the operator chose>" \
+  --context item_id="{bug_id}" \
+  --context cwd="{cwd}"
+```
+
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`.
 
 See `~/.claude/skills/_components/blocked-resolution.md`
 
@@ -522,7 +681,7 @@ See `~/.claude/skills/_components/blocked-resolution.md`
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
-**Meta-cap check (FIRST):** same as Step 1g meta-cap check.
+**Meta-cap check (FIRST):** same as Step 1g meta-cap check (run `--run-end` before PushNotification + final report).
 
 Bug-pipeline terminals routed here: `completion-unverified` and `stale_upstream`. (`bug-state.py`
 does NOT emit `needs-spec-input`.) Increment `meta_cycles`.
@@ -650,3 +809,21 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
 - Commit policy is delegated to the cycle subagent (which follows `.claude/skill-config/commit-policy.md` or the standard pattern).
 - **No research/ingest steps.** Unlike `/lazy-batch`, this skill has no Step 0.5 pre-loop ingest check, no `needs-research` halt path, no `--allow-research-skip` flag, and no in-session resume protocol for research uploads. Bugs do not undergo Gemini deep research.
 - **Coupling rule:** changes to `/lazy-batch`'s shared algorithm (hard constraints, cycle loop shape, resolution modes, pseudo-skill post-actions, cycle output discipline) must be mirrored here unless bug-pipeline-scoped per the differences table above.
+- **Hook machinery (Phase 5 — turn-routing-enforcement).** `--run-start` (Step 0.55, uses `bug-state.py`) activates the inject + validate-deny hooks scoped to the run. `--run-end` (every terminal path, §1c.6) deletes the marker + registry. The hardening dispatch (`--emit-dispatch hardening`) is the self-repair signal — depth hard-capped at 1. All non-cycle dispatch classes are emitted via `--emit-dispatch <class>` and dispatched VERBATIM.
+
+<!-- COUPLED-PAIR DIFF (lazy-bug-batch vs lazy-batch / lazy-batch-cloud) — Phase 5 turn-routing-enforcement
+     lazy-bug-batch differences from lazy-batch:
+       - State script: bug-state.py (not lazy-state.py)
+       - Spec root: docs/bugs/ (not docs/features/)
+       - Entity vocab: bug_id/bug_name (not feature_id/feature_name)
+       - Terminal success: all-bugs-fixed (not all-features-complete)
+       - Completion receipt: FIXED.md / __mark_fixed__ (not COMPLETED.md / __mark_complete__)
+       - Step 0.55 marker: pipeline=bug (not pipeline=feature)
+       - No Step 0.5 pre-loop ingest (bugs have no research)
+       - No --allow-research-skip, no needs-research, no queue-blocked-on-research
+       - all-remaining-deferred terminal (bugs only)
+       - scoped-id-not-found terminal via --bug-id
+     Structurally identical to lazy-batch for Changes A–G (hook activation, run-end on terminals,
+       LAZY-ROUTE banner consumption, denial recovery, emit-dispatch dispatch sites,
+       post-compaction counter from marker, coupled-pair diff comment). -->
+
