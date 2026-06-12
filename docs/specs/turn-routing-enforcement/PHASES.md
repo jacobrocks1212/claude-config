@@ -433,6 +433,60 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 
 ---
 
+### Phase 8: Concurrent-session safety — non-destructive marker staleness, routed (not surfaced) hardening debt, full-probe consumption
+
+**Scope:** Close the three gaps exposed live on 2026-06-12 when an interactive session ran concurrently with a marked `/lazy-batch 50` run (AlgoBooth session `e076ed30`): (1) `read_run_marker` staleness path B is delete-on-read, so the interactive session's inject hook DELETED the live run's marker at ~14:53Z, silently disarming enforcement mid-run; (2) Phase 7's `pending_hardening` probe field was surfaced but the orchestrator piped probe JSON through a field-extractor and dispatched a forward route over live debt — surfacing is not routing; (3) Phase 7's emission-time ledger ack would let repeated emissions drain debt without any hardening dispatch occurring. Phase-count note: ratio (9−6)/6 = 0.50, exactly at the circuit-breaker boundary (≤ 0.50 proceeds); Phases 7–8 are operator-directed hardening rounds consuming live-run audit evidence, not corrective drift.
+
+**Validated Assumptions (Phase 8 additions):**
+
+| assumption | how-confirmed | evidence |
+|---|---|---|
+| Path B (session mismatch) deletes a LIVE run's marker when a concurrent session's hook fires | runtime | 2026-06-12 ~14:53Z: marker bound to `e076ed30` absent from state dir after interactive-session inject firings; `read_run_marker` docstring "both cause delete-on-read" |
+| Orchestrators filter probe JSON through extractors (so a surfaced field can be invisible) | runtime | session `e076ed30` L158: probe piped to `python3 -c "...print(d['cycle_model'])..."` while `pending_hardening: 1` was live |
+| Registry entries carry `class` + `item_id` (guard can identify a hardening-class allow for ack-on-consume) | runtime | live registry inspection 2026-06-12: entry keys `['class','consumed','emitted_at','item_id','nonce','prompt_sha256']` |
+| Mid-run script edits are safe for the degraded in-flight run | code-provable (no runtime smell: all new behavior is marker-gated and that run's marker is already gone; scripts are re-exec'd per call) | `lazy_core.py` marker-gating pattern (Phases 1/7) |
+
+**Interface contract:**
+- `read_run_marker` path B (caller session_id ≠ bound marker session_id): return `None` WITHOUT deleting — the marker stays on disk for the owning session. Path A (age > 24h) and corrupt-file handling keep delete-on-read. Inject/guard inherit: a non-owner session sees no marker (no banner, fast-path allow) but never destroys the owner's run state.
+- Probe debt routing (marker-gated AND debt-gated): when `pending_hardening > 0`, the probe WITHHOLDS the forward route — no `cycle_prompt` emission/registration — and emits `route_overridden_by: "pending-hardening-debt"` plus `hardening_emit_command`: a pre-composed `--emit-dispatch hardening` command string with `--context` bindings auto-derived from the OLDEST unacked ledger entry (`trigger_kind=validate-deny`, `denied_prompt_summary`=prompt_head, `denial_reason`=reason_head, `item_id`=current feature, `probe_json`=compact summary, `registry_state`=summary or `empty`, `cwd`). A `⚠ pending_hardening: N — forward route withheld` line goes to STDERR (stdout JSON stays parseable for the inject hook and any extractor — which now fails loudly on the missing `cycle_prompt` key instead of silently proceeding).
+- Ack moves from emission-time to **guard-allow-time**: `--emit-dispatch hardening` no longer acks; instead `lazy_guard.py`, on ALLOWING a dispatch whose matched registry entry has `class == "hardening"`, acks the oldest unacked ledger entry (best-effort, fail-open). Debt clears only when a hardening dispatch actually reaches execution.
+- Prose (×3 mirrored): Step 1a consumes the FULL probe JSON — piping probe output through field-extractors is banned; `route_overridden_by`, when present, MUST be honored before any forward dispatch.
+
+**Deliverables:**
+- [ ] **WU-8.1 Non-destructive session-mismatch:** `read_run_marker` path B returns None without deletion; Phase 1 tests pinning delete-on-read-B revised; new tests: non-owner read leaves file intact + owner still reads it afterward; age-stale and corrupt-file deletion unchanged; inject/guard comments updated.
+- [ ] **WU-8.2 Routed hardening debt + guard-allow ack:** probe withholds forward route per the interface contract; emission-time ack removed (Phase 7 revision); guard acks on hardening-class allow; `bug-state.py` mirrored.
+- [ ] **WU-8.3 Full-probe consumption:** stderr `⚠` debt line; skill prose (×3): no field-extractor piping, honor `route_overridden_by`.
+- [ ] Tests: path-B non-destruction, debt-withheld probe shape (`route_overridden_by` + `hardening_emit_command` bindings + absent `cycle_prompt`), guard-allow ack (hardening-class allow acks oldest; cycle-class allow does not; ack fail-open), emission no longer acks, stderr line debt-gated; ALL standing gates green, `--test` baselines byte-identical (NO regeneration).
+
+**Minimum Verifiable Behavior:** Scripted sequence on a fixture state dir: marked run + 1 unacked deny → `--probe --emit-prompt` returns `route_overridden_by: pending-hardening-debt` with NO `cycle_prompt` and a bound `hardening_emit_command`; running that command registers a hardening-class entry WITHOUT acking; a simulated guard ALLOW of that entry acks the ledger; the next probe returns a normal forward route. Separately: `read_run_marker(session_id="other")` returns None while the marker file remains on disk and `read_run_marker(session_id="owner")` still succeeds.
+
+**Runtime Verification** *(checked by live runs — NOT by the implementation agent):*
+- [ ] An interactive session message during the next live marked run does NOT delete the marker (run ends with its own `--run-end`).
+- [ ] The next live deny → following probe withholds the forward route and the orchestrator dispatches hardening first (debt acked by the guard allow, visible in the ledger).
+
+**MCP Integration Test Assertions:** N/A — no MCP runtime in claude-config; live verification rows above stand in.
+
+**Prerequisites:** Phase 7 (revises its ack semantics). Origin evidence: live incident 2026-06-12 (~14:53Z) + session `e076ed30`.
+
+**Files likely modified:**
+- `user/scripts/lazy_core.py`, `user/scripts/lazy_guard.py`, `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`, `user/scripts/test_lazy_core.py`, `user/scripts/test_hooks.py`, `user/scripts/lazy_inject.py` (comment accuracy only)
+- `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`
+
+**Testing Strategy:**
+- Entry point: `test_lazy_core.py` Phase 8 section (hermetic `LAZY_STATE_DIR`) + `test_hooks.py` pipe-test (inject with a marker bound to a different session → no banner AND marker file survives) + both `--test` smokes + `lint-skills.py --check-projected --check-capabilities`.
+- Ground-truth assertion: the MVB chain passes; no-marker and no-debt probe outputs byte-identical to current behavior.
+- Boundary coverage: bind-pending marker (session_id None) never session-stale (unchanged); debt present but marker absent → no withholding (debt is marked-run scoped); guard ack when ledger empty (no-op); corrupt ledger lines skipped.
+- Runtime gate: next live marked run (Runtime Verification rows above).
+
+**Integration Notes for Next Phase:** With path B non-destructive, a genuinely crashed run's marker now persists until age-staleness (24h) — acceptable: the guard's enforcement surface in non-owner sessions is fast-path-allow either way, and the next `--run-start` overwrites the marker. If that window proves troublesome, a future phase can add an owner-liveness probe (PID or transcript mtime) rather than reverting to delete-on-read.
+
+**Context from prior phases:**
+- Phase 7's deny ledger/ack helpers and marker-gated probe enrichment are the substrate; this phase REVISES Phase 7's emission-time ack (documented there as the original semantics).
+- Marker-gated + debt-gated output additions keep the byte-pinned `--test` baselines safe (Phase 1/7 pattern).
+- Coupled-pair mirroring across the three batch skills is a hard gate (Phase 5 discipline).
+
+---
+
 ## Review Notes
 
 **2026-06-11 — /spec-phases authoring review.** Ground-truth verified: yes (git status, line count 326, phase-heading grep all matched the drafting subagent's pasted block). **Review verdict: PASS-WITH-FIXES** — full SPEC coverage confirmed (all components land in exactly one phase; all four Locked Decisions intact; deny hook genuinely unarmed until Phase 6; failure-mode containments reflected). Nine localized fixes applied by the orchestrator post-review: (1) Phase 6 MVB section added; (2) E2E assertions 6–7 added covering Success Criteria 2 and 4; (3) turn-window freshness recorded as an explicit SPEC deviation with a compensating 30-min registry-entry TTL; (4) session-id-mismatch staleness test rows added to Phase 1; (5) spike item (e) added for the UserPromptSubmit task-notification limitation; (6) SessionStart(compact) payload enumerated (re-entry protocol + counters); (7) depth-guard ownership clarified (Phase 2 implements vs Phase 4 integration-tests); (8) locked-decision-4 cadence clause made explicit in the /harden-harness SKILL deliverable; (9) HOOK_ERROR breadcrumb surfacing added to inject-hook behavior and pipe-tests.
