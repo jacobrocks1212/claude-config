@@ -441,7 +441,7 @@ Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys
    curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health
    ```
 
-   If this prints `200`, the runtime is already up — skip to step 4 (amend the prompt only).
+   If this prints `200`, the runtime is already up — skip the boot (steps 2–3) and go to step 4. **Do NOT amend the prompt by hand:** step 4 is the BOOT decision only — `emit_cycle_prompt` already selected the RUNTIME-IS-ALREADY-UP variant and bound every token, so the runtime-up case requires ZERO prompt edits. Splicing a "fresh-restart" / diligence paragraph into the RUNTIME-IS-ALREADY-UP block (or any other byte) mutates the hash and the validate-deny guard denies the dispatch — the exact recurrence the script-owns-the-variant rule (step 4) exists to make impossible.
 
 2. **If not up, start it (orchestrator-owned background process).** Use the canonical full-restart command (handles all three process types — Vite :1420, MCP :3333, sidecar named-pipe — per `docs/development/CLAUDE.md`):
 
