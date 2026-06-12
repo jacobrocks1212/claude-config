@@ -453,10 +453,10 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 - Prose (×3 mirrored): Step 1a consumes the FULL probe JSON — piping probe output through field-extractors is banned; `route_overridden_by`, when present, MUST be honored before any forward dispatch.
 
 **Deliverables:**
-- [ ] **WU-8.1 Non-destructive session-mismatch:** `read_run_marker` path B returns None without deletion; Phase 1 tests pinning delete-on-read-B revised; new tests: non-owner read leaves file intact + owner still reads it afterward; age-stale and corrupt-file deletion unchanged; inject/guard comments updated.
-- [ ] **WU-8.2 Routed hardening debt + guard-allow ack:** probe withholds forward route per the interface contract; emission-time ack removed (Phase 7 revision); guard acks on hardening-class allow; `bug-state.py` mirrored.
-- [ ] **WU-8.3 Full-probe consumption:** stderr `⚠` debt line; skill prose (×3): no field-extractor piping, honor `route_overridden_by`.
-- [ ] Tests: path-B non-destruction, debt-withheld probe shape (`route_overridden_by` + `hardening_emit_command` bindings + absent `cycle_prompt`), guard-allow ack (hardening-class allow acks oldest; cycle-class allow does not; ack fail-open), emission no longer acks, stderr line debt-gated; ALL standing gates green, `--test` baselines byte-identical (NO regeneration).
+- [x] **WU-8.1 Non-destructive session-mismatch:** `read_run_marker` path B returns None without deletion; Phase 1 tests pinning delete-on-read-B revised; new tests: non-owner read leaves file intact + owner still reads it afterward; age-stale and corrupt-file deletion unchanged; inject/guard comments updated.
+- [x] **WU-8.2 Routed hardening debt + guard-allow ack:** probe withholds forward route per the interface contract; emission-time ack removed (Phase 7 revision); guard acks on hardening-class allow; `bug-state.py` mirrored.
+- [x] **WU-8.3 Full-probe consumption:** stderr `⚠` debt line; skill prose (×3): no field-extractor piping, honor `route_overridden_by`.
+- [x] Tests: path-B non-destruction, debt-withheld probe shape (`route_overridden_by` + `hardening_emit_command` bindings + absent `cycle_prompt`), guard-allow ack (hardening-class allow acks oldest; cycle-class allow does not; ack fail-open), emission no longer acks, stderr line debt-gated; ALL standing gates green, `--test` baselines byte-identical (NO regeneration).
 
 **Minimum Verifiable Behavior:** Scripted sequence on a fixture state dir: marked run + 1 unacked deny → `--probe --emit-prompt` returns `route_overridden_by: pending-hardening-debt` with NO `cycle_prompt` and a bound `hardening_emit_command`; running that command registers a hardening-class entry WITHOUT acking; a simulated guard ALLOW of that entry acks the ledger; the next probe returns a normal forward route. Separately: `read_run_marker(session_id="other")` returns None while the marker file remains on disk and `read_run_marker(session_id="owner")` still succeeds.
 
@@ -484,6 +484,16 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 - Phase 7's deny ledger/ack helpers and marker-gated probe enrichment are the substrate; this phase REVISES Phase 7's emission-time ack (documented there as the original semantics).
 - Marker-gated + debt-gated output additions keep the byte-pinned `--test` baselines safe (Phase 1/7 pattern).
 - Coupled-pair mirroring across the three batch skills is a hard gate (Phase 5 discipline).
+
+---
+
+#### Implementation Notes (Phase 8 — 2026-06-12)
+
+**Review/verification verdict:** PASS — script side by one Opus subagent, prose side by the orchestrator (3 skills mirrored + coupled-pair comment notes); orchestrator re-ran all gates fresh: `test_lazy_core.py` **297/297** (+6 net: 7 added, 3 revised per the contract — the path-B delete pin, the run-end-refusal middle leg now simulating guard-allow ack, and the guard-stale-marker pipe-test flipped to marker-survives), `test_hooks.py` **23/23** (+1: inject with a non-owner-bound marker → no banner AND marker intact), both `--test` smokes byte-identical, `lint-skills.py` full flags clean, projection errors none. Implementation commit: `ee2289e`.
+
+**Key implementation decisions:** (1) `shlex.quote` escaping for `hardening_emit_command` context values (command targets bash on paste); (2) guard acks ONLY on the fresh first-time-consumption allow path, never on the idempotent re-fire path (avoids double-ack of one logical dispatch); (3) `oldest_unacked_deny()` / `build_hardening_emit_command()` / `registry_summary()` added as public `lazy_core` helpers for coupled-pair reuse; (4) stderr warning confirmed safe for `lazy_inject._run_probe` (`capture_output=True` separates streams).
+
+**Phase 7 revision recorded:** emission-time ack removed — debt now clears only when the guard ALLOWS a hardening-class dispatch. Runtime Verification rows remain open for the next live marked run (non-owner-session marker survival; live debt → withheld route → hardening-first dispatch).
 
 ---
 
