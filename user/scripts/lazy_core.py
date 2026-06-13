@@ -4272,6 +4272,11 @@ def register_emission(
     Each registration creates one entry in ``lazy-prompt-registry.json`` with:
       - nonce (str): unique uuid4 hex string — single-use control
       - prompt_sha256 (str): sha256 of the normalized prompt
+      - prompt_norm (str): the normalize_prompt_for_hash-normalized prompt text.
+        Stored verbatim (not just hashed) so the validate-deny guard can do a
+        pure trailing-suffix superset match for F1b auto-readmit
+        (lazy-pipeline-ergonomics Phase 1).  Registry entries are ephemeral
+        (ring-cap + TTL) so storing the text is size-safe.
       - emitted_at (float): epoch timestamp of the emission
       - class (str): dispatch class tag (e.g. "cycle", "recovery", "hardening")
       - item_id (str|None): the feature/bug id for context (optional)
@@ -4297,6 +4302,9 @@ def register_emission(
     entry: dict = {
         "nonce": uuid.uuid4().hex,
         "prompt_sha256": prompt_sha256(prompt),
+        # F1b: store the normalized prompt text so the guard can prefix-match a
+        # pure trailing suffix (auto-readmit) using identical normalization.
+        "prompt_norm": normalize_prompt_for_hash(prompt),
         "emitted_at": now,
         "class": cls,
         "item_id": item_id,
@@ -4622,6 +4630,150 @@ def append_deny_ledger_entry(
     except Exception:  # noqa: BLE001
         # Fail-open: a ledger write must never propagate.
         return False
+
+
+def append_auto_readmit_event(
+    tool_use_id: str,
+    readmitted_sha12: str,
+    suffix_head: str,
+    item_id: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one ``auto_readmit: true`` event to the deny ledger (JSONL).
+
+    F1b (lazy-pipeline-ergonomics Phase 1): when the validate-deny guard
+    auto-readmits a pure trailing-suffix superset of a fresh cycle-class entry
+    (instead of denying it), it MUST write an auditable record so the readmit is
+    never silent — the retro grader reads the same JSONL stream as the denies.
+
+    The event reuses the deny-ledger shape so a single reader walks both denies
+    and auto-readmits, distinguished by the ``auto_readmit`` flag:
+
+        {"ts": <epoch float>, "tool_use_id": <str>, "auto_readmit": true,
+         "readmitted_sha12": <12 hex of the MATCHED entry>,
+         "suffix_head": <≤200 chars of the appended trailing suffix>,
+         "item_id": <str|None>, "acked": true}
+
+    ``acked`` is True because an auto-readmit owes NO hardening debt (the dispatch
+    was allowed, not denied) — it must never inflate ``pending_hardening()`` or
+    block ``--run-end``.
+
+    Best-effort / fail-open: identical contract to append_deny_ledger_entry — the
+    caller wraps this, and it additionally swallows its own write errors and
+    returns False rather than raising.
+
+    Args:
+        tool_use_id: the auto-readmitted Agent dispatch's tool_use_id.
+        readmitted_sha12: first 12 hex chars of the MATCHED entry's prompt_sha256.
+        suffix_head: the appended trailing suffix, truncated to the head-char cap.
+        item_id: the matched entry's feature/bug id (optional).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "tool_use_id": tool_use_id,
+            "auto_readmit": True,
+            "readmitted_sha12": readmitted_sha12,
+            "suffix_head": (suffix_head or "")[:_LEDGER_HEAD_CHARS],
+            "item_id": item_id,
+            # Auto-readmits owe no hardening debt — pre-acked so they never count
+            # toward pending_hardening() / --run-end refusal.
+            "acked": True,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def find_auto_readmit_entry(
+    prompt: str,
+    now: float | None = None,
+) -> dict | None:
+    """Find an unconsumed, fresh, ``class == "cycle"`` registry entry whose stored
+    normalized prompt text is a PURE TRAILING-SUFFIX PREFIX of *prompt*.
+
+    F1b (lazy-pipeline-ergonomics Phase 1): the common validate-deny accident is
+    an ORCHESTRATOR NOTE appended to a script-emitted ``cycle_prompt``.  The full
+    hash misses (lookup_emission → None), so the guard would deny.  This helper
+    lets the guard instead AUTO-READMIT the dispatch when the only difference is a
+    trailing suffix appended to a sanctioned cycle prompt.
+
+    Match criteria (ALL must hold):
+      - the entry is unconsumed AND within REGISTRY_ENTRY_TTL_SECONDS AND
+        (when a run marker exists) emitted at/after the run's started_at — the
+        SAME freshness gate as lookup_emission, so a stale entry never readmits;
+      - the entry's ``class`` is exactly ``"cycle"`` — NEVER ``"hardening"``
+        (the depth-1 cap stays intact) and never any other ad-hoc class;
+      - ``dispatched_norm.startswith(entry_norm)`` after identical
+        normalize_prompt_for_hash normalization, with a NON-EMPTY remainder
+        (a pure suffix superset — an exact equal would have hit lookup_emission,
+        and an in-body edit is not a prefix so it never matches).
+
+    Returns the matched entry dict (the FIRST qualifying entry in insertion
+    order), or None when nothing qualifies.  Read-only — does NOT consume; the
+    caller consumes the nonce on a successful readmit.
+
+    Args:
+        prompt: the dispatched prompt text (normalized before comparison).
+        now: epoch float for the TTL/run-start gate (injectable for tests).
+
+    Returns:
+        The matching entry dict, or None.
+    """
+    if now is None:
+        now = time.time()
+    dispatched_norm = normalize_prompt_for_hash(prompt)
+
+    # Compute the run-start epoch the same way lookup_emission does so the
+    # freshness gate is identical (entries predating the current run never
+    # readmit).
+    marker = read_run_marker(now=now)
+    run_started_epoch: float | None = None
+    if marker is not None:
+        started_at_str = marker.get("started_at", "")
+        try:
+            started_dt = datetime.datetime.strptime(
+                started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+            )
+            run_started_epoch = (
+                started_dt - datetime.datetime(1970, 1, 1)
+            ).total_seconds()
+        except (ValueError, TypeError):
+            run_started_epoch = None
+
+    for entry in _load_registry()["entries"]:
+        # Hard class exclusion FIRST — never readmit anything but a cycle entry.
+        if entry.get("class") != "cycle":
+            continue
+        if entry.get("consumed", True):
+            continue
+        entry_norm = entry.get("prompt_norm")
+        # Legacy entries (registered before F1b) have no prompt_norm — skip them
+        # (they can still be denied; auto-readmit just doesn't apply).
+        if not isinstance(entry_norm, str) or not entry_norm:
+            continue
+        emitted_at = entry.get("emitted_at", 0.0)
+        if now - emitted_at > REGISTRY_ENTRY_TTL_SECONDS:
+            continue
+        if run_started_epoch is not None and emitted_at < run_started_epoch:
+            continue
+        # Pure trailing-suffix superset: the dispatched prompt must START WITH the
+        # registered prompt AND add a non-empty trailing remainder.  An exact
+        # match (no remainder) would already have hit lookup_emission, and an
+        # in-body edit is not a prefix so it never qualifies.
+        if dispatched_norm.startswith(entry_norm) and len(dispatched_norm) > len(entry_norm):
+            return entry
+    return None
 
 
 def read_deny_ledger() -> list[dict]:

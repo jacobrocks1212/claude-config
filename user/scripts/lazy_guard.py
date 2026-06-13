@@ -132,6 +132,13 @@ _CORRECTIVE_RECIPE = (
     "re-run the Step 1a probe (`--emit-prompt`) and dispatch its `cycle_prompt` verbatim; "
     "if the probe refuses or no route exists, dispatch the hardening stage via "
     "`--emit-dispatch hardening`; "
+    # F1a (lazy-pipeline-ergonomics Phase 1): name the SANCTIONED customization
+    # path so the next action routes through the right tool instead of editing
+    # the emitted prompt (the recurring append-a-note accident).  Customize a
+    # dispatch ONLY via these two mechanisms — never by hand-editing the prompt:
+    "to customize a dispatch, use `--context KEY=VALUE` (per-dispatch token bindings) "
+    "or `--emit-dispatch <class>` (ad-hoc classes) — never append to or edit the emitted "
+    "prompt; re-probe and dispatch verbatim; "
     "additionally, this denial itself must also be routed to the hardening stage "
     "(`--emit-dispatch hardening`, trigger_kind=validate-deny) per the inline-unbounded cadence "
     "(locked decision 4: a hand-composed prompt reaching the guard is a harness gap — "
@@ -291,6 +298,88 @@ def _bind_marker_on_allow(session_id: str | None) -> None:
         pass
 
 
+def _try_auto_readmit(prompt: str, tool_use_id: str, session_id: str | None) -> str | None:
+    """F1b (lazy-pipeline-ergonomics Phase 1): try to AUTO-READMIT a dispatch whose
+    normalized prompt is a PURE TRAILING-SUFFIX superset of an unconsumed, fresh,
+    ``class == "cycle"`` registry entry.
+
+    The common validate-deny accident is an ORCHESTRATOR NOTE appended to a
+    script-emitted ``cycle_prompt`` — the full hash misses, so the guard would
+    deny and force a full hardening round.  When the ONLY difference is a trailing
+    suffix appended to a sanctioned cycle prompt, this turns the deny into a
+    zero-cost allow instead.
+
+    On a successful match:
+      - consume the matched entry's nonce (recording this consumer), exactly like
+        the normal fresh-allow path;
+      - bind an unbound marker on allow (Phase 9 parity — BOTH allow paths bind);
+      - write an explicit ``auto_readmit: true`` event to the deny ledger so the
+        readmit is AUDITABLE and never silent (retro-gradable);
+      - return the allow JSON.
+
+    Returns the allow JSON string on a successful auto-readmit, or None when no
+    entry qualifies (the caller then proceeds to the normal deny path).
+
+    Hard exclusions (enforced by find_auto_readmit_entry):
+      - NEVER a hardening-class entry (the depth-1 cap stays fully intact);
+      - any in-body edit (not a pure prefix) never matches → still denies.
+
+    FAIL-OPEN: any error on this path is swallowed and the function returns None so
+    the caller falls through to the NORMAL deny — never to a spurious allow.
+    """
+    try:
+        entry = lazy_core.find_auto_readmit_entry(prompt)
+        if entry is None:
+            return None
+
+        # Defence-in-depth: re-assert the class exclusion at the guard boundary so
+        # a future change to the finder can never let a hardening entry through.
+        if entry.get("class") != "cycle":
+            return None
+
+        nonce = entry["nonce"]
+        entry_norm = entry.get("prompt_norm") or ""
+        dispatched_norm = lazy_core.normalize_prompt_for_hash(prompt)
+        # The appended trailing suffix (for the audit record).  Pure-suffix means
+        # dispatched_norm startswith entry_norm with a non-empty remainder.
+        suffix = dispatched_norm[len(entry_norm):]
+
+        # Consume the matched nonce, recording the consumer (parity with the
+        # normal fresh-allow path).  consume_nonce returns False if the entry was
+        # consumed between the finder read and here (a TOCTOU race) — in that case
+        # fall through to the normal deny rather than emit a spurious allow.
+        consumed = lazy_core.consume_nonce(nonce, consumer=tool_use_id)
+        if not consumed:
+            return None
+
+        # Audit FIRST (best-effort) so the readmit is recorded even if a later
+        # best-effort step hiccups; an auto_readmit owes no hardening debt.
+        try:
+            lazy_core.append_auto_readmit_event(
+                tool_use_id=tool_use_id,
+                readmitted_sha12=entry.get("prompt_sha256", "")[:12],
+                suffix_head=suffix,
+                item_id=entry.get("item_id"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Phase 9 parity: an allow binds an unbound marker (best-effort/fail-open).
+        _bind_marker_on_allow(session_id)
+
+        reason = (
+            f"auto-readmit — nonce {nonce} consumed by {tool_use_id}; dispatched "
+            f"prompt is a pure trailing-suffix superset of a fresh cycle entry "
+            f"(F1b). The appended suffix was readmitted and audited "
+            f"(auto_readmit: true in the deny ledger)."
+        )
+        return _allow_json(reason)
+    except Exception:  # noqa: BLE001
+        # FAIL-OPEN to DENY: any error here must fall through to the normal deny,
+        # never to a spurious allow.
+        return None
+
+
 def _deny_and_ledger(
     reason: str,
     *,
@@ -386,6 +475,14 @@ def guard(stdin_text: str) -> str | None:
         _bind_marker_on_allow(session_id)
         reason = f"dispatch allowed — nonce {nonce} consumed by {tool_use_id}"
         return _allow_json(reason)
+
+    # --- 1b. F1b auto-readmit: a pure trailing-suffix superset of a fresh -----
+    # cycle-class entry is ALLOWED (and audited) instead of denied.  Evaluated
+    # BEFORE the default deny.  Hardening-class entries and in-body edits never
+    # qualify (see find_auto_readmit_entry); any error fails open to the deny.
+    readmit = _try_auto_readmit(prompt, tool_use_id, session_id)
+    if readmit is not None:
+        return readmit
 
     # --- 2. No unconsumed fresh hit — look for any entry with this sha. ------
     # Pass tool_use_id so _find_entry_by_sha can prefer an entry already

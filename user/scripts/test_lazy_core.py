@@ -8174,6 +8174,304 @@ def test_guard_bound_non_owner_fast_path_unchanged():
 
 
 # ---------------------------------------------------------------------------
+# F1 (lazy-pipeline-ergonomics Phase 1) — validate-deny recovery ergonomics
+# ---------------------------------------------------------------------------
+#
+# F1a: the default (non-hardening) deny reason names the sanctioned
+#      customization path (`--context KEY=VALUE`, `--emit-dispatch <class>`) and
+#      the "dispatch verbatim — never append/edit" rule, WITHOUT dropping any of
+#      the preexisting recipe substrings the Phase 6/7 tests byte-match.
+# F1b: a pure trailing-suffix superset of an unconsumed/fresh/cycle entry is
+#      auto-readmitted (nonce consumed, allow, `auto_readmit: true` ledger event).
+#      Hardening-class entries and in-body edits are NEVER auto-readmitted; any
+#      auto-readmit-path error falls through to the normal deny (fail-open).
+
+
+def _f1_guard_module():
+    """Import lazy_guard in-process (it imports lazy_core directly)."""
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    return importlib.import_module("lazy_guard")
+
+
+def test_f1a_default_deny_reason_names_customization_path():
+    """F1a: the default deny reason ADDS the sanctioned-customization wording
+    (`--context KEY=VALUE`, `--emit-dispatch <class>`, "dispatch verbatim",
+    "never append") while PRESERVING every preexisting recipe substring that the
+    Phase 6/7 byte-match tests assert."""
+    _guard()
+    lazy_guard = _f1_guard_module()
+    reason = lazy_guard._default_deny_reason()
+
+    # Preexisting substrings (byte-matched by test_hooks / WSL leg) MUST survive.
+    for needle in (
+        "re-run the Step 1a probe",
+        "--emit-prompt",
+        "--emit-dispatch hardening",
+    ):
+        assert needle in reason, (
+            f"F1a must NOT drop the preexisting recipe substring {needle!r}; "
+            f"reason={reason!r}"
+        )
+
+    # New F1a wording naming the sanctioned customization path.
+    assert "--context KEY=VALUE" in reason, (
+        f"F1a deny reason must name `--context KEY=VALUE`; reason={reason!r}"
+    )
+    assert "--emit-dispatch <class>" in reason, (
+        f"F1a deny reason must name `--emit-dispatch <class>`; reason={reason!r}"
+    )
+    assert "verbatim" in reason, (
+        f"F1a deny reason must state the dispatch-verbatim rule; reason={reason!r}"
+    )
+    # The explicit prohibition against editing the emitted prompt.
+    assert "never append" in reason, (
+        f"F1a deny reason must say 'never append to or edit the emitted prompt'; "
+        f"reason={reason!r}"
+    )
+
+
+def test_f1a_hardening_cap_reason_unchanged():
+    """F1a must NOT touch the hardening depth-1 cap reason: it still says halt +
+    PushNotification and must NOT recommend `--emit-dispatch hardening`."""
+    _guard()
+    lazy_guard = _f1_guard_module()
+    reason = lazy_guard._hardening_cap_deny_reason()
+    assert "halt" in reason, reason
+    assert "PushNotification" in reason, reason
+    assert "--emit-dispatch hardening" not in reason, (
+        "the hardening cap reason must never recommend recursive hardening"
+    )
+
+
+def _f1_hook_input(prompt, tool_use_id, session_id=None):
+    payload = {"tool_use_id": tool_use_id, "tool_input": {"prompt": prompt}}
+    if session_id is not None:
+        payload["session_id"] = session_id
+    return json.dumps(payload)
+
+
+def test_f1b_pure_suffix_cycle_prompt_auto_readmits():
+    """F1b: a dispatch whose normalized prompt is a registered cycle prompt PLUS a
+    trailing suffix is ALLOWED, the entry's nonce is consumed, and a deny-ledger
+    line with `auto_readmit: true` is written (auditable, never silent)."""
+    _guard()
+    lazy_guard = _f1_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            base = "Run the next cycle step exactly as specified."
+            entry = lazy_core.register_emission(base, cls="cycle", item_id="feat-x")
+            nonce = entry["nonce"]
+
+            dispatched = base + "\n\nORCHESTRATOR NOTE: keep going, do not stop."
+            out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-suffix"))
+            assert out is not None, "auto-readmit must produce allow JSON (not None)"
+            payload = json.loads(out)
+            decision = payload["hookSpecificOutput"]["permissionDecision"]
+            assert decision == "allow", (
+                f"a pure-suffix superset of a fresh cycle entry must auto-readmit "
+                f"(allow); got {decision!r}; reason="
+                f"{payload['hookSpecificOutput'].get('permissionDecisionReason')!r}"
+            )
+
+            # The nonce must now be consumed (lookup_emission returns None).
+            assert lazy_core.lookup_emission(base) is None, (
+                "auto-readmit must consume the matched entry's nonce"
+            )
+            registry = json.loads(
+                (state_dir / "lazy-prompt-registry.json").read_text(encoding="utf-8")
+            )
+            match = [e for e in registry["entries"] if e.get("nonce") == nonce]
+            assert match and match[0].get("consumed") is True, (
+                "the auto-readmitted entry must be marked consumed"
+            )
+
+            # An auto_readmit ledger event must be present (same JSONL stream).
+            ledger = state_dir / "lazy-deny-ledger.jsonl"
+            assert ledger.exists(), "auto-readmit must write an auditable ledger event"
+            events = [
+                json.loads(ln)
+                for ln in ledger.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
+            ]
+            auto = [e for e in events if e.get("auto_readmit") is True]
+            assert len(auto) == 1, (
+                f"exactly one auto_readmit event expected; got {len(auto)}: {events!r}"
+            )
+            assert auto[0].get("tool_use_id") == "tu-suffix", auto[0]
+        finally:
+            _clear_state_dir()
+
+
+def test_f1b_in_body_edit_still_denies():
+    """F1b exclusion: an in-body edit (a word changed mid-prompt, NOT a pure
+    trailing suffix) is NOT a suffix superset → it still DENIES with the default
+    corrective reason, and writes a NORMAL (non-auto_readmit) deny ledger line."""
+    _guard()
+    lazy_guard = _f1_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            base = "Run the next cycle step exactly as specified now."
+            lazy_core.register_emission(base, cls="cycle", item_id="feat-x")
+
+            edited = base.replace("exactly", "approximately")
+            out = lazy_guard.guard(_f1_hook_input(edited, "tu-edit"))
+            assert out is not None
+            payload = json.loads(out)
+            assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+                "an in-body edit is not a pure suffix → it must still DENY"
+            )
+            reason = payload["hookSpecificOutput"]["permissionDecisionReason"]
+            assert "--context KEY=VALUE" in reason and "verbatim" in reason, (
+                "the in-body-edit deny must use the F1a corrective reason"
+            )
+            # The matched entry must NOT have been consumed by the deny.
+            assert lazy_core.lookup_emission(base) is not None, (
+                "a deny must never consume the registry entry"
+            )
+            ledger = state_dir / "lazy-deny-ledger.jsonl"
+            events = [
+                json.loads(ln)
+                for ln in ledger.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
+            ]
+            assert events and all(not e.get("auto_readmit") for e in events), (
+                "an in-body-edit deny must NOT write an auto_readmit event"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f1b_hardening_class_suffix_never_auto_readmits():
+    """F1b hard exclusion: a pure-suffix superset of a HARDENING-class entry is
+    NEVER auto-readmitted (the depth-1 cap stays intact) — it DENIES and the
+    entry's nonce is left unconsumed."""
+    _guard()
+    lazy_guard = _f1_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            base = "You are the harden-harness subagent. Analyze and fix the gap."
+            entry = lazy_core.register_emission(base, cls="hardening")
+            nonce = entry["nonce"]
+
+            dispatched = base + "\n\nORCHESTRATOR NOTE: also bump the version."
+            out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-hard-suffix"))
+            assert out is not None
+            payload = json.loads(out)
+            assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+                "a hardening-class suffix must NEVER auto-readmit — it must DENY"
+            )
+            # nonce must remain unconsumed (no auto-readmit consume).
+            registry = json.loads(
+                (state_dir / "lazy-prompt-registry.json").read_text(encoding="utf-8")
+            )
+            match = [e for e in registry["entries"] if e.get("nonce") == nonce]
+            assert match and match[0].get("consumed") is False, (
+                "a hardening-class entry must never be consumed by auto-readmit"
+            )
+            ledger = state_dir / "lazy-deny-ledger.jsonl"
+            events = [
+                json.loads(ln)
+                for ln in ledger.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
+            ]
+            assert all(not e.get("auto_readmit") for e in events), (
+                "a hardening-class suffix must never write an auto_readmit event"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f1b_auto_readmit_error_falls_through_to_deny():
+    """F1b fail-open: if the auto-readmit path raises internally (here:
+    consume_nonce poisoned), the guard must fall through to the NORMAL deny — never
+    a spurious allow."""
+    _guard()
+    lazy_guard = _f1_guard_module()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            base = "Run the next cycle step exactly as specified for failopen."
+            lazy_core.register_emission(base, cls="cycle")
+            dispatched = base + "\n\nORCHESTRATOR NOTE: appended."
+
+            original = lazy_core.consume_nonce
+            def _boom(*a, **k):
+                raise RuntimeError("consume exploded")
+            lazy_core.consume_nonce = _boom  # type: ignore[assignment]
+            try:
+                out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-boom"))
+            finally:
+                lazy_core.consume_nonce = original  # type: ignore[assignment]
+
+            assert out is not None
+            payload = json.loads(out)
+            assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+                "an auto-readmit-path error must fall through to deny, never a "
+                "spurious allow"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f1b_register_emission_stores_normalized_prompt_text():
+    """F1b registry-text field: register_emission stores the
+    normalize_prompt_for_hash-normalized prompt text on each entry (the field the
+    auto-readmit prefix match keys on)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # CRLF + trailing whitespace → must be normalized before storage.
+            raw = "Line one.  \r\nLine two.\r\n"
+            entry = lazy_core.register_emission(raw, cls="cycle")
+            expected = lazy_core.normalize_prompt_for_hash(raw)
+            assert entry.get("prompt_norm") == expected, (
+                f"register_emission must store the normalized prompt text; "
+                f"got {entry.get('prompt_norm')!r}, expected {expected!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
 # Test registry — defines run order and test names.
 # ---------------------------------------------------------------------------
 
@@ -10860,6 +11158,14 @@ _TESTS = [
     ("test_guard_unbound_marker_deny_does_not_bind", test_guard_unbound_marker_deny_does_not_bind),
     ("test_guard_bind_failure_is_fail_open", test_guard_bind_failure_is_fail_open),
     ("test_guard_bound_non_owner_fast_path_unchanged", test_guard_bound_non_owner_fast_path_unchanged),
+    # F1 (lazy-pipeline-ergonomics Phase 1) — validate-deny recovery ergonomics
+    ("test_f1a_default_deny_reason_names_customization_path", test_f1a_default_deny_reason_names_customization_path),
+    ("test_f1a_hardening_cap_reason_unchanged", test_f1a_hardening_cap_reason_unchanged),
+    ("test_f1b_register_emission_stores_normalized_prompt_text", test_f1b_register_emission_stores_normalized_prompt_text),
+    ("test_f1b_pure_suffix_cycle_prompt_auto_readmits", test_f1b_pure_suffix_cycle_prompt_auto_readmits),
+    ("test_f1b_in_body_edit_still_denies", test_f1b_in_body_edit_still_denies),
+    ("test_f1b_hardening_class_suffix_never_auto_readmits", test_f1b_hardening_class_suffix_never_auto_readmits),
+    ("test_f1b_auto_readmit_error_falls_through_to_deny", test_f1b_auto_readmit_error_falls_through_to_deny),
 ]
 
 

@@ -2084,6 +2084,95 @@ def test_inject_non_owner_session_leaves_marker_intact():
 
 
 # ---------------------------------------------------------------------------
+# F1b (lazy-pipeline-ergonomics Phase 1) — pure-suffix auto-readmit via the real
+# bash lazy-dispatch-guard.sh hook path (the Phase 1 MVB).
+# ---------------------------------------------------------------------------
+
+def test_guard_bash_pure_suffix_auto_readmits():
+    """Phase 1 MVB through the REAL bash hook: a dispatch whose prompt = a
+    registered cycle prompt + a trailing ORCHESTRATOR NOTE suffix is ALLOWED via
+    auto-readmit (nonce consumed, `auto_readmit: true` ledger event), while the
+    same prompt with a word changed mid-body is DENIED with the F1a corrective
+    reason naming `--context` and `--emit-dispatch`."""
+    _guard()
+    assert _GUARD_SH.exists(), f"lazy-dispatch-guard.sh missing: {_GUARD_SH}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # Bind the marker to one owning session and pass it on every call so the
+        # guard's bind-on-allow doesn't reclassify the call as a non-owner.
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        base = "Run the next cycle step exactly as specified by the probe."
+        _set_state_dir(state_dir)
+        try:
+            entry = lazy_core.register_emission(base, cls="cycle", item_id="feat-c")
+        finally:
+            _clear_state_dir()
+        nonce = entry["nonce"]
+
+        # --- pure-suffix superset → auto-readmit (allow) ---
+        suffixed = base + "\n\nORCHESTRATOR NOTE: keep going, do not stop."
+        stdin_allow = _e1_preToolUse_json(
+            suffixed, tool_use_id="toolu_suffix", session_id=owner_session,
+        )
+        r_allow = _run_bash(_GUARD_SH, stdin_allow, env)
+        assert r_allow.returncode == 0, (
+            f"bash guard must exit 0; stderr: {r_allow.stderr!r}"
+        )
+        out_allow = r_allow.stdout.strip()
+        assert out_allow != "", "auto-readmit must produce allow JSON via the bash hook"
+        p_allow = json.loads(out_allow)
+        assert p_allow["hookSpecificOutput"]["permissionDecision"] == "allow", (
+            f"a pure-suffix cycle prompt must auto-readmit (allow) through the bash "
+            f"hook; got {p_allow['hookSpecificOutput'].get('permissionDecision')!r}"
+        )
+
+        # The nonce must be consumed and an auto_readmit event written.
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.lookup_emission(base) is None, (
+                "auto-readmit must consume the matched nonce"
+            )
+        finally:
+            _clear_state_dir()
+        registry = json.loads(
+            (state_dir / "lazy-prompt-registry.json").read_text(encoding="utf-8")
+        )
+        match = [e for e in registry["entries"] if e.get("nonce") == nonce]
+        assert match and match[0].get("consumed") is True, "entry must be consumed"
+
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger_path.exists(), "auto-readmit must write an auditable ledger event"
+        events = [json.loads(ln) for ln in
+                  ledger_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        auto = [e for e in events if e.get("auto_readmit") is True]
+        assert len(auto) == 1, f"exactly one auto_readmit event expected; got {events!r}"
+        assert auto[0].get("tool_use_id") == "toolu_suffix", auto[0]
+
+        # --- in-body edit → DENY with the F1a corrective reason ---
+        edited = base.replace("exactly", "approximately")
+        stdin_deny = _e1_preToolUse_json(
+            edited, tool_use_id="toolu_edit", session_id=owner_session,
+        )
+        r_deny = _run_bash(_GUARD_SH, stdin_deny, env)
+        assert r_deny.returncode == 0, r_deny.stderr
+        p_deny = json.loads(r_deny.stdout.strip())
+        assert p_deny["hookSpecificOutput"]["permissionDecision"] == "deny", (
+            "an in-body edit must still DENY (not a pure suffix)"
+        )
+        reason = p_deny["hookSpecificOutput"]["permissionDecisionReason"]
+        for needle in ("--context KEY=VALUE", "--emit-dispatch <class>", "verbatim"):
+            assert needle in reason, (
+                f"F1a deny reason must contain {needle!r}; got {reason!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Test registry
 # ---------------------------------------------------------------------------
 
@@ -2129,6 +2218,9 @@ _TESTS = [
     # Phase 8 — inject non-destructive against a marker bound to another session
     ("test_inject_non_owner_session_leaves_marker_intact",
      test_inject_non_owner_session_leaves_marker_intact),
+    # F1b (lazy-pipeline-ergonomics Phase 1) — pure-suffix auto-readmit via bash
+    ("test_guard_bash_pure_suffix_auto_readmits",
+     test_guard_bash_pure_suffix_auto_readmits),
 ]
 
 
