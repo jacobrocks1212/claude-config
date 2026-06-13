@@ -154,9 +154,30 @@ Substantive upstream facts from turn-routing-enforcement (Complete) these phases
 **Scope:** Give runtime-reboot / blocking-foreground-wait status zones their own glyph so `⏸` is reserved for park (T5), and teach the retro grader the distinction so the overload stops reading as a deviation. Doc-only.
 
 **Deliverables:**
-- [ ] **`orchestrator-voice.md`:** introduce a distinct glyph (proposed `⟳`) for runtime-reboot / blocking-foreground-wait status zones (a sanctioned T6 rich-zone marker), and state that `⏸` is reserved EXCLUSIVELY for park (T5). Add the new glyph to the sanctioned-output marker grammar so the Zero-Text rule still recognizes it.
-- [ ] **`lazy-batch-retro` R-V grader:** mirror the distinction — the R-V-3 check recognizes the runtime-reboot glyph as a legitimate status zone (not a `⏸`-overload advisory) and flags `⏸` used for a non-park wait as the (minor) deviation instead.
-- [ ] Tests: `lint-skills.py --check-projected --check-capabilities` clean (the voice component projects into every consuming skill); a focused assertion or doc-corpus check if one exists for marker grammar. No state-script behavior changes → both `--test` smokes byte-identical by construction.
+- [x] **`orchestrator-voice.md`:** introduce a distinct glyph (proposed `⟳`) for runtime-reboot / blocking-foreground-wait status zones (a sanctioned T6 rich-zone marker), and state that `⏸` is reserved EXCLUSIVELY for park (T5). Add the new glyph to the sanctioned-output marker grammar so the Zero-Text rule still recognizes it.
+- [x] **`lazy-batch-retro` R-V grader:** mirror the distinction — the R-V-3 check recognizes the runtime-reboot glyph as a legitimate status zone (not a `⏸`-overload advisory) and flags `⏸` used for a non-park wait as the (minor) deviation instead.
+- [x] Tests: `lint-skills.py --check-projected --check-capabilities` clean (the voice component projects into every consuming skill); a focused assertion or doc-corpus check if one exists for marker grammar. No state-script behavior changes → both `--test` smokes byte-identical by construction.
+
+#### Implementation Notes (Phase 3 — 2026-06-13)
+
+**Review verdict:** Complete. Doc-only — both deliverables shipped; no script logic or script tests touched.
+
+**Glyph chosen: `⟳`** (the spec's proposed glyph) for runtime-reboot / blocking-foreground-wait status zones. `⏸` is now reserved EXCLUSIVELY for park (T5).
+
+**`orchestrator-voice.md` changes (three surgical edits):**
+- Zero-Text rule sanctioned-output marker grammar: added `⟳` (T6 runtime-reboot / blocking-foreground-wait status zone) alongside `⏸`, and annotated `⏸` as "park ONLY" — so emitting `⟳` is a sanctioned template prefix, not a deviation.
+- T5 (park): added an explicit note that `⏸` is reserved EXCLUSIVELY for park and that non-park waits use `⟳`, with the overload called out as an R-V-3-graded minor deviation.
+- T6 (rich zones): added a "Runtime-reboot / blocking-foreground-wait status zones" bullet defining the `⟳ <status>` line (e.g. `⟳ runtime rebooting…`), instructing `⟳` NEVER `⏸` for runtime reboots / budget-guard briefing waits / any blocking-foreground op; one line per wait, clears silently.
+
+**`lazy-batch-retro/SKILL.md` R-V grader change (R-V-3, one edit):** retitled R-V-3 to "Rich-zone containment + glyph discipline"; added `⟳` blocks to the sanctioned T6 list; added a **Glyph discipline (F3)** clause that (a) recognizes `⟳` runtime-reboot status zones as legitimate (NOT a deviation) and (b) flags `⏸` used for a NON-park wait (e.g. `⏸ runtime rebooting…`) as the minor deviation, counted per-instance. Wording mirrors the voice-contract change so grader and contract agree.
+
+**Glyph integrity verified:** grepped both edited files for `⟳` / `⏸` post-edit — all glyphs render correctly, no UTF-8 corruption (edits made via Edit/Write, never PowerShell Get/Set-Content).
+
+**Gate results:** `lint-skills.py --check-projected --check-capabilities` exits 0 (clean — no broken/embedded/unexpanded `!cat`, no capability namespace pollution). Confirmation smokes — `lazy-state.py --test` PASS, `bug-state.py --test` PASS — both byte-identical by construction (doc-only, no script behavior changed; baselines NOT touched).
+
+**Files touched:** `user/skills/_components/orchestrator-voice.md`, `repos/algobooth/.claude/skills/lazy-batch-retro/SKILL.md`. (PHASES.md updated for status.)
+
+**Deviations:** none.
 
 **Minimum Verifiable Behavior:** `lint-skills.py --check-projected --check-capabilities` exits 0 with the new glyph in the marker grammar; a grep of `orchestrator-voice.md` shows `⏸` described as park-only and the runtime-reboot glyph defined as a distinct T6 zone.
 

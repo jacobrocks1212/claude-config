@@ -23,7 +23,8 @@ of the templates. Operational test — sanctioned output starts with exactly one
 - `### ` (T2/T4 cycle-block heading: `### {Step name} — {work summary} [x/y]`)
 - a template field line: `mode `, `budget `, `queue `, `disp `, `done `, `audit `, `ledger `,
   `next `, `act `, `gates `
-- `⏸` (T5 park) · `⚖` (D7 policy line) · `⚠` (T6 deviation)
+- `⏸` (T5 park — park ONLY) · `⟳` (T6 runtime-reboot / blocking-foreground-wait status zone)
+  · `⚖` (D7 policy line) · `⚠` (T6 deviation)
 - a T6 rich-zone section (resolution briefing / verbatim sentinel block / echo-back) or the
   T7 report body
 
@@ -162,6 +163,10 @@ deserve full detail.
 
 ### T5 — Park event (single line; fires with the PushNotification)
 
+`⏸` is reserved **EXCLUSIVELY** for park. Do NOT reuse it for any other wait/status zone —
+runtime-reboot / blocking-foreground-wait zones use `⟳` (see T6). Overloading `⏸` for a
+non-park wait is a (minor) deviation graded by R-V-3.
+
 ```
 ⏸ parked track-filestream-default-root — 1 decision · notified (2 parked this run)
 ```
@@ -174,6 +179,11 @@ deserve full detail.
   upcoming AskUserQuestion. No other prose around them.
 - **Errors / deviations / refusals / recoveries:** `⚠ <symptom>` line → evidence (quoted
   output, ≤10 lines) → action taken → the rule violated, cited here and only here.
+- **Runtime-reboot / blocking-foreground-wait status zones:** `⟳ <status>` line (e.g.
+  `⟳ runtime rebooting…`). Use `⟳` — NEVER `⏸` (which is reserved exclusively for park, T5) —
+  whenever the orchestrator is foreground-blocked waiting on a runtime reboot, a budget-guard
+  briefing wait, or any other blocking-foreground operation. One line per wait; the zone clears
+  silently when the wait resolves.
 - **Standing-directive echo-back:** the interpretation being confirmed, verbatim, then the
   AskUserQuestion.
 
