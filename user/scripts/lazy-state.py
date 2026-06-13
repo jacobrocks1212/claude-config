@@ -4928,6 +4928,21 @@ def main() -> int:
                             "route to resume with (written into the checkpoint "
                             "file and echoed by the next --run-start)."
                         ))
+    # Retro staleness anchor: the SINGLE source of truth for "how many phases
+    # does this PHASES.md have right now". /retro's `phase_count_at_retro` writer
+    # MUST use this (not an ad-hoc `grep -c '^### Phase'`) so the count it records
+    # is byte-identical to what `retro_staleness()` later compares against via
+    # `len(parse_phases(...))`. A divergent counter is exactly what produced the
+    # d8-session-format permanent-stale loop (a `## Phase Summary` h2 the grep
+    # missed but the old parse_phases regex over-counted). Prints the integer
+    # count and exits; PHASES.md absent → prints 0.
+    parser.add_argument("--count-phases", default=None, metavar="PHASES_PATH",
+                        help=(
+                            "Print len(parse_phases(PHASES_PATH)) and exit — the "
+                            "canonical phase-section count for the retro staleness "
+                            "anchor. Use this for `phase_count_at_retro`; never an "
+                            "ad-hoc grep. Missing file → 0."
+                        ))
     args = parser.parse_args()
 
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
@@ -4935,6 +4950,22 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # --count-phases: canonical phase-section count for the retro staleness
+    # anchor. Exits immediately like the other action flags. Goes through the
+    # SAME parse_phases() that retro_staleness() uses, so the written
+    # phase_count_at_retro can never disagree with the later staleness compare.
+    if args.count_phases is not None:
+        phases_path = Path(args.count_phases)
+        if not phases_path.exists():
+            sys.stdout.write("0\n")
+            return 0
+        try:
+            text = phases_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            _die(f"--count-phases: cannot read {phases_path}: {exc}")
+        sys.stdout.write(f"{len(lazy_core.parse_phases(text))}\n")
+        return 0
 
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator

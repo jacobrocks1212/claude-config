@@ -190,11 +190,16 @@ phase_count_at_retro: <int>      # optional but REQUIRED going forward — see b
 ---
 ```
 
-`phase_count_at_retro` records the number of `### Phase` sections in the
-feature's PHASES.md at the moment the retro concluded. It is the **retro
-staleness anchor**: when later corrective `/add-phase` rounds grow PHASES.md
-past this count, `lazy-state.py` Step 8 routes another retro round (and the
-`__mark_complete__` gate refuses completion) instead of letting a retro that
+`phase_count_at_retro` records the number of phase sections in the feature's
+PHASES.md at the moment the retro concluded. Compute it with
+`lazy-state.py --count-phases <PHASES.md>` (the canonical `parse_phases()`
+counter) — **never** an ad-hoc `grep -c '^### Phase'`, which counts a different
+set than the staleness comparator and silently false-positives on non-phase
+headings like `## Phase Summary` (the d8-session-format permanent-stale loop,
+hardening-log 2026-06). It is the **retro staleness anchor**: when later
+corrective `/add-phase` rounds grow PHASES.md past this count, `lazy-state.py`
+Step 8 routes another retro round (and the `__mark_complete__` gate refuses
+completion) instead of letting a retro that
 graded the pre-corrective code stand for phases it never saw — d8-live-looping
 carried a RETRO_DONE.md written BEFORE three corrective validation rounds, so
 retro had effectively graded a 0/16-functional feature. Legacy files without

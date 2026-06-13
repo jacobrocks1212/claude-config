@@ -3868,6 +3868,93 @@ def test_parse_phases_empty_text_no_phases():
     assert phases == [], f"expected no phases, got {phases!r}"
 
 
+def test_parse_phases_phase_summary_section_not_a_phase():
+    """REGRESSION (hardening-log 2026-06, d8-session-format permanent-stale loop):
+    an h2 ``## Phase Summary`` summary section is NOT a phase and must not be
+    counted. The old ``^#{2,3}\\s+Phase\\b`` regex counted it as an 8th phase
+    for a 7-real-phase PHASES.md, so retro_staleness() returned (8,7) on every
+    probe and the state machine routed a stale retro forever.
+
+    "Phase" followed by an English word ("Summary") with no digit and no phase
+    delimiter is prose, not a phase marker — exactly the case the AlgoBooth
+    checker's PHASE_HEADER_RE author comment singles out ("### Phase Dependency
+    Graph").
+    """
+    _guard()
+    # 7 real numbered phases + a trailing ## Phase Summary roll-up section.
+    text = (
+        "### Phase 1: Manifest\n**Status:** Complete\n- [x] a\n"
+        "### Phase 2: Lifecycle\n**Status:** Complete\n- [x] b\n"
+        "### Phase 3: Auto-Save\n**Status:** Complete\n- [x] c\n"
+        "### Phase 4: Migration\n**Status:** Complete\n- [x] d\n"
+        "### Phase 5: Consolidate\n**Status:** Complete\n- [x] e\n"
+        "### Phase 6: Integration\n**Status:** Complete\n- [x] f\n"
+        "### Phase 7: Realignment\n**Status:** Complete\n- [x] g\n"
+        "## Phase Summary\n"
+        "All seven phases landed; export/import verified end-to-end.\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 7, (
+        f"expected 7 phases (## Phase Summary must NOT count), got "
+        f"{len(phases)}: {[p['heading'] for p in phases]!r}"
+    )
+    assert all(p["heading"] != "## Phase Summary" for p in phases), (
+        f"## Phase Summary leaked into phases: {[p['heading'] for p in phases]!r}"
+    )
+
+
+def test_parse_phases_english_word_after_phase_not_counted():
+    """Non-phase h2/h3 sections whose heading is ``Phase <English word(s)>`` with
+    no digit and no delimiter are excluded (Summary / Dependency Graph /
+    Implementation Notes), while every legitimate phase-id form is kept: a bare
+    numeric id (``### Phase 1``), an alphanumeric id (``### Phase 4A —``), and a
+    non-numeric id made a phase only by its delimiter (``## Phase G+:``).
+    """
+    _guard()
+    text = (
+        "### Phase 1\n**Status:** Complete\n- [x] bare numeric id counts\n"
+        "### Phase 4A — Spike\n**Status:** Complete\n- [x] alnum id counts\n"
+        "## Phase G+: Backstop\n**Status:** Ready\n- [ ] delimited non-numeric counts\n"
+        "## Phase Summary\nprose\n"
+        "### Phase Dependency Graph\nprose\n"
+        "## Phase Implementation Notes\nprose\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    headings = [p["heading"] for p in phases]
+    assert headings == [
+        "### Phase 1",
+        "### Phase 4A — Spike",
+        "## Phase G+: Backstop",
+    ], f"unexpected phase set: {headings!r}"
+
+
+def test_count_phases_cli_matches_parse_phases():
+    """The lazy-state.py ``--count-phases`` CLI prints exactly
+    ``len(parse_phases(...))`` — proving the /retro phase_count_at_retro writer
+    and retro_staleness()'s comparator share ONE counter (the fix's
+    can-never-disagree invariant).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        phases = Path(td) / "PHASES.md"
+        body = (
+            "### Phase 1: A\n- [x] a\n"
+            "### Phase 2: B\n- [x] b\n"
+            "## Phase Summary\nroll-up prose, not a phase\n"
+        )
+        phases.write_text(body, encoding="utf-8")
+        expected = len(lazy_core.parse_phases(body))
+        assert expected == 2, f"fixture sanity: expected 2, got {expected}"
+        script = Path(lazy_core.__file__).resolve().parent / "lazy-state.py"
+        out = subprocess.check_output(
+            [sys.executable, str(script), "--count-phases", str(phases)],
+            text=True,
+        ).strip()
+        assert out == str(expected), (
+            f"--count-phases printed {out!r}, parse_phases gave {expected}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tests: apply_pseudo completion-coherence enforcement — Phase 9 WU-1
 #
@@ -11251,6 +11338,10 @@ _TESTS = [
     ("test_parse_phases_phase_without_status_line", test_parse_phases_phase_without_status_line),
     ("test_parse_phases_top_level_status_not_captured", test_parse_phases_top_level_status_not_captured),
     ("test_parse_phases_empty_text_no_phases", test_parse_phases_empty_text_no_phases),
+    # Hardening 2026-06: ## Phase Summary false-positive (d8-session-format stale loop)
+    ("test_parse_phases_phase_summary_section_not_a_phase", test_parse_phases_phase_summary_section_not_a_phase),
+    ("test_parse_phases_english_word_after_phase_not_counted", test_parse_phases_english_word_after_phase_not_counted),
+    ("test_count_phases_cli_matches_parse_phases", test_count_phases_cli_matches_parse_phases),
     # Phase 9 WU-1: apply_pseudo completion-coherence enforcement
     ("test_apply_pseudo_coherence_autoflips_all_ticked_phases", test_apply_pseudo_coherence_autoflips_all_ticked_phases),
     ("test_apply_pseudo_coherence_refuses_unchecked_verification_row", test_apply_pseudo_coherence_refuses_unchecked_verification_row),

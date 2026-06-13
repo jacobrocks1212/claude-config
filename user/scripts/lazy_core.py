@@ -1134,10 +1134,34 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
 
 
 # A phase heading in PHASES.md: ``## Phase ...`` or ``### Phase ...`` (two or
-# three leading hashes, then the literal word "Phase" on a word boundary). This
-# mirrors the AlgoBooth repo checker's PHASE_HEADER_RE so lazy_core's notion of
-# "a phase" stays equivalent to check-docs-consistency.ts.
-_PHASE_HEADING_RE = re.compile(r"^#{2,3}\s+Phase\b")
+# three leading hashes, then the literal word "Phase"). Critically, "Phase" must
+# be followed by an actual phase IDENTIFIER — NOT an English word. This mirrors
+# the intent of the AlgoBooth repo checker's PHASE_HEADER_RE
+# (``/^(#{2,4})\s+Phase\s+([A-Za-z0-9.+]+)\s*[:—-]\s*(.*)$/`` in
+# check-docs-consistency.ts), whose author comment is explicit: the identifier
+# must be delimited "to prevent matching headers like '### Phase Dependency
+# Graph' where 'Phase' is just an English word, not a phase marker."
+#
+# The bare ``^#{2,3}\s+Phase\b`` form this replaced was a false-positive bug: it
+# counted an h2 ``## Phase Summary`` summary section as an 8th phase for
+# d8-session-format (7 real ``### Phase N`` headers + the summary). That made
+# retro_staleness() return (8,7) on EVERY probe — a permanent "stale retro" loop
+# that re-ran /retro forever and never advanced (hardening-log 2026-06 round).
+#
+# Discriminator (digit-OR-delimiter), strictly wider than the checker's
+# delimiter-required form ONLY for bare numeric ids (``### Phase 1`` with no
+# ``:``), which real PHASES.md and the existing parse_phases fixtures use:
+#   - identifier CONTAINS a digit  → real phase   (``Phase 1``, ``Phase 4A``, ``Phase 10``)
+#   - OR identifier is followed by a phase delimiter ``[:—-]`` → real phase
+#     (``Phase G+:`` — a non-numeric id is only a phase when delimited)
+#   - else (``Phase Summary``, ``Phase Dependency Graph``, ``Phase Implementation
+#     Notes``) → NOT a phase.
+# This is the SINGLE counter behind both retro_staleness() and lazy-state.py's
+# ``--count-phases`` (the /retro phase_count_at_retro writer), so the staleness
+# anchor and the recorded count can never disagree.
+_PHASE_HEADING_RE = re.compile(
+    r"^#{2,3}\s+Phase\s+(?:[A-Za-z.+]*\d[A-Za-z0-9.+]*|[A-Za-z0-9.+]+\s*[:—-])"
+)
 
 # A per-phase / top-level bold status line: ``**Status:** <value>``.
 _BOLD_STATUS_RE = re.compile(r"^\*\*Status:\*\*\s*(.+?)\s*$")
