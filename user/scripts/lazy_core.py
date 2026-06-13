@@ -2663,16 +2663,32 @@ def update_repeat_counts(
         # Same tuple AND same head (or both None) — genuine consecutive repeat.
         count = prior_count + 1
 
-    # --- Resolve the F2 double-probe debounce oracle (MARKER-GATED) ----------
-    # When a run marker is present, read the registry's consumed-emission count
-    # (the guard consumes one nonce per ALLOW, so this is a dispatch counter).
-    # current_consume_count stays the _MISSING sentinel when no marker is present
-    # → the key is never written and the debounce is inert (no-marker path stays
-    # byte-identical, --test baselines unchanged). read_run_marker is a read-only
-    # path (create=False) so a probe never creates the state dir as a side-effect.
+    # --- Resolve the F2 double-probe debounce oracle (MARKER-GATED, REPO-SCOPED)
+    # When a run marker for THIS repo is present, read the registry's
+    # consumed-emission count (the guard consumes one nonce per ALLOW, so this is
+    # a dispatch counter).  current_consume_count stays the _MISSING sentinel
+    # otherwise → the key is never written and the debounce is inert (no-marker
+    # path stays byte-identical, --test baselines unchanged).  read_run_marker is
+    # a read-only path (create=False) so a probe never creates the state dir as a
+    # side-effect.
+    #
+    # REPO SCOPING (hardening-log Round 8, 2026-06-13): the marker is a SINGLE
+    # global file, but the consume-count it gates (consumed_emission_count) is a
+    # global registry counter shared by whatever marked run is live.  A probe for
+    # repo A must NOT engage the F2 debounce off repo B's marker — doing so
+    # (a) made this very function non-hermetic to its `repo_root` argument, so the
+    # step-counter unit tests went RED whenever ANY marked run was live on the
+    # machine, and (b) latently let a concurrent run in another repo spuriously
+    # debounce repo A's step counter (the same cross-session hazard Rounds 3 & 5
+    # closed for the marker itself).  Gate the oracle on the marker's `repo_root`
+    # matching the probe's resolved `repo_root`; a marker missing `repo_root`
+    # (legacy/bind-pending) is treated as non-matching → debounce stays inert.
     current_consume_count: object = _MISSING
-    if read_run_marker() is not None:
-        current_consume_count = consumed_emission_count()
+    _marker = read_run_marker()
+    if _marker is not None:
+        _marker_repo = _marker.get("repo_root")
+        if _marker_repo is not None and Path(_marker_repo).resolve() == repo_root.resolve():
+            current_consume_count = consumed_emission_count()
 
     # --- Compute the step-level count (Phase 10 WU-2 — NO HEAD reset) ---------
     # Deliberately HEAD-BLIND: identical (feature_id, current_step) increments

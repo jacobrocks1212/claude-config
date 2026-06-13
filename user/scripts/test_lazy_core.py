@@ -5116,6 +5116,49 @@ def test_update_repeat_counts_debounce_peek_never_advances():
     )
 
 
+def test_update_repeat_counts_debounce_inert_for_foreign_repo_marker():
+    """Hardening-log Round 8 (2026-06-13) regression guard: the F2 debounce is a
+    GLOBAL marker gating a GLOBAL consume-count, but it must be hermetic to the
+    PROBE's repo_root. A run marker bound to a DIFFERENT repo must NOT engage the
+    debounce for a probe against THIS repo — otherwise (a) these very step-counter
+    unit tests go RED whenever any marked run is live on the machine, and (b) a
+    concurrent run in another repo spuriously holds this repo's step counter.
+
+    With a foreign-repo marker present, two identical advancing probes for THIS
+    repo must INCREMENT 1 → 2 exactly as the no-marker path does.
+
+    RED: the pre-fix impl read the unscoped global marker, engaged the debounce
+    off the foreign run's consume-count, and HELD step_repeat_count at 1.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        this_repo = td_path / "this-repo"
+        this_repo.mkdir()
+        foreign_repo = td_path / "foreign-repo"
+        foreign_repo.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        # Marker belongs to a DIFFERENT repo than the one being probed.
+        _write_marker_in(state_dir, foreign_repo)
+        # Make the foreign run's global consume-count non-zero so the only thing
+        # keeping the debounce inert is the repo_root mismatch (not an absent
+        # consume oracle).
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(this_repo, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(this_repo, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"a marker for a FOREIGN repo must not engage this repo's debounce — the "
+        f"step counter must increment 1 → 2 just like the no-marker path, got {r2!r}"
+    )
+
+
 def test_update_repeat_counts_debounce_legacy_file_without_consume_key():
     """A persisted file written WITHOUT the new consume-count key (a probe that
     predates Phase 2, or a marked write that never recorded one) is tolerated:
@@ -11250,6 +11293,7 @@ _TESTS = [
     ("test_update_repeat_counts_debounce_holds_step_count_no_consume_between", test_update_repeat_counts_debounce_holds_step_count_no_consume_between),
     ("test_update_repeat_counts_debounce_increments_with_consume_between", test_update_repeat_counts_debounce_increments_with_consume_between),
     ("test_update_repeat_counts_debounce_peek_never_advances", test_update_repeat_counts_debounce_peek_never_advances),
+    ("test_update_repeat_counts_debounce_inert_for_foreign_repo_marker", test_update_repeat_counts_debounce_inert_for_foreign_repo_marker),
     ("test_update_repeat_counts_debounce_legacy_file_without_consume_key", test_update_repeat_counts_debounce_legacy_file_without_consume_key),
     ("test_update_repeat_counts_debounce_inert_without_marker", test_update_repeat_counts_debounce_inert_without_marker),
     # git_guard_status — WU-5 single-probe payload (git guards)
