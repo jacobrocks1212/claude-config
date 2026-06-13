@@ -233,6 +233,8 @@ script-assembled `cycle_prompt` / `cycle_model` (`cycle_prompt_refused` on assem
 the JSON, with the `pipelines=bug` sections selected and the bug tokens bound; SHOULD be passed on
 every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consumes it verbatim.
 
+**Step 1a — probe ONCE per cycle (F2 double-probe debounce).** Run exactly ONE advancing, dispatch-bound `--repeat-count --emit-prompt` probe per cycle — the one whose `cycle_prompt` you actually dispatch — and use `--repeat-count-peek` for EVERY inspection / sanity / out-of-band probe so that only the single dispatch-bound probe advances the streaks. Probing a route twice with no dispatch between (an inspection probe, then the dispatch-bound probe) is a re-read, not a re-attempt, and historically inflated `step_repeat_count` into false `LOOP DETECTED` blocks. `update_repeat_counts` now defends this in depth: when a run marker is present it debounces a re-read via the registry consume-count delta (an unchanged consumed-emission count between two identical step probes ⇒ no dispatch landed ⇒ `step_repeat_count` is HELD, not incremented), so a genuine same-step oscillation (a real dispatch — hence a consume — between repeats) still trips while a benign double-probe no longer does. This note is the behavioral complement: even with the script debounce, keep to one advancing probe + peek for inspection.
+
 **Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation
 flag), append `--park-needs-input` to EVERY `bug-state.py` probe invocation in this step (base
 or enriched form alike). With the flag, the script skips bugs carrying an unresolved

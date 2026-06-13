@@ -4975,6 +4975,231 @@ def test_update_repeat_count_wrapper_still_returns_int():
 
 
 # ---------------------------------------------------------------------------
+# Tests: update_repeat_counts — Phase 2 (F2) double-probe debounce
+#
+# A re-read (two ADVANCING probes for the same (feature_id, current_step) with
+# NO dispatch between them) must NOT inflate the HEAD-blind step_repeat_count
+# and trip a false LOOP DETECTED. The "did a dispatch happen" oracle is the
+# registry CONSUME-COUNT DELTA when a run marker is present: the guard consumes
+# a nonce on every ALLOW, so an unchanged consumed-count between two identical
+# probes means no dispatch landed → HOLD step_count.
+#
+# MARKER-GATED: with NO run marker present (no registry), behavior is byte-
+# identical to today — the debounce is inert and step_repeat_count increments
+# on any unchanged step (so `--test` baselines and unmarked callers are
+# unchanged). HEAD-blindness is preserved — a real oscillation (a consume
+# between the repeats) still trips. peek never persists / never advances.
+# ---------------------------------------------------------------------------
+
+def _record_consume(state_dir: "Path") -> None:
+    """Register a cycle emission and immediately consume its nonce under the
+    given hermetic state dir — i.e. simulate one guard ALLOW (one dispatch).
+
+    Raises the registry's consumed-count by exactly one. Used by the Phase 2
+    debounce tests to stand in for "a dispatch landed between two probes."
+    """
+    _set_state_dir(state_dir)
+    try:
+        entry = lazy_core.register_emission("dispatch prompt", "cycle")
+        consumed = lazy_core.consume_nonce(entry["nonce"])
+        assert consumed, "pre-condition: the fresh nonce must consume cleanly"
+    finally:
+        _clear_state_dir()
+
+
+def _write_marker_in(state_dir: "Path", repo_root: "Path") -> None:
+    """Write a fresh, bind-pending run marker into the given hermetic state dir."""
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_run_marker(
+            pipeline="feature", cloud=False, repo_root=str(repo_root)
+        )
+    finally:
+        _clear_state_dir()
+
+
+def test_update_repeat_counts_debounce_holds_step_count_no_consume_between():
+    """THE Phase-2 deliverable: with a run marker present, two identical
+    ADVANCING probes for the same (feature_id, current_step) and NO registry
+    consume between them → step_repeat_count is HELD at 1 (a re-read, not a
+    re-attempt). repeat_count is unaffected by the debounce.
+
+    RED: pre-debounce update_repeat_counts increments unconditionally → 1 then 2.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # Two identical advancing probes, NO consume between them.
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 1, (
+        f"second identical probe with NO consume (no dispatch) between → HELD at 1 "
+        f"(re-read debounce), got {r2!r}"
+    )
+
+
+def test_update_repeat_counts_debounce_increments_with_consume_between():
+    """Real oscillation still trips: with a run marker present, two identical
+    probes WITH a registry consume recorded between them → step_repeat_count
+    INCREMENTS 1 → 2 (a dispatch landed, so this is a genuine re-attempt).
+
+    RED: a debounce that ignores the consume-delta would HOLD at 1 here.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # A real dispatch lands between the two identical probes (consume delta +1).
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"a consume between the two identical probes is a real dispatch → genuine "
+        f"oscillation must still trip (1 → 2), got {r2!r}"
+    )
+
+
+def test_update_repeat_counts_debounce_peek_never_advances():
+    """peek discipline intact under the debounce: a marked peek probe never
+    persists and never advances — the consume-count key is not written under
+    peek, and a subsequent real advance starts fresh.
+
+    RED: an impl that persisted the consume-count under peek would mutate state.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            p1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path, peek=True)
+            peek_created = sig_path.exists()
+            p2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path, peek=True)
+            a1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert not peek_created, "peek must NOT create the state file (debounce path included)"
+    assert p1["step_repeat_count"] == 1, f"first peek → 1, got {p1!r}"
+    assert p2["step_repeat_count"] == 1, f"second peek → 1 (no mutation), got {p2!r}"
+    assert a1["step_repeat_count"] == 1, (
+        f"first real advance starts at 1 (peeks didn't advance), got {a1!r}"
+    )
+
+
+def test_update_repeat_counts_debounce_legacy_file_without_consume_key():
+    """A persisted file written WITHOUT the new consume-count key (a probe that
+    predates Phase 2, or a marked write that never recorded one) is tolerated:
+    on the next marked probe with no prior consume-count key, the debounce
+    cannot prove a re-read, so step_count behaves as before (increments) and the
+    new key is added on that write — mirroring the head / step_* migrations.
+
+    RED: an impl that KeyErrors on the missing consume-count key, or that holds
+    step_count when it cannot prove a re-read.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        # Hand-write a Phase-10 shape file (step keys present, NO consume key).
+        legacy_sig = [
+            _STATE_A["feature_id"],
+            _STATE_A["sub_skill"],
+            _STATE_A["sub_skill_args"],
+            _STATE_A["current_step"],
+        ]
+        legacy_step_sig = [_STATE_A["feature_id"], _STATE_A["current_step"]]
+        sig_path.write_text(
+            json.dumps({
+                "signature": legacy_sig, "count": 1, "head": None,
+                "step_signature": legacy_step_sig, "step_count": 1,
+            }),
+            encoding="utf-8",
+        )
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            persisted = json.loads(sig_path.read_text(encoding="utf-8"))
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 2, (
+        f"legacy file with no consume-count key → debounce cannot prove a re-read, "
+        f"so step_count increments as before (1 → 2), got {r1!r}"
+    )
+    assert "consume_count" in persisted, (
+        f"the new consume-count key must be added on the next marked write, got {persisted!r}"
+    )
+
+
+def test_update_repeat_counts_debounce_inert_without_marker():
+    """MARKER-GATED: with NO run marker present, the debounce is inert — two
+    identical probes with no consume between them still increment (1 → 2), and
+    the consume-count key is NOT written, so the no-marker path is byte-identical
+    to the pre-Phase-2 behavior that the `--test` baselines pin.
+
+    RED: an impl that debounced or wrote the consume key without a marker would
+    leak into the default path and diff the smoke baselines.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"  # empty — no marker written
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            persisted = json.loads(sig_path.read_text(encoding="utf-8"))
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"no marker → debounce inert → identical probe increments (1 → 2), got {r2!r}"
+    )
+    assert "consume_count" not in persisted, (
+        f"no marker → the consume-count key must NOT be written (byte-identical "
+        f"default path), got {persisted!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: git_guard_status — WU-5 single-probe payload (git guards)
 # ---------------------------------------------------------------------------
 
@@ -11021,6 +11246,12 @@ _TESTS = [
     ("test_update_repeat_counts_step_peek_does_not_mutate", test_update_repeat_counts_step_peek_does_not_mutate),
     ("test_update_repeat_counts_legacy_file_without_step_keys", test_update_repeat_counts_legacy_file_without_step_keys),
     ("test_update_repeat_count_wrapper_still_returns_int", test_update_repeat_count_wrapper_still_returns_int),
+    # update_repeat_counts — Phase 2 (F2) double-probe debounce (consume-count oracle)
+    ("test_update_repeat_counts_debounce_holds_step_count_no_consume_between", test_update_repeat_counts_debounce_holds_step_count_no_consume_between),
+    ("test_update_repeat_counts_debounce_increments_with_consume_between", test_update_repeat_counts_debounce_increments_with_consume_between),
+    ("test_update_repeat_counts_debounce_peek_never_advances", test_update_repeat_counts_debounce_peek_never_advances),
+    ("test_update_repeat_counts_debounce_legacy_file_without_consume_key", test_update_repeat_counts_debounce_legacy_file_without_consume_key),
+    ("test_update_repeat_counts_debounce_inert_without_marker", test_update_repeat_counts_debounce_inert_without_marker),
     # git_guard_status — WU-5 single-probe payload (git guards)
     ("test_git_guard_status_clean_and_pushed", test_git_guard_status_clean_and_pushed),
     ("test_git_guard_status_dirty_tree", test_git_guard_status_dirty_tree),

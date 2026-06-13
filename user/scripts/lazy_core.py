@@ -2517,9 +2517,30 @@ def update_repeat_counts(
 
     The persisted JSON shape is
     ``{"signature": [4], "count": int, "head": str|None,
-       "step_signature": [2], "step_count": int}``. Legacy files (Phase-9 shape,
-    no ``step_*`` keys) are honored: ``step_count`` starts at 1 and the new keys
-    are added on the next write — mirroring the ``head``-field migration.
+       "step_signature": [2], "step_count": int, "consume_count": int}``. Legacy
+    files (Phase-9 shape, no ``step_*`` keys) are honored: ``step_count`` starts
+    at 1 and the new keys are added on the next write — mirroring the ``head``-field
+    migration.
+
+    ``consume_count`` (lazy-pipeline-ergonomics Phase 2, F2) is the DOUBLE-PROBE
+    DEBOUNCE oracle and is MARKER-GATED: it is written ONLY when a run marker is
+    present (``read_run_marker()`` is non-None), recording the registry's
+    consumed-entry count (``consumed_emission_count``) at the time of the probe.
+    On the next probe, when (a) a marker is present, (b) the step signature is
+    unchanged, AND (c) the prior file recorded a ``consume_count`` that equals the
+    current consumed-count → NO dispatch landed between the two probes (the guard
+    consumes a nonce on every ALLOW), so the second probe is a RE-READ and the
+    HEAD-blind ``step_count`` is HELD instead of incremented. This stops an
+    inspection-probe-then-dispatch-probe pair from inflating ``step_repeat_count``
+    and tripping a false LOOP DETECTED. A genuine oscillation still trips because
+    a real dispatch (hence a consume) lands between its repeats. The key is
+    legacy-tolerant exactly like ``head`` / ``step_*``: a file with no
+    ``consume_count`` cannot prove a re-read, so ``step_count`` behaves as before
+    (increments). When NO marker is present the key is never written and the
+    debounce is inert — the no-marker path stays byte-identical (``--test``
+    baselines unchanged). HEAD-blindness is preserved: the debounce keys on
+    DISPATCH occurrence, never on commits — no HEAD reset is added to
+    ``step_count``.
 
     Any missing file, OS error, or corrupt/invalid JSON is silently treated as
     «no prior» — the function never raises on a bad state file.
@@ -2583,6 +2604,11 @@ def update_repeat_counts(
     prior_head: object = _MISSING
     prior_step_count = 0
     prior_step_sig_list: list | None = None
+    # F2 debounce oracle: the consumed-emission count recorded by the prior
+    # MARKED probe. _MISSING distinguishes "no consume_count key" (legacy file,
+    # or an unmarked prior write) from a recorded count — only a recorded prior
+    # count can prove a re-read, so a legacy/unmarked prior never debounces.
+    prior_consume_count: object = _MISSING
     try:
         raw = signature_path.read_text(encoding="utf-8")
         data = json.loads(raw)
@@ -2609,6 +2635,12 @@ def update_repeat_counts(
         ):
             prior_step_sig_list = data["step_signature"]
             prior_step_count = data["step_count"]
+        # ``consume_count`` is OPTIONAL (F2 migration, like ``head``/``step_*``).
+        # Read it INDEPENDENTLY so a partially-upgraded file still reads what it
+        # can. Only an int is honored — anything else leaves the sentinel so the
+        # debounce stays inert (cannot prove a re-read).
+        if isinstance(data, dict) and isinstance(data.get("consume_count"), int):
+            prior_consume_count = data["consume_count"]
         # If shape is wrong, treat as no-prior (counts stay 0, sig lists None).
     except (OSError, ValueError, json.JSONDecodeError):
         # File absent, unreadable, or corrupt → treat as no prior.
@@ -2631,12 +2663,37 @@ def update_repeat_counts(
         # Same tuple AND same head (or both None) — genuine consecutive repeat.
         count = prior_count + 1
 
+    # --- Resolve the F2 double-probe debounce oracle (MARKER-GATED) ----------
+    # When a run marker is present, read the registry's consumed-emission count
+    # (the guard consumes one nonce per ALLOW, so this is a dispatch counter).
+    # current_consume_count stays the _MISSING sentinel when no marker is present
+    # → the key is never written and the debounce is inert (no-marker path stays
+    # byte-identical, --test baselines unchanged). read_run_marker is a read-only
+    # path (create=False) so a probe never creates the state dir as a side-effect.
+    current_consume_count: object = _MISSING
+    if read_run_marker() is not None:
+        current_consume_count = consumed_emission_count()
+
     # --- Compute the step-level count (Phase 10 WU-2 — NO HEAD reset) ---------
     # Deliberately HEAD-BLIND: identical (feature_id, current_step) increments
     # regardless of intervening commits (that is the oscillation-with-commits
     # signal). Legacy files (no step keys) → start at 1 and add the keys below.
     if prior_step_sig_list is None or list(new_step_sig) != prior_step_sig_list:
         step_count = 1
+    elif (
+        # F2 double-probe debounce: HOLD step_count (do NOT increment) when this
+        # is provably a RE-READ — the step signature is unchanged AND no dispatch
+        # landed between the two probes. "No dispatch" = an unchanged registry
+        # consume-count, which we can only assert when BOTH this probe and the
+        # prior write recorded one (i.e. both were marked). A legacy/unmarked
+        # prior (sentinel) or an unmarked current probe (sentinel) cannot prove a
+        # re-read → fall through to the normal increment. This preserves
+        # HEAD-blindness (keyed on dispatch occurrence, never on commits).
+        current_consume_count is not _MISSING
+        and prior_consume_count is not _MISSING
+        and current_consume_count == prior_consume_count
+    ):
+        step_count = prior_step_count
     else:
         step_count = prior_step_count + 1
 
@@ -2644,14 +2701,20 @@ def update_repeat_counts(
     # peek=True returns the would-be counts WITHOUT touching the state file, so
     # diagnostic probes never inflate or reset either persisted streak.
     if not peek:
-        payload = json.dumps({
+        record: dict = {
             "signature": list(new_sig),
             "count": count,
             "head": current_head,
             "step_signature": list(new_step_sig),
             "step_count": step_count,
-        })
-        _atomic_write(signature_path, payload)
+        }
+        # F2: record the consume-count ONLY on a marked probe. Omitting the key
+        # on the no-marker path keeps that path's persisted shape byte-identical
+        # to the pre-Phase-2 record (legacy-tolerant, like the head/step_*
+        # migrations). current_consume_count is the sentinel when no marker.
+        if current_consume_count is not _MISSING:
+            record["consume_count"] = current_consume_count
+        _atomic_write(signature_path, json.dumps(record))
 
     return {"repeat_count": count, "step_repeat_count": step_count}
 
@@ -4253,6 +4316,31 @@ def registry_summary() -> str:
         return "empty"
     unconsumed = sum(1 for e in entries if not e.get("consumed", False))
     return f"{len(entries)} entries, {unconsumed} unconsumed"
+
+
+def consumed_emission_count() -> int:
+    """Return the number of CONSUMED registry entries — the dispatch oracle.
+
+    The validate-deny guard calls ``consume_nonce`` on every ALLOW (one consume
+    per dispatch), so this monotone-within-the-ring count is a sound "how many
+    dispatches have landed" signal.  ``update_repeat_counts`` (F2) reads it twice
+    around a re-read: an UNCHANGED consumed-count between two identical step
+    probes means NO dispatch happened between them → the second probe is a
+    re-read, not a re-attempt → hold the step counter (double-probe debounce).
+
+    Read-only: ``_load_registry`` passes ``create=False`` so a probe never
+    creates the state dir as a side-effect, and returns ``{"entries": []}`` (→ 0)
+    on any missing / corrupt registry.  The registry ring-cap can evict the
+    oldest entries, but the debounce only compares two consecutive probes within
+    one run, where eviction of a consumed entry between adjacent probes is not a
+    concern (it would only *lower* the count, never spuriously raise it, so it
+    can at worst fail-open into an increment — never a spurious hold).
+
+    Returns:
+        The count of entries whose ``consumed`` flag is truthy (0 when empty).
+    """
+    entries = _load_registry().get("entries", [])
+    return sum(1 for e in entries if e.get("consumed", False))
 
 
 def _save_registry(data: dict) -> None:
