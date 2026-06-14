@@ -491,9 +491,11 @@ Agent({
   description: "lazy-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {feature_name}",
   subagent_type: "general-purpose",
   model: <the probe's cycle_model>,
-  prompt: <the probe's cycle_prompt, verbatim>
+  prompt: <the probe's cycle_prompt_ref if present, otherwise cycle_prompt verbatim>
 })
 ```
+
+**F2a dispatch-by-reference (PREFERRED when available).** When the probe emits `cycle_prompt_ref` (a `@@lazy-ref nonce=<hex>` token), use it as the `prompt:` field instead of the full `cycle_prompt` text. The PreToolUse guard resolves the token → registered bytes and rewrites the tool input before the subagent runs — the subagent receives the full prompt unchanged. This eliminates the transcription-slip class: the guard rejects mismatched hashes, so an orchestrator that accidentally paraphrases the prompt gets denied, not silently dispatched. Fall back to `cycle_prompt` verbatim ONLY when `cycle_prompt_ref` is absent or null.
 
 **Model selection — script-owned.** The orchestrator no longer chooses the model: copy `cycle_model` from the probe into the `model:` field (never omit it — see the dispatch template). The script makes the choice — `"sonnet"` ONLY when it appended the loop block (persisted `repeat_count >= 2`), `"opus"` otherwise. The rationale is unchanged: normal real-skill cycles run Opus because they can involve novel implementation decisions, while the loop-resolution cycle is mechanical (the prompt already carries the diagnosis — read the canonical sentinel schema, identify which sentinel's preconditions are met, write it, commit), so Sonnet suffices at roughly 5× the cost-efficiency. Because loop-resolution selection is mechanical and driven by the persisted streak, the script can own it deterministically.
 

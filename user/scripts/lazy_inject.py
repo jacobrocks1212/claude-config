@@ -276,8 +276,11 @@ def inject(stdin_text: str) -> str | None:
         parts.append("[probe failed — re-run manually: --repeat-count --probe --emit-prompt]")
 
     # Include the nonce for the guard to validate the next dispatch.
+    # F2a: also surface the @@lazy-ref token so the orchestrator can dispatch
+    # subagents by reference (shorter, transcription-slip-free form).
     if nonce is not None:
         parts.append(f"nonce={nonce}")
+        parts.append(f"by-ref: @@lazy-ref nonce={nonce}")
 
     # For SessionStart(compact) and PostCompact: inject the post-compaction
     # re-entry protocol and marker counters (SPEC inject item 3).

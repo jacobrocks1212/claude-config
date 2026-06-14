@@ -4479,6 +4479,12 @@ def register_emission(
         pure trailing-suffix superset match for F1b auto-readmit
         (lazy-pipeline-ergonomics Phase 1).  Registry entries are ephemeral
         (ring-cap + TTL) so storing the text is size-safe.
+      - prompt_raw (str): the EXACT original prompt bytes before any normalization.
+        F2a (lazy-validation-readiness Phase 3): stored so that
+        resolve_emission_by_nonce() can return the EXACT original text for a
+        by-reference dispatch — the guard resolves nonce → prompt_raw and returns
+        it via hookSpecificOutput.updatedInput, so the spawned subagent receives
+        the fully-expanded prompt without any retyping.
       - emitted_at (float): epoch timestamp of the emission
       - class (str): dispatch class tag (e.g. "cycle", "recovery", "hardening")
       - item_id (str|None): the feature/bug id for context (optional)
@@ -4507,6 +4513,12 @@ def register_emission(
         # F1b: store the normalized prompt text so the guard can prefix-match a
         # pure trailing suffix (auto-readmit) using identical normalization.
         "prompt_norm": normalize_prompt_for_hash(prompt),
+        # F2a (lazy-validation-readiness Phase 3): store the EXACT original bytes
+        # so resolve_emission_by_nonce() can return them verbatim for by-reference
+        # dispatch — the guard copies prompt_raw into updatedInput.prompt so the
+        # spawned subagent receives the fully-expanded original prompt, eliminating
+        # the byte-exact-retype requirement for the orchestrator.
+        "prompt_raw": prompt,
         "emitted_at": now,
         "class": cls,
         "item_id": item_id,
@@ -4594,6 +4606,157 @@ def lookup_emission(
             continue
         return entry
     return None
+
+
+def resolve_emission_by_nonce(
+    nonce: str,
+    *,
+    now: float | None = None,
+) -> dict | None:
+    """Look up a registry entry by nonce and return it ONLY when dispatchable.
+
+    F2a (lazy-validation-readiness Phase 3): the by-reference dispatch path.
+    The guard calls this when it receives a ``@@lazy-ref nonce=<hex>`` prompt
+    token.  If the nonce resolves to a fresh, unconsumed, run-start-gated entry,
+    the guard returns ``permissionDecision: "allow"`` PLUS
+    ``hookSpecificOutput.updatedInput`` (with ``prompt = entry["prompt_raw"] or
+    entry["prompt_norm"]``), so the spawned subagent receives the fully-expanded
+    prompt without any retyping.
+
+    Freshness gates mirror ``lookup_emission`` exactly:
+      1. Nonce + TTL: entry must be unconsumed AND within
+         REGISTRY_ENTRY_TTL_SECONDS (1800 s) of ``emitted_at``.
+      2. Run-start gate (when a non-stale run marker exists): additionally
+         require ``emitted_at >= marker.started_at`` epoch — entries predating
+         the current run are not dispatchable even if within TTL.
+
+    This function is READ-ONLY and fail-safe: any error → None (fail-open to
+    deny, never a spurious allow).  The guard is responsible for consuming the
+    nonce after resolving it.
+
+    Args:
+        nonce: the nonce hex string from the ``@@lazy-ref`` token.
+        now: epoch float for TTL comparison (injectable for hermetic tests;
+             defaults to time.time()).
+
+    Returns:
+        The matching registry entry dict when dispatchable, or None when:
+          - the nonce does not exist in the registry, OR
+          - the entry is consumed, OR
+          - the entry is beyond TTL, OR
+          - the entry predates the current run's started_at.
+    """
+    if now is None:
+        now = time.time()
+
+    try:
+        # Compute the run-start epoch gate (mirrors lookup_emission).
+        marker = read_run_marker(now=now)
+        run_started_epoch: float | None = None
+        if marker is not None:
+            started_at_str = marker.get("started_at", "")
+            try:
+                started_dt = datetime.datetime.strptime(
+                    started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                run_started_epoch = (
+                    started_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+            except (ValueError, TypeError):
+                run_started_epoch = None
+
+        data = _load_registry()
+        for entry in data["entries"]:
+            if entry.get("nonce") != nonce:
+                continue
+            # Gate 1: must be unconsumed.
+            if entry.get("consumed", True):
+                return None
+            # Gate 2: must be within TTL.
+            emitted_at = entry.get("emitted_at", 0.0)
+            if now - emitted_at > REGISTRY_ENTRY_TTL_SECONDS:
+                return None
+            # Gate 3: must not predate the current run (when a marker is present).
+            if run_started_epoch is not None and emitted_at < run_started_epoch:
+                return None
+            # All gates passed — this entry is dispatchable by reference.
+            return entry
+        # Nonce not found in registry.
+        return None
+    except Exception:  # noqa: BLE001
+        # Fail-safe: any error → None so the guard falls through to deny,
+        # never a spurious allow.
+        return None
+
+
+def append_dispatch_by_reference_event(
+    *,
+    tool_use_id: str,
+    nonce: str,
+    resolved_sha12: str,
+    item_id: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one ``dispatch_by_reference: true`` audit event to the deny ledger.
+
+    F2a (lazy-validation-readiness Phase 3): every by-reference allow must write
+    an auditable record to the same deny ledger (JSONL) used by denies and
+    auto-readmits, so the path is retro-gradable and distinguishable from a
+    verbatim allow.
+
+    Event shape (mirrors append_auto_readmit_event for reader uniformity):
+
+        {"ts": <epoch float>, "tool_use_id": <str>,
+         "dispatch_by_reference": true, "nonce": <hex>,
+         "resolved_sha12": <12 hex chars of the resolved prompt's sha256>,
+         "item_id": <str|None>, "acked": true}
+
+    ``acked`` is True because a by-reference allow owes NO hardening debt —
+    it is a sanctioned dispatch path, not a harness gap.
+
+    Best-effort / fail-open: mirrors the contract of append_auto_readmit_event —
+    the caller wraps this, and it additionally swallows its own write errors and
+    returns False rather than raising.
+
+    Args:
+        tool_use_id: the dispatched Agent tool_use_id.
+        nonce: the ``@@lazy-ref`` nonce that was resolved.
+        resolved_sha12: first 12 hex chars of the resolved prompt's sha256
+                        (for retro correlation without storing the full sha).
+        item_id: the matched entry's feature/bug id (optional).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        event = {
+            "ts": now,
+            "tool_use_id": tool_use_id,
+            # Discriminator field: retro readers filter on this to see
+            # by-reference dispatches separately from verbatim allows and denies.
+            "dispatch_by_reference": True,
+            "nonce": nonce,
+            "resolved_sha12": resolved_sha12,
+            "item_id": item_id,
+            # Pre-acked: by-reference dispatches owe no hardening debt — they are
+            # the SAFE path (bytes come from the registered emission, not from
+            # hand-composition), so they must never inflate pending_hardening()
+            # or block --run-end.
+            "acked": True,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        # Plain append (same pattern as append_deny_ledger_entry and
+        # append_auto_readmit_event): the ledger is append-only and a torn final
+        # line is tolerated by the corrupt-line-skipping reader.
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate to the guard.
+        return False
 
 
 def consume_nonce(nonce: str, consumer: str | None = None) -> bool:

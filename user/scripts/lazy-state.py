@@ -5261,12 +5261,24 @@ def main() -> int:
             # emission produced a non-null cycle_prompt, register it so the
             # validate hook can check it.  No marker → no-op (zero writes,
             # byte-identical output).
+            # F2a: capture the returned entry so we can surface the @@lazy-ref
+            # token alongside the prompt; orchestrators may use the shorter
+            # token to dispatch subagents (dispatch-by-reference).
             cycle_prompt = state.get("cycle_prompt")
             if cycle_prompt:
-                lazy_core.register_emission_if_marked(
+                _ref_entry = lazy_core.register_emission_if_marked(
                     cycle_prompt, "cycle",
                     item_id=state.get("feature_id"),
                 )
+                if _ref_entry is not None:
+                    # Surface the @@lazy-ref token so the orchestrator can use
+                    # dispatch-by-reference instead of repeating the full text.
+                    state["cycle_prompt_ref"] = f"@@lazy-ref nonce={_ref_entry['nonce']}"
+                else:
+                    # No marker active or registration failed — no ref available.
+                    state["cycle_prompt_ref"] = None
+            else:
+                state["cycle_prompt_ref"] = None
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).

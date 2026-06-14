@@ -2392,6 +2392,385 @@ def test_f2c_genuinely_unregistered_deny_appends_ledger():
         )
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 (lazy-validation-readiness) — F2a dispatch-by-reference guard tests
+# ---------------------------------------------------------------------------
+
+def test_f2a_guard_ref_fresh_allows_with_updated_input():
+    """F2a (guard): a '@@lazy-ref nonce=<hex>' prompt for a FRESH registered entry
+    returns an ALLOW JSON with hookSpecificOutput.updatedInput.prompt == the
+    registered raw prompt bytes; other tool_input fields (model, subagent_type,
+    description) are preserved; nonce is consumed afterward; a
+    dispatch_by_reference audit event is written to the ledger.
+
+    RED until _allow_with_updated_input and the reference branch are implemented.
+    """
+    _guard()
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+
+        # Register a real prompt via lazy_core.
+        raw_prompt = (
+            "Execute Phase 2 of the lazy-validation-readiness plan exactly as "
+            "specified in the PHASES.md — F2a dispatch-by-reference implementation."
+        )
+        _set_state_dir(state_dir)
+        try:
+            entry = lazy_core.register_emission(raw_prompt, cls="cycle", item_id="feat-f2a")
+        finally:
+            _clear_state_dir()
+
+        nonce = entry["nonce"]
+        ref_token = f"@@lazy-ref nonce={nonce}"
+
+        # Build the PreToolUse hook-input with extra tool_input fields to verify
+        # they survive the updatedInput passthrough.
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        hook_input = {
+            "session_id": owner_session,
+            "transcript_path": f"C:\\test\\{owner_session}.jsonl",
+            "cwd": "C:\\test",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "lazy-batch f2a test dispatch",
+                "prompt": ref_token,
+                "subagent_type": "general-purpose",
+                "model": "claude-opus-4-5",
+            },
+            "tool_use_id": tool_use_id,
+        }
+        stdin_text = json.dumps(hook_input)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"guard must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output, "guard must produce JSON for a fresh by-reference dispatch"
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"guard output must be valid JSON; got {output!r}; parse error: {exc}"
+            ) from exc
+
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"by-reference fresh nonce must be ALLOWED; "
+            f"got {hso.get('permissionDecision')!r}; "
+            f"full output: {output!r}"
+        )
+
+        # The allow must carry updatedInput.
+        updated = hso.get("updatedInput")
+        assert updated is not None, (
+            f"by-reference allow must carry hookSpecificOutput.updatedInput; "
+            f"full output: {output!r}"
+        )
+        assert updated.get("prompt") == raw_prompt, (
+            f"updatedInput.prompt must equal the registered raw prompt; "
+            f"got {updated.get('prompt')!r}, expected {raw_prompt!r}"
+        )
+        # Verify other tool_input fields are preserved in updatedInput.
+        assert updated.get("model") == "claude-opus-4-5", (
+            f"updatedInput must preserve the 'model' field; got {updated!r}"
+        )
+        assert updated.get("subagent_type") == "general-purpose", (
+            f"updatedInput must preserve 'subagent_type'; got {updated!r}"
+        )
+        assert updated.get("description") == "lazy-batch f2a test dispatch", (
+            f"updatedInput must preserve 'description'; got {updated!r}"
+        )
+
+        # Nonce must be consumed.
+        _set_state_dir(state_dir)
+        try:
+            registry_data = lazy_core._load_registry()  # type: ignore[attr-defined]
+        finally:
+            _clear_state_dir()
+        entries = registry_data.get("entries", [])
+        matched = [e for e in entries if e.get("nonce") == nonce]
+        assert matched, f"Registry must still have the nonce entry; entries: {entries!r}"
+        assert matched[0].get("consumed") is True, (
+            f"Nonce must be consumed after a by-reference allow; "
+            f"entry: {matched[0]!r}"
+        )
+
+        # Audit event must be written to deny-ledger.
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger_path.exists(), (
+            "By-reference dispatch must write an audit event to lazy-deny-ledger.jsonl"
+        )
+        lines = [
+            ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+        ref_events = [json.loads(ln) for ln in lines
+                      if json.loads(ln).get("dispatch_by_reference")]
+        assert ref_events, (
+            "At least one 'dispatch_by_reference: true' event must be in the ledger"
+        )
+        evt = ref_events[-1]
+        assert evt.get("acked") is True, (
+            "dispatch_by_reference audit events must be pre-acked (no debt)"
+        )
+
+
+def test_f2a_guard_ref_consumed_nonce_denies():
+    """F2a (guard): a reference to a CONSUMED nonce must result in a DENY
+    (fall-through corrective path), never a spurious allow.
+
+    RED until the reference branch is implemented.
+    """
+    _guard()
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+
+        raw_prompt = "Execute the consumed-nonce deny test step."
+        _set_state_dir(state_dir)
+        try:
+            entry = lazy_core.register_emission(raw_prompt, cls="cycle")
+            nonce = entry["nonce"]
+            # Consume the nonce before the guard call.
+            lazy_core.consume_nonce(nonce, consumer="toolu_prior")
+        finally:
+            _clear_state_dir()
+
+        ref_token = f"@@lazy-ref nonce={nonce}"
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(ref_token, tool_use_id=tool_use_id,
+                                          session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output, "guard must produce JSON for a consumed-nonce reference"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"Reference to a consumed nonce must be DENIED; "
+            f"got {hso.get('permissionDecision')!r}"
+        )
+
+
+def test_f2a_guard_ref_nonexistent_nonce_denies():
+    """F2a (guard): a reference to a NONEXISTENT nonce must result in a DENY
+    (never allows).
+
+    RED until the reference branch is implemented.
+    """
+    _guard()
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+
+        bogus_nonce = "cafebabe" * 4
+        ref_token = f"@@lazy-ref nonce={bogus_nonce}"
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(ref_token, tool_use_id=tool_use_id,
+                                          session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output, "guard must produce JSON for a nonexistent-nonce reference"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"Reference to a nonexistent nonce must be DENIED; "
+            f"got {hso.get('permissionDecision')!r}"
+        )
+
+
+def test_f2a_guard_ref_stale_nonce_denies():
+    """F2a (guard): a reference to a STALE nonce (emitted before run-start) must
+    result in a DENY — the run-start gate applies to by-reference too.
+
+    RED until the reference branch is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # Register the prompt at old_time BEFORE writing the marker.
+        old_time = _time.time() - 7200
+        raw_prompt = "Execute the stale-nonce deny test step."
+        _set_state_dir(state_dir)
+        try:
+            entry = lazy_core.register_emission(raw_prompt, cls="cycle", now=old_time)
+            nonce = entry["nonce"]
+        finally:
+            _clear_state_dir()
+
+        # Write the marker with a recent time (started_at > emitted_at).
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        ref_token = f"@@lazy-ref nonce={nonce}"
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(ref_token, tool_use_id=tool_use_id,
+                                          session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output, "guard must produce JSON for a stale-nonce reference"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"Reference to a stale nonce must be DENIED; "
+            f"got {hso.get('permissionDecision')!r}"
+        )
+
+
+def test_f2a_guard_ref_hardening_class_allows_and_acks():
+    """F2a (guard): a by-reference dispatch of a HARDENING-class fresh nonce must
+    ALLOW + consume + write updatedInput + ack the oldest hardening debt.
+
+    The depth-1 cap still applies to the NORMAL path; a by-reference of a fresh
+    hardening nonce is a legitimate first dispatch (safe path — carries no
+    hand-composed body).
+
+    RED until the reference branch is implemented.
+    """
+    _guard()
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+
+        hardening_prompt = (
+            "Harden the harness: diagnose the validate-deny gap and implement "
+            "the mechanical fix. trigger_kind=validate-deny item_id=feat-f2a."
+        )
+        _set_state_dir(state_dir)
+        try:
+            entry = lazy_core.register_emission(hardening_prompt, cls="hardening",
+                                                  item_id="feat-f2a")
+            nonce = entry["nonce"]
+            # Write one deny-ledger entry so there is debt to ack.
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="toolu_prior_deny",
+                denied_sha12="aabbcc001122",
+                reason_head="test prior deny",
+                prompt_head="some prior prompt",
+            )
+            debt_before = lazy_core.pending_hardening()
+        finally:
+            _clear_state_dir()
+
+        assert debt_before == 1, f"Expected 1 unit of hardening debt before dispatch; got {debt_before}"
+
+        ref_token = f"@@lazy-ref nonce={nonce}"
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(ref_token, tool_use_id=tool_use_id,
+                                          session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output, "guard must produce JSON for a hardening by-reference dispatch"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"By-reference hardening fresh nonce must be ALLOWED; "
+            f"got {hso.get('permissionDecision')!r}"
+        )
+        assert hso.get("updatedInput", {}).get("prompt") == hardening_prompt, (
+            "updatedInput.prompt must be the registered hardening prompt"
+        )
+
+        # Hardening debt must be acked.
+        _set_state_dir(state_dir)
+        try:
+            debt_after = lazy_core.pending_hardening()
+        finally:
+            _clear_state_dir()
+        assert debt_after == 0, (
+            f"Hardening debt must be acked after by-reference hardening allow; "
+            f"got pending={debt_after}"
+        )
+
+
+def test_f2a_guard_ref_malformed_falls_through_to_normal_deny():
+    """F2a (guard): a malformed '@@lazy-ref' token (no nonce, bad chars, etc.)
+    must NOT crash — it must fall through to the normal deny path (treated as an
+    unregistered prompt).
+
+    Variants tested: bare '@@lazy-ref', '@@lazy-ref nonce=', invalid hex chars.
+
+    RED until the reference branch is implemented (should be safe — fail-open).
+    """
+    _guard()
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+
+        malformed_tokens = [
+            "@@lazy-ref",                          # no nonce at all
+            "@@lazy-ref nonce=",                   # empty nonce value
+            "@@lazy-ref nonce=GGGG",               # invalid hex chars
+            "@@lazy-ref nonce=abc xyz",            # extra whitespace / trailing word
+        ]
+
+        for token in malformed_tokens:
+            tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+            stdin_text = _e1_preToolUse_json(token, tool_use_id=tool_use_id,
+                                              session_id=owner_session)
+            result = _run_guard_py(stdin_text, env)
+
+            assert result.returncode == 0, (
+                f"guard must exit 0 for malformed ref {token!r}; "
+                f"stderr: {result.stderr!r}"
+            )
+            output = result.stdout.strip()
+            # Must produce SOME output (a deny JSON) — must not crash/be silent.
+            assert output, (
+                f"guard must produce deny JSON for malformed ref {token!r}; "
+                f"got empty output"
+            )
+            try:
+                payload = json.loads(output)
+            except json.JSONDecodeError as exc:
+                raise AssertionError(
+                    f"guard output must be valid JSON for malformed ref {token!r}; "
+                    f"got {output!r}; error: {exc}"
+                ) from exc
+            # Must be a deny (normal path — not registered).
+            hso = payload.get("hookSpecificOutput", {})
+            assert hso.get("permissionDecision") == "deny", (
+                f"Malformed ref {token!r} must fall through to deny; "
+                f"got {hso.get('permissionDecision')!r}"
+            )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -2443,6 +2822,19 @@ _TESTS = [
      test_f2c_near_copy_slip_deny_no_ledger_append),
     ("test_f2c_genuinely_unregistered_deny_appends_ledger",
      test_f2c_genuinely_unregistered_deny_appends_ledger),
+    # Phase 3 (lazy-validation-readiness) — F2a dispatch-by-reference guard tests
+    ("test_f2a_guard_ref_fresh_allows_with_updated_input",
+     test_f2a_guard_ref_fresh_allows_with_updated_input),
+    ("test_f2a_guard_ref_consumed_nonce_denies",
+     test_f2a_guard_ref_consumed_nonce_denies),
+    ("test_f2a_guard_ref_nonexistent_nonce_denies",
+     test_f2a_guard_ref_nonexistent_nonce_denies),
+    ("test_f2a_guard_ref_stale_nonce_denies",
+     test_f2a_guard_ref_stale_nonce_denies),
+    ("test_f2a_guard_ref_hardening_class_allows_and_acks",
+     test_f2a_guard_ref_hardening_class_allows_and_acks),
+    ("test_f2a_guard_ref_malformed_falls_through_to_normal_deny",
+     test_f2a_guard_ref_malformed_falls_through_to_normal_deny),
 ]
 
 

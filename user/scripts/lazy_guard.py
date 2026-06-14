@@ -48,6 +48,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -70,6 +71,10 @@ except ImportError as _import_err:
 # ---------------------------------------------------------------------------
 
 _HOOK_NAME = "lazy-dispatch-guard"
+
+# F2a: compiled pattern for dispatch-by-reference tokens.
+# Grammar: @@lazy-ref nonce=<lowercase hex>, alone on its own line (stripped).
+_REF_RE = re.compile(r'^@@lazy-ref nonce=([0-9a-f]+)$')
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +113,43 @@ def _allow_json(reason: str) -> str:
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "permissionDecisionReason": reason,
+        }
+    })
+
+
+def _allow_with_updated_input(reason: str, updated_input: dict) -> str:
+    """F2a (lazy-validation-readiness Phase 3): return an allow JSON string that
+    ALSO carries ``hookSpecificOutput.updatedInput``.
+
+    Claude Code's PreToolUse hook supports ``updatedInput`` alongside
+    ``permissionDecision: "allow"`` — when present, it REPLACES the tool's input
+    before execution, so the spawned subagent receives the fully-expanded prompt
+    instead of the short ``@@lazy-ref nonce=<hex>`` token.
+
+    The ``updated_input`` dict is a COPY of the original ``tool_input`` with
+    ``prompt`` replaced by the resolved text (all other fields — ``model``,
+    ``subagent_type``, ``description`` — are preserved from the original input so
+    no information is lost in the replacement).
+
+    Args:
+        reason: the permissionDecisionReason string (same as _allow_json).
+        updated_input: the replacement tool_input dict (already includes the
+                       resolved prompt under key ``"prompt"``).
+
+    Returns:
+        A compact JSON string with ``permissionDecision: "allow"`` plus
+        ``updatedInput`` set to ``updated_input``.
+    """
+    return json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": reason,
+            # updatedInput replaces the Agent tool's full input dict before
+            # execution — Claude Code reads this when permissionDecision is
+            # "allow" and swaps in the new input, so the subagent runs with
+            # the resolved prompt rather than the reference token.
+            "updatedInput": updated_input,
         }
     })
 
@@ -496,6 +538,66 @@ def guard(stdin_text: str) -> str | None:
     # that would block legitimate dispatches.  If this call raises, main() will
     # catch it and write the hook-error.json breadcrumb (fail-open).
     _assert_registry_readable()
+
+    # -------------------------------------------------------------------------
+    # F2a: dispatch-by-reference branch.
+    #
+    # If the entire prompt (stripped) is a @@lazy-ref token, resolve it from
+    # the registry and return allow+updatedInput so the spawned subagent runs
+    # the fully-expanded prompt — without the orchestrator ever retyping it.
+    #
+    # Fail-open contract: ANY exception inside this block falls through to the
+    # normal path (deny if hash not found).  We NEVER turn an error here into a
+    # spurious ALLOW — the except catches everything and continues.
+    #
+    # TOCTOU safety: resolve_emission_by_nonce is read-only; consume_nonce is
+    # the atomic write.  If consume_nonce returns False (race: another consumer
+    # already consumed this nonce), we fall through to deny — never allow.
+    # -------------------------------------------------------------------------
+    try:
+        m = _REF_RE.match(prompt.strip())
+        if m:
+            ref_nonce = m.group(1)
+            # Read-only probe: returns None for expired/consumed/unknown nonces.
+            ref_entry = lazy_core.resolve_emission_by_nonce(ref_nonce)
+            if ref_entry is not None:
+                # Prefer the original raw bytes; fall back to normalized form.
+                resolved_text = ref_entry.get("prompt_raw") or ref_entry.get("prompt_norm")
+                # Atomic consume: if returns False the nonce was already consumed
+                # (TOCTOU race) — fall through to deny rather than allow.
+                consumed = lazy_core.consume_nonce(ref_nonce, consumer=tool_use_id)
+                if consumed:
+                    # Phase 8 WU-8.2 parity: ack hardening debt if applicable.
+                    _ack_if_hardening(ref_entry)
+                    # Phase 9 WU-9.2 parity: bind unbound marker to this session.
+                    _bind_marker_on_allow(session_id)
+                    # Best-effort audit event in the deny ledger (pre-acked flag).
+                    try:
+                        lazy_core.append_dispatch_by_reference_event(
+                            tool_use_id=tool_use_id,
+                            nonce=ref_nonce,
+                            resolved_sha12=lazy_core.prompt_sha256(resolved_text)[:12],
+                            item_id=ref_entry.get("item_id"),
+                        )
+                    except Exception:  # noqa: BLE001
+                        # Audit failure must never block the allow.
+                        pass
+                    # Build updatedInput as a shallow copy of the original
+                    # tool_input with the @@lazy-ref token replaced by the
+                    # fully-expanded prompt text.
+                    updated_input = dict(tool_input)
+                    updated_input["prompt"] = resolved_text
+                    reason = (
+                        f"by-reference dispatch — nonce {ref_nonce} resolved and "
+                        f"consumed by {tool_use_id} (F2a)"
+                    )
+                    return _allow_with_updated_input(reason, updated_input)
+                # consumed == False: TOCTOU race — fall through to deny below.
+            # ref_entry is None: expired/consumed/unknown — fall through to deny.
+    except Exception:  # noqa: BLE001
+        # Any unexpected error in the reference branch → fail-open (fall through
+        # to normal hash-lookup path, which will deny if not registered).
+        pass
 
     # Hash the prompt (CRLF-normalized).
     sha = lazy_core.prompt_sha256(prompt)

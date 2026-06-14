@@ -12033,14 +12033,259 @@ _TESTS = [
     ("test_guard_unbound_marker_deny_does_not_bind", test_guard_unbound_marker_deny_does_not_bind),
     ("test_guard_bind_failure_is_fail_open", test_guard_bind_failure_is_fail_open),
     ("test_guard_bound_non_owner_fast_path_unchanged", test_guard_bound_non_owner_fast_path_unchanged),
-    # F1 (lazy-pipeline-ergonomics Phase 1) — validate-deny recovery ergonomics
-    ("test_f1a_default_deny_reason_names_customization_path", test_f1a_default_deny_reason_names_customization_path),
-    ("test_f1a_hardening_cap_reason_unchanged", test_f1a_hardening_cap_reason_unchanged),
-    ("test_f1b_register_emission_stores_normalized_prompt_text", test_f1b_register_emission_stores_normalized_prompt_text),
-    ("test_f1b_pure_suffix_cycle_prompt_auto_readmits", test_f1b_pure_suffix_cycle_prompt_auto_readmits),
-    ("test_f1b_in_body_edit_still_denies", test_f1b_in_body_edit_still_denies),
-    ("test_f1b_hardening_class_suffix_never_auto_readmits", test_f1b_hardening_class_suffix_never_auto_readmits),
-    ("test_f1b_auto_readmit_error_falls_through_to_deny", test_f1b_auto_readmit_error_falls_through_to_deny),
+]
+
+# ---------------------------------------------------------------------------
+# Phase 3 (F2a) test function definitions — must appear BEFORE the final
+# _TESTS re-assignment below.
+# ---------------------------------------------------------------------------
+
+def test_f2a_register_emission_stores_prompt_raw():
+    """F2a: register_emission must store the exact raw prompt bytes in
+    'prompt_raw' so a nonce can be resolved to the EXACT original text.
+
+    RED until register_emission adds 'prompt_raw'.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            raw = "Run the next cycle—step exactly as specified."
+            entry = lazy_core.register_emission(raw, cls="cycle", item_id="feat-ref")
+            assert "prompt_raw" in entry, (
+                "register_emission must store 'prompt_raw' on each entry "
+                "(F2a / lazy-validation-readiness Phase 3)"
+            )
+            assert entry["prompt_raw"] == raw, (
+                f"prompt_raw must be the EXACT original bytes; "
+                f"got {entry['prompt_raw']!r}, expected {raw!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2a_resolve_emission_fresh_nonce_returns_entry():
+    """F2a: resolve_emission_by_nonce returns the entry for a fresh, unconsumed
+    nonce registered in the current run.
+
+    RED until resolve_emission_by_nonce is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # Write a run marker so the run-start gate passes.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned implementation step for feat-ref."
+            entry = lazy_core.register_emission(raw, cls="cycle", item_id="feat-ref")
+            nonce = entry["nonce"]
+
+            # Must have the resolver symbol.
+            assert hasattr(lazy_core, "resolve_emission_by_nonce"), (
+                "lazy_core must export resolve_emission_by_nonce "
+                "(F2a / lazy-validation-readiness Phase 3)"
+            )
+
+            resolved = lazy_core.resolve_emission_by_nonce(nonce)
+            assert resolved is not None, (
+                f"resolve_emission_by_nonce must return the entry for a fresh "
+                f"unconsumed nonce; got None for nonce {nonce!r}"
+            )
+            # The resolved text should be the raw prompt (or norm as fallback).
+            resolved_text = resolved.get("prompt_raw") or resolved.get("prompt_norm")
+            assert resolved_text == raw, (
+                f"Resolved text must match original raw prompt; "
+                f"got {resolved_text!r}, expected {raw!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2a_resolve_emission_consumed_nonce_returns_none():
+    """F2a: resolve_emission_by_nonce returns None for a nonce that has already
+    been consumed (single-use enforced, TOCTOU safety).
+
+    RED until resolve_emission_by_nonce is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — consumed nonce test."
+            entry = lazy_core.register_emission(raw, cls="cycle")
+            nonce = entry["nonce"]
+            lazy_core.consume_nonce(nonce, consumer="toolu_abc123")
+
+            resolved = lazy_core.resolve_emission_by_nonce(nonce)
+            assert resolved is None, (
+                "resolve_emission_by_nonce must return None for a consumed nonce; "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2a_resolve_emission_missing_nonce_returns_none():
+    """F2a: resolve_emission_by_nonce returns None for a nonce that does not
+    exist in the registry at all (unknown/garbage nonce).
+
+    RED until resolve_emission_by_nonce is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            bogus_nonce = "deadbeef" * 4  # 32-char hex, not in registry
+
+            resolved = lazy_core.resolve_emission_by_nonce(bogus_nonce)
+            assert resolved is None, (
+                "resolve_emission_by_nonce must return None for a missing nonce; "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2a_resolve_emission_stale_nonce_returns_none():
+    """F2a: resolve_emission_by_nonce returns None for an unconsumed nonce whose
+    emitted_at predates the current run's started_at (run-start gate).
+
+    RED until resolve_emission_by_nonce is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            old_time = _time.time() - 7200  # 2 hours ago
+
+            # Register the prompt BEFORE writing the run marker (so emitted_at < started_at).
+            raw = "Execute the planned step — stale nonce test."
+            entry = lazy_core.register_emission(raw, cls="cycle", now=old_time)
+            nonce = entry["nonce"]
+
+            # Now write the marker — started_at > emitted_at, making the entry stale.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+
+            resolved = lazy_core.resolve_emission_by_nonce(nonce)
+            assert resolved is None, (
+                "resolve_emission_by_nonce must return None for a nonce whose "
+                "emitted_at predates the run's started_at (stale gate); "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2a_append_dispatch_by_reference_event_writes_ledger():
+    """F2a: append_dispatch_by_reference_event writes a 'dispatch_by_reference: true'
+    event to the deny ledger (same JSONL file) so the by-reference path is
+    auditable by retro graders.
+
+    RED until append_dispatch_by_reference_event is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # Must have the symbol.
+            assert hasattr(lazy_core, "append_dispatch_by_reference_event"), (
+                "lazy_core must export append_dispatch_by_reference_event "
+                "(F2a / lazy-validation-readiness Phase 3)"
+            )
+
+            ts_before = _time.time()
+            result = lazy_core.append_dispatch_by_reference_event(
+                tool_use_id="toolu_reftest01",
+                nonce="abc123def456",
+                resolved_sha12="aabbccdd1234",
+                item_id="feat-ref",
+            )
+            assert result is True, (
+                "append_dispatch_by_reference_event must return True on success"
+            )
+
+            # Read back the ledger and verify the event was written.
+            ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+            assert ledger_path.exists(), (
+                "append_dispatch_by_reference_event must write to lazy-deny-ledger.jsonl"
+            )
+            lines = [
+                ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
+            ]
+            assert lines, "Ledger must have at least one entry after the call"
+            evt = json.loads(lines[-1])
+            assert evt.get("dispatch_by_reference") is True, (
+                f"Event must carry 'dispatch_by_reference: true'; got {evt!r}"
+            )
+            assert evt.get("tool_use_id") == "toolu_reftest01", (
+                f"Event must record tool_use_id; got {evt!r}"
+            )
+            assert evt.get("nonce") == "abc123def456", (
+                f"Event must record nonce; got {evt!r}"
+            )
+            assert evt.get("acked") is True, (
+                "dispatch_by_reference events owe no hardening debt — acked must be True"
+            )
+            assert evt.get("ts", 0) >= ts_before, (
+                "Event ts must be >= the call's start time"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# Extend _TESTS with Phase 3 (F2a) entries — appended after the list close above.
+_TESTS = _TESTS + [
+    # Phase 3 (lazy-validation-readiness) — F2a dispatch-by-reference: register_emission
+    # stores prompt_raw; resolve_emission_by_nonce resolver; append_dispatch_by_reference_event.
+    ("test_f2a_register_emission_stores_prompt_raw",
+     test_f2a_register_emission_stores_prompt_raw),
+    ("test_f2a_resolve_emission_fresh_nonce_returns_entry",
+     test_f2a_resolve_emission_fresh_nonce_returns_entry),
+    ("test_f2a_resolve_emission_consumed_nonce_returns_none",
+     test_f2a_resolve_emission_consumed_nonce_returns_none),
+    ("test_f2a_resolve_emission_missing_nonce_returns_none",
+     test_f2a_resolve_emission_missing_nonce_returns_none),
+    ("test_f2a_resolve_emission_stale_nonce_returns_none",
+     test_f2a_resolve_emission_stale_nonce_returns_none),
+    ("test_f2a_append_dispatch_by_reference_event_writes_ledger",
+     test_f2a_append_dispatch_by_reference_event_writes_ledger),
 ]
 
 
