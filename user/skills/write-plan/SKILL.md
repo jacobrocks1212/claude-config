@@ -145,6 +145,12 @@ Therefore, when building the WU list:
 
 **Partition INTENTIONALLY by complexity (Phase 9).** When partitioning, GROUP mechanical WUs together into mechanical parts and complex WUs into complex parts — **do NOT interleave**. Grouping lets an entire mechanical part dispatch on the cheaper model (Sonnet) without touching the complex work. Tag each emitted part with a `complexity:` frontmatter field (see below). Grouping by complexity is subordinate to the contract rules: parts still cover every phase in execution order, and a phase is never split mid-WU. When a phase's own WUs are a mix of mechanical and complex AND the dependency edges allow it, you MAY split that phase's mechanical WUs into a mechanical part and its complex WUs into a complex part (both tagged `phases: [<that phase>]`) — provided no WU in the later part is depended on by a WU in the earlier part. When complexity grouping would violate execution order or a dependency edge, keep the WUs together and tag the part `complex` (the safe tier).
 
+**Mechanical clusters are a SPLIT SIGNAL — do not absorb them into adjacent complex parts.** The most common missed-Sonnet opportunity is a phase that has a genuine complex core (new DSP, IPC wiring, architecture) PLUS a tail of mechanical WUs (registry/enum encoding, `index.d.ts` regeneration, intellisense completions, Reference-panel prose, tutorial-step authoring, sentinel/doc updates, golden-hash registration, HOT_PATH_FILES rows). When you see this shape, actively ask: can the mechanical tail be carved into a separate `complexity: mechanical` part? Apply the split unless it would:
+- violate execution order (a complex WU depends on the mechanical one or vice versa), OR
+- push any part over the 8-WU hard cap.
+
+If neither constraint applies, the split is REQUIRED — absorbing a mechanical tail into the complex part simply because they belong to the same phase wastes Opus cycles on work Sonnet handles equally well. The most common mechanical clusters to watch for: any WU whose primary deliverable is adding a variant to an existing enum or registry (`ParamId`, `ModulationSource`, a feature-flag enum), regenerating a type-declaration file, writing intellisense-completion entries, authoring Reference-panel content or tutorial steps, or updating INVARIANTS §10.1 rows and HOT_PATH_FILES registrations with no logic changes.
+
 ### Per-part `complexity` tag (Phase 9 — mechanical-vs-complex test)
 
 Every emitted part carries `complexity: mechanical | complex` in its frontmatter (default **`complex`** — the safe tier). The tag drives the `/execute-plan` cycle's dispatch model: `mechanical → sonnet`, `complex → opus`. This is the ONLY place implementation quality could regress, so the boundary is NOT guessed — apply this test:
@@ -155,6 +161,11 @@ Tag a part `mechanical` **only when ALL of its WUs** are genuinely mechanical:
 - codegen,
 - pure documentation edits,
 - mechanical refactors with snapshot/golden coverage,
+- registry/enum variant additions (adding a new `ParamId` variant, extending a discriminated union with a new encoding), where the value/wire format is already fully specified by an upstream contract,
+- regenerating type-declaration files (`index.d.ts`, napi bindings) from existing definitions,
+- intellisense-completion entries filtered to an already-defined eligible set,
+- Reference-panel prose or tutorial-step authoring where the API being documented already exists,
+- INVARIANTS §10.1 row additions and HOT_PATH_FILES registrations for a module whose hot-path classification is unambiguous (pure float math, no `RefCell`/`Drop`/alloc),
 
 **AND none of its WUs involve**:
 - a novel design decision,
@@ -162,6 +173,8 @@ Tag a part `mechanical` **only when ALL of its WUs** are genuinely mechanical:
 - cross-boundary wiring (IPC, service↔store, Rust↔TS, a new production seam).
 
 If **any** WU in the part fails the test — or you are uncertain — tag the part `complex`. A single complex WU contaminates the whole part; never average. `complex` is always safe (it dispatches on Opus, the full-capability tier); `mechanical` is the deliberate, documented downgrade. When you tag a part `mechanical`, note in its WU prose why every WU qualifies, so the `lazy-batch-retro` audit can confirm the boundary was applied (not assumed).
+
+**`complex` is NOT the safe default for tagging — it is the safe fallback for genuinely ambiguous cases.** Every part whose WUs are all mechanical MUST be tagged `mechanical`; tagging it `complex` to "play it safe" wastes Opus budget and defeats the cost-tiering mechanism. Apply the mechanical-vs-complex test above conscientiously for every part, not just the ones that feel obviously mechanical. The default `complex` applies only when the test leaves genuine uncertainty; it is not a license to skip the test.
 
 ### Partitioning rules (apply in priority order)
 
