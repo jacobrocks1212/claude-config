@@ -5330,6 +5330,233 @@ def test_update_repeat_counts_debounce_inert_without_marker():
 
 
 # ---------------------------------------------------------------------------
+# Tests: update_repeat_counts — F1 (lazy-validation-readiness) double-probe
+# debounce for repeat_count (dispatch-tuple streak).
+#
+# The SAME consume-count re-read oracle that guards step_count (F2) must also
+# guard the dispatch-tuple ``count``.  A second advancing probe for the SAME
+# dispatch tuple with the SAME HEAD and NO dispatch between the two probes
+# must NOT increment repeat_count — without this fix the orchestrator reads
+# count=2 and fires a false LOOP DETECTED.
+#
+# Five invariants (mirrors the F2/step_count battery above):
+#   1. Re-read holds: marker present, same tuple, same head, equal
+#      consume_counts → repeat_count HELD.
+#   2. Real dispatch increments: marker present, same tuple, but consume
+#      increased → repeat_count increments.
+#   3. HEAD reset wins: new HEAD resets to 1 (forward progress; never
+#      suppressed by debounce).
+#   4. No-marker path unchanged: identical probe without marker still
+#      increments 1 → 2 (debounce inert).
+#   5. Legacy-tolerant: prior file with no consume_count key cannot prove a
+#      re-read → increments as before.
+# ---------------------------------------------------------------------------
+
+
+def test_f1_repeat_count_debounce_holds_no_consume_between():
+    """F1 invariant 1 — Re-read holds repeat_count.
+
+    With a run marker present for this repo, two identical advancing probes
+    for the same dispatch tuple + same HEAD and NO registry consume between
+    them → repeat_count is HELD at 1 (a re-read, not a genuine re-attempt).
+
+    RED: pre-F1 update_repeat_counts increments unconditionally → 1 then 2,
+    which the orchestrator reads as LOOP DETECTED.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # Two identical advancing probes, NO consume between them.
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["repeat_count"] == 1, (
+        f"second identical probe with NO consume (no dispatch) between → HELD at 1 "
+        f"(F1 re-read debounce), got {r2!r}"
+    )
+
+
+def test_f1_repeat_count_debounce_increments_with_consume_between():
+    """F1 invariant 2 — Real dispatch still increments repeat_count.
+
+    With a run marker present, two identical dispatch-tuple probes WITH a
+    registry consume between them → repeat_count INCREMENTS 1 → 2 (a dispatch
+    landed, so this is a genuine re-attempt and must be counted).
+
+    RED: a debounce that ignores the consume-delta would HOLD at 1 here.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # A real dispatch lands between the two identical probes (consume delta +1).
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["repeat_count"] == 2, (
+        f"a consume between the two identical probes is a real dispatch → genuine "
+        f"repeat must still increment (1 → 2), got {r2!r}"
+    )
+
+
+def test_f1_repeat_count_head_reset_wins_over_debounce():
+    """F1 invariant 3 — HEAD reset overrides the debounce.
+
+    When a NEW HEAD is recorded since the last probe (a commit landed), the
+    dispatch-tuple streak resets to 1 regardless of the consume-count oracle
+    — a commit is always forward progress and must never be suppressed.
+
+    This verifies the debounce ONLY applies inside the same-head branch.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # Hand-write a prior state that has NO consume_count → prior_consume_count
+        # is the sentinel.  Then even if the current probe records a consume count,
+        # the oracle says "can't prove re-read" → would normally increment.  But we
+        # want to check the HEAD-reset path specifically, so use a real HEAD mismatch.
+        # Write a prior state with a fake head so the current (None) differs.
+        prior_sig = [
+            _STATE_A["feature_id"],
+            _STATE_A["sub_skill"],
+            _STATE_A["sub_skill_args"],
+            _STATE_A["current_step"],
+        ]
+        prior_step_sig = [_STATE_A["feature_id"], _STATE_A["current_step"]]
+        sig_path.write_text(
+            json.dumps({
+                "signature": prior_sig, "count": 3, "head": "deadbeef1234",
+                "step_signature": prior_step_sig, "step_count": 3,
+                "consume_count": 0,
+            }),
+            encoding="utf-8",
+        )
+        _set_state_dir(state_dir)
+        try:
+            # Probe against repo_root which is NOT a git repo → current_head=None.
+            # prior_head="deadbeef1234" ≠ None → HEAD reset branch fires.
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1, (
+        f"a new HEAD since the last probe must reset repeat_count to 1 regardless "
+        f"of the consume-count oracle, got {r1!r}"
+    )
+
+
+def test_f1_repeat_count_debounce_inert_without_marker():
+    """F1 invariant 4 — No-marker path is unchanged (debounce inert).
+
+    With NO run marker present, two identical dispatch-tuple probes still
+    increment repeat_count 1 → 2 — the consume-count key is never written and
+    the debounce is completely inert (byte-identical to the pre-F1 behavior).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"  # no marker
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            persisted = json.loads(sig_path.read_text(encoding="utf-8"))
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["repeat_count"] == 2, (
+        f"no marker → debounce inert → identical probe increments repeat_count "
+        f"(1 → 2), got {r2!r}"
+    )
+    assert "consume_count" not in persisted, (
+        f"no marker → consume-count key must NOT be written, got {persisted!r}"
+    )
+
+
+def test_f1_repeat_count_debounce_legacy_file_without_consume_key():
+    """F1 invariant 5 — Legacy-tolerant (prior file with no consume_count key).
+
+    A state file written without consume_count (a probe predating F1/F2, or an
+    unmarked write) cannot prove a re-read, so repeat_count increments as
+    before (1 → 2) — same migration tolerance as head / step_* keys.
+
+    RED: an impl that errors on the missing key, or incorrectly holds when it
+    cannot prove a re-read.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        # Hand-write a legacy Phase-10 shape (step keys present, NO consume key).
+        prior_sig = [
+            _STATE_A["feature_id"],
+            _STATE_A["sub_skill"],
+            _STATE_A["sub_skill_args"],
+            _STATE_A["current_step"],
+        ]
+        prior_step_sig = [_STATE_A["feature_id"], _STATE_A["current_step"]]
+        sig_path.write_text(
+            json.dumps({
+                "signature": prior_sig, "count": 1, "head": None,
+                "step_signature": prior_step_sig, "step_count": 1,
+            }),
+            encoding="utf-8",
+        )
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            persisted = json.loads(sig_path.read_text(encoding="utf-8"))
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 2, (
+        f"legacy file with no consume_count key → debounce cannot prove a re-read, "
+        f"so repeat_count increments as before (1 → 2), got {r1!r}"
+    )
+    assert "consume_count" in persisted, (
+        f"the consume_count key must be added to the persisted record on next "
+        f"marked write, got {persisted!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: git_guard_status — WU-5 single-probe payload (git guards)
 # ---------------------------------------------------------------------------
 

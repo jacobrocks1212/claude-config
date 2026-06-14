@@ -2546,17 +2546,19 @@ def update_repeat_counts(
     at 1 and the new keys are added on the next write — mirroring the ``head``-field
     migration.
 
-    ``consume_count`` (lazy-pipeline-ergonomics Phase 2, F2) is the DOUBLE-PROBE
-    DEBOUNCE oracle and is MARKER-GATED: it is written ONLY when a run marker is
-    present (``read_run_marker()`` is non-None), recording the registry's
-    consumed-entry count (``consumed_emission_count``) at the time of the probe.
-    On the next probe, when (a) a marker is present, (b) the step signature is
-    unchanged, AND (c) the prior file recorded a ``consume_count`` that equals the
-    current consumed-count → NO dispatch landed between the two probes (the guard
-    consumes a nonce on every ALLOW), so the second probe is a RE-READ and the
-    HEAD-blind ``step_count`` is HELD instead of incremented. This stops an
-    inspection-probe-then-dispatch-probe pair from inflating ``step_repeat_count``
-    and tripping a false LOOP DETECTED. A genuine oscillation still trips because
+    ``consume_count`` (lazy-pipeline-ergonomics Phase 2 / F2, and now also F1 /
+    lazy-validation-readiness) is the DOUBLE-PROBE DEBOUNCE oracle and is
+    MARKER-GATED: it is written ONLY when a run marker is present
+    (``read_run_marker()`` is non-None), recording the registry's consumed-entry
+    count (``consumed_emission_count``) at the time of the probe.  On the next
+    probe, when (a) a marker is present, (b) the relevant signature is unchanged,
+    AND (c) the prior file recorded a ``consume_count`` that equals the current
+    consumed-count → NO dispatch landed between the two probes (the guard consumes
+    a nonce on every ALLOW), so the second probe is a RE-READ.  Both ``count``
+    (F1: same-tuple same-HEAD branch) and ``step_count`` (F2) are HELD instead of
+    incremented.  This stops an inspection-probe-then-dispatch-probe pair from
+    inflating either counter and tripping a false LOOP DETECTED. A genuine
+    oscillation still trips because
     a real dispatch (hence a consume) lands between its repeats. The key is
     legacy-tolerant exactly like ``head`` / ``step_*``: a file with no
     ``consume_count`` cannot prove a re-read, so ``step_count`` behaves as before
@@ -2670,24 +2672,12 @@ def update_repeat_counts(
         # File absent, unreadable, or corrupt → treat as no prior.
         pass
 
-    # --- Compute the dispatch-tuple count (Phase 9 WU-2 — HEAD-aware) ---------
-    # JSON round-trips tuples as lists, so compare new_sig as a list.
-    if prior_sig_list is None or list(new_sig) != prior_sig_list:
-        # Changed signature (or no prior) — fresh streak.
-        count = 1
-    elif prior_head is _MISSING:
-        # Legacy file (no `head` recorded) — increment for backward-compat and
-        # begin recording head going forward.
-        count = prior_count + 1
-    elif prior_head is not None and prior_head != current_head:
-        # Same tuple but commits landed between probes (HEAD advanced) — that is
-        # forward progress, not a stall, so reset the streak to 1.
-        count = 1
-    else:
-        # Same tuple AND same head (or both None) — genuine consecutive repeat.
-        count = prior_count + 1
-
-    # --- Resolve the F2 double-probe debounce oracle (MARKER-GATED, REPO-SCOPED)
+    # --- Resolve the F2/F1 double-probe debounce oracle (MARKER-GATED, REPO-SCOPED)
+    # Moved ABOVE both count blocks so BOTH the dispatch-tuple count (Phase 9 /
+    # F1) and the step-level count (Phase 10 / F2) can share this single oracle
+    # read.  (Previously it sat between the two blocks; hoisting it here is the
+    # only structural change required by F1 / lazy-validation-readiness.)
+    #
     # When a run marker for THIS repo is present, read the registry's
     # consumed-emission count (the guard consumes one nonce per ALLOW, so this is
     # a dispatch counter).  current_consume_count stays the _MISSING sentinel
@@ -2699,7 +2689,7 @@ def update_repeat_counts(
     # REPO SCOPING (hardening-log Round 8, 2026-06-13): the marker is a SINGLE
     # global file, but the consume-count it gates (consumed_emission_count) is a
     # global registry counter shared by whatever marked run is live.  A probe for
-    # repo A must NOT engage the F2 debounce off repo B's marker — doing so
+    # repo A must NOT engage the debounce off repo B's marker — doing so
     # (a) made this very function non-hermetic to its `repo_root` argument, so the
     # step-counter unit tests went RED whenever ANY marked run was live on the
     # machine, and (b) latently let a concurrent run in another repo spuriously
@@ -2713,6 +2703,41 @@ def update_repeat_counts(
         _marker_repo = _marker.get("repo_root")
         if _marker_repo is not None and Path(_marker_repo).resolve() == repo_root.resolve():
             current_consume_count = consumed_emission_count()
+
+    # --- Compute the dispatch-tuple count (Phase 9 WU-2 — HEAD-aware) ---------
+    # JSON round-trips tuples as lists, so compare new_sig as a list.
+    if prior_sig_list is None or list(new_sig) != prior_sig_list:
+        # Changed signature (or no prior) — fresh streak.
+        count = 1
+    elif prior_head is _MISSING:
+        # Legacy file (no `head` recorded) — increment for backward-compat and
+        # begin recording head going forward.
+        count = prior_count + 1
+    elif prior_head is not None and prior_head != current_head:
+        # Same tuple but commits landed between probes (HEAD advanced) — that is
+        # forward progress, not a stall, so reset the streak to 1.
+        count = 1
+    elif (
+        # F1 (lazy-validation-readiness) double-probe debounce: HOLD count (do
+        # NOT increment) when this is provably a RE-READ — the dispatch tuple is
+        # unchanged, the HEAD is unchanged, AND no dispatch landed between the
+        # two probes.  "No dispatch" = unchanged registry consume-count, which
+        # we can only assert when BOTH this probe and the prior write recorded a
+        # consume-count (i.e. both were marked probes).  A legacy/unmarked prior
+        # (sentinel) or an unmarked current probe (sentinel) cannot prove a
+        # re-read → fall through to the normal increment.  This prevents the
+        # orchestrator from reading a spurious count=2 and firing a false LOOP
+        # DETECTED when an inspection probe and a dispatch probe share the same
+        # tuple with no intervening dispatch.  A genuine oscillation still trips
+        # because a real dispatch (hence a consume) lands between its repeats.
+        current_consume_count is not _MISSING
+        and prior_consume_count is not _MISSING
+        and current_consume_count == prior_consume_count
+    ):
+        count = prior_count
+    else:
+        # Same tuple AND same head (or both None) — genuine consecutive repeat.
+        count = prior_count + 1
 
     # --- Compute the step-level count (Phase 10 WU-2 — NO HEAD reset) ---------
     # Deliberately HEAD-BLIND: identical (feature_id, current_step) increments
