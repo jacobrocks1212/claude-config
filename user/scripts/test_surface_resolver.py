@@ -27,7 +27,9 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 from surface_resolver import (
     asserted_tools,
+    asserted_tools_with_lines,
     registered_tools,
+    run_lint,
     unresolved_tools,
 )
 import validation_readiness as vr
@@ -500,3 +502,255 @@ class TestValidationReadiness:
         # Some explanatory text should appear.
         output = buf.getvalue()
         assert "queue.json" in output.lower() or "no features" in output.lower() or output == ""
+
+
+# ---------------------------------------------------------------------------
+# run_lint — F8 authoring-time scenario-surface existence lint
+# (lazy-validation-readiness Phase 5a)
+#
+# NOTE: Per the project's no-subprocess-in-tests rule (CLAUDE.md Gotchas —
+# "Subprocess tests are a timeout risk"), these tests call run_lint() directly
+# rather than using subprocess.run().  The main() / argparse layer is NOT
+# tested here — run_lint() is the testable core that main() delegates to.
+# ---------------------------------------------------------------------------
+
+class TestRunLint:
+    """Tests for run_lint() — the F8 authoring-time scenario-surface lint.
+
+    All fixtures build minimal in-memory registration + scenario trees via
+    tmp_path.  No live AlgoBooth repo access.
+    """
+
+    def _make_repo(self, tmp_path: Path, tool_names: list[str]) -> Path:
+        """Build a fixture repo whose registrations/ contains the given tool names."""
+        repo = tmp_path / "repo"
+        reg_dir = repo / "src-tauri" / "src" / "ipc" / "mcp" / "registrations"
+        reg_dir.mkdir(parents=True)
+        lines = "\n".join(
+            f'crate::register_tool_post!({name}, P, "cat", "d");'
+            for name in tool_names
+        )
+        (reg_dir / "tools.rs").write_text(lines, encoding="utf-8")
+        return repo
+
+    def _make_scenario(self, tmp_path: Path, content: str, name: str = "scenario.md") -> Path:
+        """Write scenario content to a tmp file and return its path."""
+        p = tmp_path / name
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    # ------------------------------------------------------------------
+    # 1. All-registered scenario → exit 0
+    # ------------------------------------------------------------------
+
+    def test_all_registered_exits_0(self, tmp_path: Path):
+        """A scenario asserting only registered tools exits 0 with no ERROR messages.
+
+        Ground-truth: exit_code == 0, no message starts with "ERROR:".
+        """
+        repo = self._make_repo(tmp_path, ["play", "stop", "reset_state"])
+        scenario = self._make_scenario(
+            tmp_path,
+            textwrap.dedent("""\
+                # Clean scenario
+                1. POST /tools/play
+                2. sleep 1
+                3. POST /tools/stop
+                4. POST /tools/reset_state
+            """),
+        )
+
+        exit_code, messages = run_lint([scenario], repo)
+
+        # Ground-truth literal assertions.
+        assert exit_code == 0, f"Expected exit 0, got {exit_code}. Messages: {messages}"
+        error_msgs = [m for m in messages if m.startswith("ERROR:")]
+        assert error_msgs == [], f"Unexpected ERROR messages: {error_msgs}"
+        # Summary line must indicate success.
+        assert any("LINT OK" in m for m in messages), (
+            f"Expected LINT OK summary, got: {messages}"
+        )
+
+    # ------------------------------------------------------------------
+    # 2. Unregistered tool → exit 1, names tool + scenario path + line number
+    # ------------------------------------------------------------------
+
+    def test_unregistered_tool_exits_1(self, tmp_path: Path):
+        """A scenario asserting an unregistered tool exits 1.
+
+        The ERROR message MUST name the tool, the scenario path, and the
+        precise 1-based line number of the offending assertion.
+        """
+        repo = self._make_repo(tmp_path, ["play", "stop"])
+        scenario = self._make_scenario(
+            tmp_path,
+            textwrap.dedent("""\
+                # Bad scenario
+                1. POST /tools/play
+                2. POST /tools/phantom_tool
+                3. POST /tools/stop
+            """),
+        )
+
+        exit_code, messages = run_lint([scenario], repo)
+
+        # Ground-truth: exit 1.
+        assert exit_code == 1, f"Expected exit 1, got {exit_code}. Messages: {messages}"
+
+        # Find the ERROR line for phantom_tool.
+        error_msgs = [m for m in messages if m.startswith("ERROR:")]
+        assert len(error_msgs) >= 1, f"Expected at least one ERROR message, got: {messages}"
+
+        phantom_errors = [m for m in error_msgs if "phantom_tool" in m]
+        assert phantom_errors, (
+            f"ERROR message does not name 'phantom_tool'. ERROR lines: {error_msgs}"
+        )
+
+        # The scenario path must appear in the message.
+        assert str(scenario) in phantom_errors[0], (
+            f"Scenario path {scenario!r} not in error message: {phantom_errors[0]!r}"
+        )
+
+        # The line number must appear (phantom_tool is on line 3 in the dedented text).
+        assert ":3" in phantom_errors[0], (
+            f"Expected line number ':3' in error message: {phantom_errors[0]!r}"
+        )
+
+    # ------------------------------------------------------------------
+    # 3. 'sleep' is in the default allowlist → NOT flagged, exit 0
+    # ------------------------------------------------------------------
+
+    def test_sleep_not_flagged_by_default(self, tmp_path: Path):
+        """'sleep' appearing as POST /tools/sleep is in the built-in allowlist.
+
+        The lint MUST NOT flag it even though 'sleep' is not a registered
+        MCP tool — it is a test-harness control directive.
+        Exit 0 with no ERROR messages.
+        """
+        # Register only 'play'; 'sleep' is intentionally NOT registered.
+        repo = self._make_repo(tmp_path, ["play"])
+        scenario = self._make_scenario(
+            tmp_path,
+            textwrap.dedent("""\
+                # Scenario with sleep directive
+                1. POST /tools/play
+                2. sleep 1
+                3. POST /tools/sleep
+            """),
+        )
+
+        exit_code, messages = run_lint([scenario], repo)
+
+        # Ground-truth: exit 0, no ERROR for sleep.
+        assert exit_code == 0, (
+            f"Expected exit 0 ('sleep' is allowlisted), got {exit_code}. Messages: {messages}"
+        )
+        error_msgs = [m for m in messages if m.startswith("ERROR:") and "sleep" in m]
+        assert error_msgs == [], f"Unexpected ERROR for 'sleep': {error_msgs}"
+
+    # ------------------------------------------------------------------
+    # 4. --allow suppresses a specific tool → exit 0
+    # ------------------------------------------------------------------
+
+    def test_allow_flag_suppresses_named_tool(self, tmp_path: Path):
+        """run_lint(allow={'phantom_tool'}) suppresses findings for 'phantom_tool'.
+
+        Simulates --allow phantom_tool on the CLI.  The tool is NOT registered
+        and NOT in the default allowlist, but the caller-supplied allow set
+        causes it to be silently skipped → exit 0.
+        """
+        repo = self._make_repo(tmp_path, ["play"])
+        scenario = self._make_scenario(
+            tmp_path,
+            textwrap.dedent("""\
+                # Scenario with phantom_tool allowed by caller
+                1. POST /tools/play
+                2. POST /tools/phantom_tool
+            """),
+        )
+
+        exit_code, messages = run_lint([scenario], repo, allow={"phantom_tool"})
+
+        # Ground-truth: exit 0 because phantom_tool is in the caller's allow set.
+        assert exit_code == 0, (
+            f"Expected exit 0 (phantom_tool is caller-allowed), "
+            f"got {exit_code}. Messages: {messages}"
+        )
+        error_msgs = [m for m in messages if m.startswith("ERROR:")]
+        assert error_msgs == [], f"Unexpected ERROR messages with --allow: {error_msgs}"
+
+    # ------------------------------------------------------------------
+    # 5. asserted_tools_with_lines — returns (line_no, name) pairs
+    # ------------------------------------------------------------------
+
+    def test_asserted_tools_with_lines_basic(self):
+        """asserted_tools_with_lines returns correct (line_number, name) tuples.
+
+        Ground-truth: 'play' is on line 2, 'stop' is on line 4 in the fixture.
+        """
+        text = textwrap.dedent("""\
+            # Scenario
+            1. POST /tools/play
+            2. sleep 1
+            3. GET /tools/stop
+        """)
+        result = asserted_tools_with_lines(text)
+
+        # Both entries must be present with correct line numbers.
+        assert (2, "play") in result, f"Expected (2, 'play') in {result}"
+        assert (4, "stop") in result, f"Expected (4, 'stop') in {result}"
+        # No spurious extras.
+        names = {name for _, name in result}
+        assert names == {"play", "stop"}, f"Unexpected names: {names}"
+
+    def test_asserted_tools_with_lines_multiple_per_line(self):
+        """Multiple tool assertions on the SAME line are each captured separately."""
+        # Unusual but the regex must not skip occurrences on the same line.
+        text = "POST /tools/alpha GET /tools/beta\n"
+        result = asserted_tools_with_lines(text)
+        names = [name for _, name in result]
+        assert "alpha" in names, f"'alpha' missing from {result}"
+        assert "beta" in names, f"'beta' missing from {result}"
+        # Both on line 1.
+        for line_no, name in result:
+            assert line_no == 1, f"Expected line 1 for {name!r}, got {line_no}"
+
+    def test_asserted_tools_with_lines_empty(self):
+        """Empty text → empty list."""
+        assert asserted_tools_with_lines("") == []
+
+    # ------------------------------------------------------------------
+    # 6. Multiple scenarios — failure in one does not suppress the other
+    # ------------------------------------------------------------------
+
+    def test_multi_scenario_partial_failure(self, tmp_path: Path):
+        """run_lint over two scenarios: one clean, one bad → exit 1.
+
+        The ERROR message must identify the bad scenario, not the clean one.
+        The clean scenario must NOT appear in any ERROR message.
+        """
+        repo = self._make_repo(tmp_path, ["play", "stop"])
+
+        clean = self._make_scenario(
+            tmp_path,
+            "1. POST /tools/play\n2. POST /tools/stop\n",
+            name="clean.md",
+        )
+        bad = self._make_scenario(
+            tmp_path,
+            "1. POST /tools/play\n2. POST /tools/missing_tool\n",
+            name="bad.md",
+        )
+
+        exit_code, messages = run_lint([clean, bad], repo)
+
+        assert exit_code == 1, f"Expected exit 1, got {exit_code}"
+        error_msgs = [m for m in messages if m.startswith("ERROR:")]
+        # The bad scenario path must appear in an ERROR.
+        assert any(str(bad) in m for m in error_msgs), (
+            f"Bad scenario path not in any ERROR: {error_msgs}"
+        )
+        # The clean scenario path must NOT appear in any ERROR.
+        assert not any(str(clean) in m for m in error_msgs), (
+            f"Clean scenario path wrongly appears in ERROR: {error_msgs}"
+        )

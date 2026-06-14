@@ -11,6 +11,22 @@ The resolver answers two questions given a repo root:
   3. Of the asserted names, which are UNRESOLVED (not registered)?
 
 Spec: docs/specs/lazy-validation-readiness/SPEC.md §F5 + §F8
+
+--lint mode (Phase 5 / F8):
+  python surface_resolver.py --lint --repo-root <root> <scenario.md> [...]
+
+  For each scenario, prints an ERROR line for every unresolved tool:
+      ERROR: <scenario_path>:<line> asserts unregistered MCP tool '<name>' — not found
+             in registrations/ (and not in GOLDEN_TOOL_NAMES)
+
+  Exit code: 1 if any non-allowlisted unresolved tool is found; 0 if all clean.
+
+Built-in allowlist (not MCP tools — control pseudo-steps):
+  - sleep  : OS-level sleep directive, not an MCP tool endpoint
+  Extend at runtime with repeatable --allow <name> flags.
+
+  Do NOT allowlist evaluate_code / read_file / audio_perceptual_quality — those
+  are genuine surface gaps the lint is designed to catch.
 """
 
 import re
@@ -145,6 +161,26 @@ def registered_tools(
     return names
 
 
+def asserted_tools_with_lines(text: str) -> list[tuple[int, str]]:
+    """Return a list of (line_number, tool_name) for every tool assertion in ``text``.
+
+    Scans for ``POST /tools/<name>`` or ``GET /tools/<name>`` occurrences and
+    returns the 1-based line number alongside each tool name.  Duplicate tool
+    names may appear more than once (once per occurrence in the text).
+
+    This is the *with-location* companion to ``asserted_tools``.  The lint
+    (``run_lint``) uses it to produce precise file:line error messages so the
+    author can jump directly to the offending line.  The set-based
+    ``asserted_tools`` is preserved for callers that only need the unique set
+    (e.g., ``unresolved_tools`` and the F5 pre-screen).
+    """
+    results: list[tuple[int, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        for match in _SCENARIO_TOOL_RE.finditer(line):
+            results.append((line_no, match.group(1)))
+    return results
+
+
 def asserted_tools(scenario_text: str) -> set[str]:
     """Return the set of MCP tool names asserted in a scenario's text.
 
@@ -225,26 +261,134 @@ def unresolved_tools(
 
 
 # ---------------------------------------------------------------------------
-# Standalone CLI (informational — exit 0; Phase 5/F8 adds --lint / exit !=0)
+# Built-in non-tool allowlist
+# ---------------------------------------------------------------------------
+
+# Names that appear in scenario files as ``POST /tools/<name>`` or
+# ``GET /tools/<name>`` but are NOT MCP tool registrations — they are control
+# pseudo-steps interpreted by the test harness directly (e.g., the OS-level
+# sleep directive).  The lint skips these names so they are never reported as
+# "unregistered tools."
+#
+# DO NOT add genuine MCP-surface gaps to this list — names like
+# ``evaluate_code``, ``read_file``, ``audio_perceptual_quality`` are real
+# missing-surface findings the lint MUST report.  Only add names that are
+# intentionally pseudo-tools that will never be registered in registrations/.
+_DEFAULT_LINT_ALLOWLIST: frozenset[str] = frozenset({
+    "sleep",  # OS-sleep directive written as `sleep N` — not an MCP tool.
+})
+
+
+# ---------------------------------------------------------------------------
+# Lint entry point (F8 — authoring-time scenario surface lint)
+# ---------------------------------------------------------------------------
+
+def run_lint(
+    scenario_paths: list[Path],
+    repo_root: Path,
+    *,
+    allow: frozenset[str] | set[str] | None = None,
+    registrations_glob: str = "src-tauri/src/ipc/mcp/registrations/*.rs",
+) -> tuple[int, list[str]]:
+    """Run the scenario-surface existence lint over one or more scenario files.
+
+    For each scenario, checks every asserted MCP tool name (``POST /tools/<x>``
+    or ``GET /tools/<x>``) against the registered tool set from ``repo_root``.
+    Names in the effective allowlist (``_DEFAULT_LINT_ALLOWLIST | allow``) are
+    silently skipped — they are pseudo-steps, not real MCP registrations.
+
+    Returns:
+        (exit_code, messages) where:
+        - ``exit_code`` is 0 when ALL asserted tools (minus the allowlist) are
+          registered, or 1 when at least one unresolved, non-allowlisted tool
+          is found.
+        - ``messages`` is a list of human-readable strings: ERROR lines for each
+          finding plus a single summary line (always appended last).
+
+    Error message format (one per unresolved occurrence):
+        ERROR: <scenario_path>:<line_no> asserts unregistered MCP tool
+        '<name>' — not found in registrations/ (and not in GOLDEN_TOOL_NAMES)
+
+    This is the testable core — ``main()`` calls it and ``sys.exit``s on the
+    returned code.  Tests call it directly (avoids subprocess overhead and the
+    project's no-subprocess-in-tests rule).
+    """
+    effective_allow = _DEFAULT_LINT_ALLOWLIST | (allow or set())
+
+    # Compute registered tools once (shared across all scenarios — same repo_root).
+    registered = registered_tools(repo_root, registrations_glob=registrations_glob)
+
+    messages: list[str] = []
+    any_finding = False
+
+    for scenario_path in scenario_paths:
+        try:
+            text = _resolve_scenario_text(scenario_path)
+        except FileNotFoundError as exc:
+            messages.append(f"ERROR: {exc}")
+            any_finding = True
+            continue
+
+        # Walk every (line_no, tool_name) occurrence in this scenario.
+        for line_no, tool_name in asserted_tools_with_lines(text):
+            # Skip pseudo-steps (e.g. sleep) and registered tools.
+            if tool_name in effective_allow:
+                continue
+            if tool_name in registered:
+                continue
+
+            # Unresolved, non-allowlisted tool — emit a precise error.
+            messages.append(
+                f"ERROR: {scenario_path}:{line_no} asserts unregistered MCP tool "
+                f"'{tool_name}' — not found in registrations/ (and not in GOLDEN_TOOL_NAMES)"
+            )
+            any_finding = True
+
+    if any_finding:
+        messages.append(
+            f"LINT FAIL: {len([m for m in messages if m.startswith('ERROR:')])} "
+            f"unresolved tool assertion(s) found across {len(scenario_paths)} scenario(s)."
+        )
+        return 1, messages
+    else:
+        messages.append(
+            f"LINT OK: all asserted MCP tools registered "
+            f"({len(scenario_paths)} scenario(s) checked)."
+        )
+        return 0, messages
+
+
+# ---------------------------------------------------------------------------
+# Standalone CLI (informational base mode + --lint mode for F8)
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[list[str]] = None) -> int:
     """CLI entry point.
 
-    Usage:
+    Base mode (informational, exit 0):
         python surface_resolver.py --repo-root <root> <scenario.md> [...]
 
-    Prints unresolved tool names per scenario.  Exit code is always 0 in the
-    base CLI (informational).  Phase 5 / F8 adds ``--lint`` which exits
-    non-zero when any unresolved tool is found.
+    Lint mode (F8 / Phase 5, exits non-zero on findings):
+        python surface_resolver.py --lint --repo-root <root> <scenario.md> [...]
+        python surface_resolver.py --lint --allow my_pseudo_step --repo-root <root> <scenario.md>
+
+    --allow <name>   Suppress lint findings for <name> (repeatable).  Useful for
+                     project-specific pseudo-steps that are not MCP tool
+                     registrations but appear as ``POST /tools/<name>`` in
+                     scenarios.  The built-in allowlist already covers ``sleep``;
+                     only add genuinely-intentional pseudo-steps here.
+                     DO NOT use --allow to silence real surface gaps like
+                     evaluate_code, read_file, or audio_perceptual_quality.
     """
     import argparse
 
     parser = argparse.ArgumentParser(
         description=(
             "surface_resolver.py — Check which MCP tools asserted by scenario(s) "
-            "are not registered in the target repo.  Exit 0 (informational).  "
-            "Phase 5 adds --lint for non-zero exit on findings."
+            "are not registered in the target repo.\n\n"
+            "Base mode: informational, always exits 0.\n"
+            "Lint mode (--lint): exits 1 if any non-allowlisted unresolved tool found "
+            "(F8 / lazy-validation-readiness Phase 5)."
         )
     )
     parser.add_argument(
@@ -258,8 +402,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         default=False,
         help=(
-            "Exit non-zero if any scenario asserts an unresolved tool.  "
-            "(Phase 5 / F8 mode — reserved for that phase.)"
+            "Lint mode: exit 1 if any scenario asserts an unresolved MCP tool "
+            "(not in registrations/ and not in GOLDEN_TOOL_NAMES).  "
+            "Prints file:line ERROR messages for each finding.  "
+            "The built-in allowlist exempts 'sleep' (an OS sleep directive, "
+            "not an MCP tool).  Extend with --allow <name>."
+        ),
+    )
+    parser.add_argument(
+        "--allow",
+        action="append",
+        dest="allow",
+        metavar="NAME",
+        default=[],
+        help=(
+            "Additional name to suppress from lint findings (repeatable).  "
+            "Only use for pseudo-steps that are intentionally not registered.  "
+            "Do NOT use to hide genuine surface gaps."
         ),
     )
     parser.add_argument(
@@ -271,6 +430,25 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve()
+
+    if args.lint:
+        # Lint mode (F8): use run_lint for precise file:line errors + exit code.
+        extra_allow = set(args.allow) if args.allow else set()
+        scenario_paths = [Path(s) for s in args.scenarios]
+        exit_code, messages = run_lint(
+            scenario_paths,
+            repo_root,
+            allow=extra_allow,
+        )
+        for msg in messages:
+            # Route ERROR lines to stderr; summary to stdout.
+            if msg.startswith("ERROR:"):
+                print(msg, file=sys.stderr)
+            else:
+                print(msg)
+        return exit_code
+
+    # Base (informational) mode — always exits 0.
     any_missing = False
 
     for scenario_str in args.scenarios:
@@ -290,8 +468,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             print(f"{scenario_path}: OK (all asserted tools registered)")
 
-    if args.lint and any_missing:
-        return 1
+    # Base mode is always informational — exit 0 regardless.
+    _ = any_missing  # suppresses "unused variable" warning; not used for exit code.
     return 0
 
 

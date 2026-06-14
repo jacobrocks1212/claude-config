@@ -187,6 +187,39 @@ When the plan's Quality Gates step runs, the gate level is right-sized per the *
 
 Apply the Batch-frequency rule: intermediate batches MAY run the targeted gate; the full workspace gate is MANDATORY (a) before the final commit of the plan part and (b) immediately on any escalation-triggering batch. The full workspace gate must actually run AND pass before the plan part is flipped to `Complete` — record the part-end full-QG run + result in the Implementation Notes block. The `/lazy-batch-retro` auditor counts `Bash:qg` calls per cycle; ≥ 1 full-workspace `npm run qg` run per plan part (plus one on each escalation-triggering batch) is the audit signal — a part that closed with only targeted runs and no part-end full gate is the INCOMPLETE state.
 
+#### MCP Scenario Surface Lint (F8 — if this batch authored or modified an mcp-tests scenario)
+
+If a batch in this plan authored or modified **any** MCP test scenario under a
+feature's `mcp-tests/` or `docs/testing/mcp-tests/` directory, run the
+surface-existence lint as part of that batch's verification (between subagent
+dispatch and the PHASES.md update):
+
+```bash
+python ~/.claude/scripts/surface_resolver.py --lint \
+    --repo-root <repo-root> \
+    <path/to/scenario.md> [...]
+```
+
+The script is at `~/.claude/scripts/surface_resolver.py` (symlinked from the
+`claude-config` repo's `user/scripts/surface_resolver.py`).
+
+**If the lint exits non-zero (exit 1):** treat this as a blocking batch failure
+— do NOT proceed to the PHASES.md update or commit.  Fix every flagged tool first:
+
+- Each `ERROR: <file>:<line> asserts unregistered MCP tool '<name>'` identifies the
+  exact line in the scenario that asserts a tool not found in
+  `src-tauri/src/ipc/mcp/registrations/` (nor in `GOLDEN_TOOL_NAMES`).
+- Either implement the missing tool (add a PHASES.md deliverable), correct the tool
+  name in the scenario, or — for genuine non-MCP pseudo-steps — suppress with
+  `--allow <name>` (built-in allowlist already covers `sleep`).
+
+**Rationale (F8 / lazy-validation-readiness):** surface gaps (`evaluate_code`,
+missing diagnostic tools) were only discovered at Step-9 mcp-test — ~3 cycles after
+the scenario was authored.  This lint catches the gap in the same batch that authors
+the scenario, at near-zero cost.
+
+> Skip this check if the batch did NOT author or modify any `mcp-tests/` scenario.
+
 ### Component Loading
 
 The plan references reusable component files by path (listed in the Component Reference Card). **Before executing each step:**

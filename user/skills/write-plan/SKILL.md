@@ -509,6 +509,41 @@ Include a batch overview table per phase:
 
 ---
 
+## Step 3.4: MCP Scenario Surface Lint (F8 — if this cycle authored or modified an mcp-tests scenario)
+
+If this write-plan cycle authored or modified **any** MCP test scenario under a feature's
+`mcp-tests/` or `docs/testing/mcp-tests/` directory, run the surface-existence lint
+BEFORE writing plan files to disk:
+
+```bash
+python ~/.claude/scripts/surface_resolver.py --lint \
+    --repo-root <repo-root> \
+    <path/to/scenario.md> [...]
+```
+
+The script is at `~/.claude/scripts/surface_resolver.py` (symlinked from the
+`claude-config` repo's `user/scripts/surface_resolver.py`).
+
+**If the lint exits non-zero:** fix every flagged tool BEFORE the plan lands.
+Each `ERROR: <file>:<line> asserts unregistered MCP tool '<name>'` line means the
+asserted tool does not exist in `src-tauri/src/ipc/mcp/registrations/` (nor in
+`GOLDEN_TOOL_NAMES`).  Resolution options:
+
+1. **Tool does not exist yet** — add a PHASES.md deliverable to implement it, or
+   remove the assertion from the scenario until the tool is registered.
+2. **Tool exists under a different name** — correct the scenario's tool name.
+3. **Tool is a non-MCP pseudo-step** (e.g., a test-harness sleep directive) — pass
+   `--allow <name>` to suppress it (built-in allowlist already covers `sleep`).
+
+**Rationale (F8 / lazy-validation-readiness):** write-plan/execute-plan authoring
+scenarios asserting `evaluate_code` (d8-session-format) and missing diagnostic tools
+(polyphonic) caused BLOCKED discoveries at Step-9 mcp-test — ~3 full cycles later.
+This lint catches the gap at authoring time with a single cheap check.
+
+> Skip this step if the cycle did NOT author or modify any `mcp-tests/` scenario.
+
+---
+
 ## Step 3.5: Anchor-Existence Check (MANDATORY — BEFORE WRITING PLAN FILES)
 
 Before writing any plan file to disk, verify every `[VERIFY: …]` annotation you authored in Step 3:
