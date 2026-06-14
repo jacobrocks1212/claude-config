@@ -551,6 +551,14 @@ Substantive upstream facts from lazy-hardening Phases 8–11 (Complete) that the
 
 ---
 
+#### Follow-up Implementation Notes (2026-06-14 — step_repeat_count multi-part exemption)
+
+Surfaced by the audio-rate-modulation lazy-batch-retro (AlgoBooth `docs/features/audio/audio-rate-modulation/LAZY_BATCH_REVIEW_2026-06-14.md`, finding F-1): the F2 step-level oscillation tripwire false-tripped on a healthy **5-part `/execute-plan` sequence** — `step_repeat_count` climbed 1→5 across the (legitimately different) parts while the dispatch-tuple `repeat_count` correctly stayed 1, forcing a manual inspect-before-dispatch on parts 3/4/5 (zero wasted cycles, but real friction on every ≥3-part plan).
+
+**Fix** (`lazy_core.update_repeat_counts`): when `(feature_id, current_step)` repeats but `sub_skill_args` (the plan-part path) ADVANCED vs the prior probe → reset `step_repeat_count` to 1 (ordered multi-part progress). Increment only when BOTH the step signature AND `sub_skill_args` are unchanged — which preserves the d8 same-target oscillation detection the counter was built for (HEAD-advance immunity untouched; the new branch precedes the F2 consume-count debounce; prior `sub_skill_args` read from the already-persisted signature tuple, guarded so a missing/legacy file can never spuriously reset the tripwire). Tests +2 (multipart-does-not-trip; same-args-still-trips, which also asserts the dispatch-tuple `repeat_count` stays flat — the d8 blind spot); full suite **363/363**. Commit `de39d3a7`. No new phase — follow-up to the F1/F2 repeat-count debounce family.
+
+---
+
 ## Review Notes
 
 **2026-06-11 — /spec-phases authoring review.** Ground-truth verified: yes (git status, line count 326, phase-heading grep all matched the drafting subagent's pasted block). **Review verdict: PASS-WITH-FIXES** — full SPEC coverage confirmed (all components land in exactly one phase; all four Locked Decisions intact; deny hook genuinely unarmed until Phase 6; failure-mode containments reflected). Nine localized fixes applied by the orchestrator post-review: (1) Phase 6 MVB section added; (2) E2E assertions 6–7 added covering Success Criteria 2 and 4; (3) turn-window freshness recorded as an explicit SPEC deviation with a compensating 30-min registry-entry TTL; (4) session-id-mismatch staleness test rows added to Phase 1; (5) spike item (e) added for the UserPromptSubmit task-notification limitation; (6) SessionStart(compact) payload enumerated (re-entry protocol + counters); (7) depth-guard ownership clarified (Phase 2 implements vs Phase 4 integration-tests); (8) locked-decision-4 cadence clause made explicit in the /harden-harness SKILL deliverable; (9) HOOK_ERROR breadcrumb surfacing added to inject-hook behavior and pipe-tests.
