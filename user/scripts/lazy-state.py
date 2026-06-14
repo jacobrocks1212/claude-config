@@ -4928,6 +4928,51 @@ def main() -> int:
                             "route to resume with (written into the checkpoint "
                             "file and echoed by the next --run-start)."
                         ))
+    # Phase 7 (lazy-validation-readiness) stop-authorization gates.
+    # Motivating incident 2026-06-14: attended /lazy-batch 50 stopped at 5/50
+    # without operator authorization.  These flags close the enforcement gap
+    # between the prose-only prior constraint and the script gate.
+    #
+    # --unattended: pass at --run-start for scheduled/cron invocations.
+    #   Interactive /lazy-batch does NOT pass it → defaults attended=True.
+    #   An unattended run may checkpoint-stop without operator authorization
+    #   (the sanctioned overnight-pause path).
+    #
+    # --operator-authorized: pass at --run-end when the operator has explicitly
+    #   confirmed the stop via the budget-and-queue-guard AskUserQuestion.
+    #   INDEPENDENT of --ack-unhardened (hardening-debt gate) — both gates can
+    #   apply simultaneously; each checks its own concern.
+    #
+    # --terminal-reason REASON: supply the exact stop-terminal reason for
+    #   --run-end --reason terminal.  If the reason is NOT in
+    #   lazy_core.SANCTIONED_STOP_TERMINAL and --operator-authorized is absent,
+    #   the run-end is REFUSED (exit 1, marker kept).  Omitting --terminal-reason
+    #   is backward-compatible (legacy behavior) but adds a 'deprecation' note.
+    parser.add_argument("--unattended", action="store_true",
+                        help=(
+                            "With --run-start: write attended=False into the run "
+                            "marker (scheduled/cron/unattended invocation). "
+                            "Interactive /lazy-batch does NOT pass this flag — the "
+                            "default attended=True enables the stop-authorization "
+                            "gate that prevents unilateral checkpoint stops."
+                        ))
+    parser.add_argument("--operator-authorized", action="store_true",
+                        help=(
+                            "With --run-end: bypass the stop-authorization gate "
+                            "(checkpoint on attended run, or non-sanctioned terminal "
+                            "reason). Pass ONLY after the operator explicitly confirms "
+                            "the stop via the budget-and-queue-guard AskUserQuestion. "
+                            "Independent of --ack-unhardened (hardening-debt gate)."
+                        ))
+    parser.add_argument("--terminal-reason", default=None, metavar="REASON",
+                        help=(
+                            "With --run-end --reason terminal: the explicit stop "
+                            "reason token (e.g. 'all-features-complete', 'max-cycles'). "
+                            "Must be in lazy_core.SANCTIONED_STOP_TERMINAL or "
+                            "--operator-authorized must be passed. Omitting this flag "
+                            "is backward-compatible but adds a deprecation note to the "
+                            "output."
+                        ))
     # Retro staleness anchor: the SINGLE source of truth for "how many phases
     # does this PHASES.md have right now". /retro's `phase_count_at_retro` writer
     # MUST use this (not an ad-hoc `grep -c '^### Phase'`) so the count it records
@@ -4974,11 +5019,17 @@ def main() -> int:
         # Write the marker for the feature pipeline.  cloud, repo_root, and
         # max_cycles are taken from the matching existing flags so no new flags
         # are needed for those values.
+        # Phase 7 / lazy-validation-readiness: pass attended=not args.unattended
+        # so interactive /lazy-batch runs (which do NOT pass --unattended) default
+        # to attended=True, enabling the stop-authorization gate on --run-end.
+        # Scheduled/cron invocations pass --unattended → attended=False → the
+        # overnight-pause checkpoint path is allowed without operator authorization.
         marker = lazy_core.write_run_marker(
             pipeline="feature",
             cloud=args.cloud,
             repo_root=args.repo_root,
             max_cycles=args.max_cycles,
+            attended=not args.unattended,
         )
         out: dict = dict(marker)
         # Phase 7 WU-7.4: consume any checkpoint left by a prior checkpoint
@@ -4999,6 +5050,8 @@ def main() -> int:
 
         # WU-7.1: refuse to retire the marker while unacked guard denials remain,
         # unless --ack-unhardened was passed (the override is recorded for retros).
+        # This gate is INDEPENDENT of the Phase 7 stop-authorization gate below —
+        # both can apply; each checks its own concern.
         pending = lazy_core.pending_hardening()
         override_note = None
         if pending > 0:
@@ -5022,6 +5075,85 @@ def main() -> int:
                 f"unacked guard denial(s) still pending in the deny ledger."
             )
 
+        # -----------------------------------------------------------------------
+        # Phase 7 (lazy-validation-readiness) stop-authorization gates.
+        #
+        # Motivating incident 2026-06-14: an attended /lazy-batch 50 run stopped
+        # at 5/50 cycles via --run-end --reason checkpoint without operator
+        # authorization.  These gates make unilateral stops mechanically impossible.
+        #
+        # CHECKPOINT GATE: an attended run may NOT checkpoint-stop without
+        #   --operator-authorized.  The marker's attended field defaults to True
+        #   when absent (legacy marker → stricter gate = safer default).
+        #   Unattended runs and operator-authorized stops proceed normally.
+        #
+        # TERMINAL-REASON GATE: if --terminal-reason is supplied, it must be in
+        #   lazy_core.SANCTIONED_STOP_TERMINAL or --operator-authorized must be
+        #   present.  A fabricated/unknown reason is refused.  Omitting
+        #   --terminal-reason is backward-compatible but adds a deprecation note.
+        #
+        # CRITICAL: on ANY refusal, the marker MUST be left on disk.  A refused
+        # stop must not retire the run — the orchestrator must continue or
+        # escalate to the operator AskUserQuestion path.
+        # -----------------------------------------------------------------------
+
+        if reason == "checkpoint":
+            # Read the marker to learn attendedness.  Default True when marker
+            # is absent or lacks the 'attended' field (legacy → stricter gate).
+            marker_now = lazy_core.read_run_marker()
+            attended = True  # fallback: absent/legacy marker → treated as attended
+            if marker_now is not None:
+                attended = marker_now.get("attended", True)
+
+            if attended and not args.operator_authorized:
+                # REFUSE: keep marker + registry in place.  The orchestrator
+                # must either continue the loop or route through the operator
+                # AskUserQuestion and pass --operator-authorized only after
+                # confirmation.  An attended run may never checkpoint-stop
+                # unilaterally (this is the core fix for the 2026-06-14 incident).
+                sys.stdout.write(json.dumps({
+                    "run_marker_deleted": False,
+                    "refused": (
+                        "Stop-authorization gate: this is an ATTENDED run "
+                        "(attended=True in the marker). A checkpoint stop requires "
+                        "explicit operator authorization. The orchestrator must "
+                        "either (a) continue the loop, or (b) present the "
+                        "budget-and-queue-guard AskUserQuestion to the operator "
+                        "and re-invoke --run-end --reason checkpoint --operator-authorized "
+                        "only after the operator confirms. The marker was NOT deleted. "
+                        "[Phase 7 / lazy-validation-readiness — 2026-06-14 incident fix]"
+                    ),
+                    "attended": True,
+                }, indent=2) + "\n")
+                return 1
+            # Attended + authorized, or unattended: fall through to WU-7.4 below.
+
+        elif reason == "terminal":
+            # TERMINAL-REASON GATE: validate the supplied reason against the
+            # sanctioned set.  Backward-compatible: omitting --terminal-reason
+            # is allowed but adds a deprecation note (the caller should migrate).
+            terminal_reason = getattr(args, "terminal_reason", None)
+            if terminal_reason is not None:
+                if (terminal_reason not in lazy_core.SANCTIONED_STOP_TERMINAL
+                        and not args.operator_authorized):
+                    # REFUSE: non-sanctioned reason without authorization.
+                    # Marker LEFT IN PLACE.
+                    sys.stdout.write(json.dumps({
+                        "run_marker_deleted": False,
+                        "refused": (
+                            f"Stop-authorization gate: non-sanctioned terminal reason "
+                            f"'{terminal_reason}'. Sanctioned reasons: "
+                            f"{sorted(lazy_core.SANCTIONED_STOP_TERMINAL)}. "
+                            f"Pass --operator-authorized to override (operator must "
+                            f"explicitly confirm). The marker was NOT deleted. "
+                            f"[Phase 7 / lazy-validation-readiness]"
+                        ),
+                    }, indent=2) + "\n")
+                    return 1
+                # Sanctioned reason or operator-authorized: proceed.
+            # else: terminal_reason is None → backward-compatible (deprecation
+            # note added to the output below after deletion).
+
         # WU-7.4 checkpoint: requires --next-route, and writes the checkpoint
         # file BEFORE the marker/registry are cleared (it folds the marker's
         # counters as they stand at run end).
@@ -5029,13 +5161,13 @@ def main() -> int:
         if reason == "checkpoint":
             if not args.next_route:
                 _die("--run-end --reason checkpoint requires --next-route")
-            marker_now = lazy_core.read_run_marker()
+            marker_now2 = lazy_core.read_run_marker()
             counters = {}
-            if marker_now is not None:
+            if marker_now2 is not None:
                 counters = {
-                    "forward_cycles": marker_now.get("forward_cycles"),
-                    "meta_cycles": marker_now.get("meta_cycles"),
-                    "max_cycles": marker_now.get("max_cycles"),
+                    "forward_cycles": marker_now2.get("forward_cycles"),
+                    "meta_cycles": marker_now2.get("meta_cycles"),
+                    "max_cycles": marker_now2.get("max_cycles"),
                 }
             checkpoint_written = lazy_core.write_run_checkpoint(
                 args.next_route, counters,
@@ -5051,6 +5183,14 @@ def main() -> int:
             result_out["override"] = override_note
         if checkpoint_written is not None:
             result_out["checkpoint"] = checkpoint_written
+        # Phase 7: backward-compat deprecation note for legacy --reason terminal
+        # callers that omit --terminal-reason.
+        if reason == "terminal" and not getattr(args, "terminal_reason", None):
+            result_out["deprecation"] = (
+                "--run-end --reason terminal should pass --terminal-reason <reason> "
+                "for stop-authorization validation (Phase 7 / lazy-validation-readiness). "
+                "Sanctioned reasons: " + str(sorted(lazy_core.SANCTIONED_STOP_TERMINAL))
+            )
         sys.stdout.write(json.dumps(result_out, indent=2) + "\n")
         return 0
 
@@ -5085,7 +5225,14 @@ def main() -> int:
             model = result["model"]
             # Marker present → register the emission (write-through to registry).
             # Marker absent  → peek semantics (prompt produced, no registry write).
-            lazy_core.register_emission_if_marked(
+            # Phase 7 (lazy-validation-readiness) Deliverable 3: capture the
+            # returned entry so we can surface dispatch_prompt_ref (@@lazy-ref
+            # nonce=<hex>) in the output JSON — mirrors how --emit-prompt adds
+            # cycle_prompt_ref (lazy-state.py ~5266-5276 from Phase 3).
+            # The guard's existing @@lazy-ref resolution path resolves any
+            # registered class, so meta dispatches (apply-resolution, hardening,
+            # etc.) can be dispatched by reference without any guard edit.
+            _ref_entry = lazy_core.register_emission_if_marked(
                 prompt, cls,
                 item_id=context.get("item_id"),
             )
@@ -5104,6 +5251,14 @@ def main() -> int:
             # (emit_dispatch_prompt only attaches it when a run marker is active).
             if "cycle_header" in result:
                 out["cycle_header"] = result["cycle_header"]
+            # Phase 7 Deliverable 3: surface the @@lazy-ref reference token so
+            # the orchestrator can dispatch meta prompts by reference (no retyping
+            # → no transcription-slip denial for apply-resolution, hardening, etc.).
+            # Null when no marker is active (peek semantics → no registry write).
+            if _ref_entry is not None:
+                out["dispatch_prompt_ref"] = f"@@lazy-ref nonce={_ref_entry['nonce']}"
+            else:
+                out["dispatch_prompt_ref"] = None
             sys.stdout.write(json.dumps(out, indent=2) + "\n")
             return 0
         else:

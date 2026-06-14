@@ -2771,6 +2771,122 @@ def test_f2a_guard_ref_malformed_falls_through_to_normal_deny():
             )
 
 
+# ---------------------------------------------------------------------------
+# Phase 7 (lazy-validation-readiness) — meta dispatch-by-reference via --emit-dispatch
+# ---------------------------------------------------------------------------
+# Deliverable 3: --emit-dispatch registers a meta prompt and exposes the nonce
+# as dispatch_prompt_ref.  The guard's existing @@lazy-ref path (Phase 3) must
+# resolve it via updatedInput.  This test proves the full round-trip without
+# touching lazy_guard.py — it reuses the existing guard code path that Phase 3
+# already certified.
+# ---------------------------------------------------------------------------
+
+def test_p7_meta_dispatch_by_reference_via_guard():
+    """A META-class entry (e.g. 'apply-resolution') registered via the same
+    path --emit-dispatch uses (register_emission) can be dispatched by reference
+    via '@@lazy-ref nonce=<hex>' and the guard resolves it to the registered
+    prompt bytes via updatedInput.
+
+    Proves:
+      - The guard's existing @@lazy-ref resolution works for any registered class
+        (not only 'cycle' — meta classes registered by --emit-dispatch are also
+         resolvable by reference).
+      - permissionDecision == 'allow'
+      - hookSpecificOutput.updatedInput.prompt == the registered raw prompt text
+      - nonce is consumed after the allow
+
+    RED until the guard's Phase 3 reference path is proven to resolve meta-class
+    entries; a green run here confirms no lazy_guard.py change is needed.
+    """
+    _guard()
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+
+        # Register a META-class prompt directly via lazy_core (same path
+        # --emit-dispatch uses via register_emission_if_marked → register_emission).
+        meta_prompt = (
+            "Apply the resolution documented in BLOCKED.md for feature feat-meta:\n"
+            "1. Add the missing Rust wiring to context.rs\n"
+            "2. Run `npm run qg` to confirm green\n"
+            "3. Commit the changes and mark the phase complete"
+        )
+        _set_state_dir(state_dir)
+        try:
+            entry = lazy_core.register_emission(
+                meta_prompt, cls="apply-resolution", item_id="feat-meta"
+            )
+        finally:
+            _clear_state_dir()
+
+        nonce = entry["nonce"]
+        ref_token = f"@@lazy-ref nonce={nonce}"
+
+        # Build the guard hook-input with the meta dispatch reference token.
+        tool_use_id = "toolu_meta_" + uuid.uuid4().hex[:20]
+        hook_input = {
+            "session_id": owner_session,
+            "transcript_path": f"C:\\test\\{owner_session}.jsonl",
+            "cwd": "C:\\test",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "meta dispatch: apply-resolution for feat-meta",
+                "prompt": ref_token,
+                "subagent_type": "general-purpose",
+                "model": "claude-opus-4-5",
+            },
+            "tool_use_id": tool_use_id,
+        }
+        stdin_text = json.dumps(hook_input)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"guard must exit 0 for meta @@lazy-ref dispatch; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output, "guard must produce JSON for a meta by-reference dispatch"
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"guard output must be valid JSON for meta ref; got {output!r}; error: {exc}"
+            ) from exc
+
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"meta by-reference dispatch must be ALLOWED; "
+            f"got {hso.get('permissionDecision')!r}; full output: {output!r}"
+        )
+
+        # The allow must carry updatedInput with the resolved meta prompt.
+        updated = hso.get("updatedInput")
+        assert updated is not None, (
+            f"meta by-reference allow must carry hookSpecificOutput.updatedInput; "
+            f"got: {hso!r}"
+        )
+        assert updated.get("prompt") == meta_prompt, (
+            f"updatedInput.prompt must equal the registered meta prompt bytes; "
+            f"got {updated.get('prompt')!r}"
+        )
+
+        # The nonce must be consumed (single-use).
+        _set_state_dir(state_dir)
+        try:
+            resolved_after = lazy_core.resolve_emission_by_nonce(nonce)
+        finally:
+            _clear_state_dir()
+        assert resolved_after is None, (
+            f"nonce must be consumed after meta dispatch-by-reference allow; "
+            f"got {resolved_after!r}"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -2835,6 +2951,9 @@ _TESTS = [
      test_f2a_guard_ref_hardening_class_allows_and_acks),
     ("test_f2a_guard_ref_malformed_falls_through_to_normal_deny",
      test_f2a_guard_ref_malformed_falls_through_to_normal_deny),
+    # Phase 7 (lazy-validation-readiness) — meta dispatch-by-reference via --emit-dispatch
+    ("test_p7_meta_dispatch_by_reference_via_guard",
+     test_p7_meta_dispatch_by_reference_via_guard),
 ]
 
 

@@ -4039,6 +4039,31 @@ def claude_state_dir(create: bool = True) -> Path:
 # Run-marker API
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Phase 7 (lazy-validation-readiness) — sanctioned stop-terminal set.
+#
+# Motivating incident 2026-06-14: an attended /lazy-batch 50 run stopped at
+# 5/50 cycles via --run-end --reason terminal with a fabricated reason, without
+# operator authorization.  This constant is the authoritative list of reasons
+# that allow an unattended or operator-authorized terminal stop.  Any reason
+# NOT in this set is refused unless --operator-authorized is passed.
+#
+# Both lazy-state.py and bug-state.py import this constant so the set is
+# defined in exactly one place (no copy-paste drift between the coupled pair).
+# ---------------------------------------------------------------------------
+SANCTIONED_STOP_TERMINAL: frozenset[str] = frozenset({
+    "all-features-complete",   # feature queue exhausted
+    "all-bugs-fixed",          # bug queue exhausted
+    "max-cycles",              # hard cycle cap reached
+    "cloud-queue-exhausted",   # cloud run out of queue items
+    "device-queue-exhausted",  # device run out of queue items
+    "queue-missing",           # queue.json absent → cannot continue
+    "blocked-halt-for-manual", # script-emitted BLOCKED.md halt
+    "needs-research",          # NEEDS_INPUT.md needs-research halt
+    "queue-blocked-on-research",  # all queue items need research
+})
+
+
 def write_run_marker(
     pipeline: str,
     cloud: bool,
@@ -4047,6 +4072,7 @@ def write_run_marker(
     max_cycles: int | None = None,
     session_id: str | None = None,
     nonce_seed: str | None = None,
+    attended: bool = True,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the run marker to the state dir.
@@ -4068,6 +4094,11 @@ def write_run_marker(
         may omit for fully random nonces)
       - forward_cycles (int): number of real-skill dispatch cycles so far (0)
       - meta_cycles (int): number of meta/pseudo-skill cycles so far (0)
+      - attended (bool): Phase 7 — True for interactive /lazy-batch runs (the
+        default); False for scheduled/cron/unattended runs.  The stop-
+        authorization gate on --run-end reads this field: an attended run cannot
+        checkpoint-stop without explicit operator authorization.  Legacy markers
+        lacking this field are treated as attended=True (the stricter gate).
 
     Args:
         pipeline: "feature" or "bug"
@@ -4076,6 +4107,8 @@ def write_run_marker(
         max_cycles: optional hard cap (stored for inject hook / cycle headers)
         session_id: optional Claude Code session id; None = bind-pending
         nonce_seed: optional nonce seed string
+        attended: Phase 7 — True (default) for interactive runs; False for
+            scheduled/unattended runs that pass --unattended to --run-start.
         now: epoch float for started_at (injectable for hermetic tests;
              defaults to time.time())
 
@@ -4102,6 +4135,11 @@ def write_run_marker(
         "nonce_seed": nonce_seed,
         "forward_cycles": 0,
         "meta_cycles": 0,
+        # Phase 7 / lazy-validation-readiness: record whether this is an
+        # attended (interactive) or unattended (scheduled/cron) run.
+        # Default True ensures legacy/migrated callers default to the stricter
+        # gate — an attended run cannot checkpoint-stop without operator auth.
+        "attended": attended,
     }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")

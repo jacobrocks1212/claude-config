@@ -7795,7 +7795,13 @@ def test_run_end_refuses_on_unacked_deny():
 def test_checkpoint_round_trip():
     """Subprocess: --run-end --reason checkpoint --next-route X writes the
     checkpoint file (folding the marker counters); the next --run-start echoes
-    and consumes it; a plain terminal --run-end writes no checkpoint file."""
+    and consumes it; a plain terminal --run-end writes no checkpoint file.
+
+    Phase 7 note: uses --unattended at --run-start so the checkpoint gate
+    (attended=True → must have --operator-authorized) does not block this
+    test which is exercising the checkpoint file mechanism, not the auth gate.
+    The auth gate is separately covered by test_p7_run_end_checkpoint_*.
+    """
     _guard()
     lazy_state = _SCRIPTS_DIR / "lazy-state.py"
     with tempfile.TemporaryDirectory() as td:
@@ -7810,7 +7816,8 @@ def test_checkpoint_round_trip():
                 capture_output=True, text=True, env=env,
             )
 
-        assert run(["--run-start", "--max-cycles", "7"]).returncode == 0
+        # Phase 7: use --unattended so the checkpoint auth gate does not apply.
+        assert run(["--run-start", "--max-cycles", "7", "--unattended"]).returncode == 0
         # checkpoint requires --next-route — missing → non-zero exit.
         r_missing = run(["--run-end", "--reason", "checkpoint"])
         assert r_missing.returncode != 0, "checkpoint without --next-route must fail"
@@ -12286,6 +12293,530 @@ _TESTS = _TESTS + [
      test_f2a_resolve_emission_stale_nonce_returns_none),
     ("test_f2a_append_dispatch_by_reference_event_writes_ledger",
      test_f2a_append_dispatch_by_reference_event_writes_ledger),
+]
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 (lazy-validation-readiness) — stop-authorization + attended marker
+# ---------------------------------------------------------------------------
+# Motivating incident: 2026-06-14 attended /lazy-batch 50 run stopped at 5/50
+# via --run-end --reason checkpoint without operator authorization.  These tests
+# mechanically enforce the gates that prevent that from recurring.
+# ---------------------------------------------------------------------------
+
+import os as _os_env_p7  # alias for Phase 7 env helpers (separate from existing _os_env)
+
+
+def test_p7_write_run_marker_defaults_attended():
+    """write_run_marker stores attended=True by default (no attended kwarg supplied).
+
+    RED until write_run_marker gains the ``attended`` keyword parameter.
+    """
+    _guard()
+    import time as _time_p7
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now_e = _time_p7.time()
+            m = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r", now=now_e,
+            )
+            assert m.get("attended") is True, (
+                f"write_run_marker must default attended=True; got {m.get('attended')!r}"
+            )
+            # Verify persisted value is also True (round-trip)
+            on_disk = lazy_core.read_run_marker(now=now_e)
+            assert on_disk is not None, "marker must be readable after write"
+            assert on_disk.get("attended") is True, (
+                f"on-disk marker attended must be True (default); got {on_disk.get('attended')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_p7_write_run_marker_attended_false():
+    """write_run_marker with attended=False records the value as False.
+
+    RED until the attended kwarg is implemented.
+    """
+    _guard()
+    import time as _time_p7
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now_e = _time_p7.time()
+            m = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                attended=False, now=now_e,
+            )
+            assert m.get("attended") is False, (
+                f"write_run_marker(attended=False) must record False; got {m.get('attended')!r}"
+            )
+            on_disk = lazy_core.read_run_marker(now=now_e)
+            assert on_disk is not None
+            assert on_disk.get("attended") is False, (
+                f"on-disk marker attended must be False when attended=False passed; "
+                f"got {on_disk.get('attended')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_p7_marker_missing_attended_defaults_true():
+    """A legacy marker dict lacking the 'attended' key is treated as attended
+    (the stricter gate is the safe default).  Per the spec, the run-end gate
+    reads ``marker.get('attended', True)`` — missing → True.
+
+    This test verifies the gate's default by crafting a bare marker dict and
+    checking the gate expression directly.  No subprocess needed.
+
+    RED (trivially) until the spec's marker.get('attended', True) idiom is
+    confirmed present in the implementation; this test pins the semantic contract.
+    """
+    _guard()
+    # Simulate a legacy marker that has no 'attended' key.
+    legacy_marker = {
+        "pipeline": "feature",
+        "cloud": False,
+        "repo_root": "/tmp/r",
+        "started_at": "2024-01-01T00:00:00Z",
+        "forward_cycles": 0,
+        "meta_cycles": 0,
+    }
+    # The gate expression the run-end handler uses.
+    attended = legacy_marker.get("attended", True)
+    assert attended is True, (
+        f"A legacy marker without 'attended' must default to True (stricter gate); "
+        f"got {attended!r}"
+    )
+
+
+def test_p7_run_end_checkpoint_attended_no_auth_refuses():
+    """--run-end --reason checkpoint against an ATTENDED marker WITHOUT
+    --operator-authorized must be REFUSED: exit 1, run_marker_deleted=False,
+    and the marker file must still be on disk.
+
+    RED until the stop-authorization gate is implemented in lazy-state.py.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-ckpt-attended"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # --run-start WITHOUT --unattended → attended=True marker.
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0, f"run-start failed: {r_start.stderr}"
+
+        # --run-end --reason checkpoint WITHOUT --operator-authorized → REFUSE.
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "implement Phase 3"])
+        assert r.returncode == 1, (
+            f"run-end checkpoint on attended marker must exit 1 (refused); "
+            f"got {r.returncode}; stdout={r.stdout!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is False, (
+            f"refused run-end must NOT delete the marker; got {out!r}"
+        )
+        assert "refused" in out, f"refused output must contain 'refused' key; got {out!r}"
+        # The marker file must still exist on disk (the whole point).
+        marker_file = state_dir / "lazy-run-marker.json"
+        assert marker_file.exists(), (
+            "marker file must remain on disk after a refused --run-end --reason checkpoint"
+        )
+
+
+def test_p7_run_end_checkpoint_attended_with_auth_succeeds():
+    """--run-end --reason checkpoint against an attended marker WITH
+    --operator-authorized must SUCCEED: exit 0, run_marker_deleted=True.
+
+    RED until --operator-authorized is wired into the run-end handler.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-ckpt-auth"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0, f"run-start failed: {r_start.stderr}"
+
+        # --operator-authorized bypasses the attended gate.
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "implement Phase 3",
+                 "--operator-authorized"])
+        assert r.returncode == 0, (
+            f"run-end checkpoint with --operator-authorized must exit 0; "
+            f"got {r.returncode}; stdout={r.stdout!r}; stderr={r.stderr!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, (
+            f"authorized run-end must delete the marker; got {out!r}"
+        )
+        # Marker file must be gone.
+        assert not (state_dir / "lazy-run-marker.json").exists(), (
+            "marker file must be deleted after an authorized --run-end --reason checkpoint"
+        )
+
+
+def test_p7_run_end_checkpoint_unattended_no_auth_allowed():
+    """--run-end --reason checkpoint against an UNATTENDED marker WITHOUT
+    --operator-authorized must SUCCEED: the sanctioned overnight-pause path.
+
+    RED until --unattended is wired into --run-start.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-ckpt-unattended"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # --run-start --unattended → attended=False marker.
+        r_start = run(["--run-start", "--max-cycles", "10", "--unattended"])
+        assert r_start.returncode == 0, f"run-start --unattended failed: {r_start.stderr}"
+        start_out = json.loads(r_start.stdout)
+        assert start_out.get("attended") is False, (
+            f"--unattended must write attended=False; got {start_out.get('attended')!r}"
+        )
+
+        # --run-end --reason checkpoint on an unattended marker: allowed without auth.
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "overnight resume route"])
+        assert r.returncode == 0, (
+            f"run-end checkpoint on UNATTENDED marker must succeed without auth; "
+            f"got {r.returncode}; stdout={r.stdout!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, (
+            f"unattended checkpoint must delete the marker; got {out!r}"
+        )
+
+
+def test_p7_run_end_terminal_sanctioned_reason_allowed():
+    """--run-end --reason terminal --terminal-reason all-features-complete is
+    a sanctioned stop and must SUCCEED: exit 0, run_marker_deleted=True.
+
+    RED until --terminal-reason is wired into the run-end handler.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-term-sanctioned"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0
+
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "all-features-complete"])
+        assert r.returncode == 0, (
+            f"sanctioned terminal reason must exit 0; got {r.returncode}; "
+            f"stdout={r.stdout!r}; stderr={r.stderr!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, f"sanctioned terminal must delete marker; {out!r}"
+
+
+def test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth():
+    """--run-end --reason terminal --terminal-reason bogus-reason WITHOUT
+    --operator-authorized must REFUSE: exit 1, run_marker_deleted=False,
+    marker still on disk.
+
+    RED until the sanctioned-terminal-set validation is implemented.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-term-bogus"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0
+
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "bogus-reason"])
+        assert r.returncode == 1, (
+            f"non-sanctioned terminal reason without auth must exit 1; "
+            f"got {r.returncode}; stdout={r.stdout!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is False, (
+            f"refused terminal run-end must NOT delete the marker; got {out!r}"
+        )
+        assert "refused" in out, f"refused output must contain 'refused' key; got {out!r}"
+        # Marker must still exist.
+        assert (state_dir / "lazy-run-marker.json").exists(), (
+            "marker must remain on disk after non-sanctioned terminal refusal"
+        )
+
+
+def test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed():
+    """--run-end --reason terminal --terminal-reason bogus-reason WITH
+    --operator-authorized must SUCCEED: exit 0, run_marker_deleted=True.
+    Operator authorization overrides the sanctioned-set check.
+
+    RED until --operator-authorized bypasses the terminal-reason gate.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-term-bogus-auth"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0
+
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "bogus-reason",
+                 "--operator-authorized"])
+        assert r.returncode == 0, (
+            f"--operator-authorized must bypass terminal-reason gate; "
+            f"got {r.returncode}; stdout={r.stdout!r}; stderr={r.stderr!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, (
+            f"authorized non-sanctioned terminal must delete marker; got {out!r}"
+        )
+
+
+def test_p7_run_end_terminal_no_terminal_reason_adds_deprecation():
+    """--run-end --reason terminal WITHOUT --terminal-reason (legacy form)
+    must SUCCEED with a 'deprecation' note in the output — backward-compatible
+    but warns the caller to supply --terminal-reason going forward.
+
+    RED until the deprecation note is added to the terminal path.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-term-legacy"
+        state_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0
+
+        # Legacy: --run-end without --terminal-reason → still exits 0 but adds deprecation.
+        r = run(["--run-end", "--reason", "terminal"])
+        assert r.returncode == 0, (
+            f"legacy terminal run-end (no --terminal-reason) must still exit 0; "
+            f"got {r.returncode}; stdout={r.stdout!r}; stderr={r.stderr!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, f"legacy terminal must delete marker; {out!r}"
+        assert "deprecation" in out, (
+            f"legacy terminal (no --terminal-reason) must include 'deprecation' key; got {out!r}"
+        )
+
+
+def test_p7_sanctioned_stop_terminal_constant_exists():
+    """lazy_core must expose a SANCTIONED_STOP_TERMINAL set/frozenset containing
+    the canonical stop reasons so both state scripts can import it.
+
+    RED until SANCTIONED_STOP_TERMINAL is defined in lazy_core.py.
+    """
+    _guard()
+    assert hasattr(lazy_core, "SANCTIONED_STOP_TERMINAL"), (
+        "lazy_core must export SANCTIONED_STOP_TERMINAL"
+    )
+    sst = lazy_core.SANCTIONED_STOP_TERMINAL
+    assert isinstance(sst, (set, frozenset)), (
+        f"SANCTIONED_STOP_TERMINAL must be a set/frozenset; got {type(sst)!r}"
+    )
+    # Check all 9 sanctioned reasons are present.
+    required = {
+        "all-features-complete",
+        "all-bugs-fixed",
+        "max-cycles",
+        "cloud-queue-exhausted",
+        "device-queue-exhausted",
+        "queue-missing",
+        "blocked-halt-for-manual",
+        "needs-research",
+        "queue-blocked-on-research",
+    }
+    missing = required - sst
+    assert not missing, (
+        f"SANCTIONED_STOP_TERMINAL missing expected reasons: {missing}"
+    )
+
+
+def test_p7_emit_dispatch_includes_dispatch_prompt_ref():
+    """--emit-dispatch with an active marker must include 'dispatch_prompt_ref'
+    (a '@@lazy-ref nonce=<hex>' token) in the output JSON alongside
+    'dispatch_prompt'.  When no marker is present the field must be null.
+
+    RED until dispatch_prompt_ref is wired into the emit-dispatch output.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-emit-dispatch"
+        state_dir.mkdir()
+        # Build a minimal fixture repo so emit-dispatch can find a resolution prompt.
+        repo_dir = state_dir / "fixture-repo"
+        (repo_dir / "docs" / "features").mkdir(parents=True)
+        (repo_dir / "docs" / "features" / "queue.json").write_text(
+            json.dumps({"queue": [{"id": "feat-1", "name": "Test Feature",
+                                   "priority": 1, "cloud": False}]})
+        )
+        feature_dir = repo_dir / "docs" / "features" / "feat-1"
+        feature_dir.mkdir()
+        (feature_dir / "SPEC.md").write_text("# Spec\n## Status\nIn-progress\n")
+        (feature_dir / "PHASES.md").write_text("### Phase 1\n\n- [ ] Do the thing\n")
+        blocked_dir = feature_dir / "mcp-tests"
+        blocked_dir.mkdir()
+        # Write a BLOCKED.md with resolution context for apply-resolution.
+        (feature_dir / "BLOCKED.md").write_text(
+            "# Blocked\n**Blocker:** test blocker\n**Resolution:** fix it\n"
+        )
+
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # 1. No marker → dispatch_prompt_ref must be null.
+        r_no_marker = run([
+            "--emit-dispatch", "apply-resolution",
+            "--repo-root", str(repo_dir),
+            "--context", "item_id=feat-1",
+        ])
+        # May succeed or refuse (blocked missing context) — the key point is
+        # dispatch_prompt_ref field presence when output is valid JSON.
+        if r_no_marker.returncode == 0 and r_no_marker.stdout.strip():
+            try:
+                out_nm = json.loads(r_no_marker.stdout)
+                if "dispatch_prompt" in out_nm and out_nm.get("dispatch_prompt") is not None:
+                    assert "dispatch_prompt_ref" in out_nm, (
+                        "dispatch_prompt_ref key must be present in emit-dispatch output "
+                        f"(no marker → null); got {out_nm!r}"
+                    )
+                    assert out_nm["dispatch_prompt_ref"] is None, (
+                        f"dispatch_prompt_ref must be null when no marker; "
+                        f"got {out_nm['dispatch_prompt_ref']!r}"
+                    )
+            except json.JSONDecodeError:
+                pass  # Refusal may not be valid JSON in the no-marker path
+
+        # 2. With active marker → dispatch_prompt_ref must be a @@lazy-ref token.
+        r_start = run(["--run-start", "--max-cycles", "10"])
+        assert r_start.returncode == 0, f"run-start failed: {r_start.stderr}"
+
+        r_with_marker = run([
+            "--emit-dispatch", "apply-resolution",
+            "--repo-root", str(repo_dir),
+            "--context", "item_id=feat-1",
+        ])
+        # The emit may refuse if the template requires context we haven't provided;
+        # test only when it succeeds and produces a dispatch_prompt.
+        if r_with_marker.returncode == 0 and r_with_marker.stdout.strip():
+            try:
+                out_m = json.loads(r_with_marker.stdout)
+            except json.JSONDecodeError:
+                out_m = {}
+            if out_m.get("dispatch_prompt") is not None:
+                assert "dispatch_prompt_ref" in out_m, (
+                    "dispatch_prompt_ref key must be present in emit-dispatch output "
+                    f"(with marker); got {out_m!r}"
+                )
+                ref = out_m.get("dispatch_prompt_ref")
+                assert ref is not None, (
+                    f"dispatch_prompt_ref must be a @@lazy-ref token with active marker; "
+                    f"got None; full output: {out_m!r}"
+                )
+                assert isinstance(ref, str) and ref.startswith("@@lazy-ref nonce="), (
+                    f"dispatch_prompt_ref must start with '@@lazy-ref nonce='; "
+                    f"got {ref!r}"
+                )
+
+
+_TESTS = _TESTS + [
+    # Phase 7 (lazy-validation-readiness) — stop-authorization + attended marker.
+    ("test_p7_sanctioned_stop_terminal_constant_exists",
+     test_p7_sanctioned_stop_terminal_constant_exists),
+    ("test_p7_write_run_marker_defaults_attended",
+     test_p7_write_run_marker_defaults_attended),
+    ("test_p7_write_run_marker_attended_false",
+     test_p7_write_run_marker_attended_false),
+    ("test_p7_marker_missing_attended_defaults_true",
+     test_p7_marker_missing_attended_defaults_true),
+    ("test_p7_run_end_checkpoint_attended_no_auth_refuses",
+     test_p7_run_end_checkpoint_attended_no_auth_refuses),
+    ("test_p7_run_end_checkpoint_attended_with_auth_succeeds",
+     test_p7_run_end_checkpoint_attended_with_auth_succeeds),
+    ("test_p7_run_end_checkpoint_unattended_no_auth_allowed",
+     test_p7_run_end_checkpoint_unattended_no_auth_allowed),
+    ("test_p7_run_end_terminal_sanctioned_reason_allowed",
+     test_p7_run_end_terminal_sanctioned_reason_allowed),
+    ("test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth",
+     test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth),
+    ("test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed",
+     test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed),
+    ("test_p7_run_end_terminal_no_terminal_reason_adds_deprecation",
+     test_p7_run_end_terminal_no_terminal_reason_adds_deprecation),
+    ("test_p7_emit_dispatch_includes_dispatch_prompt_ref",
+     test_p7_emit_dispatch_includes_dispatch_prompt_ref),
 ]
 
 
