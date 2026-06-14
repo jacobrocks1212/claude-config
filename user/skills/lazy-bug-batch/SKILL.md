@@ -75,8 +75,12 @@ substitutions:
 
 See `~/.claude/skills/lazy-batch/SKILL.md` HARD CONSTRAINTS for the full text of each constraint.
 
+**10. HARD CONSTRAINT — stop-authorization (mirrors `/lazy-batch` HARD CONSTRAINT 10).** The orchestrator MUST NOT end a bug-pipeline run except on `max-cycles` or a genuine script-emitted terminal. The ONLY legitimate no-`AskUserQuestion` stops are: (a) `forward_cycles >= max_cycles`, and (b) a `terminal_reason` in {`all-bugs-fixed`, `max-cycles`, `queue-missing`, `blocked-halt-for-manual`, `needs-research`, `queue-blocked-on-research`} returned by `bug-state.py` in the CURRENT cycle's probe. Any DESIRE to stop for any other reason routes through the budget-and-queue-guard `AskUserQuestion` first; a checkpoint stop MAY proceed only after operator confirmation via `bug-state.py --run-end --reason checkpoint --operator-authorized`. An attended `--run-end --reason checkpoint` without `--operator-authorized` is REFUSED (exit 1, marker kept). When ending on a genuine terminal, pass `--run-end --reason terminal --terminal-reason <reason>` (sanctioned set above, or `--operator-authorized` required). See `/lazy-batch` HARD CONSTRAINT 10 for the full incident description (2026-06-14 / lazy-validation-readiness Phase 7).
+
 **Cycle-subagent execution model:** Same as `/lazy-batch` — no `Agent` tool inside the dispatched
 cycle subagent; all skills run inline using `Edit`/`Write`/`Read`.
+
+**Meta-dispatch by-reference — PREFER `dispatch_prompt_ref` at ALL `--emit-dispatch` sites (mirrors `/lazy-batch` Phase 7 / lazy-validation-readiness).** Every `bug-state.py --emit-dispatch <class>` call emits BOTH `dispatch_prompt` AND `dispatch_prompt_ref` (`@@lazy-ref nonce=<hex>`). When dispatching any meta-dispatch prompt (hardening, recovery, apply-resolution, coherence-recovery, input-audit, investigation, etc.), PREFER `dispatch_prompt_ref` over the verbatim `dispatch_prompt`. Fall back to `dispatch_prompt` verbatim ONLY when `dispatch_prompt_ref` is absent or null. See `/lazy-batch`'s "Meta-dispatch by-reference" paragraph (§1d) for the full rationale.
 
 ## OUTPUT CONTRACT — orchestrator voice (read at run start)
 
@@ -163,6 +167,8 @@ python3 ~/.claude/scripts/bug-state.py \
   --run-start --max-cycles {max_cycles} \
   --repo-root {cwd}
 ```
+
+**Attendedness:** interactive `/lazy-bug-batch` invocations call `--run-start` WITHOUT `--unattended` — the marker records `attended: true` (the default). Only a scheduled/cron driver passes `--unattended`, recording `attended: false`. The `attended` field governs whether `--run-end --reason checkpoint` requires `--operator-authorized` (see HARD CONSTRAINT 10 and the budget-and-queue guard above). Legacy markers lacking the field are treated as attended — the stricter gate is the safe default.
 
 **What this does.** The marker (`~/.claude/state/lazy-run-marker.json`) is the single on/off switch for the inject + validate-deny hooks. While the marker is present:
 - The inject hook (`lazy-route-inject.sh`) fires on every UserPromptSubmit turn, runs the full probe form, and injects the route (`LAZY-ROUTE (hook-injected, turn N): …`) into the model's context via `additionalContext`.
