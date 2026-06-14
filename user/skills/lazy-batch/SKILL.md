@@ -485,7 +485,36 @@ Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys
    curl -s -o /dev/null -w "%{http_code}" http://localhost:3333/health
    ```
 
-   If this prints `200`, the runtime is already up — skip the boot (steps 2–3) and go to step 4. **Do NOT amend the prompt by hand:** step 4 is the BOOT decision only — `emit_cycle_prompt` already selected the RUNTIME-IS-ALREADY-UP variant and bound every token, so the runtime-up case requires ZERO prompt edits. Splicing a "fresh-restart" / diligence paragraph into the RUNTIME-IS-ALREADY-UP block (or any other byte) mutates the hash and the validate-deny guard denies the dispatch — the exact recurrence the script-owns-the-variant rule (step 4) exists to make impossible.
+   If this prints `200`, the runtime is already up — proceed to step 1a (stale-binary check) before skipping the boot.  **Do NOT amend the prompt by hand:** step 4 is the BOOT decision only — `emit_cycle_prompt` already selected the RUNTIME-IS-ALREADY-UP variant and bound every token, so the runtime-up case requires ZERO prompt edits. Splicing a "fresh-restart" / diligence paragraph into the RUNTIME-IS-ALREADY-UP block (or any other byte) mutates the hash and the validate-deny guard denies the dispatch — the exact recurrence the script-owns-the-variant rule (step 4) exists to make impossible.
+
+1a. **Stale-binary check — force a `dev:restart` when native source advanced since boot (F7 / lazy-validation-readiness).** `GET /health == 200` proves the runtime is *alive*, but NOT that it is *current*: after a Rust MCP tool is added in a new commit, the still-running binary passes the health check but lacks the new tool.  An mcp-test cycle against that binary will 404 on a tool that actually exists in source.
+
+   **Why this fires *before* dispatch, not after boot:** a binary that was already up when step 1 ran may have been running since before the latest native commit.  The stale check is the only gate that catches this.
+
+   **Procedure:**
+
+   a. Read the runtime's boot stamp.  **Prefer the session-log boot stamp** if it is available (AlgoBooth writes a `boot_time` ISO-8601 field into the session's opening event; re-resolve the active session dir — NEVER cache a `logs/session-{ts}/` path — and read it with `jq` or `grep`).  If the session-log stamp is unavailable, use a `boot_time` field from the health payload (an AlgoBooth-side follow-up: extend `GET /health` with a `boot_commit`/`boot_time` field; noted here as the minimal extension to make the boot stamp always machine-readable without log parsing).
+
+   b. Run the stale-binary predicate (Python; never raises; fail-safe → False on any error):
+
+      ```bash
+      python3 ~/.claude/scripts/stale_binary.py \
+        --repo-root "{cwd}" \
+        --boot-iso "{boot_stamp_iso}"
+      ```
+
+      The script is at `~/.claude/scripts/stale_binary.py` (symlinked from
+      `user/scripts/stale_binary.py` in the claude-config repo).  Globs default to
+      `src-tauri` and `crates` (the AlgoBooth native-source roots).  Override with
+      `--glob <path>` for non-AlgoBooth repos.
+
+   c. If the script prints **`STALE`**: the native source advanced since boot → **force a `dev:restart`** now (steps 2–3 below), rather than trusting health=200.  The restart re-compiles the Rust binary and ensures the mcp-test cycle sees the current tool registry.
+
+   d. If the script prints **`FRESH`** (or the boot stamp is unavailable and the script errors → `FRESH` / fail-safe): skip the boot (steps 2–3) and go to step 4.
+
+   **Fail-safe note:** on any error (git not found, parse failure, no native commits) the script returns `FRESH` and the orchestrator proceeds without a restart — the existing health=200 gate is still the primary guard.  A spurious `FRESH` wastes nothing; a spurious `STALE` would trigger an unnecessary 3–7-min recompile on every cycle.  The fail-safe direction is chosen accordingly.
+
+   *(Spec reference: F7 in `docs/specs/lazy-validation-readiness/SPEC.md`; predicate in `user/scripts/stale_binary.py`.)*
 
 2. **If not up, start it (orchestrator-owned background process).** Use the canonical full-restart command (handles all three process types — Vite :1420, MCP :3333, sidecar named-pipe — per `docs/development/CLAUDE.md`):
 
