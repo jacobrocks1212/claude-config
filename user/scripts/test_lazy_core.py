@@ -5158,14 +5158,20 @@ def test_update_repeat_counts_returns_both_counts():
     assert result.get("step_repeat_count") == 1, f"expected step_repeat_count 1, got {result!r}"
 
 
-def test_update_repeat_counts_step_counter_ignores_sub_skill_args():
-    """The step signature is (feature_id, current_step) ONLY: a probe with the
-    same step but a DIFFERENT sub_skill / sub_skill_args still INCREMENTS the
-    step counter (while the dispatch-tuple repeat_count resets to 1).
+def test_update_repeat_counts_step_counter_ordered_args_advance_resets():
+    """ORDERED-ADVANCE EXEMPTION (audio-rate-modulation false-positive fix):
+    a probe with the same (feature_id, current_step) but an ADVANCED
+    sub_skill_args is genuine ordered forward progress (e.g. a multi-part
+    /execute-plan marching plan-part-1 → plan-part-9 while staying on the same
+    "Step 7a: execute plan") → step_repeat_count RESETS to 1, it does NOT count
+    toward the oscillation tripwire. The dispatch-tuple repeat_count also resets
+    to 1 (its full tuple changed).
 
-    This is the load-bearing discriminator: a naïve impl reusing the dispatch
-    tuple for the step signature would reset step_repeat_count to 1 here.
-    RED: update_repeat_counts missing → AttributeError.
+    This is the inverse of the original Phase-10 args-blind behavior: the step
+    counter used to INCREMENT here. The discriminator is whether sub_skill_args
+    moved — see test_update_repeat_counts_step_same_args_still_increments for the
+    d8 same-target case that MUST still climb.
+    RED: the pre-fix args-blind step counter returned 2 here.
     """
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -5173,17 +5179,110 @@ def test_update_repeat_counts_step_counter_ignores_sub_skill_args():
         # only thing resetting repeat_count below is the signature change.
         sig_path = Path(td) / "sig.json"
         r1 = lazy_core.update_repeat_counts(Path(td), _STATE_A, signature_path=sig_path)
-        # Same (feature_id, current_step) but different sub_skill + args.
+        # Same (feature_id, current_step) but ADVANCED sub_skill_args (and skill).
         r2 = lazy_core.update_repeat_counts(
             Path(td), _STATE_A_SAME_STEP_DIFF_ARGS, signature_path=sig_path
         )
     assert r1["step_repeat_count"] == 1, f"first step count should be 1, got {r1!r}"
-    assert r2["step_repeat_count"] == 2, (
-        f"step counter must INCREMENT when (feature_id, current_step) is unchanged "
-        f"even though sub_skill/args differ, got {r2!r}"
+    assert r2["step_repeat_count"] == 1, (
+        f"step counter must RESET to 1 when sub_skill_args ADVANCED (ordered "
+        f"forward progress), even though (feature_id, current_step) is unchanged, "
+        f"got {r2!r}"
     )
     assert r2["repeat_count"] == 1, (
         f"dispatch-tuple repeat_count must RESET when sub_skill/args change, got {r2!r}"
+    )
+
+
+def test_update_repeat_counts_step_multipart_progress_does_not_trip():
+    """MANDATORY case 1 — multi-part progress does NOT trip the tripwire.
+
+    Simulate a healthy multi-part /execute-plan sequence: consecutive probes with
+    the SAME (feature_id, "Step 7a: execute plan") but ADVANCING sub_skill_args
+    (plan-part-1 → part-2 → part-3). Each is ordered forward progress, so
+    step_repeat_count must stay at 1 every cycle and NEVER reach the >=3 loop
+    warning the orchestrator acts on.
+
+    This is the audio-rate-modulation false-positive: before the fix the
+    args-blind step counter climbed 1 → 2 → 3 here and force a manual
+    inspect-before-dispatch on parts 3/4/5 of a genuine forward sequence.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        # A real git repo so the dispatch-tuple HEAD path is realistic; commits
+        # land between parts (each part commits its work) — the step counter must
+        # stay flat regardless of commits AND of advancing args.
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        parts = ["plan-part-1.md", "plan-part-2.md", "plan-part-3.md"]
+        step_counts = []
+        for i, part in enumerate(parts):
+            state = {
+                "feature_id": "audio-rate-modulation",
+                "sub_skill": "/execute-plan",
+                "sub_skill_args": part,
+                "current_step": "Step 7a: execute plan",
+            }
+            r = lazy_core.update_repeat_counts(repo_root, state, signature_path=sig_path)
+            step_counts.append(r["step_repeat_count"])
+            # Each part commits its work → HEAD advances between cycles.
+            _commit_dummy(repo_root, f"part-{i}.txt")
+    assert step_counts == [1, 1, 1], (
+        f"multi-part ordered progress must keep step_repeat_count at 1 each cycle "
+        f"(args advance = forward progress), got {step_counts!r}"
+    )
+    assert max(step_counts) < 3, (
+        f"step_repeat_count must NEVER reach the >=3 tripwire for genuine "
+        f"multi-part progress, got {step_counts!r}"
+    )
+
+
+def test_update_repeat_counts_step_same_args_oscillation_still_trips():
+    """MANDATORY case 2 — same-target oscillation STILL trips (d8 preserved).
+
+    Simulate the 2026-06-11 d8 failure: consecutive probes with the SAME
+    (feature_id, current_step) AND IDENTICAL sub_skill_args, with HEAD advancing
+    each cycle (each spurious cycle commits a file, so the dispatch-tuple
+    repeat_count keeps resetting to 1 and never catches the loop). The
+    HEAD-blind, args-unchanged step_repeat_count must climb 1 → 2 → 3 → 4 and
+    reach the >=3 tripwire.
+
+    RED for the ordered-advance fix done wrong: if the exemption mis-fired on
+    unchanged args, this would stay at 1.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sig_path = Path(td) / "sig.json"
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        # SAME args every cycle — the same plan re-emitted (genuine stuck loop).
+        state = {
+            "feature_id": "d8-stuck",
+            "sub_skill": "/write-plan",
+            "sub_skill_args": "plan.md",          # UNCHANGED across all repeats
+            "current_step": "Step 7a: execute plan",
+        }
+        step_counts = []
+        repeat_counts = []
+        for i in range(4):
+            r = lazy_core.update_repeat_counts(repo_root, state, signature_path=sig_path)
+            step_counts.append(r["step_repeat_count"])
+            repeat_counts.append(r["repeat_count"])
+            # Each oscillation cycle COMMITS (HEAD advances) — the property that
+            # makes the dispatch-tuple counter useless and step_repeat_count vital.
+            _commit_dummy(repo_root, f"osc-{i}.txt")
+    assert step_counts == [1, 2, 3, 4], (
+        f"same-target oscillation (unchanged args, HEAD advancing) must keep "
+        f"climbing the step counter, got {step_counts!r}"
+    )
+    assert max(step_counts) >= 3, (
+        f"the >=3 oscillation tripwire MUST still fire for the d8 same-target "
+        f"loop, got {step_counts!r}"
+    )
+    # Confirm the d8 property that motivated step_repeat_count: the dispatch-tuple
+    # repeat_count stays low (resets each commit) so it alone would miss the loop.
+    assert max(repeat_counts) == 1, (
+        f"dispatch-tuple repeat_count must reset to 1 each commit (the d8 blind "
+        f"spot step_repeat_count exists to cover), got {repeat_counts!r}"
     )
 
 
@@ -12304,7 +12403,9 @@ _TESTS = [
     ("test_update_repeat_count_non_git_root_stores_none_head", test_update_repeat_count_non_git_root_stores_none_head),
     # update_repeat_counts — Phase 10 WU-2 step-level oscillation counter
     ("test_update_repeat_counts_returns_both_counts", test_update_repeat_counts_returns_both_counts),
-    ("test_update_repeat_counts_step_counter_ignores_sub_skill_args", test_update_repeat_counts_step_counter_ignores_sub_skill_args),
+    ("test_update_repeat_counts_step_counter_ordered_args_advance_resets", test_update_repeat_counts_step_counter_ordered_args_advance_resets),
+    ("test_update_repeat_counts_step_multipart_progress_does_not_trip", test_update_repeat_counts_step_multipart_progress_does_not_trip),
+    ("test_update_repeat_counts_step_same_args_oscillation_still_trips", test_update_repeat_counts_step_same_args_oscillation_still_trips),
     ("test_update_repeat_counts_step_counter_resets_on_step_change", test_update_repeat_counts_step_counter_resets_on_step_change),
     ("test_update_repeat_counts_step_no_head_advance_reset", test_update_repeat_counts_step_no_head_advance_reset),
     ("test_update_repeat_counts_step_peek_does_not_mutate", test_update_repeat_counts_step_peek_does_not_mutate),

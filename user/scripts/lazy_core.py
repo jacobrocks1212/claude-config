@@ -2845,11 +2845,51 @@ def update_repeat_counts(
         # Same tuple AND same head (or both None) — genuine consecutive repeat.
         count = prior_count + 1
 
+    # --- Resolve prior vs current sub_skill_args for the ordered-advance exempt
+    # The dispatch tuple is (feature_id, sub_skill, sub_skill_args, current_step),
+    # so index 2 of the persisted ``signature`` list is the PRIOR probe's
+    # sub_skill_args. We reuse that already-persisted field rather than adding a
+    # new key — no extra streak state is introduced. ``_MISSING`` when there is
+    # no valid prior dispatch tuple (no prior file, or a corrupt/legacy file
+    # whose signature failed the 4-element validation above → prior_sig_list is
+    # None). When prior args are unknowable we CANNOT prove an advance, so we
+    # fall through to the existing debounce/increment (conservative: never
+    # weakens the tripwire on a missing/old file).
+    current_step_args = state.get("sub_skill_args")
+    prior_step_args: object = _MISSING
+    if prior_sig_list is not None:  # validated as a 4-element list when set
+        prior_step_args = prior_sig_list[2]
+
     # --- Compute the step-level count (Phase 10 WU-2 — NO HEAD reset) ---------
     # Deliberately HEAD-BLIND: identical (feature_id, current_step) increments
     # regardless of intervening commits (that is the oscillation-with-commits
     # signal). Legacy files (no step keys) → start at 1 and add the keys below.
     if prior_step_sig_list is None or list(new_step_sig) != prior_step_sig_list:
+        step_count = 1
+    elif (
+        # ORDERED-ADVANCE EXEMPTION (audio-rate-modulation false-positive fix):
+        # the step signature (feature_id, current_step) is UNCHANGED but
+        # ``sub_skill_args`` ADVANCED since the prior probe. That is genuine
+        # ordered forward progress — e.g. a multi-part /execute-plan sequence
+        # (part-1.md → part-2.md → …) that legitimately stays on the SAME
+        # "Step 7a: execute plan" while marching through plan parts — so it must
+        # NOT count toward the oscillation tripwire. RESET to 1.
+        #
+        # This is the deliberate inverse of the Phase-10 design choice that made
+        # the step signature args-BLIND: that choice was to catch the d8
+        # write-plan loop, where each cycle COMMITS (HEAD advances → the
+        # dispatch-tuple repeat_count resets every iteration so it never trips)
+        # yet routing never leaves the step AND the work target is the SAME. The
+        # discriminator between the two is precisely whether sub_skill_args moved:
+        #   - d8 stuck loop:        args UNCHANGED across repeats → still counts.
+        #   - ordered multi-part:   args DIFFERENT each repeat   → exempt here.
+        # HEAD-advance-immunity (the d8 property) is preserved: we add NO head
+        # reset; we only exempt the case where the work TARGET itself advanced.
+        # Guarded on a known prior (prior_step_args is not _MISSING) so a
+        # missing/legacy prior can never spuriously reset the tripwire.
+        prior_step_args is not _MISSING
+        and current_step_args != prior_step_args
+    ):
         step_count = 1
     elif (
         # F2 double-probe debounce: HOLD step_count (do NOT increment) when this
@@ -2860,6 +2900,10 @@ def update_repeat_counts(
         # prior (sentinel) or an unmarked current probe (sentinel) cannot prove a
         # re-read → fall through to the normal increment. This preserves
         # HEAD-blindness (keyed on dispatch occurrence, never on commits).
+        #
+        # Reached only when sub_skill_args is UNCHANGED (the ordered-advance
+        # branch above already handled the advanced-args case), so the debounce
+        # still governs the genuine same-target re-read it was built for.
         current_consume_count is not _MISSING
         and prior_consume_count is not _MISSING
         and current_consume_count == prior_consume_count
