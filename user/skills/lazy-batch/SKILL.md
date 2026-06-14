@@ -249,6 +249,48 @@ If the user provided a one-off file path via `/ingest-research <path>` (run BEFO
 
 ---
 
+## Step 0.52: Validation-readiness pre-screen (advisory — F5 / lazy-validation-readiness)
+
+**Purpose:** Before front-loading `DEFERRED_NON_CLOUD` features, emit a per-feature verdict table
+showing whether each candidate's MCP test scenarios assert tools that are already registered in
+the repo.  This surfaces "the scenario asserts a tool that doesn't exist yet" early — at curation
+time — rather than three cycles later at the Step-9 mcp-test boundary.
+
+**Run:**
+```bash
+python3 ~/.claude/scripts/validation_readiness.py --repo-root {cwd}
+```
+
+The script lives at `~/.claude/scripts/validation_readiness.py` (symlinked from
+`user/scripts/validation_readiness.py` in the claude-config repo).
+
+**Output format (example):**
+```
+validation_readiness — DEFERRED_NON_CLOUD pre-screen verdict
+======================================================================
+  FEATURE                                   VERDICT                 MISSING TOOLS
+  ----------------------------------------  ----------------------  ------------------------------
+  sidecar-watchdog                          ready
+  d8-session-format                         needs-work              evaluate_code
+  polyphonic-stems                          needs-work              get_diagnostic_counters
+  ...
+advisory: operator may still front-load a needs-work feature.
+```
+
+**This step is ADVISORY — not a hard gate.** The operator may still choose to front-load a
+`needs-work` feature deliberately (e.g., the plan for this session IS to implement the missing
+surface first). However, the verdict is logged so that if the run later hits a deep blocker at
+Step 9, the blocker is traceable to an ignored pre-screen warning rather than appearing as a
+surprise.  Features with no `DEFERRED_NON_CLOUD.md` are silently skipped (not front-load
+candidates); features with `DEFERRED_NON_CLOUD.md` but no `mcp-tests/` scenarios are shown as
+`ready (no scenarios)`.
+
+**If the script is absent** (first run after the `claude-config` symlink was set up, or a
+machine where the `~/.claude/scripts/` symlink hasn't been refreshed), skip this step silently
+and continue to Step 0.55 — this is a zero-text-rule advisory, never a blocker.
+
+---
+
 ## Step 0.55: Write the run marker (IMMEDIATELY before the T1 banner / loop entry)
 
 After Step 0.5 (pre-loop ingest check) completes — and before printing the T1 banner or entering the Step 1 loop — write the run marker:
