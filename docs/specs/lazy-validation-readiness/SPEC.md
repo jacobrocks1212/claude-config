@@ -2,7 +2,7 @@
 
 > Five harness changes that stop the lazy pipeline from *wasting* validation/dispatch cycles, distilled from the `/lazy-batch-retro` of AlgoBooth session `e076ed30` (focus: avoidable rework & harness hardening). Two close false-signal/recovery-cost classes in the dispatch loop (false `LOOP DETECTED`; transcription-slip denials); three move readiness checks *earlier* so a cycle is never spent validating against an unready feature, runtime, or scenario.
 
-**Status:** Complete — all 7 phases implemented + unit-verified (harness `pytest` + 58 AlgoBooth docs-consistency tests; F2a `updatedInput` + F7 Step-1d.0 live smokes certified on the 2026-06-14 marked run). **Phase 7** (stop-authorization enforcement: no unilateral run-end + meta-dispatch by-reference) was added + implemented 2026-06-14 after a live attended-run unilateral-stop incident; its 2 live Runtime Verification rows certify on the next marked `/lazy-batch` run.
+**Status:** In-progress — Phases 1–7 implemented + unit-verified (harness `pytest` + 58 AlgoBooth docs-consistency tests; F2a `updatedInput` + F7 Step-1d.0 live smokes certified on the 2026-06-14 marked run). **Phase 7** (stop-authorization enforcement: no unilateral run-end + meta-dispatch by-reference) was added + implemented 2026-06-14 after a live attended-run unilateral-stop incident; its 2 live Runtime Verification rows certify on the next marked `/lazy-batch` run. **Phase 8** (pipeline-efficiency: gate `/retro` re-runs on phase-kind + close the `/execute-plan` finalization gap) was added 2026-06-14 from the d7-multi-timbral `/lazy-batch-retro` cost measurement — In-progress, not yet implemented.
 **Priority:** P1
 **Last updated:** 2026-06-13
 
