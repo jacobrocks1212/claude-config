@@ -66,7 +66,16 @@ Each producer skill writes exactly one `kind` value. When you author a new plan-
 - `created:` is the date the plan was first written (NOT the date of the last edit). Use `YYYY-MM-DD`.
 - `feature_id:` MUST match the parent feature directory name. For standalone fixes targeting `docs/bugs/<slug>/plans/`, use the bug-directory slug.
 - Include `phases:` whenever the plan corresponds to specific PHASES.md phases. Omitting it falls back to alphabetical plan-name sort in `lazy-state.py` — fine for single-plan features, costly for multi-plan features.
-- Do not invent new top-level keys without updating this schema. Tools MAY reject unknown keys in the future.
+- Do not invent new top-level keys without updating this schema **and the downstream consumer lint in lockstep** (see "Consumer lockstep" below). AlgoBooth's `check-docs-consistency.ts` rejects unknown top-level plan keys TODAY (not "in the future") — an undeclared key fails the docs-consistency gate (exit 1) on every plan that carries it.
+
+### Consumer lockstep (HARD — mirrors the `sentinel-frontmatter.md` ↔ `SENTINEL_SCHEMAS` rule)
+
+This schema's optional/required key set is the **producer** half of a producer/consumer contract. The **consumer** half is AlgoBooth's `scripts/check-docs-consistency.ts`:
+
+- `PLAN_REQUIRED` MUST list exactly the **Required fields** above: `kind`, `feature_id`, `status`, `created`.
+- `PLAN_OPTIONAL` MUST list every key in the **Optional** block above: `complexity`, `phases`, `deliverables`, `superseded_by`, `source_branch`, `source_commit`.
+
+**Whenever you add, rename, or remove a key here, you MUST update `check-docs-consistency.ts`'s `PLAN_OPTIONAL`/`PLAN_REQUIRED` in the same change** — otherwise a producer emitting the new key (e.g. `/write-plan` emitting `complexity` per `lazy-validation-readiness` Phase 9) trips the consumer's unknown-key rejection and blocks the pipeline gate on every future plan. This is the plan-file analogue of the sentinel-schema lockstep; treat a key present on exactly one side as drift. (A harness-hardening agent CANNOT make the AlgoBooth edit itself — prohibition #1, no target-repo source edits — so when this clause is updated, the AlgoBooth-side change is the operator's/orchestrator's to land in the target repo.)
 
 ### Consumer rules
 
