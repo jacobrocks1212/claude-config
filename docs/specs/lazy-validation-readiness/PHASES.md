@@ -203,7 +203,7 @@
 
 ### Phase 7: Stop-authorization enforcement (no unilateral run-end) + meta-dispatch by-reference
 
-**Status:** Not started
+**Status:** Complete (impl + unit-verified — 385 harness tests; both `--test` smokes byte-identical; the 2 live Runtime Verification rows certify on the next marked `/lazy-batch` run)
 
 **Scope:** Make it **mechanically impossible** for the orchestrator to end a `/lazy-batch` (or `/lazy-bug-batch` / `/lazy-batch-cloud`) run except on `max-cycles`, a genuine script-emitted terminal, or explicit operator authorization. Today the run-lifecycle has no stop-authorization gate — `lazy-state.py --run-end` retires the marker for any caller-supplied reason, and the "unattended-only + ≥2-denial reliability trigger" that is supposed to bound checkpoint stops is **pure prose in the SKILL.md with zero enforcement** (the marker doesn't even record attended-vs-unattended). This phase moves that bound from prose into the script, and eliminates the contributing cause (meta-prompt hand-transcription) by extending Phase 3's dispatch-by-reference to `--emit-dispatch` meta prompts.
 
