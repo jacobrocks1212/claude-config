@@ -400,6 +400,7 @@ R-EP-5 through R-EP-8 (PHASES.md update, quality gates, commit policy, integrati
 - **R-RE-1** `RETRO_DONE.md` written when no significant divergences (per retro's Step 6c).
 - **R-RE-2** Plan file generated with `kind: retro-plan` and `status: Ready` (or Complete after a follow-up round).
 - **R-RE-3** Round count tracked in `RETRO_DONE.md` frontmatter (`rounds:` field matches actual `retro-N-*.md` count).
+- **R-RE-4** Phase-kind retro gating (efficiency — Phase 8, lazy-validation-readiness). Read each phase's `**Phase kind:**` marker in PHASES.md. A `/retro` round that was **correctly SKIPPED** — i.e. the only phases added since the prior `RETRO_DONE.md` (`phase_count_at_retro`) are `corrective`, so `lazy-state.py` did NOT re-stale `/retro` — is **NOT** a missing-retro violation; do not flag it. Conversely, a **`corrective` phase that WRONGLY re-triggered a `/retro` round** (a retro cycle ran whose only post-`RETRO_DONE.md` phase adds are all `corrective`) IS an efficiency note: the design surface did not change, so the retro round was pure overhead (the d7-multi-timbral failure mode — 4 zero-divergence retro rounds dragged in front of corrective re-validations). Grade it a `partial` efficiency note (NOT a hard `fail`, NO new force-cap): cite the corrective phase headings + the retro round that should not have run. An untagged (legacy/default-`design`) phase that re-triggered retro is correct behavior — do not flag it.
 
 #### `/mcp-test` cycles
 - **R-MT-1** Scenario file referenced exists (`docs/testing/mcp-tests/<name>.md`).

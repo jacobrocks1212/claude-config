@@ -105,7 +105,10 @@ verdicts, instrumentation disposition, artifact path).
 - **`/add-phase`:** confirmed Hypothesis-Ledger rows are citable as `runtime` evidence in the
   corrective phase's Validated Assumptions ledger (evidence column cites the artifact AND its
   underlying evidence artifact); `## Recommended Fix Scope` seeds Files-likely-modified. Stale
-  artifacts are cited only as `(stale — re-verify)`.
+  artifacts are cited only as `(stale — re-verify)`. A phase authored from an investigation that
+  resolves a validation/mcp-test blocker is a CORRECTIVE phase (it makes the impl satisfy the
+  existing spec, not expand the design) — instruct `{ADD_PHASE}` to tag it `**Phase kind:**
+  corrective` so it does not wastefully re-trigger `/retro`.
 - **`/write-plan`:** plans cite the repro recipe + fix scope; spike WUs duplicating
   already-confirmed ledger rows are skipped (cite the row instead).
 

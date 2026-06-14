@@ -107,7 +107,16 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        NOT use Agent) against {feature_id}, authoring a new phase whose scope is
        the blocker described in BLOCKED.md (and any recovery the cycle subagent
        suggested). It appends the phase to PHASES.md (In-progress, with
-       unchecked deliverables) per its own contract. Then NEUTRALIZE BLOCKED.md
+       unchecked deliverables) per its own contract.
+       PHASE KIND (HARD REQUIREMENT): a blocker-resolution phase whose scope is
+       making the impl satisfy the EXISTING spec — i.e. `blocker_kind:
+       mcp-validation` or `execute-plan-scope` — is a CORRECTIVE phase. Instruct
+       {ADD_PHASE} to tag it `**Phase kind:** corrective` (pass this in the phase
+       description). A corrective phase does NOT re-trigger `/retro` (no design
+       surface changed), so the re-validation cycle runs without a wasteful retro
+       round in front of it. Only tag `design` if the resolution genuinely
+       expands the design surface (rare for a blocker resolution).
+       Then NEUTRALIZE BLOCKED.md
        (see below). The next loop cycle's {STATE_SCRIPT} routes the {ITEM} to
        plan/implement the new phase.
        ESCALATION (only when the orchestrator flagged validation-escalation —

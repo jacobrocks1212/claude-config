@@ -3956,6 +3956,167 @@ def test_count_phases_cli_matches_parse_phases():
 
 
 # ---------------------------------------------------------------------------
+# Tests: parse_phases phase_kind — Phase 8 (lazy-validation-readiness)
+#
+# Each parsed phase carries a ``phase_kind`` field read from a
+# ``**Phase kind:** corrective | design`` line inside the section (first
+# occurrence wins, mirroring **Status:**). Default ``"design"`` when the line
+# is absent (back-compat — legacy PHASES.md re-trigger retro exactly as before).
+# ---------------------------------------------------------------------------
+
+def test_parse_phases_phase_kind_corrective_read():
+    """A ``**Phase kind:** corrective`` line is exposed as phase_kind."""
+    _guard()
+    text = (
+        "### Phase 1: Fix\n"
+        "**Status:** Complete\n"
+        "**Phase kind:** corrective\n"
+        "- [x] make impl satisfy existing spec\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert len(phases) == 1
+    assert phases[0]["phase_kind"] == "corrective", phases[0]
+
+
+def test_parse_phases_phase_kind_design_explicit():
+    """An explicit ``**Phase kind:** design`` line is read as design."""
+    _guard()
+    text = (
+        "### Phase 1: Build\n"
+        "**Status:** Complete\n"
+        "**Phase kind:** design\n"
+        "- [x] new design surface\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert phases[0]["phase_kind"] == "design", phases[0]
+
+
+def test_parse_phases_phase_kind_defaults_design_when_absent():
+    """No ``**Phase kind:**`` line → phase_kind defaults to 'design' (back-compat).
+
+    Legacy PHASES.md authored before phase-kind tagging must continue to be
+    treated as design phases so they re-trigger retro exactly as before.
+    """
+    _guard()
+    text = (
+        "### Phase 1: Legacy\n"
+        "**Status:** Complete\n"
+        "- [x] no phase-kind line here\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert phases[0]["phase_kind"] == "design", phases[0]
+
+
+def test_parse_phases_phase_kind_case_insensitive_and_first_wins():
+    """The value is normalized to lowercase; the first kind line inside the
+    section wins (a later mention inside Implementation Notes is ignored)."""
+    _guard()
+    text = (
+        "### Phase 1\n"
+        "**Status:** Complete\n"
+        "**Phase kind:** Corrective\n"
+        "- [x] item\n"
+        "**Phase kind:** design (mentioned in notes — ignored)\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert phases[0]["phase_kind"] == "corrective", phases[0]
+
+
+def test_parse_phases_phase_kind_unknown_value_defaults_design():
+    """An unrecognized phase-kind value falls back to the safe 'design' default
+    (the conservative tier — re-triggers retro)."""
+    _guard()
+    text = (
+        "### Phase 1\n"
+        "**Status:** Complete\n"
+        "**Phase kind:** banana\n"
+        "- [x] item\n"
+    )
+    phases = lazy_core.parse_phases(text)
+    assert phases[0]["phase_kind"] == "design", phases[0]
+
+
+# ---------------------------------------------------------------------------
+# Tests: retro_staleness phase-kind gate — Phase 8 (lazy-validation-readiness)
+#
+# retro_staleness now re-stales /retro ONLY when >=1 design phase landed since
+# RETRO_DONE.md (the phases at index >= phase_count_at_retro). A run of purely
+# corrective phases since the last retro does NOT re-trigger retro.
+# ---------------------------------------------------------------------------
+
+def test_retro_staleness_only_corrective_added_not_stale():
+    """phase_count_at_retro: 1 + 3 trailing corrective phases → NOT stale.
+
+    The design surface is unchanged (the corrective phases only make the impl
+    satisfy the existing spec), so retro has nothing to re-audit → None.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n**Phase kind:** design\n- [x] A\n\n"
+            "### Phase 2\n**Phase kind:** corrective\n- [x] B\n\n"
+            "### Phase 3\n**Phase kind:** corrective\n- [x] C\n\n"
+            "### Phase 4\n**Phase kind:** corrective\n- [x] D\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 1\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) is None
+
+
+def test_retro_staleness_one_design_added_is_stale():
+    """phase_count_at_retro: 1 + a trailing design phase (among correctives) →
+    stale, returns (current, recorded)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n**Phase kind:** design\n- [x] A\n\n"
+            "### Phase 2\n**Phase kind:** corrective\n- [x] B\n\n"
+            "### Phase 3\n**Phase kind:** design\n- [x] C\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 1\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) == (3, 1)
+
+
+def test_retro_staleness_added_untagged_phase_is_stale_backcompat():
+    """A trailing phase with NO phase-kind line defaults to design → stale.
+
+    Back-compat: a legacy corrective tail authored before phase-kind tagging
+    keeps re-triggering retro (the safe default), exactly as pre-Phase-8.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n- [x] A\n\n"
+            "### Phase 2\n- [x] B\n",
+            encoding="utf-8",
+        )
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: f\ndate: 2026-06-01\n"
+            "phase_count_at_retro: 1\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.retro_staleness(spec_dir) == (2, 1)
+
+
+# ---------------------------------------------------------------------------
 # Tests: apply_pseudo completion-coherence enforcement — Phase 9 WU-1
 #
 # At __mark_complete__ / __mark_fixed__ time (AFTER the evidence gate and the
@@ -6733,6 +6894,7 @@ def _build_retro_routing_repo(
     root: Path,
     retro_done_frontmatter: str | None,
     phase_count: int = 3,
+    phase_kinds: list[str] | None = None,
 ) -> Path:
     """Build a feature repo that reaches the Step 8/9 retro→MCP gate.
 
@@ -6743,6 +6905,12 @@ def _build_retro_routing_repo(
     (the quantity retro_staleness compares against phase_count_at_retro).
     `retro_done_frontmatter` is the raw YAML body for RETRO_DONE.md, or None to
     omit the sentinel entirely (→ plain Step 8 retro dispatch).
+
+    `phase_kinds`, when provided, is a list of length `phase_count` giving the
+    `**Phase kind:**` tag for each phase (Phase 8 — lazy-validation-readiness);
+    an entry of None/"" omits the line (legacy untagged → defaults to design).
+    When omitted entirely, no phase-kind lines are written (the back-compat
+    untagged shape).
     """
     features = root / "docs" / "features"
     features.mkdir(parents=True)
@@ -6766,7 +6934,12 @@ def _build_retro_routing_repo(
     (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
     phases_body = "# Phases\n\n"
     for n in range(1, phase_count + 1):
-        phases_body += f"### Phase {n}\n- [x] Done\n\n"
+        phases_body += f"### Phase {n}\n"
+        if phase_kinds is not None:
+            kind = phase_kinds[n - 1]
+            if kind:
+                phases_body += f"**Phase kind:** {kind}\n"
+        phases_body += "- [x] Done\n\n"
     phases_body += "### Runtime Verification\n- [ ] MCP test only\n"
     (fdir / "PHASES.md").write_text(phases_body, encoding="utf-8")
     plans = fdir / "plans"
@@ -7176,6 +7349,44 @@ def test_lazy_state_retro_fieldless_routes_past_step8():
         state = ls.compute_state(root, False)
     assert state["sub_skill"] == "mcp-test", state
     assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+
+
+def test_lazy_state_retro_stale_only_corrective_routes_past_step8():
+    """Phase 8 — phase-kind gate. RETRO_DONE.md phase_count_at_retro: 1 + two
+    trailing CORRECTIVE phases (added post-retro) → NOT stale; Step 8 falls
+    through to Step 9 mcp-test (no redundant /retro round)."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nfeature_id: feat-retro\ndate: 2026-06-01\n"
+            "rounds: 1\nphase_count_at_retro: 1\n",
+            phase_count=3,
+            phase_kinds=["design", "corrective", "corrective"],
+        )
+        state = ls.compute_state(root, False)
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+
+
+def test_lazy_state_retro_stale_design_added_routes_retro_feature():
+    """Phase 8 — phase-kind gate. RETRO_DONE.md phase_count_at_retro: 1 + a
+    trailing DESIGN phase (among correctives) added post-retro → stale; Step 8
+    re-dispatches retro-feature."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_retro_routing_repo(
+            Path(td),
+            "kind: retro-done\nfeature_id: feat-retro\ndate: 2026-06-01\n"
+            "rounds: 1\nphase_count_at_retro: 1\n",
+            phase_count=3,
+            phase_kinds=["design", "corrective", "design"],
+        )
+        state = ls.compute_state(root, False)
+    assert state["sub_skill"] == "retro-feature", state
+    assert "stale" in (state["current_step"] or "").lower(), state["current_step"]
 
 
 # ---- WU-5e end-to-end: Step-8 retro-staleness routing (bug-state parity) ----
@@ -11844,6 +12055,16 @@ _TESTS = [
     ("test_parse_phases_phase_summary_section_not_a_phase", test_parse_phases_phase_summary_section_not_a_phase),
     ("test_parse_phases_english_word_after_phase_not_counted", test_parse_phases_english_word_after_phase_not_counted),
     ("test_count_phases_cli_matches_parse_phases", test_count_phases_cli_matches_parse_phases),
+    # Phase 8 (lazy-validation-readiness): parse_phases phase_kind
+    ("test_parse_phases_phase_kind_corrective_read", test_parse_phases_phase_kind_corrective_read),
+    ("test_parse_phases_phase_kind_design_explicit", test_parse_phases_phase_kind_design_explicit),
+    ("test_parse_phases_phase_kind_defaults_design_when_absent", test_parse_phases_phase_kind_defaults_design_when_absent),
+    ("test_parse_phases_phase_kind_case_insensitive_and_first_wins", test_parse_phases_phase_kind_case_insensitive_and_first_wins),
+    ("test_parse_phases_phase_kind_unknown_value_defaults_design", test_parse_phases_phase_kind_unknown_value_defaults_design),
+    # Phase 8: retro_staleness phase-kind gate
+    ("test_retro_staleness_only_corrective_added_not_stale", test_retro_staleness_only_corrective_added_not_stale),
+    ("test_retro_staleness_one_design_added_is_stale", test_retro_staleness_one_design_added_is_stale),
+    ("test_retro_staleness_added_untagged_phase_is_stale_backcompat", test_retro_staleness_added_untagged_phase_is_stale_backcompat),
     # Phase 9 WU-1: apply_pseudo completion-coherence enforcement
     ("test_apply_pseudo_coherence_autoflips_all_ticked_phases", test_apply_pseudo_coherence_autoflips_all_ticked_phases),
     ("test_apply_pseudo_coherence_refuses_unchecked_verification_row", test_apply_pseudo_coherence_refuses_unchecked_verification_row),
@@ -11953,6 +12174,9 @@ _TESTS = [
     ("test_lazy_state_retro_stale_routes_retro_feature", test_lazy_state_retro_stale_routes_retro_feature),
     ("test_lazy_state_retro_fresh_routes_past_step8", test_lazy_state_retro_fresh_routes_past_step8),
     ("test_lazy_state_retro_fieldless_routes_past_step8", test_lazy_state_retro_fieldless_routes_past_step8),
+    # Phase 8 (lazy-validation-readiness) end-to-end — Step-8 phase-kind gate
+    ("test_lazy_state_retro_stale_only_corrective_routes_past_step8", test_lazy_state_retro_stale_only_corrective_routes_past_step8),
+    ("test_lazy_state_retro_stale_design_added_routes_retro_feature", test_lazy_state_retro_stale_design_added_routes_retro_feature),
     # Phase 11 WU-5e end-to-end — Step-8 retro-staleness routing (bug-state parity)
     ("test_bug_state_retro_stale_routes_retro_feature", test_bug_state_retro_stale_routes_retro_feature),
     ("test_bug_state_retro_fresh_routes_past_step8", test_bug_state_retro_fresh_routes_past_step8),

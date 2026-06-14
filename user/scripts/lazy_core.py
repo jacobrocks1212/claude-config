@@ -1166,6 +1166,21 @@ _PHASE_HEADING_RE = re.compile(
 # A per-phase / top-level bold status line: ``**Status:** <value>``.
 _BOLD_STATUS_RE = re.compile(r"^\*\*Status:\*\*\s*(.+?)\s*$")
 
+# A per-phase ``**Phase kind:** corrective | design`` marker (Phase 8 —
+# lazy-validation-readiness). Mirrors the ``**Status:**`` per-phase convention
+# and survives the docs-consistency parse. The captured value is normalized to
+# lowercase and validated against {corrective, design}; anything else (including
+# an absent line) falls back to the safe ``design`` default so legacy PHASES.md
+# re-trigger retro exactly as before. Only the first occurrence inside a phase
+# section wins (a later mention inside Implementation Notes is ignored).
+_PHASE_KIND_RE = re.compile(r"^\*\*Phase kind:\*\*\s*(.+?)\s*$")
+
+# The canonical phase-kind tier set. ``design`` is the conservative default:
+# a design (or unknown / untagged) phase re-triggers /retro; only an explicit
+# ``corrective`` tag suppresses the retro re-stale.
+_VALID_PHASE_KINDS = frozenset({"corrective", "design"})
+_DEFAULT_PHASE_KIND = "design"
+
 
 def parse_phases(phases_text: str) -> list[dict]:
     """Parse PHASES.md into one record per phase section (Phase 9 WU-1).
@@ -1184,6 +1199,12 @@ def parse_phases(phases_text: str) -> list[dict]:
       - ``unchecked`` – count of ``- [ ]`` rows in the section, FENCE-AWARE.
       - ``checked``   – count of ``- [x]`` / ``- [X]`` rows in the section,
                         FENCE-AWARE.
+      - ``phase_kind`` – ``"corrective"`` or ``"design"``, read from the FIRST
+                        ``**Phase kind:** ...`` line inside the section
+                        (Phase 8 — lazy-validation-readiness). Defaults to
+                        ``"design"`` when the line is absent or carries an
+                        unrecognized value (back-compat: a legacy / untagged
+                        phase re-triggers /retro exactly as before).
 
     Fence-awareness reuses the established ``in_fence`` toggle pattern (see
     ``count_deliverables``): a line whose stripped form starts with ``` (a fence
@@ -1214,6 +1235,12 @@ def parse_phases(phases_text: str) -> list[dict]:
                 "status": None,
                 "unchecked": 0,
                 "checked": 0,
+                # Tracks whether a **Phase kind:** line has been consumed yet
+                # (first-wins, like status). The public ``phase_kind`` value is
+                # set to the default here and overwritten by the first valid
+                # marker; an unknown value leaves the default in place.
+                "phase_kind": _DEFAULT_PHASE_KIND,
+                "_phase_kind_seen": False,
             }
             phases.append(current)
             continue
@@ -1229,16 +1256,31 @@ def parse_phases(phases_text: str) -> list[dict]:
             if sm:
                 current["status"] = sm.group(1).strip()
                 continue
+        # First **Phase kind:** line inside the section wins; later mentions
+        # (e.g. inside an Implementation Notes block) are ignored. An
+        # unrecognized value leaves the safe ``design`` default in place.
+        if not current["_phase_kind_seen"]:
+            km = _PHASE_KIND_RE.match(stripped)
+            if km:
+                current["_phase_kind_seen"] = True
+                kind = km.group(1).strip().lower()
+                if kind in _VALID_PHASE_KINDS:
+                    current["phase_kind"] = kind
+                continue
         # Checkbox accounting (fence-aware — fenced rows already skipped above).
         if re.match(r"^-\s*\[\s*\]", stripped):
             current["unchecked"] += 1
         elif re.match(r"^-\s*\[[xX]\]", stripped):
             current["checked"] += 1
+    # Drop the private bookkeeping key so the returned records expose only the
+    # documented public fields (heading/status/unchecked/checked/phase_kind).
+    for ph in phases:
+        ph.pop("_phase_kind_seen", None)
     return phases
 
 
 def retro_staleness(spec_path: Path) -> tuple[int, int] | None:
-    """Detect a stale retro: corrective phases landed AFTER the retro concluded.
+    """Detect a stale retro: a DESIGN phase landed AFTER the retro concluded.
 
     Shared predicate for Phase 11 WU-5c (lazy-state Step-8 routing) and WU-5d
     (the ``apply_pseudo __mark_complete__`` backstop) — both keys compare the
@@ -1246,17 +1288,30 @@ def retro_staleness(spec_path: Path) -> tuple[int, int] | None:
     recorded at conclusion time (``phase_count_at_retro`` in RETRO_DONE.md
     frontmatter, written by /retro per the Phase 11 WU-5a prose half).
 
-    Returns ``(current_count, recorded_count)`` when the retro is STALE
-    (strictly more phase sections now than at retro time — the retro graded a
-    feature that has since grown corrective phases it never saw), else None.
+    Returns ``(current_count, recorded_count)`` when the retro is STALE, else
+    None.
 
-    Grandfathering / no-signal cases (all → None, preserving pre-Phase-11
-    behavior byte-identically):
+    **Phase-8 phase-kind gate (lazy-validation-readiness).** A retro is stale
+    only when ``>= 1`` of the phases added SINCE the retro is a ``design``
+    (non-corrective) phase. The phases added since the retro are the ones at
+    index ``>= recorded_count`` (the recorded count is the number of phase
+    sections at retro time, so the trailing ``current - recorded`` sections are
+    the post-retro additions). A run of PURELY ``corrective`` additions does NOT
+    re-trigger retro — corrective phases make the impl satisfy the EXISTING
+    spec and change no design surface, so the retro that graded the design has
+    nothing to re-audit. A ``design`` (or untagged / unknown-kind, which
+    defaults to ``design``) addition DOES re-stale retro. This narrows the
+    pre-Phase-8 "any added phase re-stales" behavior; legacy untagged corrective
+    tails still re-trigger (the safe default), preserving back-compat.
+
+    Grandfathering / no-signal cases (all → None, preserving prior behavior):
       - RETRO_DONE.md absent, or present without frontmatter.
       - ``phase_count_at_retro`` missing or malformed (not an int / digit
         string; YAML bools rejected — not counts).
       - PHASES.md absent (nothing to compare against).
       - Equal or FEWER phases now (consolidation is not staleness).
+      - More phases now, but every post-retro addition is ``corrective``
+        (Phase-8 gate — design surface unchanged, no re-audit warranted).
     """
     retro_meta = parse_sentinel(spec_path / "RETRO_DONE.md")
     if not retro_meta:
@@ -1283,9 +1338,21 @@ def retro_staleness(spec_path: Path) -> tuple[int, int] | None:
         # Unreadable PHASES.md: treat as no signal rather than crashing the
         # routing/gate — the doc-consistency lints own malformed-file policing.
         return None
-    current = len(parse_phases(phases_text))
-    if current > recorded:
+    parsed = parse_phases(phases_text)
+    current = len(parsed)
+    if current <= recorded:
+        # Equal or fewer phases now — consolidation is not staleness.
+        return None
+    # Phase-8 phase-kind gate: only a DESIGN phase added since the retro
+    # re-stales. The post-retro additions are the trailing sections at index
+    # >= recorded. ``recorded`` may exceed ``current`` only when current <=
+    # recorded (already returned above), so this slice is always valid here.
+    # A negative/over-large recorded is defended by clamping to [0, current].
+    added = parsed[max(0, recorded):]
+    if any(ph.get("phase_kind", _DEFAULT_PHASE_KIND) == "design" for ph in added):
         return (current, recorded)
+    # Every post-retro addition is corrective — design surface unchanged,
+    # nothing for the retro to re-audit. Not stale.
     return None
 
 

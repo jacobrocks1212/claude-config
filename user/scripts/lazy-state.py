@@ -81,6 +81,7 @@ from lazy_core import (
     _plan_lowest_phase,
     _plan_phase_set,
     _unchecked_wus_in_plan_scope,
+    _phases_text_scoped_to,
     find_implementation_plans,
     find_retro_plans,
     latest_retro_plan,
@@ -1545,19 +1546,53 @@ def compute_state(
             # stale). This check runs before the cloud-saturation gate so a
             # fully-checked scope always flips stale regardless of cloud mode.
             plan_phase_set = _plan_phase_set(plan)
-            if plan_phase_set and not _unchecked_wus_in_plan_scope(phases_text, plan_phase_set):
-                # Stale already-applied plan: every WU this plan references (scoped to its
-                # phases: field) is already [x], yet its frontmatter is still Ready/In-progress
-                # and PHASES.md still has unchecked rows elsewhere so we reached this branch.
-                # Dispatching /execute-plan would burn an Opus cycle re-verifying a plan whose
-                # work is already done (observed twice in production). Flip it Complete inline
-                # via the __flip_plan_complete_stale__ pseudo-action instead.
-                return _state(
-                    **common,
-                    current_step="Step 7a: flip plan Complete (stale — all referenced deliverables already checked)",
-                    sub_skill="__flip_plan_complete_stale__",
-                    sub_skill_args=str(plan),
+            if plan_phase_set:
+                in_scope_unchecked = _unchecked_wus_in_plan_scope(
+                    phases_text, plan_phase_set
                 )
+                # Phase 8 (lazy-validation-readiness) — close the /execute-plan
+                # finalization gap, option (b). A plan is "finalize-stale" when,
+                # within its phase scope, the only remaining-open WUs are
+                # Step-9-owned Runtime-Verification rows (the impl is done; only
+                # the verification subsections the MCP cycle ticks remain). The
+                # plan's frontmatter is still Ready/In-progress, so without this
+                # branch lazy-state re-dispatches a full /execute-plan cycle that
+                # does nothing but flip the plan to Complete (d7-multi-timbral
+                # Phase 11: cycle 33 ticked everything, cycle 34 burned ~97k tok
+                # just to flip the status). Routing those cases to the existing
+                # __flip_plan_complete_stale__ pseudo-action makes the state
+                # machine self-correct regardless of which /execute-plan revision
+                # ran (more robust than tightening the skill prose alone — the
+                # rejected option (a); see PHASES.md Implementation Notes).
+                #
+                # Two finalize-stale shapes, both routed to the pseudo-action:
+                #   (1) ZERO in-scope unchecked WUs (the original stale-plan
+                #       gate — every referenced WU is already [x]).
+                #   (2) The in-scope unchecked remainder is ENTIRELY
+                #       verification-only rows (the Phase-8 addition). We scope
+                #       PHASES.md down to the plan's phases and reuse the
+                #       verification-only predicate so a genuine implementation
+                #       row in scope still falls through to /execute-plan.
+                scoped_text = _phases_text_scoped_to(phases_text, plan_phase_set)
+                finalize_stale = (
+                    not in_scope_unchecked
+                    or remaining_unchecked_are_verification_only(scoped_text)
+                )
+                if finalize_stale:
+                    # Stale already-applied plan: every implementation WU this plan
+                    # references (scoped to its phases: field) is already [x] — only
+                    # Step-9 verification rows (if any) remain — yet its frontmatter is
+                    # still Ready/In-progress and PHASES.md still has unchecked rows
+                    # elsewhere so we reached this branch. Dispatching /execute-plan
+                    # would burn an Opus cycle re-verifying a plan whose work is already
+                    # done (observed in production). Flip it Complete inline via the
+                    # __flip_plan_complete_stale__ pseudo-action instead.
+                    return _state(
+                        **common,
+                        current_step="Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)",
+                        sub_skill="__flip_plan_complete_stale__",
+                        sub_skill_args=str(plan),
+                    )
             # Cloud-saturation gate (cloud mode only). When a plan is
             # In-progress because the only unchecked WUs in its phase scope
             # are explicitly documented in DEFERRED_NON_CLOUD.md as
@@ -3212,6 +3247,60 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
 
+    elif name == "finalize-plan-verification-rows-only-flips":
+        # Phase 8 (lazy-validation-readiness) — close the /execute-plan
+        # finalization gap, option (b). The plan's phase scope has all its
+        # IMPLEMENTATION deliverables checked; the ONLY remaining unchecked rows
+        # in scope sit under a Runtime Verification subsection (Step-9-owned).
+        # The plan frontmatter is still Ready. Phase 2 (out of scope) has a real
+        # unchecked impl row so unchecked > 0 overall and Step 7 is entered.
+        #
+        # Pre-fix (RED): _unchecked_wus_in_plan_scope returns the RV row as
+        # unchecked → the stale-plan gate does NOT fire → execute-plan is
+        # re-dispatched (a redundant cycle that only flips the plan to Complete).
+        #
+        # Post-fix (GREEN): the finalize-stale branch sees the in-scope unchecked
+        # remainder is entirely verification-only → routes to
+        # __flip_plan_complete_stale__ with no redundant execute-plan dispatch.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-fin", "name": "Feature Finalize",
+                 "spec_dir": "feat-fin", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fn = features / "feat-fin"
+        fn.mkdir()
+        (fn / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (fn / "RESEARCH.md").write_text("# R\n")
+        (fn / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # Phase 1 (plan scope): all impl WUs [x]; only a Runtime Verification
+        # row remains unchecked. Phase 2 (out of scope): a real unchecked row.
+        (fn / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] WU1 implement core logic\n"
+            "- [x] WU2 write unit tests\n"
+            "\n"
+            "**Runtime Verification** *(checked on the next marked run):*\n"
+            "- [ ] live MCP assertion certifies the surface\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = fn / "plans"
+        plans.mkdir()
+        # Plan scoped to phases: [1] — its only in-scope unchecked row is the
+        # verification row → finalize-stale → flip, do NOT execute-plan.
+        (plans / "all-phases-fin.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-fin\n"
+            "status: Ready\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan for Phase 1\n"
+        )
+        # No RETRO_DONE.md → stays in Step 7 (not past Step 8).
+
     elif name == "realign-hash-gate-detects-changed-upstream":
         # WU-8 Fixture 1: realign freshness gate hash comparison.
         #
@@ -3670,6 +3759,15 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-live",
                 "current_step": "Step 7a: execute plan",
             }),
+            # Phase 8 — finalization gap (option b). The plan's in-scope
+            # unchecked remainder is entirely Runtime-Verification rows → the
+            # finalize-stale branch must route to __flip_plan_complete_stale__
+            # (NOT a redundant execute-plan re-dispatch).
+            # RED today: code emits sub_skill="execute-plan".
+            ("finalize-plan-verification-rows-only-flips", False, False, {
+                "sub_skill": "__flip_plan_complete_stale__",
+                "feature_id": "feat-fin",
+            }),
 
             # WU-8 Fixture 1: realign hash gate detects changed upstream.
             # Downstream has a hard dep on a complete upstream. The realign plan
@@ -3801,6 +3899,21 @@ def run_smoke_tests() -> int:
                     failures.append(
                         f"[{name}] expected sub_skill_args to reference the stale "
                         f"plan file; got {args!r}"
+                    )
+            if name == "finalize-plan-verification-rows-only-flips":
+                # Phase 8 finalization gap: the flip must reference the plan file
+                # and the step must read as a stale/finalize flip (not execute).
+                cs = got.get("current_step") or ""
+                if cs and "stale" not in cs.lower():
+                    failures.append(
+                        f"[{name}] expected current_step to read as a stale flip; "
+                        f"got {cs!r}"
+                    )
+                args = got.get("sub_skill_args") or ""
+                if args and "all-phases-fin.md" not in args:
+                    failures.append(
+                        f"[{name}] expected sub_skill_args to reference the plan "
+                        f"file; got {args!r}"
                     )
             if name == "stale-upstream-auto-wired-at-probe":
                 # Post-call disk check (WU-8 Fixture 2): the auto-wiring at probe

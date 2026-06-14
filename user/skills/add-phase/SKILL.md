@@ -188,6 +188,9 @@ Write the phase using the established PHASES.md format:
 ```markdown
 ### Phase N: {Title}
 
+**Status:** {In-progress | Ready | …}
+**Phase kind:** {corrective | design}
+
 **Scope:** {Clear description of what's built — informed by Implementation Notes from prior phases}
 
 **Deliverables:**
@@ -210,6 +213,13 @@ Write the phase using the established PHASES.md format:
 **Context from prior phases:**
 - {Key patterns, pitfalls, or integration details extracted from Implementation Notes that inform this phase's implementation}
 ```
+
+**Phase-kind tagging (HARD REQUIREMENT — drives the `/retro` re-run gate):** every appended phase MUST carry a `**Phase kind:** corrective | design` line directly under its `**Status:**` line (mirrors the per-phase `**MCP runtime:**` convention; `parse_phases` reads it, defaulting to `design` when absent for back-compat). The tag tells the state machine whether the phase add warrants a fresh `/retro` round:
+
+- **`corrective`** — a fix-phase born from a blocked `/mcp-test` / validation failure whose scope is making the implementation satisfy the **EXISTING** SPEC (it does NOT expand the design surface). A run of purely-corrective additions does NOT re-stale `/retro` — there is no new design for retro to audit, so dragging a retro round in front of the re-validation is pure overhead (measured: `d7-multi-timbral` ran `/retro` 5× for 4 corrective adds, ~520k tok of zero-divergence rounds). **The blocked-resolution `/add-phase` dispatch (when the trigger is a `BLOCKED.md` with `blocker_kind: mcp-validation` or `execute-plan-scope`) and the investigation-dispatch corrective phase MUST tag `corrective`.**
+- **`design`** (default) — a phase that expands or changes the design surface (a new feature slice, a new API/algorithm, a re-decomposition). An interactive / operator `/add-phase` defaults to `design` unless the operator says it is a corrective fix. A `design` add DOES re-stale `/retro` (the design changed, so the prior retro graded a surface it no longer fully covers).
+
+When in doubt, tag `design` — it is the safe default (re-audits). Only tag `corrective` when the phase genuinely changes no design surface.
 
 **Deliverables authoring — no gate-owned rows (corrective phases are where these creep in):** pipeline-owned actions are NEVER authored as `- [ ]` rows — not in Deliverables, not under Runtime Verification. The class: SPEC.md/PHASES.md top-level `**Status:**` flips, COMPLETED.md/FIXED.md receipt writes, ROADMAP completion marks, archive moves. These are owned by the `__mark_complete__`/`__mark_fixed__` gate; a checkbox for them is unplannable, untickable work that loops the state machine (live incident 2026-06-11: a `- [ ] Update SPEC.md status to "Complete"` row in d8-live-looping routed write-plan repeatedly). A corrective phase that genuinely needs to record a completion fact authors it as a prose `**Completion (gate-owned):**` note, never a checkbox. Ordinary doc-edit deliverables ("Update SPEC §X wording") stay legitimate checkboxes — the ban is on STATUS/receipt/archive actions only. See `~/.claude/skills/_components/phases-runtime-verification.md` for the full rule + rationale.
 

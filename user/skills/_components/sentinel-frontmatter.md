@@ -206,7 +206,41 @@ retro had effectively graded a 0/16-functional feature. Legacy files without
 the field are grandfathered (no staleness check). Keep in lockstep with
 AlgoBooth's `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
 
+**Phase-kind gate (Phase 8 — lazy-validation-readiness):** the staleness
+re-route is NOT triggered by *every* post-retro phase add. `retro_staleness()`
+re-stales `/retro` **only when ≥1 of the phases added since
+`phase_count_at_retro` is a `design` (non-corrective) phase** (read from the
+per-phase `**Phase kind:**` marker — see below). A run of purely-`corrective`
+additions (fix-phases that make the impl satisfy the EXISTING spec and change no
+design surface) does NOT re-trigger retro — there is nothing for the retro to
+re-audit, and a redundant retro round in front of the re-validation is pure
+overhead (measured: `d7-multi-timbral` ran `/retro` 5× for 4 corrective adds).
+Untagged phases default to `design` (the safe pre-Phase-8 behavior — they still
+re-stale).
+
 Body keeps the per-round summary so humans can scan retro history.
+
+#### PHASES.md per-phase `**Phase kind:**` marker *(parsed PHASES field — Phase 8)*
+
+Not a sentinel, but a machine-readable per-phase marker `parse_phases()` reads
+(documented here because it drives the RETRO_DONE staleness gate above). Each
+phase section in PHASES.md MAY carry a `**Phase kind:** corrective | design`
+line directly under its `**Status:**` line (mirrors the per-phase
+`**MCP runtime:**` convention; survives the docs-consistency parse):
+
+- **`corrective`** — a fix-phase born from a blocked `/mcp-test` / validation
+  failure whose scope is making the impl satisfy the EXISTING SPEC, NOT
+  expanding design. Authored by the blocked-resolution `/add-phase` dispatch
+  (when `blocker_kind: mcp-validation` / `execute-plan-scope`) and the
+  investigation-dispatch corrective phase. Does NOT re-stale `/retro`.
+- **`design`** (DEFAULT when the line is absent — back-compat) — a phase that
+  expands or changes the design surface. Re-stales `/retro` (the design moved).
+  An interactive / operator `/add-phase` defaults to `design`.
+
+`parse_phases()` exposes the value as the `phase_kind` field of each phase
+record (first marker inside the section wins; an unrecognized value falls back
+to `design`). Keep in lockstep with AlgoBooth's
+`scripts/check-docs-consistency.ts` if it grows a phase-kind validation rule.
 
 #### `COMPLETED.md` — `kind: completed`  *(new — completion receipt)*
 
