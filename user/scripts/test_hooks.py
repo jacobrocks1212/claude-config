@@ -2176,6 +2176,222 @@ def test_guard_bash_pure_suffix_auto_readmits():
 # Test registry
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Phase 2 (lazy-validation-readiness) — F2b + F2c guard integration tests
+# ---------------------------------------------------------------------------
+
+def test_f2b_emdash_slip_allows_via_guard():
+    """F2b end-to-end (lazy-validation-readiness Phase 2): an em-dash typo on a
+    freshly-registered prompt must ALLOW through the guard (sha matches after leg-5
+    folding).  Confirms F2b is wired end-to-end from normalize → prompt_sha256 →
+    lookup_emission → guard ALLOW.
+
+    RED: normalize_prompt_for_hash lacks leg 5 — em-dash sha != hyphen sha → deny.
+    """
+    _guard()
+    assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        # Register the HYPHEN form (the script-emitted baseline).
+        hyphen_prompt = "Run the next step - implementation phase as specified."
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.register_emission(hyphen_prompt, cls="cycle", item_id="feat-f2b")
+        finally:
+            _clear_state_dir()
+
+        # Dispatch the EM-DASH form (the orchestrator's transcription slip).
+        em_prompt = "Run the next step — implementation phase as specified."  # U+2014
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(em_prompt, tool_use_id=tool_use_id,
+                                         session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"guard must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", (
+            "guard must produce JSON for an em-dash slip on a registered prompt"
+        )
+        payload = json.loads(output)
+        decision = payload["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "allow", (
+            f"em-dash slip on a registered prompt must ALLOW via F2b hash-folding; "
+            f"got {decision!r}.  F2b leg 5 is not yet wired into normalize_prompt_for_hash."
+        )
+
+
+def test_f2c_near_copy_slip_deny_no_ledger_append():
+    """F2c (lazy-validation-readiness Phase 2): a near-copy of a registered prompt
+    that F2b does NOT fold (one word changed) → deny via the transcription-slip path,
+    which must NOT append to the deny-ledger (no hardening debt for a slip).
+
+    The deny reason must NOT contain '--emit-dispatch hardening'.
+
+    RED: find_transcription_slip_entry / _deny_no_ledger do not exist yet —
+    the deny falls through to _deny_and_ledger, writing a ledger entry.
+    """
+    _guard()
+    assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        # Register the verbatim prompt.  Must be long enough (>= ~267 chars) so that
+        # changing one word ('criteria' → 'CRITERIA', 8 chars) keeps difflib ratio
+        # >= 0.97 (the F2c slip threshold).  ratio = (n-8)/n; need n >= 267.
+        original_prompt = (
+            "Run the next dispatch cycle step exactly as specified in the feature "
+            "implementation plan. Execute all planned tasks in order, verify each "
+            "deliverable against the acceptance criteria, record the observed "
+            "behavior in your response output section, and note any deviations "
+            "from the expected outcome in your analysis."
+        )
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.register_emission(original_prompt, cls="cycle", item_id="feat-slip")
+        finally:
+            _clear_state_dir()
+
+        # Count ledger lines before the guard call.
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        lines_before = (
+            len([l for l in ledger_path.read_text(encoding="utf-8").splitlines()
+                 if l.strip()])
+            if ledger_path.exists() else 0
+        )
+
+        # Dispatch a near-copy: 'criteria' → 'CRITERIA' — high similarity ratio
+        # but NOT a hash-fold match (F2b folds dashes/quotes/NBSP, not case changes).
+        # F2c slip-check should catch it and route to the cheap no-ledger deny.
+        near_copy = (
+            "Run the next dispatch cycle step exactly as specified in the feature "
+            "implementation plan. Execute all planned tasks in order, verify each "
+            "deliverable against the acceptance CRITERIA, record the observed "
+            "behavior in your response output section, and note any deviations "
+            "from the expected outcome in your analysis."
+        )
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(near_copy, tool_use_id=tool_use_id,
+                                          session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output != "", "guard must produce deny JSON for a near-copy slip"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"near-copy slip must be denied (F2c: cheap deny, no ledger); "
+            f"got {hso.get('permissionDecision')!r}"
+        )
+        # The reason must NOT contain '--emit-dispatch hardening' — this is a cheap slip deny.
+        reason = hso.get("permissionDecisionReason", "")
+        assert "--emit-dispatch hardening" not in reason, (
+            f"F2c transcription-slip deny reason must NOT contain '--emit-dispatch hardening'; "
+            f"got: {reason!r}"
+        )
+        # The deny-ledger must NOT be appended (no debt for a transcription slip).
+        lines_after = (
+            len([l for l in ledger_path.read_text(encoding="utf-8").splitlines()
+                 if l.strip()])
+            if ledger_path.exists() else 0
+        )
+        assert lines_after == lines_before, (
+            f"F2c transcription-slip deny must NOT append to the deny-ledger "
+            f"(before={lines_before}, after={lines_after}); a slip is NOT hardening debt"
+        )
+
+
+def test_f2c_genuinely_unregistered_deny_appends_ledger():
+    """F2c (lazy-validation-readiness Phase 2): a genuinely unregistered / totally
+    different prompt (no close match in the registry) must use the FULL corrective
+    deny path — deny-ledger IS appended (+1 line) and the reason contains the
+    hardening recipe (debt is preserved for real gaps).
+
+    RED: find_transcription_slip_entry / _deny_no_ledger do not exist yet — but
+    once F2c lands the ledger-append behavior for the GENUINE no-match case must
+    remain exactly as before.
+    """
+    _guard()
+    assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        # Register a prompt (so the registry is non-empty, but we'll send a different one).
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.register_emission(
+                "Run the next dispatch cycle step as specified.",
+                cls="cycle", item_id="feat-genuine",
+            )
+        finally:
+            _clear_state_dir()
+
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        lines_before = (
+            len([l for l in ledger_path.read_text(encoding="utf-8").splitlines()
+                 if l.strip()])
+            if ledger_path.exists() else 0
+        )
+
+        # A totally different / hand-composed prompt — no close registered match.
+        genuinely_different = (
+            "This is a completely hand-composed prompt about a different topic entirely "
+            "and has nothing whatsoever to do with any registered emission in the system."
+        )
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(genuinely_different, tool_use_id=tool_use_id,
+                                          session_id=owner_session)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output != "", "guard must produce deny JSON for genuinely unregistered prompt"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"genuinely unregistered prompt must be denied; "
+            f"got {hso.get('permissionDecision')!r}"
+        )
+        # Reason MUST contain '--emit-dispatch hardening' (the corrective recipe is preserved).
+        reason = hso.get("permissionDecisionReason", "")
+        assert "--emit-dispatch hardening" in reason, (
+            f"genuine no-match deny reason must contain '--emit-dispatch hardening' "
+            f"(debt is preserved for real gaps); got: {reason!r}"
+        )
+        # Ledger MUST be appended (+1 entry — debt for a genuine gap).
+        lines_after = (
+            len([l for l in ledger_path.read_text(encoding="utf-8").splitlines()
+                 if l.strip()])
+            if ledger_path.exists() else 0
+        )
+        assert lines_after == lines_before + 1, (
+            f"genuine no-match deny MUST append to the deny-ledger "
+            f"(before={lines_before}, after={lines_after}); "
+            f"real harness gaps still create hardening debt"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -2221,6 +2437,12 @@ _TESTS = [
     # F1b (lazy-pipeline-ergonomics Phase 1) — pure-suffix auto-readmit via bash
     ("test_guard_bash_pure_suffix_auto_readmits",
      test_guard_bash_pure_suffix_auto_readmits),
+    # Phase 2 (lazy-validation-readiness) — F2b end-to-end + F2c transcription-slip deny
+    ("test_f2b_emdash_slip_allows_via_guard", test_f2b_emdash_slip_allows_via_guard),
+    ("test_f2c_near_copy_slip_deny_no_ledger_append",
+     test_f2c_near_copy_slip_deny_no_ledger_append),
+    ("test_f2c_genuinely_unregistered_deny_appends_ledger",
+     test_f2c_genuinely_unregistered_deny_appends_ledger),
 ]
 
 

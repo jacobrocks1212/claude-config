@@ -4298,8 +4298,9 @@ def normalize_prompt_for_hash(prompt: str) -> str:
     """Normalize a prompt before hashing so cosmetic copy artifacts cannot defeat
     the registry match while semantic edits still do.
 
-    Four transforms, applied in order (Phase 7 WU-7.3b widened the original
-    Phase 1 pair with two more — trailing-whitespace strip + Unicode NFC):
+    Five transforms, applied in order (Phase 7 WU-7.3b widened the original
+    Phase 1 pair with two more — trailing-whitespace strip + Unicode NFC; leg 5
+    added by F2b / lazy-validation-readiness Phase 2):
       1. CRLF (\\r\\n) → LF (\\n)
       2. Lone CR (\\r not followed by \\n) → LF (\\n)
       3. Per-line trailing-whitespace strip (rstrip each line) — a copy/paste
@@ -4308,13 +4309,27 @@ def normalize_prompt_for_hash(prompt: str) -> str:
       4. Unicode NFC normalization — a decomposed (NFD) variant of an accented
          character (e.g. an editor that emits combining marks) must hash equal to
          the composed (NFC) form.
+      5. [F2b / lazy-validation-readiness] Fold Unicode characters the model trivially
+         substitutes when retyping a script-emitted prompt:
+           - em-dash U+2014, en-dash U+2013, horizontal bar U+2015,
+             figure dash U+2012  →  hyphen-minus '-'
+           - left single curly quote U+2018, right single curly quote U+2019  →  '
+           - left double curly quote U+201C, right double curly quote U+201D  →  "
+           - non-breaking space U+00A0, narrow NBSP U+202F  →  regular space
+         Applied AFTER NFC so code-point normalization happens first.  These are
+         purely cosmetic punctuation/space variants; a genuine word change still
+         alters the hash (the fold cannot collapse distinct words).  This makes an
+         em-dash/curly-quote/NBSP slip on an otherwise-verbatim emitted prompt
+         hash-equal → ALLOW without any guard change.  It also improves the F1b
+         auto-readmit near-match (shares this normalize) for free.
 
     This ensures that a prompt registered on Windows (with CRLF line endings,
     trailing whitespace, or NFD text) produces the same sha256 as the same prompt
     re-typed clean, so Windows/WSL round-trips and editor quirks cannot defeat the
     registry match.  A genuine word change still alters the hash (the deny still
     fires for a real edit).  The SPEC requires CRLF normalization in §Validate-deny
-    step 1; WU-7.3b adds the trailing-whitespace + NFC legs.
+    step 1; WU-7.3b adds the trailing-whitespace + NFC legs; F2b / lazy-validation-
+    readiness Phase 2 adds the dash/quote/NBSP folding leg.
     """
     # Step 1: collapse CRLF → LF
     normalized = prompt.replace("\r\n", "\n")
@@ -4326,7 +4341,41 @@ def normalize_prompt_for_hash(prompt: str) -> str:
     # Step 4: Unicode NFC — fold decomposed sequences into their composed form so
     # an NFD copy hashes identically to the clean NFC form.
     normalized = unicodedata.normalize("NFC", normalized)
+    # Step 5 (F2b / lazy-validation-readiness): fold cosmetic Unicode punctuation/
+    # space substitutes that the model trivially introduces when retyping a prompt.
+    # Applied after NFC so we operate on fully-composed code points.
+    # Translation table built once (str.translate is O(n) and very fast).
+    normalized = normalized.translate(_NORM_FOLD_TABLE)
     return normalized
+
+
+# F2b (lazy-validation-readiness Phase 2): translation table for leg 5 of
+# normalize_prompt_for_hash.  Maps Unicode cosmetic-substitute code points to their
+# ASCII equivalents.  Keys are Unicode code-point integers; values are the folded
+# strings (str.translate allows multi-char replacements via a mapping str→str on the
+# table, but for 1-to-1 folds it is more efficient to map ord→ord or ord→str).
+#
+# Dashes: em-dash U+2014, en-dash U+2013, horizontal bar U+2015, figure dash U+2012
+#         → hyphen-minus U+002D '-'
+# Single quotes: U+2018 LEFT SINGLE QUOTATION MARK, U+2019 RIGHT SINGLE QUOTATION MARK
+#                → apostrophe U+0027 "'"
+# Double quotes: U+201C LEFT DOUBLE QUOTATION MARK, U+201D RIGHT DOUBLE QUOTATION MARK
+#                → quotation mark U+0022 '"'
+# Spaces: U+00A0 NO-BREAK SPACE, U+202F NARROW NO-BREAK SPACE → U+0020 ' '
+_NORM_FOLD_TABLE: dict = str.maketrans(
+    {
+        0x2014: "-",   # EM DASH
+        0x2013: "-",   # EN DASH
+        0x2015: "-",   # HORIZONTAL BAR
+        0x2012: "-",   # FIGURE DASH
+        0x2018: "'",   # LEFT SINGLE QUOTATION MARK
+        0x2019: "'",   # RIGHT SINGLE QUOTATION MARK
+        0x201C: '"',   # LEFT DOUBLE QUOTATION MARK
+        0x201D: '"',   # RIGHT DOUBLE QUOTATION MARK
+        0x00A0: " ",   # NO-BREAK SPACE
+        0x202F: " ",   # NARROW NO-BREAK SPACE
+    }
+)
 
 
 def prompt_sha256(prompt: str) -> str:
@@ -4927,6 +4976,139 @@ def find_auto_readmit_entry(
         if dispatched_norm.startswith(entry_norm) and len(dispatched_norm) > len(entry_norm):
             return entry
     return None
+
+
+def find_transcription_slip_entry(
+    prompt: str,
+    *,
+    now: float | None = None,
+    threshold: float = 0.97,
+) -> dict | None:
+    """F2c (lazy-validation-readiness Phase 2): find a registry entry that the
+    dispatched *prompt* is a TRANSCRIPTION SLIP of.
+
+    A transcription slip is an otherwise-faithful reproduction of a script-emitted
+    prompt that was mangled by cosmetic editing (e.g. one word retyped, an NBSP
+    introduced) in a way that F2b's dash/quote/NBSP folding does NOT cover.  The
+    high similarity ratio (>= *threshold*, default 0.97) means the orchestrator was
+    clearly trying to dispatch a KNOWN registered prompt — the body is almost
+    identical — but the bytes differ just enough to miss the hash gate.
+
+    When this function returns an entry, the corrective action is always:
+      re-run the Step 1a probe and dispatch the registered ``cycle_prompt``
+      **verbatim or by-reference** — do NOT hand-edit the prompt again.
+
+    A genuinely unregistered / hand-composed prompt has NO close registered entry
+    (the difflib ratio is low) and falls through to the existing corrective deny
+    with hardening debt (the no-match case returns None, so the caller continues to
+    ``_deny_and_ledger``).
+
+    Scope (F2c applies ONLY here):
+      - Only applies when a valid run marker is present (this is a marked-run
+        concern; if no marker, return None immediately — fail-safe for unmarked
+        runs and ``--test`` baselines which must remain byte-identical).
+      - Scans only entries emitted in the CURRENT run (emitted_at >= run-start
+        epoch from ``read_run_marker``), mirroring ``lookup_emission``'s run-start
+        gate, so stale cross-run entries cannot mis-classify a real gap.
+      - EXCLUDES ``class == "hardening"`` entries unconditionally — the depth-1
+        hardening cap must stay fully intact; a slip against a hardening-class
+        entry must still go to ``_deny_and_ledger`` (which writes hardening debt).
+      - Uses ``difflib.SequenceMatcher`` against the NFC-normalized text (stored
+        as ``prompt_norm`` on the entry; falls back to normalizing a raw prompt
+        field if ``prompt_norm`` is missing; skips the entry if neither is
+        available).
+
+    FAIL-SAFE / FAIL-OPEN contract:
+      - Read-only; does NOT consume any nonce or write any state.
+      - Any exception is caught and returns None so the caller falls through to
+        the existing deny path — a slip-check error must NEVER turn a deny into
+        a spurious allow and must NEVER cause an unhandled exception in the guard.
+
+    Args:
+        prompt: the dispatched prompt text (normalized before comparison).
+        now: epoch float for the TTL / run-start gate (injectable for tests;
+             defaults to time.time()).
+        threshold: minimum SequenceMatcher ratio to classify as a slip (default
+                   0.97 — very high so only near-verbatim copies qualify).
+
+    Returns:
+        The highest-ratio entry whose ratio >= *threshold*, or None.
+    """
+    # Fail-safe: all errors return None (never raise from a guard sub-path).
+    try:
+        if now is None:
+            now = time.time()
+
+        # Marker-gated: F2c is a marked-run concern.  No marker → not applicable.
+        marker = read_run_marker(now=now)
+        if marker is None:
+            return None
+
+        # Compute the run-start epoch (same logic as lookup_emission).
+        run_started_epoch: float | None = None
+        started_at_str = marker.get("started_at", "")
+        try:
+            started_dt = datetime.datetime.strptime(started_at_str, "%Y-%m-%dT%H:%M:%SZ")
+            run_started_epoch = (
+                started_dt - datetime.datetime(1970, 1, 1)
+            ).total_seconds()
+        except (ValueError, TypeError):
+            run_started_epoch = None
+
+        # Normalize the dispatched prompt for comparison.
+        dispatched_norm = normalize_prompt_for_hash(prompt)
+
+        import difflib as _difflib  # stdlib; imported lazily to keep startup cost low
+
+        best_entry: dict | None = None
+        best_ratio: float = 0.0
+
+        for entry in _load_registry().get("entries", []):
+            try:
+                # Hard class exclusion: never classify a hardening-class entry as a
+                # slip — the depth-1 cap must stay intact regardless.
+                if entry.get("class") == "hardening":
+                    continue
+
+                # Run-start gate: only consider entries from the CURRENT run.
+                emitted_at = entry.get("emitted_at", 0.0)
+                if run_started_epoch is not None and emitted_at < run_started_epoch:
+                    continue
+
+                # TTL gate: entries beyond the TTL window are never candidates.
+                if now - emitted_at > REGISTRY_ENTRY_TTL_SECONDS:
+                    continue
+
+                # Consumed entries can still be slip candidates — we only want to
+                # classify the DENY path (the slip did not get an ALLOW), so the
+                # relevant registered entries may or may not be consumed.
+                # (If the exact-sha match had succeeded, the guard would already
+                # have allowed via lookup_emission or _find_entry_by_sha, so we
+                # only reach here when the sha did NOT match.)
+
+                # Retrieve normalized form for comparison.
+                entry_norm = entry.get("prompt_norm")
+                if not isinstance(entry_norm, str) or not entry_norm:
+                    # Legacy entry without prompt_norm — skip (no text to compare).
+                    continue
+
+                # SequenceMatcher similarity ratio.
+                ratio = _difflib.SequenceMatcher(
+                    None, dispatched_norm, entry_norm
+                ).ratio()
+                if ratio >= threshold and ratio > best_ratio:
+                    best_ratio = ratio
+                    best_entry = entry
+            except Exception:  # noqa: BLE001
+                # Skip a single bad entry — don't abort the scan.
+                continue
+
+        return best_entry
+
+    except Exception:  # noqa: BLE001
+        # Fail-open: any outer exception → return None so the caller falls through
+        # to the existing deny path.  Never raise from a guard sub-path.
+        return None
 
 
 def read_deny_ledger() -> list[dict]:

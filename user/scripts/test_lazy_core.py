@@ -7877,6 +7877,274 @@ def test_normalize_widened_equivalence_pairs():
     )
 
 
+def test_f2b_emdash_hashes_equal_to_hyphen():
+    """F2b (lazy-validation-readiness Phase 2): normalize_prompt_for_hash / prompt_sha256
+    must fold em-dash U+2014 → hyphen-minus '-' so an em-dash transcription slip
+    produces the SAME sha256 as the hyphen form.
+
+    Also covers en-dash (U+2013), horizontal bar (U+2015), and figure dash (U+2012).
+
+    RED: normalize_prompt_for_hash has no dash-folding leg yet — the hashes differ.
+    """
+    _guard()
+    # Em-dash → hyphen
+    base = "Run the next step - implementation phase."
+    em   = "Run the next step — implementation phase."  # em-dash U+2014
+    assert lazy_core.prompt_sha256(em) == lazy_core.prompt_sha256(base), (
+        f"em-dash variant must hash equal to hyphen form (F2b leg 5)"
+    )
+    # En-dash U+2013
+    en = "Run the next step – implementation phase."
+    assert lazy_core.prompt_sha256(en) == lazy_core.prompt_sha256(base), (
+        f"en-dash variant must hash equal to hyphen form (F2b leg 5)"
+    )
+    # Horizontal bar U+2015
+    hbar = "Run the next step ― implementation phase."
+    assert lazy_core.prompt_sha256(hbar) == lazy_core.prompt_sha256(base), (
+        f"horizontal-bar variant must hash equal to hyphen form (F2b leg 5)"
+    )
+    # Figure dash U+2012
+    fdash = "Run the next step ‒ implementation phase."
+    assert lazy_core.prompt_sha256(fdash) == lazy_core.prompt_sha256(base), (
+        f"figure-dash variant must hash equal to hyphen form (F2b leg 5)"
+    )
+
+
+def test_f2b_curly_quotes_hash_equal_to_straight():
+    """F2b: left/right single curly quotes → apostrophe; left/right double curly
+    quotes → straight double quote.  A prompt with curly quotes must hash equal to
+    the straight-quote form.
+
+    RED: normalize_prompt_for_hash has no curly-quote folding leg yet.
+    """
+    _guard()
+    # Single curly quotes U+2018 (left) and U+2019 (right)
+    base_single = "it's a cycle dispatch prompt"
+    curly_right = "it’s a cycle dispatch prompt"   # U+2019 RIGHT SINGLE QUOTATION MARK
+    curly_left  = "‘it’s a cycle dispatch prompt"  # both curly singles
+    base_left   = "'it's a cycle dispatch prompt"
+    assert lazy_core.prompt_sha256(curly_right) == lazy_core.prompt_sha256(base_single), (
+        f"right-single-curly-quote must hash equal to apostrophe form (F2b leg 5)"
+    )
+    assert lazy_core.prompt_sha256(curly_left) == lazy_core.prompt_sha256(base_left), (
+        f"left-single-curly-quote must hash equal to apostrophe form (F2b leg 5)"
+    )
+    # Double curly quotes U+201C (left) and U+201D (right)
+    base_double  = '"run the cycle step"'
+    curly_double = "“run the cycle step”"
+    assert lazy_core.prompt_sha256(curly_double) == lazy_core.prompt_sha256(base_double), (
+        f"double-curly-quote pair must hash equal to straight-double-quote form (F2b leg 5)"
+    )
+
+
+def test_f2b_nbsp_hashes_equal_to_space():
+    """F2b: non-breaking space U+00A0 and narrow NBSP U+202F must fold to regular
+    space so a copy that picks up NBSP (common in web/docx copy-paste) still
+    hashes equal.
+
+    RED: normalize_prompt_for_hash has no NBSP-folding leg yet.
+    """
+    _guard()
+    base = "Run step 1: implement the feature."
+    nbsp      = "Run step 1: implement the feature."  # non-breaking space U+00A0
+    narrow_nb = "Run step 1: implement the feature."  # narrow NBSP U+202F
+    assert lazy_core.prompt_sha256(nbsp) == lazy_core.prompt_sha256(base), (
+        f"NBSP (U+00A0) must fold to space (F2b leg 5); hashes differed"
+    )
+    assert lazy_core.prompt_sha256(narrow_nb) == lazy_core.prompt_sha256(base), (
+        f"narrow NBSP (U+202F) must fold to space (F2b leg 5); hashes differed"
+    )
+
+
+def test_f2b_genuine_word_change_still_differs():
+    """F2b guard: the dash/quote/NBSP folding must NOT over-collapse — a genuine
+    word change must still produce a different sha256 so the deny fires for real edits.
+
+    RED: if fold is incorrectly broad, this test would fail (hashes equal when they
+    should differ).  Currently RED because the other F2b tests are RED; once leg 5
+    is added this test must pass WITH them.
+    """
+    _guard()
+    # Baseline requires F2b leg 5 to be present (will fail if not).
+    base = "Run the next step - implementation phase."
+    em   = "Run the next step — implementation phase."
+    assert lazy_core.prompt_sha256(em) == lazy_core.prompt_sha256(base), (
+        "pre-condition: F2b must be in place (em-dash == hyphen) before word-change guard"
+    )
+    # Now mutate a real WORD — the fold must not have collapsed this.
+    mutated = "Run the PREVIOUS step - implementation phase."
+    assert lazy_core.prompt_sha256(mutated) != lazy_core.prompt_sha256(base), (
+        "a genuine word change must still produce a different sha256 (F2b must not over-fold)"
+    )
+
+
+def test_f2b_find_transcription_slip_entry_matches_near_copy():
+    """F2b / F2c: find_transcription_slip_entry must return the registered entry when
+    the dispatched prompt differs ONLY by characters that F2b does NOT fold (e.g. a
+    word replaced) and the similarity ratio >= threshold.
+
+    RED: find_transcription_slip_entry does not exist yet.
+    """
+    _guard()
+    assert hasattr(lazy_core, "find_transcription_slip_entry"), (
+        "lazy_core.find_transcription_slip_entry missing — F2c not yet implemented"
+    )
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # Write a marker so find_transcription_slip_entry's run-start gate works.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(state_dir / "fixture-repo"), max_cycles=10,
+                now=_time.time(),
+            )
+            # Register an emission.  Must be long enough (>= ~267 chars) that changing
+            # one word ('criteria' → 'CRITERIA', 8 chars) keeps difflib ratio >= 0.97.
+            # ratio = (n-8)/n where n is the prompt length; need n >= 267.
+            original = (
+                "Run the next dispatch cycle step exactly as specified in the "
+                "feature implementation plan. Execute all planned tasks in order, "
+                "verify each deliverable against the acceptance criteria, record "
+                "the observed behavior in your response output section, and note "
+                "any deviations from the expected outcome in your analysis."
+            )
+            lazy_core.register_emission(original, cls="cycle", item_id="feat-x")
+            # A near-copy: 'criteria' → 'CRITERIA' (one word changed, 8 chars).
+            # High similarity ratio because the body is long and nearly identical.
+            near_copy = (
+                "Run the next dispatch cycle step exactly as specified in the "
+                "feature implementation plan. Execute all planned tasks in order, "
+                "verify each deliverable against the acceptance CRITERIA, record "
+                "the observed behavior in your response output section, and note "
+                "any deviations from the expected outcome in your analysis."
+            )
+            import difflib as _dl
+            _ratio = _dl.SequenceMatcher(
+                None,
+                lazy_core.normalize_prompt_for_hash(near_copy),
+                lazy_core.normalize_prompt_for_hash(original),
+            ).ratio()
+            assert _ratio >= 0.97, (
+                f"test pre-condition: near_copy/original ratio must be >= 0.97; "
+                f"got {_ratio:.4f}. Increase the prompt length."
+            )
+            entry = lazy_core.find_transcription_slip_entry(near_copy)
+            assert entry is not None, (
+                "find_transcription_slip_entry must return the registered entry for a "
+                "near-copy (high similarity ratio, one word changed) — F2c"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2b_find_transcription_slip_entry_no_match_for_different_prompt():
+    """F2b / F2c: find_transcription_slip_entry must return None when the dispatched
+    prompt has low similarity to any registered entry (genuinely unrelated prompt).
+
+    RED: find_transcription_slip_entry does not exist yet.
+    """
+    _guard()
+    assert hasattr(lazy_core, "find_transcription_slip_entry"), (
+        "lazy_core.find_transcription_slip_entry missing — F2c not yet implemented"
+    )
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(state_dir / "fixture-repo"), max_cycles=10,
+                now=_time.time(),
+            )
+            lazy_core.register_emission(
+                "Run the next dispatch cycle step as specified in the plan.",
+                cls="cycle", item_id="feat-x",
+            )
+            # Completely unrelated prompt — low similarity.
+            unrelated = "This is a hand-composed prompt about something entirely different."
+            entry = lazy_core.find_transcription_slip_entry(unrelated)
+            assert entry is None, (
+                "find_transcription_slip_entry must return None for a genuinely different "
+                "prompt (no close registered match) — F2c"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2b_find_transcription_slip_entry_no_match_without_marker():
+    """F2b / F2c: find_transcription_slip_entry must return None when no run marker
+    is present (it is a marked-run concern — fail-safe for unmarked runs).
+
+    RED: find_transcription_slip_entry does not exist yet.
+    """
+    _guard()
+    assert hasattr(lazy_core, "find_transcription_slip_entry"), (
+        "lazy_core.find_transcription_slip_entry missing — F2c not yet implemented"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # NO marker — slip check should be inert.
+            # Register an entry anyway (tests that the gate is on the marker, not the registry).
+            # We need to skip the marker-gated write path, so write via internal registry directly.
+            # Actually: register_emission works without a marker (peek/test mode).
+            import time as _time
+            lazy_core.register_emission(
+                "Run the next dispatch cycle step as specified in the plan.",
+                cls="cycle", item_id="feat-x", now=_time.time(),
+            )
+            near_copy = "Run the next dispatch cycle step as specified in the PLAN."
+            entry = lazy_core.find_transcription_slip_entry(near_copy)
+            assert entry is None, (
+                "find_transcription_slip_entry must return None when no run marker is present "
+                "(F2c is a marked-run concern)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_f2b_find_transcription_slip_entry_excludes_hardening_class():
+    """F2b / F2c: find_transcription_slip_entry must EXCLUDE hardening-class entries
+    so the depth-1 hardening cap stays intact.
+
+    RED: find_transcription_slip_entry does not exist yet.
+    """
+    _guard()
+    assert hasattr(lazy_core, "find_transcription_slip_entry"), (
+        "lazy_core.find_transcription_slip_entry missing — F2c not yet implemented"
+    )
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(state_dir / "fixture-repo"), max_cycles=10,
+                now=_time.time(),
+            )
+            # Register a hardening-class entry (must never be a slip candidate).
+            original = "You are the harden-harness subagent. Analyze and fix the issue."
+            lazy_core.register_emission(original, cls="hardening", item_id=None)
+            # Near-copy with one word changed — would match by ratio, but class is hardening.
+            near_copy = "You are the harden-harness subagent. Analyze and FIX the issue."
+            entry = lazy_core.find_transcription_slip_entry(near_copy)
+            assert entry is None, (
+                "find_transcription_slip_entry must NOT return hardening-class entries "
+                "(depth-1 cap must stay intact) — F2c"
+            )
+        finally:
+            _clear_state_dir()
+
+
 def test_single_slot_dispatch_templates():
     """Every @requires token appears EXACTLY ONCE as a {token} slot in each
     dispatch template body (WU-7.3a transcription-surface reduction)."""
@@ -11722,6 +11990,20 @@ _TESTS = [
     ("test_hardening_template_binding", test_hardening_template_binding),
     ("test_hardening_skill_file_contract", test_hardening_skill_file_contract),
     ("test_hardening_cli_emit_and_register", test_hardening_cli_emit_and_register),
+    # Phase 2 (lazy-validation-readiness) — F2b Unicode-normalize before hashing
+    ("test_f2b_emdash_hashes_equal_to_hyphen", test_f2b_emdash_hashes_equal_to_hyphen),
+    ("test_f2b_curly_quotes_hash_equal_to_straight", test_f2b_curly_quotes_hash_equal_to_straight),
+    ("test_f2b_nbsp_hashes_equal_to_space", test_f2b_nbsp_hashes_equal_to_space),
+    ("test_f2b_genuine_word_change_still_differs", test_f2b_genuine_word_change_still_differs),
+    # Phase 2 (lazy-validation-readiness) — F2c find_transcription_slip_entry helper
+    ("test_f2b_find_transcription_slip_entry_matches_near_copy",
+     test_f2b_find_transcription_slip_entry_matches_near_copy),
+    ("test_f2b_find_transcription_slip_entry_no_match_for_different_prompt",
+     test_f2b_find_transcription_slip_entry_no_match_for_different_prompt),
+    ("test_f2b_find_transcription_slip_entry_no_match_without_marker",
+     test_f2b_find_transcription_slip_entry_no_match_without_marker),
+    ("test_f2b_find_transcription_slip_entry_excludes_hardening_class",
+     test_f2b_find_transcription_slip_entry_excludes_hardening_class),
     # Phase 7 — deny ledger, run-end refusal/override, checkpoint, normalization,
     #           single-slot templates, meta cycle_header
     ("test_phase7_symbols_present", test_phase7_symbols_present),

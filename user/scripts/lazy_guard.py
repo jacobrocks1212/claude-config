@@ -153,6 +153,19 @@ _HARDENING_DEPTH_CAP_REASON = (
 )
 
 
+_TRANSCRIPTION_SLIP_REASON = (
+    "transcription slip — the dispatched prompt is a near-verbatim copy of a "
+    "registered script-emitted prompt but the bytes differ (a word was retyped or "
+    "a cosmetic character was introduced that F2b normalization did not fold).  "
+    "This is NOT a harness gap and is NOT routed to the hardening stage — "
+    "no hardening dispatch is required and no hardening debt has been recorded.  "
+    "Corrective action: re-run the Step 1a probe (`--emit-prompt`) and dispatch its "
+    "`cycle_prompt` VERBATIM (copy-paste the full text, or use the by-reference "
+    "dispatch token `@@lazy-ref nonce=<hex>` if available) — do NOT hand-edit the "
+    "prompt again (F2c / lazy-validation-readiness)"
+)
+
+
 def _default_deny_reason() -> str:
     """Return the standard corrective deny reason for an unregistered/stale prompt."""
     return _CORRECTIVE_RECIPE
@@ -162,6 +175,36 @@ def _hardening_cap_deny_reason() -> str:
     """Return the depth-1 hardening cap reason (contains halt + PushNotification,
     must NOT contain --emit-dispatch hardening)."""
     return _HARDENING_DEPTH_CAP_REASON
+
+
+def _transcription_slip_deny_reason() -> str:
+    """F2c (lazy-validation-readiness Phase 2): return the cheap-deny reason for a
+    shape-(a) transcription-slip denial.
+
+    Key contract: this reason must NOT contain '--emit-dispatch hardening' — a
+    transcription slip is not a harness gap and must NOT create hardening debt.
+    The corrective action is always: re-probe Step 1a and dispatch verbatim /
+    by-reference without manual edits.
+    """
+    return _TRANSCRIPTION_SLIP_REASON
+
+
+def _deny_no_ledger(reason: str) -> str:
+    """F2c (lazy-validation-readiness Phase 2): return deny JSON WITHOUT writing a
+    deny-ledger entry.
+
+    Used exclusively for the transcription-slip deny path in guard().  All other
+    deny paths MUST continue to use _deny_and_ledger() so the hardening-debt gate
+    remains intact.
+
+    The deny JSON shape is identical to _deny_and_ledger (same
+    permissionDecision: 'deny' + permissionDecisionReason), so the bash wrapper
+    lazy-dispatch-guard.sh is unaffected (a deny is a deny; it doesn't inspect the
+    reason).  The only difference is the ABSENCE of a lazy-deny-ledger.jsonl append,
+    which is precisely the decouple F2c requires.
+    """
+    # _deny_json is the lean JSON builder (no ledger side-effect).
+    return _deny_json(reason)
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +593,35 @@ def guard(stdin_text: str) -> str | None:
             )
 
     # --- 3. No matching entry at all. ----------------------------------------
-    # Standard deny with corrective recipe.
+    # F2c (lazy-validation-readiness Phase 2): before falling through to the full
+    # corrective deny (which appends hardening debt to the ledger), check whether
+    # the dispatched prompt is a TRANSCRIPTION SLIP of a known registered entry —
+    # i.e. the orchestrator tried to dispatch a known emitted prompt but mangled it
+    # cosmetically in a way F2b's hash-fold did not cover (a near-verbatim copy with
+    # one word changed, etc.).
+    #
+    # If find_transcription_slip_entry returns an entry, this is a cheap re-dispatch
+    # situation — route to _deny_no_ledger (no debt, no hardening).  The corrective
+    # action (re-probe + verbatim/by-reference dispatch) is always correct because:
+    #   - the high difflib ratio means the dispatched body is structurally identical
+    #     to the registered prompt, so the intent was correct — only the bytes differ;
+    #   - the registered prompt IS available (it's in the registry) so re-dispatching
+    #     verbatim or by-reference is always the right fix.
+    #
+    # Fail-open: the entire slip-check block is wrapped in try/except so that ANY
+    # error in find_transcription_slip_entry falls through to the existing corrective
+    # deny (debt is preserved for genuine gaps).  Never raise from this block.
+    try:
+        slip_entry = lazy_core.find_transcription_slip_entry(prompt)
+        if slip_entry is not None:
+            # Transcription slip: cheap deny without ledger debt.
+            return _deny_no_ledger(_transcription_slip_deny_reason())
+    except Exception:  # noqa: BLE001
+        # Fail-open: any slip-check error falls through to the debt deny below.
+        pass
+
+    # Standard deny with corrective recipe (genuine no-route / harness gap —
+    # debt is preserved so the hardening stage drains it).
     return _deny_and_ledger(
         _default_deny_reason(),
         tool_use_id=tool_use_id, sha=sha, prompt=prompt,
