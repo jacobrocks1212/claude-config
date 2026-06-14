@@ -24,7 +24,7 @@
 
 ### Phase 1: F1 — Debounce the dispatch-tuple `repeat_count`
 
-**Status:** Not started
+**Status:** Complete
 
 **Scope:** Extend the existing consume-count double-probe debounce in `lazy_core.update_repeat_counts` so it also guards the dispatch-tuple `count` (the Phase-9 streak), exactly as it already guards the step-level `step_count` (lazy-pipeline-ergonomics Phase 2). A second advancing probe of the same dispatch tuple with no dispatch (no registry consume) between the two probes is a RE-READ and must HOLD `count`, not increment it to 2 (which appends the loop block and flips `cycle_model` to sonnet).
 
@@ -50,7 +50,7 @@
 
 ### Phase 2: F2b + F2c — Guard Unicode-normalize + decouple transcription-slip debt
 
-**Status:** Not started
+**Status:** Complete
 
 **Scope:** Two defense-in-depth mitigations for the transcription-slip denial class, independent of the structural by-reference path (Phase 3). **F2b:** widen `normalize_prompt_for_hash` to fold the Unicode characters the model trivially substitutes (em-dash/en-dash → `-`, curly quotes → straight, NBSP → space) BEFORE hashing — so an em-dash slip on an otherwise-verbatim prompt hashes equal and ALLOWS instead of denying. (This also improves the F1b auto-readmit near-match for free, since it shares `normalize_prompt_for_hash`.) **F2c:** reclassify a shape-(a) denial (the dispatched prompt is normalization-equivalent to a registered entry, i.e. differs only by characters the broadened normalize would fold) as a CHEAP re-dispatch — no `pending_hardening` deny-ledger entry, deny reason instructs verbatim/by-reference re-dispatch WITHOUT `--emit-dispatch hardening`. Reserve the debt gate for genuine no-route denials.
 
@@ -78,7 +78,7 @@
 
 ### Phase 3: F2a — Dispatch-by-reference (nonce → resolved prompt via `updatedInput`)
 
-**Status:** Not started
+**Status:** Complete (impl + unit-verified; the live `updatedInput` smoke under Runtime Verification is certified on the next marked `/lazy-batch` run)
 
 **Scope:** Eliminate the byte-exact-retype requirement structurally. Add a sanctioned dispatch form where the `Agent` call's `prompt` is a short reference token (the registered nonce), and the dispatch guard resolves it to the registered prompt bytes and returns `permissionDecision: "allow"` + `hookSpecificOutput.updatedInput: { prompt: <resolved text>, …otherFields }` so the subagent runs with the fully-expanded prompt. No retyping ⇒ no transcription-failure class, for cycle prompts AND meta dispatches. The reference path consumes the nonce exactly like the verbatim path (one allow = one consume), so F1/F2's consume oracle is unaffected.
 
@@ -117,7 +117,7 @@
 
 ### Phase 4: F5 — Validation-readiness pre-screen (+ shared surface resolver)
 
-**Status:** Not started
+**Status:** Complete
 
 **Scope:** Build the shared surface-existence resolver (the grep core F5 and F8 both consume) and wire its first consumer: a docs-only validation-readiness pre-screen. For each candidate feature carrying `DEFERRED_NON_CLOUD.md`, the pre-screen verifies that every MCP tool name asserted by the feature's `mcp-tests/` scenarios resolves under the target repo's `src-tauri/src/ipc/mcp/registrations/`, and that the asserted production emitter/wiring exists in source — emitting a per-feature `ready | needs-work` verdict naming the missing surface. Advisory, not a hard gate.
 
@@ -144,7 +144,7 @@
 
 ### Phase 5: F8 — Scenario-surface existence lint (authoring-time + qg rule)
 
-**Status:** Not started
+**Status:** Complete — 5a (claude-config lint + write-plan/execute-plan prose) and 5b (AlgoBooth `scenario-surface-tools` warning rule in `check-docs-consistency.ts`) both landed
 
 **Scope:** Catch scenarios asserting non-existent tools/emitters at AUTHORING time (inside the write-plan/execute-plan cycle), ~3 cycles earlier than the Step-9 mcp-test discovery. Reuses Phase 4's `surface_resolver`. Add (a) an authoring-time lint step the write-plan/execute-plan cycle runs after authoring a scenario, and (b) a project-wide enforcement so it holds even outside a pipeline cycle.
 
@@ -175,7 +175,7 @@
 
 ### Phase 6: F7 — Stale-binary detection in Step 1d.0
 
-**Status:** Not started
+**Status:** Complete (impl + unit-verified; the live Step-1d.0 restart-forcing behavior under Runtime Verification is certified on the next workstation `/lazy-batch` run)
 
 **Scope:** Stop the pre-mcp-test readiness check from trusting `GET /health == 200` when the running runtime is a stale binary (Rust changed since boot). Compare the runtime's boot stamp against the newest commit touching native source (`src-tauri/` + `crates/`); force a `dev:restart` when native source advanced since boot. The POLICY + the generic predicate live in claude-config; the AlgoBooth-runtime-shaped integration lives in the AlgoBooth-side Step 1d.0 / mcp-test precheck prose.
 
