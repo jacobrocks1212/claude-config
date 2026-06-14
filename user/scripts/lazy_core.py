@@ -775,6 +775,45 @@ def _plan_status(path: Path) -> str:
     return "Ready"
 
 
+# The canonical per-plan-part complexity tier set (Phase 9 —
+# lazy-validation-readiness). Mirrors the ``_VALID_PHASE_KINDS`` Phase-8 pattern
+# for the per-PHASE ``**Phase kind:**`` marker, but lives in plan-part YAML
+# frontmatter (``complexity:``) instead. ``complex`` is the CONSERVATIVE default:
+# an untagged / unrecognized / unreadable plan dispatches on Opus (the safe,
+# full-capability tier). Only an explicit, recognized ``mechanical`` tag —
+# emitted by /write-plan when a part's WUs are ALL genuinely mechanical —
+# downgrades the /execute-plan cycle to Sonnet. The model NEVER auto-guesses the
+# tier at dispatch; it trusts only the tag /write-plan deliberately wrote.
+_VALID_PLAN_COMPLEXITIES = frozenset({"mechanical", "complex"})
+_DEFAULT_PLAN_COMPLEXITY = "complex"
+
+
+def plan_complexity(path: Path) -> str:
+    """Return a plan part's ``complexity:`` tier — ``"mechanical"`` or ``"complex"``.
+
+    Reads the per-plan-part ``complexity`` field from the plan file's YAML
+    frontmatter (per ``_components/plan-frontmatter.md``). Phase 9 —
+    lazy-validation-readiness; mirrors ``_plan_status``'s lookup shape.
+
+    Defaults to the SAFE tier ``"complex"`` (→ Opus dispatch) in every uncertain
+    case — a legacy plan with no frontmatter, an absent ``complexity`` field, an
+    unrecognized value, or a missing/unreadable file. Only an explicit,
+    case-insensitively-recognized ``mechanical`` tag returns ``"mechanical"``.
+    This makes the model-tiering back-compatible (every pre-Phase-9 plan keeps
+    dispatching on Opus) and conservative (an ambiguous tag never silently
+    downgrades implementation quality).
+    """
+    meta = _parse_plan_frontmatter(path) or {}
+    if not meta:
+        return _DEFAULT_PLAN_COMPLEXITY
+    raw = meta.get("complexity")
+    if isinstance(raw, str):
+        norm = raw.strip().lower()
+        if norm in _VALID_PLAN_COMPLEXITIES:
+            return norm
+    return _DEFAULT_PLAN_COMPLEXITY
+
+
 def _plan_lowest_phase(path: Path) -> tuple[int, str]:
     """Return a sort key (lowest_phase_number, plan_name).
 
@@ -3711,10 +3750,33 @@ def emit_cycle_prompt(
 
     prompt = "\n\n".join(selected)
 
+    # --- Per-part complexity model tiering (Phase 9 — lazy-validation-readiness)
+    # The /execute-plan cycle's dispatch model is selected from the CURRENT plan
+    # part's `complexity:` frontmatter tag:
+    #     mechanical → sonnet ; complex / absent / untagged → opus.
+    # The plan part is `state["sub_skill_args"]` (the plan path) when the cycle
+    # is an /execute-plan dispatch — the ONLY cycle this tiering applies to (a
+    # /retro, /spec, /mcp-test, etc. cycle is unaffected and stays opus). Gated
+    # strictly on the explicit tag /write-plan emitted: `plan_complexity` returns
+    # the SAFE `complex`/opus default for any uncertain case, so the model never
+    # auto-guesses cheaper. This baseline composes with the loop-block downgrade
+    # below: a `complex`/opus part that loops (repeat_count>=2) still flips to
+    # sonnet (sonnet ∧ sonnet = sonnet), and a `mechanical`/sonnet part stays
+    # sonnet — the two never conflict because both only ever DOWNGRADE to sonnet.
+    model = "opus"
+    norm_sub_skill = norm_skill  # already leading-"/"-stripped above
+    if norm_sub_skill in ("execute-plan", "execute_plan"):
+        plan_arg = state.get("sub_skill_args")
+        if plan_arg:
+            # sub_skill_args may carry trailing flags (e.g. "<plan> --batch");
+            # the plan path is the first whitespace-delimited token.
+            plan_token = str(plan_arg).split()[0] if str(plan_arg).split() else ""
+            if plan_token and plan_complexity(Path(plan_token)) == "mechanical":
+                model = "sonnet"
+
     # --- Loop block: appended when the same signature repeated (>= 2) ---------
     # The loop block lives in loop-block.md inside a ``` fence; strip the fence
     # lines and bind its tokens. Model flips to sonnet when the block is added.
-    model = "opus"
     if repeat_count is not None and repeat_count >= 2:
         loop_path = template_dir / "loop-block.md"
         try:

@@ -178,6 +178,7 @@ def test_symbols_present():
         "_plan_status",
         "_plan_lowest_phase",
         "_plan_phase_set",
+        "plan_complexity",
         "count_deliverables",
         "remaining_unchecked_are_verification_only",
         "write_completed_receipt",
@@ -1176,6 +1177,102 @@ def test_plan_phase_set_alpha_entries_skipped():
         result = lazy_core._plan_phase_set(p)
     # 'all' has no leading digit → skipped; '3a' → 3; 2 → 2
     assert result == {3, 2}, f"expected {{3, 2}}, got {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: plan_complexity — Phase 9 per-part complexity tag (lazy-validation-readiness)
+#
+# Mirrors Phase 8's phase_kind parse: a per-plan-part frontmatter field
+# ``complexity: mechanical | complex`` read via the shared plan-frontmatter
+# parser. Default is the SAFE tier ``complex`` (→ opus); only an explicit,
+# recognized ``mechanical`` tag downgrades the part to sonnet.
+# ---------------------------------------------------------------------------
+
+def test_plan_complexity_mechanical():
+    """Plan with complexity: mechanical → 'mechanical'."""
+    _guard()
+    content = (
+        "---\nkind: implementation-plan\nstatus: Ready\n"
+        "complexity: mechanical\n---\n\n# Plan\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PLAN.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.plan_complexity(p)
+    assert result == "mechanical", f"expected 'mechanical', got {result!r}"
+
+
+def test_plan_complexity_complex_explicit():
+    """Plan with complexity: complex → 'complex'."""
+    _guard()
+    content = (
+        "---\nkind: implementation-plan\nstatus: Ready\n"
+        "complexity: complex\n---\n\n# Plan\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PLAN.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.plan_complexity(p)
+    assert result == "complex", f"expected 'complex', got {result!r}"
+
+
+def test_plan_complexity_absent_defaults_complex():
+    """Plan with NO complexity field → 'complex' (safe default — back-compat)."""
+    _guard()
+    content = "---\nkind: implementation-plan\nstatus: Ready\nphases:\n  - 1\n---\n"
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PLAN.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.plan_complexity(p)
+    assert result == "complex", f"absent tag must default complex, got {result!r}"
+
+
+def test_plan_complexity_legacy_no_frontmatter_defaults_complex():
+    """Legacy plan (no frontmatter) → 'complex' (safe default)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PLAN.md"
+        p.write_text("# Plan\nNo frontmatter here.\n", encoding="utf-8")
+        result = lazy_core.plan_complexity(p)
+    assert result == "complex", f"legacy plan must default complex, got {result!r}"
+
+
+def test_plan_complexity_unknown_value_defaults_complex():
+    """Unrecognized complexity value → 'complex' (safe default, never trust an
+    auto-guess at dispatch — only the canonical tier set downgrades)."""
+    _guard()
+    content = (
+        "---\nkind: implementation-plan\nstatus: Ready\n"
+        "complexity: trivial\n---\n\n# Plan\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PLAN.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.plan_complexity(p)
+    assert result == "complex", f"unknown value must default complex, got {result!r}"
+
+
+def test_plan_complexity_case_insensitive():
+    """complexity: Mechanical (mixed case) normalizes to 'mechanical'."""
+    _guard()
+    content = (
+        "---\nkind: implementation-plan\nstatus: Ready\n"
+        "complexity: Mechanical\n---\n\n# Plan\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PLAN.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.plan_complexity(p)
+    assert result == "mechanical", f"expected 'mechanical', got {result!r}"
+
+
+def test_plan_complexity_absent_path_defaults_complex():
+    """Non-existent plan path → 'complex' (never raise; conservative default)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NOPE.md"
+        result = lazy_core.plan_complexity(p)
+    assert result == "complex", f"missing path must default complex, got {result!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -6399,6 +6496,108 @@ def test_emit_cycle_prompt_loop_append_and_model_flip():
     assert none is not None and none.get("ok") is True
     assert none["model"] == "opus", f"repeat_count=None expected opus, got {none['model']!r}"
     assert "LOOP DETECTED" not in none["prompt"], "loop block appended at repeat_count=None"
+
+
+# --- Phase 9: per-part complexity model tiering (lazy-validation-readiness) ---
+#
+# The /execute-plan cycle's dispatch model is selected from the current plan
+# part's `complexity` frontmatter tag:
+#   mechanical  → sonnet
+#   complex     → opus
+#   absent/untagged → opus (back-compat — the safe default tier)
+# This composes with the loop-block downgrade (repeat_count >= 2 → sonnet):
+# a looping complex part still downgrades to sonnet.
+
+def _write_complexity_plan(plan_dir: Path, name: str, complexity: str | None) -> Path:
+    """Write a minimal plan file carrying an optional complexity tag; return path."""
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["---", "kind: implementation-plan", "status: Ready", "phases:", "  - 1"]
+    if complexity is not None:
+        lines.append(f"complexity: {complexity}")
+    lines += ["---", "", "# Plan", ""]
+    p = plan_dir / name
+    p.write_text("\n".join(lines), encoding="utf-8")
+    return p
+
+
+def test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet():
+    """A `mechanical`-tagged execute-plan part → cycle_model == 'sonnet' even
+    with no loop (repeat_count=1)."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", "mechanical")
+        state = _emit_state(sub_skill="/execute-plan", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "sonnet", f"mechanical part expected sonnet, got {r['model']!r}"
+
+
+def test_emit_cycle_prompt_complex_part_cycle_model_opus():
+    """A `complex`-tagged execute-plan part → cycle_model == 'opus'."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", "complex")
+        state = _emit_state(sub_skill="/execute-plan", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "opus", f"complex part expected opus, got {r['model']!r}"
+
+
+def test_emit_cycle_prompt_untagged_part_cycle_model_opus():
+    """An untagged execute-plan part → cycle_model == 'opus' (back-compat)."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", None)
+        state = _emit_state(sub_skill="/execute-plan", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "opus", f"untagged part expected opus, got {r['model']!r}"
+
+
+def test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet():
+    """A looping (repeat_count>=2) `complex` part STILL downgrades to sonnet —
+    the loop-block downgrade composes with complexity tiering."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", "complex")
+        state = _emit_state(sub_skill="/execute-plan", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=2, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "sonnet", f"looping complex part expected sonnet, got {r['model']!r}"
+    assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping complex part"
+
+
+def test_emit_cycle_prompt_non_execute_plan_ignores_complexity():
+    """Complexity tiering applies ONLY to /execute-plan cycles. A non-execute
+    cycle (e.g. /retro) selects opus regardless of any plan file."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    # sub_skill_args points at a mechanical plan, but the cycle is NOT execute-plan.
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", "mechanical")
+        state = _emit_state(sub_skill="/retro", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "opus", f"non-execute cycle expected opus, got {r['model']!r}"
 
 
 # --- Synthetic-template parser-behavior unit tests --------------------------
@@ -11938,6 +12137,14 @@ _TESTS = [
     ("test_plan_phase_set_numeric", test_plan_phase_set_numeric),
     ("test_plan_phase_set_no_phases", test_plan_phase_set_no_phases),
     ("test_plan_phase_set_alpha_entries_skipped", test_plan_phase_set_alpha_entries_skipped),
+    # plan_complexity — Phase 9 per-part complexity tag (lazy-validation-readiness)
+    ("test_plan_complexity_mechanical", test_plan_complexity_mechanical),
+    ("test_plan_complexity_complex_explicit", test_plan_complexity_complex_explicit),
+    ("test_plan_complexity_absent_defaults_complex", test_plan_complexity_absent_defaults_complex),
+    ("test_plan_complexity_legacy_no_frontmatter_defaults_complex", test_plan_complexity_legacy_no_frontmatter_defaults_complex),
+    ("test_plan_complexity_unknown_value_defaults_complex", test_plan_complexity_unknown_value_defaults_complex),
+    ("test_plan_complexity_case_insensitive", test_plan_complexity_case_insensitive),
+    ("test_plan_complexity_absent_path_defaults_complex", test_plan_complexity_absent_path_defaults_complex),
     # derive_stage
     ("test_derive_stage_symbol_present", test_derive_stage_symbol_present),
     ("test_derive_stage_missing_dir", test_derive_stage_missing_dir),
@@ -12140,6 +12347,12 @@ _TESTS = [
     ("test_emit_cycle_prompt_bug_tokens_real_template", test_emit_cycle_prompt_bug_tokens_real_template),
     ("test_emit_cycle_prompt_pseudo_and_idle_return_none", test_emit_cycle_prompt_pseudo_and_idle_return_none),
     ("test_emit_cycle_prompt_loop_append_and_model_flip", test_emit_cycle_prompt_loop_append_and_model_flip),
+    # Phase 9 (lazy-validation-readiness) — per-part complexity model tiering
+    ("test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet", test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet),
+    ("test_emit_cycle_prompt_complex_part_cycle_model_opus", test_emit_cycle_prompt_complex_part_cycle_model_opus),
+    ("test_emit_cycle_prompt_untagged_part_cycle_model_opus", test_emit_cycle_prompt_untagged_part_cycle_model_opus),
+    ("test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet", test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet),
+    ("test_emit_cycle_prompt_non_execute_plan_ignores_complexity", test_emit_cycle_prompt_non_execute_plan_ignores_complexity),
     ("test_emit_cycle_prompt_section_selection_synthetic", test_emit_cycle_prompt_section_selection_synthetic),
     ("test_emit_cycle_prompt_refuses_unknown_token_synthetic", test_emit_cycle_prompt_refuses_unknown_token_synthetic),
     ("test_emit_cycle_prompt_mcp_variant_routing_synthetic", test_emit_cycle_prompt_mcp_variant_routing_synthetic),

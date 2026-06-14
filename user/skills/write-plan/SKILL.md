@@ -139,7 +139,29 @@ Therefore, when building the WU list:
 
 **Hard cap:** a single generated plan file may contain at most **8 work units**. If the queue analysis from Step 1c would produce more than 8 WUs across all input PHASES.md, this skill MUST partition the output into N sequential plan files, each ≤ 8 WUs.
 
-**Minimize N. Pack multiple phases into one part whenever it's legal.** A part covering two or three phases is the EXPECTED shape when individual phases are small (≤ 4 WUs each) — `phases: [3, 4]` is normal output, not an exception. One-phase-per-part is correct ONLY when that one phase already saturates the cap (or near-saturates: ≥ 5 WUs with no legal neighbor to pack). Producing N parts equal to the phase count when packing was legal is a contract violation — `/lazy-batch{,-cloud}` budgets one Opus cycle per `/execute-plan` dispatch, so over-fragmentation directly burns the cycle budget (8 fragmented parts where 4 packed parts would have fit is a 4-cycle waste).
+**Soft target (Phase 9 — cost-aware partitioning): ~3–4 WUs per part.** Beyond the 8-WU hard cap, AIM for **3–4 work units per part** so a large phase splits into several *fresh-context* parts. This is a token-cost lever, not a correctness rule: a workstation `/execute-plan` cycle runs **inline in one Opus context** (a dispatched subagent cannot recursively fan out), so its cost is dominated by monotonic context accumulation — every file read, gate output, and edit for the whole part stays in one context. The orchestrator dispatches **one fresh subagent per plan part**, so finer parts = the context reset that nested subagents would otherwise give. A part at the 8-WU cap (d7-multi-timbral: one part hit 399k tok / 106 min in a single inline context) is the cost shape to avoid. The soft target yields to the rules below — never split a phase mid-WU to hit it, and never fragment so finely you bloat cycle count past the savings.
+
+**Minimize N for SMALL phases; split LARGE phases toward the soft target.** Two forces, applied together: (a) pack multiple *small* phases into one part whenever it's legal — a part covering two or three small phases (`phases: [3, 4]`) is normal output; (b) when a single phase (or a legal pack) exceeds the ~3–4 WU soft target, prefer splitting it into multiple parts (still ≤ 8 WUs each, still no phase split mid-WU) so each `/execute-plan` cycle starts lean. One-phase-per-part is correct when that phase is large; multi-phase-per-part is correct when the phases are small. Over-fragmentation (N parts each with 1 WU when packing was legal) is still a contract violation — `/lazy-batch{,-cloud}` budgets one cycle per `/execute-plan` dispatch.
+
+**Partition INTENTIONALLY by complexity (Phase 9).** When partitioning, GROUP mechanical WUs together into mechanical parts and complex WUs into complex parts — **do NOT interleave**. Grouping lets an entire mechanical part dispatch on the cheaper model (Sonnet) without touching the complex work. Tag each emitted part with a `complexity:` frontmatter field (see below). Grouping by complexity is subordinate to the contract rules: parts still cover every phase in execution order, and a phase is never split mid-WU. When a phase's own WUs are a mix of mechanical and complex AND the dependency edges allow it, you MAY split that phase's mechanical WUs into a mechanical part and its complex WUs into a complex part (both tagged `phases: [<that phase>]`) — provided no WU in the later part is depended on by a WU in the earlier part. When complexity grouping would violate execution order or a dependency edge, keep the WUs together and tag the part `complex` (the safe tier).
+
+### Per-part `complexity` tag (Phase 9 — mechanical-vs-complex test)
+
+Every emitted part carries `complexity: mechanical | complex` in its frontmatter (default **`complex`** — the safe tier). The tag drives the `/execute-plan` cycle's dispatch model: `mechanical → sonnet`, `complex → opus`. This is the ONLY place implementation quality could regress, so the boundary is NOT guessed — apply this test:
+
+Tag a part `mechanical` **only when ALL of its WUs** are genuinely mechanical:
+- boilerplate / scaffolding,
+- test-fixture authoring,
+- codegen,
+- pure documentation edits,
+- mechanical refactors with snapshot/golden coverage,
+
+**AND none of its WUs involve**:
+- a novel design decision,
+- an algorithm or DSP,
+- cross-boundary wiring (IPC, service↔store, Rust↔TS, a new production seam).
+
+If **any** WU in the part fails the test — or you are uncertain — tag the part `complex`. A single complex WU contaminates the whole part; never average. `complex` is always safe (it dispatches on Opus, the full-capability tier); `mechanical` is the deliberate, documented downgrade. When you tag a part `mechanical`, note in its WU prose why every WU qualifies, so the `lazy-batch-retro` audit can confirm the boundary was applied (not assumed).
 
 ### Partitioning rules (apply in priority order)
 
@@ -566,6 +588,7 @@ Before writing any plan file to disk, verify every `[VERIFY: …]` annotation yo
 - `kind: implementation-plan`
 - `feature_id:` — parent feature directory name
 - `status: Ready` (or `Draft` if `--batch` halted on `NEEDS_INPUT.md`)
+- `complexity: mechanical | complex` — the per-part cost tier from Step 2.5's mechanical-vs-complex test (Phase 9). Default `complex` (Opus). Emit `mechanical` ONLY when every WU in the part passed the test above. This field is REQUIRED on every part — write `complexity: complex` explicitly even for complex parts so the tier is auditable and never inferred from absence.
 - `phases:` — YAML list of every PHASES.md phase number this plan implements. **Multi-element lists are normal and expected** when Step 2.5 packed multiple phases into one part — e.g. `phases: [1, 2]`, `phases: [3, 4]`, `phases: [5, 6, 7]`. A singleton `phases: [N]` is correct ONLY when that one phase saturates the 8-WU cap on its own (or it's the last part and no other phase remained to pack). For a multi-feature plan, list every phase across every feature this part covers. For partitioned multi-part output (Step 2.5), each part's `phases:` lists every phase assigned to that part — not just the lowest.
 
 ### Multi-part Output Reporting

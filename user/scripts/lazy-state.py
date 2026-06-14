@@ -5511,6 +5511,15 @@ def main() -> int:
             )
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
+            # Phase 9 (lazy-validation-readiness) — per-part model tiering.
+            # emit_cycle_prompt selects cycle_model from the CURRENT plan part's
+            # `complexity:` tag when this is an /execute-plan cycle (read off
+            # state["sub_skill_args"], the plan path): mechanical → sonnet,
+            # complex / absent → opus. It composes with the loop-block downgrade
+            # (repeat_count >= 2 → sonnet). bug-state.py shares this exact call,
+            # so the bug pipeline mirrors the tiering automatically (no separate
+            # cycle-model path). Gated strictly on the explicit tag — never an
+            # auto-guess at dispatch.
             emitted = lazy_core.emit_cycle_prompt(
                 Path(args.repo_root), state,
                 pipeline="feature", cloud=args.cloud, repeat_count=rc,
