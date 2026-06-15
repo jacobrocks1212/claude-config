@@ -186,6 +186,15 @@ non-park wait is a (minor) deviation graded by R-V-3.
   silently when the wait resolves.
 - **Standing-directive echo-back:** the interpretation being confirmed, verbatim, then the
   AskUserQuestion.
+- **Needs-research halt announcement (Step 4 / Step 1f research halt):** the research-halt
+  announcement IS a sanctioned T6 rich zone — print it in FULL. Fixed structure: (1) the `⏸`
+  pause line, (2) the feature + prompt-file identity lines, (3) the **research prompt content in
+  a fenced ` ```text ` code block** (verbatim, per `research-halt-announcement.md` Variant A/B),
+  (4) the char-count over/under indicator, (5) the FASTEST-RESUME in-session-upload block + the
+  alternative upload paths. The zero-text rule does NOT suppress this prompt dump — surfacing the
+  pastable prompt is the entire point of the halt. A needs-research halt turn that ends with only
+  a sentinel write + the T7 table (no fenced prompt block) is a CONTRACT VIOLATION (the operator
+  cannot act on a halt they cannot see). Burned on the d8-effect-chains run, 2026-06-14.
 
 ### T7 — Final report
 

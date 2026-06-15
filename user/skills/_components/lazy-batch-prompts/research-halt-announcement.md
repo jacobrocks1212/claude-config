@@ -17,7 +17,23 @@
        {within | over} is chosen by comparing measured char count to 24,000
        (Gemini's practical web-UI character cap; see ~/.claude/skills/spec/SKILL.md
        Phase 2 for source notes). When over, append "(may need manual trimming
-       before paste)" to that line — informational only, do NOT refuse to print. -->
+       before paste)" to that line — informational only, do NOT refuse to print.
+
+     POINTER-RESOLUTION note for {RESEARCH_PROMPT content} (both variants):
+       The {…RESEARCH_PROMPT content…} token is the EFFECTIVE (resolved) prompt,
+       NOT necessarily the literal bytes of {spec_path}/RESEARCH_PROMPT.md. When
+       that file is a POINTER doc (a short file whose body mostly links to another
+       feature's RESEARCH_PROMPT.md — e.g. "Combined with <other> research (they
+       ship as a unit)" + a [link](../<other>/RESEARCH_PROMPT.md), often with a
+       focus note like "Sections 4 and 7 are most relevant"), the caller (lazy-batch
+       Step 4 step 1 / lazy-batch-cloud Step 4) resolves it ONE level: follows the
+       link, surfaces the referenced prompt's named focus sections (+ its Context /
+       identity preamble) — or the whole referenced file if no sections are named —
+       and PREPENDS the focus note verbatim. Surface the resolved content here so
+       the operator can paste a real prompt into Gemini, never a 3-line pointer.
+       Pointer resolution changes WHAT is surfaced; it NEVER waives the halt — the
+       feature still requires its OWN RESEARCH.md (anti-exemption rule, lazy-batch
+       Step 4). Burned on d8-effect-chains, 2026-06-14. -->
 
 ---
 
