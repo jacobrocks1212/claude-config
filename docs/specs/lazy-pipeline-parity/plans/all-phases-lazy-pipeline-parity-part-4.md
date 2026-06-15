@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-pipeline-parity
-status: Ready
+status: Complete
 created: 2026-06-15
 complexity: mechanical
 phases: [4]
@@ -122,9 +122,9 @@ References component files by path. **Before each step**, `Read` the listed comp
 
 ## Work Units
 
-- [ ] WU-1 — C6 doc-anchor cross-linking + authoring notes across the five derived skills
-- [ ] WU-2 — `lint-skills.py --check-parity` flag (optional — mirror existing `--check-*` flags)
-- [ ] WU-3 — `lazy-batch-retro` registry-awareness note
+- [x] WU-1 — C6 doc-anchor cross-linking + authoring notes across the five derived skills
+- [x] WU-2 — `lint-skills.py --check-parity` flag (optional — mirror existing `--check-*` flags)
+- [x] WU-3 — `lazy-batch-retro` registry-awareness note
 
 ---
 

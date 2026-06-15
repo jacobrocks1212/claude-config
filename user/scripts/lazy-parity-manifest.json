@@ -74,7 +74,7 @@
           "heading": "## Step 0.52: Validation-readiness pre-screen (advisory — F5 / lazy-validation-readiness)",
           "coverage": "divergence",
           "reason": "Front-loading a DEFERRED_NON_CLOUD cohort is feature-curation; does not map to bug queueing.",
-          "doc_anchor": "Differences table: Step 0.52 / validation-readiness"
+          "doc_anchor": "Step 0.52 validation-readiness pre-screen"
         },
         {
           "heading": "## Step 0.55: Write the run marker (IMMEDIATELY before the T1 banner / loop entry)",
@@ -195,7 +195,7 @@
           "heading": "## Step 4: Research Halt (terminal_reason == \"needs-research\")",
           "coverage": "divergence",
           "reason": "Bugs do not undergo Gemini deep research (operator-confirmed 2026-06-15).",
-          "doc_anchor": "Differences table: Research / Gemini steps"
+          "doc_anchor": "Research / Gemini steps"
         },
         {
           "heading": "### ANTI-EXEMPTION RULE — a dependency/sibling having RESEARCH.md is NOT a waiver (HARD)",
@@ -287,7 +287,8 @@
         {
           "heading": "## Step 0.52: Validation-readiness pre-screen (advisory — F5 / lazy-validation-readiness)",
           "coverage": "divergence",
-          "reason": "Front-loading a DEFERRED_NON_CLOUD cohort with a readiness verdict is a workstation-only curation step; cloud never produces DEFERRED_NON_CLOUD.md entries until Step 9 fires, so the pre-screen has no candidates and is omitted."
+          "reason": "Front-loading a DEFERRED_NON_CLOUD cohort with a readiness verdict is a workstation-only curation step; cloud never produces DEFERRED_NON_CLOUD.md entries until Step 9 fires, so the pre-screen has no candidates and is omitted.",
+          "doc_anchor": "Step 0.52 validation-readiness pre-screen"
         },
         {
           "heading": "## Step 0.55: Write the run marker (IMMEDIATELY before the T1 banner / loop entry)",
@@ -613,7 +614,8 @@
         {
           "heading": "### `__write_validated_from_results__`",
           "coverage": "divergence",
-          "reason": "Cloud defers Tauri/MCP and never boots the runtime, so it cannot produce live MCP validation results — only __write_validated_from_skip__ (and the cloud-only __write_deferred_non_cloud__) apply."
+          "reason": "Cloud defers Tauri/MCP and never boots the runtime, so it cannot produce live MCP validation results — only __write_validated_from_skip__ (and the cloud-only __write_deferred_non_cloud__) apply.",
+          "doc_anchor": "not applicable in cloud"
         },
         {
           "heading": "### `__flip_plan_complete_cloud_saturated__`",

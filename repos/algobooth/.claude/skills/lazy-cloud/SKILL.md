@@ -5,6 +5,8 @@ argument-hint: [optional: "status" to report, "skip" to skip current feature, or
 plan-mode: never
 ---
 
+> **Parity note:** before editing this skill, run `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-cloud` to confirm parity with its canonical twin is clean, and run `pytest user/scripts/test_lazy_parity.py` after to confirm your change introduces no drift. Intentional divergences are recorded in `user/scripts/lazy-parity-manifest.json` (the source of truth).
+
 # Lazy Cloud — Autonomous Feature Dispatcher (Cloud Mode)
 
 Thin LLM wrapper around `~/.claude/scripts/lazy-state.py --cloud`. The cloud variant of `/lazy`: same state machine, same sentinel contract, same one-skill-per-invocation rule — but aware that this session runs in an ephemeral cloud Linux container with no Tauri desktop, no audio device, and no `tauri:dev` server.
@@ -63,6 +65,8 @@ The cloud session runs in an ephemeral Linux container with:
 - **No long-lived shared state** — the container is reclaimed after the session ends.
 
 When `lazy-state.py --cloud` would normally dispatch a step that requires the desktop environment (today: MCP testing, Step 9), it returns `sub_skill: "__write_deferred_non_cloud__"` instead. The wrapper writes the DEFERRED_NON_CLOUD.md sentinel and stops. **Note:** the `/retro` step (formerly Step 8) is unwired (2026-06) — once phases are complete the pipeline routes straight to the Step 9 MCP gate, which defers in cloud. The cloud-saturated skip in Step 2 (DEFERRED_NON_CLOUD.md + no VALIDATED.md, on a feature past implementation) is the terminal state for a feature whose only remaining work is workstation MCP validation.
+
+**`__write_validated_from_results__` is not applicable in cloud:** the cloud environment cannot run live MCP validation against the Tauri desktop app, so the state script never emits `__write_validated_from_results__`. Only `__write_validated_from_skip__` (based on a prior SKIP_MCP_TEST.md) applies here; all other validation paths require the workstation.
 
 ---
 

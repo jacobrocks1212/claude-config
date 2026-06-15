@@ -7,6 +7,8 @@ plan-mode: never
 allowed-tools: ["Bash", "Read"]
 ---
 
+> **Parity note:** before editing this skill, run `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-status` to confirm parity with its canonical twin is clean, and run `pytest user/scripts/test_lazy_parity.py` after to confirm your change introduces no drift. Intentional divergences are recorded in `user/scripts/lazy-parity-manifest.json` (the source of truth).
+
 # Lazy Bug Status
 
 Read-only dashboard for the autonomous bug pipeline. Runs `~/.claude/scripts/bug-state.py`,

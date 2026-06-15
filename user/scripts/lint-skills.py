@@ -251,6 +251,11 @@ def main() -> None:
         help="Check projected output for capability namespace pollution (requires --check-projected and --repos-dir)",
     )
     parser.add_argument(
+        "--check-parity",
+        action="store_true",
+        help="Run the lazy skill-family parity audit (lazy_parity_audit.audit_all_pairs) across all five canonical/derived pairs; non-zero on drift.",
+    )
+    parser.add_argument(
         "--repos-dir",
         type=Path,
         default=Path.home() / "source" / "repos",
@@ -302,6 +307,19 @@ def main() -> None:
                 exit_code = 1
             elif not warnings:
                 print("OK — no capability namespace pollution detected.")
+
+    # Lazy skill-family parity audit (optional standalone run; the hard gate is test_lazy_parity.py)
+    if args.check_parity:
+        import lazy_parity_audit  # same directory as this script
+        parity_repo_root = Path(__file__).resolve().parents[2]  # user/scripts/lint-skills.py -> repo root
+        parity_findings = lazy_parity_audit.audit_all_pairs(parity_repo_root)
+        if parity_findings:
+            for finding in parity_findings:
+                print(finding)
+            print(f"\n{len(parity_findings)} lazy-parity drift finding(s) found.")
+            exit_code = 1
+        else:
+            print("OK — lazy skill-family parity: zero drift across all five pairs.")
 
     sys.exit(exit_code)
 

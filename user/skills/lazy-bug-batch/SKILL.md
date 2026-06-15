@@ -22,6 +22,8 @@ feature pipeline. Read `~/.claude/skills/lazy-batch/SKILL.md` first; this skill'
 bind the shared algorithm to bug-pipeline vocabulary (bug_id / bug_name, FIXED.md, docs/bugs/,
 bug-state.py).
 
+> **Parity note:** before editing this skill, run `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` to confirm parity with its canonical twin is clean, and run `pytest user/scripts/test_lazy_parity.py` after to confirm your change introduces no drift. Intentional divergences are recorded in `user/scripts/lazy-parity-manifest.json` (the source of truth).
+
 ---
 
 ## Differences from `/lazy-batch`
@@ -48,6 +50,7 @@ bug-state.py).
 | `skip_needs_research` var | used under `--allow-research-skip` | N/A |
 | `research_pending` var | accumulates research-pending feature_ids | N/A |
 | Step 0.5 pre-loop ingest | probes staged `.txt` files, dispatches `/ingest-research` | Skipped entirely (N/A to bugs) |
+| Step 0.52 validation-readiness pre-screen | advisory F5 pre-screen — front-loads a DEFERRED_NON_CLOUD cohort with readiness verdicts | N/A — front-loading a DEFERRED_NON_CLOUD cohort is feature-curation, not bug queueing |
 | LOOP DETECTED sentinel guidance | mentions `VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md` (RETRO_DONE.md excluded — retro unwired 2026-06) | same set, substituting `FIXED.md` for `COMPLETED.md`; DEFERRED_NON_CLOUD.md applies to bugs too |
 | `completion-unverified` description | feature's SPEC claims Complete but no COMPLETED.md receipt | bug's SPEC claims Fixed but no FIXED.md receipt |
 | Step 1.5 probe command | `python3 ~/.claude/scripts/lazy-state.py` | `python3 ~/.claude/scripts/bug-state.py` |

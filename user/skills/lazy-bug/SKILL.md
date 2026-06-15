@@ -5,6 +5,8 @@ argument-hint: [optional: "status" to report, "skip" to skip current bug, or an 
 plan-mode: never
 ---
 
+> **Parity note:** before editing this skill, run `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug` to confirm parity with its canonical twin is clean, and run `pytest user/scripts/test_lazy_parity.py` after to confirm your change introduces no drift. Intentional divergences are recorded in `user/scripts/lazy-parity-manifest.json` (the source of truth).
+
 # Lazy Bug — Autonomous Bug Dispatcher
 
 Thin LLM wrapper around `~/.claude/scripts/bug-state.py`. Each invocation:

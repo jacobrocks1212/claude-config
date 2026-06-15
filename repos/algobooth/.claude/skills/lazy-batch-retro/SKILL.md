@@ -283,6 +283,8 @@ Print a compact summary to chat:
 
 For each cycle, walk the relevant skill's instructions verbatim and grade compliance. Verdicts: `pass`, `fail`, `partial`, `unverifiable`, `n/a`. Each verdict needs a 1–2 sentence citation pointing at the cached source.
 
+> **Parity registry (lazy skill-family).** Intentional differences between `/lazy-batch` and its derived twins (`/lazy-batch-cloud`, `/lazy-bug-batch`, and the `/lazy`-family twins) are recorded in `user/scripts/lazy-parity-manifest.json`, enforced by `user/scripts/lazy_parity_audit.py` (the `pytest user/scripts/test_lazy_parity.py` hard gate). When grading whether a run's deviation from the canonical pattern is expected or anomalous, a rubric may consult that registry: a behavior recorded there as a per-pair `divergence` (with a `reason`) is intentional, not a defect.
+
 ### 4a. ORCHESTRATOR-LEVEL RULES (against lazy-batch[-cloud]/SKILL.md)
 
 | Rule | What to check |

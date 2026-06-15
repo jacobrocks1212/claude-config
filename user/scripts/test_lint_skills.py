@@ -2,7 +2,8 @@
 """
 test_lint_skills.py - Tests for lint-skills.py
 
-Covers lint_projected() false-positive and genuine-directive detection.
+Covers lint_projected() false-positive and genuine-directive detection,
+and the --check-parity integration via audit_all_pairs().
 """
 
 import importlib.util
@@ -82,4 +83,35 @@ def test_lint_projected_flags_genuine_directive(tmp_path, ls):
     )
     assert issues[0]["kind"] == "unexpanded-cat", (
         f"Expected kind='unexpanded-cat', got: {issues[0]['kind']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# --check-parity integration
+# ---------------------------------------------------------------------------
+
+def test_check_parity_clean_repo():
+    """audit_all_pairs() returns zero findings on the clean repo.
+
+    This mirrors what --check-parity does: calls lazy_parity_audit.audit_all_pairs
+    with the repo root (parents[2] of this file's location) and asserts no drift.
+    """
+    import importlib
+    import sys as _sys
+
+    # Ensure user/scripts is on sys.path so the sibling import resolves.
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+
+    lazy_parity_audit = importlib.import_module("lazy_parity_audit")
+
+    # user/scripts/test_lint_skills.py -> parents[0]=user/scripts, [1]=user, [2]=repo root
+    repo_root = Path(__file__).resolve().parents[2]
+
+    findings = lazy_parity_audit.audit_all_pairs(repo_root)
+
+    assert findings == [], (
+        f"Expected zero lazy-parity findings on a clean repo, but got:\n"
+        + "\n".join(findings)
     )
