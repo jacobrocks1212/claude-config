@@ -240,8 +240,211 @@
       "axis": "cloud",
       "flavor": "inherit-by-reference",
       "mechanic_set": "lazy-batch",
-      "mechanic_overrides": [],
-      "headings": []
+      "token_substitutions": [],
+      "mechanic_overrides": [
+        {
+          "id": "run-end-dev-kill",
+          "coverage": "divergence",
+          "reason": "Cloud defers Tauri/MCP and never boots the orchestrator-owned runtime, so there is nothing to tear down at run-end."
+        }
+      ],
+      "headings": [
+        {
+          "heading": "## HARD CONSTRAINTS (non-negotiable)",
+          "coverage": "restated",
+          "evidence": "HARD CONSTRAINTS"
+        },
+        {
+          "heading": "## OUTPUT CONTRACT — orchestrator voice (read at run start)",
+          "coverage": "restated",
+          "evidence": "OUTPUT CONTRACT — orchestrator voice"
+        },
+        {
+          "heading": "## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)",
+          "coverage": "restated",
+          "evidence": "Step 0\\.0: Environment Preflight"
+        },
+        {
+          "heading": "## /lazy-batch — run start",
+          "coverage": "restated",
+          "evidence": "/lazy-batch-cloud — run start"
+        },
+        {
+          "heading": "## Step 0.4: Resume-time remote sync (HARD REQUIREMENT)",
+          "coverage": "restated",
+          "evidence": "Step 0\\.4: Resume-time remote sync"
+        },
+        {
+          "heading": "## Step 0.45: Ad-hoc Enqueue (only when `--adhoc` was supplied)",
+          "coverage": "restated",
+          "evidence": "Step 0\\.45: Ad-hoc Enqueue"
+        },
+        {
+          "heading": "## Step 0.5: Pre-loop staged-research ingest check",
+          "coverage": "restated",
+          "evidence": "Step 0\\.5: Pre-loop staged-research ingest check"
+        },
+        {
+          "heading": "## Step 0.52: Validation-readiness pre-screen (advisory — F5 / lazy-validation-readiness)",
+          "coverage": "divergence",
+          "reason": "Front-loading a DEFERRED_NON_CLOUD cohort with a readiness verdict is a workstation-only curation step; cloud never produces DEFERRED_NON_CLOUD.md entries until Step 9 fires, so the pre-screen has no candidates and is omitted."
+        },
+        {
+          "heading": "## Step 0.55: Write the run marker (IMMEDIATELY before the T1 banner / loop entry)",
+          "coverage": "restated",
+          "evidence": "Step 0\\.55: Write Run Marker"
+        },
+        {
+          "heading": "## Step 1: Cycle Loop",
+          "coverage": "restated",
+          "evidence": "Step 1: Cycle Loop"
+        },
+        {
+          "heading": "### 1a. Run lazy-state.py",
+          "coverage": "restated",
+          "evidence": "1a\\. Run lazy-state\\.py --cloud"
+        },
+        {
+          "heading": "### 1b. Handle terminal states",
+          "coverage": "restated",
+          "evidence": "1b\\. Handle terminal states"
+        },
+        {
+          "heading": "### 1c. Check the max-cycles cap",
+          "coverage": "restated",
+          "evidence": "1c\\. Check the max-cycles cap"
+        },
+        {
+          "heading": "### 1c.6. PushNotification policy (park / halt / flush / run-end)",
+          "coverage": "restated",
+          "evidence": "1c\\.6\\. PushNotification policy"
+        },
+        {
+          "heading": "### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)",
+          "coverage": "restated",
+          "evidence": "1c\\.5\\. Inline pseudo-skill handling"
+        },
+        {
+          "heading": "### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)",
+          "coverage": "restated",
+          "evidence": "1d\\. Compose and dispatch the cycle subagent"
+        },
+        {
+          "heading": "### 1d.5. Post-cycle input audit (Opus — runs only on `/spec` and `plan-feature` cycles)",
+          "coverage": "restated",
+          "evidence": "1d\\.5\\. Post-cycle input audit"
+        },
+        {
+          "heading": "### 1e. Record cycle outcome and loop",
+          "coverage": "restated",
+          "evidence": "1e\\. Record cycle outcome and loop"
+        },
+        {
+          "heading": "### 1f. Research-wait mode (`terminal_reason == \"queue-blocked-on-research\"`)",
+          "coverage": "restated",
+          "evidence": "1f\\. Research-wait mode"
+        },
+        {
+          "heading": "### 1g. Decision-resume mode (`terminal_reason == \"needs-input\"`)",
+          "coverage": "restated",
+          "evidence": "1g\\. Decision-resume mode"
+        },
+        {
+          "heading": "### 1g-flush. Parked-decision flush (`--park` only)",
+          "coverage": "restated",
+          "evidence": "1g-flush\\. Parked-decision flush"
+        },
+        {
+          "heading": "### 1h. Blocked-resolution mode (`terminal_reason == \"blocked\"`)",
+          "coverage": "restated",
+          "evidence": "1h\\. Blocked-resolution mode"
+        },
+        {
+          "heading": "### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)",
+          "coverage": "restated",
+          "evidence": "1i\\. Operator-directed halt-resolution"
+        },
+        {
+          "heading": "## Step 1.5: Forward-Progress Verification (informally \"Step 2.5\"; runs after loop exit, before the Step 2 batch report)",
+          "coverage": "restated",
+          "evidence": "Step 1\\.5: Forward-Progress Verification"
+        },
+        {
+          "heading": "## Step 2: Final Batch Report",
+          "coverage": "restated",
+          "evidence": "Step 2: Final Batch Report"
+        },
+        {
+          "heading": "## /lazy-batch — Done",
+          "coverage": "restated",
+          "evidence": "/lazy-batch-cloud — Done"
+        },
+        {
+          "heading": "### Cycle log",
+          "coverage": "restated",
+          "evidence": "Cycle log"
+        },
+        {
+          "heading": "### Auto-accepted decisions (`--park` two-key)",
+          "coverage": "restated",
+          "evidence": "Auto-accepted decisions"
+        },
+        {
+          "heading": "### Completeness-policy applications (D7)",
+          "coverage": "restated",
+          "evidence": "Completeness-policy applications"
+        },
+        {
+          "heading": "## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)",
+          "coverage": "restated",
+          "evidence": "Step 3: Cycle Output Discipline"
+        },
+        {
+          "heading": "### {Step name} — {work summary, ≤12 words} [{n}/{max}]                   ← T2 heading",
+          "coverage": "restated",
+          "evidence": "work summary"
+        },
+        {
+          "heading": "## Step 4: Research Halt (terminal_reason == \"needs-research\")",
+          "coverage": "restated",
+          "evidence": "Step 4: Research Halt"
+        },
+        {
+          "heading": "### ANTI-EXEMPTION RULE — a dependency/sibling having RESEARCH.md is NOT a waiver (HARD)",
+          "coverage": "restated",
+          "evidence": "ANTI-EXEMPTION RULE"
+        },
+        {
+          "heading": "### Stub specs vs structured-research-pending specs (disambiguation rule)",
+          "coverage": "restated",
+          "evidence": "Stub specs vs structured-research-pending"
+        },
+        {
+          "heading": "### Step 4 — shared sentinel write (both paths)",
+          "coverage": "inherited",
+          "evidence": "See.*lazy-batch/SKILL\\.md.*Step 4 for the full algorithm"
+        },
+        {
+          "heading": "### Step 4 — DEFAULT path (`allow_research_skip == false`): immediate halt",
+          "coverage": "inherited",
+          "evidence": "See.*lazy-batch/SKILL\\.md.*Step 4 for the full algorithm"
+        },
+        {
+          "heading": "### Step 4 — OPT-IN path (`allow_research_skip == true`): legacy batch",
+          "coverage": "inherited",
+          "evidence": "See.*lazy-batch/SKILL\\.md.*Step 4 for the full algorithm"
+        },
+        {
+          "heading": "## Step 5: In-Session Resume Protocol (research uploaded via chat)",
+          "coverage": "restated",
+          "evidence": "Step 5: In-Session Resume Protocol"
+        },
+        {
+          "heading": "## Notes",
+          "coverage": "restated",
+          "evidence": "## Notes"
+        }
+      ]
     },
     {
       "canonical": "user/skills/lazy/SKILL.md",
