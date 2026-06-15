@@ -510,3 +510,11 @@ class TestLiveZeroDrift:
             "lazy-bug has parity drift vs lazy:\n"
             + "\n".join(f"  {f}" for f in findings)
         )
+
+    def test_live_lazy_cloud_zero_drift(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        findings = audit_pair(repo_root, "lazy-cloud")
+        assert findings == [], (
+            "lazy-cloud has parity drift vs lazy:\n"
+            + "\n".join(f"  {f}" for f in findings)
+        )
