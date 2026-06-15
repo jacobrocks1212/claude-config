@@ -1595,6 +1595,78 @@ def _phases_text_scoped_to(phases_text: str, phase_set: set[int]) -> str:
     return "\n".join(out)
 
 
+# A per-WU plan progress checkbox: ``- [ ] WU-N — <title>`` / ``- [x] WU-N …``.
+# Made mandatory by write-plan ISSUE-6 (d8-effect-chains run 2026-06-14): every
+# work unit in every generated plan part carries exactly one such row in a
+# ``## Work Units`` checklist. ``/execute-plan`` ticks each as it lands the WU,
+# so these rows are the MACHINE source of truth for plan-part deliverable
+# completion (PHASES.md per-deliverable ticks are demoted to human documentation
+# — see the verify_ledger docstring + write-plan/execute-plan SKILL prose).
+#
+# The WU id may be a bare number (``WU-3``) or a dotted sub-id (``WU-9.0``,
+# ``WU-3a``) — accept any ``[A-Za-z0-9.]+`` run after ``WU-``. The separator after
+# the id is the em-dash convention but we do not require it (a ``- [ ] WU-3``
+# with no title still counts as a progress row). The match is anchored at the
+# list-item bullet so a mid-prose mention of "WU-3" is NOT a false checkbox.
+_PLAN_WU_CHECKBOX_RE = re.compile(
+    r"^\s*-\s*\[(?P<mark>[ xX])\]\s*WU-[A-Za-z0-9.]+\b",
+)
+
+
+def _plan_wu_checkbox_counts(plan_text: str) -> tuple[int, int]:
+    """Return ``(unchecked, checked)`` counts of per-WU plan progress checkboxes.
+
+    Parses the ISSUE-6 ``- [ ] WU-N — <title>`` / ``- [x] WU-N …`` rows from a
+    plan part's body. Fence-aware in the same spirit as ``count_deliverables``:
+    a checkbox inside a triple-backtick code fence is an illustrative example
+    (e.g. the write-plan SKILL's own format sample) and is NOT counted.
+
+    ``(0, 0)`` means the plan has NO parseable per-WU checkboxes at all — a
+    legacy pre-ISSUE-6 plan. The caller uses that to fall back to the
+    PHASES-phase-level behavior (with a diagnostic) rather than vacuously pass.
+    """
+    unchecked = 0
+    checked = 0
+    in_fence = False
+    for line in plan_text.splitlines():
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _PLAN_WU_CHECKBOX_RE.match(line)
+        if not m:
+            continue
+        if m.group("mark") == " ":
+            unchecked += 1
+        else:
+            checked += 1
+    return unchecked, checked
+
+
+def _plan_unchecked_wus_are_verification_only(plan_text: str) -> bool:
+    """Return True iff every UNCHECKED ``- [ ] WU-N`` row in the plan body sits
+    under a Runtime Verification / MCP Integration Test subsection.
+
+    Preserves the verification-only-row exemption (the same one
+    ``remaining_unchecked_are_verification_only`` applies to PHASES.md) but at
+    the PLAN-WU granularity: a per-WU checkbox under a gate-owned
+    ``**Runtime Verification**`` / ``## MCP Integration Test`` subsection is
+    ticked by the Step-9 ``/mcp-test`` gate, NOT by ``/execute-plan``, so it must
+    not fail the plan-part ``deliverables_done`` verdict.
+
+    Reuses ``remaining_unchecked_are_verification_only`` over the plan body so the
+    section-detection logic (markdown headings AND bold markers, fence-aware,
+    Superseded-phase aware) is identical to the PHASES.md path — but only the
+    ``- [ ] WU-N`` rows participate, because the underlying helper returns False
+    on the FIRST unchecked ``- [ ]`` it sees outside a verification subsection,
+    and an ISSUE-6-compliant plan body's only ``- [ ]`` rows ARE the WU rows plus
+    any verification rows. (A stray non-WU ``- [ ]`` in the plan body would
+    conservatively be treated as non-verification work — the safe direction.)
+    """
+    return remaining_unchecked_are_verification_only(plan_text)
+
+
 def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = None) -> dict:
     """Verify the four completion-ledger preconditions for a feature.
 
@@ -1619,16 +1691,16 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
        are equivalent to "all plans exist and all are Complete". False when no
        plans have been authored at all, or any plan has a non-Complete status.
 
-    4. ``deliverables_done`` — ``spec_path/PHASES.md`` exists and has zero real
-       (non-verification) unchecked deliverables. "Real" is defined by
+    4. ``deliverables_done`` — zero real (non-verification) unchecked
+       deliverables remain. The SURFACE this reads depends on scope (see below).
+       "Real" / verification-exempt is defined by
        ``remaining_unchecked_are_verification_only``: rows under a
        "Runtime Verification / MCP Integration Test" subsection heading are
-       exempt workstation-only checks. Uses ``count_deliverables`` to detect
-       zero-unchecked, and falls back to ``remaining_unchecked_are_verification_only``
-       for the exemption. If PHASES.md does not exist, returns False (no evidence
-       that implementation phases were ever completed).
+       exempt workstation-only checks ticked by the Step-9 ``/mcp-test`` gate.
 
-    Plan-scoped mode (Phase 9 WU-3 — ``plan_path`` given):
+    Plan-scoped mode (``plan_path`` given) — deliverables_done SOURCE OF TRUTH
+    (2026-06-15, d8-effect-chains review
+    ``docs/features/audio/audio-vision/domains/d8-effect-chains/LAZY_BATCH_REVIEW_2026-06-15.md``):
       Multi-part plans split one feature across several plan files (each with a
       ``phases:`` set). Feature-level checks 3 + 4 fire false alarms while later
       parts are legitimately pending. When ``plan_path`` is provided, checks 3
@@ -1637,15 +1709,28 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
           (read via ``_plan_status`` — the same parser ``find_implementation_plans``
           and the stale-flip logic use). A missing ``plan_path`` file parses to the
           legacy default ``Ready`` → False.
-        - ``deliverables_done`` = no unchecked NON-verification rows remain in the
-          plan's phases (``_unchecked_wus_in_plan_scope`` for the in-scope unchecked
-          rows, with the mid-feature verification-only exemption applied by slicing
-          the in-scope phase sections through
-          ``remaining_unchecked_are_verification_only``). A plan with an EMPTY /
-          missing ``phases:`` set has unknown scope, so it FALLS BACK to the
-          feature-level ``deliverables_done`` semantics (unknown scope must not
-          vacuously pass).
-      ``plan_path=None`` → byte-for-byte the original feature-level behavior.
+        - ``deliverables_done`` reads the PLAN PART's own per-WU checkboxes
+          (``- [ ] WU-N`` — mandatory since write-plan ISSUE-6) as the MACHINE
+          record, NOT the PHASES.md phase-level deliverable rows. The plan part is
+          the unit of execution and its WUs never span parts or phases, so this
+          eliminates BOTH false-fail classes the PHASES-scoped read suffered:
+          (a) cross-part — a phase-level deliverable belonging to part-3 failing
+          the part-2 check (a phase spans parts); (b) cross-phase attribution — a
+          deliverable filed under Phase 5 but built in corrective Phase 6 sitting
+          done-but-unticked. Done iff no unchecked ``- [ ] WU-N`` rows remain,
+          with the verification-only exemption applied at the WU level
+          (``_plan_unchecked_wus_are_verification_only``).
+        - LEGACY FALLBACK: a pre-ISSUE-6 plan with NO parseable per-WU checkboxes
+          falls back to the prior PHASES-phase-level behavior (scoped to the
+          plan's ``phases:``; or feature-level when the plan has no ``phases:`` —
+          unknown scope must not vacuously pass) and records
+          ``deliverables_source: "phases-fallback (legacy plan — no per-WU
+          checkboxes)"`` so the operator knows the legacy path fired. Legacy plans
+          are NOT hard-failed.
+      ``plan_path=None`` → byte-for-byte the original feature-level behavior
+      (the whole feature's PHASES.md via ``count_deliverables`` +
+      ``remaining_unchecked_are_verification_only``). If PHASES.md does not exist
+      at feature level, returns False (no evidence phases were completed).
 
     Return shape:
     ```
@@ -1658,6 +1743,10 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
             "plan_complete": bool,
             "deliverables_done": bool,
         },
+        "deliverables_source": str,  # diagnostic (additive, never gates):
+                                     #   "plan-wu-checkboxes"       — new machine record
+                                     #   "phases-fallback (…)"      — legacy plan path fired
+                                     #   "phases-feature-level"     — no plan_path (whole feature)
     }
     ```
 
@@ -1729,29 +1818,76 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
         plan_complete = any_complete and len(incomplete_plans) == 0
 
     # --- check 4: no real (non-verification) unchecked deliverables ---
+    #
+    # SOURCE OF TRUTH (2026-06-15 — d8-effect-chains review):
+    #   * Plan-scoped (``plan_path`` given): the PLAN PART's own per-WU
+    #     checkboxes (``- [ ] WU-N`` — mandatory since write-plan ISSUE-6) are
+    #     the machine record. The plan part is the unit of execution and its WUs
+    #     never span parts or phases, so reading them eliminates BOTH the
+    #     cross-part false-fail (a Phase-5 deliverable belonging to part-3 failing
+    #     the part-2 check) AND the cross-phase-attribution false-fail (a
+    #     deliverable filed under Phase 5 but built in corrective Phase 6 sitting
+    #     done-but-unticked). PHASES.md per-deliverable ticks are now
+    #     human-readable documentation, NOT the gate.
+    #   * Legacy fallback: a pre-ISSUE-6 plan with NO parseable per-WU checkboxes
+    #     falls back to the prior PHASES-phase-level behavior and records
+    #     ``deliverables_source`` so the operator knows the legacy path fired.
+    #   * Feature-level (no ``plan_path`` — used by /mcp-test cycles): unchanged;
+    #     it legitimately checks the whole feature's PHASES.md.
     phases_file = spec_path / "PHASES.md"
-    if not phases_file.exists():
-        # No PHASES.md means we have no evidence of phases being completed.
-        deliverables_done = False
-    else:
-        phases_text = phases_file.read_text(encoding="utf-8")
-        if scoped and plan_phase_set:
-            # Plan-scoped with a known phase set: only the plan's phases count.
-            # Mid-feature verification-only rows in scope stay exempt — slice the
-            # in-scope phase sections and apply the same exemption helper used at
-            # feature level.
-            in_scope_unchecked = _unchecked_wus_in_plan_scope(phases_text, plan_phase_set)
-            if not in_scope_unchecked:
-                # No unchecked rows at all inside the plan's phases → done.
+    # Diagnostic: which surface produced the deliverables_done verdict.
+    deliverables_source = "phases-feature-level"
+    if scoped:
+        # Plan-scoped: prefer the plan part's own per-WU checkboxes.
+        plan_text = ""
+        if plan_path is not None and plan_path.exists():
+            try:
+                plan_text = plan_path.read_text(encoding="utf-8")
+            except OSError:
+                plan_text = ""
+        wu_unchecked, wu_checked = _plan_wu_checkbox_counts(plan_text)
+        if wu_unchecked or wu_checked:
+            # ISSUE-6-compliant plan: the per-WU checkboxes ARE the machine
+            # record. Done iff no unchecked WU rows remain — with the
+            # verification-only exemption (a WU row under a Runtime Verification /
+            # MCP Integration Test subsection is ticked by the Step-9 /mcp-test
+            # gate, not by /execute-plan).
+            deliverables_source = "plan-wu-checkboxes"
+            if wu_unchecked == 0:
                 deliverables_done = True
             else:
-                # Some in-scope rows are unchecked — done only if they are ALL
-                # under a Runtime Verification / MCP Integration Test subsection.
-                scoped_text = _phases_text_scoped_to(phases_text, plan_phase_set)
-                deliverables_done = remaining_unchecked_are_verification_only(scoped_text)
+                deliverables_done = _plan_unchecked_wus_are_verification_only(plan_text)
         else:
-            # Feature-level (or a scoped plan with no `phases:` → unknown scope,
-            # which must NOT vacuously pass, so it uses feature-level semantics).
+            # Legacy pre-ISSUE-6 plan (no per-WU checkboxes): fall back to the
+            # PHASES-phase-level behavior, scoped to the plan's phases. Emit a
+            # diagnostic so the operator knows the legacy path fired.
+            deliverables_source = "phases-fallback (legacy plan — no per-WU checkboxes)"
+            if not phases_file.exists():
+                deliverables_done = False
+            else:
+                phases_text = phases_file.read_text(encoding="utf-8")
+                if plan_phase_set:
+                    in_scope_unchecked = _unchecked_wus_in_plan_scope(phases_text, plan_phase_set)
+                    if not in_scope_unchecked:
+                        deliverables_done = True
+                    else:
+                        scoped_text = _phases_text_scoped_to(phases_text, plan_phase_set)
+                        deliverables_done = remaining_unchecked_are_verification_only(scoped_text)
+                else:
+                    # Legacy plan with NO `phases:` set → unknown scope → must NOT
+                    # vacuously pass; use feature-level semantics over all of PHASES.
+                    unchecked, _checked = count_deliverables(phases_text)
+                    if unchecked == 0:
+                        deliverables_done = True
+                    else:
+                        deliverables_done = remaining_unchecked_are_verification_only(phases_text)
+    else:
+        # Feature-level (no plan_path): the whole feature's PHASES.md.
+        if not phases_file.exists():
+            # No PHASES.md means we have no evidence of phases being completed.
+            deliverables_done = False
+        else:
+            phases_text = phases_file.read_text(encoding="utf-8")
             unchecked, _checked = count_deliverables(phases_text)
             if unchecked == 0:
                 deliverables_done = True
@@ -1777,6 +1913,11 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
         "ok": failing_check is None,
         "failing_check": failing_check,
         "checks": checks,
+        # Diagnostic (additive — never gates): which surface produced the
+        # deliverables_done verdict. "plan-wu-checkboxes" is the new machine
+        # source of truth; the "phases-fallback …" / "phases-feature-level"
+        # values mark the legacy / feature-level paths for the operator.
+        "deliverables_source": deliverables_source,
     }
 
 

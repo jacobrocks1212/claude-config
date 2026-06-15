@@ -181,6 +181,8 @@ def test_symbols_present():
         "plan_complexity",
         "count_deliverables",
         "remaining_unchecked_are_verification_only",
+        "_plan_wu_checkbox_counts",
+        "_plan_unchecked_wus_are_verification_only",
         "write_completed_receipt",
         "has_completion_receipt",
         "spec_status",
@@ -2754,6 +2756,264 @@ def test_verify_ledger_plan_scoped_missing_plan_file_fails():
         f"missing plan file → plan_complete False: {result['checks']}"
     )
     assert result["ok"] is False, f"missing plan must fail: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: verify_ledger — plan-WU checkboxes are the deliverables_done source of
+# truth (2026-06-15, d8-effect-chains review). The plan PART's own
+# ``- [ ] WU-N`` rows (mandatory since write-plan ISSUE-6) drive the scoped
+# deliverables_done verdict, eliminating the cross-part AND cross-phase
+# attribution false-fails the PHASES-phase-level read suffered.
+# ---------------------------------------------------------------------------
+
+def _write_plan_with_wus(
+    plans_dir: Path,
+    filename: str,
+    status: str,
+    phases: list,
+    wu_lines: str,
+) -> Path:
+    """Write an implementation plan with a ``## Work Units`` per-WU checklist.
+
+    ``wu_lines`` is the raw body inserted under a ``## Work Units`` heading — the
+    ISSUE-6 ``- [ ] WU-N — <title>`` rows (plus any ``**Runtime Verification**``
+    subsection with verification rows) that ``/execute-plan`` ticks.
+    """
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    p = plans_dir / filename
+    phases_yaml = "".join(f"  - {n}\n" for n in phases) if phases else ""
+    body = (
+        "---\n"
+        "kind: implementation-plan\n"
+        f"status: {status}\n"
+    )
+    if phases:
+        body += "phases:\n" + phases_yaml
+    body += "---\n\n# Implementation Plan\n\n## Work Units\n\n" + wu_lines + "\n"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+# A PHASES.md whose Phase-5 deliverable row actually belongs to part-3 (the d8
+# cross-part defect): the row sits under Phase 5 but is built/ticked by a later
+# plan part. The part-2 check (phases [5]) MUST NOT false-fail on it because the
+# machine record is now the plan PART's own WU checkboxes, not these rows.
+_PHASES_PHASE5_SPANS_PARTS = (
+    "### Phase 5\n"
+    "**Status:** In-progress\n"
+    "### Deliverables\n"
+    "- [x] Part-2's own Phase-5 work (done)\n"
+    "- [ ] Part-3's Phase-5 work (belongs to a later plan part — still pending)\n"
+)
+
+
+def test_verify_ledger_plan_wu_phase_spans_two_parts_no_false_fail():
+    """(a) A phase spans two plan parts. Checking part-2 (whose own WUs are all
+    ticked in the plan) must NOT false-fail on part-3's still-pending Phase-5
+    deliverable row in PHASES.md.
+
+    The OLD PHASES-phase-level read scoped to phases [5] would see the unchecked
+    "Part-3's Phase-5 work" row and fail. The NEW plan-WU read consults part-2's
+    own ``- [ ] WU-N`` rows (all ticked) → deliverables_done True.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        # part-2 owns phase 5; its OWN WUs are fully ticked.
+        part2 = _write_plan_with_wus(
+            plans, "plan-part-2.md", "Complete", [5],
+            "- [x] WU-1 — Part-2 Phase-5 implementation\n"
+            "- [x] WU-2 — Part-2 Phase-5 wiring\n",
+        )
+        (spec_dir / "PHASES.md").write_text(_PHASES_PHASE5_SPANS_PARTS,
+                                            encoding="utf-8")
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part2)
+    assert result["deliverables_source"] == "plan-wu-checkboxes", (
+        f"should read plan-WU checkboxes, not PHASES: {result}"
+    )
+    assert result["checks"]["deliverables_done"] is True, (
+        f"part-2's own WUs all ticked → deliverables_done True despite part-3's "
+        f"pending Phase-5 row: {result['checks']}"
+    )
+    assert result["ok"] is True, f"part-2 should pass cleanly: {result}"
+
+
+def test_verify_ledger_plan_wu_cross_phase_attribution_ignored():
+    """(b) Cross-phase attribution: a deliverable filed under Phase 5 but built in
+    corrective Phase 6 sits done-but-unticked in PHASES.md. The plan-part check
+    no longer cares — it reads the executing part's OWN WU checkboxes.
+
+    Here part-1 covers phase 6 (the corrective phase that actually built the
+    work); its WUs are ticked. PHASES.md still shows the Phase-5-filed row
+    unticked, but that no longer affects the part's deliverables_done.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        part1 = _write_plan_with_wus(
+            plans, "plan-part-1.md", "Complete", [6],
+            "- [x] WU-1 — Corrective Phase-6 work that satisfies the Phase-5 intent\n",
+        )
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 5\n"
+            "### Deliverables\n"
+            "- [ ] Deliverable filed here but built in Phase 6 (done-but-unticked)\n"
+            "### Phase 6\n"
+            "### Deliverables\n"
+            "- [x] Corrective work\n",
+            encoding="utf-8",
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["deliverables_source"] == "plan-wu-checkboxes", result
+    assert result["checks"]["deliverables_done"] is True, (
+        f"part-1's WUs ticked → done regardless of the Phase-5-attributed "
+        f"unticked row: {result['checks']}"
+    )
+    assert result["ok"] is True, f"cross-phase attribution must not fail part-1: {result}"
+
+
+def test_verify_ledger_plan_wu_unchecked_fails():
+    """An UNCHECKED non-verification ``- [ ] WU-N`` in the plan part →
+    deliverables_done False. Proves the plan-WU read is not vacuously green."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        part1 = _write_plan_with_wus(
+            plans, "plan-part-1.md", "Complete", [1],
+            "- [x] WU-1 — landed\n"
+            "- [ ] WU-2 — still pending implementation work\n",
+        )
+        # PHASES.md is fully ticked — proving the FAIL comes from the plan, not PHASES.
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n- [x] All PHASES deliverables ticked\n", encoding="utf-8"
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["deliverables_source"] == "plan-wu-checkboxes", result
+    assert result["checks"]["deliverables_done"] is False, (
+        f"unchecked plan WU → deliverables_done False even though PHASES is "
+        f"fully ticked: {result['checks']}"
+    )
+    assert result["failing_check"] == "deliverables_done", result
+
+
+def test_verify_ledger_plan_wu_verification_only_exempt():
+    """(c) The verification-only-row exemption holds at the plan-WU level: a
+    ``- [ ] WU-N`` under a ``**Runtime Verification**`` subsection (gate-owned,
+    ticked by /mcp-test not /execute-plan) does NOT fail deliverables_done."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        part1 = _write_plan_with_wus(
+            plans, "plan-part-1.md", "Complete", [1],
+            "- [x] WU-1 — implementation landed\n"
+            "- [x] WU-2 — wiring landed\n"
+            "\n**Runtime Verification**\n"
+            "- [ ] WU-3 — MCP smoke test passes (ticked by /mcp-test)\n",
+        )
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n- [x] Done\n", encoding="utf-8"
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["deliverables_source"] == "plan-wu-checkboxes", result
+    assert result["checks"]["deliverables_done"] is True, (
+        f"only-unchecked WU is under Runtime Verification → exempt → done: "
+        f"{result['checks']}"
+    )
+    assert result["ok"] is True, f"verification-only unchecked WU should pass: {result}"
+
+
+def test_verify_ledger_legacy_plan_no_wu_checkboxes_falls_back():
+    """(d) A legacy pre-ISSUE-6 plan with NO parseable ``- [ ] WU-N`` rows falls
+    back to the PHASES-phase-level behavior AND reports the diagnostic
+    deliverables_source. It is NOT hard-failed.
+
+    Here PHASES phase-1 has a real unchecked non-verification deliverable, so the
+    fallback correctly yields deliverables_done False — proving the legacy path
+    still does real work (not a vacuous pass)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        # _write_plan writes a plan body with NO ## Work Units / WU checkboxes.
+        legacy = _write_plan(plans, "plan-part-1.md", "Complete", [1])
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Thing A\n"
+            "- [ ] Thing B (real pending deliverable)\n",
+            encoding="utf-8",
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=legacy)
+    assert result["deliverables_source"] == (
+        "phases-fallback (legacy plan — no per-WU checkboxes)"
+    ), f"legacy plan must report the fallback diagnostic: {result}"
+    assert result["checks"]["deliverables_done"] is False, (
+        f"legacy fallback catches the real unchecked PHASES deliverable: "
+        f"{result['checks']}"
+    )
+
+
+def test_verify_ledger_legacy_plan_fallback_passes_when_phases_done():
+    """Legacy-plan fallback also PASSES when the in-scope PHASES deliverables are
+    all ticked — confirming the fallback reproduces the prior behavior in both
+    directions, not just the failing one."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        legacy = _write_plan(plans, "plan-part-1.md", "Complete", [1])
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n- [x] Thing A\n- [x] Thing B\n", encoding="utf-8"
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=legacy)
+    assert result["deliverables_source"] == (
+        "phases-fallback (legacy plan — no per-WU checkboxes)"
+    ), result
+    assert result["checks"]["deliverables_done"] is True, result
+    assert result["ok"] is True, f"legacy fallback should pass when PHASES done: {result}"
+
+
+def test_verify_ledger_feature_level_reports_source():
+    """The feature-level call (no --plan) reports deliverables_source
+    'phases-feature-level' and keeps its whole-feature PHASES.md semantics."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        _write_plan_with_wus(
+            plans, "plan-part-1.md", "Complete", [1],
+            "- [x] WU-1 — done\n",
+        )
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n- [x] Done\n", encoding="utf-8"
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # no plan_path
+    assert result["deliverables_source"] == "phases-feature-level", result
+    assert result["checks"]["deliverables_done"] is True, result
 
 
 # ---------------------------------------------------------------------------
@@ -12855,6 +13115,14 @@ _TESTS = [
     ("test_verify_ledger_plan_scoped_verification_only_in_scope_passes", test_verify_ledger_plan_scoped_verification_only_in_scope_passes),
     ("test_verify_ledger_plan_scoped_empty_phases_falls_back_to_feature_level", test_verify_ledger_plan_scoped_empty_phases_falls_back_to_feature_level),
     ("test_verify_ledger_plan_scoped_missing_plan_file_fails", test_verify_ledger_plan_scoped_missing_plan_file_fails),
+    # verify_ledger — plan-WU checkboxes as deliverables_done source of truth (2026-06-15)
+    ("test_verify_ledger_plan_wu_phase_spans_two_parts_no_false_fail", test_verify_ledger_plan_wu_phase_spans_two_parts_no_false_fail),
+    ("test_verify_ledger_plan_wu_cross_phase_attribution_ignored", test_verify_ledger_plan_wu_cross_phase_attribution_ignored),
+    ("test_verify_ledger_plan_wu_unchecked_fails", test_verify_ledger_plan_wu_unchecked_fails),
+    ("test_verify_ledger_plan_wu_verification_only_exempt", test_verify_ledger_plan_wu_verification_only_exempt),
+    ("test_verify_ledger_legacy_plan_no_wu_checkboxes_falls_back", test_verify_ledger_legacy_plan_no_wu_checkboxes_falls_back),
+    ("test_verify_ledger_legacy_plan_fallback_passes_when_phases_done", test_verify_ledger_legacy_plan_fallback_passes_when_phases_done),
+    ("test_verify_ledger_feature_level_reports_source", test_verify_ledger_feature_level_reports_source),
     # apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
     ("test_apply_pseudo_validated_from_skip_writes", test_apply_pseudo_validated_from_skip_writes),
     ("test_apply_pseudo_validated_from_skip_refuses_when_skip_absent", test_apply_pseudo_validated_from_skip_refuses_when_skip_absent),

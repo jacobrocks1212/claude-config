@@ -2,9 +2,11 @@
 
 **This is a blocking gate.** You CANNOT proceed to the next step until PHASES.md has been updated and verified. Skipping this step means the next session (or post-compaction recovery) will not know what was completed.
 
+> **Machine source of truth note (2026-06-15 — d8-effect-chains review).** The completion gate (`--verify-ledger --plan <plan_part>`) reads `deliverables_done` from the **plan part's own `- [ ] WU-N` checkboxes**, NOT from the PHASES.md per-deliverable checkboxes below. In PHASES.md, the durable, must-be-accurate human record is the phase **Status** line + the **Implementation Notes** block (steps 2–3); the per-deliverable `- [ ]`→`- [x]` ticks (step 1) are **best-effort human-readable documentation** — keep them as accurate as you reasonably can, but they no longer gate the pipeline and need not be kept in lockstep with the machine gate. Tick the plan-part `- [ ] WU-N` rows (see execute-plan Per-Step Protocol item 5) as the machine record.
+
 For each completed work unit, update PHASES.md:
 
-1. Check off completed deliverables: `- [ ]` → `- [x]`
+1. Check off completed deliverables (best-effort human documentation): `- [ ]` → `- [x]`
 
    **Runtime-spike evidence rule (HARD):** a deliverable or Validated-Assumptions ledger row that claims `runtime` / `spike` confirmation may be ticked ONLY with a cited **runtime artifact** — an MCP tool result, a session-log line, or a test that drives the REAL component (the actual ring/transport/process, not a mock). A static code trace does NOT satisfy a runtime row, however thorough: d8-live-looping's WU-9.0 "runtime spike" was closed on a static trace that concluded "no broken seam" and was wrong twice, costing two further full validation rounds. If a live probe is impossible this cycle (no runtime available), the row STAYS UNTICKED with an explicit `NEEDS_RUNTIME:` note naming what must be observed — never downgrade the confirmation method to close the box.
 2. Add/append an Implementation Notes block:

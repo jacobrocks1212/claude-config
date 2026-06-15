@@ -3474,11 +3474,16 @@ def main() -> int:
             "Scripted completion-ledger guard (replaces the prose guard blocks "
             "in the lazy-bug skills). Verifies: (1) clean working tree, "
             "(2) HEAD == @{u}, (3) all implementation plans are status: Complete, "
-            "(4) no real (non-verification) unchecked deliverables in SPEC_PATH/PHASES.md. "
-            "With --plan PLAN, checks 3+4 narrow to that plan part's phase scope "
+            "(4) no real (non-verification) unchecked deliverables. "
+            "With --plan PLAN, checks 3+4 narrow to that plan part's scope "
             "(plan_complete = the plan's own status: Complete; deliverables_done = "
-            "no unchecked non-verification rows in the plan's phases). "
-            "Emits a JSON verdict and exits 0 on pass, 1 on first failing check."
+            "no unchecked non-verification `- [ ] WU-N` rows in the PLAN PART itself "
+            "— the ISSUE-6 per-WU checkboxes are the machine source of truth; a "
+            "legacy plan with no per-WU checkboxes falls back to PHASES-phase-level "
+            "and reports deliverables_source). Without --plan, check 4 reads the "
+            "whole feature's PHASES.md. "
+            "Emits a JSON verdict (incl. diagnostic deliverables_source) and exits "
+            "0 on pass, 1 on first failing check."
         ),
     )
     parser.add_argument(
