@@ -765,3 +765,25 @@ Results saved to: docs/testing/mcp-tests/results/{scenario-name}-{YYYY-MM-DD}.md
 {If improvements found}: ✓ {N} improvement(s) vs prior run ({prior-date}).
 {If first run}: First run recorded.
 ```
+
+---
+
+## Step 7: Tear Down the Dev Server (MANDATORY — runs on PASS **or** FAIL)
+
+**ISSUE 4 (operator request, d8-effect-chains `/lazy-batch` run, 2026-06-14): the MCP-test agent must explicitly kill the dev server when finished.** A stray dev runtime was left running across runs. This teardown is UNCONDITIONAL — it runs whether validation passed, failed, was blocked, skipped, or deferred. Do it AFTER the sentinel + result file are written (so the kill never races the artifacts).
+
+**Who owns the kill depends on who booted the runtime — but a stray runtime is NEVER acceptable:**
+
+- **Standalone invocation (this skill booted the server in Step 2 — `server_was_running = false`):** YOU own the teardown. Run the full kill:
+
+  ```bash
+  npm run dev:kill
+  ```
+
+  `dev:kill` runs `scripts/kill-dev.js`, the ONLY reliable full teardown — it kills Vite (port 1420), the MCP server (port 3333), stale sidecar processes (named-pipe survivors that `npx kill-port` misses), and orphaned Tauri binaries. Do NOT rely on `npx kill-port 3333` alone for teardown — the sidecar survives it (see Step 2). The kill is fire-and-forget-safe (it's a short synchronous script, not a long background build) — run it in the foreground and confirm it returns.
+
+- **Orchestrator-managed runtime (lazy-pipeline / `--batch` — `server_was_running = true`, the orchestrator pre-booted in its Step 1d.0 `npm run dev:restart`):** the ORCHESTRATOR owns the runtime lifecycle across cycles, so do NOT kill it from inside the cycle subagent (that would tear down a runtime the next cycle may reuse). Instead, the orchestrator MUST tear it down at run boundary — `/lazy-batch` runs `npm run dev:kill` as part of its `--run-end` teardown (and on any clean terminal) so the dev runtime never leaks across runs. This skill's responsibility in the orchestrated case is to leave the runtime in the state the orchestrator handed it (running + MCP-ready), and to surface in its return one-liner if the runtime appears dead so the orchestrator can re-boot or tear down.
+
+- **Cloud (`/lazy-batch-cloud`):** N/A — the cloud variant defers `/mcp-test` entirely (writes `DEFERRED_NON_CLOUD.md`) and never boots a Tauri desktop runtime, so there is nothing to tear down.
+
+**Verify the kill landed (standalone path):** after `npm run dev:kill`, a `GET http://localhost:3333/health` MUST fail to connect (no 200). If port 3333 still answers, the kill did not complete — re-run `npm run dev:kill` and re-verify before returning. Never end the turn with a live dev runtime you booted.

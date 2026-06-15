@@ -358,6 +358,14 @@ For each work unit, document:
 - **Spec requirements:** Quote or reference the specific SPEC.md sections
 - **Batch:** Which parallel batch within this phase (1, 2, etc.)
 
+**PER-WU PROGRESS CHECKBOX (HARD — ISSUE 6, d8-effect-chains run 2026-06-14).** Every work unit in every generated plan part MUST have exactly one parseable progress checkbox of the form:
+
+```
+- [ ] WU-N — <short title>
+```
+
+where `N` is the work-unit number (stable within the part) and `<short title>` matches the WU's heading. Place these together in a `## Work Units` checklist near the top of the part body (a single flat list), in addition to the detailed per-WU documentation above. Rationale: `/execute-plan` resumes from the **first unchecked `- [ ] WU-N`** after a `BLOCKED.md`/`NEEDS_INPUT.md` halt or a compaction, and the verify-ledger / resume-granularity logic counts WU progress from these rows. A part whose ONLY checkboxes are MCP-reachability rows and generic Step-B review boxes (no `- [ ] WU-N`) leaves resume + `deliverables_done` BLIND to per-WU progress — exactly the d8-effect-chains part-1 defect a recovery had to patch by hand. These `- [ ] WU-N` rows are plan-body progress markers; they are NOT PHASES.md deliverable rows and NOT the gate-owned/runtime rows banned in Step 1c.5 (`/execute-plan` ticks them as it lands each WU). Do NOT omit them even for a single-WU part.
+
 **Anchor discipline (MANDATORY — every dependency that names an existing symbol or file):**
 Every phrase in a work unit's Implementation goal or Scope that uses "uses", "extends", "delegates to", "calls existing", "refactors", or "integrates with" an existing file/type/function MUST carry a `[VERIFY: <grep-or-path>]` annotation immediately after the cited name. The annotation is the exact shell command (or absolute path) that proves the symbol/file exists in the tree **today**. Examples:
 - `delegates to PatternStore.setPattern() [VERIFY: grep -r "fn setPattern" src/stores/]`

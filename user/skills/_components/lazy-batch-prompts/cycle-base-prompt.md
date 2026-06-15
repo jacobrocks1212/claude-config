@@ -159,6 +159,17 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
 
 <!-- @section skill-execute-plan pipelines=feature,bug modes=workstation,cloud skills=execute-plan,retro-feature -->
 /execute-plan (and retro-feature's inner execute-plan loop) — inline execution:
+  - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
+    run EXACTLY the plan file passed to you — never a sibling part, never "the part
+    that's actually ready." Check the dispatched part's `> **Entry criteria:**` /
+    `Plan series` "execute parts strictly in order" prerequisites FIRST. If a
+    prerequisite part is not `status: Complete`, STOP and write BLOCKED.md
+    (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part — do NOT
+    silently switch to it. (Live incident: dispatched on Sonnet for the mechanical
+    part-2, the subagent silently executed the complex part-1 instead, then died
+    resultless.) If the dispatched part's real work exceeds its declared
+    `complexity:` tier (e.g. complex work under a Sonnet dispatch), STOP with
+    BLOCKED.md `blocker_kind: model-tier-mismatch` rather than grinding it out.
   - TEST-FIRST PER BATCH (R4): the inline path collapses the test-agent/impl-agent
     split, so keep the discipline manually — write the failing tests FIRST,
     confirm they fail for the right reason, THEN implement until they pass. Edit

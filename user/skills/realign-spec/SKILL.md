@@ -219,6 +219,8 @@ Skill({ skill: "add-phase", args: "<phases-md> Corrective — Realign with upstr
 
 (`--batch` keeps the orchestrator-driven path free of interactive prompts; humans running `/realign-spec --apply` directly will get the same behavior, which is fine — the realign plan already authoritatively describes the desired phase.)
 
+**Prerequisite-ordering (ISSUE 1 — d8-effect-chains run 2026-06-14).** When the corrective phase is a **prerequisite** for an existing lower-numbered phase (it builds the foundation that existing phase documents/depends on), the realign-plan's "Proposed corrective phase" entry MUST state that dependency explicitly so `/add-phase` applies its PREREQUISITE-ORDERING RULE (Step 4: fractional-insert as `(M-1).5` or renumber) instead of appending at `highest + 1`. A prerequisite numbered AFTER its dependents inverts execution order under phase-number sort and oscillates the router — this is the exact d8-effect-chains failure (a corrective Phase 6 that was a prerequisite for the pre-existing Phase 5). Do NOT let the corrective phase land as the highest number when it must run first.
+
 If `<phases-md>` does not exist, that's a precondition error: `add-phase` requires an existing PHASES.md. In that case, skip the dispatch and instead record in the action report that the corrective phase needs to be added manually after `/spec-phases` produces PHASES.md.
 
 Track for the action report: whether /add-phase was dispatched, whether it wrote `<feature-dir>/NEEDS_INPUT.md` (orchestrator-relevant halt), the proposed phase title.

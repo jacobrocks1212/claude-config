@@ -73,6 +73,20 @@ The plan file's YAML frontmatter (per `~/.claude/skills/_components/plan-frontma
 
 The status field is flipped by THIS skill only — producers never write `Complete` or `In-progress`. See Steps 4e and 4f below for the transitions.
 
+### 1a.6a: EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — never silently switch parts)
+
+You execute **exactly the one plan file passed in `$ARGUMENTS`** — never a sibling part, never "the part that's actually ready." This is a HARD rule with no exceptions.
+
+**ISSUE 2 — live incident, d8-effect-chains `/lazy-batch` run (2026-06-14).** This skill was dispatched (on Sonnet, because the part was tagged `complexity: mechanical`) to execute **part-2**. Part-2's entry criterion was *"Part 1 complete"* — and Part 1 was NOT complete (a routing inversion, ISSUE 1, kept selecting part-2). Instead of surfacing the unmet criterion, the subagent **silently executed part-1** (Phase 6 — complex audio/IPC work), committed part-1's WU-1/WU-2 under the Sonnet model chosen for the *mechanical* part-2, then died waiting on a backgrounded build and returned resultless. Two faults: (i) a silent part-switch, and (ii) complex work run under the wrong model tier.
+
+**The contract:**
+
+1. **Check the dispatched part's entry criteria FIRST.** If the plan declares an `> **Entry criteria:**` block (or a `Plan series` preamble that says "Execute parts strictly in order" / "Entry criteria: Part K complete"), verify every prerequisite part/phase is actually complete before doing ANY work.
+   - A sibling part is "complete" iff its plan file's frontmatter is `status: Complete` (per `plan-frontmatter.md`). Do NOT infer completeness from PHASES.md checkboxes alone.
+2. **If a prerequisite is unmet → STOP and surface BLOCKED.** Do NOT execute a different part to "cope." Write `BLOCKED.md` (per `~/.claude/skills/_components/sentinel-frontmatter.md`) with `blocker_kind: prerequisite-part-incomplete`, naming the unmet prerequisite part/phase and this part's path, then return a clear blocked one-liner. In `--batch` mode this is the loud-failure backstop that lets the orchestrator re-route to the prerequisite part (ISSUE 1's routing fix is the real prevention; this is the safety net for when routing still hands you the wrong part).
+3. **Never execute work from a part other than the one in `$ARGUMENTS`.** If you believe a different part should run first, that is a routing decision for the orchestrator/state machine — surface it via BLOCKED.md, do not act on it yourself.
+4. **Model-tier integrity.** You run on the model the orchestrator chose for *this* part (from its `complexity:` tag). If the dispatched part turns out to require work beyond its declared tier — e.g. you were dispatched on Sonnet for a `mechanical` part but the actual work is complex/cross-boundary — STOP and surface it (BLOCKED.md `blocker_kind: model-tier-mismatch`) rather than grinding complex work under an under-powered model.
+
 ### 1a.6: CLOUD-SATURATION DECISION (mandatory before reporting "no work this cycle")
 
 Before this skill can report a no-op cycle ("nothing to execute, plan already done from this side"), it MUST perform the following decision. Failing to perform it is the documented cause of the `/lazy-batch[-cloud]` loop where `lazy-state.py` returns `Step 7a: execute plan` cycle after cycle but no progress lands.

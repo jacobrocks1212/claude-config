@@ -183,6 +183,15 @@ A new phase often rests on assumptions about how the *running* system behaves �
 
 Determine the next phase number (highest existing + 1, or fill a gap if prior phases were superseded and removed).
 
+**PREREQUISITE-ORDERING RULE (HARD — ISSUE 1, d8-effect-chains run 2026-06-14).** A corrective/prerequisite phase MUST NOT be numbered AFTER the phase(s) it must precede. Determine the dependency direction first: if the new phase is a **prerequisite** for an existing lower-numbered phase (it builds the foundation that the existing phase documents/depends on), appending it at `highest + 1` INVERTS execution order — the downstream `/write-plan` partitions by phase number and the state machine selects the lowest-phase plan part first, so the prerequisite (high number) routes AFTER its dependents (low number). This is exactly the d8-effect-chains failure: a corrective Phase 6 was a prerequisite for the pre-existing Phase 5 (Phase 5 documents the `.cab()`/`.reverb()` API that Phase 6 builds), and the router oscillated routing Phase 5's plan part before Phase 6's.
+
+When the new phase is a prerequisite for an existing phase **M**, pick ONE (in preference order):
+
+1. **Insert as a fractional phase before M** — number it `Phase (M-1).5` (e.g. `Phase 4.5` to precede `Phase 5`). `parse_phases` and the plan-frontmatter `phases:` field accept non-integer / leading-digit identifiers (`_plan_lowest_phase` extracts the leading digit run), so a fractional number sorts correctly before M. This is the lowest-churn option.
+2. **Renumber** — shift M and all subsequent phases up by one and insert the prerequisite at M's old number. Higher churn (every downstream `phases:` reference must move) but yields clean integer numbering.
+
+Either way, the authoritative signal is **execution order = ascending phase number** AND **`/write-plan` part series order** (the `-part-K` filename suffix, honored by `lazy_core._plan_sort_key`). Do NOT rely on a prose "Prerequisites:" note alone to fix ordering — the state machine sorts by number, not by reading prose. If you genuinely cannot avoid a higher-numbered prerequisite (rare), the corrective phase's `/write-plan` part MUST be authored as `-part-1` of the series so the part-series sort overrides the phase-number inversion (this is the routing backstop, but renumber/fractional-insert is preferred — fix the source, not the symptom).
+
 Write the phase using the established PHASES.md format:
 
 ```markdown
