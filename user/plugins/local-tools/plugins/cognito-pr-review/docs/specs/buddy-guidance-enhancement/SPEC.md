@@ -2,7 +2,7 @@
 
 > Restructure how `review-pr-buddy` partitions a PR and guides an expert reviewer through it, grounded in research-backed best practices for code review and expert cognition — defeating anchoring/automation bias, respecting empirical cognitive ceilings, and capturing severity-weighted judgments.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-06-15
 
