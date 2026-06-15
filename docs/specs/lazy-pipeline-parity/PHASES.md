@@ -55,7 +55,7 @@ grep -n "dev:kill"         user/skills/lazy-bug-batch/SKILL.md
 **Scope:** Author the machine-readable parity manifest, build the audit engine (`lazy_parity_audit.py`) implementing checks C1–C6, and write the test suite (`test_lazy_parity.py`) — fixture-based engine tests plus a live zero-drift assertion for the fully-audited `lazy-batch`→`lazy-bug-batch` pair. Phase 2 transitively re-verifies Phase 1 (the live pair must be in-sync for the zero-drift assertion to pass).
 
 **Deliverables:**
-- [ ] **`user/scripts/lazy-parity-manifest.json`** — the per-pair divergence registry. Must include:
+- [x] **`user/scripts/lazy-parity-manifest.json`** — the per-pair divergence registry. Must include:
   - `mechanic_sets` keyed by canonical root (`lazy-batch`, `lazy`, `lazy-status`), each containing the full Tier-2 mechanic catalog with `id` and `assert` predicates (regex_present pattern). Seed from the SPEC §Technical Design §1: `cycle-dispatch-by-ref`, `meta-dispatch-by-ref`, `run-end-dev-kill`, `two-gate-terminal`, `output-contract-voice`, `completeness-policy`, `stop-authorization-hc10` for `lazy-batch`; `mark-terminal-two-gate`, `one-skill-per-invocation`, `preflight-first`, `completeness-policy` for `lazy`; `read-only-no-mutation`, `runs-state-script` for `lazy-status`.
   - The **fully-populated** `lazy-batch`→`lazy-bug-batch` pair entry: `canonical`, `derived`, `axis`, `flavor`, `mechanic_set`, `token_substitutions` (lazy-state.py→bug-state.py, COMPLETED.md→FIXED.md, `__mark_complete__`→`__mark_fixed__`), `headings[]` (one entry per canonical `## Step`/`### sub-step` heading with `coverage` ∈ {restated, inherited, divergence} and `reason` where coverage=divergence), and `mechanic_overrides: []` (empty — both mechanics apply to this pair). Divergence entries must include Step 0.52 (validation-readiness pre-screen) and Step 4 (Research Halt / Gemini) with authored reasons per the SPEC audit findings.
   - Stub entries (empty `headings[]`) for the four remaining pairs — filled in Phase 3.
@@ -91,6 +91,15 @@ grep -n "dev:kill"         user/skills/lazy-bug-batch/SKILL.md
 - The manifest's stub entries for the four remaining pairs are the Phase 3 input surface. Phase 3 populates each stub with full `headings[]` + `mechanic_overrides` + divergences after running a full audit.
 - The engine's C3 check is exactly what would have caught Phase 1's two gaps — the Phase 2 C3-fixture test simulates both (a useful regression anchor).
 - Keep `lazy_parity_audit.py` importable (not `__main__`-only) so `test_lazy_parity.py` drives it without subprocess invocation (false-green smell: subprocess tests with `execSync`/`subprocess.run` mask import errors and swallow assertion failures).
+
+#### Implementation Notes
+
+**2026-06-15 — Phase 2 Batch 1 (WU-1: manifest) implemented.**
+- **Built:** `user/scripts/lazy-parity-manifest.json` (274 ln), dispatched to one Sonnet impl agent (non-TDD data file — exercised by WU-2's live assertion).
+- **`mechanic_sets`:** three roots — `lazy-batch` (7 mechanics), `lazy` (4), `lazy-status` (2) — patterns verbatim from SPEC §Technical Design §1. All 7 `lazy-batch` patterns confirmed to resolve in the derived `lazy-bug-batch/SKILL.md` (incl. `two-gate-terminal` `MCP-coverage audit.*completion-integrity` at L3/L60, and the two Phase-1-closed mechanics `cycle_prompt_ref` / `dev:kill`).
+- **`lazy-batch`→`lazy-bug-batch` pair fully populated:** 39 `headings[]` entries (one per canonical `##`/`###` heading — count matches `grep -cE "^#{2,3} "` = 39). 30 restated (each with a token-subbed `evidence` regex verified to grep in the derived file) + 9 divergence (each with a `reason`, no `evidence`). The 9 divergences are the Gemini-research path (Step 0.5 ingest, Step 4 Research Halt + its 5 sub-headings, Step 5 in-session resume) and Step 0.52 validation-readiness pre-screen — the two SPEC-mandated divergences (Step 0.52, Step 4) carry `doc_anchor`s. `token_substitutions` ordered `lazy-state.py`→`bug-state.py` BEFORE `lazy-batch`→`lazy-bug-batch`; `mechanic_overrides: []` (both mechanics apply post-Phase-1).
+- **4 stub pairs** present (`lazy-batch-cloud`, `lazy-bug`, `lazy-cloud`, `lazy-bug-status`) with correct `canonical`/`derived`/`axis`/`flavor`/`mechanic_set` and empty `headings[]` — Phase 3 (Part 3) input surface.
+- **Review verdict:** PASS. Ground-truth verified: yes (status / wc=274 / JSON 5-pairs-39-headings-9-divergences / canonical heading count all re-run and matched). Definitive validation deferred to WU-2's live zero-drift assertion.
 
 ---
 
