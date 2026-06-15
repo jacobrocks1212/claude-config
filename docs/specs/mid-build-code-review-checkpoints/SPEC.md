@@ -2,7 +2,7 @@
 
 > During `/execute-plan` (Cognito Forms projection only), emit a concise non-blocking Why↔How explanation after each committed batch so the user can steer mid-run without ever pausing execution.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-06-15
 
