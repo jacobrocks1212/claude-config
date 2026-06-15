@@ -11,8 +11,8 @@
 **Scope:** Two targeted prose edits to `user/skills/lazy-bug-batch/SKILL.md` that close the two runtime-affecting gaps identified by the full `lazy-batch`→`lazy-bug-batch` audit. No new files, no new infra. Independently shippable — the edits restore behavioral parity in the bug pipeline immediately, and Phase 2's live zero-drift assertion depends on these gaps being closed.
 
 **Deliverables:**
-- [ ] **F2a cycle-dispatch template fix** (~line 495 of `lazy-bug-batch/SKILL.md`): change the cycle-dispatch `prompt:` line from `prompt: <the probe's cycle_prompt, verbatim>` to `prompt: <the probe's cycle_prompt_ref if present, otherwise cycle_prompt verbatim>`, mirroring the wording already in `user/skills/lazy-batch/SKILL.md` (~line 494). Eliminates the byte-exact-retype transcription-slip class for bug-pipeline cycle dispatches.
-- [ ] **`dev:kill` run-end teardown in §1c.6**: add a mandatory `npm run dev:kill` on every `--run-end`/terminal path — placed AFTER `bug-state.py --run-end`, BEFORE the `PushNotification` call — matching the structure in `lazy-batch` §1c.6. Annotate as workstation-only / no-op-safe (mirrors the canonical note). Prevents the orchestrator-owned runtime (booted in bug Step 1d.0 for mcp-test cycles) from leaking after run-end.
+- [x] **F2a cycle-dispatch template fix** (~line 495 of `lazy-bug-batch/SKILL.md`): change the cycle-dispatch `prompt:` line from `prompt: <the probe's cycle_prompt, verbatim>` to `prompt: <the probe's cycle_prompt_ref if present, otherwise cycle_prompt verbatim>`, mirroring the wording already in `user/skills/lazy-batch/SKILL.md` (~line 494). Eliminates the byte-exact-retype transcription-slip class for bug-pipeline cycle dispatches.
+- [x] **`dev:kill` run-end teardown in §1c.6**: add a mandatory `npm run dev:kill` on every `--run-end`/terminal path — placed AFTER `bug-state.py --run-end`, BEFORE the `PushNotification` call — matching the structure in `lazy-batch` §1c.6. Annotate as workstation-only / no-op-safe (mirrors the canonical note). Prevents the orchestrator-owned runtime (booted in bug Step 1d.0 for mcp-test cycles) from leaking after run-end.
 
 **Minimum Verifiable Behavior:** Both of the following greps return matches in `lazy-bug-batch/SKILL.md` (zero output = still broken):
 ```
@@ -21,11 +21,23 @@ grep -n "dev:kill"         user/skills/lazy-bug-batch/SKILL.md
 ```
 
 **Verification** *(grep / lint — run by the implementer):*
-- [ ] `grep -n "cycle_prompt_ref" user/skills/lazy-bug-batch/SKILL.md` — must match ≥1 line in the cycle-dispatch block (~line 495).
-- [ ] `grep -n "dev:kill" user/skills/lazy-bug-batch/SKILL.md` — must match ≥1 line in the §1c.6 run-end block.
-- [ ] `python3 user/scripts/lint-skills.py --check-projected` — exits 0 (no regressions to other skills from the edits).
+- [x] `grep -n "cycle_prompt_ref" user/skills/lazy-bug-batch/SKILL.md` — must match ≥1 line in the cycle-dispatch block (~line 495).
+- [x] `grep -n "dev:kill" user/skills/lazy-bug-batch/SKILL.md` — must match ≥1 line in the §1c.6 run-end block.
+- [x] `python3 user/scripts/lint-skills.py --check-projected` — exits 0 (no regressions to other skills from the edits).
 
 **Prerequisites:** None.
+
+#### Implementation Notes
+
+**2026-06-15 — Phase 1 implemented (lazy-pipeline-parity Part 1 of 4).**
+- **Work completed:** Two prose-parity edits to `user/skills/lazy-bug-batch/SKILL.md`, dispatched to one Sonnet impl agent (non-TDD — skill-markdown prose, no executable behavior).
+- **F2a cycle-dispatch by-reference:** updated BOTH the consume-and-dispatch prose (now line **425**: "prefer the probe's `cycle_prompt_ref` if present, otherwise the `cycle_prompt` verbatim") AND the Dispatch code block (now line **504**: `prompt: <the probe's cycle_prompt_ref if present, otherwise cycle_prompt verbatim>`). The code-block line mirrors canonical `lazy-batch/SKILL.md` line 579 verbatim. (PHASES cited "~line 495"; actual landed location 504/425 — the cited line was advisory.)
+- **`dev:kill` run-end teardown:** inserted a new paragraph in §1c.6 item 2 (halt), AFTER the `bug-state.py --run-end` mandatory paragraph and BEFORE "3. flush" — landing the `npm run dev:kill` fenced block (now line **315**) AFTER `--run-end` and BEFORE the `PushNotification`, exactly per spec. Mirrors canonical `lazy-batch` §1c.6 incl. the ISSUE 4 / d8-effect-chains provenance, the workstation-only/no-op-safe annotation, and the cloud-N/A note. `dev:kill` was 0 matches before this change (confirms genuinely new work).
+- **Canonical anchors mirrored:** `lazy-batch/SKILL.md` line 579 (cycle dispatch by-ref) and §1c.6 lines 407–413 (dev:kill teardown). The already-shipped line-84 `dispatch_prompt_ref` meta-dispatch fallback was the pattern reference for the cycle-prompt analog.
+- **Files modified:** `user/skills/lazy-bug-batch/SKILL.md` (875 ln after edit, +12/-3).
+- **Gate results:** `python3 user/scripts/lint-skills.py --check-projected` → EXIT 0 (no projection regressions); both MVB greps return matches at the correct structural locations. MCP Integration Test: SKIPPED — PHASES declares `MCP runtime: not-required` (claude-config harness tooling, no Tauri/MCP server).
+- **Ground-truth verification:** orchestrator independently re-ran `git status --short`, `wc -l`, both greps, and the lint — all matched the subagent's `GROUND-TRUTH OUTPUT` block exactly.
+- **Review verdict:** PASS. Ground-truth verified: yes. Both edits mirror canonical wording; no unrelated prose touched; propagation/mount-site checks N/A (pure prose doc).
 
 **Files likely modified / created:**
 - `user/skills/lazy-bug-batch/SKILL.md` — two prose edits (cycle-dispatch template, §1c.6 run-end teardown).

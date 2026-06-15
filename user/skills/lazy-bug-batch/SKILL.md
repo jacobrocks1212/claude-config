@@ -309,6 +309,14 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
 
    **`--run-end` is MANDATORY before EVERY terminal/halt PushNotification.** On every path listed above, call `python3 ~/.claude/scripts/bug-state.py --run-end` BEFORE the PushNotification fires. `--run-end` deletes the run marker AND the prompt registry (all run-scoped enforcement state). A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades. The call is idempotent — if the marker is already absent, `--run-end` exits cleanly.
 
+   **Dev-runtime teardown is MANDATORY on run-end (mirrors `/lazy-batch` §1c.6 / ISSUE 4 — d8-effect-chains run, 2026-06-14).** The orchestrator OWNS the dev runtime it pre-booted in Step 1d.0 (`npm run dev:restart`) for bug `mcp-test` cycles, so it MUST tear it down when the run ends — otherwise the runtime (Vite 1420 + MCP 3333 + sidecar + Tauri binary) leaks across runs. On EVERY terminal/halt path, AFTER `bug-state.py --run-end` and BEFORE the PushNotification, run the full kill in the orchestrator session:
+
+   ```bash
+   npm run dev:kill   # workstation only; no-op-safe if nothing is running
+   ```
+
+   `dev:kill` (`scripts/kill-dev.js`) is the only reliable full teardown — it kills Vite, the MCP server, named-pipe-surviving sidecar processes, and orphaned Tauri binaries. Run it UNCONDITIONALLY on workstation runs (it is safe even if the runtime was never booted — e.g. an all-`not-required` queue). It is N/A for cloud bug runs (no desktop runtime is ever booted). The mcp-test cycle subagent does NOT kill the orchestrator-owned runtime mid-run (it may be reused next cycle); teardown is the orchestrator's responsibility at run boundary — see `~/.claude/skills/lazy-batch/SKILL.md` §1c.6 and mcp-test SKILL.md Step 7.
+
 3. **flush** — message: `"lazy-bug-batch flush — {N} parked decision(s) ready for your input"`.
 4. **run-end** — every run termination.
 
@@ -414,8 +422,9 @@ fall through to Step 1d.
 
 If Step 1c.5 did not handle this cycle, build the dispatch by CONSUMING the script-assembled
 prompt. Composition is now `python3 ~/.claude/scripts/bug-state.py … --repeat-count --emit-prompt`
-(the bug-pipeline mirror of lazy-batch's Step 1a probe) → use the probe's `cycle_prompt` verbatim
-as the Agent `prompt:` and `cycle_model` as the Agent `model:`. See
+(the bug-pipeline mirror of lazy-batch's Step 1a probe) → prefer the probe's `cycle_prompt_ref` if
+present, otherwise the `cycle_prompt` verbatim, as the Agent `prompt:`, and `cycle_model` as the
+Agent `model:`. See
 `~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the shared consume-and-dispatch rules,
 in-session loop-guard cross-check, and the `cycle_prompt`-null/refused fallback — they apply
 identically to the bug pipeline.
@@ -492,7 +501,7 @@ Agent({
   description: "lazy-bug-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {bug_name}",
   subagent_type: "general-purpose",
   model: <the probe's cycle_model>,
-  prompt: <the probe's cycle_prompt, verbatim>
+  prompt: <the probe's cycle_prompt_ref if present, otherwise cycle_prompt verbatim>
 })
 ```
 
