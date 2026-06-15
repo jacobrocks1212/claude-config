@@ -116,7 +116,7 @@ Each phase has exactly one work unit (one file). The three files have no overlap
 ## Work Units
 
 - [x] WU-1 — Restructure `journey-planner.md` partitioning + journey template (Phase 1)
-- [ ] WU-2 — Rewrite `review-pr-buddy.md` two-pass loop + schema + mapping (Phase 2)
+- [x] WU-2 — Rewrite `review-pr-buddy.md` two-pass loop + schema + mapping (Phase 2)
 - [ ] WU-3 — Update `README.md` Buddy section + scaffold `VALIDATION.md` (Phase 3)
 
 ---

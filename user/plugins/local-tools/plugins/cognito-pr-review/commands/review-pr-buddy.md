@@ -19,8 +19,8 @@ An interactive, senior-architect pair-review command. Unlike the autonomous `/re
 Three phases:
 
 1. **Phase 0 — Non-interactive prep.** Delegates entirely to `commands/review-pr.md` Steps 1–8. Produces the journey file and `{cacheDir}/processed-findings.json` (including reuse findings) without involving you.
-2. **Phase 1 — Interactive walk.** Steps through every `### Step N: {Group}` chunk in the journey file's `## Manual Review Guide`, teaching you what changed, surfacing findings from `processed-findings.json`, asking Socratic questions, and capturing your verdict on each finding via `AskUserQuestion`. Progress is checkpointed continuously to `{cacheDir}/buddy-session.json`.
-3. **Phase 2 — Curated synthesis.** Writes the final `PR-{id}.md` review in synthesizer-v2 format containing _only_ the findings you kept, your own observations, and your will-comment notes. The autonomous synthesizer agent is NOT invoked — the interactive session IS the synthesis.
+2. **Phase 1 — Interactive walk.** Steps through every `### Step N: {Group}` chunk in the journey file's `## Manual Review Guide` using a two-pass loop: first an independent read (orientation + reviewer reasoning before pre-computed findings are revealed), then a reconciliation pass against tool findings. Captures a severity disposition (Blocking / Important / Suggestion / Dismiss) for every finding — tool-surfaced and reviewer-authored — via `AskUserQuestion`. Progress is checkpointed continuously to `{cacheDir}/buddy-session.json`.
+3. **Phase 2 — Curated synthesis.** Writes the final `PR-{id}.md` review in synthesizer-v2 format containing _only_ the findings you kept (with their severity and optional comment notes). The autonomous synthesizer agent is NOT invoked — the interactive session IS the synthesis.
 
 ---
 
@@ -65,7 +65,7 @@ Initialize Task-tool tracking for the three high-level phases:
 
 ### Setup
 
-Read the journey file (`<cogDocsItemDir>/PR-{pr_id}-journey.md` in PR mode) and locate the `## Manual Review Guide` section. Extract every `### Step N: {Group Name}` chunk — each chunk has `**Files:**`, `**What to look for:**`, and `**Key questions:**`.
+Read the journey file (`<cogDocsItemDir>/PR-{pr_id}-journey.md` in PR mode) and locate the `## Manual Review Guide` section. Extract every `### Step N: {Group Name}` chunk — each chunk has `**Files:**`, `**Perspective:**`, `**Predictive questions:**`, `**Complexity:**`, and `**loc_estimate:**`.
 
 Read `{cacheDir}/processed-findings.json` into memory. Findings carry a `file` field; a finding belongs to a chunk if its `file` appears in that chunk's `**Files:**` list.
 
@@ -75,46 +75,54 @@ Initialize `{cacheDir}/buddy-session.json` (see schema below). If the file alrea
 
 For each chunk, in order, run these six steps:
 
-#### 1. Teach
+#### 1. Orient
 
-Provide a senior-architect explanation of what changed in this chunk, why it matters relative to the journey Objective, and how the author approached it. Ground the explanation in the cached diff and journey context — do NOT dump the raw diff at the reviewer. Aim for the tone of a peer explaining it over the shoulder: concise, insightful, contextual.
+State a one-line objective for this chunk. If the chunk's `**Complexity:**` is `non-trivial` (or missing/ambiguous — treat as `non-trivial`), additionally give a senior-architect teach of what changed and why it matters relative to the journey Objective: concise, insightful, grounded in the cached diff and journey context — not a dump of the raw diff. For `trivial` chunks, the one-liner is the whole orientation. Deep teaching beyond the standard orient is available on explicit reviewer request ("explain this in depth").
 
-#### 2. Surface Findings
+#### 2. Independent Read — Pass 1
 
-From `processed-findings.json`, collect findings whose `file` is in this chunk's `**Files:**` list. Present them grouped by source:
+Present the chunk's implementation and its bundled tests. Pose the chunk's `**Perspective:**` persona and `**Predictive questions:**` verbatim. Invite the reviewer to read cold and record their own observations.
+
+**Pre-computed tool findings are NOT shown in this pass.** This is the anti-anchoring step — the reviewer reasons independently before seeing what the pipeline flagged.
+
+_AI-role framing:_ The buddy's role in this pass is facilitation — orientation, persona framing, and predictive questioning. The reviewer is the sole arbiter of business-logic correctness and must not defer to the tool on logic. The tool cannot reason about domain intent.
+
+Use `AskUserQuestion` to collect the reviewer's Pass-1 observations (file, optional line, note) before proceeding to Pass 2. Record these in `pass1_observations[]` in the chunk's session record.
+
+#### 3. Reconcile — Pass 2
+
+Reveal the chunk's pre-computed findings from `processed-findings.json` (investigation, sweep, reuse, intrafile) as a reconciliation against the reviewer's Pass-1 take: where they overlap, where the tool flagged something the reviewer didn't catch, and that the tool may have missed domain-intent issues the reviewer caught.
+
+Present findings grouped by source:
 
 - **Investigation findings** (`source:"investigation"`) — bugs, edge cases, correctness issues
 - **Sweep rule hits** (`source:"sweep"`) — pattern violations, rule matches
 - **Reuse & duplication flags** (`source:"reuse"`) — verdict (e.g. `refactor`, `extend`, `wrap`, `acceptable-new`), existing-system candidate, suggested action
 - **Intra-file reuse & consistency** (`source:"intrafile"`) — verdict (`refactor`/`reuse` for in-file duplication, `inconsistent` for surrounding-code divergence), in-file `file:line`/symbol candidate, suggested action
 
-Highlight important and blocking findings. Do not bury them in a flat list.
+Highlight blocking and important findings. Do not bury them in a flat list. If no pre-computed findings exist, state: "No pre-computed findings for this group."
 
-If no findings exist for this chunk, state that explicitly: "No pre-computed findings for this group."
+_AI-role framing:_ These are mechanical-triage and cross-file-dependency aids — not the arbiter of business-logic correctness. The reviewer's Pass-1 observations take precedence on domain intent.
 
-#### 3. Socratic Prompt
+#### 4. Disposition
 
-Pose the chunk's journey `**Key questions:**` verbatim, then add 1–2 additional questions of your own as a senior architect. Invite the reviewer to reason through the chunk before reaching their verdict. Do not answer the questions — prompt for the reviewer's thinking.
-
-#### 4. Capture Verdict
-
-Use `AskUserQuestion` to ask the reviewer to disposition each surfaced finding. Present the options clearly:
+Use `AskUserQuestion` to ask the reviewer to disposition every finding — tool-surfaced (Pass 2) AND reviewer-authored Pass-1 observations. Present the severity options clearly:
 
 ```
-For each finding, choose:
-  keep          — include in the final review as-is
-  dismiss       — drop it (optional: add a note explaining why)
-  will-comment  — include in final review as a PR comment note
-  add-own       — skip this finding; I have my own observation to record instead
+For each finding, assign a severity:
+  Blocking    — critical logic / security / data-corruption / requirement violation
+  Important   — architectural degradation, missing edge case, significant perf issue
+  Suggestion  — style / nit / optional refactor
+  Dismiss     — drop this finding (optional note explaining why)
 ```
 
-If there are no pre-computed findings for this chunk, use `AskUserQuestion` to ask whether the reviewer wants to add their own observation before continuing.
+Any non-dismissed finding may carry an optional free-text comment note. Prompt for it after the severity choice.
 
-When the reviewer uses `add-own`, prompt for: file path, optional line number, and their observation text.
+Reviewer-authored Pass-1 observations become severity-tagged findings with `source: "reviewer"`. If there are no tool findings and the reviewer recorded no Pass-1 observations, use `AskUserQuestion` to ask whether they want to add an observation before moving on.
 
 #### 5. Checkpoint
 
-Write (or update) `{cacheDir}/buddy-session.json` with this chunk's completed dispositions and status `"done"`. See schema below.
+Write (or update) `{cacheDir}/buddy-session.json` with this chunk's completed `pass1_observations`, `dispositions`, and status `"done"`. See schema below.
 
 #### 6. Advance
 
@@ -133,7 +141,7 @@ At any point in the walk, the reviewer may:
 On session start, before looping, check whether `{cacheDir}/buddy-session.json` already exists. If it does:
 
 1. Read it and find the first chunk whose `"status"` is not `"done"`.
-2. Resume the walk from that chunk — do not re-run completed chunks.
+2. Resume the two-pass loop from that chunk — do not re-run completed chunks.
 3. Announce: "Resuming buddy session at chunk {n} of {total}: '{group name}'."
 
 If all chunks are `"done"`, skip to Phase 2.
@@ -150,23 +158,25 @@ If all chunks are `"done"`, skip to Phase 2.
 	"chunks": [
 		{
 			"index": 0,
-			"group": "<journey step name>",
+			"group": "<behavioral thread name>",
+			"complexity": "trivial|non-trivial",
+			"loc_estimate": 0,
 			"status": "pending|in-progress|done",
+			"pass1_observations": [
+				{ "file": "<path>", "line": 0, "note": "<reviewer's independent observation>" }
+			],
 			"dispositions": [
 				{
 					"finding_ref": "<file:line or id>",
-					"verdict": "keep|dismiss|will-comment|add-own",
-					"note": "<optional>"
+					"source": "investigation|sweep|reuse|intrafile|reviewer",
+					"severity": "blocking|important|suggestion|dismiss",
+					"note": "<optional comment text>"
 				}
 			]
 		}
 	],
 	"added_observations": [
-		{
-			"file": "<file path>",
-			"line": 0,
-			"note": "<reviewer's own observation>"
-		}
+		{ "file": "<file path>", "line": 0, "note": "<reviewer's own observation>" }
 	]
 }
 ```
@@ -183,10 +193,14 @@ When all chunks are complete (all `"status": "done"`), update the Task tracker: 
 
 From `buddy-session.json`:
 
-- **Kept findings** (`verdict: "keep"`) — include in the final review
-- **Will-comment findings** (`verdict: "will-comment"`) — include in the final review with a "Comment" label
-- **Add-own observations** from `added_observations[]` — include as reviewer-authored findings
-- **Dismissed findings** (`verdict: "dismiss"`) — EXCLUDED from the final review
+Map severity dispositions to synthesizer-v2 output sections:
+
+- **Blocking** (`severity: "blocking"`) — include in `## Critical Findings` (for `source:"investigation"` findings) or `### Important` subsections (for `source:"sweep"`, `source:"reuse"`, `source:"intrafile"` findings)
+- **Important** (`severity: "important"`) — include in the appropriate `### Important` subsections
+- **Suggestion** (`severity: "suggestion"`) — include in the existing `### Minor` (nit) subsections — never introduce a new suggestion-level heading; map these into the Minor tier only
+- **Dismiss** (`severity: "dismiss"`) — EXCLUDED from the final review
+
+Reviewer-authored findings (`source: "reviewer"`) from `pass1_observations[]` are included per their severity disposition. A non-dismissed finding's optional `note` is carried as its comment text.
 
 Do NOT invoke the `synthesizer-v2` agent. The interactive session IS the synthesis step. You (the orchestrating agent) write the review directly from the curated content above.
 
@@ -223,7 +237,7 @@ Read `{cacheDir}/pr-context.json` for the `cogDocsItemDir` field (always set in 
 
 Mirror the sentinel behavior from `commands/review-pr.md` Step 12.6 exactly.
 
-If `cogDocsItemDir` is non-null, write `<cogDocsItemDir>/REVIEWED.md` with YAML frontmatter carrying PR identity, today's date, and the finding counts from the curated review (total kept + add-own, per-tier counts from the synthesized sections). Follow the frontmatter with a one-line human-readable body.
+If `cogDocsItemDir` is non-null, write `<cogDocsItemDir>/REVIEWED.md` with YAML frontmatter carrying PR identity, today's date, and the finding counts from the curated review. Derive counts from the severity tally: `critical` = count of `blocking` dispositions, `important` = count of `important` dispositions, `minor` = count of `suggestion` dispositions. `findings_total` = total non-dismissed findings (including reviewer-authored). Follow the frontmatter with a one-line human-readable body.
 
 Use the same template as Step 12.6:
 
@@ -259,7 +273,7 @@ Update the Task tracker: Phase 2 complete.
 Report to the reviewer:
 - Review artifact path
 - Journey file path
-- Finding counts: kept / dismissed / add-own / will-comment
+- Finding counts: blocking / important / suggestion / dismissed (including reviewer-authored)
 - REVIEWED.md status (written / skipped / failed)
 
 ---
