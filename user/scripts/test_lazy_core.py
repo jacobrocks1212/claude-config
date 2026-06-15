@@ -1180,6 +1180,171 @@ def test_plan_phase_set_alpha_entries_skipped():
 
 
 # ---------------------------------------------------------------------------
+# Tests: _plan_series_index / _plan_sort_key / find_implementation_plans ordering
+# ISSUE 1 (d8-effect-chains live /lazy-batch run, 2026-06-14) — a corrective Phase 6
+# (part-1, prerequisite) was numbered HIGHER than the Phase 5 it must precede
+# (part-2/part-3). Phase-number sort inverted execution order; the ``-part-K``
+# series index must take precedence so part-1 routes before part-2.
+# ---------------------------------------------------------------------------
+
+def test_plan_series_index_from_filename():
+    """A ``...-part-K.md`` filename yields series index K; no suffix → None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        p1 = d / "all-phases-effect-chains-part-1.md"
+        p2 = d / "all-phases-effect-chains-part-2.md"
+        plain = d / "all-phases-effect-chains.md"
+        for p in (p1, p2, plain):
+            p.write_text("---\nkind: implementation-plan\n---\n", encoding="utf-8")
+        assert lazy_core._plan_series_index(p1) == 1
+        assert lazy_core._plan_series_index(p2) == 2
+        assert lazy_core._plan_series_index(plain) is None
+
+
+def test_plan_series_index_frontmatter_override():
+    """An explicit ``series_index:`` frontmatter field wins over the filename."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Filename says part-2 but frontmatter says 1 → frontmatter wins.
+        p = Path(td) / "weird-name-part-2.md"
+        p.write_text(
+            "---\nkind: implementation-plan\nseries_index: 1\n---\n",
+            encoding="utf-8",
+        )
+        assert lazy_core._plan_series_index(p) == 1
+
+
+def test_plan_sort_key_series_beats_phase():
+    """ISSUE 1 core: part-1 (phases [6]) sorts BEFORE part-2 (phases [5]).
+
+    Under the old _plan_lowest_phase sort, part-2 (Phase 5) sorted first — the
+    d8-effect-chains inversion. _plan_sort_key puts series_index first so the
+    prerequisite part-1 wins regardless of its higher phase number.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        part1 = d / "all-phases-fx-part-1.md"   # Phase 6 (prerequisite)
+        part2 = d / "all-phases-fx-part-2.md"   # Phase 5 (depends on part-1)
+        part1.write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [6]\n---\n",
+            encoding="utf-8",
+        )
+        part2.write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [5]\n---\n",
+            encoding="utf-8",
+        )
+        k1 = lazy_core._plan_sort_key(part1)
+        k2 = lazy_core._plan_sort_key(part2)
+        assert k1 < k2, (
+            f"part-1 (Phase 6 prerequisite) must sort before part-2 (Phase 5): "
+            f"k1={k1} k2={k2}"
+        )
+
+
+def test_find_implementation_plans_part_series_order():
+    """find_implementation_plans returns part-1 first even when part-1 has a HIGHER
+    phase number than part-2 (the d8-effect-chains corrective-Phase-6 inversion).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        plans = spec_dir / "plans"
+        plans.mkdir()
+        # part-1 = Phase 6 (prerequisite), part-2 = Phase 5, part-3 = Phase 5.
+        (plans / "all-phases-fx-part-1.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [6]\n---\n",
+            encoding="utf-8",
+        )
+        (plans / "all-phases-fx-part-2.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [5]\n---\n",
+            encoding="utf-8",
+        )
+        (plans / "all-phases-fx-part-3.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [5]\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.find_implementation_plans(spec_dir)
+        names = [p.name for p in result]
+        assert names == [
+            "all-phases-fx-part-1.md",
+            "all-phases-fx-part-2.md",
+            "all-phases-fx-part-3.md",
+        ], f"part series must route part-1 → part-2 → part-3 in order, got {names}"
+
+
+def test_find_implementation_plans_non_series_phase_order_preserved():
+    """Non-series plans (no -part-K suffix) keep the prior lowest-phase ordering."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        plans = spec_dir / "plans"
+        plans.mkdir()
+        (plans / "phase-3-foo.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [3]\n---\n",
+            encoding="utf-8",
+        )
+        (plans / "phase-1-bar.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [1]\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.find_implementation_plans(spec_dir)
+        names = [p.name for p in result]
+        assert names == ["phase-1-bar.md", "phase-3-foo.md"], (
+            f"non-series plans must keep lowest-phase order, got {names}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: load_context_json — ISSUE 3 robust --context channel (d8-effect-chains)
+# ---------------------------------------------------------------------------
+
+def test_load_context_json_valid_long_value():
+    """A long failure_summary with commas/colons/parens/newlines round-trips."""
+    _guard()
+    long_summary = (
+        "Execute-plan deviated: part-2 (phases:[5], complexity:mechanical) was "
+        "dispatched, but its entry criteria (Part 1 complete) were unmet; the "
+        "subagent silently executed part-1 (Phase 6, complex audio/IPC), committed "
+        "WU-1/WU-2, then died waiting on a backgrounded build (returned resultless). "
+        "Faults: (i) silent part-switch; (ii) complex work under sonnet.\n"
+        "Next: route part-1 first, surface BLOCKED on unmet entry criterion."
+    ) * 3  # ~1500+ chars
+    payload = json.dumps({"failure_summary": long_summary, "item_id": "d8-effect-chains"})
+    result = lazy_core.load_context_json(payload)
+    assert result["failure_summary"] == long_summary, "long value must round-trip intact"
+    assert result["item_id"] == "d8-effect-chains"
+
+
+def test_load_context_json_rejects_non_object():
+    """A JSON array/string top level → ValueError (caught as structured error)."""
+    _guard()
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        lazy_core.load_context_json('["not", "an", "object"]')
+    with _pytest.raises(ValueError):
+        lazy_core.load_context_json('"a bare string"')
+
+
+def test_load_context_json_rejects_malformed():
+    """Invalid JSON → ValueError, never a silent empty dict."""
+    _guard()
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        lazy_core.load_context_json('{not valid json,,,}')
+
+
+def test_load_context_json_coerces_values_to_str():
+    """Non-string values are stringified; None → empty string."""
+    _guard()
+    result = lazy_core.load_context_json('{"n": 42, "b": true, "empty": null}')
+    assert result == {"n": "42", "b": "True", "empty": ""}, (
+        f"values must coerce to str (None→''), got {result}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: plan_complexity — Phase 9 per-part complexity tag (lazy-validation-readiness)
 #
 # Mirrors Phase 8's phase_kind parse: a per-plan-part frontmatter field
@@ -8980,6 +9145,74 @@ def test_emit_dispatch_hardening_no_longer_acks():
             _clear_state_dir()
 
 
+def test_emit_dispatch_context_file_long_value():
+    """ISSUE 3 (d8-effect-chains live run): a long failure_summary with
+    commas/colons/parens/newlines supplied via --context-file produces VALID JSON
+    with all fields bound — never the all-None non-JSON failure the live run hit
+    with an inline --context value.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    keys = _dispatch_requires("recovery")
+    long_summary = (
+        "Execute-plan deviated: part-2 (phases:[5], complexity:mechanical) was "
+        "dispatched, but its entry criteria (Part 1 complete) were unmet; the "
+        "subagent silently executed part-1 (Phase 6, complex audio/IPC), committed "
+        "WU-1/WU-2, then died waiting on a backgrounded build.\nNext: route part-1 first."
+    ) * 4  # well over 1500 chars, full of shell-hostile punctuation + newlines
+    ctx = {k: f"val-{k}" for k in keys}
+    ctx["failure_summary"] = long_summary
+    if "item_id" not in ctx:
+        ctx["item_id"] = "d8-effect-chains"
+    with tempfile.TemporaryDirectory() as td:
+        cf = Path(td) / "ctx.json"
+        cf.write_text(json.dumps(ctx), encoding="utf-8")
+        # No marker → peek semantics (no registry write needed for this assertion).
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(Path(td) / "state")
+        r = subprocess.run(
+            [sys.executable, str(lazy_state), "--emit-dispatch", "recovery",
+             "--context-file", str(cf)],
+            capture_output=True, text=True, env=env,
+        )
+        # MUST be parseable JSON regardless of value length/punctuation.
+        data = json.loads(r.stdout)
+        assert data.get("dispatch_prompt") is not None, (
+            f"long context-file value must bind a prompt, got refusal: {data}"
+        )
+        assert long_summary in data["dispatch_prompt"], (
+            "the long failure_summary must appear bound in the prompt"
+        )
+
+
+def test_emit_dispatch_always_emits_json_on_error():
+    """ISSUE 3: --emit-dispatch NEVER emits non-JSON, even on a bad context payload.
+
+    A --context-file pointing at malformed JSON must yield a STRUCTURED JSON error
+    object (dispatch_prompt: null, error_kind present), exit 1 — not a bare
+    traceback or empty stdout.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        cf = Path(td) / "bad.json"
+        cf.write_text("{not valid json,,,}", encoding="utf-8")
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(Path(td) / "state")
+        r = subprocess.run(
+            [sys.executable, str(lazy_state), "--emit-dispatch", "recovery",
+             "--context-file", str(cf)],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 1, f"malformed context must exit 1, got {r.returncode}"
+        data = json.loads(r.stdout)  # MUST be valid JSON
+        assert data["dispatch_prompt"] is None
+        assert data.get("error_kind") == "ValueError", (
+            f"structured error must carry error_kind, got {data}"
+        )
+        assert "not valid JSON" in data["dispatch_prompt_refused"]
+
+
 def test_guard_allow_acks_on_hardening_class():
     """Phase 8 WU-8.2: simulate the guard ALLOW path on a hardening-class entry
     → oldest deny acked; a cycle-class allow → no ack; allow with empty ledger →
@@ -10390,10 +10623,22 @@ def test_fold_and_advance_run_counters():
     forward_cycles only; '__*' or None sub_skill → increments meta_cycles only;
     no marker → returns None.
 
+    ISSUE 5 (d8-effect-chains live run): advance is now CONSUME-GATED — a counter
+    advances only when the registry consume-count exceeds the marker's
+    last_advance_consume_count. Each advance below is preceded by a simulated
+    dispatch consume (register_emission + consume_nonce) so the gate is satisfied;
+    a separate test (test_advance_run_counters_consume_gated) covers the no-consume
+    no-op path that is the actual fix.
+
     RED state: fold_run_counters / advance_run_counters not implemented.
     """
     _guard()
     import time as _time
+
+    def _simulate_dispatch_consume():
+        """Bump the registry consume-count by one (mimics a guard ALLOW)."""
+        entry = lazy_core.register_emission("dispatch prompt", "cycle")
+        lazy_core.consume_nonce(entry["nonce"])
 
     # --- fold_run_counters ---
     # (1) Explicit flag wins over marker value
@@ -10425,7 +10670,8 @@ def test_fold_and_advance_run_counters():
                 pipeline="feature", cloud=False, repo_root="/tmp/r",
                 max_cycles=10, now=now,
             )
-            # Real sub_skill (forward cycle)
+            # Real sub_skill (forward cycle) — preceded by a dispatch consume.
+            _simulate_dispatch_consume()
             state_forward = {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
             updated = lazy_core.advance_run_counters(state_forward)
             assert updated is not None, (
@@ -10439,7 +10685,8 @@ def test_fold_and_advance_run_counters():
                 f"meta_cycles must stay 0 for a forward cycle, got {updated['meta_cycles']!r}"
             )
 
-            # Pseudo sub_skill (__mark_complete__) → meta cycle
+            # Pseudo sub_skill (__mark_complete__) → meta cycle (new consume first).
+            _simulate_dispatch_consume()
             state_meta = {"sub_skill": "__mark_complete__", "feature_id": "feat-x"}
             updated2 = lazy_core.advance_run_counters(state_meta)
             assert updated2 is not None, (
@@ -10453,7 +10700,8 @@ def test_fold_and_advance_run_counters():
                 f"got {updated2['meta_cycles']!r}"
             )
 
-            # sub_skill=None → meta
+            # sub_skill=None → meta (new consume first).
+            _simulate_dispatch_consume()
             state_none_skill = {"sub_skill": None, "feature_id": "feat-x"}
             updated3 = lazy_core.advance_run_counters(state_none_skill)
             assert updated3 is not None, "advance_run_counters must return marker"
@@ -10474,6 +10722,111 @@ def test_fold_and_advance_run_counters():
             assert result_no_marker is None, (
                 f"advance_run_counters must return None when no marker present, "
                 f"got {result_no_marker!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_run_counters_consume_gated():
+    """ISSUE 5 (d8-effect-chains live run): advance_run_counters is a NO-OP when no
+    dispatch (registry consume) has landed since the last advance.
+
+    This is the actual fix for the forward_cycles inflation: the inject hook fires
+    the probe with --repeat-count on EVERY UserPromptSubmit turn; without the
+    consume gate, each firing advanced the counter (forward_cycles hit 11 after ~2
+    real dispatches). With the gate, repeated probes between two dispatches do not
+    advance.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=25, now=_time.time(),
+            )
+            state = {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
+
+            # (1) Bare probe BEFORE any dispatch → no advance (consume-count 0).
+            m0 = lazy_core.advance_run_counters(state)
+            assert m0 is not None, "marker present → returns marker"
+            assert m0["forward_cycles"] == 0, (
+                f"no dispatch yet → forward_cycles stays 0, got {m0['forward_cycles']!r}"
+            )
+
+            # (2) One dispatch consume → exactly ONE advance, no matter how many
+            #     probe firings happen between dispatches.
+            entry = lazy_core.register_emission("p", "cycle")
+            lazy_core.consume_nonce(entry["nonce"])
+            m1 = lazy_core.advance_run_counters(state)
+            assert m1["forward_cycles"] == 1, (
+                f"one dispatch → forward_cycles 1, got {m1['forward_cycles']!r}"
+            )
+            # Three more bare probes (inject firings) with NO new dispatch → no-op.
+            for _ in range(3):
+                mN = lazy_core.advance_run_counters(state)
+                assert mN["forward_cycles"] == 1, (
+                    f"bare probe must NOT advance forward_cycles, got "
+                    f"{mN['forward_cycles']!r}"
+                )
+
+            # (3) A second dispatch consume → advances again (to 2).
+            entry2 = lazy_core.register_emission("p2", "cycle")
+            lazy_core.consume_nonce(entry2["nonce"])
+            m2 = lazy_core.advance_run_counters(state)
+            assert m2["forward_cycles"] == 2, (
+                f"second dispatch → forward_cycles 2, got {m2['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_meta_cycle_increments_meta():
+    """ISSUE 5: a meta/recovery dispatch (--emit-dispatch path) advances meta_cycles
+    via advance_meta_cycle, and absorbs its own consume so a follow-on forward probe
+    does not double-count.
+
+    In the live run meta_cycles stayed 0 through 2 recoveries because recovery goes
+    through --emit-dispatch, not the --repeat-count probe. advance_meta_cycle closes
+    that gap.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=25, now=_time.time(),
+            )
+            # No marker-less path: marker present.
+            m = lazy_core.advance_meta_cycle()
+            assert m is not None and m["meta_cycles"] == 1, (
+                f"advance_meta_cycle must increment meta_cycles to 1, got {m!r}"
+            )
+            assert m["forward_cycles"] == 0, "meta advance must not touch forward_cycles"
+            # The watermark was bumped to consume+1 to absorb the meta dispatch's own
+            # forthcoming consume. Simulate that consume; a forward probe must NOT
+            # advance off it (it belonged to the meta dispatch).
+            entry = lazy_core.register_emission("recovery prompt", "recovery")
+            lazy_core.consume_nonce(entry["nonce"])
+            m2 = lazy_core.advance_run_counters(
+                {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
+            )
+            assert m2["forward_cycles"] == 0, (
+                f"the meta dispatch's own consume must NOT advance forward_cycles, "
+                f"got {m2['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+    # No marker → returns None.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.advance_meta_cycle() is None, (
+                "advance_meta_cycle must return None when no marker present"
             )
         finally:
             _clear_state_dir()

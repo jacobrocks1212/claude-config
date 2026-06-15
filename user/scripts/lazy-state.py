@@ -5029,6 +5029,30 @@ def main() -> int:
                             "Supply a context key=value for --emit-dispatch. "
                             "Repeatable. Split on the first '=' only."
                         ))
+    # ISSUE 3 (d8-effect-chains live run, 2026-06-14): long/complex --context
+    # values (e.g. a ~1500-char failure_summary with commas/colons/parens/newlines)
+    # are brittle through the shell + a single inline --context flag. Two robust
+    # large-value channels, both bypassing shell quoting entirely:
+    #   --context-file PATH : read a JSON object {key: value, ...} from a file.
+    #   --context-stdin     : read the SAME JSON object from stdin.
+    # Both MERGE into the --context KEY=VALUE dict (inline --context wins on a key
+    # collision, since it is the most explicit). Values may contain ANY characters
+    # — newlines, commas, colons, parens — because JSON, not the shell, frames them.
+    parser.add_argument("--context-file", default=None, metavar="PATH",
+                        help=(
+                            "With --emit-dispatch: read a JSON object of context "
+                            "key/value pairs from PATH. Robust channel for long "
+                            "values with punctuation/newlines that would be mangled "
+                            "as inline --context KEY=VALUE. Merged with --context "
+                            "(inline --context wins on collision)."
+                        ))
+    parser.add_argument("--context-stdin", action="store_true",
+                        help=(
+                            "With --emit-dispatch: read a JSON object of context "
+                            "key/value pairs from stdin. Same merge semantics as "
+                            "--context-file. Use for very large failure_summary "
+                            "payloads piped from the orchestrator."
+                        ))
     # Phase 7 WU-7.1 / WU-7.4: --run-end behavior modifiers.
     #   --ack-unhardened : proceed with --run-end even when unacked guard denials
     #                      remain in the deny ledger (the override is recorded in
@@ -5319,26 +5343,47 @@ def main() -> int:
     # Pipeline is always "feature" for lazy-state.py (the feature pipeline script).
     if args.emit_dispatch is not None:
         cls = args.emit_dispatch
-        # Parse repeatable --context KEY=VALUE flags into a dict (split on first =).
-        context: dict = {}
-        for kv in (args.context or []):
-            if "=" in kv:
-                key, _, value = kv.partition("=")
-                context[key] = value
-        # Validate the class before assembling — ValueError from emit_dispatch_prompt
-        # means an unknown class was passed; surface it cleanly.
+        # ISSUE 3 (d8-effect-chains live run): the ENTIRE handler is wrapped so it
+        # NEVER emits non-JSON / partial output. Any failure — a bad --context-file
+        # path, malformed context JSON, an unexpected exception inside the
+        # assembler — is caught and surfaced as a structured JSON error object on
+        # stdout (exit 1), never a bare traceback or empty stdout. The live run's
+        # failure mode was a long --context value parsed to all-None fields; a
+        # structured error object lets the orchestrator detect+retry instead of
+        # silently proceeding on garbage.
         try:
+            # Parse repeatable --context KEY=VALUE flags into a dict (split on first =).
+            # The robust large-value channels (--context-file / --context-stdin)
+            # are MERGED in first; inline --context wins on a key collision.
+            context: dict = {}
+            if args.context_file is not None:
+                file_obj = lazy_core.load_context_json(
+                    Path(args.context_file).read_text(encoding="utf-8")
+                )
+                context.update(file_obj)
+            if args.context_stdin:
+                context.update(lazy_core.load_context_json(sys.stdin.read()))
+            for kv in (args.context or []):
+                if "=" in kv:
+                    key, _, value = kv.partition("=")
+                    context[key] = value
             result = lazy_core.emit_dispatch_prompt(
                 cls, context,
                 pipeline="feature",
                 cloud=args.cloud,
             )
-        except ValueError as exc:
+        except Exception as exc:  # noqa: BLE001
+            # ISSUE 3: emit a STRUCTURED JSON error object for ANY failure (unknown
+            # class ValueError, unreadable --context-file, malformed context JSON,
+            # or an unexpected internal error) — never a bare traceback / empty
+            # stdout. `error_kind` lets the orchestrator distinguish a context
+            # parse/IO problem (retry with a fixed payload) from a genuine refusal.
             sys.stdout.write(json.dumps({
                 "dispatch_prompt": None,
                 "dispatch_model": None,
                 "dispatch_class": cls,
                 "dispatch_prompt_refused": str(exc),
+                "error_kind": type(exc).__name__,
             }, indent=2) + "\n")
             return 1
         if result.get("ok"):
@@ -5357,6 +5402,15 @@ def main() -> int:
                 prompt, cls,
                 item_id=context.get("item_id"),
             )
+            # ISSUE 5 (d8-effect-chains live run): a meta/recovery dispatch goes
+            # through --emit-dispatch (NOT the --repeat-count probe path), so the
+            # meta budget was never advancing (meta_cycles stayed 0 through 2 live
+            # recoveries). Advance it here on a registered (marker-present) meta
+            # emission so recovery/hardening/apply-resolution dispatches count
+            # against the meta-cycle budget. Gated on _ref_entry (marker present →
+            # this is a real, registered dispatch — not a no-marker peek).
+            if _ref_entry is not None:
+                lazy_core.advance_meta_cycle()
             # Phase 8 WU-8.2: emission no longer acks the deny ledger.  The ack
             # moves to GUARD-ALLOW time (lazy_guard.py, on allowing a hardening-
             # class entry) so the debt clears only when a hardening dispatch

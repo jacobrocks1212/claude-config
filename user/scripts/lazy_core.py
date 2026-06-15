@@ -23,6 +23,8 @@ Public API (stable for Phase 2 reuse):
     _parse_plan_frontmatter(path)
     _plan_status(path)
     _plan_lowest_phase(path)
+    _plan_series_index(path)
+    _plan_sort_key(path)
     _plan_phase_set(path)
     _unchecked_wus_in_plan_scope(phases_text, phase_set)
     find_implementation_plans(spec_dir)
@@ -845,6 +847,72 @@ def _plan_lowest_phase(path: Path) -> tuple[int, str]:
     return (lowest, path.name)
 
 
+# Recognizes the ``-part-K`` suffix /write-plan emits when it partitions a
+# feature into a multi-part plan series (see write-plan/SKILL.md Step 2.5 naming
+# rule: ``all-phases-<slug>-part-1.md``, ``...-part-2.md``, etc., and the
+# ``> **Plan series:** part K of N`` preamble whose contract is "Execute parts
+# strictly in order"). The K is captured just before the ``.md`` suffix.
+_PLAN_PART_RE = re.compile(r"-part-(\d+)(?:\.md)?$", re.IGNORECASE)
+
+
+def _plan_series_index(path: Path) -> int | None:
+    """Return the 1-based part index K from a ``...-part-K.md`` plan filename.
+
+    Returns None when the filename carries no ``-part-K`` suffix (a single-part
+    or legacy plan). A frontmatter ``series_index:`` field, when present, takes
+    precedence over the filename — this lets a producer carry the authoritative
+    order machine-readably without renaming files. ``series_index:`` is an
+    OPTIONAL, lazy-only ordering hint: it is read here but is NOT in the
+    plan-frontmatter REQUIRED/OPTIONAL key set parsed by AlgoBooth's
+    check-docs-consistency.ts, so it MUST stay filename-derived in the common
+    case to avoid forcing a consumer-lockstep schema change. Prefer the filename
+    suffix; reserve the frontmatter field for the rare case where the filename
+    cannot encode the order.
+    """
+    meta = _parse_plan_frontmatter(path) or {}
+    raw = meta.get("series_index") if meta else None
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    m = _PLAN_PART_RE.search(path.name)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _plan_sort_key(path: Path) -> tuple[int, int, str]:
+    """Authoritative execution-order sort key for implementation plans.
+
+    Returns ``(series_index, lowest_phase, name)``.
+
+    ROOT-CAUSE FIX (ISSUE 1 — d8-effect-chains live /lazy-batch run, 2026-06-14):
+    A /realign-spec corrective Phase 6 was a PREREQUISITE for the pre-existing
+    Phase 5 (Phase 5 documents the ``.cab()``/``.reverb()`` API that Phase 6
+    builds). /write-plan emitted part-1 ``phases: [6]`` (the prerequisite) and
+    part-2/part-3 ``phases: [5]`` (depend on part-1). Sorting purely by
+    ``_plan_lowest_phase`` (phase number) routed part-2 (Phase 5) BEFORE part-1
+    (Phase 6) — inverting the declared "Execute parts strictly in order"
+    contract — so the router oscillated (step_repeat_count hit 3) and the
+    execute-plan subagent silently deviated to part-1.
+
+    The ``-part-K`` series index is the DECLARED, authoritative execution order
+    ("part K of N … Execute parts strictly in order"). It therefore sorts FIRST,
+    ahead of raw phase number. This makes a prerequisite phase numbered HIGHER
+    than its dependents (part-1=Phase 6 before part-2=Phase 5) route correctly
+    as long as the producer wrote the parts in dependency order — which is the
+    series invariant. Plans with no ``-part-K`` suffix carry series_index
+    sys.maxsize so they sort after an explicit part series but among themselves
+    fall back to the prior (lowest_phase, name) behavior — preserving the
+    single-plan / non-series ordering exactly.
+    """
+    idx = _plan_series_index(path)
+    series = idx if idx is not None else sys.maxsize
+    lowest, name = _plan_lowest_phase(path)
+    return (series, lowest, name)
+
+
 def _plan_phase_set(plan_path: Path) -> set[int]:
     """Return the set of phase numbers declared in a plan's ``phases:`` field.
 
@@ -947,11 +1015,15 @@ def find_implementation_plans(spec_dir: Path) -> list[Path]:
                 "_components/plan-frontmatter.md"
             )
             plans.append(legacy)
-    # Sort by lowest declared phase, then plan name. Plans without phases:
-    # fall to (sys.maxsize, name) so they sort after phase-tagged plans —
-    # preserves a sensible order for single-plan features while letting
-    # multi-plan features pick the earliest phase first.
-    plans.sort(key=_plan_lowest_phase)
+    # Sort by the authoritative execution-order key (_plan_sort_key):
+    # (series_index, lowest_phase, name). The ``-part-K`` series index sorts
+    # FIRST so a declared multi-part plan series ("Execute parts strictly in
+    # order") always routes part-1 before part-2 — even when part-1 carries a
+    # HIGHER phase number than part-2 (the d8-effect-chains corrective-Phase-6
+    # inversion, ISSUE 1). Non-series plans (no ``-part-K`` suffix) carry
+    # series_index sys.maxsize and fall back to the prior (lowest_phase, name)
+    # ordering, so single-plan / legacy features behave exactly as before.
+    plans.sort(key=_plan_sort_key)
     return plans
 
 
@@ -3925,6 +3997,41 @@ DISPATCH_MODELS: dict[str, str] = {
 # template, e.g.: <!-- @requires item_id,spec_path,sentinel_path -->
 _DISPATCH_REQUIRES_RE = re.compile(r"^<!--\s*@requires\s+([a-z0-9_,]+)\s*-->")
 
+
+def load_context_json(text: str) -> dict:
+    """Parse a --context-file / --context-stdin JSON payload into a context dict.
+
+    ISSUE 3 (d8-effect-chains live /lazy-batch run, 2026-06-14): a ~1500-char
+    ``failure_summary`` with commas/colons/parens/newlines was unreliable as an
+    inline ``--context KEY=VALUE`` flag (the shell — not the script — mangled it).
+    The JSON channel sidesteps shell quoting entirely: the orchestrator writes the
+    payload to a file (or pipes it) and the value may contain ANY characters.
+
+    Validation is strict so a malformed payload becomes a STRUCTURED error in the
+    --emit-dispatch handler rather than silently-empty context:
+      - The decoded JSON MUST be an object (dict). A list/str/number → ValueError.
+      - Every key MUST be a string. A non-string key → ValueError.
+      - Values are coerced to str (None → "") to match the inline-flag contract
+        (emit_dispatch_prompt stringifies all bindings anyway).
+
+    Raises:
+        ValueError: on invalid JSON, a non-object top level, or a non-string key.
+    """
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"context payload is not valid JSON: {exc}") from exc
+    if not isinstance(obj, dict):
+        raise ValueError(
+            f"context payload must be a JSON object, got {type(obj).__name__}"
+        )
+    out: dict = {}
+    for key, value in obj.items():
+        if not isinstance(key, str):
+            raise ValueError(f"context key must be a string, got {key!r}")
+        out[key] = "" if value is None else str(value)
+    return out
+
 # Phase 7 WU-7.5a: per-class Step name for the meta cycle_header.  The header
 # the orchestrator echoes is `### {Step} — {summary} [meta {m}/{cap}]`; this map
 # pins {Step} per the PHASES.md Phase 7 interface contract so every meta dispatch
@@ -4308,6 +4415,12 @@ def write_run_marker(
         "nonce_seed": nonce_seed,
         "forward_cycles": 0,
         "meta_cycles": 0,
+        # ISSUE 5 (d8-effect-chains live run, 2026-06-14): the consume-count
+        # watermark at which a cycle counter was last advanced. A counter advances
+        # only when the registry consume-count exceeds this (one consume per real
+        # dispatch), so bare inject-probe firings never inflate the counter.
+        # Starts at 0 — the first advance requires at least one consumed dispatch.
+        "last_advance_consume_count": 0,
         # Phase 7 / lazy-validation-readiness: record whether this is an
         # attended (interactive) or unattended (scheduled/cron) run.
         # Default True ensures legacy/migrated callers default to the stricter
@@ -5098,32 +5211,71 @@ def fold_run_counters(
 
 
 def advance_run_counters(state: dict) -> dict | None:
-    """Advance the persisted forward_cycles or meta_cycles counter in the marker.
+    """Advance the persisted forward_cycles or meta_cycles counter in the marker —
+    ONLY when an actual dispatch (registry consume) has landed since the last
+    advance.
+
+    ROOT-CAUSE FIX (ISSUE 5 — d8-effect-chains live /lazy-batch run, 2026-06-14):
+    The inject hook (lazy-route-inject.sh → lazy_inject.py) runs the full probe
+    with ``--repeat-count`` on EVERY UserPromptSubmit turn while the marker is
+    present — including non-dispatch turns (task notifications, the orchestrator's
+    own bookkeeping turns, etc.). The prior implementation advanced the counter on
+    EACH such firing, so ``forward_cycles`` reached 11 after only ~2 real
+    dispatches + 2 recoveries (premature inflation → a false max-cycles halt at
+    11/25 mid-run). The fix applies the SAME peek-vs-advance / consume-oracle
+    discipline already used by ``update_repeat_counts`` (F2 debounce): a counter
+    advances ONLY when the registry's consumed-emission count (``consume_count``,
+    one consume per guard ALLOW = one real dispatch) has increased since the marker
+    last recorded it. A probe firing with no intervening dispatch is a no-op.
 
     Classification rule (mirrors the emit_cycle_prompt None-return logic):
       - Real sub_skill: sub_skill is truthy AND does NOT start with ``"__"``
         → forward_cycles += 1  (a real dispatch cycle)
       - Pseudo/meta sub_skill: sub_skill starts with ``"__"``, OR sub_skill is
         falsy (None / empty) → meta_cycles += 1
+    Meta/recovery dispatches that go through ``--emit-dispatch`` (not a probe) call
+    ``advance_meta_cycle`` directly — those increment ``meta_cycles`` and bump the
+    consume watermark too, so a subsequent probe in the same turn does not
+    double-count.
 
-    The updated marker is written atomically (via _atomic_write) and returned.
-    When no marker is present (read_run_marker returns None), this function
-    returns None without writing anything — marker-gated, no-op when inactive.
+    The marker carries ``last_advance_consume_count``: the consume-count at which a
+    counter was last advanced (initialized to 0 at --run-start). The advance fires
+    iff the current consume-count is strictly greater. After advancing, the
+    watermark is updated to the current count. A legacy marker without the key is
+    treated as 0, so the first advance still requires at least one consumed
+    dispatch — a bare probe before any dispatch (consume-count 0) never advances.
 
-    This function is called at dispatch-bound probe time (--repeat-count, NOT
-    --repeat-count-peek) so only the actual dispatch probe advances the counters.
-    The peek probe reads state without side effects; this mirrors the peek
-    discipline already established for update_repeat_counts.
+    The updated marker is written atomically and returned. When no marker is
+    present (read_run_marker returns None), this function returns None without
+    writing anything — marker-gated, no-op when inactive. When a marker is present
+    but no dispatch has landed since the last advance, the marker is returned
+    UNCHANGED (no write).
 
     Args:
         state: the probe state dict (must contain "sub_skill")
 
     Returns:
-        The updated marker dict with incremented counters; None when no marker.
+        The marker dict (advanced or unchanged); None when no marker.
     """
     marker = read_run_marker()
     if marker is None:
         return None
+
+    # Consume-oracle gate: only advance when a real dispatch landed since the last
+    # advance. consumed_emission_count() is monotone-within-a-run (one consume per
+    # guard ALLOW). A legacy marker without the watermark key uses -1 so the first
+    # dispatch of the run always advances.
+    current_consume = consumed_emission_count()
+    prior_consume = marker.get("last_advance_consume_count", 0)
+    try:
+        prior_consume = int(prior_consume)
+    except (TypeError, ValueError):
+        prior_consume = 0
+    if current_consume <= prior_consume:
+        # No dispatch consumed since the last advance — this is a bare probe/inject
+        # firing (or a re-read). Do NOT advance, do NOT write. Idempotent across
+        # the many inject-hook firings within one cycle.
+        return marker
 
     sub_skill = state.get("sub_skill")
     # Real sub_skill: truthy and does not start with "__"
@@ -5133,6 +5285,39 @@ def advance_run_counters(state: dict) -> dict | None:
         # Pseudo or absent sub_skill → meta cycle
         marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
 
+    marker["last_advance_consume_count"] = current_consume
+
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
+def advance_meta_cycle() -> dict | None:
+    """Increment the marker's ``meta_cycles`` counter for a meta/recovery dispatch.
+
+    ISSUE 5 (d8-effect-chains live run): recovery / coherence-recovery / hardening
+    / apply-resolution / investigation dispatches go through ``--emit-dispatch``,
+    NOT the ``--repeat-count`` probe path, so the prior code never incremented
+    ``meta_cycles`` for them (it stayed 0 through 2 recoveries in the live run).
+    This helper is called from the --emit-dispatch handler when it registers a
+    meta-class emission so the meta budget actually advances.
+
+    It bumps ``last_advance_consume_count`` to the current consume-count PLUS ONE
+    — absorbing the meta dispatch's OWN forthcoming guard-ALLOW consume — so the
+    next ``--repeat-count`` probe does not mis-attribute that consume as a forward
+    cycle. (If the meta dispatch is ultimately refused/never consumed, the worst
+    case is one delayed forward advance — far cheaper than the inflation bug.)
+    Marker-gated: no-op (returns None) when no marker is active.
+
+    Returns:
+        The updated marker dict; None when no marker.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
+    # +1 absorbs this meta dispatch's own forthcoming consume (see docstring).
+    marker["last_advance_consume_count"] = consumed_emission_count() + 1
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
