@@ -84,9 +84,15 @@ Audit algorithm:
    `⚖ D7 violation: {what was descoped/deferred, ≤8 words} — {complete path not taken |
    taken but undisclosed}` — so the orchestrator surfaces it as a T6 deviation.
 
-5. If the list from step 4 is EMPTY: return a one-line summary
-   `clean — no product-behavior decisions baked in`. Write nothing. STOP.
-   (Exception: if step 4b found D7 violations, append the `⚖ D7 violation:` lines to
+5. If the list from step 4 is EMPTY: write no sentinel, but return a SKIP-DISCLOSURE summary
+   (never a bare "clean" — the orchestrator surfaces this verbatim on the operator-facing T3
+   `audit` line, and a no-NEEDS_INPUT.md outcome is never silent: see
+   ~/.claude/skills/_components/sentinel-frontmatter.md Producer responsibilities #7). The
+   summary MUST carry (a) how many decisions you reviewed (`0` is valid — "no decisions arose"),
+   (b) the class that made each auto-acceptable (`mechanical-internal` / `scope-class (D7)`),
+   and (c) a ≤12-word reason no product-behavior call was at stake. Format:
+   `needs-input skipped — {N} decision(s) reviewed, all {mechanical-internal | scope-class (D7) | none arose}; {≤12-word justification}`.
+   Then STOP. (Exception: if step 4b found D7 violations, append the `⚖ D7 violation:` lines to
    that summary — still write no sentinel.)
 
 6. If the list is NON-EMPTY:
@@ -165,5 +171,7 @@ GROUND-TRUTH OUTPUT — return a one-paragraph summary (≤ 8 lines) covering:
 - Any D7 violations from step 4b (silent lower-effort choices / undisclosed policy applications), one `⚖ D7 violation:` line each.
 - Whether the cycle subagent's Decision-Classification Ledger was present and well-formed; if missing/malformed, flag the contract violation.
 - The one-line titles of any surfaced decisions.
-- Whether you wrote NEEDS_INPUT.md (and the commit sha if so).
+- Whether you wrote NEEDS_INPUT.md (and the commit sha if so) OR, if you wrote none, the
+  skip-disclosure line from step 5 (`needs-input skipped — …`) with its justification — the
+  no-sentinel outcome is never silent.
 - Whether you recorded `audit_concurs` and its value (or why you skipped it).

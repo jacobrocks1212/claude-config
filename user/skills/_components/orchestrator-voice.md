@@ -142,8 +142,14 @@ next   execute-plan
 
 `done` is ONE line: duration + the load-bearing outcome (artifact written / verdict / counts).
 The old 3–5-bullet cycle summary is retired — details live in the commit and the docs the
-subagent wrote. `audit` appears only where Step 1e requires the audit-signal line. `ledger`
-states the post-cycle guard outcome (`clean · pushed` when healthy; anything else is a T6
+subagent wrote. `audit` carries one of two signals depending on cycle type: (1) on
+`/execute-plan` cycles, the Step 1e inline/test-first audit signal (e.g.
+`RED→GREEN 33/33 · gates qg:ts green · inline, zero Agent()`); (2) on `/spec` and `plan-feature`
+cycles, the Step 1d.5 input-audit's NEEDS_INPUT disposition — **REQUIRED on every such cycle, in
+both the surfaced AND the skipped case** (the NEEDS_INPUT skip is never silent — `sentinel-frontmatter.md`
+Producer responsibilities #7). Surfaced: `audit  {N} product-behavior decision(s) surfaced → NEEDS_INPUT.md`.
+Skipped: `audit  needs-input skipped — {N} reviewed, all {mechanical-internal | scope-class (D7) | none arose}; {≤12-word justification}`.
+`ledger` states the post-cycle guard outcome (`clean · pushed` when healthy; anything else is a T6
 deviation). `next` is the fresh probe's routing (or `terminal: <reason>`).
 
 ### T4 — Inline pseudo-skill / completion gates

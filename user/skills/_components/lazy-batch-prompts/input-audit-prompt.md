@@ -83,11 +83,17 @@ Audit algorithm:
    `⚖ D7 violation: {what was descoped/deferred, ≤8 words} — {complete path
    not taken | taken but undisclosed}` — so the orchestrator surfaces it as a
    T6 deviation and the work gets completed.
-5. If the list is EMPTY: return a one-line summary
-   `clean — no product-behavior decisions baked in; cycle subagent's
-   auto-accepts were all mechanical-internal`. Write nothing. STOP.
-   (Exception: if step 4b found D7 violations, append the `⚖ D7 violation:`
-   line(s) to that summary — still write no sentinel.)
+5. If the list is EMPTY: write no sentinel, but return a SKIP-DISCLOSURE summary
+   (never a bare "clean" — the orchestrator surfaces this verbatim on the
+   operator-facing T3 `audit` line, and a no-`NEEDS_INPUT.md` outcome is never
+   silent: `~/.claude/skills/_components/sentinel-frontmatter.md` Producer
+   responsibilities #7). The summary MUST carry: (a) how many decisions you
+   reviewed (`0` is valid — "no decisions arose"), (b) the class that made each
+   auto-acceptable (`mechanical-internal` / `scope-class (D7)`), and (c) a
+   ≤12-word reason no product-behavior call was at stake. Format:
+   `needs-input skipped — {N} decision(s) reviewed, all {mechanical-internal | scope-class (D7) | none arose}; {≤12-word justification}`.
+   Then STOP. (Exception: if step 4b found D7 violations, append the
+   `⚖ D7 violation:` line(s) to that summary — still write no sentinel.)
 6. If the list is NON-EMPTY:
    a. Cap at the top 4 by user-visibility impact (the sentinel schema's
       `AskUserQuestion` 4-question cap). The first ≤4 highest-visibility
@@ -176,7 +182,9 @@ Audit algorithm:
      and well-formed; if missing/malformed, flag the contract violation by
      skill name.
    - The one-line titles of the surfaced decisions.
-   - Whether you wrote NEEDS_INPUT.md (and the commit sha if so).
+   - Whether you wrote NEEDS_INPUT.md (and the commit sha if so) OR, if you
+     wrote none, the skip-disclosure line from step 5 (`needs-input skipped — …`)
+     with its justification — the no-sentinel outcome is never silent.
    - Whether you recorded `audit_concurs` and its value (or why you skipped it).
 
 Do NOT halt the loop. The NEEDS_INPUT.md sentinel you write is picked up by
