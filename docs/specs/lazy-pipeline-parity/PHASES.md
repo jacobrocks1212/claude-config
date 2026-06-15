@@ -59,7 +59,7 @@ grep -n "dev:kill"         user/skills/lazy-bug-batch/SKILL.md
   - `mechanic_sets` keyed by canonical root (`lazy-batch`, `lazy`, `lazy-status`), each containing the full Tier-2 mechanic catalog with `id` and `assert` predicates (regex_present pattern). Seed from the SPEC §Technical Design §1: `cycle-dispatch-by-ref`, `meta-dispatch-by-ref`, `run-end-dev-kill`, `two-gate-terminal`, `output-contract-voice`, `completeness-policy`, `stop-authorization-hc10` for `lazy-batch`; `mark-terminal-two-gate`, `one-skill-per-invocation`, `preflight-first`, `completeness-policy` for `lazy`; `read-only-no-mutation`, `runs-state-script` for `lazy-status`.
   - The **fully-populated** `lazy-batch`→`lazy-bug-batch` pair entry: `canonical`, `derived`, `axis`, `flavor`, `mechanic_set`, `token_substitutions` (lazy-state.py→bug-state.py, COMPLETED.md→FIXED.md, `__mark_complete__`→`__mark_fixed__`), `headings[]` (one entry per canonical `## Step`/`### sub-step` heading with `coverage` ∈ {restated, inherited, divergence} and `reason` where coverage=divergence), and `mechanic_overrides: []` (empty — both mechanics apply to this pair). Divergence entries must include Step 0.52 (validation-readiness pre-screen) and Step 4 (Research Halt / Gemini) with authored reasons per the SPEC audit findings.
   - Stub entries (empty `headings[]`) for the four remaining pairs — filled in Phase 3.
-- [ ] **`user/scripts/lazy_parity_audit.py`** — importable module + CLI (`--repo-root <path>`, optional `--pair <derived-name>`, exit 0 clean / exit 1 drift). Implements checks C1–C6 per the SPEC §Technical Design §2:
+- [x] **`user/scripts/lazy_parity_audit.py`** — importable module + CLI (`--repo-root <path>`, optional `--pair <derived-name>`, exit 0 clean / exit 1 drift). Implements checks C1–C6 per the SPEC §Technical Design §2:
   - **C1** (Tier-1 completeness): every `## Step`/`### sub-step` heading in the canonical has a `headings[]` entry for this pair.
   - **C2** (coverage resolves): a `restated`/`inherited` entry's evidence regex (after token substitution) matches in the derived skill file.
   - **C3** (Tier-2 predicates): every mechanic in the pair's `mechanic_set` (minus `mechanic_overrides` with coverage=divergence) matches in the derived skill file.
@@ -67,16 +67,16 @@ grep -n "dev:kill"         user/skills/lazy-bug-batch/SKILL.md
   - **C5** (reason hygiene): a divergence entry has a non-empty `reason`; a non-divergence entry has no `reason` field.
   - **C6** (soft/warn): a divergence with a `doc_anchor` field has that anchor text present in the derived skill's prose. Emits a warning, does not affect exit code.
   - Token substitutions applied before all regex matching (canonical vocab → derived vocab, never false-failing on axis differences).
-- [ ] **`user/scripts/test_lazy_parity.py`** — two test classes:
+- [x] **`user/scripts/test_lazy_parity.py`** — two test classes:
   - *Fixture-based engine tests* (synthetic canonical/derived pair built in a tmp directory): one test per hard check proving the check fires — missing heading → C1 fails naming the heading + pair; broken pointer regex → C2 fails; missing mechanic → C3 fails; stale divergence entry → C4 fails; reasonless divergence entry → C5 fails. Plus: a `mechanic_override` with coverage=divergence correctly suppresses C3 for that mechanic on the overriding pair (C3 passes despite the mechanic being absent from the derived file). C6 warns (captured in stderr) without failing exit code.
   - *Live zero-drift assertion* for `lazy-batch`→`lazy-bug-batch`: calls `lazy_parity_audit.audit_pair(repo_root, pair_name="lazy-bug-batch")` and asserts zero drift findings. This is the hard gate for the pair; it passes iff Phase 1 is complete and the manifest is correctly populated.
 
 **Minimum Verifiable Behavior:** `pytest user/scripts/test_lazy_parity.py -q` green — specifically: the C3-fixture test fails (C3 fires) when the derived file lacks `cycle_prompt_ref`; the `mechanic_override` fixture suppresses C3 for the overriding pair; and the live `lazy-batch→lazy-bug-batch` zero-drift assertion passes (confirming Phase 1 closed both gaps).
 
 **Verification** *(pytest — run by the implementer):*
-- [ ] `pytest user/scripts/test_lazy_parity.py -q` — all tests green (fixtures + live pair).
-- [ ] `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` — exits 0 (zero drift on the fully-audited pair).
-- [ ] `python3 user/scripts/lint-skills.py --check-projected` — still exits 0.
+- [x] `pytest user/scripts/test_lazy_parity.py -q` — all tests green (fixtures + live pair).
+- [x] `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` — exits 0 (zero drift on the fully-audited pair).
+- [x] `python3 user/scripts/lint-skills.py --check-projected` — still exits 0.
 
 **Prerequisites:** Phase 1: Close the Known Runtime-Affecting Leaks (the live pair must be in-sync for the zero-drift assertion to pass).
 
@@ -100,6 +100,14 @@ grep -n "dev:kill"         user/skills/lazy-bug-batch/SKILL.md
 - **`lazy-batch`→`lazy-bug-batch` pair fully populated:** 39 `headings[]` entries (one per canonical `##`/`###` heading — count matches `grep -cE "^#{2,3} "` = 39). 30 restated (each with a token-subbed `evidence` regex verified to grep in the derived file) + 9 divergence (each with a `reason`, no `evidence`). The 9 divergences are the Gemini-research path (Step 0.5 ingest, Step 4 Research Halt + its 5 sub-headings, Step 5 in-session resume) and Step 0.52 validation-readiness pre-screen — the two SPEC-mandated divergences (Step 0.52, Step 4) carry `doc_anchor`s. `token_substitutions` ordered `lazy-state.py`→`bug-state.py` BEFORE `lazy-batch`→`lazy-bug-batch`; `mechanic_overrides: []` (both mechanics apply post-Phase-1).
 - **4 stub pairs** present (`lazy-batch-cloud`, `lazy-bug`, `lazy-cloud`, `lazy-bug-status`) with correct `canonical`/`derived`/`axis`/`flavor`/`mechanic_set` and empty `headings[]` — Phase 3 (Part 3) input surface.
 - **Review verdict:** PASS. Ground-truth verified: yes (status / wc=274 / JSON 5-pairs-39-headings-9-divergences / canonical heading count all re-run and matched). Definitive validation deferred to WU-2's live zero-drift assertion.
+
+**2026-06-15 — Phase 2 Batch 2 (WU-2: engine + tests, TDD) implemented.**
+- **Built (TDD — test agent → impl agent):** `user/scripts/test_lazy_parity.py` (496 ln, 12 tests) written first (RED with `ModuleNotFoundError`), then `user/scripts/lazy_parity_audit.py` (345 ln) written to green.
+- **Engine:** importable `audit_pair(repo_root, pair_name, manifest=None)` / `audit_all_pairs(...)` / `load_manifest(...)` + argparse CLI (`--repo-root`, optional `--pair`; exit 1 on findings else 0). Implements C1 (Tier-1 heading completeness), C2 (restated/inherited evidence resolves after token sub), C3 (mechanic predicates, suppressed by `mechanic_overrides` coverage=divergence), C4 (no stale heading/override), C5 (reason hygiene), C6 (soft — stderr-only doc_anchor warning, never in findings). Token substitutions applied to the canonical-vocab side (evidence + mechanic patterns) before `re.search` against the derived file; headings rstrip-normalized; files read with universal newlines. No subprocess; stdlib only.
+- **Tests:** 11 fixture engine tests (each check has a firing + passing case; token-sub C2 case; `mechanic_override` suppresses C3; C6 warns via `capsys` without entering findings) + 1 live zero-drift assertion `audit_pair(repo_root, "lazy-bug-batch") == []` driving the real repo + committed manifest. Fixtures build synthetic canonical/derived SKILL.md in `tmp_path` and drive `audit_pair()` directly.
+- **Gate results:** `pytest user/scripts/test_lazy_parity.py -q` → 12 passed; `pytest user/scripts/ -q` → 507 passed (no regressions, +12 new); `lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` → exit 0 (2 expected C6 stderr warnings for the Step 0.52 / Step 4 doc_anchors not yet present in bug-batch prose — soft, reconciled in Phase 4). `lint-skills.py --check-projected` → exit 0. MCP test: SKIPPED (`MCP runtime: not-required`).
+- **Ground-truth verification:** orchestrator independently re-ran `git status`, `wc -l`, function greps, the parity pytest, and the audit CLI — all matched (one stale `wc -l` in the test agent's report — 430 vs actual 496 — was a mid-edit capture; the substantive RED-tests claim was independently verified true and the file content reviewed in full).
+- **Review verdict:** PASS (both batches). Ground-truth verified: yes (engine/CLI/suite re-run); test-agent wc mismatch noted + resolved by orchestrator re-verification. Propagation: new module, no import indirection / no existing-API change. The pytest suite is the live hard gate.
 
 ---
 

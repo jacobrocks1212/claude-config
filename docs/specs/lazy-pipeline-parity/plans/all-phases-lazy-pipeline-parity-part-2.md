@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-pipeline-parity
-status: Ready
+status: Complete
 created: 2026-06-15
 complexity: complex
 phases: [2]
@@ -125,8 +125,8 @@ References component files by path. **Before each step**, `Read` the listed comp
 
 ## Work Units
 
-- [ ] WU-1 — Author `lazy-parity-manifest.json` (mechanic_sets + fully-populated `lazy-bug-batch` pair + 4 stubs)
-- [ ] WU-2 — Build `lazy_parity_audit.py` (C1–C6 engine + CLI) with `test_lazy_parity.py` (fixtures + live `lazy-bug-batch` zero-drift) [TDD]
+- [x] WU-1 — Author `lazy-parity-manifest.json` (mechanic_sets + fully-populated `lazy-bug-batch` pair + 4 stubs)
+- [x] WU-2 — Build `lazy_parity_audit.py` (C1–C6 engine + CLI) with `test_lazy_parity.py` (fixtures + live `lazy-bug-batch` zero-drift) [TDD]
 
 ---
 
