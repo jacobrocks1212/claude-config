@@ -452,8 +452,104 @@
       "axis": "bug",
       "flavor": "restatement",
       "mechanic_set": "lazy",
+      "token_substitutions": [
+        {"canonical": "lazy-state.py",     "derived": "bug-state.py"},
+        {"canonical": "__mark_complete__", "derived": "__mark_fixed__"},
+        {"canonical": "COMPLETED.md",      "derived": "FIXED.md"}
+      ],
       "mechanic_overrides": [],
-      "headings": []
+      "headings": [
+        {
+          "heading": "## Sentinel File Format",
+          "coverage": "restated",
+          "evidence": "Sentinel File Format"
+        },
+        {
+          "heading": "## Step 0.0: Environment Preflight (FIRST — before the start banner and before remote sync)",
+          "coverage": "restated",
+          "evidence": "Step 0\\.0: Environment Preflight"
+        },
+        {
+          "heading": "## Step 0: Load Tools and Parse Arguments",
+          "coverage": "restated",
+          "evidence": "Step 0: Load Tools and Parse Arguments"
+        },
+        {
+          "heading": "## Step 0.3: Ad-hoc Enqueue (only when an ad-hoc task was supplied)",
+          "coverage": "restated",
+          "evidence": "Step 0\\.3: Ad-hoc Enqueue"
+        },
+        {
+          "heading": "## Step 1: Run lazy-state.py",
+          "coverage": "restated",
+          "evidence": "Step 1: Run bug-state\\.py"
+        },
+        {
+          "heading": "## Step 2: Handle Terminal States",
+          "coverage": "restated",
+          "evidence": "Step 2: Handle Terminal States"
+        },
+        {
+          "heading": "### 2a. Operator-resolvable terminals → ask for a resolution path (do NOT bare-STOP)",
+          "coverage": "restated",
+          "evidence": "2a\\. Operator-resolvable terminals"
+        },
+        {
+          "heading": "### 2b. Clean-stop terminals → report + STOP",
+          "coverage": "restated",
+          "evidence": "2b\\. Clean-stop terminals"
+        },
+        {
+          "heading": "## Step 3: Handle Special Actions (sentinel writes / completion)",
+          "coverage": "restated",
+          "evidence": "Step 3: Handle Special Actions"
+        },
+        {
+          "heading": "### `__write_validated_from_skip__`",
+          "coverage": "restated",
+          "evidence": "__write_validated_from_skip__"
+        },
+        {
+          "heading": "### `__write_validated_from_results__`",
+          "coverage": "restated",
+          "evidence": "__write_validated_from_results__"
+        },
+        {
+          "heading": "### `__flip_plan_complete_cloud_saturated__`",
+          "coverage": "restated",
+          "evidence": "__flip_plan_complete_cloud_saturated__"
+        },
+        {
+          "heading": "### `__mark_complete__`",
+          "coverage": "restated",
+          "evidence": "__mark_fixed__"
+        },
+        {
+          "heading": "### Any other `__*__` action",
+          "coverage": "restated",
+          "evidence": "Any other"
+        },
+        {
+          "heading": "## Step 4: Dispatch the Sub-Skill",
+          "coverage": "restated",
+          "evidence": "Step 4: Dispatch the Sub-Skill"
+        },
+        {
+          "heading": "## Step 5: Skip Current Feature",
+          "coverage": "restated",
+          "evidence": "Step 5: Skip Current"
+        },
+        {
+          "heading": "## Sentinel Files Reference",
+          "coverage": "restated",
+          "evidence": "Sentinel Files Reference"
+        },
+        {
+          "heading": "## State Machine Summary",
+          "coverage": "restated",
+          "evidence": "State Machine Summary"
+        }
+      ]
     },
     {
       "canonical": "user/skills/lazy/SKILL.md",
