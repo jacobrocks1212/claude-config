@@ -35,6 +35,43 @@
        feature still requires its OWN RESEARCH.md (anti-exemption rule, lazy-batch
        Step 4). Burned on d8-effect-chains, 2026-06-14. -->
 
+<!-- CODE-BLOCK HYGIENE (HARD — both variants): the inner ```text fence is what the
+     operator copies VERBATIM into Gemini, so it MUST contain ONLY the research prompt
+     content — nothing else.
+       INSIDE the ```text fence: the prompt content ONLY (the `## Project context`
+         identity prepend, if present, + the research question/sections). Zero operator
+         instructions. Zero meta-fluff: no "Send this to Gemini", no "Paste this into…",
+         no "Mode: deep-research" / "Model: gemini-2.5-pro" headers, and no leading
+         "> Combined with <other> research (they ship as a unit)" blockquote. Such
+         ship-as-a-unit / mode metadata is NOT research substance — it belongs in SPEC.md
+         or as prose outside the fence (well-formed self-contained prompts written by
+         /spec Phase 2 already exclude it; if a legacy/resolved prompt still carries a
+         leading ship-as-a-unit blockquote or mode header, STRIP it before placing the
+         content in the fence).
+       OUTSIDE the fence (as the surrounding prose of the announcement block): every
+         operator-facing instruction — the "copy this entire block into Gemini" lead-in,
+         the char-count line, the FASTEST-RESUME upload steps, and the resume/re-invoke
+         instructions. These are already positioned outside the ```text fence in the
+         templates below; keep them there.
+
+     GOOD (fence = pure prompt):
+       **Research prompt** (copy this entire block into Gemini Deep Research):
+       ```text
+       ## Project context
+       AlgoBooth is a desktop DJ workflow for Strudel live coding…
+       # Research Question: effect-chain ordering and wet/dry topology
+       ## Context …
+       ## Specific Questions …
+       ```
+     BAD (operator fluff + metadata leaked INTO the fence — FORBIDDEN):
+       ```text
+       Send this to Gemini in deep-research mode.
+       Mode: deep-research / Model: gemini-2.5-pro
+       > Combined with d8-track-infrastructure research (they ship as a unit).
+       # Research Question: effect-chain ordering …
+       ```
+     The BAD form forces the operator to hand-edit the paste; the GOOD form is paste-ready. -->
+
 ---
 
 ## Variant A — Step 4 (single feature, `needs-research` strict halt)
@@ -50,7 +87,7 @@ Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
 **Research prompt** (copy this entire block into Gemini Deep Research):
 
 ```text
-{full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present}
+{full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present — prompt content ONLY, no operator instructions or ship-as-a-unit / mode metadata inside this fence (see CODE-BLOCK HYGIENE above)}
 ```
 
 [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
@@ -109,7 +146,7 @@ Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
 **Research prompt** (copy this entire block into Gemini Deep Research):
 
 ```text
-{full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present}
+{full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present — prompt content ONLY, no operator instructions or ship-as-a-unit / mode metadata inside this fence (see CODE-BLOCK HYGIENE above)}
 ```
 
 [length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]

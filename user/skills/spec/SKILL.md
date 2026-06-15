@@ -400,6 +400,15 @@ After the decomposition, proceed with iterative brainstorming below.
 
    Budget realistically: the resolved identity prepend (step 2) is capped at `IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars, leaving 18K+ for the prompt body. If you can't keep the *body* under cap, write the file anyway and surface a warning in the Phase 2 summary (see step 6) — the operator can decide whether to truncate manually. Never silently truncate.
 
+   **EVERY `RESEARCH_PROMPT.md` MUST be self-contained and copy-paste-complete on its own (HARD REQUIREMENT — no exceptions).** The operator copies a single `RESEARCH_PROMPT.md` verbatim into Gemini. A reader who opens ANY one feature's `RESEARCH_PROMPT.md` must get a complete, runnable Gemini prompt from that file alone — never a stub that says "see the sibling's prompt."
+
+   - **The pointer/stub anti-pattern is FORBIDDEN.** Do NOT write a short `RESEARCH_PROMPT.md` whose body is a reference to another feature's prompt — e.g. "> Combined with `<other-feature>` research (they ship as a unit) — see `../<other-feature>/RESEARCH_PROMPT.md`, focus Sections 4 & 7." That 3-to-7-line pointer is useless to paste: the operator gets a link, not a research question.
+     > **Burned on `d8-effect-chains`, 2026-06-14.** Its `RESEARCH_PROMPT.md` was a 7-line pointer at `../d8-track-infrastructure/RESEARCH_PROMPT.md`. A `/lazy-batch` run halted on it, surfaced the bare pointer, and the orchestrator was tempted to invent a "the sibling already has research, no run needed" exemption. The root cause was upstream — the pointer file should never have been *created*. Surface-time pointer resolution (lazy-batch Step 4) is now only a legacy fallback; new prompts are self-contained by construction here.
+   - **Combined-research / "ships as a unit" features (the case that produced the stub):** when two or more features share ONE combined deep-research prompt, the correct output is the **FULL combined prompt content in EACH member feature's `RESEARCH_PROMPT.md`** — never a stub in one pointing at another. Pick the most robust mechanism:
+     - **Default — duplicate the full content** into each member's `RESEARCH_PROMPT.md`. Simplest, zero indirection, survives the file being read in isolation, on any platform, and through git/cloud reclaim. This is the recommended choice.
+     - **Symlink** each member's `RESEARCH_PROMPT.md` to the canonical one (symlinks work on this machine — Windows Developer Mode is on per AlgoBooth `CLAUDE.md`) ONLY if you have a strong reason to avoid duplication. A symlink reads as the full prompt when opened/copied, so it satisfies self-containment — but it is more fragile than duplication (breaks if the target moves; some tools deref differently). Prefer duplication unless the prompt is very large and drift between copies is a real concern.
+     - Either way, the "combined / ships-as-a-unit" framing is **SPEC.md metadata, not prompt substance** — record it in SPEC.md (and, if useful, as prose around the prompt), NOT as a leading blockquote inside the prompt body (see step 4's no-meta-fluff rule). Each member's prompt still stands alone.
+
 4. **Write the file** to `{spec-dir}/{feature-slug}/RESEARCH_PROMPT.md` with the identity prepend (if any) followed by the prompt body:
 
    ```markdown
@@ -415,6 +424,12 @@ After the decomposition, proceed with iterative brainstorming below.
    ```
 
    If no identity prepend was resolved (step 2 case 3), skip the `## Project context` block AND the `---` separator entirely; start directly with the Research Question heading.
+
+   **No meta-fluff in the prompt body (HARD).** The file content must be PURE research prompt — the operator copies it verbatim into Gemini, so anything that is not part of the actual research question is noise that pollutes the paste. Do NOT include:
+   - A leading "> Combined with `<other>` research (they ship as a unit)" blockquote or any other ship-as-a-unit / cross-feature framing (that is SPEC.md metadata — see step 3).
+   - Operator/tool metadata headers like "Mode: deep-research", "Model: gemini-2.5-pro", "Paste this into Gemini", or "deep-research mode" — none of that is research substance.
+
+   The `## Project context` identity prepend and the structured prompt sections (below) ARE legitimate prompt content and stay. Everything in the file should be content you want Gemini to actually read and act on.
 
 **Research prompt structure (the body after the optional identity prepend):**
 - **Research Question** — Clear, specific main question

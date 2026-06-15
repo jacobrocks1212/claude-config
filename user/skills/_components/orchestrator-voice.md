@@ -195,6 +195,16 @@ non-park wait is a (minor) deviation graded by R-V-3.
   pastable prompt is the entire point of the halt. A needs-research halt turn that ends with only
   a sentinel write + the T7 table (no fenced prompt block) is a CONTRACT VIOLATION (the operator
   cannot act on a halt they cannot see). Burned on the d8-effect-chains run, 2026-06-14.
+  - **Code block = prompt content ONLY (HARD).** The operator copies the fenced ` ```text ` block
+    VERBATIM into Gemini, so it MUST contain nothing but the research prompt. Keep ALL operator-facing
+    instructions (where to paste, the FASTEST-RESUME / resume steps, the char-count line) as prose
+    OUTSIDE the fence — items (2), (4), (5) above live around the block, never inside it. And strip any
+    meta-fluff that is not research substance from the fence: no "Send this to Gemini" / "Paste this
+    into…" lines, no "Mode: deep-research" / "Model: gemini-2.5-pro" headers, no leading
+    "> Combined with `<other>` research (they ship as a unit)" blockquote — that ship-as-a-unit / mode
+    metadata belongs in SPEC.md or surrounding prose, not in the copied block. (New `/spec` Phase 2
+    prompts are self-contained and fluff-free by construction; strip only if a legacy/resolved prompt
+    still carries it.) See the good/bad example in `research-halt-announcement.md` CODE-BLOCK HYGIENE.
 
 ### T7 — Final report
 
