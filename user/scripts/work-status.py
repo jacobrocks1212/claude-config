@@ -99,32 +99,6 @@ def _scan_wip_markers(base: Path) -> list[Path]:
     return result
 
 
-# Number of seconds a WIP item must lag behind the mirror syncedAt before it is
-# considered stale.  30 minutes matches the lease heartbeat window.
-_WIP_STALE_SECONDS: int = 1800
-
-
-def _wip_is_stale(
-    last_touched: str | None,
-    synced_at: str | None,
-    threshold: int = _WIP_STALE_SECONDS,
-) -> bool:
-    """Return True iff synced_at is more than threshold seconds after last_touched.
-
-    Both timestamps are ISO-8601 strings (trailing 'Z' accepted).  Returns False
-    if either argument is missing, empty, or unparseable — graceful, never raises.
-    NEVER reads the system clock; the reference is the mirror syncedAt.
-    """
-    if not last_touched or not synced_at:
-        return False
-    try:
-        lt = datetime.datetime.fromisoformat(last_touched.replace("Z", "+00:00"))
-        sa = datetime.datetime.fromisoformat(synced_at.replace("Z", "+00:00"))
-        return (sa - lt).total_seconds() > threshold
-    except (ValueError, AttributeError):
-        return False
-
-
 # ---------------------------------------------------------------------------
 # Pure stub functions (implementation agent fills these in)
 # ---------------------------------------------------------------------------
@@ -225,8 +199,14 @@ def _inflight_wip_rows(sources: dict) -> list[dict]:
         if branch_val:
             lease_branches.add(str(branch_val))
 
-    synced_at: str | None = (sources.get("mirror") or {}).get("syncedAt")
     titles = _mirror_titles(sources)
+
+    # Build a str(id) -> wi map for completion-reconciliation lookups.
+    mirror_wi_map: dict[str, dict] = {
+        str(wi.get("id")): wi
+        for wi in ((sources.get("mirror") or {}).get("workItems") or [])
+        if wi.get("id") is not None
+    }
 
     rows: list[dict] = []
     seen_wi_ids: set[str] = set()
@@ -236,7 +216,6 @@ def _inflight_wip_rows(sources: dict) -> list[dict]:
         data = lazy_core.parse_sentinel(wip_path) or {}
         wi_id_raw = data.get("wi_id")
         branch_raw = data.get("branch")
-        last_touched = data.get("last_touched")
 
         wi_id_str = str(wi_id_raw) if wi_id_raw is not None else ""
         branch_str = str(branch_raw) if branch_raw else ""
@@ -256,11 +235,16 @@ def _inflight_wip_rows(sources: dict) -> list[dict]:
         # Dedup within WIP rows
         if wi_id_str and wi_id_str in seen_wi_ids:
             continue
+
+        # Completion-reconciliation: drop items whose mirror WI is completed.
+        if wi_id_str and wi_id_str in mirror_wi_map:
+            if _wi_is_completed(mirror_wi_map[wi_id_str]):
+                continue
+
         if wi_id_str:
             seen_wi_ids.add(wi_id_str)
 
         stage = lazy_core.derive_stage(parent)
-        stale = _wip_is_stale(last_touched, synced_at)
 
         title = titles.get(wi_id_str)
         if not title:
@@ -273,12 +257,10 @@ def _inflight_wip_rows(sources: dict) -> list[dict]:
                 title = "(no title)"
 
         rows.append({
-            "wi_id": wi_id_str or "?",
+            "wi_id": wi_id_str,
             "title": title,
             "branch": branch_str or "?",
             "stage": stage,
-            "stale": stale,
-            "source": "wip",
         })
 
     return rows
@@ -410,9 +392,8 @@ def render_dashboard(
         # No leases file — show WIP rows if any, else degradation text
         if wip_rows:
             for wrow in wip_rows:
-                stale_flag = " [STALE]" if wrow["stale"] else ""
                 lines.append(
-                    f"  [{wrow['wi_id']}] {wrow['branch']}  stage={wrow['stage']}  source=wip{stale_flag}"
+                    f"  [{wrow['wi_id']}] {wrow['branch']}  stage={wrow['stage']}"
                 )
         else:
             lines.append("  No leases yet (leases.json not found)")
@@ -439,9 +420,8 @@ def render_dashboard(
                     parts.append(f"  heartbeat={heartbeat}")
                 lines.append("".join(parts) + stale_flag)
             for wrow in wip_rows:
-                stale_flag = " [STALE]" if wrow["stale"] else ""
                 lines.append(
-                    f"  [{wrow['wi_id']}] {wrow['branch']}  stage={wrow['stage']}  source=wip{stale_flag}"
+                    f"  [{wrow['wi_id']}] {wrow['branch']}  stage={wrow['stage']}"
                 )
 
     lines.append("")
@@ -610,6 +590,26 @@ def filter_recent_team(
 # columns). ADO stamps closed items with boardColumn "Closed" and merged-but-
 # open items with "Merged"; both are surfaced in the Recently Completed bucket.
 _COMPLETED_COLUMNS = frozenset({"Merged", "Closed"})
+
+
+def _wi_is_completed(wi: dict) -> bool:
+    """Return True if a mirror work item signals completion.
+
+    Checks three independent signals — any one is sufficient:
+    - boardColumn in _COMPLETED_COLUMNS (Merged / Closed)
+    - state (case-insensitive, stripped) in _TERMINAL_STATES
+    - prStatus (case-insensitive, stripped) == "completed"
+
+    Graceful: wi is a plain dict; all fields use .get() with or "" so missing
+    keys never raise.
+    """
+    if (wi.get("boardColumn") or "") in _COMPLETED_COLUMNS:
+        return True
+    if (wi.get("state") or "").strip().lower() in _TERMINAL_STATES:
+        return True
+    if (wi.get("prStatus") or "").strip().lower() == "completed":
+        return True
+    return False
 
 
 def recently_completed_cards(
@@ -914,12 +914,11 @@ def render_markdown(
     if leases is None:
         # No leases file — show WIP rows if any, else degradation text
         if wip_rows_md:
-            lines.append("| WI | Title | Stage | Source |")
-            lines.append("| --- | --- | --- | --- |")
+            lines.append("| WI | Title | Stage |")
+            lines.append("| --- | --- | --- |")
             for wrow in wip_rows_md:
-                stale_flag = " **STALE**" if wrow["stale"] else ""
                 lines.append(
-                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['title'])} | {_escape_md_pipe(wrow['stage'])}{stale_flag} | source=wip |"
+                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['title'])} | {_escape_md_pipe(wrow['stage'])} |"
                 )
         else:
             lines.append("_No leases yet (leases.json not found)_")
@@ -945,9 +944,8 @@ def render_markdown(
                     f"| {_wi_link(wi_id, lease.get('url'))} | {title} | {started} | {worker} | {stage}{stale_flag} |"
                 )
             for wrow in wip_rows_md:
-                stale_flag = " **STALE**" if wrow["stale"] else ""
                 lines.append(
-                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['title'])} | | | {_escape_md_pipe(wrow['stage'])}{stale_flag} source=wip |"
+                    f"| {_wi_link(wrow['wi_id'])} | {_escape_md_pipe(wrow['title'])} | | | {_escape_md_pipe(wrow['stage'])} |"
                 )
     lines.append("")
 
@@ -2030,8 +2028,8 @@ def run_self_tests() -> int:
                 f"fixture_s: branch 'p/900-foo' missing from terminal In Flight region: {region_s!r}"
             assert "spec" in region_s, \
                 f"fixture_s: stage 'spec' missing from terminal In Flight region: {region_s!r}"
-            assert "source=wip" in region_s, \
-                f"fixture_s: 'source=wip' missing from terminal In Flight region: {region_s!r}"
+            assert "source=wip" not in region_s, \
+                f"fixture_s: 'source=wip' must be ABSENT from terminal In Flight region: {region_s!r}"
 
             # Markdown renderer
             md_s = render_markdown(sources_s)
@@ -2040,8 +2038,8 @@ def run_self_tests() -> int:
                 f"fixture_s: wi_id '900' missing from markdown In Flight region: {flight_s!r}"
             assert "| foo |" in flight_s, \
                 f"fixture_s: slug-derived title 'foo' missing from markdown In Flight region: {flight_s!r}"
-            assert "source=wip" in flight_s, \
-                f"fixture_s: 'source=wip' missing from markdown In Flight region: {flight_s!r}"
+            assert "source=wip" not in flight_s, \
+                f"fixture_s: 'source=wip' must be ABSENT from markdown In Flight region: {flight_s!r}"
 
             print("PASS fixture_s_wip_only_in_flight")
     except Exception as exc:
@@ -2096,8 +2094,8 @@ def run_self_tests() -> int:
             # (b) WIP-only sibling 904 must appear (RED until union impl)
             assert "904" in region_t, \
                 f"fixture_t: wip-only wi_id '904' must appear in terminal In Flight after union impl: {region_t!r}"
-            assert "source=wip" in region_t, \
-                f"fixture_t: 'source=wip' must appear for wip-only sibling '904' in terminal: {region_t!r}"
+            assert "source=wip" not in region_t, \
+                f"fixture_t: 'source=wip' must be ABSENT from terminal In Flight (904 appears without provenance token): {region_t!r}"
 
             # Markdown renderer
             md_t = render_markdown(sources_t)
@@ -2109,8 +2107,8 @@ def run_self_tests() -> int:
             # (b) WIP-only sibling 904 must appear (RED until union impl)
             assert "904" in flight_t, \
                 f"fixture_t: wip-only wi_id '904' must appear in markdown In Flight after union impl: {flight_t!r}"
-            assert "source=wip" in flight_t, \
-                f"fixture_t: 'source=wip' must appear for wip-only sibling '904' in markdown: {flight_t!r}"
+            assert "source=wip" not in flight_t, \
+                f"fixture_t: 'source=wip' must be ABSENT from markdown In Flight (904 appears without provenance token): {flight_t!r}"
 
             print("PASS fixture_t_dedup_lease_wins")
     except Exception as exc:
@@ -2240,18 +2238,15 @@ def run_self_tests() -> int:
             term_w = render_dashboard(sources_w)
             region_w = _flight_region_terminal(term_w)
 
-            # Find the line containing 902 and assert it has [STALE]
+            # Both 902 and 903 must appear in terminal In Flight, but neither carries [STALE]
             stale_lines_w = [ln for ln in region_w.splitlines() if "902" in ln]
             assert stale_lines_w, \
                 f"fixture_w: wi_id '902' must appear in terminal In Flight: {region_w!r}"
-            assert any("[STALE]" in ln for ln in stale_lines_w), \
-                f"fixture_w: stale WIP row '902' must carry '[STALE]' in terminal; lines: {stale_lines_w}"
-
             fresh_lines_w = [ln for ln in region_w.splitlines() if "903" in ln]
             assert fresh_lines_w, \
                 f"fixture_w: wi_id '903' must appear in terminal In Flight: {region_w!r}"
-            assert all("[STALE]" not in ln for ln in fresh_lines_w), \
-                f"fixture_w: non-stale WIP row '903' must NOT carry '[STALE]' in terminal; lines: {fresh_lines_w}"
+            assert all("[STALE]" not in ln for ln in region_w.splitlines() if "902" in ln or "903" in ln), \
+                f"fixture_w: [STALE] must NEVER appear on WIP rows (902 or 903) in terminal In Flight; region: {region_w!r}"
 
             # Markdown renderer
             md_w = render_markdown(sources_w)
@@ -2260,22 +2255,166 @@ def run_self_tests() -> int:
             stale_lines_md_w = [ln for ln in flight_w.splitlines() if "902" in ln]
             assert stale_lines_md_w, \
                 f"fixture_w: wi_id '902' must appear in markdown In Flight: {flight_w!r}"
-            assert any("STALE" in ln for ln in stale_lines_md_w), \
-                f"fixture_w: stale WIP row '902' must carry 'STALE' in markdown; lines: {stale_lines_md_w}"
-
             fresh_lines_md_w = [ln for ln in flight_w.splitlines() if "903" in ln]
             assert fresh_lines_md_w, \
                 f"fixture_w: wi_id '903' must appear in markdown In Flight: {flight_w!r}"
-            assert all("STALE" not in ln for ln in fresh_lines_md_w), \
-                f"fixture_w: non-stale WIP row '903' must NOT carry 'STALE' in markdown; lines: {fresh_lines_md_w}"
+            assert all("STALE" not in ln for ln in flight_w.splitlines() if "902" in ln or "903" in ln), \
+                f"fixture_w: STALE must NEVER appear on WIP rows (902 or 903) in markdown In Flight; region: {flight_w!r}"
 
             print("PASS fixture_w_staleness_flag")
     except Exception as exc:
         print(f"FAIL fixture_w_staleness_flag: {exc}")
         failures += 1
 
+    # ------------------------------------------------------------------
+    # Fixture X — completion reconciliation: mirror-completed WIP drops from In Flight
+    # Items 910 (boardColumn=Merged), 911 (prStatus=Completed), 912 (state=Closed)
+    # must vanish from In Flight.  Control item 913 (Active, no completion signal)
+    # must REMAIN.  Item 910 also appears under Recently Completed in markdown.
+    # ------------------------------------------------------------------
+    try:
+        lazy_core_available_x = True
+        try:
+            import lazy_core as _lc_x
+        except Exception:
+            lazy_core_available_x = False
+
+        if not lazy_core_available_x:
+            print("PASS fixture_x_completion_reconciliation (skipped: lazy_core unavailable)")
+        else:
+            tmp_x = tempfile.mkdtemp(prefix="ws_test_x_")
+            base_x = Path(tmp_x) / "docs" / "features"
+            base_x.mkdir(parents=True, exist_ok=True)
+
+            mirror_synced_x = "2026-06-03T06:00:00Z"
+
+            item_x_910 = _make_item_dir(base_x, "910-merged", "910", "p/910-merged",
+                                        now=mirror_synced_x)
+            item_x_911 = _make_item_dir(base_x, "911-prdone", "911", "p/911-prdone",
+                                        now=mirror_synced_x)
+            item_x_912 = _make_item_dir(base_x, "912-closed", "912", "p/912-closed",
+                                        now=mirror_synced_x)
+            item_x_913 = _make_item_dir(base_x, "913-active", "913", "p/913-active",
+                                        now=mirror_synced_x)
+
+            sources_x = _make_sources(
+                Path(tmp_x),
+                [item_x_910 / "WIP.md", item_x_911 / "WIP.md",
+                 item_x_912 / "WIP.md", item_x_913 / "WIP.md"],
+                leases_data={"leases": []},
+                mirror_synced=mirror_synced_x,
+            )
+            sources_x["mirror"]["workItems"] = [
+                {"id": 910, "title": "merged item", "boardColumn": "Merged",
+                 "changedDate": mirror_synced_x, "state": "Active", "prStatus": None},
+                {"id": 911, "title": "pr done", "boardColumn": "In Progress",
+                 "changedDate": mirror_synced_x, "state": "Active", "prStatus": "Completed"},
+                {"id": 912, "title": "closed item", "boardColumn": "In Progress",
+                 "changedDate": mirror_synced_x, "state": "Closed", "prStatus": None},
+                {"id": 913, "title": "active item", "boardColumn": "In Progress",
+                 "changedDate": mirror_synced_x, "state": "Active", "prStatus": None},
+            ]
+
+            # Terminal renderer
+            term_x = render_dashboard(sources_x)
+            region_x = _flight_region_terminal(term_x)
+
+            assert "910" not in region_x, \
+                f"fixture_x: mirror-Merged item '910' must be ABSENT from terminal In Flight: {region_x!r}"
+            assert "911" not in region_x, \
+                f"fixture_x: prStatus-Completed item '911' must be ABSENT from terminal In Flight: {region_x!r}"
+            assert "912" not in region_x, \
+                f"fixture_x: terminal-state-Closed item '912' must be ABSENT from terminal In Flight: {region_x!r}"
+            assert "913" in region_x, \
+                f"fixture_x: control active item '913' must REMAIN in terminal In Flight: {region_x!r}"
+
+            # Markdown renderer
+            md_x = render_markdown(sources_x)
+            flight_x = _flight_region_markdown(md_x)
+
+            assert "910" not in flight_x, \
+                f"fixture_x: mirror-Merged item '910' must be ABSENT from markdown In Flight: {flight_x!r}"
+            assert "911" not in flight_x, \
+                f"fixture_x: prStatus-Completed item '911' must be ABSENT from markdown In Flight: {flight_x!r}"
+            assert "912" not in flight_x, \
+                f"fixture_x: terminal-state-Closed item '912' must be ABSENT from markdown In Flight: {flight_x!r}"
+            assert "913" in flight_x, \
+                f"fixture_x: control active item '913' must REMAIN in markdown In Flight: {flight_x!r}"
+
+            # Item 910 (boardColumn=Merged, changedDate=syncedAt) appears under Recently Completed
+            assert "Recently Completed" in md_x, \
+                f"fixture_x: markdown must contain a 'Recently Completed' section: {md_x!r}"
+            assert "910" in md_x, \
+                f"fixture_x: mirror-Merged item '910' must appear somewhere in markdown (Recently Completed): {md_x!r}"
+
+            print("PASS fixture_x_completion_reconciliation")
+    except Exception as exc:
+        print(f"FAIL fixture_x_completion_reconciliation: {exc}")
+        failures += 1
+
+    # ------------------------------------------------------------------
+    # Fixture Y — id-less WIP row: no '?', no Source column, no source=wip
+    # A WIP.md with branch/last_touched but NO wi_id → empty WI cell.
+    # Uses leases_data=None (WIP-only markdown branch, the one with | WI | ... | Source |).
+    # ------------------------------------------------------------------
+    try:
+        lazy_core_available_y = True
+        try:
+            import lazy_core as _lc_y
+        except Exception:
+            lazy_core_available_y = False
+
+        if not lazy_core_available_y:
+            print("PASS fixture_y_idless_wip_row (skipped: lazy_core unavailable)")
+        else:
+            tmp_y = tempfile.mkdtemp(prefix="ws_test_y_")
+            base_y = Path(tmp_y) / "docs" / "features"
+            base_y.mkdir(parents=True, exist_ok=True)
+
+            # Build dir manually — DO NOT use _make_item_dir (it stamps wi_id)
+            item_y_dir = base_y / "branch-aware-doc-context"
+            item_y_dir.mkdir(parents=True, exist_ok=True)
+            (item_y_dir / "WIP.md").write_text(
+                '---\nbranch: p/branch-aware-doc-context\nlast_touched: "2026-06-03T06:00:00Z"\n---\n',
+                encoding="utf-8",
+            )
+
+            sources_y = _make_sources(
+                Path(tmp_y),
+                [item_y_dir / "WIP.md"],
+                leases_data=None,  # WIP-only branch (no leases dict)
+                mirror_synced="2026-06-03T06:00:00Z",
+            )
+
+            flight_y = _flight_region_markdown(render_markdown(sources_y))
+
+            # The id-less item's derived title must appear
+            assert "branch aware doc context" in flight_y or "branch-aware-doc-context" in flight_y, \
+                f"fixture_y: id-less item title must appear in markdown In Flight: {flight_y!r}"
+
+            # No literal '?' in the WI cell
+            assert "?" not in flight_y, \
+                f"fixture_y: literal '?' must NOT appear in markdown In Flight (empty id should render as empty cell): {flight_y!r}"
+
+            # No broken edit link with a missing id
+            assert (_ADO_EDIT_BASE + "?") not in flight_y, \
+                f"fixture_y: broken ADO link with missing id must NOT appear in markdown In Flight: {flight_y!r}"
+            assert "/edit/?" not in flight_y, \
+                f"fixture_y: '/edit/?' must NOT appear in markdown In Flight: {flight_y!r}"
+
+            # No Source column / source=wip token
+            assert "Source" not in flight_y, \
+                f"fixture_y: 'Source' column must NOT appear in markdown In Flight: {flight_y!r}"
+            assert "source=wip" not in flight_y, \
+                f"fixture_y: 'source=wip' token must NOT appear in markdown In Flight: {flight_y!r}"
+
+            print("PASS fixture_y_idless_wip_row")
+    except Exception as exc:
+        print(f"FAIL fixture_y_idless_wip_row: {exc}")
+        failures += 1
+
     # Summary
-    total = 23
+    total = 25
     passed = total - failures
     print(f"\n{passed}/{total} fixtures passed")
     return failures
