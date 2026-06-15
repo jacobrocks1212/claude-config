@@ -1,32 +1,62 @@
 ---
 name: mcp-test
-description: Start tauri:dev, wait for MCP readiness, then dispatch a Sonnet subagent with a persisted test scenario
-argument-hint: <test description — e.g. "test mix knob crossfade" or "verify queue fire sequence" or "tier:0">
+description: Resolve a YAML scenario, ensure MCP runtime readiness, run the deterministic engine (scripts/mcp-test/run.ts), read the compact verdict.json, forward the engine-written sentinel, and reconcile PHASES — haiku happy path, Sonnet only on failure
+argument-hint: <test description — e.g. "test mix knob crossfade" or "verify queue fire sequence" or a scenario id>
 ---
 
-# MCP Test
+# MCP Test — Informed Dispatcher (deterministic engine)
 
-Start the AlgoBooth dev server if not already running, wait for full MCP readiness, then dispatch a Sonnet subagent to execute a persisted test scenario via the MCP HTTP API.
+> **This skill was rewritten to the Informed Dispatcher pattern (deterministic-runner Phase 8).**
+> The model NO LONGER drives the MCP API by hand, improvises curl calls, or *judges* assertions.
+> A unit-tested TypeScript engine (`scripts/mcp-test/`) executes the declarative YAML scenario,
+> evaluates every assertion **in code**, and writes a compact `verdict.json` PLUS the terminal
+> pipeline sentinel. The model's role collapses to: **resolve a scenario → ensure runtime
+> readiness → run the engine → read the small verdict → forward the sentinel the engine wrote →
+> reconcile PHASES.** Raw MCP payloads (sample arrays, log dumps) NEVER enter model context — the
+> verdict carries scalars + reasons + `heals[]`, and the engine writes any raw artifact to disk
+> cited by path. Because the inputs are small and structured, **the happy path is haiku-steerable;
+> Sonnet is pulled in ONLY to diagnose a Gate-3 assertion failure or repair the harness.**
+
+The engine, not the model, talks to `localhost:3333`. See
+[`docs/features/mcp-testing/deterministic-runner/SPEC.md`](../../docs/features/mcp-testing/deterministic-runner/SPEC.md)
+(§Components #6 "Thin skill dispatcher", §Model orchestration, Locked Decision #8) and the engine
+reference at [`scripts/mcp-test/CLAUDE.md`](../../scripts/mcp-test/CLAUDE.md).
+
+---
+
+## Model tier (Locked Decision #8 — HARD)
+
+| Work | Tier | Why |
+|------|------|-----|
+| Scenario resolution, engine invocation, verdict read, sentinel forward, PHASES reconcile | **Haiku** | Mechanical; inputs small and structured (the whole happy path) |
+| Gate-3 failure classification (flake vs genuine) | **Sonnet** | Judgment over the engine's evidence bundle; conservative *uncertain → genuine* bias |
+| Harness-hardening repair (mechanics only) | **Sonnet** | Edits scenario data / engine under full gates |
+
+The happy path runs on haiku end-to-end. Escalate to Sonnet ONLY when the verdict's classification
+is `uncertain` (Gate 3) or `harness` repair beyond the engine's own self-heal is needed (see Step 5).
+A clean pass that escalates to Sonnet is a defect — the success metric is "single pass on haiku".
 
 ---
 
 ## Step 0: Precondition — all implementation phases must be complete
 
-`/mcp-test` is Step 9 in the lazy state machine; it runs after all implementation phases are complete. (The `/retro` Step 8 that previously ran between implementation and MCP validation has been unwired — 2026-06. `RETRO_DONE.md` is no longer a gate for this skill.) If `$ARGUMENTS` references a feature, confirm phases are complete before proceeding; a stale RETRO_DONE.md that happens to exist is tolerated (it will be folded at completion) but is not required.
+`/mcp-test` is Step 9 in the lazy state machine; it runs after all implementation phases are
+complete. (The `/retro` Step 8 was unwired — 2026-06. `RETRO_DONE.md` is no longer a gate.)
 
-**Algorithm:**
+1. If `$ARGUMENTS` is `tier:N`, the precondition does not apply (tier batch mode is not scoped to a
+   single feature) — skip Step 0.
+2. Otherwise map `$ARGUMENTS` to a feature dir under `docs/features/` using the same correlation
+   logic as `lazy-state.py` (match against `queue.json`, or `$ARGUMENTS` names the dir directly).
+   Ambiguous/empty → skip Step 0 (ad-hoc run, not under the state machine).
+3. If a feature dir resolves, confirm its phases are complete before proceeding.
 
-1. Resolve the feature directory the test scenario targets:
-   - If `$ARGUMENTS` is `tier:N`, the precondition does not apply (tier batch mode is not scoped to a single feature) — skip Step 0 entirely.
-   - Otherwise, attempt to map `$ARGUMENTS` to a feature directory under `docs/features/`. Use the same correlation logic as `/lazy-state.py`: match the feature name / id against `queue.json` entries, or check if `$ARGUMENTS` itself names a feature dir.
-   - If the mapping is ambiguous (multiple matches) or empty (no plausible feature), skip Step 0 — the test is being run ad-hoc, not under the lazy state-machine flow.
-2. If a feature dir is resolved, proceed to Step 0.5. (`RETRO_DONE.md` is no longer a prerequisite — retro is unwired, 2026-06.)
-
-This precondition check is enforced even when `/mcp-test` is invoked directly by a human (not via `/lazy`). If phases are clearly incomplete, surface the gap and stop — MCP validation before implementation is complete is the wrong order. Bypassing the gate via `--force` is intentionally NOT provided.
+This check is enforced even on a direct human invocation. If phases are clearly incomplete, surface
+the gap and stop — MCP validation before implementation is complete is the wrong order. There is
+intentionally no `--force` bypass.
 
 ---
 
-## Step 0.5: Task Tracking (MANDATORY — DO NOT SKIP)
+## Step 0.5: Task Tracking (MANDATORY)
 
 Load task tools and create tasks for compaction recovery:
 
@@ -35,755 +65,309 @@ ToolSearch: "select:TaskCreate,TaskUpdate,TaskGet,TaskList"
 ```
 
 Create tasks immediately:
-1. `TaskCreate({ subject: "Parse arguments + tier batch check", description: "Extract test description, check for tier:N batch mode" })`
-2. `TaskCreate({ subject: "Server lifecycle", description: "Kill, start, and verify dev server + tool registration" })`
-3. `TaskCreate({ subject: "Resolve/create test scenario", description: "Find existing scenario or create new one with behavioral exploration" })`
-4. `TaskCreate({ subject: "Validate scenario file", description: "Verify all required sections present" })`
-5. `TaskCreate({ subject: "Wait for app readiness", description: "Health poll, sidecar gate, audio pipeline smoke test" })`
-6. `TaskCreate({ subject: "Dispatch test subagent", description: "Launch Sonnet subagent to execute scenario" })`
-7. `TaskCreate({ subject: "Evaluate results", description: "Score assertions, generate report" })`
+1. `TaskCreate({ subject: "Resolve scenario", description: "Map $ARGUMENTS to a corpus/live YAML scenario (or create one)" })`
+2. `TaskCreate({ subject: "Ensure runtime readiness", description: "Orchestrated: confirm health==200. Standalone: boot + wait." })`
+3. `TaskCreate({ subject: "Run the engine", description: "npx tsx scripts/mcp-test/run.ts <scenario> — pre-flight → scored run → verdict + sentinel" })`
+4. `TaskCreate({ subject: "Read verdict.json", description: "Read the compact verdict — counts, reasons, heals[], classification" })`
+5. `TaskCreate({ subject: "Forward sentinel + reconcile PHASES", description: "The engine wrote the sentinel; reconcile PHASES via reconcile-phases.ts" })`
+6. `TaskCreate({ subject: "Escalate if needed", description: "Gate-3 uncertain → Sonnet diagnosis; harness → self-heal/repair" })`
 
-Update each task to `in_progress` when starting it, `completed` when done. After context compaction, call `TaskList` first to find your current position.
+Update each to `in_progress` when starting, `completed` when done. After compaction, `TaskList`
+first to find your position.
 
 ---
 
-## Step 1: Parse Arguments
+## Step 1: Resolve the Scenario
 
-Extract the user's test description from `$ARGUMENTS`. If empty, use **AskUserQuestion**: "What should the MCP test subagent do?"
+The engine consumes a declarative **YAML** scenario (the locked v1 format — see
+`scripts/mcp-test/CLAUDE.md` and `scripts/check-mcp-scenarios.ts`).
 
-### Step 1.5: Tier Batch Mode
+### tier:N batch mode
 
-If `$ARGUMENTS` matches the pattern `tier:N` (e.g., `tier:0`, `tier:2`), activate **Tier Batch Mode**:
+If `$ARGUMENTS` matches `tier:N`, run each scenario in that tier sequentially (Steps 2–5 per
+scenario), then report a per-scenario summary table and stop. The engine's `reset_state` discipline
+between runs keeps a clean slate.
 
-1. Look up the scenario list for that tier from the table below.
-2. Execute each scenario sequentially: run Steps 2–6.5 for each, calling `POST /tools/reset_state` between scenarios to ensure a clean slate.
-3. After all scenarios complete, report a per-scenario summary table:
-
-   | Scenario | Score | Blocking Issues | Coverage Gaps |
-   |----------|-------|-----------------|---------------|
-   | infra-health-readiness | X% | — | — |
-   | ... | ... | ... | ... |
-
-4. **Stop here** — do not continue to Step 2 as a single-scenario run.
-
-#### Tier → Scenario Mapping
-
-| Tier | Scenarios |
-|------|-----------|
+| Tier | Scenarios (under `docs/testing/mcp-tests/corpus/live/` if converted, else the legacy `.md`) |
+|------|------|
 | 0 | infra-health-readiness, infra-session-telemetry, infra-screenshot-capture, infra-state-reset |
 | 1 | play-stop-lifecycle, test-tone-loading, code-evaluation, tempo-control |
 | 2 | channel-muting, mix-knob-crossfade, dual-channel-isolation |
-| 3 | pattern-bank-crud, code-history, pattern-import-export |
-| 4 | queue-crud, queue-fire-sequence, queue-timed-advance, cue-promote-transition, transition-modes, cancel-transition |
-| 5 | view-mode-switching, hud-controls, editor-switching, panel-visibility, island-controls, master-editor-lock |
-| 6 | setlist-crud, setlist-round-trip, settings-persistence, notification-toasts |
-| 7 | invalid-code-recovery, empty-channel-handling, rapid-state-changes |
-| 8 | bug-007-require-crypto-telemetry |
 
-Each scenario name corresponds to the file `docs/testing/mcp-tests/{scenario-name}.md`.
+(See the legacy tier map in git history for the full set; the curated live corpus is the
+regression-validated subset — `docs/testing/mcp-tests/corpus/live/*.yaml`.)
+
+### Single scenario
+
+1. **Prefer a converted YAML scenario.** Scan `docs/testing/mcp-tests/corpus/live/*.yaml` (and
+   `corpus/mock/` for engine-logic-only runs) for a name matching `$ARGUMENTS`. A YAML scenario is
+   the engine's native input — no conversion needed.
+2. **If only a legacy `.md` scenario exists** (`docs/testing/mcp-tests/*.md`), it is grandfathered
+   (the lint warns, never fails). Convert the curated behavior to a YAML scenario following the
+   format in `scripts/mcp-test/CLAUDE.md` (Phase 1 grammar: `version`, `name`, `requires`, `steps`,
+   `assertions`), then lint it:
+   ```bash
+   npx tsx scripts/check-mcp-scenarios.ts docs/testing/mcp-tests/corpus/live
+   python ~/.claude/scripts/surface_resolver.py --repo-root . --lint docs/testing/mcp-tests/corpus/live/<name>.yaml
+   ```
+   Both must pass (schema + JSONPath cardinality + audio-tolerance rules; every asserted tool
+   registered) before running.
+3. **If no scenario exists at all**, author one from the feature's SPEC behavior. Keep assertions on
+   **scalar** observables (the engine evaluates them in code) — `get_audio_buffer`'s `rms` /
+   `scheduler_playing` / `max_discontinuity` / `dc_offset`, the audio-quality scalar fields, state
+   snapshot fields. Do NOT design assertions that need raw sample arrays.
+
+> **Do NOT hand-drive the MCP API to "explore" behavior in the happy path.** The old skill probed
+> tools by curl before writing assertions; that is now the engine's pre-flight job (field-path
+> dry-run resolves every assertion path against a live read). Author the scenario, run the engine,
+> and let pre-flight surface an unresolvable path as a `harness` miss to self-heal.
 
 ---
 
-## Step 2: Server Lifecycle — Kill, Start, and Verify
+## Step 2: Ensure Runtime Readiness
 
-> **Plan-declared structural untestability — assess BEFORE booting anything:** if the
-> feature/bug PHASES.md carries `**MCP runtime:** not-required — {reason}` (authored by
-> `/spec-phases`), do NOT start the server yet. FIRST verify the plan's claim against
-> `docs/features/mcp-testing/SPEC.md` (the genuinely untestable classes are the "What We
-> Cannot Prove" observation gaps and raw-PCM injection into the Rust callback thread —
-> "Audio IS MCP-testable" via `load_test_tone` + `get_audio_buffer`, so audio claims are
-> usually wrong). If you CONCUR, skip Steps 2–5 entirely and write the scoped
-> `SKIP_MCP_TEST.md` (provenance fields below) — no runtime needed. If you DISAGREE,
-> proceed with the normal lifecycle (standalone runs boot it here; lazy-batch cycles
-> return the single line `NEEDS_RUNTIME` instead, per the dispatch prompt).
+The engine needs the dev runtime up and MCP-ready (`GET http://localhost:3333/health` == 200) before
+the live run. **Who owns the boot depends on the invocation:**
 
-> **Orchestrator-managed runtime (lazy-pipeline / `--batch` runs):** when `/mcp-test`
-> is driven by `/lazy-batch` (or `/lazy`), the **orchestrator** pre-boots the dev
-> runtime in its own long-lived session and BLOCKS on `GET
-> http://localhost:3333/health` == 200 BEFORE dispatching this cycle. In that case
-> the server is ALREADY running and MCP-ready: **do NOT kill/restart it, do NOT
-> `npx kill-port`, and do NOT start a background `tauri:dev`.** Treat
-> `server_was_running = true` and skip straight to the Step 4 *readiness* check.
-> The reason the orchestrator owns the boot: this skill runs INLINE inside a cycle
-> subagent that has no `Agent` tool, and a background process it starts does NOT
-> survive the subagent's turn boundary — so a subagent that backgrounded the build
-> and ended its turn produced a resultless, sentinel-less return (a contract
-> violation). The orchestrator's session persists across the subagent's turn; the
-> subagent's does not.
->
-> **NO FIRE-AND-FORGET (applies to ALL invocations, human or pipeline):** never
-> start a long build/process as a background task and then end the turn waiting on
-> background events. Either drive the validation to a definitive pass/fail + a
-> written sentinel within the turn, or use a BLOCKING foreground readiness wait
-> (a `curl`/`sleep` `until`-loop, or a Monitor you await). A return with no result
-> and no sentinel wastes the run.
+### Orchestrated (lazy-pipeline / `--batch`) — the runtime is ALREADY up
 
-**CRITICAL: Test isolation requires a fresh server.** The Strudel sidecar maintains internal state (cycle counter, pattern scheduling, PLL clock) that persists across `reset_state` calls. A sidecar that connected in a prior session may report `is_connected: true` but have a stuck `current_cycle: 0.0`, producing zero voices. The ONLY reliable fix is a full app restart.
+When driven by `/lazy-batch` (or `/lazy`), the **orchestrator** pre-boots the dev runtime in its
+own long-lived session and BLOCKS on `health == 200` BEFORE dispatching this cycle. So:
 
-### When to restart (ALWAYS do this)
+- **Do NOT kill/restart, do NOT `npx kill-port`, do NOT background a `tauri:dev`.** Treat the
+  runtime as ready and go straight to Step 3.
+- **Why the orchestrator owns the boot:** this skill runs INLINE inside a cycle subagent with no
+  `Agent` tool, and a background process it starts does NOT survive the subagent's turn boundary —
+  a subagent that backgrounded the build and ended its turn produced a resultless, sentinel-less
+  return (a contract violation). The orchestrator's session persists; the subagent's does not.
+- If the runtime appears dead mid-cycle, do NOT try to boot it yourself — surface `NEEDS_RUNTIME`
+  in your return one-liner so the orchestrator re-boots.
 
-**Default behavior: always kill and restart.** Prior sessions leave the sidecar in an unpredictable state. `reset_state` clears frontend/store state but does NOT restart the sidecar process or reset its internal cycle counter.
+### Standalone (a human ran `/mcp-test` directly) — boot it here
+
+Prior sessions leave the Strudel sidecar in an unpredictable state (a stuck cycle counter survives
+`reset_state`). The reliable fix is a full restart:
 
 ```bash
 npx kill-port 3333
+npm run tauri:dev    # run_in_background: true
 ```
 
-`npx kill-port 3333` is the reliable way to stop the server. Do NOT use `taskkill /F /IM algobooth.exe` — the `tauri dev` watcher may respawn the process before you can restart cleanly.
-
-After killing, start fresh:
-
-```bash
-npm run tauri:dev
-```
-
-Use `run_in_background: true` for this command. Set `server_was_running = false`. Health and readiness checks happen in Step 4.
-
-**Key optimization:** Do NOT wait for the server here. Proceed immediately to Step 2.5 (scenario resolution). The dev server takes 3-5 minutes to compile and boot — use that time for scenario research and drafting. The readiness check in Step 4 will block only if the server isn't ready by then.
-
-### Exception: skip restart ONLY when ALL of these are true
-
-1. Health check returns 200: `curl -s http://localhost:3333/health`
-2. Sidecar is connected AND cycling: `curl -s http://localhost:3333/tools/get_sidecar_status` shows `is_connected: true`
-3. No Rust code has been modified since the server started (no new tools, no registration changes, no feature flag changes)
-4. The user explicitly says the server is in a known-good state (e.g., "server is already running, just run the test")
-
-If ALL four conditions are met → set `server_was_running = true` and skip to Step 2.5.
-
-If ANY condition fails → kill and restart as described above.
-
-### Step 2.5: Verify New Tools Are Registered (MANDATORY after code changes)
-
-If the test scenario targets **recently added or modified MCP tools** (e.g., the user says "validate the new tools we just added"), the server may be running stale code from before those tools were compiled. This step catches that.
-
-Wait for health to respond first (poll if needed), then:
-
-1. Check the expected tool count or probe a specific new tool:
-   ```bash
-   curl -s http://localhost:3333/info | python -c "import sys,json; print(len(json.load(sys.stdin)['tools']))"
-   ```
-   Or probe the specific new tool directly:
-   ```bash
-   curl -s -X POST http://localhost:3333/tools/<new_tool_name> -H "Content-Type: application/json" -d '{}'
-   ```
-
-2. **If the tool returns 404 or the tool count is lower than expected** → the server is running stale code. Restart it:
-   ```bash
-   npx kill-port 3333
-   ```
-   Then re-run `npm run tauri:dev` in background and wait for health + readiness in Step 4.
-
-3. **If the tool responds (even with a parameter validation error)** → the server has the latest code. Proceed.
-
-**Why this matters:** MCP HTTP routes are registered at compile time via `inventory::submit!` macros in `registrations.rs`. Hot-reload only covers frontend (Vue/TypeScript) changes. Any Rust-side change (new tools, modified registrations, feature flag changes) requires a full Rust recompile and server restart. The `#[tool]` attribute (rmcp) and the `register_tool_*!` macro (inventory) are both required — missing the inventory registration causes 404s at runtime even though the code compiles clean.
-
----
-
-## Step 3: Resolve or Create Test Scenario
-
-Do this **while the dev server is booting** (if it was started in Step 2). Scenario resolution is pure I/O — reading docs, possibly writing a new file — and overlaps perfectly with the 3-5 minute compile+boot time.
-
-Test scenarios live in `docs/testing/mcp-tests/`. Read `docs/testing/mcp-tests/CLAUDE.md` for the format spec.
-
-### 3a. Check for existing scenario
-
-Scan `docs/testing/mcp-tests/*.md` (excluding CLAUDE.md) for a file that matches the user's `$ARGUMENTS`. Match by:
-- File name similarity (e.g., user says "mix knob crossfade" → `mix-knob-crossfade.md`)
-- Description section content
-
-If found → read it and confirm with the user: "Found existing test scenario: `docs/testing/mcp-tests/{name}.md`. Run it as-is, or update?"
-- **Run as-is** → proceed to Step 4 with this file path
-- **Update** → edit the file, then proceed
-
-### 3b. Create new scenario (if none exists)
-
-#### Research existing docs first
-
-Before writing anything, search for guidance and similar patterns:
-
-1. Read `docs/testing/mcp-tests/CLAUDE.md` — the format spec and conventions for test scenarios
-2. Read ALL existing scenario files in `docs/testing/mcp-tests/*.md` (excluding CLAUDE.md) — look for:
-   - **Reusable patterns** — setup sequences, assertion styles, watermark polling approaches that the new scenario should follow for consistency
-   - **Partial overlap** — an existing scenario may already cover some of the behavior being tested; avoid duplicating assertions and cross-reference instead
-   - **Conventions** — dB thresholds, wait durations, phase structure, and naming patterns established by prior scenarios
-3. Check `docs/MCP_USAGE_GUIDE.md` — specifically the **Audio Architecture** and **Tool Reference** sections for the tools and parameters needed
-4. Check `docs/features/` for any spec related to the behavior under test — the scenario's assertions should align with the spec's defined behavior, not ad-hoc assumptions
-
-Use findings from this research to inform the scenario structure, assertion thresholds, and phase organization.
-
-#### Verify behavioral assumptions via exploration (MANDATORY for new scenarios)
-
-Before writing any assertions, **probe the actual MCP tool behavior** by running a lightweight exploration against the live app. This prevents writing assertions based on assumed semantics that don't match reality (e.g., assuming an undo stack records "new code" when it actually records "old code").
-
-1. Identify the key MCP tools the scenario will test
-2. For each tool, run a minimal round-trip via `curl` to capture:
-   - **Response shape** — exact field names, types, nesting (e.g., `new_code` vs `restored_code`, `remaining_history` vs `count`)
-   - **Behavioral semantics** — what the tool actually does (e.g., does `undo_code` return the popped entry or the new current state? does history record the replaced code or the new code?)
-   - **Side effects** — does the operation trigger session events? which event names? synchronous or deferred?
-   - **Timing** — does the state change appear immediately in subsequent reads, or is there a propagation delay?
-3. Record the findings as notes to inform assertion design
-4. If any finding contradicts your initial assumptions from the docs, adjust the scenario design BEFORE writing it — do NOT write assertions based on doc assumptions alone
-
-**Example exploration for code history:**
-```bash
-# Check baseline
-curl -s -X POST http://localhost:3333/tools/get_code_history -H "Content-Type: application/json" -d '{"channel":"main"}'
-# Set code and check what history records
-curl -s -X POST http://localhost:3333/tools/update_code -H "Content-Type: application/json" -d '{"channel":"main","code":"test_a"}'
-sleep 1
-curl -s -X POST http://localhost:3333/tools/update_code -H "Content-Type: application/json" -d '{"channel":"main","code":"test_b"}'
-sleep 1
-curl -s -X POST http://localhost:3333/tools/get_code_history -H "Content-Type: application/json" -d '{"channel":"main"}'
-# → Discovery: latest history entry is "test_a" (replaced code), NOT "test_b" (new code)
-# Clean up
-curl -s -X POST http://localhost:3333/tools/update_code -H "Content-Type: application/json" -d '{"channel":"main","code":""}'
-```
-
-This step requires the app to be running. If the app is not yet ready (Step 2 started it), wait for health + readiness first (Step 4), then come back and run exploration before drafting the scenario.
-
-#### Draft the scenario
-
-Translate the user's `$ARGUMENTS` into a test scenario file:
-
-1. Map each user instruction to specific MCP tool calls with exact parameters
-2. Replace UI concepts with MCP-native terms:
-   - "set active channel to X" → `POST /tools/set_active_editor {"editor": "X"}` for UI focus, plus `update_code` or `load_test_tone` with `channel: "X"` for audio routing
-   - "switch channel" → `POST /tools/switch_editor` (toggles between main/cue)
-   - "enable playback" → `POST /tools/play`
-   - "set mixer to 50%" → `POST /tools/set_mix_knob {"value": N}` (0=Cue, 100=Master)
-   - "verify audio is audible" → check `get_audio_silence_diagnostics` (with optional `channel` param) or `get_evaluation_result`
-   - "press keyboard shortcut" → `POST /tools/simulate_keyboard {"key": "Space", "modifiers": ["ctrl"]}`
-   - "wait for event X" → `POST /tools/wait_for_event {"pattern": "X", "timeout_ms": 5000}`
-   - "check if animation finished" → `GET /tools/get_animation_state` (wait for `animating: false`)
-   - "verify toast notification" → `GET /tools/get_toast_history`
-   - "check focus state" → `GET /tools/get_focus_state`
-   - "verify code evaluation" → `GET /tools/get_evaluation_result`
-   - "capture specific element" → `POST /tools/capture_screenshot {"selector": ".performance-strip"}` (see selector reference below)
-3. **Use validated CSS selectors** for `capture_screenshot`. The following selectors are tested and produce correctly-scoped captures:
-
-   | Selector | Captures |
-   |----------|----------|
-   | `.performance-strip` | Full transport bar (play/stop, mixer, navigation) |
-   | `.document-editor` | Code editor area |
-   | `.cm-editor` | CodeMirror editor only (code content) |
-   | `.custom-header-bar` | Top header/title bar |
-   | `.studio-main-row` | Editor + RHS panels row |
-   | `.studio-mode-layout` | Full layout minus header bar |
-   | `.strip-zone--transport` | Play/stop button + status indicator |
-   | `.strip-zone--mixer` | Cue/Master crossfader |
-   | `.strip-zone--navigation` | F1-F4 panel toggle buttons |
-   | `.rhs-panel-area` | Right-hand side panels (empty/tiny when collapsed) |
-
-   **WARNING:** `.transport-bar` does NOT exist — use `.performance-strip` for the transport bar. If a selector is not found in the DOM, `capture_screenshot` silently falls back to full-page capture (same size as no selector). Always verify targeted captures are smaller than full-page.
-
-4. Write positive AND negative assertions with step references and evidence expectations
-5. Write the file to `docs/testing/mcp-tests/{kebab-case-name}.md` following the format in the CLAUDE.md
-6. Show the user the file path and a brief summary before proceeding
-
----
-
-## Step 3.5: Validate Scenario File
-
-Before dispatching the subagent, verify the resolved scenario file contains all required sections. This prevents a wasted subagent run on a malformed file.
-
-Read the scenario file and check for the presence of **all** of the following sections:
-
-| Required Section | What to look for |
-|-----------------|-----------------|
-| Description | A `## Description` heading with non-empty content |
-| Prerequisites | A `## Prerequisites` heading with non-empty content |
-| Instructions | A `## Instructions` heading with numbered steps |
-| Assertions — Positive | A `### Positive` (or `## Assertions` containing a Positive sub-table) with at least one row |
-| Assertions — Negative | A `### Negative` sub-table with at least one row |
-
-**If all sections are present** → proceed to Step 4.
-
-**If any section is missing or empty** → stop immediately and report the validation error to the user:
-
-```
-SCENARIO VALIDATION FAILED: docs/testing/mcp-tests/{name}.md
-
-Missing or empty sections:
-  - Prerequisites
-  - Assertions (Negative)
-
-Fix the scenario file and re-run /mcp-test.
-```
-
-Do NOT dispatch the subagent until validation passes.
-
----
-
-## Step 4: Wait for App Readiness
-
-Now that the scenario is ready, ensure the dev server is fully initialized before dispatching the test subagent.
-
-**If `server_was_running` is true** (from Step 2), skip the health poll and go directly to the readiness check.
-
-**If `server_was_running` is false**, first poll `/health` with exponential backoff using the Monitor tool:
+`npx kill-port 3333` is the reliable stop (NOT `taskkill /F /IM algobooth.exe` — the watcher
+respawns). The build takes 3–5 min — use that time for Step 1 scenario resolution. Then BLOCK on
+readiness (foreground `until`-loop, never a fire-and-forget background wait):
 
 ```bash
 for delay in 5 10 20 30 30 30 30 30 30 30 30 30 30 30 30; do
-  curl -s http://localhost:3333/health && echo "READY" && break
-  echo "Waiting ${delay}s..."
+  curl -s http://localhost:3333/health && echo "HEALTH OK" && break
   sleep $delay
 done
+# then confirm the session logger + sidecar are up:
+curl -s -X POST http://localhost:3333/tools/get_session_events -H "Content-Type: application/json" -d '{"limit":1}'   # total_lines > 10
+curl -s http://localhost:3333/tools/get_sidecar_status   # is_connected: true
 ```
 
-Total timeout: 450s. If health never responds → report BLOCKING failure and stop.
+> **Skip the restart ONLY when ALL hold:** health 200, sidecar connected, NO Rust code changed since
+> boot, and the user explicitly says the server is known-good. Any Rust-side change (new/modified
+> tools, registrations, feature flags) requires a full recompile + restart — MCP routes register at
+> compile time via `inventory::submit!`; hot-reload covers only frontend changes.
 
-**Then, for all cases**, run the app readiness check. The `/health` endpoint responds as soon as the Rust HTTP server starts, but Vue stores and MCP event listeners initialize later.
-
-Poll with exponential backoff: 10s, 15s, 20s, 30s, 45s, 60s (6 retries, ~180s max).
-
-**Key detail:** Do NOT filter by `evt_filter: "store_"` — store telemetry events only fire when store *actions* run (user interaction), not during initialization. Use **unfiltered** events and check `total_lines` instead, which counts all session events including `session_start`, `log_info`, etc. that fire during Vue/Pinia boot.
-
-Use this exact script (handles JSON with or without spaces around colons):
-
-```bash
-for delay in 10 15 20 30 45 60; do
-  result=$(curl -s -X POST http://localhost:3333/tools/get_session_events \
-    -H "Content-Type: application/json" -d '{"limit": 1}' 2>/dev/null)
-  total=$(echo "$result" | grep -oE '"total_lines" *: *[0-9]+' | grep -oE '[0-9]+')
-  if [ -n "$total" ] && [ "$total" -gt 10 ]; then
-    echo "READY: total_lines=$total"
-    exit 0
-  fi
-  echo "Not ready (total_lines=${total:-null}), waiting ${delay}s..."
-  sleep $delay
-done
-echo "TIMEOUT"
-exit 1
-```
-
-**Ready** when `total_lines > 10` — this means the session logger is running and Vue has initialized enough to emit log events.
-
-If all 6 retries exhausted → report BLOCKING failure and stop.
-
-### Sidecar Readiness Gate
-
-After `total_lines > 10` is confirmed, check that the Strudel sidecar has booted and connected:
-
-```bash
-curl -s http://localhost:3333/tools/get_sidecar_status
-```
-
-Verify the response contains `"is_connected": true`.
-
-- **Connected** → proceed to the audio pipeline smoke test below.
-- **Not connected** (e.g., `is_connected: false`, connection refused, or missing field) → report BLOCKED:
-
-  ```
-  BLOCKED: Sidecar not connected.
-  get_sidecar_status response: {raw response here}
-
-  The Strudel sidecar must be connected before running tests that touch the audio pipeline.
-  Wait for the sidecar to boot and re-run /mcp-test, or check for sidecar startup errors in the dev console.
-  ```
-
-  Do NOT dispatch the subagent.
-
-### Audio Pipeline Smoke Test (MANDATORY)
-
-**This catches the "stale sidecar" problem.** A sidecar may report `is_connected: true` but have a stuck cycle counter, producing zero voices. Verify the full pipeline works end-to-end before dispatching the subagent.
-
-1. Load a test tone and play:
-   ```bash
-   curl -s -X POST http://localhost:3333/tools/load_test_tone -H "Content-Type: application/json" -d '{"channel":"main"}'
-   sleep 2
-   curl -s -X POST http://localhost:3333/tools/play -H "Content-Type: application/json" -d '{}'
-   sleep 5
-   ```
-
-2. Check audio is active:
-   ```bash
-   curl -s http://localhost:3333/tools/get_audio_silence_diagnostics
-   ```
-   Verify `queueLen > 0` (sidecar has active patterns). If `queueLen == 0` AND `v2VoicesTriggered == 0`, the audio pipeline is not working.
-
-3. **If pipeline is working** (`queueLen > 0`) → clean up and proceed to Step 5:
-   ```bash
-   curl -s -X POST http://localhost:3333/tools/stop -H "Content-Type: application/json" -d '{}'
-   curl -s -X POST http://localhost:3333/tools/update_code -H "Content-Type: application/json" -d '{"channel":"main","code":""}'
-   ```
-
-4. **If pipeline is dead** (`queueLen == 0`, `v2VoicesTriggered == 0`) → the sidecar is stuck. Kill and restart:
-   ```bash
-   npx kill-port 3333
-   ```
-   Re-run `npm run tauri:dev` in background, wait for full readiness (re-do Step 4 from the top). If the pipeline fails a second time, report BLOCKING failure — do NOT dispatch the subagent on a dead pipeline.
+> **Structural untestability — assess BEFORE booting:** if the feature/bug PHASES.md carries
+> `**MCP runtime:** not-required — {reason}`, verify the claim against
+> `docs/features/mcp-testing/SPEC.md` (the only genuinely untestable classes are the "What We Cannot
+> Prove" observation gaps and raw-PCM injection into the Rust callback thread — "Audio IS
+> MCP-testable" via `load_test_tone` + `get_audio_buffer`, so audio claims are usually wrong). If you
+> CONCUR, skip Steps 2–5 and the engine's sentinel writer emits the scoped `SKIP_MCP_TEST.md`
+> (provenance below). If you DISAGREE, proceed normally; lazy-batch cycles return `NEEDS_RUNTIME`
+> rather than booting.
 
 ---
 
-## Step 4.5: Environment Capability — Headless Pump vs Real Device
+## Step 3: Run the Engine (THE execution — not the model)
 
-**Read this whenever an audio-quality assertion fails on a *non-deterministic metric* (dropouts, sustained-stability, timing jitter) rather than a logic metric.** It tells you whether the failure is your code or the test substrate, and which sentinel to write.
+Invoke the deterministic runner against the resolved scenario, passing the feature id so the engine
+emits the terminal sentinel into the feature dir:
 
-### Which audio backend is live, and why it matters
+```bash
+npx tsx scripts/mcp-test/run.ts docs/testing/mcp-tests/corpus/live/<scenario>.yaml <outDir>
+```
 
-The Rust backend (`src-tauri/src/audio/context.rs`, `classify_audio_backend(forced, probe)`) picks ONE of two output drivers at startup:
+The engine runs the full pipeline in ONE pass (SPEC §Validation flow):
 
-| Driver | Selected when | Clock source | Fidelity for AQ assertions |
-|--------|---------------|--------------|----------------------------|
-| `CpalOutputDriver` (`cpal_driver.rs`) | A usable default output device + negotiated config exists AND headless is not forced | **Real hardware device callback** | Full — sustained-stability/dropout/timing metrics are trustworthy |
-| `HeadlessPumpDriver` (`headless_pump.rs`) | `ALGOBOOTH_AUDIO_HEADLESS=1` (forced) **OR** no default device / no supported config (auto-degrade) | **Software pump** — a paced thread (`spin_sleep::SpinSleeper`, absolute-target pacing + xrun recovery) | Logic/signal-presence trustworthy; **sustained-timing metrics are NOT** |
+1. **Pre-flight readiness gate** — docs pre-screen + live `/info` probe + field-path dry-run +
+   backend detection. A blocking miss SHORT-CIRCUITS to a `harness` verdict with NO scored run (no
+   avoidable rerun — the single-pass guarantee). `backend-deferrable` misses (sustained-timing on a
+   headless host) are carried as non-blocking deferrals.
+2. **Scored run** — executes each step against `localhost:3333` (per-tool HTTP method from the
+   authoritative `tool-methods.ts` map, never inferred from the name), captures responses, and
+   evaluates every assertion **in code** via the locked operator set + strict JSONPath (a scalar
+   operator on a 0/2+-match path FAILS LOUD — no silent array-flatten false-pass).
+3. **Three-gate classification** — Gate 1 (pre-flight miss) → `harness`; Gate 2 (HTTP 5xx / DSP
+   error flag) → `genuine` with ZERO model invocation; Gate 3 (valid response, value out of band) →
+   `uncertain` (the only case needing Sonnet), biased `uncertain → genuine`; clean → `pass`.
+4. **Self-heal** (on a `harness` classification) — mechanics-only, audited repair (field/JSONPath
+   drift, threshold *typo* with unchanged value, tool-name casing, pacing/timeout, missing `requires`
+   entry, stale-read race, stale-binary restart), re-run, capped retries. Every heal is recorded in
+   `verdict.json.heals[]` (before/after + reason) and raises `warning`. **Anti-masking (hard):** a
+   change to *what an assertion asserts* (threshold band, expected value, deletion/weakening) is
+   SEMANTIC → the engine writes `NEEDS_INPUT.md` and refuses, never an autonomous edit.
+5. **Sentinel emission** — on a clean/deferred `pass` the engine writes the TERMINAL sentinel
+   directly (the model NEVER authors sentinels): `VALIDATED.md` (clean pass) /
+   `DEFERRED_REQUIRES_DEVICE.md` (clean pass with backend deferrals) / `SKIP_MCP_TEST.md` (explicit
+   structural skip). `genuine` / `uncertain` / unrepaired `harness` emit NO terminal sentinel here
+   (they route to BLOCKED / Sonnet / self-heal). `MCP_TEST_RESULTS.md` carries the partial record
+   with `validated_commit`.
 
-Confirm the live backend before trusting (or distrusting) an AQ result: `GET /tools/get_audio_mode` reports `mode` (`cpal` | `headless`) + `forced`. `get_audio_silence_diagnostics` reports `v2VoicesTriggered` / `queueLen`.
+The CLI exits 0 on a pass verdict, 1 on a fail verdict, 2 on a load/transport error.
 
-### The WSL2 limitation (and why it is environmental, not a product defect)
+---
 
-On WSL2 there is no ALSA output device, so the engine runs the `HeadlessPumpDriver` (forced via `ALGOBOOTH_AUDIO_HEADLESS=1`, or auto-degraded). The pump is a normal OS-scheduled thread, so it gets **preempted** under load. Consequences:
+## Step 4: Read the Verdict (the ONLY thing in model context)
 
-- **What WORKS faithfully under the headless pump:** all behavioral/logic assertions (commit/abort/state/correlationId), and instantaneous signal-integrity — RMS presence, clicks, clipping, DC offset, silence-while-playing — via `load_test_tone` + `get_audio_buffer`/`audio_capture` (per CLAUDE.md "Audio IS MCP-testable"). Voices DO flow under the pump (`v2VoicesTriggered > 0`); a zero-voice result is a real bug, not this limitation.
-- **What is NOT faithful under the headless pump:** any assertion over *sustained playback time* whose pass condition is timing-stability — e.g. zero-dropout, jitter bounds. `audio_artifact_scan` will report dropouts on a steady tone **even with zero transactional activity**, because the pump was preempted. Prove this is environmental with a **control run**: capture the same metric with no feature activity; if the artifact still appears, it is the substrate, not the code.
+Read the compact `verdict.json` the engine wrote (`<outDir>/<stem>.verdict.json`). It is a few KB —
+the FROZEN schema (`scripts/mcp-test/verdict.ts`):
 
-**Decision rule when an AQ assertion fails on a non-deterministic metric:**
-1. Run the control (same metric, zero feature activity). If the artifact persists → environmental.
-2. Confirm `mode: headless` via `get_audio_mode`.
-3. If both hold, the assertion is **WSL2-untestable, not un-testable** — it will pass on a real-device host (Windows-native cpal callback, or any host with a real output device where headless is not forced). **DEFER it** via `DEFERRED_REQUIRES_DEVICE.md` (the device-axis deferral below) so a real-device run re-opens and certifies it; do NOT mark it failed, do NOT fake a pass, and do NOT write a *permanent* `SKIP_MCP_TEST.md` for it (a permanent skip means a later real-device run never re-validates — exactly the gap this deferral closes).
+- `name`, `result` (`pass`|`fail`), `passed`, `failed`
+- `assertions[]` — each row: `id`, `subject`, `path`, `operator`, `expected`, `observed` (scalar or
+  a compact `{ omitted: "<n> values — see artifact" }` stand-in), `result`, `reason`
+- `heals[]` — audited self-heal records (before/after + reason); non-empty → drift was present and
+  self-healed, so you SEE it even on a pass
+- `warning` — true when any heal applied
+- `artifact` — the PATH to the sibling raw-payload file (sample arrays, full step context). **Open
+  it ONLY if a scalar already FAILED and deeper localization is genuinely needed** — never pull the
+  raw `samples` array into context on a pass.
 
-### Sentinel handling for environment-scoped partial validation (`--batch` / lazy-pipeline runs)
+> **Token-cost contract (the SPEC success metric).** The model reads `verdict.json` only. Raw
+> `samples` arrays and unfiltered log dumps are NEVER serialized into context — the engine wrote
+> them to the `artifact` path. Measured baseline: the prior LLM-as-runner `/mcp-test` burned ~1.34M
+> tokens / 9 cycles on a single feature, dominated by raw `get_audio_buffer` arrays + full log
+> dumps the assertions never needed. This rewrite removes that bloat with UNCHANGED verification
+> strength (the assertions are still on the scalars).
 
-When invoked under the lazy state machine (Step 9), `/mcp-test` writes a terminal sentinel into the feature dir (`docs/features/.../<feature>/`). Pick the right one — the distinction is load-bearing because `lazy-state.py` advances the QUEUE on a terminal `VALIDATED.md`, a permanent `SKIP_MCP_TEST.md`, or a device-axis `DEFERRED_REQUIRES_DEVICE.md` (the last DEFERS rather than completes — the feature stays In-progress on a no-device host and is re-opened on a real-device host):
+---
+
+## Step 5: Forward the Sentinel + Reconcile PHASES
+
+The engine ALREADY wrote the terminal sentinel (Step 3.5). Your job is to forward/confirm it and
+reconcile `PHASES.md` — both mechanical, both haiku.
+
+### On a clean / deferred `pass`
+
+1. Confirm the engine wrote the expected sentinel (`VALIDATED.md` for a clean pass, or
+   `DEFERRED_REQUIRES_DEVICE.md` if the verdict carried backend deferrals). Do NOT re-author it.
+2. Reconcile the feature's `PHASES.md` with the deterministic helper — it ticks the validated phase's
+   per-deliverable checkboxes + per-phase `**Status:**` (scoped to that phase's section) and NEVER
+   flips the top-level `**Status:**` or writes `COMPLETED.md` (both `__mark_complete__`-owned):
+   ```bash
+   npx tsx scripts/mcp-test/reconcile-phases.ts <PHASES.md> <validated-phase>
+   ```
+3. Walk every unchecked **Runtime Verification** row in the validated phase: tick the ones this run
+   proved (with a one-line evidence annotation naming the scenario/assertion); re-scope any NOT
+   covered to an honest follow-up note (and disclose with a `⚖` line). If a genuinely blocking row
+   stays unchecked, the outcome is a `MCP_TEST_RESULTS.md` partial, not `VALIDATED.md`.
+4. Commit the reconciliation alongside the engine's sentinel write.
+
+### On a `genuine` (Gate 2) or unrepaired `harness`
+
+No terminal sentinel was written. A `genuine` runtime bug routes to `BLOCKED.md` via the normal lazy
+route (ZERO model judgment was needed — the engine classified it deterministically). At
+`retry_count >= 2` a `BLOCKED.md` with `blocker_kind: mcp-validation` MUST carry a `## Seam
+Enumeration` section (every boundary in the failing chain: user surface → sidecar/IPC → command
+queue → engine apply → state machine → final observable, each `probed-OK`/`probed-FAIL`/`unprobed`
+with one line of evidence) — you just drove the runtime, so you are the cheapest place to enumerate
+it; `blocked-resolution` / `/add-phase` consume it as the corrective phase's seam-audit checklist.
+
+### On an `uncertain` (Gate 3) — THE ONLY Sonnet escalation
+
+The engine bundled the failed assertion rows as the evidence bundle and biased `uncertain → genuine`.
+Escalate to **Sonnet** to classify flake vs genuine over that evidence. Sonnet may classify
+*infrastructure flake* ONLY on proven environmental evidence (e.g. a CPU-starvation/preemption
+signature on a `headless` backend — confirm via `get_audio_mode` + a zero-feature-activity control
+run); otherwise → genuine. **Sonnet is FORBIDDEN from altering any semantic assertion value** (that
+is the anti-masking line — a real threshold/expected-value change is `NEEDS_INPUT`, never an edit).
+
+---
+
+## Sentinel reference (the engine writes these — you forward them)
+
+The distinction is load-bearing: `lazy-state.py` advances the QUEUE on a terminal `VALIDATED.md`, a
+permanent `SKIP_MCP_TEST.md`, or a device-axis `DEFERRED_REQUIRES_DEVICE.md` (the last DEFERS —
+the feature stays In-progress on a no-device host and re-opens on a real-device host).
 
 | Outcome | Sentinel | When |
 |---------|----------|------|
-| Every scenario passed | `VALIDATED.md` (`kind: validated`, `result: all-passing`) | Full pass — nothing environment-blocked |
-| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `pass_count`/`total_count`, `validated_commit`) | Honest record of a partial; on its own this does NOT complete the feature (the pipeline loops on partial) |
-| Residual failures are real-device-only but **certifiable on a real device** | `DEFERRED_REQUIRES_DEVICE.md` (`kind: deferred-requires-device`) **scoped to the specific scenario IDs** | The default for sustained-timing / dropout / jitter assertions that fail only under the headless pump. DEFERS to a real-device host — does NOT complete the feature here. |
-| Residual failures are un-testable on **ANY** host (genuinely no MCP path) | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`) **scoped to the specific scenario IDs** | Permanent waiver. The ONLY genuinely any-host-untestable path is raw-PCM injection into the Rust callback thread (per `docs/features/mcp-testing/SPEC.md`). Almost never the right call for a timing assertion. |
+| Every scenario passed | `VALIDATED.md` (`kind: validated`) | Clean pass, nothing environment-blocked |
+| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `validated_commit`) | Honest partial — does NOT complete the feature |
+| Residual failures real-device-only but certifiable on a real device | `DEFERRED_REQUIRES_DEVICE.md` (`kind: deferred-requires-device`), scoped `deferred_scenarios[]` | Sustained-timing / dropout / jitter under the headless pump |
+| Residual failures un-testable on ANY host | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`), scoped | Permanent waiver — only raw-PCM injection qualifies |
 
-**`BLOCKED.md` at `retry_count >= 2` MUST carry a `## Seam Enumeration` section (validation-escalation contract).** When the validation outcome is a `BLOCKED.md` with `blocker_kind: mcp-validation` and a `retry_count` of 2 or more (i.e. this feature has now failed end-to-end validation at least twice), the sentinel body MUST include a `## Seam Enumeration` section: every boundary in the failing chain (user surface → sidecar/IPC transport → command queue/ring → engine apply → state machine → final observable: audio/telemetry), one row per seam, each tagged `probed-OK` / `probed-FAIL` / `unprobed` with one line of evidence. You have just driven the live runtime — you are the cheapest place to enumerate the chain. Downstream, `blocked-resolution` and `/add-phase` consume this section as the corrective phase's **seam-audit checklist** so the next validation round verifies the WHOLE chain instead of discovering the next broken layer cold (d8-live-looping burned three ~1M-token validation rounds peeling exactly one layer per round: API reachability → unsupported live-input source → audio-thread command-apply drop).
+**`validated_commit` is REQUIRED in every `MCP_TEST_RESULTS.md`** (the engine captures `git rev-parse
+HEAD` at validation time via injected deps) — the Step-9 sha-freshness gate compares it to HEAD so
+stale results trigger a re-verify.
 
-**`validated_commit` is REQUIRED in every `MCP_TEST_RESULTS.md` (going forward).** When writing `MCP_TEST_RESULTS.md`, include the frontmatter field `validated_commit: <git rev-parse HEAD at validation time>` — capture the sha when the MCP run completes, BEFORE any further commits. The state scripts' Step-9 sha-freshness gate compares this field to the current HEAD so stale results (validated against older code) trigger a re-verify instead of silently certifying current code. Legacy files without the field skip the check — new writes MUST carry it. Schema: `~/.claude/skills/_components/sentinel-frontmatter.md` (`kind: mcp-test-results`).
+**`SKIP_MCP_TEST.md` provenance (HARD — the state scripts enforce):** `granted_by: mcp-test` (the
+only value a pipeline-written skip may carry) + `spec_class: <the untestable class you verified>`
+(the `docs/features/mcp-testing/SPEC.md` class). `lazy_core.skip_waiver_refusal()` REFUSES a grant
+without it. The engine's sentinel writer enforces both invariants (and `deferred_scenarios[]`
+non-empty — a blanket whole-feature deferral is rejected).
 
-**Deferral vs skip — pick by re-testability (this is the load-bearing distinction):**
-
-- A sustained-timing/dropout/jitter assertion that fails ONLY because the host runs the HeadlessPumpDriver is **WSL2-untestable, not un-testable** → write `DEFERRED_REQUIRES_DEVICE.md`. It is NOT permanent: a real-device `/lazy` host re-opens it. (`lazy-state.py` Step 9 on a real-device host re-dispatches `/mcp-test` scoped to the deferred scenario IDs.)
-- An assertion that NO host can drive through MCP (raw-PCM injection only) → `SKIP_MCP_TEST.md` (permanent). Cross-check `docs/features/mcp-testing/SPEC.md` before writing one.
-
-**SKIP provenance (HARD — the state scripts enforce this):** every `SKIP_MCP_TEST.md` this skill writes MUST carry, in frontmatter:
-- `granted_by: mcp-test` — you are the validation step; this is the only `granted_by` value a pipeline-written skip may carry.
-- `spec_class: <the untestable class you verified>` — the `docs/features/mcp-testing/SPEC.md` class the deliverable falls under (e.g. `raw-PCM injection into the Rust callback thread`, an observation-gap row, or `standalone crate — no app integration`). REQUIRED: `lazy_core.skip_waiver_refusal()` REFUSES an mcp-test grant without it (and refuses any pipeline-written skip that omits `granted_by` entirely) — the queue halts for operator confirmation instead of validating. Schema: `~/.claude/skills/_components/sentinel-frontmatter.md`.
-
-**`DEFERRED_REQUIRES_DEVICE.md` — the required shape (NOT a blanket whole-feature deferral):**
-
-- `deferred_scenarios:` lists the **specific scenario IDs** being deferred (non-empty — every *other* scenario must have actually passed via MCP on this host). This is the self-limiting scope a real-device run re-opens.
-- `reason:` states the real-device-specific cause (headless-pump preemption / no real device), explicitly noting the artifact reproduces with **zero feature activity** (the control run) and that a real-device host does not exhibit it.
-- `proxy_validation:` (optional) cites the proxy that DOES cover the metric here (e.g. `npm run qg:realtime` — K=4 smoke + NIGHTLY 60s).
-- `backend_observed: headless` (optional) records the `get_audio_mode` reading at deferral.
-- See the canonical schema in `~/.claude/skills/_components/sentinel-frontmatter.md` (`kind: deferred-requires-device`).
-
-**Re-open contract (what a real-device run must do).** When `/mcp-test` is dispatched on a real-device host against a feature carrying `DEFERRED_REQUIRES_DEVICE.md` (its args name the deferred scenario IDs), run EXACTLY those scenarios against the live cpal backend (confirm `get_audio_mode` reports `mode: cpal`, not `forced`). On pass: **delete `DEFERRED_REQUIRES_DEVICE.md` and write `VALIDATED.md`** so the pipeline proceeds to completion. On a genuine failure (a real dropout on real hardware): that is a real bug → `BLOCKED.md`, NOT a re-deferral or a skip.
-
-The intent: a future real-device run re-validates the deferred assertions instead of inheriting a permanent blanket exemption. A blanket whole-feature deferral is wrong — if the logic + signal-presence scenarios are MCP-testable here (they are), only the sustained-timing residual gets deferred, and only with the device-specific justification above.
-
-### Reconcile PHASES.md after writing VALIDATED.md (REQUIRED on a full pass)
-
-Immediately after writing `VALIDATED.md`, RECONCILE the feature's `PHASES.md` so it is coherent for the completion gate. Walk every phase and, for EACH unchecked Runtime Verification row:
-
-- **Covered by this validation run** → tick it (`- [ ]` → `- [x]`) with a brief evidence annotation naming the scenario / assertion that proved it.
-- **NOT covered by this run** → re-scope it honestly: convert the row to a non-checkbox follow-up note, OR — if the gap is genuinely blocking — downgrade the outcome to an `MCP_TEST_RESULTS.md` partial instead of `VALIDATED.md`. Disclose the re-scope with a `⚖` line in your Step 6 summary.
-
-Then flip each phase's `**Status:**` to `Complete` once nothing in that phase remains unchecked (per-phase flips are permitted — only the top-level `**Status:**` and the receipt are orchestrator-owned). **Why:** the completion-integrity gate refuses an incoherent flip (top-level `Complete` while a per-phase row stays unchecked or a per-phase Status is not `Complete`/`Superseded`), so an unreconciled `PHASES.md` strands the feature at `__mark_complete__`. Commit the reconciliation alongside the `VALIDATED.md` write.
+**Deferral vs skip — by re-testability:** a sustained-timing/dropout/jitter assertion that fails
+ONLY because the host runs the HeadlessPumpDriver is WSL2-untestable, not un-testable →
+`DEFERRED_REQUIRES_DEVICE.md` (a real-device `/lazy` host re-opens it scoped to the deferred IDs; on
+pass it deletes the deferral and writes `VALIDATED.md`; a real dropout on real hardware →
+`BLOCKED.md`). An assertion NO host can drive through MCP (raw-PCM only) → permanent
+`SKIP_MCP_TEST.md`. Canonical schema: `~/.claude/skills/_components/sentinel-frontmatter.md`.
 
 ---
 
-## Step 5: Dispatch Sonnet Subagent
+## Step 6: Report
 
-Launch a **Sonnet** subagent via the Agent tool (`model: "sonnet"`). The prompt references files by path — do NOT inline their content.
+Summarize to the user (haiku — small, structured):
 
-Replace `{SCENARIO_PATH}` with the test scenario file path from Step 3.
+1. **Verdict** — `result`, `passed`/`failed`, the classification `kind`, and any `heals[]` (each is
+   audited drift the engine self-healed — surface it even on a pass).
+2. **Sentinel** — which terminal sentinel the engine wrote (or why none: genuine/uncertain/harness).
+3. **PHASES reconcile** — which phase/rows were ticked; any `⚖` re-scope disclosure.
+4. **Scenario file** — the YAML scenario used/created.
+5. **Escalation** — if Sonnet was pulled in (Gate-3/repair), say so; a clean pass should NOT have
+   escalated (single-pass-on-haiku is the success metric).
 
-```
-You are testing the AlgoBooth Tauri desktop app via its MCP HTTP API on localhost:3333.
-The app is already running and fully initialized.
-
-## Reference Documentation (read these files)
-
-- docs/MCP_USAGE_GUIDE.md — Audio architecture, complete tool reference, endpoint formats
-- docs/testing/MCP_INTEGRATION_GUIDE.md — Test scenarios, event validation, session log analysis, confidence scoring
-
-## Test Scenario (read this file)
-
-{SCENARIO_PATH}
-
-This file contains: a description of what is being tested, numbered MCP-native instructions to execute, and assertion tables (positive and negative) to validate against.
-
-## Session Telemetry
-
-- **POST /tools/get_session_events** — read session.jsonl events. Params: `limit`, `offset`, `since_line` (watermark polling), `evt_filter` (prefix filter like "audio_", "store_")
-- **GET /tools/get_session_meta** — session metadata including `session_dir` path
-- **POST /tools/wait_for_event** — block until a matching event appears in session.jsonl. Params: `pattern` (substring match), `timeout_ms` (default 5000, max 30000). Returns `{ matched, event, elapsed_ms }`. Use this instead of manual watermark polling loops.
-- **Analysis:** `npx tsx scripts/analyze-session.ts <session_dir>/` — generates structured summary.md
-
-## Observation Tools
-
-- **GET /tools/get_toast_history** — session-scoped ring buffer (max 100) of toast/notification events with message, type, shown_at_us, dismissed_at_us
-- **GET /tools/get_focus_state** — query document.activeElement: `{ selector, component, focusable }`
-- **GET /tools/get_scroll_state** — scroll position of queue panel and pattern list containers
-- **GET /tools/get_animation_state** — `{ animating: boolean, active_transitions: string[] }` via Web Animations API
-- **GET /tools/get_evaluation_result** — last Strudel evaluation result: `{ status: "success"|"error"|"pending"|"none", error_message, voices_triggered, evaluated_at_us }`
-
-## Control Tools
-
-- **POST /tools/simulate_keyboard** — dispatch a synthetic KeyboardEvent: `{ key: "Space", modifiers: ["ctrl"] }`. Returns `{ dispatched: boolean, action_fired: string|null }` where `action_fired` is the matched keyboard binding action name. Use this instead of store mutations for keyboard-driven interactions.
-- **POST /tools/capture_screenshot** — supports optional `{ selector: ".css-selector" }` for targeted DOM element capture. When selector is provided, only that element is captured (smaller PNG, faster). When omitted, captures full page. **Validated selectors:** `.performance-strip` (transport bar), `.document-editor` (code editor), `.cm-editor` (CodeMirror only), `.custom-header-bar` (top bar), `.studio-main-row` (editor + RHS panels), `.strip-zone--transport` (play/stop), `.strip-zone--mixer` (crossfader), `.strip-zone--navigation` (F1-F4 buttons), `.rhs-panel-area` (RHS panels — empty when collapsed). WARNING: `.transport-bar` does NOT exist — use `.performance-strip`.
-
-## Setup (run FIRST, before the test scenario)
-
-1. POST /tools/reset_state
-2. POST /tools/stop
-3. POST /tools/unlock_master_editor
-4. POST /tools/update_code {"channel": "main", "code": ""}
-5. POST /tools/update_code {"channel": "cue", "code": ""}
-6. POST /tools/queue_clear
-7. Wait 2s
-7.5. Verify clear succeeded: GET /tools/get_audio_silence_diagnostics — confirm `mainCode` and `cueCode` are both empty strings. If either contains code, retry steps 4-5 and re-verify. If still not empty after retry, report BLOCKING failure.
-8. Capture event baseline: POST /tools/get_session_events {"limit": 1} → note total_lines
-
-## Execution Protocol
-
-1. Run Setup above
-2. Execute the Instructions from the test scenario file, step by step
-3. **Audio verification gate:** After any step that starts playback with a pattern, wait 3-5s then call `GET /tools/get_audio_silence_diagnostics`. If `v2VoicesTriggered == 0`, the pattern is not producing audio — report BLOCKING failure with the diagnostics response and stop. Do not proceed with measurements on silent audio.
-4. **Code evaluation verification:** After `update_code`, check the `evaluation_result` field in the response (status: "success", "error", or "pending"). If "pending", poll `GET /tools/get_evaluation_result` (up to 3 retries, 500ms apart) until status resolves. Use `get_evaluation_result` for async evaluation checks between steps.
-5. **Animation settling:** Before any screenshot after a UI-mutating action, call `GET /tools/get_animation_state`. If `animating: true`, wait 500ms and retry (up to 3 retries). Only capture screenshots when animations have settled.
-6. **Visual verification:** After UI-mutating actions (view mode change, panel toggle, layout switch), wait for animation settling (step 5), then `POST /tools/capture_screenshot`. For targeted verification, use `{ selector: ".performance-strip" }` to capture specific components instead of full-page screenshots. Read the returned PNG path to visually verify the expected UI state.
-7. **Event-driven waiting:** Instead of fixed `sleep` delays after actions, prefer `POST /tools/wait_for_event {"pattern": "event_name", "timeout_ms": 5000}` to block until the expected event appears in the session log. This is faster and more reliable than fixed delays.
-8. After each phase, collect events using `wait_for_event` or the watermark polling pattern
-9. Validate every assertion (positive, negative, AND visual) from the scenario's Assertions tables
-10. Score each assertion: VERIFIED (100%), PARTIAL (50-75%), CONTRADICTED (0%)
-11. **Audio Quality Contracts** — after all behavioral assertions pass, execute any Audio Quality Contracts found in the scenario's SPEC.md (see below)
-
-## Audio Quality Contracts
-
-After completing all behavioral assertions (steps 1-10 above), check whether the test scenario's source SPEC.md contains a `## Audio Quality Contracts` section. If it does, execute each contract row as a structured audio quality assertion.
-
-### Contract Table Format
-
-Each contract row in the SPEC.md has these columns:
-
-| Column | Description |
-|--------|-------------|
-| ID | Unique contract identifier (e.g., `AQ-EQ-01`) |
-| Condition | What to set up via MCP tools (Strudel pattern, controls) |
-| Channel | Which audio bus to capture: `main`, `cue`, or `mix` |
-| Tool | Which audio quality tool to call (e.g., `audio_pitch`, `audio_filter`) |
-| Measurement | Which field in the tool's JSON response to assert on |
-| Assert | Expected value — range `[380, 420]`, threshold `< 0.5`, or boolean `== true` |
-
-### Execution Protocol
-
-For each contract row:
-
-1. **Set up Condition** — evaluate the Strudel pattern via `POST /tools/update_code` or `POST /tools/load_test_tone`, adjust controls as needed
-2. **Start playback** — `POST /tools/play` if not already playing
-3. **Wait 2-3s** for audio to stabilize (use `sleep 3` or `wait_for_event` with `audio_rms_batch`)
-4. **Capture audio** — `POST /tools/audio_capture { "channel": "<Channel>" }`
-5. **Run measurement** — call the specified Tool with `{ "capture_id": "<id>" }` plus any required params from the Condition column
-6. **Assert** — extract the Measurement field from the response and compare against the Assert value
-7. **Release capture** — `POST /tools/audio_release { "capture_id": "<id>" }`
-8. **Report** — `AQ-EQ-01: PASS` or `AQ-EQ-01: FAIL — cutoff_hz was 482 Hz, expected [380, 420]`
-
-### Available Audio Quality Tools
-
-| Tool | Description | Key Response Fields |
-|------|-------------|-------------------|
-| `audio_capture` | Capture audio snapshot → returns `capture_id` | `capture_id`, `peak_dbfs`, `rms_dbfs` |
-| `audio_release` | Release a capture to free memory | `released` |
-| `audio_artifact_scan` | Detect clicks, clipping, dropouts, DC drift | `clean`, `clicks.count`, `clipping.clip_count` |
-| `audio_pitch` | Measure pitch via FFT + zero-crossing | `dominant_frequency_hz`, `confidence`, `cents_error` |
-| `audio_spectrum` | Spectral analysis | `spectral_centroid_hz`, `noise_floor_dbfs`, `peak_dbfs` |
-| `audio_filter` | Filter characterization | `cutoff_hz`, `rolloff_db_per_octave` |
-| `audio_distortion` | THD, aliasing, IMD | `thd_percent`, `aliasing_ratio_db`, `aliasing_audible` |
-| `audio_lufs` | Integrated loudness (LUFS) | `integrated_lufs` |
-| `audio_reverb` | RT60, EDT, C80, echo density | `rt60_seconds`, `edt_seconds`, `c80_db`, `ned_score` |
-| `audio_stereo` | Stereo analysis | `balance`, `mid_side_ratio_db`, `mean_correlation` |
-| `audio_dynamics` | Attack/release timing | `attack_ms`, `release_ms`, `compressor_attack_ms` |
-| `audio_modulation` | LFO/tremolo detection | `detected`, `rate_hz`, `depth` |
-
-### Contract Results in Report
-
-Append a separate section to the report for Audio Quality Contracts:
-
-```
-### Audio Quality Contracts
-| ID | Tool | Measurement | Expected | Actual | Result |
-|----|------|-------------|----------|--------|--------|
-| AQ-EQ-01 | audio_filter | cutoff_hz | [380, 420] | 397.2 | PASS |
-| AQ-EQ-02 | audio_filter | rolloff_db_per_octave | [-14, -10] | -11.8 | PASS |
-```
-
-If no `## Audio Quality Contracts` section exists in the SPEC.md, skip this step entirely — contracts are opt-in.
-
-## Rules
-
-- Use curl via Bash: GET for read-only, POST with -H "Content-Type: application/json" -d '{...}' for mutations
-- **Realistic pacing between actions** — insert a brief `sleep 1` between sequential MCP actions to simulate real user interaction timing. Without pacing, actions fire back-to-back faster than any human could operate, causing `wait_for_event` to miss synchronous events and failing to reflect real-world usage patterns. Use `wait_for_event` when you know which event to expect; use `sleep 1` as a minimum between other sequential actions. Always insert `sleep 0.5` *before* `wait_for_event` if the triggering action fires events synchronously.
-- **Prefer `wait_for_event` over long fixed delays** — instead of `sleep 3`, use `POST /tools/wait_for_event {"pattern": "audio_rms_batch", "timeout_ms": 5000}` to wait precisely until the expected event appears. Fall back to fixed delays only when no specific event is expected.
-- **Prefer `get_evaluation_result` over voice count checks** — after `update_code`, check the inline `evaluation_result` or poll `get_evaluation_result` for definitive success/error/pending status instead of relying solely on `v2VoicesTriggered`.
-- **Prefer targeted screenshots** — use `capture_screenshot` with `{ selector: ".performance-strip" }` to capture specific UI regions. Full-page screenshots are noisy; targeted captures are smaller and focus on the area under test.
-- **Check animation state before screenshots** — call `get_animation_state` and wait for `animating: false` before capturing, to avoid mid-transition artifacts.
-- **Use `simulate_keyboard` for keyboard-driven tests** — dispatches real KeyboardEvents through the same path as user keypresses, resolves the matching keyboard binding action.
-- **Screenshots:** Use the Read tool on the returned PNG path — Claude Code can natively view PNG images. Describe what you see (layout, panels, controls) in the Evidence column. **IMPORTANT:** If the Read tool fails on a screenshot path (e.g., URL parsing error, file not found), do NOT retry — record the screenshot path as evidence with a note "screenshot captured but could not be read" and continue. Never let a screenshot read failure block the test.
-- Screenshot limitations: WebGL/canvas elements (waveforms, Hydra) render blank. Focus on verifying layout structure, panel visibility, and control state.
-- **Channel switching before code/tone changes:** Before calling `update_code` or `load_test_tone` targeting a channel different from the current active editor, ALWAYS call `set_active_editor` first. This ensures the Channel Indicator UI reflects the switch — just like a real user would select the Cue or Master tab before typing code. The active editor starts as `"master"` by default after setup.
-- **Channel-scoped diagnostics:** Use `get_audio_silence_diagnostics` with `{ channel: "main" }` or `{ channel: "cue" }` to check per-channel audio state instead of always checking the global response.
-- **Assert on metrics, not raw buffers (token-cost rule — Phase 9, `lazy-validation-readiness`).** Verification strength comes from the SCALAR observations the tools already return — **prefer them and pull NOTHING larger.** The MCP cycle MUST assert from:
-  - `get_audio_buffer`'s scalar fields — `rms`, `max_discontinuity`, `dc_offset`, and the ground-truth `scheduler_playing` — NOT the interleaved `samples` array. The silence-while-playing hard-fail (`rms < 1e-4 && scheduler_playing`) and the RMS/click/DC assertions are all decidable from these scalars alone.
-  - the harmonic/spectral SCALAR fields from the audio-quality tools (`dominant_frequency_hz`, `cents_error`, `spectral_centroid_hz`, `thd_percent`, `cutoff_hz`, `clicks.count`, `clipping.clip_count`, etc.) — the `## Available Audio Quality Tools` "Key Response Fields" column.
-  - `pass` / `fail` counts and the assertion-result rows, not the full payloads behind them.
-  - **FILTERED** logs — `get_session_events` / `get_console_logs` with `evt_filter`, `since_line` watermark polling, `limit`, or a head/tail/grep slice — rather than a full unfiltered dump. (The unfiltered-events caveat at the `total_lines` note above still applies for *boot* counting; that is a `{"limit": 1}` metadata read, not a full dump.)
-
-  Pull the raw interleaved `samples` array (or a full `get_console_logs` / `get_session_events` dump) into context **ONLY** when a scalar metric has already FAILED and a deeper look is genuinely needed to localize it. Verification strength is UNCHANGED — the assertions are still on the metrics; this only removes context bloat. **Why it matters (measured, d7-multi-timbral run, 2026-06-14):** `/mcp-test` burned **~1.34M tokens across 9 cycles / 120 min**, dominated by raw `get_audio_buffer` sample arrays + full `get_console_logs` / `get_session_events` dumps pulled in when the assertions only needed the scalar metrics above.
-- Do NOT read or search source code files (src/, src-tauri/) — use only the reference docs and MCP API responses
-- Do NOT modify any source code
-- If an operation fails, report what happened rather than retrying silently
-- **`v2VoicesTriggered` is cumulative:** This counter is global (main+cue combined) and never resets during a session. A nonzero value does NOT mean audio is currently playing — only that voices were triggered at some point. Use `queueLen > 0` from `get_audio_silence_diagnostics` as the reliable "sidecar has active patterns" check instead.
-
-## Report Format
-
-### Assertion Results
-| # | Type | Assertion | Result | Evidence |
-|---|------|-----------|--------|----------|
-| P1 | Positive | ... | VERIFIED / CONTRADICTED | Raw event data or dB values |
-| N1 | Negative | ... | VERIFIED / CONTRADICTED | ... |
-| V1 | Visual | ... | VERIFIED / CONTRADICTED | Screenshot observation |
-
-### Overall Score: X% of assertions verified
-
-### Coverage Gaps (MANDATORY)
-For any aspect you could NOT fully test:
-| # | Behavior | Reason | Workaround | Suggested Fix |
-|---|----------|--------|------------|---------------|
-| 1 | ... | ... | ... | ... |
-
-If no gaps: "No coverage gaps — all behaviors verified via MCP."
-```
+Do NOT paste raw payloads. If a coverage gap suggests a missing MCP tool that would be
+straightforward to add, note it as a candidate for `/spec` or `/add-phase`.
 
 ---
 
-## Step 6: Report Results
+## Step 7: Tear Down the Dev Server (standalone path only)
 
-After the subagent completes, summarize its findings to the user:
+A stray dev runtime is never acceptable. Teardown is UNCONDITIONAL (pass/fail/blocked/skip/deferred),
+AFTER the sentinel + reconcile are committed.
 
-1. **Test results** — assertion pass/fail with evidence, overall score
-2. **Coverage gaps** — present the gaps table prominently; these need manual testing or new MCP tooling
-3. **Blocking issues** — any failures or errors that prevented testing
-4. **Scenario file** — remind the user which file was used/created: `docs/testing/mcp-tests/{name}.md`
-
-If coverage gaps suggest missing MCP tools that would be straightforward to add, note them as candidates for a follow-up `/spec` or `/add-phase`.
-
----
-
-## Step 6.5: Persist Results and Diff Against Prior Run
-
-After summarizing results to the user (Step 6), write a result file and compare against any prior run.
-
-### 6.5a. Determine the result file path
-
-- **Scenario name:** derive from the scenario file name without extension (e.g., `mix-knob-crossfade` from `mix-knob-crossfade.md`).
-- **Date:** today's date in `YYYY-MM-DD` format.
-- **Path:** `docs/testing/mcp-tests/results/{scenario-name}-{YYYY-MM-DD}.md`
-
-### 6.5b. Check for a prior result
-
-Scan `docs/testing/mcp-tests/results/` for any file matching `{scenario-name}-*.md` (any date). Sort by filename descending and take the most recent one (if any).
-
-### 6.5c. Write the result file
-
-Write the result file with the following structure:
-
-```markdown
-# {Scenario Name} — {YYYY-MM-DD}
-
-## Scenario
-File: docs/testing/mcp-tests/{scenario-name}.md
-
-## Assertion Results
-| # | Type | Assertion | Result | Evidence |
-|---|------|-----------|--------|----------|
-| P1 | Positive | ... | VERIFIED / CONTRADICTED | ... |
-| N1 | Negative | ... | VERIFIED / CONTRADICTED | ... |
-
-## Overall Coverage
-**Score:** X% of assertions verified
-
-## Blocking Issues
-{List any blocking issues found, or "None"}
-
-## Coverage Gaps
-{Copy the coverage gaps table from the subagent report, or "No coverage gaps"}
-
-## Diff vs Prior Run
-{See 6.5d below}
-```
-
-### 6.5d. Diff against prior run
-
-**If a prior result file exists:**
-
-Compare the Assertion Results tables row-by-row (match by assertion `#` and `Type`):
-
-- **Regressions** — assertions that were `VERIFIED` in the prior run but are now `CONTRADICTED` or missing.
-- **Improvements** — assertions that were `CONTRADICTED` (or missing) in the prior run but are now `VERIFIED`.
-
-Append a diff section to the result file:
-
-```markdown
-## Diff vs Prior Run
-Prior result: docs/testing/mcp-tests/results/{scenario-name}-{prior-date}.md
-
-### Regressions (previously passing, now failing)
-| # | Type | Assertion |
-|---|------|-----------|
-| P2 | Positive | ... |
-
-### Improvements (previously failing, now passing)
-| # | Type | Assertion |
-|---|------|-----------|
-| N1 | Negative | ... |
-
-_If no regressions:_ "No regressions — all previously passing assertions still pass."
-_If no improvements:_ "No improvements vs prior run."
-```
-
-**If no prior result exists:**
-
-```markdown
-## Diff vs Prior Run
-First run — no prior result to compare.
-```
-
-### 6.5e. Report to user
-
-After writing the file, tell the user:
-
-```
-Results saved to: docs/testing/mcp-tests/results/{scenario-name}-{YYYY-MM-DD}.md
-{If regressions found}: ⚠ {N} regression(s) detected vs prior run ({prior-date}).
-{If improvements found}: ✓ {N} improvement(s) vs prior run ({prior-date}).
-{If first run}: First run recorded.
-```
-
----
-
-## Step 7: Tear Down the Dev Server (MANDATORY — runs on PASS **or** FAIL)
-
-**ISSUE 4 (operator request, d8-effect-chains `/lazy-batch` run, 2026-06-14): the MCP-test agent must explicitly kill the dev server when finished.** A stray dev runtime was left running across runs. This teardown is UNCONDITIONAL — it runs whether validation passed, failed, was blocked, skipped, or deferred. Do it AFTER the sentinel + result file are written (so the kill never races the artifacts).
-
-**Who owns the kill depends on who booted the runtime — but a stray runtime is NEVER acceptable:**
-
-- **Standalone invocation (this skill booted the server in Step 2 — `server_was_running = false`):** YOU own the teardown. Run the full kill:
-
+- **Standalone (this skill booted it — `server_was_running = false`):** YOU own teardown:
   ```bash
   npm run dev:kill
   ```
+  `dev:kill` (`scripts/kill-dev.js`) is the ONLY reliable full teardown — Vite (1420), MCP (3333),
+  stale sidecar named-pipe survivors, orphaned Tauri binaries. `npx kill-port 3333` alone leaves the
+  sidecar. Run it foreground; then verify `GET http://localhost:3333/health` fails to connect. If
+  3333 still answers, re-run and re-verify before returning.
+- **Orchestrated (`--batch` — `server_was_running = true`):** do NOT kill it — the ORCHESTRATOR owns
+  the runtime across cycles and tears it down at run boundary (`/lazy-batch` `--run-end`
+  `npm run dev:kill`). Leave it running + MCP-ready; surface `NEEDS_RUNTIME` only if it looks dead.
+- **Cloud (`/lazy-batch-cloud`):** N/A — the cloud variant defers `/mcp-test` (`DEFERRED_NON_CLOUD.md`)
+  and never boots a Tauri runtime.
 
-  `dev:kill` runs `scripts/kill-dev.js`, the ONLY reliable full teardown — it kills Vite (port 1420), the MCP server (port 3333), stale sidecar processes (named-pipe survivors that `npx kill-port` misses), and orphaned Tauri binaries. Do NOT rely on `npx kill-port 3333` alone for teardown — the sidecar survives it (see Step 2). The kill is fire-and-forget-safe (it's a short synchronous script, not a long background build) — run it in the foreground and confirm it returns.
+---
 
-- **Orchestrator-managed runtime (lazy-pipeline / `--batch` — `server_was_running = true`, the orchestrator pre-booted in its Step 1d.0 `npm run dev:restart`):** the ORCHESTRATOR owns the runtime lifecycle across cycles, so do NOT kill it from inside the cycle subagent (that would tear down a runtime the next cycle may reuse). Instead, the orchestrator MUST tear it down at run boundary — `/lazy-batch` runs `npm run dev:kill` as part of its `--run-end` teardown (and on any clean terminal) so the dev runtime never leaks across runs. This skill's responsibility in the orchestrated case is to leave the runtime in the state the orchestrator handed it (running + MCP-ready), and to surface in its return one-liner if the runtime appears dead so the orchestrator can re-boot or tear down.
+## `/lazy-batch` Step-9 integration note (deterministic-runner Phase 8)
 
-- **Cloud (`/lazy-batch-cloud`):** N/A — the cloud variant defers `/mcp-test` entirely (writes `DEFERRED_NON_CLOUD.md`) and never boots a Tauri desktop runtime, so there is nothing to tear down.
-
-**Verify the kill landed (standalone path):** after `npm run dev:kill`, a `GET http://localhost:3333/health` MUST fail to connect (no 200). If port 3333 still answers, the kill did not complete — re-run `npm run dev:kill` and re-verify before returning. Never end the turn with a live dev runtime you booted.
+The orchestrator-managed runtime pre-boot is UNCHANGED: `/lazy-batch` Step 1d.0 runs
+`npm run dev:restart` and BLOCKS on `health == 200` before dispatching the Step-9 `/mcp-test` cycle,
+and tears the runtime down at `--run-end` via `npm run dev:kill`. What changed is the cycle body —
+the dispatched subagent no longer drives the MCP API by hand; it runs the deterministic engine
+(`npx tsx scripts/mcp-test/run.ts <scenario>`), reads `verdict.json`, forwards the engine-written
+sentinel, and reconciles PHASES — on **haiku**, escalating to Sonnet only for a Gate-3 `uncertain`
+classification or a harness repair beyond the engine's self-heal. No `/lazy-batch` prompt change is
+required for the runtime lifecycle; the only behavioral shift is the smaller, cheaper, haiku-tier
+cycle (the token-cost contract above). The Phase-7 live-replay corpus
+(`npx tsx scripts/mcp-test/replay.ts`) is the regression guard that this skill+engine path keeps
+reproducing known-good verdicts across future engine changes.
