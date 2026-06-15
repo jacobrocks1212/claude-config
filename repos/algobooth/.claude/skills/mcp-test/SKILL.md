@@ -10,9 +10,9 @@ Start the AlgoBooth dev server if not already running, wait for full MCP readine
 
 ---
 
-## Step 0: Precondition — `/retro` must have run
+## Step 0: Precondition — all implementation phases must be complete
 
-`/mcp-test` is Step 9 in the lazy state machine; it runs AFTER `/retro` (Step 8). The retro skill's terminal `RETRO_DONE.md` sentinel is the gate. If `$ARGUMENTS` references a feature whose `RETRO_DONE.md` is missing, refuse to run and surface the missing precondition.
+`/mcp-test` is Step 9 in the lazy state machine; it runs after all implementation phases are complete. (The `/retro` Step 8 that previously ran between implementation and MCP validation has been unwired — 2026-06. `RETRO_DONE.md` is no longer a gate for this skill.) If `$ARGUMENTS` references a feature, confirm phases are complete before proceeding; a stale RETRO_DONE.md that happens to exist is tolerated (it will be folded at completion) but is not required.
 
 **Algorithm:**
 
@@ -20,23 +20,9 @@ Start the AlgoBooth dev server if not already running, wait for full MCP readine
    - If `$ARGUMENTS` is `tier:N`, the precondition does not apply (tier batch mode is not scoped to a single feature) — skip Step 0 entirely.
    - Otherwise, attempt to map `$ARGUMENTS` to a feature directory under `docs/features/`. Use the same correlation logic as `/lazy-state.py`: match the feature name / id against `queue.json` entries, or check if `$ARGUMENTS` itself names a feature dir.
    - If the mapping is ambiguous (multiple matches) or empty (no plausible feature), skip Step 0 — the test is being run ad-hoc, not under the lazy state-machine flow.
-2. If a feature dir is resolved, check for `<feature-dir>/RETRO_DONE.md`:
-   - **Present** → proceed to Step 0.5.
-   - **Missing** → print this error and STOP:
+2. If a feature dir is resolved, proceed to Step 0.5. (`RETRO_DONE.md` is no longer a prerequisite — retro is unwired, 2026-06.)
 
-     ```
-     /mcp-test: RETRO_DONE.md missing for <feature_id>.
-
-     Under the current state-machine ordering, /retro runs at Step 8
-     BEFORE /mcp-test (Step 9). Run /lazy (workstation) or /lazy-cloud
-     to drive /retro first, then re-invoke /mcp-test.
-
-     Feature dir: <feature-dir>
-     ```
-
-     Do NOT start `tauri:dev`, do NOT dispatch a subagent. The fix is to run `/retro` (or `/lazy[-cloud]`), not to bypass this gate.
-
-This precondition is enforced even when `/mcp-test` is invoked directly by a human (not via `/lazy`). The retro pass is implementation-time analysis — running MCP tests before retro means runtime validation precedes the systematic review of whether the implementation matches the spec, which is the wrong order. Bypassing the gate via `--force` is intentionally NOT provided; rerun `/retro` if the prior retro is stale.
+This precondition check is enforced even when `/mcp-test` is invoked directly by a human (not via `/lazy`). If phases are clearly incomplete, surface the gap and stop — MCP validation before implementation is complete is the wrong order. Bypassing the gate via `--force` is intentionally NOT provided.
 
 ---
 

@@ -4,7 +4,7 @@
 completion was trustworthy only by *convention*, not by *construction*:
 
 1. A feature reached `Complete` while `PHASES.md` still had unchecked deliverables (SPEC/PHASES status incoherence).
-2. A feature was flipped `Complete` on an ordinary implementation commit — bypassing `/retro` + `/mcp-test` entirely — and `is_workstation_complete()` happily skipped it forever, with **no durable evidence** that it ever passed a gate.
+2. A feature was flipped `Complete` on an ordinary implementation commit — bypassing `/mcp-test` entirely (and previously `/retro` before it was unwired in 2026-06) — and `is_workstation_complete()` happily skipped it forever, with **no durable evidence** that it ever passed a gate.
 3. After a legitimate completion, `__mark_complete__` *deleted* `VALIDATED.md` / `RETRO_DONE.md`, so a real completion and an un-gated one became indistinguishable on disk.
 
 This gate is the structural fix. It runs INSIDE `__mark_complete__`, AFTER the

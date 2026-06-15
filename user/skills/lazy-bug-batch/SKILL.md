@@ -1,6 +1,6 @@
 ---
 name: lazy-bug-batch
-description: Autonomous orchestrator for the bug pipeline — mirrors /lazy-batch shape but operates on docs/bugs/ via bug-state.py. Loops on bug-state.py, spawns one Opus subagent per cycle, and drives /spec-bug → /spec-phases → /write-plan → /execute-plan → /retro-feature → /mcp-test → __mark_fixed__. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt gated by MCP-coverage audit + completion-integrity gate, then git mv to _archive/. See ~/.claude/skills/lazy-batch/SKILL.md for the full algorithm; this skill documents only bug-pipeline differences.
+description: Autonomous orchestrator for the bug pipeline — mirrors /lazy-batch shape but operates on docs/bugs/ via bug-state.py. Loops on bug-state.py, spawns one Opus subagent per cycle, and drives /spec-bug → /spec-phases → /write-plan → /execute-plan → /mcp-test → __mark_fixed__. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt gated by MCP-coverage audit + completion-integrity gate, then git mv to _archive/. (The /retro-feature step is unwired — 2026-06.) See ~/.claude/skills/lazy-batch/SKILL.md for the full algorithm; this skill documents only bug-pipeline differences.
 argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park]
 plan-mode: never
 model: opus
@@ -48,7 +48,7 @@ bug-state.py).
 | `skip_needs_research` var | used under `--allow-research-skip` | N/A |
 | `research_pending` var | accumulates research-pending feature_ids | N/A |
 | Step 0.5 pre-loop ingest | probes staged `.txt` files, dispatches `/ingest-research` | Skipped entirely (N/A to bugs) |
-| LOOP DETECTED sentinel guidance | mentions `RETRO_DONE.md / VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md` | same set, substituting `FIXED.md` for `COMPLETED.md`; DEFERRED_NON_CLOUD.md applies to bugs too |
+| LOOP DETECTED sentinel guidance | mentions `VALIDATED.md / DEFERRED_NON_CLOUD.md / SKIP_MCP_TEST.md` (RETRO_DONE.md excluded — retro unwired 2026-06) | same set, substituting `FIXED.md` for `COMPLETED.md`; DEFERRED_NON_CLOUD.md applies to bugs too |
 | `completion-unverified` description | feature's SPEC claims Complete but no COMPLETED.md receipt | bug's SPEC claims Fixed but no FIXED.md receipt |
 | Step 1.5 probe command | `python3 ~/.claude/scripts/lazy-state.py` | `python3 ~/.claude/scripts/bug-state.py` |
 | `scoped-id-not-found` terminal | via `--feature-id` / `TR_SCOPED_ID_NOT_FOUND` | via `--bug-id` / `TR_SCOPED_ID_NOT_FOUND` |
@@ -356,7 +356,7 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   per `~/.claude/skills/_components/completion-integrity-gate.md` — the script is the **single
   author** of the `FIXED.md` receipt write (`kind: fixed`, `provenance: gated`, folding validation
   evidence from VALIDATED.md / MCP_TEST_RESULTS.md into the receipt body), the SPEC.md/PHASES.md
-  `**Status:** Fixed` flip, and the deletion of the consumed VALIDATED.md / RETRO_DONE.md /
+  `**Status:** Fixed` flip, and the deletion of the consumed VALIDATED.md / RETRO_DONE.md (if a stale one exists) /
   DEFERRED_NON_CLOUD.md sentinels (FIXED.md / SKIP_MCP_TEST.md / MCP_TEST_RESULTS.md are kept).
   **Mechanical third gate inside `--apply-pseudo __mark_fixed__`:** the script auto-flips
   all-ticked phases to Complete and REFUSES (`refused:<reason>`, zero writes) if any phase
@@ -442,9 +442,9 @@ plus per-pipeline sentinel-set sections). The orchestrator does NO hand-substitu
 "autonomous bug pipeline" / `Bug:`-header / FIXED.md substitution list and the whole "No premature
 Fixed" guard block are dead (the template's generic status-honesty section emits them already).
 
-Bug cycles dispatch `spec-bug` / `plan-bug` / `execute-plan` / `retro-feature` / `mcp-test`; the
+Bug cycles dispatch `spec-bug` / `plan-bug` / `execute-plan` / `mcp-test`; the
 sectioned template covers all of them via its `skills=` section selection (`/spec-bug` replaces
-`/spec`, `plan-bug` replaces `plan-feature` — both orchestrator-only docs passes, no sub-subagents).
+`/spec`, `plan-bug` replaces `plan-feature` — both orchestrator-only docs passes, no sub-subagents). (`retro-feature` is unwired — 2026-06.)
 
 #### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY)
 
@@ -725,8 +725,8 @@ python3 ~/.claude/scripts/bug-state.py
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 1.5 for the full algorithm. Bug-pipeline
 substitutions: compare probe tuple against `prev_cycle_signature` and prepend ✅ or ⚠ block to
 the Step 2 report. The ⚠ WARNING block's "Likely causes" bullet replaces feature-pipeline
-sentinels with bug-pipeline equivalents (`RETRO_DONE.md`, `VALIDATED.md`, `FIXED.md`,
-`DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`). Use `lazy-bug-batch` in the push-notification
+sentinels with bug-pipeline equivalents (`VALIDATED.md`, `FIXED.md`,
+`DEFERRED_NON_CLOUD.md`, `SKIP_MCP_TEST.md`). (`RETRO_DONE.md` is excluded — retro is unwired, 2026-06.) Use `lazy-bug-batch` in the push-notification
 message.
 
 ---

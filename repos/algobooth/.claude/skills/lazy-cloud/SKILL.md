@@ -142,16 +142,16 @@ If `sub_skill` begins with `__` (double-underscore), it is a special action the 
 
 ### `__write_deferred_non_cloud__`
 
-`sub_skill_args` is `{spec_path}`. All implementation phases are complete but cloud cannot run MCP tests. Write the deferral sentinel and stop so the next invocation can proceed to retro.
+`sub_skill_args` is `{spec_path}`. All implementation phases are complete but cloud cannot run MCP tests. Write the deferral sentinel and stop so the next invocation can proceed to the MCP gate. (Retro is unwired — 2026-06; there is no retro step between phase-completion and the MCP gate.)
 
 1. If `{spec_path}/DEFERRED_NON_CLOUD.md` already exists, skip the write (idempotent).
-2. Otherwise write `{spec_path}/DEFERRED_NON_CLOUD.md` with kind `deferred-non-cloud`, `deferred_step: 8`, `reason: "Cloud Linux environment cannot run tauri:dev or reach the MCP HTTP server."`, `deferred_by: lazy-cloud`, `date: <today>`, and a body explaining how the workstation /lazy resumes.
-3. PushNotification: `"{feature_name}: MCP testing deferred to workstation /lazy. Run /lazy-cloud again to continue with retro."`
-4. Print the after-status bookend (Deferred: "Step 8 MCP testing → {spec_path}/DEFERRED_NON_CLOUD.md"), STOP.
+2. Otherwise write `{spec_path}/DEFERRED_NON_CLOUD.md` with kind `deferred-non-cloud`, `deferred_step: 9`, `reason: "Cloud Linux environment cannot run tauri:dev or reach the MCP HTTP server."`, `deferred_by: lazy-cloud`, `date: <today>`, and a body explaining how the workstation /lazy resumes.
+3. PushNotification: `"{feature_name}: MCP testing deferred to workstation /lazy. Run /lazy on workstation to finalize."`
+4. Print the after-status bookend (Deferred: "Step 9 MCP testing → {spec_path}/DEFERRED_NON_CLOUD.md"), STOP.
 
 ### `__write_validated_from_skip__`
 
-`sub_skill_args` is `{spec_path}`. SKIP_MCP_TEST.md exists from a prior workstation assessment — write VALIDATED.md so retro proceeds normally.
+`sub_skill_args` is `{spec_path}`. SKIP_MCP_TEST.md exists from a prior workstation assessment — write VALIDATED.md so the pipeline proceeds to mark-complete. (Retro is unwired — 2026-06; no retro step after writing VALIDATED.md.)
 
 1. Parse `{spec_path}/SKIP_MCP_TEST.md`'s frontmatter.
 2. Write `{spec_path}/VALIDATED.md` (kind: validated, mcp_scenarios: [], result: all-passing, body: "MCP tests skipped per prior SKIP_MCP_TEST.md").
@@ -196,7 +196,7 @@ Run the gate per the component above with `{spec_path}`, `{feature_id}`, and `{c
 On `gated`, the gate has already run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __mark_complete__ {spec_path}` — the script is the **sole author** of the `COMPLETED.md` receipt (validation evidence folded in), the SPEC.md/PHASES.md `**Status:** Complete` flips, and the deletion of the consumed `VALIDATED.md` / `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md` sentinels (`COMPLETED.md` / `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` / `plans/` are kept). Do NOT re-perform any of those writes by hand. The remaining mechanics are:
 
 1. Update `docs/features/ROADMAP.md` — wrap the feature row in `~~ ... ~~` and append `**COMPLETE**` (the one docs write the script does not perform).
-2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
+2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented and MCP-validated" })`.
 3. PushNotification: `"{feature_name} COMPLETE. Run /lazy-cloud to continue."`
 4. Print the after-status bookend, STOP.
 
@@ -246,7 +246,7 @@ Identical to `/lazy`, plus the cloud-deferral sentinel:
 | `VALIDATED.md` | /lazy (after 100% pass) — NEVER /lazy-cloud from MCP results | Validation gate | Deleted on feature completion |
 | `SKIP_MCP_TEST.md` | /lazy (assessment) — never written by /lazy-cloud | Documents why MCP testing was skipped (permanent waiver) | Persists permanently |
 | `DEFERRED_REQUIRES_DEVICE.md` | /mcp-test on a no-real-device host — NEVER /lazy-cloud | Defers real-device-only assertions to a real-device host (NOT a skip) | Deleted by a real-device run after it certifies the deferred scenarios |
-| `RETRO_DONE.md` | /lazy[-cloud] (after retro execution) | Retro completion gate | Deleted on feature completion |
+| `RETRO_DONE.md` | DORMANT — /retro is unwired (2026-06); never written for new features (retained for lint-validity + restore) | (formerly the retro completion gate) | Deleted on feature completion if a stale one exists |
 | **`DEFERRED_NON_CLOUD.md`** | **/lazy-cloud (cloud-blocked step)** | **Documents step deferred to workstation /lazy** | **Deleted on feature completion — left in place by /lazy as audit trail until then** |
 | `NEEDS_RESEARCH.md` | /lazy-batch[-cloud] | Halt: research prompt exists, awaiting human Gemini run | Deleted when RESEARCH.md is dropped in place |
 | `NEEDS_INPUT.md` | any `--batch` skill | Halt: ambiguous decision encountered | Deleted when the human resolves the decision |

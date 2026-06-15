@@ -94,7 +94,7 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
 
    | terminal | terminal-specific fix option(s) (first) | universal options (always appended) |
    |----------|------------------------------------------|--------------------------------------|
-   | `completion-unverified` | **Reopen & re-validate** — set `**Status:** In-progress` and let the pipeline re-run retro + MCP so a *gated* receipt is earned. · **Grandfather the receipt** — only if the work was genuinely validated before the gate existed: write a `provenance: backfilled-unverified` receipt (honest debt). | Defer & continue queue · Halt for manual fix |
+   | `completion-unverified` | **Reopen & re-validate** — set `**Status:** In-progress` and let the pipeline re-run MCP validation so a *gated* receipt is earned. (Retro is unwired — 2026-06; re-validate goes directly to the MCP gate.) · **Grandfather the receipt** — only if the work was genuinely validated before the gate existed: write a `provenance: backfilled-unverified` receipt (honest debt). | Defer & continue queue · Halt for manual fix |
    | `stale_upstream` (both pipelines — `STALE_UPSTREAM.md`) | **Re-materialize / absorb** — accept the changed upstream and re-run the materialize/realign step (the apply subagent dispatches `/realign-spec` or re-materializes), then neutralize `STALE_UPSTREAM.md` by rename. · **Reject** — the upstream change does not affect this item; neutralize the sentinel and proceed unchanged. | Defer & continue queue · Halt for manual fix |
    | `needs-spec-input` (**feature pipeline only**) | **Provide spec direction** — operator's notes seed the SPEC baseline (the apply subagent dispatches `/spec` with the direction, or writes an `ADHOC_BRIEF.md`-style seed). | Defer & continue queue · Halt for manual fix |
    | `needs-research` / `queue-blocked-on-research` (**feature pipeline only**, reachable here only under `--allow-research-skip`; the default strict-halt path stops at Step 4 before routing here) | **Upload research now** — operator pastes/attaches the Gemini result in their NEXT message; the in-session resume protocol ingests it. · **Defer this research-pending feature & continue** — work the rest of the queue first. | Halt for manual fix |
@@ -143,7 +143,8 @@ batch skills keep their richer bespoke `needs-input` (decision-resume) and `bloc
       surfaced). Common enactments:
         • "Reopen & re-validate": set the SPEC `**Status:**` back to `In-progress`
           (and PHASES top-level if applicable); delete any premature receipt; the
-          next loop cycle routes the feature back through retro + MCP. Do NOT write a
+          next loop cycle routes the feature back through MCP validation. (Retro is
+          unwired — 2026-06; routing goes directly to the MCP gate.) Do NOT write a
           gated receipt yourself.
         • "Grandfather the receipt": write the `provenance: backfilled-unverified`
           receipt (COMPLETED.md / FIXED.md) per the sentinel schema, with an honest

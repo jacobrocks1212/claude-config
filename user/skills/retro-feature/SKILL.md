@@ -6,6 +6,8 @@ plan-mode: never
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Agent"]
 ---
 
+> **DORMANT — unwired from the lazy autonomous pipeline 2026-06; retained for manual use and restore. The pipeline no longer dispatches this step.**
+
 # Retro Feature
 
 Composes `/retro` and `/execute-plan` into a single dispatch so the autonomous orchestrator (or a human) can drive a feature's entire retro phase (Step 9) in one round-trip instead of N state-machine cycles. The skill itself is dispatch + sentinel-check glue; the actual work is done by `/retro` (which writes a `retro-N-*.md` plan and — per its Step 6c — emits `RETRO_DONE.md` when no significant divergences remain) and `/execute-plan` (which ships any corrective work the retro identified).

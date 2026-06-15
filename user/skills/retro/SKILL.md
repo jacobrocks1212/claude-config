@@ -5,6 +5,8 @@ argument-hint: [feature-name | SPEC path | PHASES path] [--auto]
 plan-mode: never
 ---
 
+> **DORMANT — unwired from the lazy autonomous pipeline 2026-06; retained for manual use and restore. The pipeline no longer dispatches this step.**
+
 # Retro
 
 Reviews completed work (specified by user, or inferred from conversation history) and produces a structured retrospective. Identifies issues encountered, incorrect assumptions, inefficient implementation order, missed parallelism, and proposes concrete workflow improvements. The improvement plan is written to a file for execution via `/execute-plan`.

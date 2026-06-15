@@ -143,7 +143,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a **special action** 
 
 ### `__write_validated_from_skip__`
 
-`sub_skill_args` is `{spec_path}`. SKIP_MCP_TEST.md exists; write VALIDATED.md so the state machine progresses to retro on the next invocation.
+`sub_skill_args` is `{spec_path}`. SKIP_MCP_TEST.md exists; write VALIDATED.md so the state machine progresses to the MCP gate / mark-complete on the next invocation. (Retro is unwired — 2026-06; there is no retro step between implementation and the MCP gate.)
 
 1. Parse `{spec_path}/SKIP_MCP_TEST.md`'s frontmatter.
 2. Write `{spec_path}/VALIDATED.md` with kind `validated`, `mcp_scenarios: []`, `result: all-passing`, and a body note: "MCP tests skipped per prior SKIP_MCP_TEST.md".
@@ -198,7 +198,7 @@ Run the gate per the component above with `{spec_path}`, `{feature_id}`, and `{c
 On `gated`, the gate has already run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __mark_complete__ {spec_path}` — the script is the **sole author** of the `COMPLETED.md` receipt (validation evidence folded in), the SPEC.md/PHASES.md `**Status:** Complete` flips, and the deletion of the consumed `VALIDATED.md` / `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md` sentinels (`COMPLETED.md` / `SKIP_MCP_TEST.md` / `MCP_TEST_RESULTS.md` / `plans/` are kept). Do NOT re-perform any of those writes by hand. The remaining mechanics are:
 
 1. Update `docs/features/ROADMAP.md` — find the feature row, wrap name+description in `~~ ... ~~`, append `**COMPLETE**` (the one docs write the script does not perform).
-2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented, validated, and retro done" })`.
+2. Invoke `Skill({ skill: "commit", args: "feat({feature_id}): complete — all phases implemented and MCP-validated" })`.
 3. PushNotification: `"{feature_name} COMPLETE. Run /lazy to continue."`
 4. Print the after-status bookend, STOP.
 

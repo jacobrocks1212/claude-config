@@ -79,12 +79,13 @@ both** of its neighbors:
 | `DEFERRED_NON_CLOUD.md` | Cloud can't run the step *at all* (no Tauri/MCP). | Workstation `/lazy` runs it. |
 | `DEFERRED_REQUIRES_DEVICE.md` | Assertion is WSL2-untestable but **real-device-testable** — deferred on the device axis. | A real-device `/lazy` host re-opens it (`lazy-state.py` Step 9) and certifies the deferred scenarios. |
 
-`lazy-state.py` keys on this file: a no-real-device host with `RETRO_DONE.md` +
-this sentinel + no `VALIDATED.md` is **device-saturated** — Step 2 skips it so the
+`lazy-state.py` keys on this file: a no-real-device host with this sentinel
++ no `VALIDATED.md` is **device-saturated** — Step 2 skips it so the
 queue advances (terminal `device-queue-exhausted`), exactly mirroring the
 cloud-saturated skip. The feature does NOT reach `Complete` on a no-device host
 (no receipt is written): completion stays blocked until a real-device run clears
-the deferral, so `Complete` always means fully validated.
+the deferral, so `Complete` always means fully validated. (`RETRO_DONE.md` was
+previously part of this check but is no longer required — retro unwired, 2026-06.)
 
 Required:
 
@@ -174,7 +175,9 @@ with a cited evidence artifact — no citation, no verdict), `## Repro Recipe`,
 one per round. Keep in lockstep with AlgoBooth
 `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
 
-#### `RETRO_DONE.md` — `kind: retro-done`
+#### `RETRO_DONE.md` — `kind: retro-done` *(dormant — retro unwired 2026-06; retained for lint-validity of any stray file + restore path)*
+
+> **DORMANT.** The `/retro` step that wrote this sentinel has been unwired from the pipeline (operator decision, 2026-06). `lazy-state.py` no longer emits `retro-feature` and no longer requires this sentinel as a completion precondition. The schema below is kept so that: (a) any stale `RETRO_DONE.md` left in a feature dir still validates cleanly against the docs-consistency lint; (b) the restore path (re-wiring retro) remains documented. Do NOT write this sentinel for new features — it will be silently folded at completion if found.
 
 Required:
 
@@ -448,7 +451,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 | DEFERRED_NON_CLOUD.md | /lazy-cloud cannot run a step in cloud | /lazy Step 10 (feature completion) |
 | DEFERRED_REQUIRES_DEVICE.md | /mcp-test on a no-real-device host can't certify a real-device-only assertion | A real-device /lazy host re-opens (Step 9), certifies the deferred scenarios, then deletes it + writes VALIDATED.md |
 | VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
-| RETRO_DONE.md | /lazy after retro plan executes | /lazy Step 10 (folded into COMPLETED.md) |
+| RETRO_DONE.md | DORMANT — /retro is unwired (2026-06); never written for new features (retained for lint-validity + restore) | /lazy Step 10 (folded into COMPLETED.md if a stale one exists) |
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
 | SKIP_MCP_TEST.md | /lazy assessment: not testable | Persists permanently |
 | MCP_TEST_RESULTS.md | /lazy after mcp-test runs | Persists permanently (audit) |

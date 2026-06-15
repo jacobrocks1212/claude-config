@@ -171,6 +171,7 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
     completion is the ONE chained command from the turn-end contract below.
 
 <!-- @section skill-retro pipelines=feature,bug modes=workstation,cloud skills=retro,retro-feature -->
+<!-- DORMANT — retro unwired from the autonomous pipeline 2026-06; emit_cycle_prompt never selects this section (sub_skill=retro is no longer emitted by lazy-state.py). Retained so section-lookup / residue checks remain stable. -->
 /retro — inline execution:
   Do the Step 3 A–G research INLINE and SERIALLY (read each input, synthesize)
   rather than fanning out parallel research subagents; the deliverable is
@@ -178,6 +179,7 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   divergences) — only the parallelism is dropped.
 
 <!-- @section skill-retro-feature pipelines=feature,bug modes=workstation,cloud skills=retro-feature -->
+<!-- DORMANT — retro unwired from the autonomous pipeline 2026-06; emit_cycle_prompt never selects this section (sub_skill=retro-feature is no longer emitted by lazy-state.py). Retained so section-lookup / residue checks remain stable. -->
 /retro-feature — composed orchestrator, inline:
   It loops /retro + /execute-plan IN YOUR CONTEXT (via the Skill tool, NOT Agent
   dispatch) until RETRO_DONE.md is on disk, a BLOCKED.md / NEEDS_INPUT.md halt
@@ -272,14 +274,14 @@ Status honesty (PIPELINE-GATE — HARD):
   Never flip the top-level `**Status:**` of SPEC.md or PHASES.md to
   {forbidden_status}, and never write {receipt_name} yourself — both are owned
   EXCLUSIVELY by the orchestrator's {mark_pseudo} gate, which fires only after
-  the validation tail (/retro → /mcp-test → coverage audit). A rogue flip leaves
+  the validation tail (/mcp-test → coverage audit). A rogue flip leaves
   no {receipt_name} receipt, so the state script HARD-HALTS on
   `completion-unverified` until a human reconciles (it does NOT skip the tail).
   You MAY flip the PLAN-PART frontmatter `status:` and the per-PHASE checkboxes /
   `Status:` line for the phase you just implemented; when the LAST phase's work
   lands, set the top-level PHASES `**Status:**` to `In-progress` (NOT
   {forbidden_status}) — implementation done, validation pending. Let the state
-  machine route to /retro + /mcp-test next.
+  machine route to /mcp-test next. (The /retro step is unwired — 2026-06.)
 
 <!-- @section resume-safety pipelines=feature,bug modes=workstation skills=execute-plan,retro,retro-feature -->
 Resume safety (plan-part + per-WU granularity):

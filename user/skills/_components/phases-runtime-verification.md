@@ -11,8 +11,9 @@
 
   Rationale: `lazy_core`'s `remaining_unchecked_are_verification_only()`
   heuristic decides whether all remaining unchecked rows are verification-only
-  so it can route the phase forward to the retro→MCP gate (Step 8→9) instead
-  of looping back on write-plan/execute-plan. A `- [ ]` checkbox placed under
+  so it can route the phase forward to the MCP gate (Step 9 — retro at Step 8
+  is unwired, 2026-06) instead of looping back on write-plan/execute-plan.
+  A `- [ ]` checkbox placed under
   `### Deliverables` is read as an outstanding IMPLEMENTATION item — this
   misclassification causes spurious write-plan/execute-plan churn (this exact
   misplacement cost two Sonnet recoveries + two pipeline stalls in production).
