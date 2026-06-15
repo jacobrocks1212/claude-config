@@ -7592,10 +7592,13 @@ def test_bug_state_blocked_no_escalation_other_kind():
 
 # ---- WU-5c end-to-end: Step-8 retro-staleness routing (lazy-state only) ----
 
-def test_lazy_state_retro_stale_routes_retro_feature():
-    """RETRO_DONE.md with phase_count_at_retro: 2 + PHASES.md now carrying 3
-    phases → the retro is STALE; Step 8 re-dispatches retro-feature with the
-    same args as the not-exists branch and a stale-annotated current_step."""
+def test_lazy_state_retro_stale_routes_past_step8():
+    """RETRO UNWIRED (2026-06): a RETRO_DONE.md with phase_count_at_retro: 2 +
+    PHASES.md now carrying 3 phases would historically have re-staled the retro
+    and re-dispatched retro-feature. With retro removed from the pipeline, a
+    stale RETRO_DONE.md is ignored for routing — it falls straight through to
+    Step 9 mcp-test (the retro_staleness predicate stays in the codebase but no
+    longer gates routing)."""
     _guard()
     ls = _load_state_script("lazy-state.py")
     with tempfile.TemporaryDirectory() as td:
@@ -7606,12 +7609,8 @@ def test_lazy_state_retro_stale_routes_retro_feature():
             phase_count=3,
         )
         state = ls.compute_state(root, False)
-        spec_dir = str(root / "docs" / "features" / "feat-retro")
-    assert state["sub_skill"] == "retro-feature", state
-    assert state["sub_skill_args"] == f"{spec_dir} --batch", state
-    assert state["current_step"] == (
-        "Step 8: retro phase (stale — 1 phases added since retro)"
-    ), state["current_step"]
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
 
 
 def test_lazy_state_retro_fresh_routes_past_step8():
@@ -7668,10 +7667,11 @@ def test_lazy_state_retro_stale_only_corrective_routes_past_step8():
     assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
 
 
-def test_lazy_state_retro_stale_design_added_routes_retro_feature():
-    """Phase 8 — phase-kind gate. RETRO_DONE.md phase_count_at_retro: 1 + a
-    trailing DESIGN phase (among correctives) added post-retro → stale; Step 8
-    re-dispatches retro-feature."""
+def test_lazy_state_retro_stale_design_added_routes_past_step8():
+    """RETRO UNWIRED (2026-06): even a stale RETRO_DONE.md with a trailing DESIGN
+    phase added post-retro (which historically re-staled the retro) no longer
+    re-dispatches retro-feature — retro is removed from the pipeline, so routing
+    falls through to Step 9 mcp-test regardless of staleness."""
     _guard()
     ls = _load_state_script("lazy-state.py")
     with tempfile.TemporaryDirectory() as td:
@@ -7683,8 +7683,8 @@ def test_lazy_state_retro_stale_design_added_routes_retro_feature():
             phase_kinds=["design", "corrective", "design"],
         )
         state = ls.compute_state(root, False)
-    assert state["sub_skill"] == "retro-feature", state
-    assert "stale" in (state["current_step"] or "").lower(), state["current_step"]
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
 
 
 # ---- WU-5e end-to-end: Step-8 retro-staleness routing (bug-state parity) ----
@@ -7694,11 +7694,11 @@ def test_lazy_state_retro_stale_design_added_routes_retro_feature():
 # carry the same RETRO_DONE.md + PHASES.md shape, so a stale BUG retro must be
 # re-routed exactly like a stale feature retro.
 
-def test_bug_state_retro_stale_routes_retro_feature():
-    """bug-state: RETRO_DONE.md with phase_count_at_retro: 2 + PHASES.md now
-    carrying 3 phases → the retro is STALE; Step 8 re-dispatches retro-feature
-    with the same args as the not-exists branch and a stale-annotated
-    current_step (exact mirror of lazy-state's Step-8 staleness branch)."""
+def test_bug_state_retro_stale_routes_past_step8():
+    """RETRO UNWIRED (2026-06), bug-pipeline parity: a stale bug RETRO_DONE.md
+    (phase_count_at_retro: 2, PHASES.md now carrying 3) no longer re-dispatches
+    retro-feature — retro is removed from the bug pipeline too, so routing falls
+    through to Step 9 mcp-test."""
     _guard()
     bs = _load_state_script("bug-state.py")
     with tempfile.TemporaryDirectory() as td:
@@ -7709,12 +7709,8 @@ def test_bug_state_retro_stale_routes_retro_feature():
             phase_count=3,
         )
         state = bs.compute_state(root, False)
-        spec_dir = str(root / "docs" / "bugs" / "bug-retro")
-    assert state["sub_skill"] == "retro-feature", state
-    assert state["sub_skill_args"] == f"{spec_dir} --batch", state
-    assert state["current_step"] == (
-        "Step 8: retro phase (stale — 1 phases added since retro)"
-    ), state["current_step"]
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
 
 
 def test_bug_state_retro_fresh_routes_past_step8():
@@ -12485,14 +12481,14 @@ _TESTS = [
     ("test_bug_state_blocked_escalation_payload", test_bug_state_blocked_escalation_payload),
     ("test_bug_state_blocked_no_escalation_other_kind", test_bug_state_blocked_no_escalation_other_kind),
     # Phase 11 WU-5c end-to-end — Step-8 retro-staleness routing (lazy-state)
-    ("test_lazy_state_retro_stale_routes_retro_feature", test_lazy_state_retro_stale_routes_retro_feature),
+    ("test_lazy_state_retro_stale_routes_past_step8", test_lazy_state_retro_stale_routes_past_step8),
     ("test_lazy_state_retro_fresh_routes_past_step8", test_lazy_state_retro_fresh_routes_past_step8),
     ("test_lazy_state_retro_fieldless_routes_past_step8", test_lazy_state_retro_fieldless_routes_past_step8),
     # Phase 8 (lazy-validation-readiness) end-to-end — Step-8 phase-kind gate
     ("test_lazy_state_retro_stale_only_corrective_routes_past_step8", test_lazy_state_retro_stale_only_corrective_routes_past_step8),
-    ("test_lazy_state_retro_stale_design_added_routes_retro_feature", test_lazy_state_retro_stale_design_added_routes_retro_feature),
+    ("test_lazy_state_retro_stale_design_added_routes_past_step8", test_lazy_state_retro_stale_design_added_routes_past_step8),
     # Phase 11 WU-5e end-to-end — Step-8 retro-staleness routing (bug-state parity)
-    ("test_bug_state_retro_stale_routes_retro_feature", test_bug_state_retro_stale_routes_retro_feature),
+    ("test_bug_state_retro_stale_routes_past_step8", test_bug_state_retro_stale_routes_past_step8),
     ("test_bug_state_retro_fresh_routes_past_step8", test_bug_state_retro_fresh_routes_past_step8),
     ("test_bug_state_retro_fieldless_routes_past_step8", test_bug_state_retro_fieldless_routes_past_step8),
     # Phase 11 WU-5d/5e — apply_pseudo __mark_complete__/__mark_fixed__ retro-staleness backstop

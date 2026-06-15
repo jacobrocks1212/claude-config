@@ -10,8 +10,8 @@ plan-mode: never
 Thin LLM wrapper around `~/.claude/scripts/lazy-state.py --cloud`. The cloud variant of `/lazy`: same state machine, same sentinel contract, same one-skill-per-invocation rule — but aware that this session runs in an ephemeral cloud Linux container with no Tauri desktop, no audio device, and no `tauri:dev` server.
 
 State-machine differences from `/lazy` (all encoded in `lazy-state.py --cloud`):
-- Step 2 skips cloud-saturated features (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md) and advances.
-- **Step 8 (retro) runs in cloud** — `/retro` is a docs/analysis pass (no Tauri, no MCP), so cloud sessions DO run it. This is the gap the new ordering closes: under the old order, cloud halted at MCP deferral and never reached retro.
+- Step 2 skips cloud-saturated features (DEFERRED_NON_CLOUD.md + no VALIDATED.md, on a feature past implementation) and advances.
+- **Step 8 (retro) is UNWIRED** (operator decision, 2026-06) — once phases are complete the pipeline routes directly to the Step 9 MCP gate; `lazy-state.py --cloud` never emits `retro-feature`. The `/retro-feature` skill remains in the catalog (restore path).
 - Step 9 (MCP test) dispatches `__write_deferred_non_cloud__` (the wrapper writes the sentinel) and the loop ends — workstation `/lazy` picks up the deferral.
 - Step 10 halts (cloud cannot finalize without VALIDATED.md) — terminal_reason `cloud-queue-exhausted`.
 
@@ -62,7 +62,7 @@ The cloud session runs in an ephemeral Linux container with:
 - **No Windows-only tooling** — anything requiring Windows paths, PowerShell, or Windows-specific dependencies.
 - **No long-lived shared state** — the container is reclaimed after the session ends.
 
-When `lazy-state.py --cloud` would normally dispatch a step that requires the desktop environment (today: MCP testing, Step 9), it returns `sub_skill: "__write_deferred_non_cloud__"` instead. The wrapper writes the DEFERRED_NON_CLOUD.md sentinel and stops. **Note:** `/retro` (Step 8) runs in cloud — it's a docs/analysis pass and does not require the Tauri runtime or MCP server. The cloud-saturated skip in Step 2 (RETRO_DONE.md + DEFERRED_NON_CLOUD.md + no VALIDATED.md) is the terminal state for a feature whose only remaining work is workstation MCP validation.
+When `lazy-state.py --cloud` would normally dispatch a step that requires the desktop environment (today: MCP testing, Step 9), it returns `sub_skill: "__write_deferred_non_cloud__"` instead. The wrapper writes the DEFERRED_NON_CLOUD.md sentinel and stops. **Note:** the `/retro` step (formerly Step 8) is unwired (2026-06) — once phases are complete the pipeline routes straight to the Step 9 MCP gate, which defers in cloud. The cloud-saturated skip in Step 2 (DEFERRED_NON_CLOUD.md + no VALIDATED.md, on a feature past implementation) is the terminal state for a feature whose only remaining work is workstation MCP validation.
 
 ---
 
@@ -159,7 +159,7 @@ If `sub_skill` begins with `__` (double-underscore), it is a special action the 
 
 ### `__flip_plan_complete_cloud_saturated__`
 
-`sub_skill_args` is the absolute path of a plan file with `status: In-progress`. Emitted at Step 7a when an In-progress plan's only unchecked WUs (scoped to its `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. The documented exit is to flip the plan's frontmatter `status:` from `In-progress` to `Complete` so future cloud cycles treat this plan part as cloud-saturated and proceed to Step 8 retro / Step 9 deferral / Step 2 cloud-saturated skip — instead of looping on `Step 7a: execute plan` no-ops.
+`sub_skill_args` is the absolute path of a plan file with `status: In-progress`. Emitted at Step 7a when an In-progress plan's only unchecked WUs (scoped to its `phases:` field) are documented in `<spec_path>/DEFERRED_NON_CLOUD.md` as workstation-only. The documented exit is to flip the plan's frontmatter `status:` from `In-progress` to `Complete` so future cloud cycles treat this plan part as cloud-saturated and proceed to Step 9 deferral / Step 2 cloud-saturated skip (retro is unwired — no Step 8 between phase-completion and the MCP gate) — instead of looping on `Step 7a: execute plan` no-ops.
 
 1. Read the plan file. Locate the `status:` line inside the YAML frontmatter fence (`---` ... `---`).
 2. Replace ONLY the value: `In-progress` → `Complete`. Leave every other frontmatter field and the markdown body untouched. If the line is already `Complete`, no-op (idempotent).
@@ -171,7 +171,7 @@ This pseudo-skill never touches SPEC.md, ROADMAP.md, or any sentinel — it is a
 
 ### `__mark_complete__`
 
-`sub_skill_args` is `{spec_path}`. Both VALIDATED.md AND RETRO_DONE.md exist (e.g., workstation produced VALIDATED.md while cloud has RETRO_DONE.md). Cloud CAN complete in this case — **but the MCP-coverage audit gate (Step 4.4) runs first**. The audit is docs-only (reads SPEC.md + `mcp-tests/*.md`, no Tauri / no MCP server) so it works identically in cloud and workstation. This closes the 30%-of-features Reopened-Complete gap the audit walk surfaced.
+`sub_skill_args` is `{spec_path}`. VALIDATED.md exists (workstation produced it; retro is unwired, so RETRO_DONE.md is no longer required). Cloud CAN complete in this case — **but the MCP-coverage audit gate (Step 4.4) runs first**. The audit is docs-only (reads SPEC.md + `mcp-tests/*.md`, no Tauri / no MCP server) so it works identically in cloud and workstation. This closes the 30%-of-features Reopened-Complete gap the audit walk surfaced.
 
 **Step 4.4: MCP-coverage audit (NEW — runs BEFORE the flip).**
 
@@ -255,9 +255,9 @@ Identical to `/lazy`, plus the cloud-deferral sentinel:
 
 ## State Machine Summary
 
-The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to get the cloud-aware variants (Step 2 skip, **Step 8 retro runs in cloud**, Step 9 MCP deferral, Step 10 halt). This skill is a thin LLM wrapper that runs the script, dispatches the named sub-skill or performs the named special action, and stops.
+The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to get the cloud-aware variants (Step 2 skip, Step 9 MCP deferral, Step 10 halt; Step 8 retro is unwired). This skill is a thin LLM wrapper that runs the script, dispatches the named sub-skill or performs the named special action, and stops.
 
-**Current step ordering after phases complete:** Step 8 retro → Step 9 MCP test (deferred in cloud) → Step 10 mark complete. `/retro` runs FIRST so the implementation-time retrospective gate fires regardless of whether MCP testing is available. The lazy state machine does not auto-loop retro — additional rounds are triggered only by `/retro` itself writing a follow-up plan.
+**Current step ordering after phases complete:** Step 9 MCP test (deferred in cloud) → Step 10 mark complete. The Step 8 `/retro` step is unwired (operator decision, 2026-06) — once phases are complete the pipeline routes directly to the MCP gate.
 
 ```
 [ad-hoc task supplied?]  → Step 0.3 enqueue at top of queue (Bash, once) → fall through

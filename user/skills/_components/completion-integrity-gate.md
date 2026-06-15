@@ -48,8 +48,14 @@ identically in cloud and workstation.
      completion** — a workstation flip requires `VALIDATED.md` or
      `SKIP_MCP_TEST.md`.
 
-   Also confirm `{spec_path}/RETRO_DONE.md` exists (retro ran). If neither a
-   validation sentinel nor RETRO_DONE.md is present → **refuse** (Step 4).
+   If no validation sentinel is present → **refuse** (Step 4).
+
+   > **RETRO_DONE.md is NOT required (retro unwired, operator decision 2026-06).**
+   > The /retro step was removed from the lazy pipeline — the state machine never
+   > routes to `retro-feature`, so RETRO_DONE.md is never written for new
+   > features/bugs. This gate therefore must NOT require it; requiring it would
+   > block mark-complete forever (retro never runs to write it). Git history is
+   > the restore path.
 
 2a. **Device-deferral check (NEW).** Confirm `{spec_path}/DEFERRED_REQUIRES_DEVICE.md`
    is **NOT present**. That sentinel means real-device-only MCP assertions are
@@ -112,9 +118,10 @@ identically in cloud and workstation.
        if present.
    - **Flips** `SPEC.md **Status:** Complete` (first occurrence) and
      `PHASES.md **Status:** Complete` (first occurrence) when those files exist.
-   - **Deletes** `VALIDATED.md`, `RETRO_DONE.md`, and `DEFERRED_NON_CLOUD.md`
-     (content now lives in the receipt). Keeps `SKIP_MCP_TEST.md`,
-     `MCP_TEST_RESULTS.md`, `COMPLETED.md`, and `plans/`.
+   - **Deletes** `VALIDATED.md`, `RETRO_DONE.md` (if present — retro is unwired,
+     so new features carry none; a stale one from an in-flight feature is still
+     cleaned up), and `DEFERRED_NON_CLOUD.md` (content now lives in the receipt).
+     Keeps `SKIP_MCP_TEST.md`, `MCP_TEST_RESULTS.md`, `COMPLETED.md`, and `plans/`.
 
    The **ROADMAP strikethrough** (multi-line fuzzy edit) remains the orchestrator's
    responsibility — it is not a deterministic scripted write and stays in skill
@@ -137,9 +144,9 @@ identically in cloud and workstation.
 
 - `gated` — preconditions met; the script has written `COMPLETED.md`, flipped
   `SPEC.md`/`PHASES.md` status to `Complete`, and deleted `VALIDATED.md` /
-  `RETRO_DONE.md` / `DEFERRED_NON_CLOUD.md`. The consumer's only remaining step
-  is the ROADMAP strikethrough (the single orchestrator-side write that the
-  script does not perform).
+  `RETRO_DONE.md` (if present) / `DEFERRED_NON_CLOUD.md`. The consumer's only
+  remaining step is the ROADMAP strikethrough (the single orchestrator-side
+  write that the script does not perform).
 - `refused:<reason>` — `NEEDS_INPUT.md` written; consumer MUST NOT flip this
   cycle. Print a one-line halt note (`🛑 completion-integrity gate: <reason> — NEEDS_INPUT.md written; mark-complete deferred.`) and return.
 

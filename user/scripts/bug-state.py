@@ -121,7 +121,7 @@ SKILL_PLAN_BUG = "plan-bug"               # implementation planning for a conclu
 SKILL_SPEC_PHASES = "spec-phases"          # break bug SPEC into PHASES
 SKILL_WRITE_PLAN = "write-plan"            # write an implementation plan
 SKILL_EXECUTE_PLAN = "execute-plan"        # execute a Ready plan
-SKILL_RETRO = "retro-feature"             # retro pass (reused from feature pipeline)
+SKILL_RETRO = "retro-feature"             # DORMANT (retro unwired 2026-06) — kept for restore path  # noqa: F841
 SKILL_MCP_TEST = "mcp-test"               # MCP / runtime validation
 SKILL_MARK_FIXED = "__mark_fixed__"        # archive-on-fix pseudo-skill
 
@@ -132,7 +132,7 @@ STEP_INVESTIGATE = "Step 4: investigate bug"
 STEP_PHASES = "Step 6: spec phases"
 STEP_WRITE_PLAN = "Step 7a: write plan"
 STEP_EXECUTE_PLAN = "Step 7a: execute plan"
-STEP_RETRO = "Step 8: retro phase"
+STEP_RETRO = "Step 8: retro phase"  # DORMANT (retro unwired 2026-06) — kept for restore path
 STEP_MCP = "Step 9: run MCP tests"
 STEP_MCP_SKIP = "Step 9: skip-mcp-test → validated"
 # Provenance gate: a SKIP_MCP_TEST.md with granted_by: pipeline (self-granted)
@@ -469,6 +469,34 @@ def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
     return [c[2] for c in candidates]
 
 
+def _phases_effectively_complete(spec_dir: Path) -> bool:
+    """Return True iff a bug has no remaining actionable implementation work.
+
+    Mirror of lazy-state.py::_phases_effectively_complete. This is the
+    precondition the Step 2 cloud/device-saturated skips used to encode via the
+    presence of RETRO_DONE.md (which only ever existed once phases were complete
+    and a retro round ran). With retro unwired, RETRO_DONE no longer exists, so
+    we test the underlying property directly: a bug is "past implementation"
+    when its PHASES.md has zero unchecked deliverables, OR every implementation
+    plan is Complete and only verification-only rows remain. A bug still
+    mid-implementation must NOT be skipped here — it has actionable work.
+    """
+    phases_file = spec_dir / "PHASES.md"
+    if not phases_file.exists():
+        return False
+    phases_text = phases_file.read_text(encoding="utf-8")
+    unchecked, _checked = count_deliverables(phases_text)
+    if unchecked == 0:
+        return True
+    if (
+        not find_implementation_plans(spec_dir)
+        and _has_any_complete_plan(spec_dir)
+        and remaining_unchecked_are_verification_only(phases_text)
+    ):
+        return True
+    return False
+
+
 def compute_state(
     repo_root: Path,
     cloud: bool,
@@ -588,17 +616,19 @@ def compute_state(
             )
 
         # -----------------------------------------------------------------------
-        # Cloud-saturated skip (mirrors lazy-state.py lines ~912-919).
-        # A bug that has RETRO_DONE.md + DEFERRED_NON_CLOUD.md but no VALIDATED.md
-        # cannot be certified on a cloud host (cloud cannot run MCP tests).  Skip it
-        # so the queue advances; TR_CLOUD_QUEUE_EXHAUSTED is emitted if no other bug
-        # is actionable.
+        # Cloud-saturated skip (mirrors lazy-state.py).
+        # A bug past implementation that has DEFERRED_NON_CLOUD.md but no
+        # VALIDATED.md cannot be certified on a cloud host (cloud cannot run MCP
+        # tests).  Skip it so the queue advances; TR_CLOUD_QUEUE_EXHAUSTED is
+        # emitted if no other bug is actionable. (Retro unwired: the old
+        # RETRO_DONE.md precondition is replaced by _phases_effectively_complete()
+        # — the underlying "past implementation" property RETRO_DONE proxied. A
+        # bug still mid-implementation must NOT be skipped.)
         # -----------------------------------------------------------------------
         if cloud:
-            retro_done = (spec_dir / "RETRO_DONE.md").exists()
             deferred = (spec_dir / "DEFERRED_NON_CLOUD.md").exists()
             validated = (spec_dir / "VALIDATED.md").exists()
-            if retro_done and deferred and not validated:
+            if deferred and not validated and _phases_effectively_complete(spec_dir):
                 cloud_saturated_skipped.append(bug_name)
                 _diag(
                     f"cloud-saturated skipped: {bug_name} — DEFERRED_NON_CLOUD.md "
@@ -608,12 +638,13 @@ def compute_state(
 
         # -----------------------------------------------------------------------
         # Device-saturated skip (mirrors lazy-state.py's device-axis logic).
+        # (Retro unwired: _phases_effectively_complete() replaces the old
+        # RETRO_DONE.md precondition.)
         # -----------------------------------------------------------------------
         if not real_device:
-            retro_done = (spec_dir / "RETRO_DONE.md").exists()
             device_deferred = (spec_dir / "DEFERRED_REQUIRES_DEVICE.md").exists()
             validated = (spec_dir / "VALIDATED.md").exists()
-            if retro_done and device_deferred and not validated:
+            if device_deferred and not validated and _phases_effectively_complete(spec_dir):
                 device_saturated_skipped.append(bug_name)
                 _DEVICE_DEFERRED.append(bug_name)
                 meta = parse_sentinel(spec_dir / "DEFERRED_REQUIRES_DEVICE.md") or {}
@@ -862,40 +893,13 @@ def compute_state(
 
     # All PHASES.md deliverables are checked.
 
-    # Step 8: Retro phase — runs before MCP.
-    retro_done_file = spec_dir / "RETRO_DONE.md"
-    if not retro_done_file.exists():
-        return _bug_state(
-            **common,
-            current_step=STEP_RETRO,
-            sub_skill=SKILL_RETRO,
-            sub_skill_args=f"{spec_dir_str} --batch",
-        )
-
-    # Step 8 staleness re-route (Phase 11 WU-5e — bug-pipeline parity with
-    # lazy-state.py's WU-5c branch): RETRO_DONE.md exists, but if it recorded a
-    # phase_count_at_retro SMALLER than the number of `### Phase` sections
-    # PHASES.md carries now, corrective phases landed AFTER the retro concluded
-    # — the retro graded a fix it never saw finished. Re-dispatch the SAME
-    # retro-feature action as the not-exists branch above; /retro re-running
-    # writes a fresh RETRO_DONE.md with the updated count, which un-sticks this
-    # route. Grandfathering: a field-less RETRO_DONE.md, a malformed count, or
-    # a missing PHASES.md all return None from retro_staleness → fall through
-    # unchanged (byte-identical routing for every pre-Phase-11 sentinel,
-    # including all pinned smoke baselines). The __mark_fixed__ backstop in
-    # lazy_core.apply_pseudo enforces the same predicate as a second key.
-    _retro_stale = lazy_core.retro_staleness(spec_dir)
-    if _retro_stale is not None:
-        _now_count, _retro_count = _retro_stale
-        return _bug_state(
-            **common,
-            current_step=(
-                f"{STEP_RETRO} (stale — {_now_count - _retro_count} "
-                "phases added since retro)"
-            ),
-            sub_skill=SKILL_RETRO,
-            sub_skill_args=f"{spec_dir_str} --batch",
-        )
+    # RETRO UNWIRED (operator decision, 2026-06) — bug-pipeline parity with
+    # lazy-state.py. The Step 8 /retro phase has been removed: once all phases
+    # are complete the pipeline routes DIRECTLY to the Step 9 MCP gate, never to
+    # retro-feature. Git history is the restore path; /retro-feature SKILL stays
+    # in place. The now-inert retro_staleness() backstop in lazy_core.apply_pseudo
+    # is left dormant (harmless; returns None when RETRO_DONE.md is absent, which
+    # it now always is for new bugs) — nothing gates on it anymore.
 
     # Step 9-pre: device-deferral re-open / guard.
     # Mirrors lazy-state.py's exact Step 9-pre logic.
@@ -1036,21 +1040,22 @@ def compute_state(
             )
 
     # Step 10: Mark fixed.
-    # Entry: RETRO_DONE.md + VALIDATED.md (+ Status not yet Fixed).
+    # Entry: VALIDATED.md (+ Status not yet Fixed). (Retro unwired — no
+    # RETRO_DONE.md precondition.)
     #
-    # Cloud defensive backstop (mirrors lazy-state.py lines ~1441-1453).
+    # Cloud defensive backstop (mirrors lazy-state.py).
     # The Step-2 cloud-saturated skip normally prevents a cloud host from ever
-    # reaching this point without VALIDATED.md (RETRO_DONE.md + DEFERRED_NON_CLOUD.md
-    # → skip in queue walk → TR_CLOUD_QUEUE_EXHAUSTED at exhaustion).  But if somehow
-    # a bug arrives here on a cloud host without VALIDATED.md, halt rather than
-    # silently archiving with zero validation.
+    # reaching this point without VALIDATED.md (DEFERRED_NON_CLOUD.md + phases
+    # complete → skip in queue walk → TR_CLOUD_QUEUE_EXHAUSTED at exhaustion).
+    # But if somehow a bug arrives here on a cloud host without VALIDATED.md,
+    # halt rather than silently archiving with zero validation.
     if cloud and not validated_file.exists():
         return _bug_state(
             **common,
             current_step="Step 10a: cloud halt",
             terminal_reason=TR_CLOUD_QUEUE_EXHAUSTED,
             notify_message=(
-                f"{bug_name}: cloud work complete (phases + retro). "
+                f"{bug_name}: cloud work complete (phases). "
                 "Awaiting workstation /lazy-bug for deferred MCP validation."
             ),
         )
@@ -1304,8 +1309,9 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         )
 
     elif name == "phases-complete-no-retro":
-        # All PHASES.md deliverables checked; no RETRO_DONE.md.
-        # Expected: sub_skill == retro-feature (Step 8)
+        # All PHASES.md deliverables checked; no sentinels.
+        # Retro unwired: Step 9 mcp-test fires directly (NOT retro-feature).
+        # Expected: sub_skill == mcp-test (Step 9)
         (bugs_dir / "queue.json").write_text(json.dumps({
             "queue": [
                 {"id": "bug-pcnr", "name": "Phases Complete No Retro",
@@ -2487,13 +2493,13 @@ def run_smoke_tests() -> int:
                 "current_step": STEP_EXECUTE_PLAN,
             },
         ),
-        # 4. Phases complete, no retro → retro-feature (Step 8)
+        # 4. Phases complete (retro unwired) → Step 9 mcp-test directly
         (
             "phases-complete-no-retro", False, True,
             {
                 "feature_id": "bug-pcnr",
-                "sub_skill": SKILL_RETRO,
-                "current_step": STEP_RETRO,
+                "sub_skill": SKILL_MCP_TEST,
+                "current_step": STEP_MCP,
             },
         ),
         # 5. Retro done, no VALIDATED.md, non-cloud non-device host → mcp-test

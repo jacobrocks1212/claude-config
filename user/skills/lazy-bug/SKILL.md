@@ -170,8 +170,8 @@ machine progresses to retro on the next invocation.
 
 ### `__mark_fixed__`
 
-`sub_skill_args` is `{spec_path}`. VALIDATED.md AND RETRO_DONE.md both exist; finalize the bug
-via the archive-on-fix procedure.
+`sub_skill_args` is `{spec_path}`. VALIDATED.md exists (retro is unwired — RETRO_DONE.md is no
+longer required); finalize the bug via the archive-on-fix procedure.
 
 **Gate 1 — MCP-coverage audit** per
 `~/.claude/skills/_components/mcp-coverage-audit.md`.
@@ -315,9 +315,13 @@ The script mirrors the lifecycle:
 
 ```
 SPEC (Open/Investigating) → spec-bug (investigation) → PHASES → write-plan → execute-plan
-→ retro-feature (RETRO_DONE.md) → mcp-test (VALIDATED.md / skip / device-defer)
+→ mcp-test (VALIDATED.md / skip / device-defer)
 → __mark_fixed__ (FIXED.md receipt → Status: Fixed → git mv _archive/ → commit)
 ```
+
+> Retro unwired (operator decision, 2026-06): the `/retro-feature` step that previously sat
+> between execute-plan and mcp-test is removed — `bug-state.py` routes directly to the MCP gate
+> once phases are complete. The `/retro-feature` skill remains in the catalog (restore path).
 
 **No research/Gemini steps (N/A to bugs).** The feature pipeline's Step 4.5 stub-spec, Step 4.6
 realign, and Step 5 research gate have no bug analog — bugs have a root cause to investigate

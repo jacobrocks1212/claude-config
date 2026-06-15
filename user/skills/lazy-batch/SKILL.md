@@ -9,9 +9,9 @@ allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 
 # Lazy Batch — Autonomous Pipeline Orchestrator
 
-Drives the per-feature autonomous tail (`/plan-feature` (= `/spec-phases` + `/write-plan` in one cycle) → `/execute-plan` → `/retro` → `/mcp-test` → mark-complete) by looping on `~/.claude/scripts/lazy-state.py`. Each cycle spawns an Opus subagent that invokes the named sub-skill; the orchestrator (this skill, running in the main session) never touches source code, never invokes a skill directly, and never parses sentinel files manually.
+Drives the per-feature autonomous tail (`/plan-feature` (= `/spec-phases` + `/write-plan` in one cycle) → `/execute-plan` → `/mcp-test` → mark-complete) by looping on `~/.claude/scripts/lazy-state.py`. Each cycle spawns an Opus subagent that invokes the named sub-skill; the orchestrator (this skill, running in the main session) never touches source code, never invokes a skill directly, and never parses sentinel files manually.
 
-**Step ordering note:** `/retro` runs BEFORE `/mcp-test` (Step 8 retro → Step 9 MCP). `/retro` is a docs/analysis pass and runs identically in cloud and workstation; `/mcp-test` only runs on workstation (cloud defers). Behavior inside the loop is unchanged — the orchestrator dispatches whatever `lazy-state.py` returns.
+**Step ordering note:** the `/retro` step has been UNWIRED (operator decision, 2026-06). Once all phases are complete the pipeline routes directly to `/mcp-test` (Step 9 MCP gate); `lazy-state.py` never emits `retro-feature`. `/mcp-test` only runs on workstation (cloud defers). Behavior inside the loop is otherwise unchanged — the orchestrator dispatches whatever `lazy-state.py` returns. (The `/retro-feature` skill remains in the catalog; git history is the restore path.)
 
 This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-cloud` (under `repos/algobooth/.claude/skills/lazy-batch-cloud/`); the two are coupled per CLAUDE.md.
 

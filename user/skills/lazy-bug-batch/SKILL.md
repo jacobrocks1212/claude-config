@@ -10,8 +10,9 @@ allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
 # Lazy Bug Batch — Autonomous Bug Pipeline Orchestrator
 
 Drives the per-bug autonomous tail (`/spec-bug` → `/spec-phases` → `/write-plan` → `/execute-plan`
-→ `/retro-feature` → `/mcp-test` → `__mark_fixed__` archive-on-fix) by looping on
-`~/.claude/scripts/bug-state.py`. Each cycle spawns an Opus subagent that invokes the named
+→ `/mcp-test` → `__mark_fixed__` archive-on-fix) by looping on
+`~/.claude/scripts/bug-state.py`. (The `/retro-feature` step has been unwired — operator decision
+2026-06 — so once phases are complete the pipeline routes directly to the MCP gate.) Each cycle spawns an Opus subagent that invokes the named
 sub-skill; the orchestrator (this skill, running in the main session) never touches source code,
 never invokes a skill directly, and never parses sentinel files manually.
 
