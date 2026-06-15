@@ -257,7 +257,11 @@ For each step/batch defined in the plan:
 6. **Update task status** — Mark completed task(s) as `completed`
 7. **Satisfy checklist** — Must include: "PHASES.md updated and verified for this batch"
 8. **Commit the batch atomically** — After the PHASES.md ticks land (item 5), make the batch commit the FINAL link of the SAME chained Bash command as the batch's quality gate: `<batch QG> && git add -A && git commit -m "..." && git push`. This closes the turn-loss gap between "gate passed" and "commit" — the auto-backgrounded gate job commits + pushes itself, so ending the turn cannot leave the batch's code uncommitted. A failing gate (`&&`) aborts before the commit. See "Atomic gate+commit" under Step 4 for the full rationale and definition-of-done.
-9. **Proceed** — Move to the next step/batch
+9. **Mid-build checkpoint (project-scoped)** — after the commit lands and before proceeding, emit the project's per-batch code-review checkpoint if one is configured:
+
+!`cat .claude/skill-config/post-phase-code-review-checkpoint.md 2>/dev/null || echo "<!-- no per-batch code-review checkpoint configured for this repo -->"`
+
+10. **Proceed** — Move to the next step/batch
 
 #### Batch Review Gate (MANDATORY — injected, BLOCKING)
 
