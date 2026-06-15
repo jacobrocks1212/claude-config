@@ -29,6 +29,7 @@ This skill repeatedly uses a "surface full context in chat, THEN call `AskUserQu
 - **Same number of options per question**, in the same order.
 - **Same labels/titles** — each picker `label` must be the exact chat option label, or a length-truncated shortening of it (never a re-worded or different label).
 - **Same recommendation** — the option you recommend in chat must be the same option flagged/highlighted in the picker.
+- **Recommended option FIRST (HARD REQUIREMENT).** The recommended option MUST be listed FIRST (option A / position 1) in BOTH the chat block and the `AskUserQuestion` picker, with `(Recommended)` appended to its label. Never recommend an option (e.g. "Recommendation: C") while listing it second or third — that mismatch is the exact defect this rule forbids. If you change which option you recommend, you MUST reorder it to the top of BOTH the chat block and the picker — and move the `(Recommended)` suffix with it — BEFORE calling `AskUserQuestion`. Chat and picker must agree on the set/order of options AND on which one sits at position 1.
 
 The **only** allowed differences are unavoidable picker-length truncations: (a) a picker `label` may be a shortened form of the chat option's bolded label, and (b) a picker option `description` may be truncated relative to the chat's full pros/cons. The *set* of choices must be identical.
 

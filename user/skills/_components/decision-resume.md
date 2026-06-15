@@ -105,7 +105,7 @@ Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (p
      - `description`: the first sentence of `<description>`. AskUserQuestion will truncate longer descriptions — the full text is already above in chat (step 2), so the truncation is non-fatal.
    - `multiSelect`: `false` unless the H3 explicitly says "select all that apply" or similar (rare — most decisions are mutually exclusive). When in doubt, default to `false`.
 
-   **The option set MUST exactly match the options presented in the step-2a briefing** — same labels, same count, recommendation marked `(Recommended)` and listed first. If the briefing and the sentinel's `**Options:**` list diverged, fix the briefing and re-print before calling `AskUserQuestion` — never introduce an option in the UI that wasn't explained in chat.
+   **The option set MUST exactly match the options presented in the step-2a briefing** — same labels, same count, and the recommended option marked `(Recommended)` and listed FIRST (option A / position 1) in BOTH the chat briefing and the picker (HARD REQUIREMENT). The recommendation never sits at position 2+; if the sentinel's `**Options:**` list recommends a non-first option, reorder it to the top — carrying the `(Recommended)` suffix — before building the picker. If the briefing and the sentinel's `**Options:**` list diverged, fix the briefing and re-print before calling `AskUserQuestion` — never introduce an option in the UI that wasn't explained in chat.
 
    Call `AskUserQuestion` once with all N questions in a single `questions` array (the tool supports up to 4 questions per call). Capture the response.
 

@@ -183,12 +183,14 @@ Present the check-in, then use `AskUserQuestion` to capture the user's call. Ite
 AskUserQuestion({
   question: "<partition-specific decision question>",
   options: [
-    { label: "<option A — your recommendation>", description: "<tradeoffs>" },
+    { label: "<option A — your recommendation> (Recommended)", description: "<tradeoffs>" },
     { label: "<option B>", description: "<tradeoffs>" },
     { label: "Investigate further", description: "Dispatch more recon before deciding" }
   ]
 })
 ```
+
+**Recommended option FIRST (HARD REQUIREMENT).** The option you recommend MUST be listed FIRST (option A / position 1) in BOTH the chat check-in and this `AskUserQuestion` picker, with `(Recommended)` appended to its label. Never recommend an option while listing it second or third; if you change your recommendation, reorder it to the top of both surfaces — moving the `(Recommended)` suffix with it — before calling `AskUserQuestion`.
 
 On "Investigate further": dispatch another recon subagent, surface the findings, and repeat the check-in + decide loop for this partition.
 

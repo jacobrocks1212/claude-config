@@ -389,11 +389,11 @@ Every `NEEDS_INPUT.md` MUST carry — under the closing `---` of the frontmatter
 **Problem:** <2-4 sentence framing of why this decision is needed and what's at stake. Cite the spec section, research finding, or constraint that surfaced it.>
 
 **Options:**
-- **<option A>** — <one-paragraph description of the option, including concrete tradeoffs (cost / complexity / risk / reversibility).>
+- **<recommended option> (Recommended)** — <one-paragraph description of the option, including concrete tradeoffs (cost / complexity / risk / reversibility).>
 - **<option B>** — <same shape.>
 - **<option C>** — <same shape; optional, max 4 options.>
 
-**Recommendation:** <option name> — <one-sentence justification.>
+**Recommendation:** <recommended option name> — <one-sentence justification.>
 
 ### 2. <next decision title, matching decisions[1]>
 
@@ -401,6 +401,8 @@ Every `NEEDS_INPUT.md` MUST carry — under the closing `---` of the frontmatter
 ```
 
 This body is the **source of truth** for what the orchestrator displays to the user. The orchestrator (`/lazy-batch` / `/lazy-batch-cloud`) re-prints the entire `## Decision Context` section verbatim to chat BEFORE calling `AskUserQuestion`, whose option descriptions are truncated by the UI. Without the rich body, the user sees only the truncated picker — uninformed choice. With it, the chat carries the full tradeoff context the writer would have surfaced interactively.
+
+**Recommended option FIRST (HARD REQUIREMENT).** Within each `**Options:**` list, the option named in the `**Recommendation:**` line MUST be the FIRST bullet (option A / position 1), with `(Recommended)` appended to its bold label. Because the consumer (decision-resume / parked-flush) parses this list IN ORDER into the chat block and the `AskUserQuestion` picker, listing the recommendation first here guarantees it lands at position 1 in BOTH surfaces with the recommendation unmistakable. Never author an `**Options:**` list that recommends a non-first option (e.g. `**Recommendation:** option C` while C is the third bullet). If you revise which option you recommend, you MUST reorder the list so the new recommendation is the first bullet — and move the `(Recommended)` suffix with it — before the sentinel is consumed.
 
 **Write for a zero-context reader.** The operator answering may have been away for hours and remembers nothing about the session. Each H3 must be self-contained: gloss jargon and internal names on first use, state which original requirement (SPEC section / prior operator decision) the choice affects, and make each option's tradeoffs explicit enough that the operator can decide from this text alone — including which option is architecturally strongest and which best satisfies the original requirements when those differ.
 
