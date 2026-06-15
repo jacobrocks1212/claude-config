@@ -122,6 +122,7 @@ Phase 3 changes routing behavior intentionally — new fixtures assert the new r
 - **Scope:** "D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed"
 - **Files:** the 3 batch SKILLs (`user/skills/lazy-batch`, `user/skills/lazy-bug-batch`, `repos/algobooth/.claude/skills/lazy-batch-cloud`) + `~/.claude/skills/_components/halt-resolution.md` [VERIFY: `grep -n "max_cycles bounds it regardless" user/skills/_components/halt-resolution.md`]
 - **Implementation goal (D3 locked):** fix the unreachable-cap bug (the 1a→1b→1g/1h/1i→1a path never passes the Step 1c cap check) by checking the cap at the TOP of every resolution mode; implement forward vs meta counters (meta ceiling 2× `max_cycles`); report both in cycle header + final report. Fix halt-resolution.md's "(max_cycles bounds it regardless)" claim.
+  > **⏩ Forward pointer (2026-06-15, commit `e54b296`):** the meta ceiling (2× `max_cycles`) and the resolution-mode cap-checks implemented here were later **removed** per operator decision — `meta_cycles` is now tracked + reported but uncapped/unenforced; only `forward_cycles` is capped. This describes the original D3 work as built; see `docs/specs/lazy-validation-readiness/PHASES.md`.
 - **Note:** Phase-2/Phase-6 will further edit lazy-bug-batch; this WU adds D3 counters to it inline (Phase 6 inherits).
 - **Batch:** 2 (overlaps WU-1 on lazy-bug-batch SKILL.md)
 

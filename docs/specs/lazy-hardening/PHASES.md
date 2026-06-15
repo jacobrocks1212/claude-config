@@ -187,6 +187,7 @@ cloud gates in bug-state; standing-directive confirmation.
 - [x] `roadmap_marks_complete` / `upstream_is_complete` / `is_stub_spec` anchored (no substring collisions)
 - [x] Stale already-applied plan → inline flip pseudo-action (not execute-plan)
 - [x] D3: split forward/meta counters (meta ceiling 2× max_cycles) + cap check at top of every resolution mode; halt-resolution.md claim fixed
+  > **⏩ Forward pointer (2026-06-15, commit `e54b296`):** the meta-cycle ceiling (2× max_cycles) and its cap-check at the top of every resolution mode were **removed** per operator decision — `meta_cycles` is still tracked + displayed but is now **uncapped and unenforced**; only `forward_cycles` is capped (at `max_cycles`). The same change fixed an accidental checkpoint-resume counter reset. This line records the original D3 decision as it stood; see `docs/specs/lazy-validation-readiness/PHASES.md`.
 - [x] `scoped-id-not-found` terminal; diagnostics for malformed queue entries
 - [x] Realign mtime gate → recorded upstream-PHASES hash; `check_stale_upstream` wired to CLI/probe; Step-10 unexpected-state writes its NEEDS_INPUT.md
 
