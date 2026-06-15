@@ -133,7 +133,7 @@ Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-v
 ```
 ## /lazy-bug-batch — run start
 mode   workstation · park {on|off}
-budget fwd {max_cycles} · meta {2*max_cycles}
+budget fwd {max_cycles} · meta no cap
 queue  {N} bug(s) · first: {first open bug id}
 ```
 
@@ -304,7 +304,7 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
 
 1. **park** — message: `"parked {bug_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {bug_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (per `/lazy-batch` §1c.6 item 1).
 2. **halt** — on every terminal/halt: `all-bugs-fixed`, `all-remaining-deferred`,
-   `queue-missing`, `BLOCKED` halt-for-manual, `NEEDS_INPUT` halt, `max-cycles`, `meta-cap`,
+   `queue-missing`, `BLOCKED` halt-for-manual, `NEEDS_INPUT` halt, `max-cycles`,
    `device-queue-exhausted`, script-error, and any future obstacle terminal.
 
    **`--run-end` is MANDATORY before EVERY terminal/halt PushNotification.** On every path listed above, call `python3 ~/.claude/scripts/bug-state.py --run-end` BEFORE the PushNotification fires. `--run-end` deletes the run marker AND the prompt registry (all run-scoped enforcement state). A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades. The call is idempotent — if the marker is already absent, `--run-end` exits cleanly.
@@ -584,7 +584,7 @@ bindings:
 
 - `cycle_log` entry uses `bug_name` instead of `feature_name`.
 - **Spin-off notification (Step 1e step 3a):** if a cycle return reports spinning off a bug doc or an `--enqueue-adhoc` item (the cycle owns the reverse-reference in the origin doc per `cycle-base-prompt.md`), fire `PushNotification("spun off {id} — {reason}")` and add the D7 digest entry (`completeness-policy.md` §Logging / §5 — pre-authorized, notify + log, never a question).
-- Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### {Step name} — {work summary} [{n}/{max}]` (forward: `[{forward_cycles+1}/{max_cycles}]`; meta: `[meta {meta_cycles}/{2*max_cycles}]`); the `disp` line carries `{sub_skill} → {bug_id}`.
+- Per-cycle chat output: T2 at dispatch + T3 at return per orchestrator-voice.md / `/lazy-batch` Step 3 — heading `### {Step name} — {work summary} [{n}/{max}]` (forward: `[{forward_cycles+1}/{max_cycles}]`; meta: `[meta {meta_cycles}]` — count only, no denominator, meta is uncapped); the `disp` line carries `{sub_skill} → {bug_id}`.
 - **Post-`/execute-plan` and `/mcp-test` ledger-consistency guard (guardrail D):** see
   `~/.claude/skills/lazy-batch/SKILL.md` Step 1e item 4a for the full guard algorithm. Runs
   identically for the bug pipeline — including the plan-scoping rule: pass `--plan {plan_file}`
@@ -617,8 +617,7 @@ NOT APPLICABLE to the bug pipeline. `bug-state.py` never emits `needs-research` 
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Meta-cap check (FIRST):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/bug-state.py --run-end`, then halt with message
-`"lazy-bug-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification, print final batch report, STOP.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 **Pipeline binding for the shared handler** — `{SKILL}` = `/lazy-bug-batch`,
 `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{PUSH_RULE}` = workstation (standard push).
@@ -671,7 +670,7 @@ See `~/.claude/skills/_components/parked-flush.md`
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-**Meta-cap check (FIRST):** same as Step 1g meta-cap check (run `--run-end` before PushNotification + final report).
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 **Pipeline binding** — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`,
 `{ITEM}` = bug, `{SPEC_ROOT}` = `docs/bugs`, `{ADD_PHASE}` = `/add-phase` (or `/plan-bug` if
@@ -700,7 +699,7 @@ See `~/.claude/skills/_components/blocked-resolution.md`
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
-**Meta-cap check (FIRST):** same as Step 1g meta-cap check (run `--run-end` before PushNotification + final report).
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 Bug-pipeline terminals routed here: `completion-unverified` and `stale_upstream`. (`bug-state.py`
 does NOT emit `needs-spec-input`.) Increment `meta_cycles`.
@@ -739,7 +738,7 @@ When the loop exits, print:
 ## /lazy-bug-batch — Done
 
 **Forward cycles used:** {forward_cycles}/{max_cycles}
-**Meta cycles used:** {meta_cycles}/{2*max_cycles}
+**Meta cycles used:** {meta_cycles}
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
 **Park mode:** {on | off}
@@ -755,7 +754,6 @@ When the loop exits, print:
   - If terminal_reason is "completion-unverified": reconcile the receipt gap.
   - If terminal_reason is "all-remaining-deferred": re-include a bug by deleting its DEFERRED.md.
   - If forward-cycles-cap: re-run `/lazy-bug-batch {max_cycles}` from a fresh session.
-  - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate before re-running.
   - (needs-input is no longer a terminal state — Step 1g resolves inline.)
 ```
 
@@ -810,7 +808,7 @@ next   {fresh probe routing | terminal: <reason>}
 The heading leads with the pipeline step being advanced to (bug-pipeline names: Investigate /
 Plan / Implement / Retro / Validate / Mark Fixed), then a ≤12-word summary of this cycle's
 work, then the counter — `[{forward_cycles}/{max_cycles}]` for forward cycles (post-increment),
-`[meta {meta_cycles}/{2*max_cycles}]` for meta cycles. The retired `### Cycle fwd N/M · meta
+`[meta {meta_cycles}]` for meta cycles (count only, no denominator — meta is uncapped). The retired `### Cycle fwd N/M · meta
 K/L` heading must not reappear. All contract rules are inherited verbatim from
 `/lazy-batch` Step 3 (mechanics silent; deviations are T6; halt/resolution briefings are T6 rich
 zones; final report is T7; the retired `**Result:**`/`**Commit:**` bullets, `· {bug_name} ·

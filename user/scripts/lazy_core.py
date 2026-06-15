@@ -3470,15 +3470,14 @@ def format_cycle_header(
     Produces a string in EXACTLY this form (separators are U+00B7 MIDDLE DOT
     ``·``, and the em-dash placeholder is U+2014 ``—``):
 
-        ### Cycle fwd {fwd}/{max} · meta {meta}/{double} · {feature} · {sub_skill}
+        ### Cycle fwd {fwd}/{max} · meta {meta} · {feature} · {sub_skill}
 
     Counter rendering:
     - ``{fwd}``    = ``forward_cycles`` if not None else ``?``
     - ``{max}``    = ``max_cycles`` if not None else ``?``
-    - ``{meta}``   = ``meta_cycles`` if not None else ``?``
-    - ``{double}`` = ``2 * max_cycles`` if ``max_cycles is not None`` else ``?``
-      (the orchestrator's total meta-cycle budget is double the forward-cycle
-      ceiling — computed here, not supplied by the caller)
+    - ``{meta}``   = ``meta_cycles`` if not None else ``?``  (COUNT ONLY — no
+      denominator: meta_cycles has NO ceiling. Operator decision 2026-06-14 —
+      the meta loop is unbounded; only forward_cycles is capped at max_cycles.)
 
     State field rendering:
     - ``{feature}``   = ``state.get("feature_id")`` if truthy else ``—`` (U+2014)
@@ -3488,17 +3487,15 @@ def format_cycle_header(
     fwd_str = str(forward_cycles) if forward_cycles is not None else "?"
     max_str = str(max_cycles) if max_cycles is not None else "?"
     meta_str = str(meta_cycles) if meta_cycles is not None else "?"
-    # double is derived from max_cycles — the meta-cycle budget is 2× the
-    # forward-cycle ceiling.  Fall back to '?' when max is unknown.
-    double_str = str(2 * max_cycles) if max_cycles is not None else "?"
 
     # Render state fields: use the value when truthy, else the em-dash sentinel.
     feature_str = state.get("feature_id") or "—"
     sub_skill_str = state.get("sub_skill") or "—"
 
+    # meta is a bare COUNT (no "/cap") — meta_cycles is uncapped by design.
     return (
         f"### Cycle fwd {fwd_str}/{max_str}"
-        f" · meta {meta_str}/{double_str}"
+        f" · meta {meta_str}"
         f" · {feature_str}"
         f" · {sub_skill_str}"
     )
@@ -4033,7 +4030,8 @@ def load_context_json(text: str) -> dict:
     return out
 
 # Phase 7 WU-7.5a: per-class Step name for the meta cycle_header.  The header
-# the orchestrator echoes is `### {Step} — {summary} [meta {m}/{cap}]`; this map
+# the orchestrator echoes is `### {Step} — {summary} [meta {m}]` (bare count, no
+# cap — meta_cycles is uncapped as of 2026-06-14); this map
 # pins {Step} per the PHASES.md Phase 7 interface contract so every meta dispatch
 # carries a canonical heading (0/8 meta cycles carried one before this WU).
 DISPATCH_STEP_NAMES: dict[str, str] = {
@@ -4198,14 +4196,16 @@ def emit_dispatch_prompt(
 
     # --- Meta cycle_header (Phase 7 WU-7.5a — MARKER-GATED) --------------------
     # When a run marker is present, attach a canonical cycle heading the
-    # orchestrator echoes verbatim:  ### {Step} — {summary} [meta {m}/{cap}]
+    # orchestrator echoes verbatim:  ### {Step} — {summary} [meta {m}]
     #   Step    : from DISPATCH_STEP_NAMES (per the Phase 7 interface contract).
     #   summary : the work summary — context item_name, fallback item_id, fallback
     #             the class name.
     #   m       : the marker's persisted meta counter + 1 — the cycle THIS dispatch
     #             will consume (1-based current-cycle semantics, matching the
     #             forward cycle_header's POST-advance convention noted in Phase 1).
-    #   cap     : 2 * max_cycles from the marker (the meta-cycle budget).
+    # COUNT ONLY — no "/cap" denominator: meta_cycles has NO ceiling (operator
+    # decision 2026-06-14 — the meta loop is unbounded; only forward_cycles is
+    # capped at max_cycles).
     # No marker → no cycle_header key at all, so no-marker emissions remain
     # byte-identical to the Phase 3/4 shape.
     marker = read_run_marker()
@@ -4218,9 +4218,7 @@ def emit_dispatch_prompt(
         )
         meta_now = marker.get("meta_cycles", 0) or 0
         m = meta_now + 1
-        max_cycles = marker.get("max_cycles")
-        cap = str(2 * max_cycles) if isinstance(max_cycles, int) else "?"
-        result["cycle_header"] = f"### {step} — {summary} [meta {m}/{cap}]"
+        result["cycle_header"] = f"### {step} — {summary} [meta {m}]"
 
     return result
 
@@ -4579,7 +4577,8 @@ def delete_run_marker(clear_registry: bool = False) -> bool:
     Called by both state scripts' ``--run-end`` flag and by every terminal path
     in the orchestrator SKILLs (the 1c.6 PushNotification enumeration doubles
     as the deletion checklist: all-features-complete, cloud/device-queue-exhausted,
-    queue-missing, max-cycles, meta-cap, operator-chosen halt, script-error).
+    queue-missing, max-cycles, operator-chosen halt, script-error).
+    (meta-cap was removed 2026-06-14 — meta_cycles is now uncapped.)
 
     Args:
         clear_registry: when True, also delete ``lazy-prompt-registry.json`` from
@@ -5906,3 +5905,74 @@ def consume_run_checkpoint() -> dict | None:
     except OSError:
         pass
     return data
+
+
+def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
+    """Restore a resumed run's monotonic cycle counters from its checkpoint.
+
+    ROOT-CAUSE FIX (accidental mid-run counter reset, 2026-06-14): a sanctioned
+    checkpoint pause writes ``lazy-run-checkpoint.json`` carrying the marker's
+    ``forward_cycles`` / ``meta_cycles`` at run end (see ``write_run_checkpoint``).
+    The resuming ``--run-start`` previously called ``write_run_marker`` (which
+    UNCONDITIONALLY zeros both counters + the consume watermark) and then merely
+    echoed the checkpoint as ``resumed_from_checkpoint`` WITHOUT writing those
+    counters back. Result: a checkpoint pause/resume reset the running cycle count
+    to 0 MID-RUN — a direct violation of HARD CONSTRAINT 8 (both counters are
+    monotonic for the LIFE of a run and never reset on a within-run transition).
+    This is the operator-observed reset.
+
+    Intended semantics (resume-continues-counts): a checkpoint resume is the SAME
+    logical run continuing after a sanctioned pause, so the resumed marker must
+    CARRY FORWARD the paused counts. This helper reads the just-written marker,
+    overwrites ``forward_cycles`` / ``meta_cycles`` from the checkpoint's
+    ``counters`` block, and resets ``last_advance_consume_count`` to 0.
+
+    Why ``last_advance_consume_count`` resets to 0 (and that is CORRECT, not a
+    reset of a cycle counter): the registry/consume-count watermark is run-scoped
+    and a fresh ``--run-start`` clears the registry (``delete_run_marker`` cleared
+    it at the prior checkpoint). The watermark only gates whether a *future*
+    consume since the last advance is real; carrying a stale watermark across the
+    registry reset would suppress the first post-resume advance. Zeroing it means
+    the first real dispatch after resume advances correctly ON TOP of the restored
+    forward/meta totals — so the visible running total N never goes backward.
+
+    A genuinely NEW ``/lazy-batch <N>`` invocation (no checkpoint on disk) is NOT
+    affected: ``checkpoint`` is None → this is a no-op and the marker keeps the
+    by-design 0/0 start.
+
+    Args:
+        checkpoint: the dict returned by ``consume_run_checkpoint()`` (or None).
+            Only its ``counters`` sub-dict is consulted; absent/garbage values
+            fall back to 0 so a malformed checkpoint can never crash run-start.
+
+    Returns:
+        The updated marker dict when counters were restored; None when there was
+        no checkpoint, no active marker, or no usable counters (no-op).
+    """
+    if not isinstance(checkpoint, dict):
+        return None
+    counters = checkpoint.get("counters")
+    if not isinstance(counters, dict):
+        return None
+    marker = read_run_marker()
+    if marker is None:
+        return None
+
+    def _coerce(value: object) -> int:
+        # A checkpoint counter may legitimately be None (marker lacked the field
+        # at checkpoint time) or a non-int from a hand-edited/corrupt file —
+        # coerce to a non-negative int, never crash run-start.
+        try:
+            n = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 0
+        return n if n >= 0 else 0
+
+    marker["forward_cycles"] = _coerce(counters.get("forward_cycles"))
+    marker["meta_cycles"] = _coerce(counters.get("meta_cycles"))
+    # Registry is freshly cleared on this run-start → the consume watermark must
+    # start at 0 so the first real post-resume dispatch advances (see docstring).
+    marker["last_advance_consume_count"] = 0
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker

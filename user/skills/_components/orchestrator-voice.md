@@ -78,7 +78,7 @@ the next visible thing after the silent mechanics is the template block itself.
 ```
 ## /lazy-bug-batch — run start
 mode   workstation · park on · research strict
-budget fwd 6 · meta 12
+budget fwd 6 · meta no cap
 queue  4 bugs · first: track-path-filestream-source-silent
 ```
 
@@ -112,9 +112,9 @@ Heading format: `### {Step name} — {work summary, ≤12 words} [{n}/{max}]`.
 - **Work summary** — one clause saying what THIS cycle is about to do, specific to the item
   ("implement plan part 2 of 3", "real-device validation of the resize scenario"), not a
   restatement of the step name.
-- **Counter** — forward cycles: `[2/6]`. Meta cycles: `[meta 1/12]`. Both counters are still
-  tracked per D3 and both appear in the T7 final report; the heading shows only the counter
-  this cycle consumes.
+- **Counter** — forward cycles: `[2/6]`. Meta cycles: `[meta 1]` (count only, no denominator —
+  meta is uncapped per operator decision 2026-06-14). Both counters are still tracked per D3 and
+  both appear in the T7 final report; the heading shows only the counter this cycle consumes.
 
 `disp` carries sub-skill, target, model, and — only when applicable — a trailing tag:
 `(sonnet, loop-resolution)` / `(opus, recovery)`. Nothing else before the Agent call.
@@ -123,7 +123,7 @@ Heading format: `### {Step name} — {work summary, ≤12 words} [{n}/{max}]`.
 a `cycle_header` field (the `--probe` enrichment emits it pre-formatted), the heading line is
 that string echoed **verbatim** — never re-typed, never composed from memory or a remembered
 earlier probe. **This now covers META dispatches too:** every `--emit-dispatch <class>` output
-carries its own pre-formatted `cycle_header` (`### {Step} — {summary} [meta m/cap]`) when a marker
+carries its own pre-formatted `cycle_header` (`### {Step} — {summary} [meta m]`) when a marker
 is present — echo it verbatim under the SAME probe-presence guard as forward cycles (the headerless
 meta dispatches graded 0/8 in the first enforced run; a meta heading with no same-turn emit behind
 it is the same R-V violation). A probe-shaped heading with no same-turn probe behind it is the gravest R-V

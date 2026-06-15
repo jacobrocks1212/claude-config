@@ -57,13 +57,10 @@ after the flush (this IS a run-end; the loop genuinely ends after the flush comp
 
 ### Algorithm
 
-**Meta-cap check (FIRST — before any other action in the flush).** Check
-`if meta_cycles >= 2 * max_cycles:` before flushing. If the cap is reached, skip the flush:
-emit a warning to chat (`"⚠ meta-cycle cap (2× max_cycles) reached — skipping parked-decision
-flush; {N} parked item(s) left unresolved. Restart from a fresh session to resolve them."`),
-fire a PushNotification with the same message, and proceed directly to the final report (or
-resume the loop, if trigger (a) — but without flushing). Do NOT increment `meta_cycles` for
-this guard check itself.
+**No meta-cap check.** `meta_cycles` is uncapped (operator decision 2026-06-14) — there is
+no meta-cycle ceiling, so the flush is never skipped for a meta-cap reason. Proceed directly
+to Step 1. (`meta_cycles` is still incremented per flushed item below and displayed as a bare
+count; the run's only hard stop remains the forward-cycle cap, `forward_cycles >= max_cycles`.)
 
 **Step 1 — Collect unresolved parked items.** Build the set `pending_flush`: all items whose
 sentinel file is still named `{spec_path}/NEEDS_INPUT.md` (i.e., not yet renamed to
@@ -203,7 +200,7 @@ These are processed by the existing batched `AskUserQuestion` flow in Step 3.
 
   6. **Cycle accounting** — same as Step 6 of the flush (one `meta_cycles` increment per
      dispatched apply, one `cycle_log` entry, one per-cycle update block with heading
-     `### Cycle {meta_cycles}/{2*max_cycles} (meta) · {feature_name} · auto-accept [two-key]`).
+     `### Cycle {meta_cycles} (meta) · {feature_name} · auto-accept [two-key]`).
      Each auto-accepted item counts as a meta cycle, matching the standard flush accounting.
 
 After processing all `auto_acceptable[]` items, assign `pending_flush = must_ask[]` and continue
@@ -285,13 +282,13 @@ apply-resolution dispatches are issued, fire one PushNotification per §1c.6 flu
 
 **Step 6 — Cycle accounting.** Each flushed decision's apply dispatch is a META cycle:
 
-  - For each dispatched apply-resolution subagent: increment `meta_cycles` by 1, check
-    `if meta_cycles >= 2 * max_cycles:` (mid-flush meta-cap check — if hit, stop flushing
-    remaining items, emit the cap warning, and proceed to post-flush continuation).
+  - For each dispatched apply-resolution subagent: increment `meta_cycles` by 1. There is NO
+    mid-flush meta-cap check — `meta_cycles` is uncapped (operator decision 2026-06-14); flush
+    every item.
   - Record one `cycle_log` entry per dispatched apply: `{forward_cycles + meta_cycles,
     feature_name, "▶ parked-flush (resolved + applied)", "<N> decision(s); <first-line-of-subagent-summary>"}`.
   - Emit the canonical per-cycle update block (Step 3 of the consuming skill): heading
-    `### Cycle {meta_cycles}/{2*max_cycles} (meta) · {feature_name} · parked-flush`,
+    `### Cycle {meta_cycles} (meta) · {feature_name} · parked-flush`,
     `**Result:**` = `"parked decision(s) flushed + applied — {first-line-of-subagent-summary}"`.
     One block per apply dispatch.
   - Update `prev_cycle_signature = (feature_id, "__parked_flush__", sub_skill_args, current_step)`

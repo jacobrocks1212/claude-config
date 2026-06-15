@@ -3680,6 +3680,18 @@ def main() -> int:
         checkpoint = lazy_core.consume_run_checkpoint()
         if checkpoint is not None:
             out["resumed_from_checkpoint"] = checkpoint
+            # ROOT-CAUSE FIX (mid-run counter reset, 2026-06-14) — coupled-pair
+            # mirror of lazy-state.py. write_run_marker above zeroed the counters;
+            # a checkpoint resume is the SAME run continuing, so its monotonic
+            # forward/meta counts must carry forward (HARD CONSTRAINT 8 — never
+            # reset within a run). Restore them and echo the continued totals.
+            restored = lazy_core.restore_checkpoint_counters(checkpoint)
+            if restored is not None:
+                out["forward_cycles"] = restored.get("forward_cycles")
+                out["meta_cycles"] = restored.get("meta_cycles")
+                out["last_advance_consume_count"] = restored.get(
+                    "last_advance_consume_count"
+                )
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 

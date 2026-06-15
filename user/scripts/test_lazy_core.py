@@ -6182,8 +6182,9 @@ def test_git_guard_status_invalid_repo_is_safe_dirty():
 def test_format_cycle_header_full():
     """All counters provided, state has feature_id and sub_skill → exact pinned string.
 
-    The 2*max_cycles arithmetic (2*8==16) is part of the contract and must be
-    computed by the function, not hard-coded by the caller.
+    meta is rendered as a bare COUNT with NO denominator (operator decision
+    2026-06-14 — meta_cycles is uncapped; only forward_cycles is capped at
+    max_cycles, so only fwd shows '/max').
     RED: format_cycle_header missing → AttributeError after _guard().
     """
     _guard()
@@ -6191,7 +6192,7 @@ def test_format_cycle_header_full():
     result = lazy_core.format_cycle_header(
         state, forward_cycles=2, max_cycles=8, meta_cycles=3
     )
-    expected = "### Cycle fwd 2/8 · meta 3/16 · audio-engine · /execute-plan"
+    expected = "### Cycle fwd 2/8 · meta 3 · audio-engine · /execute-plan"
     assert result == expected, (
         f"format_cycle_header returned wrong string.\n"
         f"  expected: {expected!r}\n"
@@ -6202,8 +6203,9 @@ def test_format_cycle_header_full():
 def test_format_cycle_header_missing_fields():
     """state={} and all counters None → feature/sub_skill render as —, counters as ?.
 
-    The exact placeholder contract: counters None → '?', missing feature_id/sub_skill → '—'.
-    Also verifies that 2*max_cycles renders as '?' when max_cycles is None.
+    The exact placeholder contract: fwd counters None → '?', missing
+    feature_id/sub_skill → '—'.  meta is a bare COUNT (no denominator) — it
+    renders just '?' when meta_cycles is None (no '/?' cap term).
     RED: format_cycle_header missing → AttributeError after _guard().
     """
     _guard()
@@ -6211,7 +6213,7 @@ def test_format_cycle_header_missing_fields():
     result = lazy_core.format_cycle_header(
         state, forward_cycles=None, max_cycles=None, meta_cycles=None
     )
-    expected = "### Cycle fwd ?/? · meta ?/? · — · —"
+    expected = "### Cycle fwd ?/? · meta ? · — · —"
     assert result == expected, (
         f"format_cycle_header returned wrong string for all-None/empty state.\n"
         f"  expected: {expected!r}\n"
@@ -8522,6 +8524,193 @@ def test_checkpoint_round_trip():
         assert not ckpt_path.exists(), "terminal run-end must not write a checkpoint"
 
 
+# ---------------------------------------------------------------------------
+# Regression: ACCIDENTAL mid-run counter reset (2026-06-14)
+#
+# HARD CONSTRAINT 8: forward_cycles AND meta_cycles are monotonic for the LIFE
+# of a run and must NEVER reset on a within-run transition (feature transition,
+# recovery/meta cycle, marker rewrite, post-compaction re-entry, OR a sanctioned
+# checkpoint pause/resume).  The live reset bug: a checkpoint resume re-ran
+# write_run_marker (which zeros both counters) and echoed the checkpoint WITHOUT
+# restoring the paused counts → the running total N reset to 0 mid-run.
+# ---------------------------------------------------------------------------
+
+def test_restore_checkpoint_counters_carries_forward():
+    """restore_checkpoint_counters re-applies the checkpoint's forward/meta counts
+    onto the freshly-written (zeroed) marker so a resume CONTINUES the count.
+
+    Also resets last_advance_consume_count to 0 (the registry is freshly cleared
+    on run-start, so the first post-resume dispatch must be able to advance)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Simulate the run-start sequence: write_run_marker zeros the counters.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            zeroed = lazy_core.read_run_marker()
+            assert zeroed["forward_cycles"] == 0 and zeroed["meta_cycles"] == 0
+
+            # A checkpoint left by a prior sanctioned pause carrying live counts.
+            checkpoint = {
+                "reason": "checkpoint",
+                "next_route": "execute-plan Phase 3",
+                "counters": {"forward_cycles": 7, "meta_cycles": 4, "max_cycles": 25},
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(checkpoint)
+            assert restored is not None, "restore must return the updated marker"
+            assert restored["forward_cycles"] == 7, restored
+            assert restored["meta_cycles"] == 4, restored
+            assert restored["last_advance_consume_count"] == 0, restored
+
+            # The on-disk marker must reflect the restore (not just the return).
+            on_disk = lazy_core.read_run_marker()
+            assert on_disk["forward_cycles"] == 7, on_disk
+            assert on_disk["meta_cycles"] == 4, on_disk
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_checkpoint_counters_no_checkpoint_is_noop():
+    """A genuinely NEW invocation (checkpoint=None) is a no-op — the marker keeps
+    its by-design 0/0 start.  Also tolerates malformed/None checkpoints without
+    crashing and without touching the marker."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=10,
+            )
+            # None / non-dict / missing-counters → all no-ops returning None.
+            assert lazy_core.restore_checkpoint_counters(None) is None
+            assert lazy_core.restore_checkpoint_counters("garbage") is None
+            assert lazy_core.restore_checkpoint_counters({}) is None
+            assert lazy_core.restore_checkpoint_counters({"counters": "x"}) is None
+            # Marker untouched — still the by-design fresh 0/0 start.
+            m = lazy_core.read_run_marker()
+            assert m["forward_cycles"] == 0 and m["meta_cycles"] == 0, m
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_checkpoint_counters_coerces_garbage_counts():
+    """Malformed counter values in the checkpoint (None / strings / negatives)
+    coerce to non-negative ints rather than crashing run-start."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=10,
+            )
+            ckpt = {"counters": {"forward_cycles": None, "meta_cycles": "bad"}}
+            restored = lazy_core.restore_checkpoint_counters(ckpt)
+            assert restored is not None
+            assert restored["forward_cycles"] == 0, restored
+            assert restored["meta_cycles"] == 0, restored
+
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=10,
+            )
+            ckpt2 = {"counters": {"forward_cycles": -3, "meta_cycles": 5}}
+            restored2 = lazy_core.restore_checkpoint_counters(ckpt2)
+            assert restored2["forward_cycles"] == 0, restored2  # negative clamped
+            assert restored2["meta_cycles"] == 5, restored2
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_advance_round_trips_counters_under_rmw():
+    """GUARD: every read-modify-write of the marker (advance_run_counters,
+    advance_meta_cycle, bind_marker_session) must PRESERVE the other counters and
+    last_advance_consume_count — a reserialize that drops a field is the classic
+    accidental-reset bug.  This pins the round-trip for all three writers."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            # Seed live counts directly on the marker.
+            m = lazy_core.read_run_marker()
+            m["forward_cycles"] = 9
+            m["meta_cycles"] = 6
+            m["last_advance_consume_count"] = 12
+            (Path(td) / "lazy-run-marker.json").write_text(
+                json.dumps(m, indent=2) + "\n", encoding="utf-8"
+            )
+
+            # bind_marker_session: must preserve BOTH counters + watermark.
+            lazy_core.bind_marker_session("sess-abc")
+            after_bind = lazy_core.read_run_marker()
+            assert after_bind["forward_cycles"] == 9, after_bind
+            assert after_bind["meta_cycles"] == 6, after_bind
+            assert after_bind["last_advance_consume_count"] == 12, after_bind
+            assert after_bind["session_id"] == "sess-abc", after_bind
+
+            # advance_meta_cycle: meta += 1, forward UNCHANGED.
+            lazy_core.advance_meta_cycle()
+            after_meta = lazy_core.read_run_marker()
+            assert after_meta["meta_cycles"] == 7, after_meta
+            assert after_meta["forward_cycles"] == 9, after_meta
+        finally:
+            _clear_state_dir()
+
+
+def test_checkpoint_resume_preserves_counters_e2e():
+    """Subprocess end-to-end: a checkpoint run-end at fwd=N/meta=M followed by a
+    resuming --run-start must echo (and persist) fwd=N/meta=M — NOT 0/0.  This is
+    the regression for the operator-observed mid-run reset across a checkpoint
+    pause/resume (HARD CONSTRAINT 8)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "resume-state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # Start (unattended so the checkpoint auth gate does not block the test).
+        assert run(["--run-start", "--max-cycles", "25", "--unattended"]).returncode == 0
+        # Seed live counts on the marker (simulating several cycles of progress).
+        marker_path = state_dir / "lazy-run-marker.json"
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker["forward_cycles"] = 7
+        marker["meta_cycles"] = 3
+        marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+
+        # Sanctioned checkpoint pause — folds the live counts into the checkpoint.
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "execute-plan Phase 4"])
+        assert r.returncode == 0, f"{r.stdout}{r.stderr}"
+        ckpt = json.loads((state_dir / "lazy-run-checkpoint.json").read_text(encoding="utf-8"))
+        assert ckpt["counters"]["forward_cycles"] == 7, ckpt
+        assert ckpt["counters"]["meta_cycles"] == 3, ckpt
+
+        # Resume: --run-start must RESTORE the counts, not reset to 0/0.
+        r2 = run(["--run-start", "--max-cycles", "25", "--unattended"])
+        assert r2.returncode == 0
+        out2 = json.loads(r2.stdout)
+        assert out2["forward_cycles"] == 7, out2
+        assert out2["meta_cycles"] == 3, out2
+        # And the persisted marker reflects the continued counts.
+        resumed_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert resumed_marker["forward_cycles"] == 7, resumed_marker
+        assert resumed_marker["meta_cycles"] == 3, resumed_marker
+        # Watermark resets to 0 (registry was cleared) so the next dispatch advances.
+        assert resumed_marker["last_advance_consume_count"] == 0, resumed_marker
+
+
 def test_normalize_widened_equivalence_pairs():
     """Widened normalize_prompt_for_hash: CRLF + trailing-whitespace + NFD all
     hash equal to the clean LF/NFC form; a semantic word change still differs."""
@@ -8844,8 +9033,9 @@ def test_single_slot_dispatch_templates():
 
 def test_emit_dispatch_cycle_header_marker_gated():
     """emit_dispatch_prompt attaches cycle_header ONLY when a marker is present;
-    the header matches `### {Step} — {summary} [meta {m}/{cap}]` with the
-    class-map step name, item_name summary, m = meta+1, cap = 2*max_cycles."""
+    the header matches `### {Step} — {summary} [meta {m}]` (bare meta COUNT, no
+    denominator — meta_cycles is uncapped, operator decision 2026-06-14) with the
+    class-map step name, item_name summary, and m = meta+1."""
     _guard()
     requires_keys = _read_recovery_requires_keys()
     assert requires_keys is not None, "dispatch-recovery.md missing"
@@ -8880,8 +9070,8 @@ def test_emit_dispatch_cycle_header_marker_gated():
             r = lazy_core.emit_dispatch_prompt("recovery", ctx, pipeline="feature")
             assert r["ok"], r
             assert "cycle_header" in r, "cycle_header must be present with a marker"
-            # Step for 'recovery' is 'Recover'; m = meta(3)+1 = 4; cap = 2*5 = 10.
-            assert r["cycle_header"] == "### Recover — My Feature [meta 4/10]", (
+            # Step for 'recovery' is 'Recover'; m = meta(3)+1 = 4; NO cap (uncapped).
+            assert r["cycle_header"] == "### Recover — My Feature [meta 4]", (
                 f"unexpected cycle_header: {r['cycle_header']!r}"
             )
 
@@ -8893,7 +9083,7 @@ def test_emit_dispatch_cycle_header_marker_gated():
                 pipeline="feature",
             )
             assert ri["ok"], ri
-            assert ri["cycle_header"].startswith("### Investigate — Bug Q [meta 4/10]"), ri["cycle_header"]
+            assert ri["cycle_header"].startswith("### Investigate — Bug Q [meta 4]"), ri["cycle_header"]
         finally:
             _clear_state_dir()
 
@@ -8916,7 +9106,7 @@ def test_emit_dispatch_cycle_header_summary_fallback():
             ctx["item_name"] = ""  # falsy → fallback to item_id
             r = lazy_core.emit_dispatch_prompt("recovery", ctx, pipeline="feature")
             assert r["ok"], r
-            assert r["cycle_header"] == "### Recover — feat-fallback [meta 1/8]", (
+            assert r["cycle_header"] == "### Recover — feat-fallback [meta 1]", (
                 r.get("cycle_header")
             )
         finally:
@@ -12910,6 +13100,12 @@ _TESTS = [
     ("test_guard_deny_ledger_failure_is_fail_open", test_guard_deny_ledger_failure_is_fail_open),
     ("test_run_end_refuses_on_unacked_deny", test_run_end_refuses_on_unacked_deny),
     ("test_checkpoint_round_trip", test_checkpoint_round_trip),
+    # Regression: accidental mid-run counter reset (2026-06-14) — HC8 monotonicity
+    ("test_restore_checkpoint_counters_carries_forward", test_restore_checkpoint_counters_carries_forward),
+    ("test_restore_checkpoint_counters_no_checkpoint_is_noop", test_restore_checkpoint_counters_no_checkpoint_is_noop),
+    ("test_restore_checkpoint_counters_coerces_garbage_counts", test_restore_checkpoint_counters_coerces_garbage_counts),
+    ("test_marker_advance_round_trips_counters_under_rmw", test_marker_advance_round_trips_counters_under_rmw),
+    ("test_checkpoint_resume_preserves_counters_e2e", test_checkpoint_resume_preserves_counters_e2e),
     ("test_normalize_widened_equivalence_pairs", test_normalize_widened_equivalence_pairs),
     ("test_single_slot_dispatch_templates", test_single_slot_dispatch_templates),
     ("test_emit_dispatch_cycle_header_marker_gated", test_emit_dispatch_cycle_header_marker_gated),

@@ -28,8 +28,8 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 8. **TWO session-global monotonic counters replace the single `cycle` counter.** Both are initialized once in Step 0 and NEITHER is ever reset on feature transitions.
    - **`forward_cycles`** — counts pipeline-advancing work. Ceiling: `max_cycles`. Incremented by: (a) real-skill dispatch cycles (Step 1e step 5) and (b) pipeline-advancing pseudo-skills at Step 1c.5 (`__mark_complete__`, `__mark_fixed__`, `__write_deferred_non_cloud__` (cloud variant only — workstation `lazy-state.py` never emits this), `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`). **Capped at Step 1c** (`if forward_cycles >= max_cycles` → the existing max-cycles halt).
-   - **`meta_cycles`** — counts resolution / recovery / audit / cleanup work. Ceiling: `2 * max_cycles`. Incremented by: Step 1g (decision-resume), Step 1h (blocked-resolution), Step 1i (operator-directed halt-resolution), LOOP-DETECTED / Step 1e.4a recovery dispatches, the input-audit cycle at Step 1d.5, and the stale-plan flip pseudo-skill `__flip_plan_complete_stale__`. **Capped at the TOP of every resolution mode**: the `if meta_cycles >= 2 * max_cycles:` check is inserted at the START of Step 1g, Step 1h, and Step 1i, which halts with a clear "meta-cycle cap (2× max_cycles) reached" message + PushNotification + final report. This cap check is what makes the resolution-path loop BOUNDED — without it, a Defer→same-terminal re-prompt cycle is unbounded.
-   - **Input-audit (Step 1d.5):** audits are NOT counted as separate cycles (they share the real-skill cycle's slot in `cycle_log` and do NOT increment either counter). This keeps audit costs outside the budget. The meta cap still bounds the surrounding loop.
+   - **`meta_cycles`** — counts resolution / recovery / audit / cleanup work. **NO ceiling — uncapped by design (operator decision 2026-06-14).** Incremented by: Step 1g (decision-resume), Step 1h (blocked-resolution), Step 1i (operator-directed halt-resolution), LOOP-DETECTED / Step 1e.4a recovery dispatches, the input-audit cycle at Step 1d.5, and the stale-plan flip pseudo-skill `__flip_plan_complete_stale__`. The meta loop is NOT bounded by a meta cap; the run's only hard stop is the `forward_cycles >= max_cycles` cap at Step 1c. `meta_cycles` is still tracked and displayed (as a bare count), but there is NO `if meta_cycles >= …` halt anywhere — Step 1g/1h/1i have no meta-cap check.
+   - **Input-audit (Step 1d.5):** audits are NOT counted as separate cycles (they share the real-skill cycle's slot in `cycle_log` and do NOT increment either counter). This keeps audit costs outside the budget.
    - **Running total for cycle_log index:** use `forward_cycles + meta_cycles` as the monotonic `N` in cycle-log entries and per-cycle headings (i.e., the N-th action in this invocation regardless of type). `prev_cycle_signature` is a tuple of ids, unaffected.
    - Cycle N's per-cycle heading always refers to the N-th action in this invocation, regardless of which feature it operated on. A feature transition is NOT a fresh batch; the orchestrator runs ONE log across every feature it touches.
 
@@ -85,7 +85,7 @@ Only enter the new mode after the operator confirms. If they say No or provide a
 
 Initialize counters and per-session state:
 - `forward_cycles = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py` returns a new `feature_id`). Counts pipeline-advancing work; ceiling is `max_cycles`.
-- `meta_cycles = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset on feature transitions). Counts resolution/recovery/cleanup work; ceiling is `2 * max_cycles`.
+- `meta_cycles = 0` — initialized once per `/lazy-batch` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset on feature transitions). Counts resolution/recovery/cleanup work; **uncapped — no ceiling, no cap enforcement** (operator decision 2026-06-14). Only `forward_cycles` is capped (at `max_cycles`).
 - `max_cycles = <parsed>`
 - `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
 - `cycle_log = []` — each entry: `{forward_cycles + meta_cycles, feature, action, subagent_summary}` (the running total is the monotonic N-th action in this invocation).
@@ -120,7 +120,7 @@ Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-v
 ```
 ## /lazy-batch — run start
 mode   workstation · park {on|off} · research {strict|batched}
-budget fwd {max_cycles} · meta {2*max_cycles}
+budget fwd {max_cycles} · meta no cap
 queue  {N} feature(s) · first: {first queue entry id}
 ```
 
@@ -400,7 +400,7 @@ Print final batch report, STOP. Do NOT try to renew the cap automatically — th
 The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
 
 1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) Message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
-2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `queue-missing`, `all-features-complete`, `max-cycles`, `meta-cap`, `device-queue-exhausted`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
+2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `queue-missing`, `all-features-complete`, `max-cycles`, `device-queue-exhausted`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
 
    **`--run-end` is MANDATORY before EVERY terminal/halt PushNotification.** On every path listed above, call `python3 ~/.claude/scripts/lazy-state.py --run-end` BEFORE the PushNotification fires. `--run-end` deletes the run marker AND the prompt registry (all run-scoped enforcement state). A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades. The call is idempotent — if the marker is already absent (e.g. `--run-start` failed earlier), `--run-end` exits cleanly.
 
@@ -784,7 +784,7 @@ No special resume detection is needed in `/lazy-batch`'s main loop — every upl
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Meta-cap check (FIRST — before any other action in Step 1g):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then halt with message `"lazy-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP. This is what guarantees a Defer→same-terminal re-prompt loop is bounded.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{PUSH_RULE}` = workstation (the apply subagent's standard end-of-work push suffices). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then read and apply the shared decision-resume handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
@@ -852,7 +852,7 @@ orchestrators):
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-**Meta-cap check (FIRST — before any other action in Step 1h):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then halt with message `"lazy-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{SPEC_ROOT}` = `docs/features`, `{ADD_PHASE}` = `/add-phase`, `{PUSH_RULE}` = workstation (standard push). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (blocked-resolution is a meta cycle). Then read and apply the shared blocked-resolution handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
@@ -879,7 +879,7 @@ Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
-**Meta-cap check (FIRST — before any other action in Step 1i):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then halt with message `"lazy-batch meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified`, `needs-spec-input`, `stale_upstream` (and any future obstacle terminal) — the orchestrator routes here instead of halting. Rather than dead-ending, it re-prints the obstacle context, `AskUserQuestion`s a resolution path (reopen & re-validate / provide direction / defer & continue / halt-for-manual / custom), enacts the choice via an Opus apply-resolution subagent, and continues the loop. Follow the shared component (read and apply it exactly):
 
@@ -960,7 +960,7 @@ When the loop exits (terminal state or max-cycles), print:
 ## /lazy-batch — Done
 
 **Forward cycles used:** {forward_cycles}/{max_cycles}
-**Meta cycles used:** {meta_cycles}/{2*max_cycles}
+**Meta cycles used:** {meta_cycles}
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
 **Park mode:** {on | off}
@@ -978,7 +978,6 @@ When the loop exits (terminal state or max-cycles), print:
   - If terminal_reason is "queue-blocked-on-research" (only reachable under --allow-research-skip): same as needs-research — upload research in chat for fastest resume, or use one of the staged/drop paths and re-run `/lazy-batch {max_cycles} [--allow-research-skip]`.
   - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch invocation.)
   - If forward-cycles-cap: re-run `/lazy-batch {max_cycles}` from a fresh session
-  - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
 ```
 
 *(Print the following table ONLY when `park_mode == true` AND `auto_accepted[]` is non-empty. Omit entirely otherwise — no change to default reports.)*
@@ -1026,7 +1025,7 @@ ledger {clean · pushed | …}                                               ←
 next   {fresh probe routing | terminal: <reason>}
 ```
 
-The heading leads with the **pipeline step being advanced to** (T2's canonical names: Spec / Investigate / Plan / Implement / Retro / Validate / Realign / Research / Mark Complete / Mark Fixed), then a **≤12-word summary of the work this cycle is about to do** (specific to the item, not a restatement of the step name), then the **counter**: `[{forward_cycles}/{max_cycles}]` for forward cycles (post-increment), `[meta {meta_cycles}/{2*max_cycles}]` for meta cycles (decision-resume 1g, blocked-resolution 1h, halt-resolution 1i, stale-plan flip). Both counters are still tracked and both appear in the T7 final report. Inline pseudo-skill cycles emit T4 (`act` / `gates` / `done` / `next`) instead of T2+T3, under the same heading shape. The retired formats — the `### Cycle fwd N/M · meta K/L` heading, the `· {feature_name} · {sub_skill}` heading suffix, the `**Result:**`/`**Commit:**` bullet block, and any 3–5-line cycle summary — must NOT reappear; the contract's Precedence clause governs.
+The heading leads with the **pipeline step being advanced to** (T2's canonical names: Spec / Investigate / Plan / Implement / Retro / Validate / Realign / Research / Mark Complete / Mark Fixed), then a **≤12-word summary of the work this cycle is about to do** (specific to the item, not a restatement of the step name), then the **counter**: `[{forward_cycles}/{max_cycles}]` for forward cycles (post-increment), `[meta {meta_cycles}]` for meta cycles (count only, no denominator — meta is uncapped) (decision-resume 1g, blocked-resolution 1h, halt-resolution 1i, stale-plan flip). Both counters are still tracked and both appear in the T7 final report. Inline pseudo-skill cycles emit T4 (`act` / `gates` / `done` / `next`) instead of T2+T3, under the same heading shape. The retired formats — the `### Cycle fwd N/M · meta K/L` heading, the `· {feature_name} · {sub_skill}` heading suffix, the `**Result:**`/`**Commit:**` bullet block, and any 3–5-line cycle summary — must NOT reappear; the contract's Precedence clause governs.
 
 **Rules (all follow from the contract's "mechanics are silent" principle):**
 

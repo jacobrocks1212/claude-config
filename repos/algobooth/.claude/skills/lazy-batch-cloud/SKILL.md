@@ -35,7 +35,7 @@ Constraints 1-9 mirror `/lazy-batch`'s HARD CONSTRAINTS 1-9; constraint 10 is cl
 7. **NEVER actively wait for filesystem events.** The orchestrator MUST NOT use `Monitor`, `sleep`, `wait`, polling loops, or any other mechanism to block while research is uploaded. Research arrives on the user's own timeline — they may be away from their device for hours or days. When `queue-blocked-on-research` or `needs-research` fires, the orchestrator halts cleanly (Step 1f / Step 4). The resume signal is chat-driven, not filesystem-driven: if the user's next message in the same conversation supplies research (file attachment, pasted text, or absolute path), the in-session resume protocol (Step 5) fires immediately; otherwise the user's next `/lazy-batch-cloud` invocation is the resume signal. Responding to a chat message is NOT polling — it is a single-turn event, not an active wait.
 8. **TWO session-global monotonic counters replace the single `cycle` counter.** Identical model to `/lazy-batch` HARD CONSTRAINT 8 — both initialized once in Step 0 and NEITHER reset on feature transitions.
    - **`forward_cycles`** — counts pipeline-advancing work. Ceiling: `max_cycles`. Incremented by: real-skill dispatch cycles (Step 1e) and pipeline-advancing pseudo-skills at Step 1c.5 (`__mark_complete__`, `__write_deferred_non_cloud__`, `__write_validated_from_results__`, `__write_validated_from_skip__`, `__flip_plan_complete_cloud_saturated__`). **Capped at Step 1c** (`if forward_cycles >= max_cycles` → the existing max-cycles halt).
-   - **`meta_cycles`** — counts resolution/recovery/cleanup work. Ceiling: `2 * max_cycles`. Incremented by: Step 1g (decision-resume), Step 1h (blocked-resolution), Step 1i (operator-directed halt-resolution), LOOP-DETECTED / recovery dispatches, and the stale-plan flip pseudo-skill `__flip_plan_complete_stale__`. **Capped at the TOP of every resolution mode** — `if meta_cycles >= 2 * max_cycles:` at the START of Step 1g, Step 1h, and Step 1i.
+   - **`meta_cycles`** — counts resolution/recovery/cleanup work. **NO ceiling — uncapped by design (operator decision 2026-06-14).** Incremented by: Step 1g (decision-resume), Step 1h (blocked-resolution), Step 1i (operator-directed halt-resolution), LOOP-DETECTED / recovery dispatches, and the stale-plan flip pseudo-skill `__flip_plan_complete_stale__`. The meta loop is NOT bounded by a meta cap; the run's only hard stop is the `forward_cycles >= max_cycles` cap at Step 1c. `meta_cycles` is still tracked and displayed (as a bare count), but there is NO `if meta_cycles >= …` halt — Step 1g/1h/1i have no meta-cap check.
    - **Input-audit (Step 1d.5):** audits share the cycle's slot in `cycle_log` and do NOT increment either counter.
    - **Running total for cycle_log index:** use `forward_cycles + meta_cycles` as the monotonic N.
    - A feature transition is NOT a fresh batch; the orchestrator runs ONE log across every feature it touches.
@@ -87,7 +87,7 @@ Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-v
 ```
 ## /lazy-batch-cloud — run start
 mode   cloud (no Tauri/MCP) · park {on|off} · research {strict|batched}
-budget fwd {max_cycles} · meta {2*max_cycles}
+budget fwd {max_cycles} · meta no cap
 queue  {N} feature(s) · first: {first queue entry id}
 ```
 
@@ -231,7 +231,7 @@ This step is **silent** on success — do not announce it in chat output (mechan
 
 Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This init is logically part of Step 0 (arg parse): it happens ONCE, before Steps 0.4 / 0.5 / 0.6 run, so any pre-loop cycle they record (Step 0.5's ingest dispatch, Step 0.6's finalize dispatch) increments the appropriate counter (`forward_cycles` for the 0.5 ingest cycle, `meta_cycles` for the 0.6 finalize cycle) / sets `prev_cycle_signature` forward from these values — the loop entry NEVER re-initializes them.**
 - `forward_cycles = 0` — initialized once per `/lazy-batch-cloud` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset when `lazy-state.py --cloud` returns a new `feature_id`). Counts pipeline-advancing work; ceiling is `max_cycles`.
-- `meta_cycles = 0` — initialized once per `/lazy-batch-cloud` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset on feature transitions). Counts resolution/recovery/cleanup work; ceiling is `2 * max_cycles`.
+- `meta_cycles = 0` — initialized once per `/lazy-batch-cloud` invocation; monotonic across feature transitions (HARD CONSTRAINT 8 — never reset on feature transitions). Counts resolution/recovery/cleanup work; **uncapped — no ceiling, no cap enforcement** (operator decision 2026-06-14). Only `forward_cycles` is capped (at `max_cycles`).
 - `allow_research_skip = <parsed>` — see Step 4 + Step 1f for the behavior switch.
 - `research_pending = set()` — feature_ids that hit `needs-research` this session. Only used when `allow_research_skip == true`; empty under the default strict-halt path.
 - `skip_needs_research = false` — flips to `true` after the first `needs-research` cycle **only when `allow_research_skip == true`**. Stays `false` under the default path.
@@ -318,7 +318,7 @@ Print final batch report, STOP.
 The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
 
 1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) Message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
-2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `cloud-queue-exhausted`, `device-queue-exhausted`, `queue-missing`, `all-features-complete`, `max-cycles`, `meta-cap`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification. **MANDATORY: run `python3 ~/.claude/scripts/lazy-state.py --run-end` on EVERY terminal/halt path, BEFORE firing the PushNotification.** `--run-end` deletes the run marker AND the prompt registry. Missed deletion is self-healing (24h staleness + session-id mismatch on re-run) but is a protocol violation the retro grades.
+2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `cloud-queue-exhausted`, `device-queue-exhausted`, `queue-missing`, `all-features-complete`, `max-cycles`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification. **MANDATORY: run `python3 ~/.claude/scripts/lazy-state.py --run-end` on EVERY terminal/halt path, BEFORE firing the PushNotification.** `--run-end` deletes the run marker AND the prompt registry. Missed deletion is self-healing (24h staleness + session-id mismatch on re-run) but is a protocol violation the retro grades.
 3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-batch-cloud flush — {N} parked decision(s) ready for your input"`.
 4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
 
@@ -514,7 +514,7 @@ The user can mix environments: drop `RESEARCH.md` directly from workstation, the
 
 ### 1g. Decision-resume mode (`terminal_reason == "needs-input"`)
 
-**Meta-cap check (FIRST — before any other action in Step 1g):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then halt with message `"lazy-batch-cloud meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP. This is what guarantees a Defer→same-terminal re-prompt loop is bounded.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch-cloud`, `{STATE_SCRIPT}` = `lazy-state.py` (run with `--cloud`), `{ITEM}` = feature, `{PUSH_RULE}` = **cloud: the apply subagent MUST push the work branch IMMEDIATELY after each commit (container-reclaim durability — a local-only commit is lost if the container is reclaimed)**. The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then read and apply the shared decision-resume handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
@@ -585,7 +585,7 @@ orchestrators):
 
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
-**Meta-cap check (FIRST — before any other action in Step 1h):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then halt with message `"lazy-batch-cloud meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch-cloud`, `{STATE_SCRIPT}` = `lazy-state.py` (run with `--cloud`), `{ITEM}` = feature, `{SPEC_ROOT}` = `docs/features`, `{ADD_PHASE}` = `/add-phase`, `{PUSH_RULE}` = **cloud: push the work branch IMMEDIATELY after each commit (container-reclaim durability)**. The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (blocked-resolution is a meta cycle). The enactment is docs-only (no Tauri/MCP), so it runs identically in cloud. Then read and apply the shared blocked-resolution handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
@@ -612,7 +612,7 @@ Use the returned `dispatch_prompt` **VERBATIM** as the Agent `prompt:` and `disp
 
 ### 1i. Operator-directed halt-resolution (other non-max-cycles problem-terminals)
 
-**Meta-cap check (FIRST — before any other action in Step 1i):** `if meta_cycles >= 2 * max_cycles:` → run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then halt with message `"lazy-batch-cloud meta-cycle cap (2× max_cycles = {2*max_cycles}) reached — too many resolution/recovery cycles. Restart from a fresh session."`, PushNotification with the same one-line summary, print final batch report, STOP.
+**No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
 
 For every remaining problem-terminal that previously bare-`STOP`ed — `completion-unverified`, `needs-spec-input`, `stale_upstream` (and any future obstacle terminal) — the orchestrator routes here instead of halting. Rather than dead-ending, it re-prints the obstacle context, `AskUserQuestion`s a resolution path (reopen & re-validate / provide direction / defer & continue / halt-for-manual / custom), enacts the choice via an Opus apply-resolution subagent, and continues the loop. Follow the shared component (read and apply it exactly):
 
@@ -675,7 +675,7 @@ When the loop exits (terminal state, forward-cycles cap, or meta-cycles cap), pr
 ## /lazy-batch-cloud — Done
 
 **Forward cycles used:** {forward_cycles}/{max_cycles}
-**Meta cycles used:** {meta_cycles}/{2*max_cycles}
+**Meta cycles used:** {meta_cycles}
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
 **Park mode:** {on | off}
@@ -696,7 +696,6 @@ Header is `## /lazy-batch-cloud — Done`. Cloud-specific "Next step" guidance:
   - (needs-input is no longer a terminal state — Step 1g resolves and resumes within the same /lazy-batch-cloud invocation. blocked, completion-unverified, needs-spec-input, and stale_upstream are likewise no longer dead-ends — Step 1h / Step 1i ask for a resolution path and resume; only the operator-chosen "Halt for manual fix" reaches this report.)
   - If terminal_reason is "cloud-queue-exhausted": run /lazy on workstation to run MCP tests
   - If forward-cycles-cap: re-run `/lazy-batch-cloud {max_cycles}` from a fresh session
-  - If meta-cycles-cap (2× max_cycles): too many resolution/recovery cycles — investigate the cause before re-running.
 ```
 
 *(Print the following table ONLY when `park_mode == true` AND `auto_accepted[]` is non-empty. Omit entirely otherwise — no change to default reports.)*
@@ -744,7 +743,7 @@ ledger {clean · pushed | …}                                               ←
 next   {fresh probe routing | terminal: <reason>}
 ```
 
-The heading leads with the pipeline step being advanced to (T2's canonical names: Spec / Plan / Implement / Retro / Validate / Realign / Research / Mark Complete), then a ≤12-word summary of this cycle's work, then the counter — `[{forward_cycles}/{max_cycles}]` for forward cycles, `[meta {meta_cycles}/{2*max_cycles}]` for meta cycles (values AFTER incrementing — the heading reads the completed state; the `/lazy-batch` reference uses the same convention). The retired `### Cycle fwd N/M · meta K/L` heading must not reappear. All contract rules carry over verbatim: mechanics silent (no dispatch narration, no commit-strategy narration, no probe restating), between-cycle commit prompts ignored silently, deviations surfaced as T6 (`⚠` → evidence → action → rule), halt/terminal announcements and resolution briefings (including the Step 1h blocked-resolution prompt + its "Halt for manual fix" stop, and the Step 1i halt-resolution prompt + its Halt stop) are T6 rich zones, final report is T7. The retired formats — the `· {feature_name} · {sub_skill}` heading suffix and the `**Result:**`/`**Commit:**` bullet block — must NOT reappear. See `~/.claude/skills/lazy-batch/SKILL.md` Step 3 for the full rules.
+The heading leads with the pipeline step being advanced to (T2's canonical names: Spec / Plan / Implement / Retro / Validate / Realign / Research / Mark Complete), then a ≤12-word summary of this cycle's work, then the counter — `[{forward_cycles}/{max_cycles}]` for forward cycles, `[meta {meta_cycles}]` for meta cycles (count only, no denominator — meta is uncapped) (values AFTER incrementing — the heading reads the completed state; the `/lazy-batch` reference uses the same convention). The retired `### Cycle fwd N/M · meta K/L` heading must not reappear. All contract rules carry over verbatim: mechanics silent (no dispatch narration, no commit-strategy narration, no probe restating), between-cycle commit prompts ignored silently, deviations surfaced as T6 (`⚠` → evidence → action → rule), halt/terminal announcements and resolution briefings (including the Step 1h blocked-resolution prompt + its "Halt for manual fix" stop, and the Step 1i halt-resolution prompt + its Halt stop) are T6 rich zones, final report is T7. The retired formats — the `· {feature_name} · {sub_skill}` heading suffix and the `**Result:**`/`**Commit:**` bullet block — must NOT reappear. See `~/.claude/skills/lazy-batch/SKILL.md` Step 3 for the full rules.
 
 **Cloud nuance (background dispatch).** A cloud cycle subagent may be dispatched to run in the background (HARD CONSTRAINT 10 references in-flight background cycle agents). The T2 block emitted at dispatch is the ONLY output permitted before the result — the former `▶ … (dispatched)` line format is retired (T2 already marks the dispatch; the contract's Precedence clause governs). Specifically do NOT narrate "running in the background", "waiting on the completion notification", or any commit-race reasoning while it runs (this is exactly the noise the discipline removes). When the cycle completes, emit the T3 return block.
 
