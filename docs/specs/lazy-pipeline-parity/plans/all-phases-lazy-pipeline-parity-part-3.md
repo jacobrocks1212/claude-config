@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-pipeline-parity
-status: Ready
+status: Complete
 created: 2026-06-15
 complexity: complex
 phases: [3]
@@ -121,10 +121,10 @@ References component files by path. **Before each step**, `Read` the listed comp
 
 ## Work Units
 
-- [ ] WU-1 — `lazy-batch`→`lazy-batch-cloud` registry section (inherit-by-reference; `dev:kill` mechanic_override divergence) + live assertion
-- [ ] WU-2 — `lazy`→`lazy-bug` registry section (full restatement — highest drift risk) + gap-fixes + live assertion
-- [ ] WU-3 — `lazy`→`lazy-cloud` registry section (thin wrapper, pointer-resolution audit) + live assertion
-- [ ] WU-4 — `lazy-status`→`lazy-bug-status` registry section (full restatement) + live assertion
+- [x] WU-1 — `lazy-batch`→`lazy-batch-cloud` registry section (inherit-by-reference; `dev:kill` mechanic_override divergence) + live assertion
+- [x] WU-2 — `lazy`→`lazy-bug` registry section (full restatement — highest drift risk) + gap-fixes + live assertion
+- [x] WU-3 — `lazy`→`lazy-cloud` registry section (thin wrapper, pointer-resolution audit) + live assertion
+- [x] WU-4 — `lazy-status`→`lazy-bug-status` registry section (full restatement) + live assertion
 
 ---
 

@@ -658,8 +658,47 @@
       "axis": "bug",
       "flavor": "restatement",
       "mechanic_set": "lazy-status",
+      "token_substitutions": [
+        {"canonical": "lazy-state.py", "derived": "bug-state.py"}
+      ],
       "mechanic_overrides": [],
-      "headings": []
+      "headings": [
+        {
+          "heading": "## Step 0: Parse Arguments",
+          "coverage": "restated",
+          "evidence": "Step 0: Parse Arguments"
+        },
+        {
+          "heading": "## Step 1: Run lazy-state.py",
+          "coverage": "restated",
+          "evidence": "Step 1: Run bug-state\\.py"
+        },
+        {
+          "heading": "## Step 2: Gather Light Additional Context",
+          "coverage": "restated",
+          "evidence": "Step 2: Gather Light Additional Context"
+        },
+        {
+          "heading": "## Step 3: Map sub_skill to a Human-Readable Next Action",
+          "coverage": "restated",
+          "evidence": "Step 3: Map sub_skill"
+        },
+        {
+          "heading": "## Step 4: Format and Output",
+          "coverage": "restated",
+          "evidence": "Step 4: Format and Output"
+        },
+        {
+          "heading": "## Pipeline Status{ (cloud)}",
+          "coverage": "restated",
+          "evidence": "Pipeline Status"
+        },
+        {
+          "heading": "## Notes",
+          "coverage": "restated",
+          "evidence": "## Notes"
+        }
+      ]
     }
   ]
 }
