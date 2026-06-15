@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: buddy-guidance-enhancement
-status: Ready
+status: Complete
 created: 2026-06-15
 complexity: complex
 phases: [1, 2, 3]
@@ -117,7 +117,7 @@ Each phase has exactly one work unit (one file). The three files have no overlap
 
 - [x] WU-1 — Restructure `journey-planner.md` partitioning + journey template (Phase 1)
 - [x] WU-2 — Rewrite `review-pr-buddy.md` two-pass loop + schema + mapping (Phase 2)
-- [ ] WU-3 — Update `README.md` Buddy section + scaffold `VALIDATION.md` (Phase 3)
+- [x] WU-3 — Update `README.md` Buddy section + scaffold `VALIDATION.md` (Phase 3)
 
 ---
 

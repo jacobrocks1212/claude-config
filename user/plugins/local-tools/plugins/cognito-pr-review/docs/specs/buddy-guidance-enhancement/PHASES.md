@@ -147,7 +147,20 @@ The sole dependency is `cognito-pr-review-v2 — composes`. `composes` is not a 
 **Deliverables:**
 - [ ] **No-regression validation.** Re-run the buddy on a sample of previously-reviewed PRs (those with an existing `PR-{id}.md`). Confirm the reviewer surfaces ≥ the findings caught under the old flow, the ordering/caps/personas hold, findings are withheld until Pass 2, and teach scales to complexity. Record results as a short validation note in this spec directory (e.g. `VALIDATION.md`) — not in code.
 - [ ] **Behavioral-clustering check (Open Question).** During the runs above, judge whether the planner clustered by behavioral thread or lapsed into directory groups. If prompt-level clustering proves unreliable, note it as a Tier-2 follow-up (deterministic AST/data-flow tooling) — out of scope to fix here.
-- [ ] **README update.** Rewrite `README.md` L96 (and the surrounding Buddy Review section, L83–96 as needed) to describe the two-pass loop (independent read → reconcile) and the Blocking/Important/Suggestion/Dismiss severity vocabulary, replacing the old `keep / dismiss / will-comment / add-own` + single-pass framing.
+- [x] **README update.** Rewrite `README.md` L96 (and the surrounding Buddy Review section, L83–96 as needed) to describe the two-pass loop (independent read → reconcile) and the Blocking/Important/Suggestion/Dismiss severity vocabulary, replacing the old `keep / dismiss / will-comment / add-own` + single-pass framing.
+
+#### Implementation Notes (Phase 3 — executable portion only)
+**Completed:** 2026-06-15
+**Work completed:**
+- README update (executable): rewrote the `### Buddy Review` Phase-1 paragraph to describe the two-pass loop — orient (scaled to chunk complexity), Pass 1 independent read (tool findings withheld, anti-anchoring, reviewer is sole arbiter of business-logic correctness), Pass 2 reconcile + per-finding severity (Blocking/Important/Suggestion/Dismiss) with optional comment note; surfaced the risk-matched Perspective persona + Predictive questions. Updated Phase-2 paragraph to "non-dismissed findings … annotated with their severities." Phase 0 + command block left byte-for-byte intact; only the Buddy Review section changed.
+- `VALIDATION.md` scaffold (executable): created net-new `docs/specs/buddy-guidance-enhancement/VALIDATION.md` as an EMPTY acceptance checklist — heading, one-line purpose, 5-column table (Behavior | Trigger | Expected Evidence | Result | Notes) populated with all 8 SPEC Validation Criteria rows verbatim, Result/Notes left blank, plus an unselected "Behavioral-clustering quality" line. No results fabricated.
+**Drift guard (held):** `agents/synthesizer-v2.md` NOT modified (`git diff --name-only` lists only `README.md`); no `### Suggestion` section heading introduced — README mentions the Suggestion *severity* in prose only, which is the required user-facing vocabulary.
+**Manual deliverables intentionally left unchecked:** "No-regression validation" and "Behavioral-clustering check (Open Question)" are Jacob's manual buddy-walk acceptance — they require running the buddy on real PRs and recording outcomes in the scaffolded `VALIDATION.md`. The scaffold is shipped; the runs are not subagent-executable.
+**Files modified:**
+- `README.md` — Buddy Review section (Phase 1 + Phase 2 paragraphs).
+- `docs/specs/buddy-guidance-enhancement/VALIDATION.md` — net-new scaffold.
+**Grep consistency checks:** `keep / dismiss / will-comment / add-own`=0, `will-comment`=0, `add-own`=0, severity vocab (`Blocking|Important|Suggestion|Dismiss`)=1, two-pass/anti-anchor mention=1, `VALIDATION.md` exists — all pass.
+**Review verdict:** PASS — ground-truth re-run matched the subagent block; inline diff + new-file review confirmed both deliverables; mount-site check confirmed VALIDATION.md is in the spec dir PHASES.md references.
 
 **Minimum Verifiable Behavior:** A `VALIDATION.md` note exists recording the buddy re-run on ≥1 prior PR with a pass/fail against each SPEC Validation Criteria row, and `README.md` no longer contains the strings `keep / dismiss / will-comment / add-own` (its Buddy section describes the two-pass loop + severity vocabulary).
 
