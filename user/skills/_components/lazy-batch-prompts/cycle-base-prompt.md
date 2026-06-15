@@ -322,7 +322,7 @@ Hard contract (sentinel + git hygiene + report):
   4. REPORT — one paragraph (≤8 lines): state advanced, files modified, whether
      work is committed+pushed (or "no commit"), any `⚖ policy:` lines, any issues.
      NO commit sha. On any cycle that COULD write NEEDS_INPUT.md (/spec,
-     /spec-phases, /write-plan, /add-phase, /retro), state the NEEDS_INPUT
+     /spec-phases, /write-plan, /add-phase), state the NEEDS_INPUT
      disposition EXPLICITLY — either "wrote NEEDS_INPUT.md ({N} decision(s))" or,
      when none was needed, a skip disclosure: "no NEEDS_INPUT — {N} reviewed, all
      {mechanical-internal | scope-class (D7) | none arose}; {≤12-word reason}".
