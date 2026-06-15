@@ -179,3 +179,60 @@ The sole dependency is `cognito-pr-review-v2 — composes`. `composes` is not a 
 **Testing Strategy:** Manual end-to-end. Pick PRs with archived reviews of varying size/complexity (at least one multi-layer and one >400-LOC thread); run the buddy; compare surfaced findings to the archive; verify each SPEC Validation Criteria row.
 
 **Integration Notes for Next Phase:** None — final phase. **Completion (gate-owned):** flipping SPEC.md `**Status:**` to Complete is owned by the completion gate once Phase 3's validation passes; it is not a checkbox here.
+
+---
+
+### Phase 4: Visual teaching — ASCII diagrams in the Orient step
+
+**Status:** Implemented (manual buddy-walk acceptance pending)
+**Phase kind:** design
+
+**Scope:** Augment the buddy's teach (the **Orient** step, `commands/review-pr-buddy.md` §1) so that for `non-trivial` chunks the senior-architect teach *additionally* renders one or more compact ASCII-art diagrams that visualize the chunk's behavioral thread — data flow across architectural layers, component/dependency relationships, and/or control/sequence flow — generated live by the buddy and grounded in the cached diff and structural context. The diagram complements the existing prose teach; it does not replace it. Diagram rendering scales to chunk `complexity` exactly as the prose teach already does (trivial → none; non-trivial/missing → diagram), preserving the expertise-reversal discipline the feature was built on. This extends Phase 2's Orient step in place; no schema, journey-field, or pipeline change.
+
+**Deliverables:**
+- [x] **4a — Diagram in the Orient teach (non-trivial only).** Extend §1 Orient so that when `Complexity` is `non-trivial` (or missing/ambiguous), the teach renders at least one ASCII diagram alongside the prose. Reuse the existing complexity gate verbatim — `trivial` chunks render no diagram (the one-liner remains the whole orientation).
+- [x] **4b — Diagram-type selection guidance.** Give the buddy guidance to pick the diagram that fits the thread's shape: **data-flow** (value/request moving across layers — the default for a cross-layer behavioral thread), **component/dependency** (which components the thread touches and how they relate), or **sequence/control-flow** (ordered steps for stateful or async logic). More than one is allowed when the thread genuinely warrants it; one is the norm.
+- [x] **4c — On-demand for trivial / deeper diagrams.** Wire diagram requests into the existing "explain this in depth" Interruption-Handling carve-out (§Interruption Handling, "Ask to dig deeper") so a reviewer can request a diagram on a `trivial` chunk or a richer diagram on any chunk. No new command verb — it rides the existing deeper-dig path.
+- [x] **4d — Grounding + rendering constraints (anti-pattern guidance).** State explicitly: diagrams are derived from the cached diff + structural context (the same source the prose teach uses) and must reflect the *actual* changed components/edges — do not invent architecture. ASCII/box-drawing only (the buddy renders in terminal markdown — no Mermaid, no image links, no HTML). Keep diagrams compact (fit a terminal pane; favor a focused thread view over a whole-system map). Label nodes with the real file/type/layer names from the chunk's `Files`.
+- [x] **4e — README user-facing doc.** Update the `### Buddy Review` section of `README.md` (Phase-1 paragraph, the same paragraph Phase 3 rewrote) to mention that non-trivial chunks are taught with ASCII data-flow/component diagrams. Prose only; do not introduce any new synthesizer section or severity vocabulary.
+- [x] Tests: none — prompt-file change with no automated harness (consistent with the feature's `MCP runtime: not-required` model). Verified by manual buddy walk-through (Runtime Verification below).
+
+#### Implementation Notes (Phase 4)
+**Completed:** 2026-06-15
+**Work completed:**
+- **WU-1 (`commands/review-pr-buddy.md` §1 Orient):** Extended the existing `non-trivial` complexity gate (explicitly "not a new branch — this rides the existing condition") to additionally render at least one compact ASCII diagram of the chunk's behavioral thread alongside the prose teach; `trivial` chunks render none. Added diagram-type selection guidance (data-flow default / component-dependency / sequence-control-flow, one is the norm), grounding + rendering constraints (diff-derived, reflect actual changed components, no invented architecture; ASCII/box-drawing only — no Mermaid/image/HTML; compact; label nodes with real `**Files:**` names), and a clearly-framed illustrative ASCII template (`Controller → Service → StorageRepository`). AI-role framing preserved: the diagram is a facilitation/orientation aid, reviewer remains sole arbiter.
+- **WU-1 (§Interruption Handling):** Extended the existing "Ask to dig deeper" bullet in-place (no new verb, no new bullet) so a reviewer may request a diagram on a `trivial` chunk or a richer/alternative diagram on any chunk, under the same §1 Orient ASCII-only/compact/diff-grounded constraints.
+- **WU-2 (`README.md` `### Buddy Review` Phase-1 paragraph):** Added a prose clause — "accompanied by a compact ASCII data-flow / component diagram of the chunk's behavioral thread (available on demand for any chunk)" — after the existing "fuller senior-architect teach scaled to complexity." Prose only; no new heading/section/severity vocabulary.
+**Drift guard (held):** `git diff --name-only` lists only `commands/review-pr-buddy.md`, `README.md` (+ this PHASES.md and the already-flipped SPEC.md) — `agents/synthesizer-v2.md` NOT modified. `grep -c "### Suggestion"` = 0 in both files. No Mermaid fences, image links, or HTML introduced (the single `mermaid` grep hit at review-pr-buddy.md:91 is the constraint rule text itself).
+**Grep consistency checks (Step B.4):** drift guard — synthesizer not in diff ✓; `### Suggestion` = 0 in both files ✓; no non-ASCII rendering constructs in the diagram region (only the constraint-text mention) ✓; `grep -nic "diagram" commands/review-pr-buddy.md` = 4 (≥1) ✓; README Phase-1 paragraph contains a diagram mention (README.md:96) ✓; gate-reuse confirmed by inspection — the diagram instruction sits inside the existing `non-trivial` Orient gate, not a new conditional ✓.
+**Files modified:** `commands/review-pr-buddy.md`, `README.md` (+ PHASES.md, SPEC.md status).
+**Review verdict:** PASS — ground-truth re-run matched both subagents' blocks exactly (wc/grep counts identical); both WUs satisfy 4a–4e; drift guard held; propagation/mount-site checks N/A (prose-only prompt edits, no new files).
+**Manual rows:** the Phase 4 "Runtime Verification" rows remain unchecked — they are Jacob's manual buddy-walk acceptance (diagram legibility, node/edge correspondence, on-demand rendering), not subagent-executable. Flipping SPEC.md `**Status:**` back to Complete is gate-owned once that manual validation passes.
+
+**Minimum Verifiable Behavior:** Walk a non-trivial cross-layer chunk in the buddy on a real/sample PR: the Orient step renders, alongside the prose teach, a legible ASCII diagram whose nodes are the chunk's actual changed components and whose edges are the thread's real data/control flow — while a `trivial` chunk in the same walk still gets only its one-line objective.
+
+**Runtime Verification** *(checked by manual buddy walk-through — there is no automated harness):*
+- [ ] On a non-trivial cross-layer chunk, the Orient step renders a legible ASCII diagram (nodes = real changed components, edges = the thread's data/control flow) in addition to the prose teach.
+- [ ] A `trivial` chunk renders no diagram; the one-line objective remains the whole orientation.
+- [ ] The diagram reflects the actual changed components (cross-checked against the chunk's `Files`), not an invented or generic architecture.
+- [ ] Requesting "show a diagram" / "explain in depth" on a trivial chunk produces one on demand.
+- [ ] Output is pure ASCII/box-drawing — no Mermaid fences, image links, or HTML.
+
+**Prerequisites:**
+- Phase 2 (complete): the two-pass loop and the §1 Orient teach-by-complexity branch this phase extends. The diagram gate reuses Phase 2's `Complexity` handling (`commands/review-pr-buddy.md` §1 Orient).
+- Phase 1 (complete): the per-chunk `**Files:**` and `**Complexity:**` journey fields the diagram is grounded in and gated by.
+
+**Files likely modified:**
+- `commands/review-pr-buddy.md` — §1 Orient step (add diagram rendering + type-selection + grounding/rendering constraints), §Interruption Handling "Ask to dig deeper" (on-demand diagrams).
+- `README.md` — `### Buddy Review` Phase-1 paragraph (mention visual teaching).
+
+**Testing Strategy:** Manual end-to-end. Walk one non-trivial multi-layer chunk and one trivial chunk in the buddy; confirm the five Runtime Verification rows. Spot-check that the diagram's nodes/edges correspond to the chunk's actual changed files and the thread's real cross-layer flow, and that nothing renders as non-ASCII (Mermaid/image/HTML). No unit tests exist for prompt files.
+
+**Integration Notes for Next Phase:** None — extends the existing teach surface in place. If a future phase moves diagram *pre-computation* into the journey-planner (so the planner emits a cached diagram per chunk rather than the buddy generating it live), the grounding source would shift from the buddy's cached-diff read to a planner-emitted field — out of scope here; the live-generation approach keeps the diagram current with the cached diff and adds no journey schema.
+
+**Context from prior phases:**
+- The teach lives **only** in the Orient step and is already complexity-gated (Phase 2 Impl Notes; `review-pr-buddy.md` §1): "one-liner for `trivial`, fuller teach for `non-trivial`/missing." 4a/4c reuse this exact gate — do not add a parallel complexity branch.
+- **Drift guard carried from Phases 2–3:** `agents/synthesizer-v2.md` must NOT be modified, and no new `### Suggestion` section or severity vocabulary may be introduced. The README edit is prose-only (Phase 3 Impl Notes).
+- The teach is "grounded in the cached diff and journey context — **not a dump of the raw diff**" (`review-pr-buddy.md` §1). 4d's grounding rule mirrors this: diagrams summarize the thread's real structure, they don't transcribe the diff.
+- Diagram quality is the runtime-coupled analogue of Phase 3's behavioral-clustering Open Question — observable only by running the buddy, so it's validated in the manual walk, not provable from the prompt text.
+- No Cognito-Forms Review Guardrails block: this phase edits plugin markdown prompts (`commands/review-pr-buddy.md`, `README.md`), not Cognito Forms `*.cs`/`*.vue`/`*.ts` source, so the review-rule corpus does not apply.

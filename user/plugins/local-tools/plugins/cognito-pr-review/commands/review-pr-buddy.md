@@ -79,6 +79,33 @@ For each chunk, in order, run these six steps:
 
 State a one-line objective for this chunk. If the chunk's `**Complexity:**` is `non-trivial` (or missing/ambiguous — treat as `non-trivial`), additionally give a senior-architect teach of what changed and why it matters relative to the journey Objective: concise, insightful, grounded in the cached diff and journey context — not a dump of the raw diff. For `trivial` chunks, the one-liner is the whole orientation. Deep teaching beyond the standard orient is available on explicit reviewer request ("explain this in depth").
 
+Under the same `non-trivial` gate (not a new branch — this rides the existing condition), additionally render at least one compact ASCII diagram of the chunk's behavioral thread alongside the prose teach. For `trivial` chunks, no diagram is rendered.
+
+**Diagram-type selection:** pick the type that best fits the thread's shape — one is the norm; use more than one only when the thread genuinely warrants it:
+- **data-flow** (value or request moving across layers) — the default for a cross-layer behavioral thread
+- **component/dependency** (which components the thread touches and how they relate)
+- **sequence/control-flow** (ordered steps for stateful or async logic)
+
+**Grounding and rendering constraints:**
+- Derived from the cached diff and structural context; must reflect the **actual** changed components/edges — do not invent architecture or draw a generic whole-system map.
+- **ASCII / box-drawing characters only** — no Mermaid fences (no ` ```mermaid `), no image links, no HTML (`<img>`, `<svg>`, `<table>`, etc.).
+- **Compact** — fit a terminal pane; favor a focused thread view over a whole-system map.
+- **Label nodes with real file/type/layer names** drawn from the chunk's `**Files:**` list.
+
+Example shape (illustrative template only — not a required literal output):
+
+```
+  Controller
+      |
+      v
+  Service
+      |
+      v
+  StorageRepository
+```
+
+_AI-role framing:_ The diagram is a facilitation and orientation aid — a tool for quickly visualizing the behavioral thread. It is NOT a claim about business-logic correctness. The reviewer remains the sole arbiter of domain intent and correctness; the diagram cannot reason about that.
+
 #### 2. Independent Read — Pass 1
 
 Present the chunk's implementation and its bundled tests. Pose the chunk's `**Perspective:**` persona and `**Predictive questions:**` verbatim. Invite the reviewer to read cold and record their own observations.
@@ -132,7 +159,7 @@ Announce the chunk is complete and move to the next one.
 
 At any point in the walk, the reviewer may:
 
-- **Ask to dig deeper** into a file or concept — answer using cached context and your architectural knowledge
+- **Ask to dig deeper** into a file or concept — answer using cached context and your architectural knowledge; this also covers requests for a diagram on a `trivial` chunk (which normally renders none) or for a richer or alternative diagram on any chunk — satisfy these from cached context and architectural knowledge using the same ASCII-only, compact, diff-grounded constraints defined in §1 Orient above
 - **Request to open a local file** — this is an investigation-style carve-out: you may read the local codebase on the `main` branch (not the PR branch) to provide context, just as the investigation agent does. This is NOT sweep's cache-only restriction. State this explicitly: "Reading from the local codebase on `main` for context — this is not the PR branch state."
 - **Revisit a prior chunk** — re-open that chunk's session state, present its dispositions, and allow the reviewer to change verdicts. Update `buddy-session.json` accordingly.
 
