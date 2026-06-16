@@ -687,5 +687,247 @@ class TestReceiptPresent:
         assert by_id["feat-b"]["receipt_present"] is False
 
 
+# ---------------------------------------------------------------------------
+# WU-7 — queue_writer (permutation-validated atomic reorder + AV-lock retry)
+# ---------------------------------------------------------------------------
+
+def _write_queue(path: Path, ids):
+    path.write_text(
+        json.dumps({"queue": [{"id": i, "name": i, "spec_dir": i, "tier": 1}
+                              for i in ids]}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+class TestQueueWriterPermutation:
+    """reorder_queue validates the posted order is a true permutation."""
+
+    def test_true_permutation_accepted(self, tmp_path):
+        from pipeline_visualizer.queue_writer import reorder_queue
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b", "c"])
+        reorder_queue(qp, ["c", "a", "b"])
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        assert [e["id"] for e in data["queue"]] == ["c", "a", "b"]
+
+    def test_added_id_rejected_no_write(self, tmp_path):
+        from pipeline_visualizer.queue_writer import reorder_queue, PermutationError
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b"])
+        before = qp.read_bytes()
+        with pytest.raises(PermutationError):
+            reorder_queue(qp, ["a", "b", "c"])  # added id
+        assert qp.read_bytes() == before
+
+    def test_dropped_id_rejected_no_write(self, tmp_path):
+        from pipeline_visualizer.queue_writer import reorder_queue, PermutationError
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b", "c"])
+        before = qp.read_bytes()
+        with pytest.raises(PermutationError):
+            reorder_queue(qp, ["a", "b"])  # dropped id
+        assert qp.read_bytes() == before
+
+    def test_duplicate_id_rejected_no_write(self, tmp_path):
+        from pipeline_visualizer.queue_writer import reorder_queue, PermutationError
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b"])
+        before = qp.read_bytes()
+        with pytest.raises(PermutationError):
+            reorder_queue(qp, ["a", "a"])  # dupe
+        assert qp.read_bytes() == before
+
+
+class TestQueueWriterAtomic:
+    """The write matches lazy-state.py's _atomic_write convention so /lazy reads
+    it cleanly: indent=2 + a single trailing newline, via temp + os.replace."""
+
+    def test_round_trip_format_matches_convention(self, tmp_path):
+        from pipeline_visualizer.queue_writer import reorder_queue
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b", "c"])
+        reorder_queue(qp, ["b", "c", "a"])
+        text = qp.read_text(encoding="utf-8")
+        # Valid JSON, ends with exactly one trailing newline, indent=2.
+        data = json.loads(text)
+        assert [e["id"] for e in data["queue"]] == ["b", "c", "a"]
+        assert text.endswith("}\n")
+        assert not text.endswith("}\n\n")
+        assert text == json.dumps(data, indent=2) + "\n"
+
+    def test_preserves_sibling_keys_and_entry_fields(self, tmp_path):
+        # A reorder must not drop other top-level keys or per-entry fields.
+        from pipeline_visualizer.queue_writer import reorder_queue
+        qp = tmp_path / "queue.json"
+        qp.write_text(json.dumps({
+            "schema": 2,
+            "queue": [
+                {"id": "a", "name": "A", "tier": 1, "stub": True},
+                {"id": "b", "name": "B", "tier": 2},
+            ],
+        }, indent=2) + "\n", encoding="utf-8")
+        reorder_queue(qp, ["b", "a"])
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        assert data["schema"] == 2
+        assert [e["id"] for e in data["queue"]] == ["b", "a"]
+        a = next(e for e in data["queue"] if e["id"] == "a")
+        assert a["stub"] is True and a["name"] == "A"
+
+
+class TestQueueWriterRetry:
+    """os.replace AV-lock retry: PermissionError [WinError 32] twice then OK."""
+
+    def test_retry_succeeds_within_three_tries(self, tmp_path, monkeypatch):
+        from pipeline_visualizer import queue_writer
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b"])
+        real_replace = queue_writer.os.replace
+        calls = {"n": 0}
+
+        def flaky_replace(src, dst):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                err = PermissionError("locked")
+                err.winerror = 32
+                raise err
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(queue_writer.os, "replace", flaky_replace)
+        queue_writer.reorder_queue(qp, ["b", "a"], retry_sleep=0)
+        assert calls["n"] == 3
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        assert [e["id"] for e in data["queue"]] == ["b", "a"]
+
+    def test_exhausted_retries_raises(self, tmp_path, monkeypatch):
+        from pipeline_visualizer import queue_writer
+        qp = tmp_path / "queue.json"
+        _write_queue(qp, ["a", "b"])
+
+        def always_locked(src, dst):
+            err = PermissionError("locked")
+            err.winerror = 32
+            raise err
+
+        monkeypatch.setattr(queue_writer.os, "replace", always_locked)
+        with pytest.raises(queue_writer.QueueWriteError):
+            queue_writer.reorder_queue(qp, ["b", "a"], retry_sleep=0)
+
+
+# ---------------------------------------------------------------------------
+# WU-7 — POST /api/queue route + run-marker refusal + queue_locked flag
+# ---------------------------------------------------------------------------
+
+import contextlib
+import os as _os
+
+
+@contextlib.contextmanager
+def _isolated_state_dir(tmp_path, marker: bool):
+    """Point lazy_core.read_run_marker at a temp state dir; optionally seed a
+    fresh run marker so the server detects an active run."""
+    state_dir = tmp_path / "_state"
+    state_dir.mkdir(exist_ok=True)
+    prev = _os.environ.get("LAZY_STATE_DIR")
+    _os.environ["LAZY_STATE_DIR"] = str(state_dir)
+    try:
+        marker_path = state_dir / "lazy-run-marker.json"
+        if marker:
+            import datetime as _dt
+            now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            marker_path.write_text(json.dumps({
+                "pipeline": "feature", "started_at": now,
+                "session_id": None, "pid": 1234,
+            }), encoding="utf-8")
+        elif marker_path.exists():
+            marker_path.unlink()
+        yield
+    finally:
+        if prev is None:
+            _os.environ.pop("LAZY_STATE_DIR", None)
+        else:
+            _os.environ["LAZY_STATE_DIR"] = prev
+
+
+def _post(port, path, payload):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    body = json.dumps(payload)
+    conn.request("POST", path, body=body,
+                 headers={"Content-Type": "application/json",
+                          "Content-Length": str(len(body))})
+    resp = conn.getresponse()
+    data = resp.read()
+    return resp, data
+
+
+class TestPostQueueRoute:
+    def test_idle_reorder_persists(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path, feature_id="demo-feat")
+        # Add a second feature so a reorder is observable.
+        qp = repo_root / "docs" / "features" / "queue.json"
+        _write_queue(qp, ["one", "two", "three"])
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_server(repo_root)
+            try:
+                resp, _ = _post(port, "/api/queue",
+                                {"pipeline": "features", "order": ["three", "one", "two"]})
+                assert resp.status == 200
+            finally:
+                httpd.shutdown()
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        assert [e["id"] for e in data["queue"]] == ["three", "one", "two"]
+
+    def test_run_marker_refuses_409_byte_identical(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path, feature_id="demo-feat")
+        qp = repo_root / "docs" / "features" / "queue.json"
+        _write_queue(qp, ["one", "two", "three"])
+        before = qp.read_bytes()
+        with _isolated_state_dir(tmp_path, marker=True):
+            httpd, port = _start_server(repo_root)
+            try:
+                resp, _ = _post(port, "/api/queue",
+                                {"pipeline": "features", "order": ["three", "two", "one"]})
+                assert resp.status == 409
+            finally:
+                httpd.shutdown()
+        assert qp.read_bytes() == before  # byte-identical — refused, not written
+
+    def test_state_reports_queue_locked_under_marker(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path, feature_id="demo-feat")
+        with _isolated_state_dir(tmp_path, marker=True):
+            httpd, port = _start_server(repo_root)
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/state")
+                body = json.loads(conn.getresponse().read())
+                assert body["queue_locked"] is True
+            finally:
+                httpd.shutdown()
+
+    def test_state_reports_unlocked_when_idle(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path, feature_id="demo-feat")
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_server(repo_root)
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/state")
+                body = json.loads(conn.getresponse().read())
+                assert body["queue_locked"] is False
+            finally:
+                httpd.shutdown()
+
+    def test_post_bad_permutation_400(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path, feature_id="demo-feat")
+        qp = repo_root / "docs" / "features" / "queue.json"
+        _write_queue(qp, ["one", "two"])
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_server(repo_root)
+            try:
+                resp, _ = _post(port, "/api/queue",
+                                {"pipeline": "features", "order": ["one", "two", "x"]})
+                assert resp.status == 400
+            finally:
+                httpd.shutdown()
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
