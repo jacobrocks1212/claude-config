@@ -9315,6 +9315,80 @@ def test_execute_plan_commit_budget_scales_with_phase_count():
         assert false_pos is not None and false_pos["reason"] == "unexpected-commits"
 
 
+def test_execute_plan_commit_budget_scales_with_wu_count():
+    """WU-scaling follow-up (2026-06-16): /execute-plan commits once per WORK UNIT,
+    so a WU-dense plan part (more WUs than phases) must budget by the WU count, not
+    the phase count. The live recurrence: cycle-subagent-runs part-1 had 5 WUs
+    across 2 phases → 5 commits, but the phase-only budget (2 + slack = 4) tripped
+    unexpected-commits. The fix scales by max(phase_count, wu_count) + slack."""
+    _guard()
+    slack = lazy_core._EXECUTE_PLAN_PHASE_BUDGET_SLACK
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+
+        # The recurrence: 2 phases, 5 per-WU checkboxes (1 already checked).
+        wu_dense = root / "wu-dense-part-1.md"
+        wu_dense.write_text(
+            "---\nkind: implementation-plan\nstatus: in-progress\n"
+            "phases: [1, 2]\n---\n\n"
+            "- [x] WU-1 — first\n"
+            "- [ ] WU-2 — second\n"
+            "- [ ] WU-3 — third\n"
+            "- [ ] WU-4 — fourth\n"
+            "- [ ] WU-5 — fifth\n",
+            encoding="utf-8",
+        )
+        # budget scales by WU count (5), NOT phase count (2): 5 + slack.
+        budget = lazy_core._execute_plan_commit_budget("execute-plan", str(wu_dense))
+        assert budget == 5 + slack, budget
+        # 5 commits (one per WU) now sits WITHIN budget — no false positive.
+        marker = {
+            "run_started_at": "2026-06-16T13:31:00Z",
+            "begin_head_sha": "a" * 40,
+            "kind": "real",
+        }
+        assert lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-16T13:31:00Z",
+            current_head_sha="b" * 40, sub_skill="execute-plan",
+            commits_since=5, budget_override=budget,
+        ) is None
+        # a genuine runaway (beyond the declared work + slack) still trips.
+        runaway = lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-16T13:31:00Z",
+            current_head_sha="b" * 40, sub_skill="execute-plan",
+            commits_since=5 + slack + 1, budget_override=budget,
+        )
+        assert runaway is not None and runaway["reason"] == "unexpected-commits"
+
+        # phase count still wins when it is the greater signal (phases > WUs).
+        phase_heavy = root / "phase-heavy.md"
+        phase_heavy.write_text(
+            "---\nkind: implementation-plan\nstatus: ready\n"
+            "phases: [1, 2, 3, 4]\n---\n\n- [ ] WU-1 — only one\n",
+            encoding="utf-8",
+        )
+        assert lazy_core._execute_plan_commit_budget(
+            "execute-plan", str(phase_heavy)
+        ) == 4 + slack
+
+        # a legacy plan with WU checkboxes but NO phases: field now budgets by WUs
+        # (previously returned None → fell back to the fixed table of 3).
+        no_phases_wus = root / "no-phases-wus.md"
+        no_phases_wus.write_text(
+            "---\nkind: implementation-plan\nstatus: ready\n---\n\n"
+            "- [ ] WU-1 — a\n- [ ] WU-2 — b\n- [ ] WU-3 — c\n",
+            encoding="utf-8",
+        )
+        assert lazy_core._execute_plan_commit_budget(
+            "execute-plan", str(no_phases_wus)
+        ) == 3 + slack
+
+        # neither phases: nor WU checkboxes → None (fixed-table fallback preserved).
+        empty = root / "empty.md"
+        empty.write_text("---\nkind: implementation-plan\n---\nprose only\n", encoding="utf-8")
+        assert lazy_core._execute_plan_commit_budget("execute-plan", str(empty)) is None
+
+
 def test_checkpoint_round_trip():
     """Subprocess: --run-end --reason checkpoint --next-route X writes the
     checkpoint file (folding the marker counters); the next --run-start echoes

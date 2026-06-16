@@ -5384,21 +5384,28 @@ _EXECUTE_PLAN_PHASE_BUDGET_SLACK = 2
 def _execute_plan_commit_budget(
     sub_skill: str | None, sub_skill_args: str | None
 ) -> int | None:
-    """Phase-scaled commit budget for an execute-plan cycle (hardening Round 20 D2).
+    """Work-scaled commit budget for an execute-plan cycle (hardening Round 20 D2;
+    WU-scaling follow-up 2026-06-16).
 
-    /execute-plan commits once per phase (the standard per-phase gate+commit
-    cadence), so a legitimate single-part plan with N phases makes ~N commits. The
-    fixed per-sub_skill table budget (3) false-positived ``unexpected-commits`` on
-    any plan with 4+ phases. This derives a budget of ``phase_count + slack`` from
-    the dispatched plan part's ``phases:`` frontmatter (the plan part path is the
-    execute-plan ``sub_skill_args``).
+    /execute-plan commits once per WORK UNIT — the per-WU ``tick the box + commit``
+    cadence is the dominant signal, not the phase count. Round 20 scaled the budget
+    by ``phase_count + slack``, but a WU-dense plan part (e.g. 5 WUs spread across
+    2 phases) legitimately makes ~5 commits, which a phase-only budget of
+    ``2 + slack = 4`` under-counts and false-positives as ``unexpected-commits``
+    (the 2026-06-16 cycle-subagent part-1 recurrence: 5 commits vs a phase-derived
+    budget of 4). This derives the budget from the GREATER of the dispatched plan
+    part's declared phase count (``phases:`` frontmatter) and its parseable per-WU
+    checkbox count (``- [ ] WU-N`` rows, write-plan ISSUE-6), plus a small slack —
+    so a legacy phase-only plan and an ISSUE-6 per-WU plan both get an honest
+    ceiling while a genuine runaway (commits beyond the work the plan declares)
+    still trips.
 
     Returns the scaled budget, or ``None`` when it cannot be computed — for ANY of:
     a non-execute-plan sub_skill, a missing/blank sub_skill_args, an unreadable
-    plan file, or a plan with no parseable ``phases:`` field. A ``None`` return
-    makes ``detect_cycle_bracket_friction`` fall back to the fixed table budget, so
-    the worst case is the pre-Round-20 behavior — never a false negative, never a
-    crash.
+    plan file, or a plan with NEITHER a parseable ``phases:`` field NOR any per-WU
+    checkboxes. A ``None`` return makes ``detect_cycle_bracket_friction`` fall back
+    to the fixed table budget, so the worst case is the pre-Round-20 behavior —
+    never a false negative, never a crash.
 
     The sub_skill_args may carry trailing flags (e.g. ``"<plan>.md --batch"``);
     only the leading whitespace-delimited token is treated as the plan path
@@ -5411,13 +5418,25 @@ def _execute_plan_commit_budget(
     plan_token = str(sub_skill_args).split()[0] if str(sub_skill_args).split() else ""
     if not plan_token:
         return None
+    plan_path = Path(plan_token)
     try:
-        phase_set = _plan_phase_set(Path(plan_token))
+        phase_set = _plan_phase_set(plan_path)
     except Exception:  # noqa: BLE001
+        phase_set = set()
+    try:
+        unchecked_wus, checked_wus = _plan_wu_checkbox_counts(
+            plan_path.read_text(encoding="utf-8")
+        )
+    except Exception:  # noqa: BLE001
+        unchecked_wus, checked_wus = 0, 0
+    # Commits scale with WORK UNITS, so take the greater of the phase count and the
+    # total (checked + unchecked) per-WU checkbox count. Either signal alone may be
+    # absent (a legacy plan with no per-WU rows; an unusual plan with no phases:
+    # field) — using the max means whichever the plan actually declares governs.
+    scale_count = max(len(phase_set), unchecked_wus + checked_wus)
+    if scale_count <= 0:
         return None
-    if not phase_set:
-        return None
-    return len(phase_set) + _EXECUTE_PLAN_PHASE_BUDGET_SLACK
+    return scale_count + _EXECUTE_PLAN_PHASE_BUDGET_SLACK
 
 
 def detect_cycle_bracket_friction(
