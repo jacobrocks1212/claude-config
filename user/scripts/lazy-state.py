@@ -1545,24 +1545,42 @@ def compute_state(
     # Step 7: Phase completion
     if unchecked > 0:
         plans = find_implementation_plans(spec_path)
-        if not plans and _has_any_complete_plan(spec_path) and (
-            cloud or remaining_unchecked_are_verification_only(phases_text)
-        ):
-            # All implementation plans are Complete; remaining PHASES.md
-            # unchecked rows are workstation-only (e.g. per-phase Runtime
-            # Verification / MCP-assertion subsections ticked at MCP test
-            # time).
-            #
-            # Cloud: always bypass — cloud can't tick any workstation row, so
-            # fall through to Step 9 (cloud defers or honors an existing
-            # DEFERRED_NON_CLOUD.md), and Step 2's cloud-saturated skip
-            # eventually fires.
-            #
-            # Workstation: bypass ONLY when the unchecked remainder is entirely
-            # verification rows. Workstation CAN run those checks, so falling
-            # through reaches Step 9 /mcp-test (the dispatch that actually ticks
-            # them). If any real implementation row is still unchecked we skip
-            # this branch and write-plan as before.
+        verification_only = remaining_unchecked_are_verification_only(phases_text)
+        # Step 7 bypass — fall through to the Step 9 MCP gate instead of
+        # write-plan/execute-plan. Two DISTINCT discriminators, one per mode:
+        #
+        # Cloud: bypass when implementation is provably done (>=1 Complete plan
+        # on disk) — cloud can't tick ANY workstation row regardless of whether
+        # it's a verification or implementation row, so we can't use the
+        # verification-only predicate as the "impl done" proxy; we need the
+        # explicit Complete-plan receipt. Falls through to Step 9 (cloud defers
+        # or honors an existing DEFERRED_NON_CLOUD.md); Step 2's cloud-saturated
+        # skip eventually fires.
+        #
+        # Workstation: bypass when the unchecked remainder is ENTIRELY
+        # verification rows — and crucially WITHOUT requiring a Complete plan on
+        # disk. A verification-only remainder is itself proof that no
+        # implementation work remains (write-plan is banned, Step 1c.5, from
+        # emitting a verification-only re-run-/mcp-test WU), so there is nothing
+        # for write-plan to plan. Requiring _has_any_complete_plan here was the
+        # mcp-testing deadlock (2026-06-15): a feature implemented batch-by-batch
+        # via PHASES checkboxes has NO plans/ dir, so _has_any_complete_plan is
+        # False, control fell to `elif not plans` -> write-plan, which writes no
+        # plan and returns -> identical state -> infinite write-plan loop. Any
+        # feature implemented without a parent plans/ receipt whose only
+        # remaining unchecked rows are Runtime Verification could never reach the
+        # Step-9 MCP gate. The verification-only predicate is the correct,
+        # plan-receipt-independent gate for the workstation case.
+        #
+        # The legacy combined form ALSO bypassed the workstation
+        # verification-only case when a Complete plan happened to exist
+        # (_has_any_complete_plan True + verification_only True); that path is
+        # preserved — verification_only True now bypasses on workstation whether
+        # or not a Complete plan exists. If any real implementation row is still
+        # unchecked, verification_only is False and we write-plan as before.
+        cloud_bypass = cloud and not plans and _has_any_complete_plan(spec_path)
+        workstation_bypass = not cloud and not plans and verification_only
+        if cloud_bypass or workstation_bypass:
             pass
         elif not plans:
             return _state(

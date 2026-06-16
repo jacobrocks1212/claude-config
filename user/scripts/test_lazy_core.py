@@ -8187,6 +8187,90 @@ def test_bug_state_retro_fieldless_routes_past_step8():
     assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
 
 
+# ---- harden(script) 2026-06-15: no-plans verification-only Step-7 deadlock ----
+#
+# Regression for the mcp-testing write-plan no-progress loop. A feature
+# implemented batch-by-batch via PHASES checkboxes (NO plans/ dir) whose only
+# remaining unchecked rows are Runtime Verification rows must route to the
+# Step-9 MCP gate, not loop on write-plan. The pre-fix Step-7 bypass required
+# _has_any_complete_plan(spec_path) which is False with no plans/ dir, so
+# control fell to `elif not plans` -> write-plan; write-plan is banned from
+# emitting a verification-only WU, so it wrote nothing and the state repeated.
+
+def _build_no_plans_verification_only_repo(root: Path) -> Path:
+    """Build a feature repo with NO plans/ dir whose only unchecked PHASES.md
+    rows are verification-only (the mcp-testing deadlock shape).
+
+    All implementation rows are [x]; a trailing `### Runtime Verification`
+    subsection holds the single unchecked row. SPEC + RESEARCH + RESEARCH_SUMMARY
+    + PHASES exist so compute_state reaches Step 7. Deliberately omits the
+    plans/ dir entirely so _has_any_complete_plan() returns False.
+    """
+    features = root / "docs" / "features"
+    features.mkdir(parents=True)
+    features.joinpath("queue.json").write_text(
+        json.dumps({
+            "queue": [
+                {"id": "feat-noplan", "name": "Feature NOPLAN",
+                 "spec_dir": "feat-noplan", "tier": 1}
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-noplan"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n",
+        encoding="utf-8",
+    )
+    (fdir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+    phases_body = (
+        "# Phases\n\n"
+        "### Phase 1\n- [x] Impl one\n\n"
+        "### Phase 2\n- [x] Impl two\n\n"
+        "### Runtime Verification\n- [ ] MCP test only\n"
+    )
+    (fdir / "PHASES.md").write_text(phases_body, encoding="utf-8")
+    # NOTE: no plans/ dir created — this is the load-bearing condition.
+    return root
+
+
+def test_lazy_state_no_plans_verification_only_routes_to_mcp():
+    """Workstation: NO plans/ dir + verification-only unchecked remainder →
+    Step 9 mcp-test, NOT a write-plan loop (the mcp-testing deadlock)."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_no_plans_verification_only_repo(Path(td))
+        state = ls.compute_state(root, False)
+    assert state["sub_skill"] == "mcp-test", state
+    assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
+    assert state["sub_skill"] != "write-plan", state
+
+
+def test_lazy_state_no_plans_real_impl_row_still_write_plan():
+    """Guard the inverse: NO plans/ dir but a genuine implementation row still
+    unchecked (verification_only False) must STILL route to write-plan — the fix
+    must not blanket-bypass features with real pending implementation work."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = _build_no_plans_verification_only_repo(Path(td))
+        # Re-open a real (non-verification) implementation row.
+        fdir = Path(td) / "docs" / "features" / "feat-noplan"
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n- [x] Impl one\n\n"
+            "### Phase 2\n- [ ] Impl two still open\n\n"
+            "### Runtime Verification\n- [ ] MCP test only\n",
+            encoding="utf-8",
+        )
+        state = ls.compute_state(root, False)
+    assert state["sub_skill"] == "write-plan", state
+
+
 # ---- WU-5d: apply_pseudo __mark_complete__ retro-staleness backstop ----
 
 def test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes():
@@ -13313,6 +13397,9 @@ _TESTS = [
     ("test_bug_state_retro_stale_routes_past_step8", test_bug_state_retro_stale_routes_past_step8),
     ("test_bug_state_retro_fresh_routes_past_step8", test_bug_state_retro_fresh_routes_past_step8),
     ("test_bug_state_retro_fieldless_routes_past_step8", test_bug_state_retro_fieldless_routes_past_step8),
+    # harden(script) 2026-06-15 — no-plans verification-only Step-7 deadlock (mcp-testing)
+    ("test_lazy_state_no_plans_verification_only_routes_to_mcp", test_lazy_state_no_plans_verification_only_routes_to_mcp),
+    ("test_lazy_state_no_plans_real_impl_row_still_write_plan", test_lazy_state_no_plans_real_impl_row_still_write_plan),
     # Phase 11 WU-5d/5e — apply_pseudo __mark_complete__/__mark_fixed__ retro-staleness backstop
     ("test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes", test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes),
     ("test_apply_pseudo_mark_complete_grandfathered_retro_completes", test_apply_pseudo_mark_complete_grandfathered_retro_completes),
