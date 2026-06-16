@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-16 (4th+ recurrence; prior incidents 2026-06-15 / 2026-06-16)
+**Fixed:** 2026-06-16
+**Fix commit:** 6e44116
 **Placement:** docs/bugs/cycle-subagent-runs-orchestrator-work
 **Related:**
 - `docs/features/lazy-cycle-containment/` (C1–C8 — the containment machinery built to stop this; `COMPLETED.md` `dcf36ba7`, 2026-06-15)
