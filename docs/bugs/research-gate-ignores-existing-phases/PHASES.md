@@ -44,10 +44,12 @@ No hard upstream deps — this is a self-contained harness bug. The only cross-a
 
 **Scope:** Add a deterministic, fence-aware predicate that answers "does this PHASES.md show implementation evidence?" by composing the existing `parse_phases` / `count_deliverables` parsers. This is the reusable primitive the Step-5 guard (Phase 2) consults. Isolating it in `lazy_core.py` keeps the shared-helper change and its direct unit tests separate from the routing change. (SPEC D2 / Affected Area row "Implementation-evidence predicate".)
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `lazy_core.phases_show_implementation(phases_text: str) -> bool` added near `parse_phases` / `count_deliverables`. Returns `False` when `parse_phases(phases_text)` yields **zero** phases (stub guard — SPEC Open-Q1 / D2). Otherwise returns `True` when ANY of: a parsed phase's `status` is `Complete` or `In-progress` (case-insensitive compare on the stripped value), OR `count_deliverables(phases_text)[1] >= 1` (≥1 checked deliverable), OR the text contains an `## Implementation Notes` heading (regex `^#{2,3}\s+Implementation Notes\b`, fence-awareness not required — a heading inside a fence is a non-issue for this signal, but match only at line start). Else `False`.
-- [ ] Docstring documents the contract: the three OR'd signals, the zero-phase stub guard, and that it is purely a read — no side effects, no `_diag` (the diagnostic is emitted by the caller in Phase 2, so the predicate stays a pure function reusable elsewhere).
-- [ ] Tests: `test_lazy_core.py` characterization — RED first. Cases: (a) zero parsed phases → `False`; (b) one phase `**Status:** Complete` → `True`; (c) one phase `**Status:** In-progress`, no checked boxes → `True`; (d) phases all `**Status:** Planned` but ≥1 `- [x]` → `True`; (e) phases all `Planned`, zero checked, but an `## Implementation Notes` block present → `True`; (f) phases parsed, all `Planned`, zero checked, no Implementation Notes → `False`; (g) checkbox inside a ```fence``` does NOT count (fence-aware via `count_deliverables`).
+- [x] `lazy_core.phases_show_implementation(phases_text: str) -> bool` added near `parse_phases` / `count_deliverables`. Returns `False` when `parse_phases(phases_text)` yields **zero** phases (stub guard — SPEC Open-Q1 / D2). Otherwise returns `True` when ANY of: a parsed phase's `status` is `Complete` or `In-progress` (case-insensitive compare on the stripped value), OR `count_deliverables(phases_text)[1] >= 1` (≥1 checked deliverable), OR the text contains an `## Implementation Notes` heading (regex `^#{2,3}\s+Implementation Notes\b`, fence-awareness not required — a heading inside a fence is a non-issue for this signal, but match only at line start). Else `False`.
+- [x] Docstring documents the contract: the three OR'd signals, the zero-phase stub guard, and that it is purely a read — no side effects, no `_diag` (the diagnostic is emitted by the caller in Phase 2, so the predicate stays a pure function reusable elsewhere).
+- [x] Tests: `test_lazy_core.py` characterization — RED first. Cases: (a) zero parsed phases → `False`; (b) one phase `**Status:** Complete` → `True`; (c) one phase `**Status:** In-progress`, no checked boxes → `True`; (d) phases all `**Status:** Planned` but ≥1 `- [x]` → `True`; (e) phases all `Planned`, zero checked, but an `## Implementation Notes` block present → `True`; (f) phases parsed, all `Planned`, zero checked, no Implementation Notes → `False`; (g) checkbox inside a ```fence``` does NOT count (fence-aware via `count_deliverables`).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` passes including the new `phases_show_implementation` cases. Concretely: a PHASES.md string with one `**Status:** In-progress` phase returns `True`; an empty-stub string (no phase headings) returns `False`; a string with only `Planned` phases and no checked boxes / no Implementation Notes returns `False`.
 
@@ -63,6 +65,12 @@ Pure unit characterization in `test_lazy_core.py` (the helper is domain-agnostic
 **Integration Notes for Next Phase:**
 - Phase 2's guard reads `phases_show_implementation(phases_text)` and pairs a `True` result with a `_diag(...)` emission. The predicate itself stays side-effect-free.
 - Contract locked here: `False` for zero parsed phases is the stub guard the SPEC Open-Q1 depends on — Phase 2 relies on it so a stub PHASES.md does NOT suppress research.
+
+#### Implementation Notes (Phase 1)
+
+- Added `phases_show_implementation(phases_text) -> bool` in `lazy_core.py` immediately after `parse_phases` (~`:1481`), with module-level `_IMPL_NOTES_HEADING_RE = re.compile(r"^#{2,3}\s+Implementation Notes\b", re.MULTILINE)`. Composes the existing `parse_phases` (zero-phase stub guard + per-phase status) and `count_deliverables` (checked-box signal, inherits fence-awareness) — no new parsing. Pure read, no `_diag`.
+- Seven RED-first characterization tests added to `test_lazy_core.py` (a–g per the deliverable) and registered in the `_TESTS` runner list after the `count_deliverables` block. Confirmed RED for the right reason first (`AttributeError: module 'lazy_core' has no attribute 'phases_show_implementation'`), then GREEN.
+- Gates: `python user/scripts/test_lazy_core.py` → **397/397 passed, 0 failed** (incl. the 7 new cases). `python user/scripts/lazy_coord.py --test` → all smoke tests passed (shared-import sanity).
 
 ---
 

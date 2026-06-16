@@ -252,6 +252,99 @@ def test_count_deliverables_only_checked():
 
 
 # ---------------------------------------------------------------------------
+# Tests: phases_show_implementation — implementation-evidence predicate
+# (research-gate-ignores-existing-phases P1, RED-first characterization)
+# ---------------------------------------------------------------------------
+
+def test_phases_show_impl_zero_parsed_phases_false():
+    """(a) No '## Phase' heading → zero parsed phases → False (stub guard)."""
+    _guard()
+    text = (
+        "# Implementation Phases\n"
+        "Some preamble prose with no phase headings.\n"
+        "- [ ] a stray top-level box that is NOT inside a phase\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is False
+
+
+def test_phases_show_impl_complete_status_true():
+    """(b) One phase **Status:** Complete → True."""
+    _guard()
+    text = (
+        "### Phase 1: Do the thing\n"
+        "**Status:** Complete\n"
+        "- [ ] deliverable\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is True
+
+
+def test_phases_show_impl_in_progress_status_true():
+    """(c) One phase **Status:** In-progress, zero checked boxes → True."""
+    _guard()
+    text = (
+        "### Phase 1: Do the thing\n"
+        "**Status:** In-progress\n"
+        "- [ ] not done yet\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is True
+
+
+def test_phases_show_impl_checked_box_true():
+    """(d) Phases all **Status:** Planned but ≥1 '- [x]' deliverable → True."""
+    _guard()
+    text = (
+        "### Phase 1: Alpha\n"
+        "**Status:** Planned\n"
+        "- [x] already done\n"
+        "### Phase 2: Beta\n"
+        "**Status:** Planned\n"
+        "- [ ] pending\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is True
+
+
+def test_phases_show_impl_implementation_notes_true():
+    """(e) Phases all Planned, zero checked, but an Implementation Notes block → True."""
+    _guard()
+    text = (
+        "### Phase 1: Alpha\n"
+        "**Status:** Planned\n"
+        "- [ ] pending\n"
+        "## Implementation Notes\n"
+        "Did some work here.\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is True
+
+
+def test_phases_show_impl_planned_no_evidence_false():
+    """(f) Phases parsed, all Planned, zero checked, no Implementation Notes → False."""
+    _guard()
+    text = (
+        "### Phase 1: Alpha\n"
+        "**Status:** Planned\n"
+        "- [ ] pending one\n"
+        "### Phase 2: Beta\n"
+        "**Status:** Planned\n"
+        "- [ ] pending two\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is False
+
+
+def test_phases_show_impl_fenced_checkbox_does_not_count_false():
+    """(g) The only '- [x]' is inside a fenced block → False (fence-awareness)."""
+    _guard()
+    text = (
+        "### Phase 1: Alpha\n"
+        "**Status:** Planned\n"
+        "```\n"
+        "- [x] illustrative example, not a real deliverable\n"
+        "```\n"
+        "- [ ] real pending box\n"
+    )
+    assert lazy_core.phases_show_implementation(text) is False
+
+
+# ---------------------------------------------------------------------------
 # Tests: remaining_unchecked_are_verification_only
 # ---------------------------------------------------------------------------
 
@@ -13467,6 +13560,14 @@ _TESTS = [
     ("test_count_deliverables_mixed", test_count_deliverables_mixed),
     ("test_count_deliverables_only_unchecked", test_count_deliverables_only_unchecked),
     ("test_count_deliverables_only_checked", test_count_deliverables_only_checked),
+    # phases_show_implementation — implementation-evidence predicate (P1)
+    ("test_phases_show_impl_zero_parsed_phases_false", test_phases_show_impl_zero_parsed_phases_false),
+    ("test_phases_show_impl_complete_status_true", test_phases_show_impl_complete_status_true),
+    ("test_phases_show_impl_in_progress_status_true", test_phases_show_impl_in_progress_status_true),
+    ("test_phases_show_impl_checked_box_true", test_phases_show_impl_checked_box_true),
+    ("test_phases_show_impl_implementation_notes_true", test_phases_show_impl_implementation_notes_true),
+    ("test_phases_show_impl_planned_no_evidence_false", test_phases_show_impl_planned_no_evidence_false),
+    ("test_phases_show_impl_fenced_checkbox_does_not_count_false", test_phases_show_impl_fenced_checkbox_does_not_count_false),
     # remaining_unchecked_are_verification_only
     ("test_ruvonly_no_unchecked", test_ruvonly_no_unchecked),
     ("test_ruvonly_all_under_heading", test_ruvonly_all_under_heading),

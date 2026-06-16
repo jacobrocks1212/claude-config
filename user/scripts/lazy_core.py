@@ -1478,6 +1478,59 @@ def parse_phases(phases_text: str) -> list[dict]:
     return phases
 
 
+# Line-start "Implementation Notes" heading (## or ###). The body-evidence
+# signal for phases_show_implementation — an Implementation Notes block is
+# appended by /execute-plan after a phase lands, so its presence is positive
+# proof the feature is past the pre-planning research stage. Matched only at
+# line start (re.M); a fenced occurrence is a non-issue for this signal.
+_IMPL_NOTES_HEADING_RE = re.compile(r"^#{2,3}\s+Implementation Notes\b", re.MULTILINE)
+
+
+def phases_show_implementation(phases_text: str) -> bool:
+    """Return True iff a PHASES.md shows implementation EVIDENCE.
+
+    The reusable primitive the Step-5 research-gate guard consults
+    (research-gate-ignores-existing-phases): a feature whose PHASES.md already
+    shows implementation is past the pre-planning research stage, so the
+    research gate must NOT send it back for research.
+
+    Composes the existing parsers — adds NO new parsing surface:
+
+    - **Zero-phase stub guard (FIRST):** when ``parse_phases(phases_text)``
+      yields zero phases (no ``## Phase`` heading — a stub / empty PHASES.md),
+      return ``False`` unconditionally. A stub is treated exactly like "no
+      PHASES.md" so a placeholder file does NOT suppress legitimate research
+      (SPEC Open-Q1 / D2).
+    - Otherwise return ``True`` when ANY of these three signals holds:
+        1. a parsed phase's ``status`` is ``Complete`` or ``In-progress``
+           (case-insensitive compare on the stripped value), OR
+        2. ``count_deliverables(phases_text)[1] >= 1`` — at least one checked
+           ``- [x]`` deliverable (fence-awareness inherited from
+           ``count_deliverables``: a checkbox inside a ``` fence does not
+           count), OR
+        3. an ``## Implementation Notes`` (or ``###``) heading is present at a
+           line start.
+      Else ``False``.
+
+    Side-effect-free: a pure read. It emits NO ``_diag`` — the diagnostic is
+    the caller's responsibility (the Step-5 guard in ``lazy-state.py`` emits
+    the D3 ``_diag`` line), keeping this predicate reusable elsewhere.
+    """
+    phases = parse_phases(phases_text)
+    if not phases:
+        # Stub / empty PHASES.md — treat as "no PHASES.md": do not suppress
+        # research.
+        return False
+    for ph in phases:
+        if (ph.get("status") or "").strip().lower() in {"complete", "in-progress"}:
+            return True
+    if count_deliverables(phases_text)[1] >= 1:
+        return True
+    if _IMPL_NOTES_HEADING_RE.search(phases_text):
+        return True
+    return False
+
+
 def retro_staleness(spec_path: Path) -> tuple[int, int] | None:
     """Detect a stale retro: a DESIGN phase landed AFTER the retro concluded.
 
