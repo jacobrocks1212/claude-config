@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-16
+**Fixed:** 2026-06-16
+**Fix commit:** 8f1f429
 **Placement:** docs/bugs/research-gate-ignores-existing-phases
 **Related:** `user/scripts/CLAUDE.md` (lifecycle precedence), `docs/specs/lazy-decision-gates/`, `docs/specs/lazy-pipeline-ergonomics/`, sibling bug `docs/bugs/_archive/hardening-blind-to-process-friction/`
 

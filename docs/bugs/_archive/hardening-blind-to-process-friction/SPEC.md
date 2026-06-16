@@ -8,7 +8,7 @@
 **Fixed:** 2026-06-16
 **Fix commit:** 0813b0f
 **Placement:** docs/bugs/hardening-blind-to-process-friction
-**Related:** `docs/specs/turn-routing-enforcement/` (hardening stage + deny-ledger), `docs/specs/lazy-hardening/`, sibling bug `docs/bugs/research-gate-ignores-existing-phases/`
+**Related:** `docs/specs/turn-routing-enforcement/` (hardening stage + deny-ledger), `docs/specs/lazy-hardening/`, sibling bug `docs/bugs/_archive/research-gate-ignores-existing-phases/`
 
 ---
 
