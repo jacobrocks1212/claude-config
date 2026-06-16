@@ -5191,6 +5191,21 @@ _CYCLE_COMMIT_BUDGET: dict[str, int] = {
     # flagged, while a true runaway (many commits) still trips.
     "execute-plan": 3,
     "retro-feature": 3,
+    # Pipeline-advancing terminal pseudo-skills (`__mark_complete__` /
+    # `__mark_fixed__`). These do NOT dispatch a work-skill subagent — they are
+    # the orchestrator's own inline documentation cycle, but their `__mark_complete__`
+    # route legitimately commits MORE THAN ONCE: the `--apply-pseudo` receipt+flip
+    # is one atomic commit, and the Gate-1 corrective-coverage meta path
+    # (SKILL.md §428) authors+commits mcp-tests scenario(s) and may also commit a
+    # gate-halt cycle_log / SPEC test-exempt note. With the default budget of 1
+    # this two-commit completion cycle false-positived `unexpected-commits` (the
+    # 2026-06-16 recurrence: `begin_head_sha=0a0e928c6711, sub_skill=__mark_complete__`
+    # / `730a4df88d17`). Round 15 fixed the `execute-plan` sibling of this defect
+    # but did not enumerate the pseudo-skill cycles; this row closes that gap. A
+    # genuine runaway (>3 commits) still trips. Mirrors `bug-state.py` via the
+    # shared `lazy_core` module — bug `__mark_fixed__` resolves the same key here.
+    "__mark_complete__": 3,
+    "__mark_fixed__": 3,
 }
 
 

@@ -14854,6 +14854,40 @@ def test_detect_friction_over_budget_commits():
     assert "5" in got.get("detail", ""), got
 
 
+def test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget():
+    """Hardening 2026-06-16 recurrence: a `__mark_complete__` completion / meta cycle
+    legitimately commits MORE THAN ONCE (the `--apply-pseudo` receipt+flip plus the
+    Gate-1 corrective-coverage scenario commit). Round 15 fixed the `execute-plan`
+    sibling of this defect but did NOT enumerate the pseudo-skill cycles, so a
+    2-commit `__mark_complete__` cycle (budget defaulted to 1) re-tripped
+    `unexpected-commits` (begin_head_sha 0a0e928c6711 / 730a4df88d17). With the
+    pseudo-skill budget row (__mark_complete__/__mark_fixed__: 3) the legitimate
+    multi-commit completion cycle no longer false-positives."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-16T00:00:00Z",
+        "begin_head_sha": "0a0e928c6711",
+    }
+    for ss in ("__mark_complete__", "__mark_fixed__"):
+        got = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-16T00:00:00Z",  # identity intact
+            current_head_sha="730a4df88d17",
+            sub_skill=ss,
+            commits_since=2,  # receipt+flip + corrective-coverage commit
+        )
+        assert got is None, (ss, got)
+    # A genuine runaway (>3) on the same pseudo-skill STILL trips — no gate weakened.
+    runaway = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-16T00:00:00Z",
+        current_head_sha="730a4df88d17",
+        sub_skill="__mark_complete__",
+        commits_since=7,
+    )
+    assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
+
+
 def test_detect_friction_within_commit_budget_returns_none():
     """WU-2: a single commit (within the conservative budget) and intact identity
     → None."""
