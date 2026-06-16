@@ -2,9 +2,11 @@
 
 > `/lazy-batch` dispatches every happy-path `/mcp-test` cycle on **Opus**, even though the skill was "switched to haiku." The switch landed only as description prose; the dispatch-model selector has no haiku branch.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-16
+**Fixed:** 2026-06-16
+**Fix commit:** 4d1e0f4
 **Placement:** docs/bugs/mcp-test-haiku-tier-unwired
 **Related:** `docs/specs/lazy-hardening/`, `repos/algobooth/.claude/skills/mcp-test/SKILL.md` (Informed Dispatcher rewrite, commit ae47a4d), `user/scripts/lazy_core.py::emit_cycle_prompt`
 
