@@ -14171,6 +14171,296 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Phase 1 (lazy-cycle-containment) — Self-edit reload discipline (C8).
+#
+# self_edit_mode(repo_root): True iff ~/.claude/{skills,scripts,hooks} ALL
+# resolve (after symlink resolution) UNDER the run's git toplevel — i.e. the
+# run is editing the harness it executes from. Semantically-correct (robust to
+# the repo cloned elsewhere); NOT a cwd-basename match.
+#
+# GOVERNING_FILE_SET: the orchestrator's in-context governing-prose files that
+# must be re-Read on self-edit (they do NOT auto-refresh from a fresh
+# subprocess / disk read). The auto-refresh surfaces (lazy_core.py,
+# cycle-base-prompt.md, hook .sh bodies, downstream skill prose) are NOT in it.
+# ---------------------------------------------------------------------------
+
+
+def _restore_env(key: str, prev: "str | None") -> None:
+    """Restore an environment variable to its prior value (or remove it)."""
+    if prev is None:
+        _os.environ.pop(key, None)
+    else:
+        _os.environ[key] = prev
+
+
+def _symlinks_supported(td: str) -> bool:
+    """Best-effort probe: can this host create a directory symlink in `td`?
+
+    On Windows, symlink creation needs Developer Mode or elevation; when it is
+    unavailable we skip the symlink-dependent self-edit tests rather than fail.
+    """
+    target = Path(td) / "_symlink_probe_target"
+    link = Path(td) / "_symlink_probe_link"
+    target.mkdir()
+    try:
+        _os.symlink(str(target), str(link), target_is_directory=True)
+    except (OSError, NotImplementedError, AttributeError):
+        return False
+    finally:
+        try:
+            if link.is_symlink():
+                link.unlink()
+        except OSError:
+            pass
+    return True
+
+
+def _make_self_edit_fixture(td: str, *, inside: bool) -> tuple:
+    """Build a fake git toplevel + a fake HOME whose ~/.claude/{skills,scripts,
+    hooks} are symlinks.
+
+    inside=True  → the three symlinks resolve UNDER the git toplevel (self-edit).
+    inside=False → they resolve into a sibling dir OUTSIDE the toplevel.
+
+    Returns (toplevel: Path, fake_home: Path).
+    """
+    toplevel = Path(td) / "toplevel"
+    toplevel.mkdir()
+    # Make it a real git repo so `git rev-parse --show-toplevel` succeeds.
+    subprocess.run(["git", "init", "-q", str(toplevel)], check=True,
+                   capture_output=True)
+
+    fake_home = Path(td) / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+
+    if inside:
+        # Mirror the live layout: repo holds user/{skills,scripts,hooks}; the
+        # ~/.claude/* names are symlinks pointing INTO the toplevel.
+        src_base = toplevel / "user"
+    else:
+        src_base = Path(td) / "elsewhere"
+    for name in ("skills", "scripts", "hooks"):
+        real = src_base / name
+        real.mkdir(parents=True)
+        _os.symlink(str(real), str(fake_home / ".claude" / name),
+                   target_is_directory=True)
+    return toplevel, fake_home
+
+
+def test_self_edit_mode_symbol_present():
+    """self_edit_mode + GOVERNING_FILE_SET are exported by lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "self_edit_mode"), "lazy_core.self_edit_mode missing"
+    assert hasattr(lazy_core, "GOVERNING_FILE_SET"), (
+        "lazy_core.GOVERNING_FILE_SET missing"
+    )
+
+
+def test_self_edit_mode_true_inside_toplevel(monkeypatch=None):
+    """All three ~/.claude/* symlinks resolve UNDER git toplevel → True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        if not _symlinks_supported(td):
+            return  # host cannot make symlinks — skip (treated as pass)
+        toplevel, fake_home = _make_self_edit_fixture(td, inside=True)
+        _orig_home = _os.environ.get("HOME")
+        _orig_userprofile = _os.environ.get("USERPROFILE")
+        _os.environ["HOME"] = str(fake_home)
+        _os.environ["USERPROFILE"] = str(fake_home)
+        try:
+            assert lazy_core.self_edit_mode(toplevel) is True
+        finally:
+            _restore_env("HOME", _orig_home)
+            _restore_env("USERPROFILE", _orig_userprofile)
+
+
+def test_self_edit_mode_false_outside_toplevel():
+    """Symlinks resolve OUTSIDE the git toplevel → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        if not _symlinks_supported(td):
+            return
+        toplevel, fake_home = _make_self_edit_fixture(td, inside=False)
+        _orig_home = _os.environ.get("HOME")
+        _orig_userprofile = _os.environ.get("USERPROFILE")
+        _os.environ["HOME"] = str(fake_home)
+        _os.environ["USERPROFILE"] = str(fake_home)
+        try:
+            assert lazy_core.self_edit_mode(toplevel) is False
+        finally:
+            _restore_env("HOME", _orig_home)
+            _restore_env("USERPROFILE", _orig_userprofile)
+
+
+def test_self_edit_mode_false_normal_repo_no_symlinks():
+    """A plain git repo, ~/.claude/* are real dirs (not symlinks into it) → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        toplevel = Path(td) / "toplevel"
+        toplevel.mkdir()
+        subprocess.run(["git", "init", "-q", str(toplevel)], check=True,
+                       capture_output=True)
+        fake_home = Path(td) / "home"
+        for name in ("skills", "scripts", "hooks"):
+            (fake_home / ".claude" / name).mkdir(parents=True)
+        _orig_home = _os.environ.get("HOME")
+        _orig_userprofile = _os.environ.get("USERPROFILE")
+        _os.environ["HOME"] = str(fake_home)
+        _os.environ["USERPROFILE"] = str(fake_home)
+        try:
+            assert lazy_core.self_edit_mode(toplevel) is False
+        finally:
+            _restore_env("HOME", _orig_home)
+            _restore_env("USERPROFILE", _orig_userprofile)
+
+
+def test_self_edit_mode_false_not_a_git_repo():
+    """repo_root is not a git repo (rev-parse --show-toplevel fails) → False, no raise."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        not_a_repo = Path(td) / "plain"
+        not_a_repo.mkdir()
+        fake_home = Path(td) / "home"
+        for name in ("skills", "scripts", "hooks"):
+            (fake_home / ".claude" / name).mkdir(parents=True)
+        _orig_home = _os.environ.get("HOME")
+        _orig_userprofile = _os.environ.get("USERPROFILE")
+        _os.environ["HOME"] = str(fake_home)
+        _os.environ["USERPROFILE"] = str(fake_home)
+        try:
+            assert lazy_core.self_edit_mode(not_a_repo) is False
+        finally:
+            _restore_env("HOME", _orig_home)
+            _restore_env("USERPROFILE", _orig_userprofile)
+
+
+def test_self_edit_mode_false_one_missing_path():
+    """If only some of the three ~/.claude/* paths resolve under toplevel → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        if not _symlinks_supported(td):
+            return
+        toplevel, fake_home = _make_self_edit_fixture(td, inside=True)
+        # Remove one of the three symlinks so the predicate cannot be all-true.
+        (fake_home / ".claude" / "hooks").unlink()
+        _orig_home = _os.environ.get("HOME")
+        _orig_userprofile = _os.environ.get("USERPROFILE")
+        _os.environ["HOME"] = str(fake_home)
+        _os.environ["USERPROFILE"] = str(fake_home)
+        try:
+            assert lazy_core.self_edit_mode(toplevel) is False
+        finally:
+            _restore_env("HOME", _orig_home)
+            _restore_env("USERPROFILE", _orig_userprofile)
+
+
+def test_governing_file_set_includes_orchestrator_and_components():
+    """The governing set INCLUDES lazy-batch SKILL + bug/cloud twins + the 3 components."""
+    _guard()
+    gset = lazy_core.GOVERNING_FILE_SET
+    includes = [
+        "user/skills/lazy-batch/SKILL.md",
+        "user/skills/lazy-bug-batch/SKILL.md",
+        "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md",
+        "user/skills/_components/orchestrator-voice.md",
+        "user/skills/_components/completeness-policy.md",
+        "user/skills/_components/lazy-dispatch-template.md",
+    ]
+    for rel in includes:
+        assert rel in gset, f"governing set must include {rel}"
+
+
+def test_governing_file_set_excludes_auto_refresh_surfaces():
+    """The governing set EXCLUDES auto-refreshing surfaces (no false 'reload')."""
+    _guard()
+    gset = lazy_core.GOVERNING_FILE_SET
+    excludes = [
+        "user/scripts/lazy_core.py",
+        "user/scripts/lazy-state.py",
+        "user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md",
+        "user/hooks/lazy-cycle-containment.sh",
+    ]
+    for rel in excludes:
+        assert rel not in gset, (
+            f"auto-refresh surface {rel} must NOT be in the governing set"
+        )
+
+
+def test_governing_files_touched_intersects_commit():
+    """governing_files_touched(repo_root) returns the last commit's governing hits."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q", str(root)], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email",
+                        "t@t.local"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "T"],
+                       check=True, capture_output=True)
+        # Initial commit (a non-governing file).
+        (root / "README.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "init"],
+                       check=True, capture_output=True)
+        # Second commit touches a governing file + a non-governing file.
+        gov = root / "user" / "skills" / "lazy-batch" / "SKILL.md"
+        gov.parent.mkdir(parents=True)
+        gov.write_text("edit\n", encoding="utf-8")
+        (root / "user" / "scripts").mkdir(parents=True)
+        (root / "user" / "scripts" / "lazy_core.py").write_text("y\n",
+                                                                 encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "edit"],
+                       check=True, capture_output=True)
+        touched = lazy_core.governing_files_touched(root)
+        assert "user/skills/lazy-batch/SKILL.md" in touched
+        assert "user/scripts/lazy_core.py" not in touched
+
+
+def test_lazy_batch_skill_carries_reload_discipline_prose():
+    """WU-2: lazy-batch/SKILL.md documents the governing-file reload discipline."""
+    _guard()
+    skill = (_SCRIPTS_DIR.parent / "skills" / "lazy-batch" / "SKILL.md")
+    text = skill.read_text(encoding="utf-8")
+    assert "self_edit_mode" in text, "reload discipline must reference self_edit_mode"
+    assert "governing-file" in text.lower(), "must name the governing-file set"
+    # New-hook-registration restart surfacing (T6).
+    assert "settings.json hook wiring changed" in text, (
+        "must carry the new-hook-registration ⚠ restart surfacing"
+    )
+    # Auto-refresh boundary documented no-ops.
+    assert "cycle-base-prompt.md" in text, (
+        "must document cycle-base-prompt.md as an auto-refresh no-op"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_self_edit_mode_symbol_present", test_self_edit_mode_symbol_present),
+    ("test_self_edit_mode_true_inside_toplevel",
+     test_self_edit_mode_true_inside_toplevel),
+    ("test_self_edit_mode_false_outside_toplevel",
+     test_self_edit_mode_false_outside_toplevel),
+    ("test_self_edit_mode_false_normal_repo_no_symlinks",
+     test_self_edit_mode_false_normal_repo_no_symlinks),
+    ("test_self_edit_mode_false_not_a_git_repo",
+     test_self_edit_mode_false_not_a_git_repo),
+    ("test_self_edit_mode_false_one_missing_path",
+     test_self_edit_mode_false_one_missing_path),
+    ("test_governing_file_set_includes_orchestrator_and_components",
+     test_governing_file_set_includes_orchestrator_and_components),
+    ("test_governing_file_set_excludes_auto_refresh_surfaces",
+     test_governing_file_set_excludes_auto_refresh_surfaces),
+    ("test_governing_files_touched_intersects_commit",
+     test_governing_files_touched_intersects_commit),
+    ("test_lazy_batch_skill_carries_reload_discipline_prose",
+     test_lazy_batch_skill_carries_reload_discipline_prose),
+]
+
+
 def main() -> int:
     print("=" * 60)
     print("test_lazy_core.py — characterization tests")
