@@ -42,5 +42,10 @@
   PASS [bug-park-needs-input-mode-skip] park mode: dispatched='bug-after', parked count=1
   PASS [bug-park-needs-input-resolved-reenter] resolved: dispatched='bug-parked', parked=[]
   PASS [bug-park-needs-input-blocked-precedence] blocked-precedence: terminal_reason='blocked', bug-parked in parked[]=False
+  PASS [bug-park-blocked-mode-skip] dispatched='workable-bug', parked count=1
+  PASS [bug-park-blocked-default-halt] default: terminal_reason='blocked', parked key absent=True
+  PASS [bug-park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
+  PASS [bug-park-blocked-and-needs-input-single-park] dispatched='workable-bug', blocked-bug park count=1
+  PASS [bug-park-blocked-reenter-under-flag] blocked-bug parked under flag=True, dispatched='workable-bug'
 
 All smoke tests passed.

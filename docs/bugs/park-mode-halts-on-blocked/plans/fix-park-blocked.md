@@ -25,7 +25,7 @@ phases: [1, 2, 3, 4, 5, 6]
 ## Work Units
 
 - [x] WU-1 — lazy-state.py: --park-blocked flag, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
-- [ ] WU-2 — bug-state.py: mirror --park-blocked, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
+- [x] WU-2 — bug-state.py: mirror --park-blocked, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
 - [ ] WU-3 — lazy_core.build_parked_entry: add sentinel_kind field (+ test_lazy_core.py characterization)
 - [ ] WU-4 — Orchestrator wiring: lazy-batch + lazy-bug-batch + lazy-batch-cloud SKILL.md
 - [ ] WU-5 — parked-flush.md: surface blocked-parked items (blocked-specific affordance)

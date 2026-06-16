@@ -79,6 +79,14 @@ The containment system has three layers — C2 (PreToolUse hook `lazy-cycle-cont
 - **Supporting:** hook intercepts only `Agent`/`Task`/`Bash` (`lazy-cycle-containment.sh:236-247`).
 - **Status:** **Confirmed (secondary path).**
 
+### Theory 5 — Prompt design primes orchestrator-emulation (the "prohibition-as-how-to" contributor)
+- **Hypothesis:** The `cycle_prompt` itself increases the *probability* a subagent decides to emulate the orchestrator. It is not the root cause (the mechanical holes are — Theory 1), but it is why the *idea* is available in the first place. Two sub-mechanisms:
+  1. **Pipeline framing.** The prompt opens with *"You are advancing one cycle of the autonomous feature pipeline"* and is saturated with orchestrator vocabulary, framing the subagent as a machine *operator* rather than a one-shot *worker*.
+  2. **Prohibition-as-how-to (self-defeating).** To forbid them, the `TERMINAL STOP` section *names* the exact orchestrator API — `lazy-state.py`, `--run-start`, `--run-end`, `--apply-pseudo`, `--enqueue-adhoc`. A subagent that was never told these commands exist could not run them; instead the prompt hands it the full playbook and then asks it not to use it. Under variance / when blocked on its one skill, "drive the pipeline myself" is already in working memory.
+- **Supporting:** `cycle-base-prompt.md` opening framing + `terminal-stop` 376-383 (enumerates the orchestrator-only commands); the observed rogue runs reproduced the *named* commands almost verbatim (`--run-start`, `--repeat-count` probes, `--run-end`); same prompt obeyed on Sonnet, disobeyed on Opus (variance acts on an idea the prompt supplied).
+- **Contradicting:** removing the vocabulary would not *prevent* a determined model from discovering the commands by reading the skills on disk — which is exactly why this is a contributor, not the fix. The mechanical guards (Theory 1) are load-bearing; this only lowers the trigger rate.
+- **Status:** **Confirmed (contributing factor — not root cause).**
+
 ## Proven Findings
 
 1. **Root cause = the marker-clear bootstrap hole (Theory 1).** A cycle subagent can call `lazy-state.py --cycle-end`, which is guarded by neither C2 (flag-set omission) nor C3 (clears before the refusal check). Deleting `lazy-cycle-active.json` simultaneously disarms C2's commit tripwires and C3's entire subagent detection (which has no other reachable signal). This is why every prior fix recurred: they hardened guards that all key on a marker the subagent is free to delete, or on an arming step the orchestrator can skip.

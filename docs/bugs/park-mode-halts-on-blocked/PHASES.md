@@ -92,12 +92,18 @@ Write each fixture's assertions FIRST (they must fail RED against the unmodified
 **Scope:** Apply the exact Phase-1 changes to `bug-state.py` so `/lazy-bug-batch --park` parks blocked bugs and advances (SPEC Open-Q1, resolved yes by D7). The two scripts share `lazy_core.py`; this keeps them symmetric per the Coupling Rule.
 
 **Deliverables:**
-- [ ] `bug-state.py compute_state(...)` gains `park_blocked: bool = False` (appended after `park_needs_input` at `:507`).
-- [ ] Step-2 selection loop gains a BLOCKED park branch symmetric with the NEEDS_INPUT branch at `:683–693`: parks a bug carrying `BLOCKED.md` under `park_blocked`, using `build_parked_entry(bug_id, spec_dir / "BLOCKED.md")`. Same single-park ordering for a bug carrying both sentinels.
-- [ ] `_PARK_MODE` set true when EITHER flag active (`:539`–`:540`).
-- [ ] Honest all-parked terminal in the `current is None` block (`:706+`): `terminal_reason="queue-exhausted-all-parked"` when `_PARKED` is non-empty, placed AFTER the existing specific terminals (`cloud-queue-exhausted`, `device-queue-exhausted`, `all-deferred`) and BEFORE `all-bugs-fixed`. The existing `TR_ALL_DEFERRED` (DEFERRED.md operator-parked) stays distinct from the new park terminal.
-- [ ] `--park-blocked` CLI arg added (`:3516` neighborhood) and wired into the `compute_state(...)` call in main (`:4090`).
-- [ ] Tests: bug-side `--test` fixtures mirroring Phase 1 (modeled on `bug-state.py:~3219` `WU-1-park (bug)` fixture).
+- [x] `bug-state.py compute_state(...)` gains `park_blocked: bool = False` (appended after `park_needs_input` at `:507`).
+- [x] Step-2 selection loop gains a BLOCKED park branch symmetric with the NEEDS_INPUT branch at `:683–693`: parks a bug carrying `BLOCKED.md` under `park_blocked`, using `build_parked_entry(bug_id, spec_dir / "BLOCKED.md")`. Same single-park ordering for a bug carrying both sentinels.
+- [x] `_PARK_MODE` set true when EITHER flag active (`:539`–`:540`).
+- [x] Honest all-parked terminal in the `current is None` block (`:706+`): `terminal_reason="queue-exhausted-all-parked"` when `_PARKED` is non-empty, placed AFTER the existing specific terminals (`cloud-queue-exhausted`, `device-queue-exhausted`, `all-deferred`) and BEFORE `all-bugs-fixed`. The existing `TR_ALL_DEFERRED` (DEFERRED.md operator-parked) stays distinct from the new park terminal.
+- [x] `--park-blocked` CLI arg added (`:3516` neighborhood) and wired into the `compute_state(...)` call in main (`:4090`).
+- [x] Tests: bug-side `--test` fixtures mirroring Phase 1 (modeled on `bug-state.py:~3219` `WU-1-park (bug)` fixture).
+
+**Implementation Notes (2026-06-16):**
+- Done — byte-for-byte symmetric mirror of Phase 1. Added `TR_QUEUE_EXHAUSTED_ALL_PARKED = "queue-exhausted-all-parked"` constant (`:119`, the bug pipeline uses TR_ constants where lazy-state uses literals — same string value). `park_blocked` param `:509`; `_PARK_MODE = park_needs_input or park_blocked` `:541`; Step-2 BLOCKED park branch added ABOVE the NEEDS_INPUT branch (~`:688`); all-parked terminal inserted before `all-bugs-fixed` and after the operator-DEFERRED terminal (~`:780`); `--park-blocked` CLI arg after `--park-needs-input` (~`:3805`); main wiring `park_blocked=args.park_blocked` (~`:4370`).
+- Tests: five new sub-fixtures under a fresh `bug-park-blocked` temp root — the four Phase-1 shapes plus sub-fixture E (BLOCKED-only bug IS parked under `park_blocked=True`, the affirmative mirror of the existing sub-fixture D which proves NOT-parked WITHOUT the flag). RED-first confirmed (`TypeError` before impl), all PASS.
+- Sub-fixture D (`bug-park-needs-input-blocked-precedence`) still passes unchanged — it now means "blocked NOT parked because `park_blocked` was NOT set," which is correct.
+- Baseline `tests/baselines/bug-state-test-baseline.txt` regenerated via `_normalize_smoke_output` (isolated `LAZY_STATE_DIR`). Both suites + `test_lazy_core.py` green (387/387). Shared `lazy_core` import surface unchanged.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/bug-state.py --test` passes including new fixtures; no-flag output byte-identical to the regenerated `bug-state-test-baseline.txt`. A temp queue `[blocked-bug, workable-bug]` under `park_blocked=True` dispatches `workable-bug` with `blocked-bug` in `parked[]`.
 
