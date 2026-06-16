@@ -2,11 +2,6 @@
   "_note": "Ordering is hybrid: explicit queue order takes precedence; bug-state.py falls back to severity (P0->P1->P2->Low) then Discovered date for bugs absent from this list. These are harness (claude-config) defects investigated 2026-06-16; each SPEC is Status: Concluded, so bug-state.py routes them to /plan-bug.",
   "queue": [
     {
-      "id": "park-mode-halts-on-blocked",
-      "name": "--park mode halts on BLOCKED instead of parking it and advancing the queue",
-      "severity": "P2"
-    },
-    {
       "id": "research-gate-ignores-existing-phases",
       "name": "Research gate fires on already-implemented features (wasted Gemini round-trip)",
       "severity": "P2"

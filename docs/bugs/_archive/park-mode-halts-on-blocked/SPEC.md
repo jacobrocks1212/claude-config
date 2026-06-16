@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-16
+**Fixed:** 2026-06-16
+**Fix commit:** 110ed29
 **Placement:** docs/bugs/park-mode-halts-on-blocked
 **Related:** `docs/specs/lazy-pipeline-ergonomics/` (park-and-continue), `user/scripts/CLAUDE.md`, sibling harness bugs `docs/bugs/_archive/hardening-blind-to-process-friction/`, `docs/bugs/research-gate-ignores-existing-phases/`
 
