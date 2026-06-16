@@ -1,0 +1,10 @@
+{
+  "queue": [
+    {
+      "id": "lazy-pipeline-visualizer",
+      "name": "Lazy Pipeline Visualizer",
+      "spec_dir": "lazy-pipeline-visualizer",
+      "tier": 1
+    }
+  ]
+}

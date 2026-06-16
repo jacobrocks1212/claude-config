@@ -1,0 +1,8 @@
+# Capability namespaces for component filtering
+# One namespace per line — matches _components/{namespace}/ subdirectories.
+#
+# claude-config intentionally declares NO capabilities. In particular it does
+# NOT declare `mcp`: this repo has no MCP server and no Tauri runtime, so the
+# mcp-namespaced skill components do not apply. Feature validation here is the
+# repo's own pytest + lint-skills + project-skills + parity-audit suite
+# (see quality-gates.md), and the lazy Step 9 MCP gate is operator-exempt.
