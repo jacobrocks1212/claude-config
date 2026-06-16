@@ -14846,6 +14846,132 @@ def test_refuse_guard_op_set_matches_spec():
 
 
 # ---------------------------------------------------------------------------
+# hardening-blind-to-process-friction Phase 1 (D4) — agent_id-aware C3
+#
+# refuse_if_cycle_active decides subagent-vs-main-thread in priority order:
+#   1. LAZY_ORCHESTRATOR truthy → NEVER refuse (orchestrator immunity, even with
+#      a stale marker present — fixes the Proven-Finding-#3 self-deny defect).
+#   2. LAZY_CYCLE_SUBAGENT truthy → refuse (explicit subagent signal, no marker
+#      required).
+#   3. else cycle marker present → refuse (legacy backstop carrier).
+# ---------------------------------------------------------------------------
+
+def _clear_cycle_env() -> None:
+    for k in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT"):
+        os.environ.pop(k, None)
+
+
+def test_refuse_guard_orchestrator_env_never_refuses_even_with_marker():
+    """LAZY_ORCHESTRATOR truthy → the guard NEVER refuses, even with a (stale)
+    cycle marker present. This is the structural immunity to the self-deny
+    defect: a lingering marker from a crashed prior dispatch can no longer
+    self-refuse the orchestrator."""
+    _guard()
+    _clear_cycle_env()
+    for op in _GUARDED_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            os.environ["LAZY_ORCHESTRATOR"] = "1"
+            try:
+                lazy_core.write_cycle_marker(feature_id="stale", nonce="n")
+                # Must NOT raise / exit despite the marker being present.
+                lazy_core.refuse_if_cycle_active(op)
+            finally:
+                _clear_cycle_env()
+                _clear_state_dir()
+
+
+def test_refuse_guard_explicit_subagent_env_refuses_without_marker():
+    """LAZY_CYCLE_SUBAGENT truthy → refuse for every guarded op even with NO
+    cycle marker armed (arming-free subagent containment)."""
+    _guard()
+    _clear_cycle_env()
+    for op in _GUARDED_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            os.environ["LAZY_CYCLE_SUBAGENT"] = "1"
+            try:
+                # No marker written.
+                code, msg = _capture_refusal(op)
+                assert code is not None and code != 0, (
+                    f"{op} must refuse for an explicit subagent (no marker)"
+                )
+                assert op in msg, f"{op} corrective message must name the op"
+            finally:
+                _clear_cycle_env()
+                _clear_state_dir()
+
+
+def test_refuse_guard_orchestrator_env_overrides_explicit_subagent():
+    """LAZY_ORCHESTRATOR takes priority over LAZY_CYCLE_SUBAGENT (the orchestrator
+    assertion wins) — never refuse."""
+    _guard()
+    _clear_cycle_env()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        os.environ["LAZY_ORCHESTRATOR"] = "1"
+        os.environ["LAZY_CYCLE_SUBAGENT"] = "1"
+        try:
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            lazy_core.refuse_if_cycle_active("--run-end")  # must NOT raise / exit
+        finally:
+            _clear_cycle_env()
+            _clear_state_dir()
+
+
+def test_refuse_guard_falsey_orchestrator_env_does_not_grant_immunity():
+    """A falsey LAZY_ORCHESTRATOR (e.g. "0", "false", "") must NOT grant immunity —
+    the marker backstop still refuses a subagent."""
+    _guard()
+    _clear_cycle_env()
+    for falsey in ("0", "false", "", "off", "no"):
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            os.environ["LAZY_ORCHESTRATOR"] = falsey
+            try:
+                lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+                code, _ = _capture_refusal("--run-end")
+                assert code is not None and code != 0, (
+                    f"falsey LAZY_ORCHESTRATOR={falsey!r} must NOT grant immunity"
+                )
+            finally:
+                _clear_cycle_env()
+                _clear_state_dir()
+
+
+def test_refuse_guard_marker_backstop_still_refuses_no_env():
+    """With NO env signals set, the legacy marker backstop still refuses (the
+    pre-D4 behavior is preserved as the fallback carrier)."""
+    _guard()
+    _clear_cycle_env()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            code, msg = _capture_refusal("--run-end")
+            assert code is not None and code != 0, "marker backstop must refuse"
+            assert "cycle" in msg.lower()
+        finally:
+            _clear_state_dir()
+
+
+def test_env_truthy_helper():
+    """_env_truthy treats unset / falsey strings as False and other values True."""
+    _guard()
+    _clear_cycle_env()
+    try:
+        assert lazy_core._env_truthy("LAZY_ORCHESTRATOR") is False  # unset
+        for falsey in ("", "0", "false", "FALSE", "no", "off", "  "):
+            os.environ["LAZY_ORCHESTRATOR"] = falsey
+            assert lazy_core._env_truthy("LAZY_ORCHESTRATOR") is False, falsey
+        for truthy in ("1", "true", "yes", "on", "agent_abc"):
+            os.environ["LAZY_ORCHESTRATOR"] = truthy
+            assert lazy_core._env_truthy("LAZY_ORCHESTRATOR") is True, truthy
+    finally:
+        _clear_cycle_env()
+
+
+# ---------------------------------------------------------------------------
 # Follow-up: structural MCP-skip short-circuit (no-app-surface repos)
 #   repo_has_no_app_surface / phases_mcp_runtime_not_required helpers,
 #   skip_waiver_refusal(granted_by: pipeline-structural) re-verification, and

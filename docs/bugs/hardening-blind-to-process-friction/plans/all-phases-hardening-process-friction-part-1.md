@@ -99,7 +99,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 - [x] WU-1 — Confirm `agent_id` field + author deny/allow hook fixtures (test-first)
 - [x] WU-2 — Re-target the C2 hook (`lazy-cycle-containment.sh`) on `agent_id`
-- [ ] WU-3 — `agent_id`-aware `refuse_if_cycle_active` + lockstep comment + lazy_core tests
+- [x] WU-3 — `agent_id`-aware `refuse_if_cycle_active` + lockstep comment + lazy_core tests
 
 ---
 

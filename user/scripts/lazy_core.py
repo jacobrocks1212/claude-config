@@ -5146,21 +5146,44 @@ def clear_cycle_marker() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Refuse-by-construction (lazy-cycle-containment C3 / Phase 3)
+# Refuse-by-construction (lazy-cycle-containment C3 / Phase 3; agent_id-aware
+# per hardening-blind-to-process-friction Phase 1 / D4)
 #
-# The orchestrator-only state-script operations REFUSE when the cycle marker is
-# present — the belt-and-suspenders backstop if the C2 hook (Phase 4) is
-# disabled or bypassed. Safe for the orchestrator BY CONSTRUCTION: the
-# orchestrator sets the marker → dispatches → clears the marker on return →
-# only THEN runs these ops. They never execute with the marker present in
-# correct orchestrator flow; the refusal bites ONLY a subagent calling them
-# mid-dispatch.
+# The orchestrator-only state-script operations REFUSE for a subagent caller —
+# the belt-and-suspenders backstop if the C2 hook (lazy-cycle-containment.sh) is
+# disabled or bypassed. The subagent-vs-main-thread distinction is established
+# in PRIORITY ORDER (D4):
+#
+#   1. LAZY_ORCHESTRATOR truthy in the env → NEVER refuse (the main-thread
+#      orchestrator asserts its identity). This makes the orchestrator
+#      STRUCTURALLY IMMUNE to a stale/lingering cycle marker — the
+#      Proven-Finding-#3 self-deny defect cannot recur even if a prior dispatch
+#      crashed without --cycle-end.
+#   2. LAZY_CYCLE_SUBAGENT truthy in the env → REFUSE. This is the explicit
+#      subagent-context signal a dispatch may set; it does not depend on the
+#      marker being armed.
+#   3. Otherwise fall back to the cycle MARKER as the carrier: marker present →
+#      REFUSE (the legacy backstop, retained per D4's final clause). A subagent
+#      running mid-dispatch sees the orchestrator's marker; the orchestrator's
+#      correct flow (set marker → dispatch → clear marker → THEN run these ops)
+#      means the marker is cleared when the orchestrator reaches them.
+#
+# Why the env var matters (D4): a Python subprocess (lazy-state.py called from a
+# subagent's Bash) CANNOT read the PreToolUse `agent_id` field — that is
+# hook-input-only and does not propagate to subprocess env. So C3's reachable
+# subagent signal is the env var (preferred) + the marker (fallback carrier),
+# NOT agent_id. The C2 hook uses agent_id directly (it runs in the hook
+# pipeline where the field IS present); C3 is the script-side backstop using the
+# reachable signals. The deny SCOPE (which ops) stays in lockstep across both.
 #
 # CYCLE_REFUSED_OPS MUST stay in lockstep with the C2 hook's loop-formation /
-# lifecycle deny-set (Phase 4) — they are intentionally redundant
-# defense-in-depth. A divergence is a coverage hole. The allow-listed ops a
-# legitimately-dispatched subagent needs (`--neutralize-sentinel`,
-# `--verify-ledger`) and all read/probe ops are deliberately NOT in this set.
+# lifecycle / recursive-dispatch deny-set (the agent_id trip in
+# lazy-cycle-containment.sh: recursive Agent/Task, nested /lazy-batch, the
+# LOOP_FORMATION_FLAGS routing flags, and dev:kill/dev:restart) — they are
+# intentionally redundant defense-in-depth. A divergence is a coverage hole. The
+# allow-listed ops a legitimately-dispatched subagent needs
+# (`--neutralize-sentinel`, `--verify-ledger`) and all read/probe ops are
+# deliberately NOT in this set.
 # ---------------------------------------------------------------------------
 
 CYCLE_REFUSED_OPS: frozenset[str] = frozenset({
@@ -5172,27 +5195,52 @@ CYCLE_REFUSED_OPS: frozenset[str] = frozenset({
 })
 
 
+def _env_truthy(name: str) -> bool:
+    """Return True when env var *name* is set to a non-empty, non-falsey value.
+
+    Treats "", "0", "false", "no", "off" (case-insensitive) as false so a
+    deliberately-cleared var doesn't read as set.
+    """
+    val = os.environ.get(name)
+    if val is None:
+        return False
+    return val.strip().lower() not in ("", "0", "false", "no", "off")
+
+
 def refuse_if_cycle_active(op_name: str) -> None:
-    """Refuse an orchestrator-only op if the cycle marker is present.
+    """Refuse an orchestrator-only op when the caller is a cycle subagent (D4).
 
     Invoked at the ENTRY of each guarded CLI handler (`--run-end`, `--run-start`,
     `--apply-pseudo`, `--enqueue-adhoc`, `--emit-dispatch`) in lazy-state.py and
     bug-state.py, BEFORE any side effect (marker write/delete, queue mutation,
     prompt emission) so a refused op leaves state untouched.
 
-    When `read_cycle_marker()` is not None: print a corrective message to stderr
-    and exit non-zero with ZERO side effects. When the marker is absent: return
-    silently (the orchestrator's normal flow runs these ops between cycles, with
-    the marker cleared, so the guard is a no-op there).
+    Subagent-vs-main-thread is decided in priority order (see the module comment
+    above CYCLE_REFUSED_OPS):
+      1. LAZY_ORCHESTRATOR truthy → return silently (never refuse the orchestrator,
+         even with a stale marker present — structural immunity to the self-deny
+         defect).
+      2. LAZY_CYCLE_SUBAGENT truthy → refuse (explicit subagent signal).
+      3. else cycle marker present → refuse (legacy backstop carrier).
+    A refusal prints a corrective message to stderr and exits 3 with ZERO side
+    effects.
 
     Args:
         op_name: the CLI flag being guarded (e.g. "--run-end"). Echoed in the
                  corrective message so the subagent sees exactly what it tried.
     """
-    marker = read_cycle_marker()
-    if marker is None:
+    # 1. The main-thread orchestrator asserts its identity → never self-refuse,
+    #    even if a stale marker lingers from a crashed prior dispatch.
+    if _env_truthy("LAZY_ORCHESTRATOR"):
         return
-    feature_id = marker.get("feature_id", "<unknown>")
+
+    # 2/3. Explicit subagent signal, else the marker as the fallback carrier.
+    explicit_subagent = _env_truthy("LAZY_CYCLE_SUBAGENT")
+    marker = read_cycle_marker()
+    if not explicit_subagent and marker is None:
+        return
+
+    feature_id = (marker or {}).get("feature_id", "<unknown>")
     sys.stderr.write(
         f"REFUSED: `{op_name}` is an orchestrator-only operation and you are a "
         f"single cycle subagent (the lazy-cycle-active marker is present for "
