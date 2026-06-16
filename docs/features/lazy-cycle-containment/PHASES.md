@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 <!-- All 9 phases implemented across plan parts 1–5 (2026-06-15); validation pending.
      NOT Complete — the __mark_complete__ integrity gate owns the Complete flip +
      COMPLETED.md receipt after the validation tail (/mcp-test → coverage audit). -->

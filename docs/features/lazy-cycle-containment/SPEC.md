@@ -2,7 +2,7 @@
 
 > Make "one dispatch = one cycle" a mechanical, in-flight boundary — not a prose contract enforced only after the fact — so a dispatched cycle subagent cannot run off and execute an entire batch itself.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P0
 **Last updated:** 2026-06-16
 
