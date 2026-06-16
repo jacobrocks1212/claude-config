@@ -60,3 +60,12 @@ with a SPEC-locked surface, so it is surfaced here rather than baked in silently
   that honors the SPEC's already-locked encoding table (which deliberately defines
   Pending/Queue as a first-class redundant-encoded state) and gives the operator an honest
   backlog-depth signal, at the cost of one preset column and one rollup row.
+
+## Resolution
+
+*Recorded on 2026-06-15 23:58:00 UTC.*
+
+### 1. Where does a queued-but-unstarted item render on the graph?
+
+**Choice:** Add a dedicated `Pending/Queue` entry node
+**Notes:** Operator selected the recommended option. Add a gray/hollow Pending/Queue entry node at the head of each track (left of Spec); queued-but-unstarted tokens (unknown/`None`/queued-not-started literals) render there and animate into Spec when `/spec` starts. Add the corresponding Pending/Queue row to the Curated-node rollup table in SPEC.md, and update plan part 1's `curated_stage` deliverable so unknown/`None` step maps to the new `Pending` node rather than `Spec`.
