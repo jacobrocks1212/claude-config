@@ -32,7 +32,7 @@ phases: [1, 2]
 
 - [x] WU-1 — Export `LAZY_ORCHESTRATOR=1` from the three orchestrators (Phase 1)
 - [x] WU-2 — Env-var immunity/refusal unit tests + lazy_core cross-ref comment (Phase 1)
-- [ ] WU-3 — `refuse_cycle_marker_mutation_if_subagent` guard helper + unit tests (Phase 2)
+- [x] WU-3 — `refuse_cycle_marker_mutation_if_subagent` guard helper + unit tests (Phase 2)
 - [ ] WU-4 — Wire the marker-mutation guard into `--cycle-end`/`--cycle-begin` in both state machines + `--test` fixtures (Phase 2)
 - [ ] WU-5 — Add `--cycle-end`/`--cycle-begin` to C2 hook `LOOP_FORMATION_FLAGS` + hook test (Phase 2)
 

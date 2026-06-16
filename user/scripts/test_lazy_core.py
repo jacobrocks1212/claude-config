@@ -16114,6 +16114,190 @@ def test_env_truthy_helper():
 
 
 # ---------------------------------------------------------------------------
+# cycle-subagent-runs-orchestrator-work Phase 2 (KEYSTONE) —
+# refuse_cycle_marker_mutation_if_subagent
+#
+# --cycle-end / --cycle-begin are the ops the orchestrator runs WHILE its own
+# cycle marker is present (begin arms it, end clears it). So the plain
+# refuse_if_cycle_active marker-fallback (refuse anyone-with-a-marker) cannot be
+# reused — it would refuse the orchestrator's own bracket. This dedicated guard
+# keys on the POSITIVE signal:
+#   1. LAZY_ORCHESTRATOR truthy → return silently (orchestrator clears/arms under
+#      its own live marker — legitimate).
+#   2. else LAZY_CYCLE_SUBAGENT truthy → refuse (explicit subagent).
+#   3. else cycle marker present (without orchestrator env) → refuse (the
+#      reachable subagent-context signal — a subagent mid-dispatch sees the
+#      orchestrator's marker but has no LAZY_ORCHESTRATOR export).
+#   4. else (no marker, no subagent env) → return silently (genuinely-uncontained
+#      main thread with no marker).
+# A refusal exits 3 with ZERO side effects (the marker is NOT mutated).
+# ---------------------------------------------------------------------------
+
+_MARKER_MUTATION_OPS = ["--cycle-end", "--cycle-begin"]
+
+
+def _capture_marker_mutation_refusal(op):
+    """Invoke refuse_cycle_marker_mutation_if_subagent, capturing (code, stderr)."""
+    import io as _io
+    buf = _io.StringIO()
+    real_stderr = sys.stderr
+    sys.stderr = buf
+    code = None
+    try:
+        lazy_core.refuse_cycle_marker_mutation_if_subagent(op)
+    except SystemExit as exc:
+        code = exc.code if exc.code is not None else 0
+    finally:
+        sys.stderr = real_stderr
+    return code, buf.getvalue()
+
+
+def test_marker_mutation_guard_symbol_present():
+    """refuse_cycle_marker_mutation_if_subagent exists on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "refuse_cycle_marker_mutation_if_subagent"), (
+        "Phase 2 missing refuse_cycle_marker_mutation_if_subagent"
+    )
+
+
+def test_marker_mutation_guard_orchestrator_allowed_with_marker():
+    """LAZY_ORCHESTRATOR truthy → NEVER refuse, even with the marker present (the
+    orchestrator legitimately clears/arms its own bracket)."""
+    _guard()
+    _clear_cycle_env()
+    for op in _MARKER_MUTATION_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            os.environ["LAZY_ORCHESTRATOR"] = "1"
+            try:
+                lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+                # Must NOT raise / exit.
+                lazy_core.refuse_cycle_marker_mutation_if_subagent(op)
+            finally:
+                _clear_cycle_env()
+                _clear_state_dir()
+
+
+def test_marker_mutation_guard_refuses_explicit_subagent_no_marker():
+    """LAZY_CYCLE_SUBAGENT truthy → refuse for every mutation op even with NO
+    marker armed."""
+    _guard()
+    _clear_cycle_env()
+    for op in _MARKER_MUTATION_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            os.environ["LAZY_CYCLE_SUBAGENT"] = "1"
+            try:
+                code, msg = _capture_marker_mutation_refusal(op)
+                assert code == 3, f"{op} must exit 3 for explicit subagent; got {code}"
+                assert op in msg, f"{op} corrective message must name the op: {msg!r}"
+            finally:
+                _clear_cycle_env()
+                _clear_state_dir()
+
+
+def test_marker_mutation_guard_refuses_marker_present_without_orchestrator_env():
+    """The reachable subagent signal: a cycle marker present + NO LAZY_ORCHESTRATOR
+    → refuse (a subagent mid-dispatch sees the orchestrator's marker but never
+    inherits the orchestrator export)."""
+    _guard()
+    _clear_cycle_env()
+    for op in _MARKER_MUTATION_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+                code, msg = _capture_marker_mutation_refusal(op)
+                assert code == 3, f"{op} must exit 3 (marker present, no orch env)"
+                assert op in msg, f"{op} corrective message must name the op"
+            finally:
+                _clear_state_dir()
+
+
+def test_marker_mutation_guard_noop_no_marker_no_subagent_env():
+    """No marker AND no subagent env signal → return silently (the genuinely
+    uncontained main-thread case with no marker armed yet)."""
+    _guard()
+    _clear_cycle_env()
+    for op in _MARKER_MUTATION_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                # No marker, no env signals.
+                lazy_core.refuse_cycle_marker_mutation_if_subagent(op)  # must NOT raise
+            finally:
+                _clear_state_dir()
+
+
+def test_marker_mutation_guard_falsey_orchestrator_does_not_grant_immunity():
+    """A falsey LAZY_ORCHESTRATOR must NOT grant immunity — the marker backstop
+    still refuses a subagent."""
+    _guard()
+    _clear_cycle_env()
+    for falsey in ("0", "false", "", "off", "no"):
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            os.environ["LAZY_ORCHESTRATOR"] = falsey
+            try:
+                lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+                code, _ = _capture_marker_mutation_refusal("--cycle-end")
+                assert code == 3, (
+                    f"falsey LAZY_ORCHESTRATOR={falsey!r} must NOT grant immunity"
+                )
+            finally:
+                _clear_cycle_env()
+                _clear_state_dir()
+
+
+def test_marker_mutation_guard_zero_side_effects_on_refusal():
+    """A refused mutation leaves the marker file ON DISK, byte-identical (the
+    guard runs BEFORE any clear/overwrite)."""
+    _guard()
+    _clear_cycle_env()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        marker_path = Path(td) / _CYCLE_MARKER_FILENAME
+        try:
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            before = marker_path.read_text(encoding="utf-8")
+            code, _ = _capture_marker_mutation_refusal("--cycle-end")
+            assert code == 3, "guard must refuse"
+            assert marker_path.exists(), "refused --cycle-end must NOT delete the marker"
+            after = marker_path.read_text(encoding="utf-8")
+            assert before == after, "refused op must not mutate the marker"
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_mutation_guard_orchestrator_overrides_explicit_subagent():
+    """LAZY_ORCHESTRATOR takes priority over LAZY_CYCLE_SUBAGENT (the orchestrator
+    assertion wins)."""
+    _guard()
+    _clear_cycle_env()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        os.environ["LAZY_ORCHESTRATOR"] = "1"
+        os.environ["LAZY_CYCLE_SUBAGENT"] = "1"
+        try:
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            lazy_core.refuse_cycle_marker_mutation_if_subagent("--cycle-begin")  # no raise
+        finally:
+            _clear_cycle_env()
+            _clear_state_dir()
+
+
+def test_marker_mutation_ops_not_in_cycle_refused_ops():
+    """--cycle-end / --cycle-begin are guarded by the dedicated marker-mutation
+    helper, NOT added to CYCLE_REFUSED_OPS (whose members use the plain
+    marker-fallback that --cycle-end cannot use). Lockstep documentation check."""
+    _guard()
+    for op in _MARKER_MUTATION_OPS:
+        assert op not in lazy_core.CYCLE_REFUSED_OPS, (
+            f"{op} must NOT be in CYCLE_REFUSED_OPS — it uses the dedicated guard"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Follow-up: structural MCP-skip short-circuit (no-app-surface repos)
 #   repo_has_no_app_surface / phases_mcp_runtime_not_required helpers,
 #   skip_waiver_refusal(granted_by: pipeline-structural) re-verification, and

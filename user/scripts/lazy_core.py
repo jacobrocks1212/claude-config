@@ -5710,6 +5710,17 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
 # allow-listed ops a legitimately-dispatched subagent needs
 # (`--neutralize-sentinel`, `--verify-ledger`) and all read/probe ops are
 # deliberately NOT in this set.
+#
+# NOTE (cycle-subagent-runs-orchestrator-work Phase 2, KEYSTONE): `--cycle-end`
+# and `--cycle-begin` are deliberately NOT added to CYCLE_REFUSED_OPS. Members of
+# this set use the plain marker-fallback (refuse anyone-with-a-marker), which the
+# orchestrator's own --cycle-end/--cycle-begin cannot tolerate — those run WHILE
+# the orchestrator's marker is present. They are instead guarded by the dedicated
+# `refuse_cycle_marker_mutation_if_subagent`, which keys on the POSITIVE
+# LAZY_ORCHESTRATOR signal (orchestrator allowed under a live marker; subagent
+# refused). The C2/C3 deny SCOPE still matches: the C2 hook adds --cycle-end /
+# --cycle-begin to LOOP_FORMATION_FLAGS (agent_id trip), so a subagent cannot
+# clear/arm the marker at EITHER layer. Keep the two in lockstep.
 # ---------------------------------------------------------------------------
 
 CYCLE_REFUSED_OPS: frozenset[str] = frozenset({
@@ -5781,6 +5792,67 @@ def refuse_if_cycle_active(op_name: str) -> None:
         f"routing the next cycle, lifecycle teardown ({op_name}), enqueuing, and "
         f"completion are the orchestrator's job. This op was refused with zero "
         f"side effects.\n"
+    )
+    sys.exit(3)
+
+
+def refuse_cycle_marker_mutation_if_subagent(op_name: str) -> None:
+    """Refuse a cycle-MARKER MUTATION op (``--cycle-end`` / ``--cycle-begin``) for
+    a subagent caller (cycle-subagent-runs-orchestrator-work Phase 2, KEYSTONE).
+
+    Invoked at the ENTRY of the ``--cycle-end`` / ``--cycle-begin`` handlers in
+    lazy-state.py and bug-state.py, BEFORE ``cycle_end_friction_check`` /
+    ``clear_cycle_marker`` / ``write_cycle_marker`` — so a refused op leaves the
+    marker file untouched (zero side effects).
+
+    WHY THIS IS A SEPARATE GUARD (not ``refuse_if_cycle_active`` / not in
+    ``CYCLE_REFUSED_OPS``): the ops in ``CYCLE_REFUSED_OPS`` use the plain
+    marker-fallback (refuse anyone-with-a-marker), which is correct for them
+    because the orchestrator's correct flow has the marker CLEARED when it runs
+    them. But ``--cycle-end`` / ``--cycle-begin`` are exactly the ops the
+    orchestrator runs WHILE its own marker is present (begin arms it, end clears
+    it). Reusing the plain marker-fallback would refuse the orchestrator's own
+    legitimate bracket and wedge the pipeline. So this guard keys on the POSITIVE
+    ``LAZY_ORCHESTRATOR`` signal instead — that is why Phase 1 (the export) is a
+    HARD prerequisite. The deny SCOPE still matches the C2 hook (a subagent cannot
+    clear/arm the marker).
+
+    Decided in priority order:
+      1. LAZY_ORCHESTRATOR truthy → return silently (the orchestrator owns the
+         bracket; allowed to clear/arm under its own live marker).
+      2. else LAZY_CYCLE_SUBAGENT truthy → refuse (explicit subagent signal).
+      3. else cycle marker present (no orchestrator env) → refuse (the reachable
+         subagent-context signal: a subagent mid-dispatch sees the orchestrator's
+         marker but never inherits the LAZY_ORCHESTRATOR export).
+      4. else (no marker, no subagent env) → return silently (the genuinely
+         uncontained main-thread case with no marker armed yet — e.g. the very
+         first ``--cycle-begin`` of a run before any marker exists).
+    A refusal prints a corrective message to stderr and exits 3 with ZERO side
+    effects (the marker is NOT mutated).
+
+    Args:
+        op_name: the CLI flag being guarded ("--cycle-end" | "--cycle-begin").
+    """
+    # 1. The orchestrator asserts its identity → never refuse its own bracket.
+    if _env_truthy("LAZY_ORCHESTRATOR"):
+        return
+
+    # 2/3. Explicit subagent signal, else marker-present-without-orchestrator-env.
+    explicit_subagent = _env_truthy("LAZY_CYCLE_SUBAGENT")
+    marker = read_cycle_marker()
+    if not explicit_subagent and marker is None:
+        # 4. No subagent env AND no marker → genuinely uncontained main thread.
+        return
+
+    feature_id = (marker or {}).get("feature_id", "<unknown>")
+    sys.stderr.write(
+        f"REFUSED: `{op_name}` mutates the cycle-containment marker and is an "
+        f"orchestrator-only operation — you are a single cycle subagent (the "
+        f"lazy-cycle-active marker is present for feature '{feature_id}'). A "
+        f"subagent must NOT clear or re-arm the containment marker: clearing it "
+        f"un-arms every downstream guard at once. STOP after your commit + push "
+        f"+ report — the cycle bracket ({op_name}) is the orchestrator's job. "
+        f"This op was refused with zero side effects (the marker is untouched).\n"
     )
     sys.exit(3)
 
