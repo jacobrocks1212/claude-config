@@ -600,10 +600,12 @@ The loop-guard evaluation itself is silent — never announce "no loop-guard fir
 # IMMEDIATELY before the Agent dispatch.
 #   - real-skill cycle:  --kind real --sub-skill {probe.sub_skill}   (e.g. execute-plan)
 #   - any meta-dispatch: --kind meta --sub-skill {probe.sub_skill}   (e.g. __mark_complete__)
-python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind {real|meta} --sub-skill {sub_skill}
+# --sub-skill-args is the probe's sub_skill_args VERBATIM (the plan-part path on
+# execute-plan cycles) — MANDATORY whenever the probe returns a non-null sub_skill_args.
+python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind {real|meta} --sub-skill {sub_skill} --sub-skill-args {sub_skill_args}
 ```
 
-`--cycle-begin` writes `~/.claude/state/lazy-cycle-active.json` (self-healing: a stale marker from a crashed prior dispatch is overwritten + logged — the orchestrator is single-threaded, only one dispatch is ever in flight). `{dispatch_nonce}` is the dispatch's nonce (reuse the probe's `cycle_prompt_ref`/registry nonce when present, else any fresh hex). Pass `--feature-id` matching the feature this dispatch is for — the hook's 2nd-feature commit tripwire keys on it. **`--sub-skill` is MANDATORY on EVERY bracket — real AND meta** (`--kind meta` is NOT a licence to omit it): bind it to the probe's `sub_skill` VERBATIM, including a pseudo-skill name like `__mark_complete__`/`__mark_fixed__` when the meta cycle is a Gate-1 corrective-coverage / completion-gate dispatch. Omitting `--sub-skill` records `sub_skill=None` in the marker, which makes `--cycle-end`'s process-friction detector fall back to the conservative default (budget 1) and **false-positive `unexpected-commits`** on a legitimate multi-commit cycle — both the real-cycle case (`execute-plan`'s test+impl commits, budget 3) AND the meta case (a `__mark_complete__` completion cycle whose `--apply-pseudo` receipt+flip and corrective-coverage commits exceed 1, budget 3; the 2026-06-16 recurrence). `--cycle-begin` is NOT C3-guarded (the orchestrator owns the bracket); it is callable between cycles.
+`--cycle-begin` writes `~/.claude/state/lazy-cycle-active.json` (self-healing: a stale marker from a crashed prior dispatch is overwritten + logged — the orchestrator is single-threaded, only one dispatch is ever in flight). `{dispatch_nonce}` is the dispatch's nonce (reuse the probe's `cycle_prompt_ref`/registry nonce when present, else any fresh hex). Pass `--feature-id` matching the feature this dispatch is for — the hook's 2nd-feature commit tripwire keys on it. **`--sub-skill` is MANDATORY on EVERY bracket — real AND meta** (`--kind meta` is NOT a licence to omit it): bind it to the probe's `sub_skill` VERBATIM, including a pseudo-skill name like `__mark_complete__`/`__mark_fixed__` when the meta cycle is a Gate-1 corrective-coverage / completion-gate dispatch. Omitting `--sub-skill` records `sub_skill=None` in the marker, which makes `--cycle-end`'s process-friction detector fall back to the conservative default (budget 1) and **false-positive `unexpected-commits`** on a legitimate multi-commit cycle — both the real-cycle case (`execute-plan`'s test+impl commits, budget 3) AND the meta case (a `__mark_complete__` completion cycle whose `--apply-pseudo` receipt+flip and corrective-coverage commits exceed 1, budget 3; the 2026-06-16 recurrence). **`--sub-skill-args {sub_skill_args}` is EQUALLY MANDATORY on a real `execute-plan` cycle (and any cycle whose probe returns a non-null `sub_skill_args`) — bind it to the probe's `sub_skill_args` VERBATIM (the absolute plan-part path).** The `--cycle-end` detector scales the `execute-plan` budget by the plan part's declared WORK-UNIT count (`max(phase_count, wu_count) + slack`, via `_execute_plan_commit_budget`), but it can only read the plan when the marker carries `sub_skill_args` — omitting it makes the override return `None`, the detector falls back to the FIXED table budget of 3, and a legitimate WU-dense plan part (>3 work units) **false-positives `unexpected-commits`** even though `--sub-skill execute-plan` was supplied correctly (the 2026-06-16 `adhoc-mcp-runner-payload-interpolation` recurrence: 4 commits vs `budget=3`). Pass BOTH flags together on every bracket. `--cycle-begin` is NOT C3-guarded (the orchestrator owns the bracket); it is callable between cycles.
 
 ```bash
 # IMMEDIATELY after the Agent returns — on EVERY return path (success, halt-with-sentinel, error):
@@ -615,8 +617,8 @@ python3 ~/.claude/scripts/lazy-state.py --cycle-end
 Dispatch:
 
 ```
-# 1. Set the cycle marker (C1):
-python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind real --sub-skill {sub_skill}
+# 1. Set the cycle marker (C1) — --sub-skill AND --sub-skill-args both bound from the probe:
+python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind real --sub-skill {sub_skill} --sub-skill-args {sub_skill_args}
 
 # 2. Dispatch:
 Agent({
