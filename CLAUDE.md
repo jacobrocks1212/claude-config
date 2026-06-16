@@ -156,6 +156,7 @@ When adding to a coupled pair, also update each file's State Machine Summary / o
 | `validate-plan.py` | Validates PHASES.md plan structure |
 | `gemini-research.py` | Google Gemini deep research tool |
 | `analyze_har.py` | HTTP Archive file analysis |
+| `pipeline_visualizer/` | Local web control-plane for the lazy feature/bug pipelines: `python -m pipeline_visualizer --repo-root <repo>` serves a graph/queues/fleet dashboard (`/api/state`, `/api/queue`) by shelling `lazy-state.py`/`bug-state.py` (stdlib-only renderer, never re-infers state) |
 | `fix-line-endings.ps1` | CRLF/LF normalization (PostToolUse hook) |
 | `run-eslint.ps1` | Auto-lint TypeScript/Vue on save (PostToolUse hook) |
 

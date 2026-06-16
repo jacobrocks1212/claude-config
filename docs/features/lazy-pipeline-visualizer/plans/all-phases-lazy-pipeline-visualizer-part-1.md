@@ -89,9 +89,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — curated_stage rollup + leases freshness (pure functions, TDD)
-- [ ] WU-2 — probe (shell state scripts + read queue/leases/roadmap) + TTL cache (TDD)
-- [ ] WU-3 — ThreadingHTTPServer + API routing + CLI entry (TDD)
+- [x] WU-1 — curated_stage rollup + leases freshness (pure functions, TDD)
+- [x] WU-2 — probe (shell state scripts + read queue/leases/roadmap) + TTL cache (TDD)
+- [x] WU-3 — ThreadingHTTPServer + API routing + CLI entry (TDD)
 
 ---
 
