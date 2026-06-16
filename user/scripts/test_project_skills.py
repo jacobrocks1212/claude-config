@@ -599,3 +599,68 @@ def test_cycle_prompt_within_size_budget():
             f"{label}: assembled cycle prompt is {len(prompt)} chars, "
             f"over the {_CYCLE_PROMPT_SIZE_CEILING} ceiling"
         )
+
+
+# ---------------------------------------------------------------------------
+# Recovery grep-and-cite gate (lazy-cycle-containment Phase 7, C5)
+# ---------------------------------------------------------------------------
+#
+# SPEC §C5 + Validation row "dispatch-recovery prose carries the grep-and-cite
+# gate": the recovery subagent MUST grep for VALIDATED.md / MCP_TEST_RESULTS.md
+# covering a Runtime-Verification row before ticking it; on a miss it leaves the
+# box unticked and reports the absence. The gate must be present BOTH on disk in
+# dispatch-recovery.md AND in the assembled recovery prompt the orchestrator
+# dispatches (emit_dispatch_prompt re-reads the component from disk at emit time,
+# so a single component edit satisfies both — these tests prove that end-to-end).
+
+# The component file under test.
+_DISPATCH_RECOVERY_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "skills" / "_components" / "lazy-batch-prompts" / "dispatch-recovery.md"
+)
+
+# Stable substrings that prove the grep-and-cite gate is on disk.
+_RECOVERY_GATE_MARKERS = ("grep", "VALIDATED.md", "MCP_TEST_RESULTS.md", "cite")
+
+
+def _emit_recovery_prompt(lazy_core, *, pipeline: str, cloud: bool) -> str:
+    """Assemble a real recovery dispatch prompt for one variant; return its text."""
+    repo_root = Path(__file__).resolve().parents[2]
+    context = {
+        "item_id": "demo-feature",
+        "item_name": "Demo Feature",
+        "spec_path": str(repo_root / "docs" / "features" / "demo-feature"),
+        "failure_summary": "deliverables_done failing for plans/part-1.md",
+        "cwd": str(repo_root),
+    }
+    result = lazy_core.emit_dispatch_prompt(
+        "recovery", context, pipeline=pipeline, cloud=cloud
+    )
+    assert result.get("ok") is True, (
+        f"{pipeline}/{cloud}: recovery emit refused: {result.get('refused')}"
+    )
+    return result["prompt"]
+
+
+def test_dispatch_recovery_component_carries_grep_and_cite_gate():
+    """dispatch-recovery.md must contain the grep-and-cite gate on disk (§C5)."""
+    text = _DISPATCH_RECOVERY_PATH.read_text(encoding="utf-8")
+    for marker in _RECOVERY_GATE_MARKERS:
+        assert marker in text, (
+            f"dispatch-recovery.md missing grep-and-cite gate marker {marker!r}"
+        )
+
+
+def test_recovery_emit_carries_grep_and_cite_gate_every_variant():
+    """The ASSEMBLED recovery prompt must carry the grep-and-cite gate in every
+    feature/bug × workstation/cloud variant (emit re-reads the component)."""
+    lazy_core = _load_lazy_core()
+    for pipeline in ("feature", "bug"):
+        for cloud in (False, True):
+            prompt = _emit_recovery_prompt(lazy_core, pipeline=pipeline, cloud=cloud)
+            label = f"{pipeline}/{'cloud' if cloud else 'workstation'}"
+            for marker in _RECOVERY_GATE_MARKERS:
+                assert marker in prompt, (
+                    f"{label}: assembled recovery prompt missing grep-and-cite "
+                    f"gate marker {marker!r}"
+                )

@@ -96,7 +96,7 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — recovery grep-and-cite gate in dispatch-recovery.md + recovery emit + docs-consistency test (Phase 7)
+- [x] WU-1 — recovery grep-and-cite gate in dispatch-recovery.md + recovery emit + docs-consistency test (Phase 7)
 - [ ] WU-2 — R-O-9 rule (§4a) + force-cap (§5c) in lazy-batch-retro/SKILL.md (Phase 8)
 - [ ] WU-3 — R-O-9 fixture self-test: multi-feature single dispatch → fail + force-cap (Phase 8)
 - [ ] WU-4 — R-V-1 reinforcement in orchestrator-voice.md + plan-feature Decision-Classification Ledger requirement (Phase 9)

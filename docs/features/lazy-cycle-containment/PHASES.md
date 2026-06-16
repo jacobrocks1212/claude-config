@@ -296,9 +296,9 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** Make the recovery subagent's "tick ONLY with on-disk evidence" prose self-enforcing in `user/skills/_components/lazy-batch-prompts/dispatch-recovery.md` (and the recovery emit): the recovery subagent MUST `grep` for `VALIDATED.md` / `MCP_TEST_RESULTS.md` covering a Runtime-Verification row before ticking it; if absent, leave the box unticked and report it. Closes the cycle-3 over-tick observed in the AlgoBooth run.
 
 **Deliverables:**
-- [ ] `dispatch-recovery.md`: require a grep-and-cite before ticking any Runtime-Verification row — the recovery subagent greps for `VALIDATED.md` / `MCP_TEST_RESULTS.md` (or the equivalent on-disk evidence) covering the row; ticks ONLY on a hit; otherwise leaves it unticked and reports the absence.
-- [ ] Reflect the grep-and-cite requirement in the recovery emit prose (wherever the recovery prompt is composed) so the dispatched recovery subagent receives it.
-- [ ] Tests: docs-consistency grep that `dispatch-recovery.md` contains the grep-and-cite gate (the prose self-enforcement is on disk).
+- [x] `dispatch-recovery.md`: require a grep-and-cite before ticking any Runtime-Verification row — the recovery subagent greps for `VALIDATED.md` / `MCP_TEST_RESULTS.md` (or the equivalent on-disk evidence) covering the row; ticks ONLY on a hit; otherwise leaves it unticked and reports the absence.
+- [x] Reflect the grep-and-cite requirement in the recovery emit prose (wherever the recovery prompt is composed) so the dispatched recovery subagent receives it.
+- [x] Tests: docs-consistency grep that `dispatch-recovery.md` contains the grep-and-cite gate (the prose self-enforcement is on disk).
 
 **Minimum Verifiable Behavior:** a grep of `dispatch-recovery.md` finds the grep-and-cite gate text (recovery subagent must cite on-disk evidence before ticking) — verifiable statically.
 
@@ -317,6 +317,11 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 
 **Integration Notes for Next Phase:**
 - `dispatch-recovery.md` is a prompt component re-read at emit time (auto-refreshing) — NOT in Phase 1's reload set.
+
+**Implementation Notes (2026-06-15 — Phase 7 implemented, validation pending):**
+- `dispatch-recovery.md`: rewrote step 2(b) into an explicit **GREP-AND-CITE GATE** — before ticking ANY verification box (Runtime-Verification subsection rows or PHASES.md RV rows) the recovery subagent MUST `grep` the spec path for `VALIDATED.md` / `MCP_TEST_RESULTS.md` covering the specific row, tick ONLY on a cited hit, and on a miss leave the box UNticked + report the absence. Added the citation/absence requirement to the return-format `@section` so the dispatched subagent surfaces the evidence (or its absence) in its summary.
+- Reflected automatically in the recovery emit: `emit_dispatch_prompt("recovery", …)` re-reads `dispatch-recovery.md` from disk at emit time (no caching), so the single component edit propagates to every dispatched recovery prompt — no `lazy_core.py` change needed (the component IS the emit source).
+- Tests (WU-1, test-first): added 2 `test_project_skills.py` cases — `test_dispatch_recovery_component_carries_grep_and_cite_gate` (gate markers on disk) and `test_recovery_emit_carries_grep_and_cite_gate_every_variant` (the ASSEMBLED recovery prompt carries the gate in all feature/bug × workstation/cloud variants, driving the real `emit_dispatch_prompt`). Wrote them FIRST (red: 2/2 failed — `grep`/`cite` markers absent), then implemented to green.
 
 ---
 
