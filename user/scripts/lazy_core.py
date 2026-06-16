@@ -5757,6 +5757,13 @@ def refuse_if_cycle_active(op_name: str) -> None:
     """
     # 1. The main-thread orchestrator asserts its identity → never self-refuse,
     #    even if a stale marker lingers from a crashed prior dispatch.
+    #    cycle-subagent-runs-orchestrator-work Phase 1 (2026-06-16): this branch
+    #    was READ-but-never-SET until the three orchestrators (lazy-batch,
+    #    lazy-bug-batch, lazy-batch-cloud) began `export LAZY_ORCHESTRATOR=1` at
+    #    their Step 0.55 run-start. Until then containment degraded to the
+    #    deletable marker (the absence of any positive orchestrator signal). The
+    #    export is now the load-bearing positive carrier; this guard's immunity
+    #    actually fires for the real orchestrator.
     if _env_truthy("LAZY_ORCHESTRATOR"):
         return
 

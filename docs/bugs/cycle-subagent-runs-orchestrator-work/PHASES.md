@@ -39,17 +39,23 @@ Defense-in-depth and occurrence-rate fixes follow (Skill-tool deny, prompt resha
 This phase exports the signal and proves the existing priority logic resolves correctly; it does NOT yet add `--cycle-end` to the refused set (Phase 2).
 
 **Deliverables:**
-- [ ] In `user/skills/lazy-batch/SKILL.md`, add an orchestrator-startup step (alongside the existing `--run-start` setup) that exports `LAZY_ORCHESTRATOR=1` for the session before any `lazy-state.py` lifecycle/routing call — e.g. `export LAZY_ORCHESTRATOR=1` emitted once at run start, documented as the C3 self-immunity signal.
-- [ ] Mirror the same export into the two twins: `user/skills/lazy-bug-batch/SKILL.md` and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (parity contract — the orchestrator-startup shape is shared).
-- [ ] Confirm `lazy_core.refuse_if_cycle_active` priority-1 (`LAZY_ORCHESTRATOR` truthy → return without refusing) needs no code change — it is already implemented (`lazy_core.py:5760-5761`). Add a code comment cross-referencing this bug if the wiring was previously dead (read-but-never-set).
-- [ ] Tests: a `lazy_core` unit test (in `user/scripts/test_lazy_core.py`) asserting `refuse_if_cycle_active("--run-end")` returns silently when `LAZY_ORCHESTRATOR=1` is set **even with a cycle marker present** (structural immunity to a stale marker), and exits 3 (subagent) when it is unset and a marker is present.
+- [x] In `user/skills/lazy-batch/SKILL.md`, add an orchestrator-startup step (alongside the existing `--run-start` setup) that exports `LAZY_ORCHESTRATOR=1` for the session before any `lazy-state.py` lifecycle/routing call — e.g. `export LAZY_ORCHESTRATOR=1` emitted once at run start, documented as the C3 self-immunity signal.
+- [x] Mirror the same export into the two twins: `user/skills/lazy-bug-batch/SKILL.md` and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (parity contract — the orchestrator-startup shape is shared).
+- [x] Confirm `lazy_core.refuse_if_cycle_active` priority-1 (`LAZY_ORCHESTRATOR` truthy → return without refusing) needs no code change — it is already implemented. Added a code comment cross-referencing this bug (the wiring was read-but-never-set until this phase).
+- [x] Tests: a `lazy_core` unit test (in `user/scripts/test_lazy_core.py`) asserting `refuse_if_cycle_active("--run-end")` returns silently when `LAZY_ORCHESTRATOR=1` is set **even with a cycle marker present** (structural immunity to a stale marker), and exits 3 (subagent) when it is unset and a marker is present. (Already present: `test_refuse_guard_orchestrator_env_never_refuses_even_with_marker` + `test_refuse_guard_marker_backstop_still_refuses_no_env` cover both arms.)
 
 **Minimum Verifiable Behavior:** `python -m pytest user/scripts/test_lazy_core.py -q -k cycle` passes the new immunity test: with `LAZY_ORCHESTRATOR=1` + a written cycle marker, `refuse_if_cycle_active` does NOT raise `SystemExit(3)`; with the var unset + marker present, it raises `SystemExit(3)`.
 
 **Runtime Verification** *(checked by the in-file / pytest harness):*
-- [ ] `python user/scripts/test_lazy_core.py` (or `pytest user/scripts/test_lazy_core.py -q`) green, including the new immunity/refusal assertions.
+- [x] `python user/scripts/test_lazy_core.py` (or `pytest user/scripts/test_lazy_core.py -q`) green, including the new immunity/refusal assertions.
 
 **Prerequisites:** None (first phase).
+
+**Implementation Notes (2026-06-16, inline cycle subagent — no Agent tool):**
+- All three orchestrators now `export LAZY_ORCHESTRATOR=1` at Step 0.55 immediately before `--run-start`, with a rationale comment naming this bug. The lazy-batch-cloud "Differences" table gained a row registering the export as **MIRRORED (shared)**, not a divergence.
+- `lazy_core.refuse_if_cycle_active` priority-1 needed no logic change; added a cross-ref comment marking the export as the now-load-bearing positive carrier (was read-but-never-set).
+- **Pre-existing test-isolation defect surfaced + fixed in-cycle (⚖ scope-class):** `lazy-state.py --test` failed under a LIVE cycle marker because the `materialize_wi` bug route shells `bug-state.py --enqueue-adhoc` as a subprocess that inherited the ambient marker → C3 refused (exit 3) → `check=True` raised. This is the orchestrator-side enqueue, so it now passes `env={**os.environ, "LAZY_ORCHESTRATOR": "1"}` to the child, making the call hermetic against an ambient marker. Both `--test` suites green again; baselines unaffected (the materialize output is identical to the no-marker path).
+- Verified end-to-end: with `LAZY_ORCHESTRATOR=1` set, the full `lazy-state.py --test` passes even with the live marker — proving the export grants real immunity through the priority-1 branch.
 
 **Files likely modified:**
 - `user/skills/lazy-batch/SKILL.md` — export `LAZY_ORCHESTRATOR=1` at orchestrator startup.

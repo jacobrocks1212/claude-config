@@ -428,7 +428,15 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
     else:  # bug route
         bugs_dir = repo_root / "docs" / "bugs"
         bugs_dir.mkdir(parents=True, exist_ok=True)
-        # Call bug-state.py --enqueue-adhoc via subprocess (idempotent skip-on-dup)
+        # Call bug-state.py --enqueue-adhoc via subprocess (idempotent skip-on-dup).
+        # cycle-subagent-runs-orchestrator-work Phase 1/2: materialize is an
+        # orchestrator-side enqueue, so assert LAZY_ORCHESTRATOR=1 in the child
+        # env. Without it, a --enqueue-adhoc subprocess inherits a live cycle
+        # marker from whatever context is running (e.g. lazy-state.py --test
+        # invoked from within a cycle subagent) and the C3 guard refuses (exit 3),
+        # failing this legitimate orchestrator op. This makes the call hermetic
+        # against an ambient marker.
+        _materialize_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
         subprocess.run(
             [
                 sys.executable,
@@ -440,6 +448,7 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
                 "--repo-root", str(repo_root),
             ],
             check=True,
+            env=_materialize_env,
         )
         item_dir = bugs_dir / slug
         item_dir.mkdir(parents=True, exist_ok=True)

@@ -204,6 +204,19 @@ After steps 1-4: if anything was actually reconciled (unpushed commits pushed, a
 **Runs once, immediately after Step 0.6 and BEFORE the Step 1 cycle loop.** This writes the run marker that activates the inject hook and validate-deny guard for the session. It is script-owned — the orchestrator does not manage the marker file directly; `--run-start` creates it and `--run-end` deletes it.
 
 ```bash
+# C3 self-immunity signal (cycle-subagent-runs-orchestrator-work, Phase 1): the
+# orchestrator asserts its identity by EXPORTING LAZY_ORCHESTRATOR=1 into the
+# session env it runs every lazy-state.py lifecycle/routing call from. This is
+# the positive, marker-independent carrier `refuse_if_cycle_active` /
+# `refuse_cycle_marker_mutation_if_subagent` key on (lazy_core.py priority 1) —
+# it makes the orchestrator STRUCTURALLY IMMUNE to a stale/live cycle marker (its
+# own --cycle-end clears the marker while the marker is still present), and the
+# ABSENCE of the var is what marks a cycle subagent (a subagent's Bash subprocess
+# never inherits this export). Carry it on EVERY lifecycle/routing call below
+# (--run-start/--run-end/--cycle-begin/--cycle-end/--apply-pseudo/--enqueue-adhoc/
+# --emit-dispatch); export once for the session so it persists.
+export LAZY_ORCHESTRATOR=1
+
 python3 ~/.claude/scripts/lazy-state.py \
   --cloud --run-start --unattended --max-cycles {max_cycles} \
   --repo-root {cwd}
@@ -871,6 +884,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Resume-reconciliation step (Step 0.6) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** A killed/interrupted workstation session keeps its local commits and dirty tree on persistent disk, and Step 0.4's ff-sync covers the remote-advanced case; there is no reclaim residue to reconcile. | new Step 0.6, mandatory every invocation and after any `SessionStart:resume`: (a) push unpushed commits; (b) read-only `lazy-state.py --cloud` probe; (c) detect "finished-but-not-finalized" (WUs committed/pushed but frontmatter still Ready/In-progress) and handle with a SHORT finalize dispatch instead of full re-execution; (d) reconcile a killed agent's dirty working tree (keep + finish correct partial work, never wholesale-discard). |
 | No waiting on dead notifications (HARD CONSTRAINT 10) | **CLOUD-SCOPED DIVERGENCE — not mirrored.** No container-reclaim boundary exists on workstation, so a background cycle agent's completion notification is never lost; the concept does not apply. | new HARD CONSTRAINT 10: after any `SessionStart:resume` the orchestrator MUST treat an in-flight background cycle agent as "unknown — reconcile from git + lazy-state" (Step 0.6), never "still running, awaiting notification." A completion notification cannot cross a reclaim boundary. This is the OPPOSITE of HARD CONSTRAINT 7 (forbids passively blocking on a dead signal), not a violation of it. |
 | Hook machinery (run marker, inject hook, validate-deny guard) | **MIRRORED** — `--run-start` writes the run marker at Step 0.55 (activates inject + validate-deny hooks); `--run-end` deletes it on every terminal/halt path; all non-cycle dispatches emitted via `--emit-dispatch <class>` and consumed verbatim. Counters persisted in marker; inject hook reads them without CLI flags. | **CLOUD-SCOPED DIVERGENCE (partial):** `--run-start` passes `--cloud` flag (workstation does not); the marker field `cloud=true` lets hooks select cloud-mode behavior. Everything else — `--run-end` at every terminal, LAZY-ROUTE banner check in Step 1a, `--emit-dispatch` for non-cycle dispatches, no `--forward-cycles`/`--meta-cycles` on probe — is **identical** in both. |
+| `export LAZY_ORCHESTRATOR=1` at Step 0.55 (C3 self-immunity signal — cycle-subagent-runs-orchestrator-work P1) | **MIRRORED (shared)** — both orchestrators export `LAZY_ORCHESTRATOR=1` for the session immediately before `--run-start`, so `refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent` (lazy_core priority 1) grant the orchestrator structural immunity to its own live cycle marker, and the var's ABSENCE marks a subagent. NOT a divergence. | same export, identical placement and rationale. |
 
 All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f, Step 1g, Step 1h, and Step 1i are also shared shape; both orchestrators reach them via the same state-script terminal reasons. The blocked / needs-input / completion-unverified / needs-spec-input / stale_upstream handling is now the SAME in both (docs-only resolution modes); the only legitimate cloud divergences are the Tauri/MCP deferral, `DEFERRED_NON_CLOUD.md` + `__write_deferred_non_cloud__`, the 3-gate `__mark_complete__`, `__flip_plan_complete_cloud_saturated__`, cloud reclaim recovery (Steps 0.4 / 0.6, guardrails B/C, HARD CONSTRAINT 10), and per-batch/per-WU immediate pushes.
 

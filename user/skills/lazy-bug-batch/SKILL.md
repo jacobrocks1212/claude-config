@@ -164,9 +164,22 @@ After the enqueue returns, continue to Step 0.55. The bug queue carries no pre-l
 
 ## Step 0.55: Write the run marker (IMMEDIATELY before the T1 banner / loop entry)
 
-After Step 0.45 (or Step 0.4 if `--adhoc` was absent) completes — and before printing the T1 banner or entering the Step 1 loop — write the run marker:
+After Step 0.45 (or Step 0.4 if `--adhoc` was absent) completes — and before printing the T1 banner or entering the Step 1 loop — assert the orchestrator identity signal, then write the run marker:
 
 ```bash
+# C3 self-immunity signal (cycle-subagent-runs-orchestrator-work, Phase 1): the
+# orchestrator asserts its identity by EXPORTING LAZY_ORCHESTRATOR=1 into the
+# session env it runs every bug-state.py lifecycle/routing call from. This is the
+# positive, marker-independent carrier `refuse_if_cycle_active` /
+# `refuse_cycle_marker_mutation_if_subagent` key on (lazy_core.py priority 1) —
+# it makes the orchestrator STRUCTURALLY IMMUNE to a stale/live cycle marker (its
+# own --cycle-end clears the marker while the marker is still present), and the
+# ABSENCE of the var is what marks a cycle subagent (a subagent's Bash subprocess
+# never inherits this export). Carry it on EVERY lifecycle/routing call below
+# (--run-start/--run-end/--cycle-begin/--cycle-end/--apply-pseudo/--enqueue-adhoc/
+# --emit-dispatch); export once for the session so it persists.
+export LAZY_ORCHESTRATOR=1
+
 python3 ~/.claude/scripts/bug-state.py \
   --run-start --max-cycles {max_cycles} \
   --repo-root {cwd}
