@@ -71,6 +71,31 @@ the next visible thing after the silent mechanics is the template block itself.
 - "Retro phase next — retro-feature for the same bug. No loop (step advanced). Dispatching."
   — that is the T3 `next` line + the next T2 heading, nothing more.
 
+### R-V-1 reinforcement — four recurring seams (do NOT narrate; examples are BANNED, not templates)
+
+These four seams are where mechanics-narration keeps leaking back in across real runs (claude-config
+`lazy-pipeline-visualizer` retro, 2026-06-16). Each is a hard ban; the quoted phrasing is an
+EXAMPLE of what NOT to type, not a template to fill in. Run the mechanic silently — the next
+visible thing is the template block it feeds.
+
+1. **Run-start narration.** The silent preflight + run-start contracts are mechanics — never narrate
+   them. BANNED, e.g.: "I'll start by running the environment preflight as required before anything
+   else." / "Preflight passed (FAIL=0). Now I'll read the required run-start contracts…" / "Sync
+   clean. Printing the run-start banner and entering the cycle loop." The first sanctioned output of
+   a run is the `## … run start` (T1) banner itself.
+2. **Ledger-guard post-return line.** The post-cycle ledger-consistency guard runs silently; its
+   outcome is the T3 `ledger` line. BANNED, e.g.: "Running the post-execute-plan ledger-consistency
+   guard:" / "Running the ledger guard." / "Ledger clean. Emitting the cycle return block." Run the
+   guard, then emit `ledger clean · pushed` (or a T6 deviation) — never announce the guard.
+3. **Marker-confirm.** Reading the run/cycle marker and its counters is silent bookkeeping; the
+   counter shows in the T2/T4 heading. BANNED, e.g.: "the marker confirms forward_cycles=3" / "Marker
+   confirms forward_cycles=3, meta_cycles=1 — under budget." / "forward_cycles = 1. Next probe:" The
+   counter is the `[n/max]` in the heading and the T7 table — nowhere else.
+4. **Narrated file reads.** Reading a component, handler, template, or section is silent — the UI
+   already prints the `Read …` line. BANNED, e.g.: "Reading the resolution handler" / "Reading the
+   canonical cycle base prompt I must bind…" / "Let me read the Step 0.4 remote-sync section:" /
+   "Now the cycle base prompt template:". Run the reads back-to-back with zero text between them.
+
 ## Turn templates
 
 ### T1 — Run start (once, after silent preflight)

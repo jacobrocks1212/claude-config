@@ -664,3 +664,62 @@ def test_recovery_emit_carries_grep_and_cite_gate_every_variant():
                     f"{label}: assembled recovery prompt missing grep-and-cite "
                     f"gate marker {marker!r}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# R-V-1 reinforcement + plan-feature ledger (lazy-cycle-containment Phase 9, C7)
+# ---------------------------------------------------------------------------
+#
+# SPEC §C7 + Validation rows "R-V-1 hard-bans carry the new seams" and
+# "plan-feature emits the ledger":
+#   (a) orchestrator-voice.md hard-bans must carry the four reinforced seams —
+#       run-start narration, ledger-guard post-return line, marker-confirm, and
+#       narrated file reads — each WITH a concrete example of the banned phrasing.
+#   (b) plan-feature/SKILL.md must require the structured `### Decision-
+#       Classification Ledger` in its Step 3 return summary.
+
+_ORCH_VOICE_PATH = (
+    Path(__file__).resolve().parents[1] / "skills" / "_components"
+    / "orchestrator-voice.md"
+)
+_PLAN_FEATURE_PATH = (
+    Path(__file__).resolve().parents[1] / "skills" / "plan-feature" / "SKILL.md"
+)
+
+# Each seam: a label substring that must appear AND an example-phrase substring
+# that must appear in the same hard-bans region (proves "with examples").
+_RV1_SEAMS = [
+    # (seam description marker, an example of the banned phrasing)
+    ("run-start narration", "environment preflight"),
+    ("ledger guard", "Running the"),            # "Running the {ledger} guard."
+    ("marker confirm", "the marker confirms forward_cycles"),
+    ("narrated file reads", "Reading the resolution handler"),
+]
+
+
+def test_orchestrator_voice_hard_bans_carry_four_rv1_seams():
+    """orchestrator-voice.md hard-bans must name the four reinforced seams with
+    examples (SPEC §C7 R-V-1 reinforcement)."""
+    text = _ORCH_VOICE_PATH.read_text(encoding="utf-8")
+    lower = text.lower()
+    for label, example in _RV1_SEAMS:
+        assert label.lower() in lower, (
+            f"orchestrator-voice.md missing R-V-1 seam label {label!r}"
+        )
+        assert example.lower() in lower, (
+            f"orchestrator-voice.md missing example phrasing for seam "
+            f"{label!r}: expected {example!r}"
+        )
+
+
+def test_plan_feature_requires_decision_classification_ledger():
+    """plan-feature/SKILL.md must require the `### Decision-Classification Ledger`
+    in its return summary (SPEC §C7 plan-feature ledger)."""
+    text = _PLAN_FEATURE_PATH.read_text(encoding="utf-8")
+    assert "### Decision-Classification Ledger" in text, (
+        "plan-feature/SKILL.md does not require the "
+        "'### Decision-Classification Ledger' in its return summary"
+    )
+    # It must be framed as a requirement, and reference the /spec --batch shape.
+    assert "MANDATORY" in text or "MUST" in text or "require" in text.lower()
+    assert "/spec --batch" in text or "spec --batch" in text

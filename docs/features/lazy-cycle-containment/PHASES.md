@@ -2,6 +2,12 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+<!-- All 9 phases implemented across plan parts 1–5 (2026-06-15); validation pending.
+     NOT Complete — the __mark_complete__ integrity gate owns the Complete flip +
+     COMPLETED.md receipt after the validation tail (/mcp-test → coverage audit). -->
+
+
 **MCP runtime:** not-required — pure claude-config harness mechanics (Python state-script + bash hook + skill prose + projected components). No Tauri app, no MCP-reachable surface; validation is `pytest` on `lazy_core.py`, a bash hook-test harness, `project-skills.py` projection lint, and docs-consistency greps. This is the `standalone — no app integration` untestable class per `docs/features/mcp-testing/SPEC.md`.
 
 ## Cross-feature Integration Notes
@@ -370,9 +376,9 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** Two folded-in fixes from the claude-config `lazy-pipeline-visualizer` retro: (a) the R-V-1 mechanics-silent reinforcement in `user/skills/_components/orchestrator-voice.md`; (b) the missing `plan-feature` Decision-Classification Ledger in `user/skills/plan-feature/SKILL.md`.
 
 **Deliverables:**
-- [ ] `orchestrator-voice.md`: tighten the silent-mechanics rule at the observed recurring seams — run-start narration, "Running the {ledger} guard." post-return lines, marker-confirm ("the marker confirms forward_cycles=…"), narrated file reads ("Reading the resolution handler"). Add these to the hard-bans list WITH examples.
-- [ ] `plan-feature/SKILL.md`: require the cycle to emit the structured `### Decision-Classification Ledger` that `/spec --batch` mandates, so the Step 1d.5 input-audit is not the only safety net (its absence let a SPEC-locked state-collapse slip past prose self-classification).
-- [ ] Tests: docs-consistency grep that `orchestrator-voice.md` hard-bans list carries the four new seams with examples; that `plan-feature/SKILL.md` requires the `### Decision-Classification Ledger` in its return summary.
+- [x] `orchestrator-voice.md`: tighten the silent-mechanics rule at the observed recurring seams — run-start narration, "Running the {ledger} guard." post-return lines, marker-confirm ("the marker confirms forward_cycles=…"), narrated file reads ("Reading the resolution handler"). Add these to the hard-bans list WITH examples.
+- [x] `plan-feature/SKILL.md`: require the cycle to emit the structured `### Decision-Classification Ledger` that `/spec --batch` mandates, so the Step 1d.5 input-audit is not the only safety net (its absence let a SPEC-locked state-collapse slip past prose self-classification).
+- [x] Tests: docs-consistency grep that `orchestrator-voice.md` hard-bans list carries the four new seams with examples; that `plan-feature/SKILL.md` requires the `### Decision-Classification Ledger` in its return summary.
 
 **Minimum Verifiable Behavior:** a grep of `orchestrator-voice.md` finds the four new hard-banned seams with examples; a grep of `plan-feature/SKILL.md` finds the `### Decision-Classification Ledger` requirement — both verifiable statically.
 
@@ -395,6 +401,12 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Integration Notes for Next Phase:**
 - This is the LAST phase. When its work lands, the implementation of all 9 phases is done — set the top-level PHASES `**Status:**` to `In-progress` (NOT Complete — validation pending; the `__mark_complete__` gate owns the Complete flip after the validation tail).
 - `orchestrator-voice.md` being in the governing-file set means this edit (Phase 9) and Phase 5's `lazy-batch/SKILL.md` edit are the two governing-prose edits whose mid-run pickup motivated sequencing C8 (Phase 1) first.
+
+**Implementation Notes (2026-06-15 — Phase 9 implemented, validation pending):**
+- `orchestrator-voice.md`: added a labeled **"R-V-1 reinforcement — four recurring seams"** subsection to the Hard-bans block, each seam with a concrete BANNED-phrasing example: (1) run-start narration ("I'll start by running the environment preflight…"), (2) ledger-guard post-return line ("Running the post-execute-plan ledger-consistency guard:"), (3) marker-confirm ("the marker confirms forward_cycles=3" — the previously-missing seam), (4) narrated file reads ("Reading the resolution handler"). Framed as bans, not templates.
+- `plan-feature/SKILL.md`: added a **Decision-Classification Ledger (MANDATORY return)** requirement to Step 3, reproducing the exact `### Decision-Classification Ledger` table shape `/spec --batch` mandates and pointing at `spec/SKILL.md`. This makes the Step 1d.5 input-audit not the only safety net (the `lazy-pipeline-visualizer` missing-ledger gap).
+- Tests (WU-5, test-first): added 2 `test_project_skills.py` cases — `test_orchestrator_voice_hard_bans_carry_four_rv1_seams` (all four seam labels + their example phrasings present) and `test_plan_feature_requires_decision_classification_ledger` (the literal `### Decision-Classification Ledger` token + a requirement framing + the `/spec --batch` reference). Wrote them FIRST (red: 2/2 — seams/ledger absent), then implemented to green.
+- All 9 phases' implementation now lands across the five plan parts — top-level PHASES `**Status:**` set to `In-progress` (validation pending; the `__mark_complete__` gate owns the Complete flip after the validation tail). MCP runtime is `not-required` (pure harness mechanics); the validation tail resolves via the mcp-test cycle's skip/validate decision.
 
 ---
 
