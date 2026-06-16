@@ -28,7 +28,7 @@ phases: [1, 2, 3, 4, 5, 6]
 - [x] WU-2 — bug-state.py: mirror --park-blocked, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
 - [x] WU-3 — lazy_core.build_parked_entry: add sentinel_kind field (+ test_lazy_core.py characterization)
 - [x] WU-4 — Orchestrator wiring: lazy-batch + lazy-bug-batch + lazy-batch-cloud SKILL.md
-- [ ] WU-5 — parked-flush.md: surface blocked-parked items (blocked-specific affordance)
+- [x] WU-5 — parked-flush.md: surface blocked-parked items (blocked-specific affordance)
 - [ ] WU-6 — user/scripts/CLAUDE.md: document --park-blocked + queue-exhausted-all-parked
 
 ## EXECUTION MODEL — READ THIS FIRST
