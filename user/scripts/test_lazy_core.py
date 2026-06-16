@@ -15470,6 +15470,42 @@ def test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget():
     assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
 
 
+def test_detect_friction_mcp_test_cycle_multi_commit_within_budget():
+    """Hardening 2026-06-16 recurrence (mcp-audio-quality-observability): the Step-9
+    `/mcp-test` validation cycle legitimately commits MORE THAN ONCE — the engine's
+    audited mechanics-only self-heal (a `heals[]` scenario/tool-methods edit) lands
+    separately from the terminal sentinel + PHASES reconcile. With `mcp-test` absent
+    from the budget table it defaulted to 1, so a normal 2-commit validation cycle
+    re-tripped `unexpected-commits` (`begin_head_sha=a28085bb938e,
+    sub_skill='mcp-test', budget=1`, HEAD advanced 2 commits). This is the same
+    missing-row defect class Round 15 fixed for `execute-plan` and Rounds 16/17 for
+    the pseudo-skills; the `mcp-test: 3` row closes it. A genuine runaway (>3) still
+    trips — no gate weakened."""
+    _guard()
+    marker = {
+        "feature_id": "mcp-audio-quality-observability", "nonce": "n",
+        "run_started_at": "2026-06-16T00:00:00Z",
+        "begin_head_sha": "a28085bb938e",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-16T00:00:00Z",  # identity intact
+        current_head_sha="730a4df88d17",
+        sub_skill="mcp-test",
+        commits_since=2,  # self-heal commit + sentinel/PHASES-reconcile commit
+    )
+    assert got is None, got
+    # A genuine runaway (>3) on the same sub_skill STILL trips — no gate weakened.
+    runaway = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-16T00:00:00Z",
+        current_head_sha="730a4df88d17",
+        sub_skill="mcp-test",
+        commits_since=7,
+    )
+    assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
+
+
 def test_detect_friction_within_commit_budget_returns_none():
     """WU-2: a single commit (within the conservative budget) and intact identity
     → None."""

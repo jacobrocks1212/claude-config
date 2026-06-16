@@ -5357,6 +5357,24 @@ _CYCLE_COMMIT_BUDGET: dict[str, int] = {
     # flagged, while a true runaway (many commits) still trips.
     "execute-plan": 3,
     "retro-feature": 3,
+    # The Step-9 /mcp-test validation cycle legitimately commits MORE THAN ONCE.
+    # A clean pass is one commit (the engine's terminal sentinel + the PHASES
+    # reconcile, committed together — mcp-test SKILL.md Step 5.4), but a cycle may
+    # add a SECOND (or third) honest commit: the deterministic engine's audited
+    # mechanics-only self-heal (a `heals[]` field/JSONPath/threshold-typo edit to
+    # the scenario YAML or tool-methods map — SKILL.md Step 3.4) is committed
+    # separately from the sentinel+reconcile, and a `result: partial`
+    # MCP_TEST_RESULTS.md may land before the terminal sentinel on a follow-up
+    # pass. With the default budget of 1 this normal 2-commit validation cycle
+    # false-positived `unexpected-commits` (the 2026-06-16
+    # `mcp-audio-quality-observability` recurrence:
+    # `begin_head_sha=a28085bb938e, sub_skill='mcp-test', budget=1`, HEAD advanced
+    # 2 commits). This is the SAME missing-row defect class Round 15 fixed for
+    # `execute-plan` and Rounds 16/17 fixed for the `__mark_complete__` /
+    # `__mark_fixed__` pseudo-skills; `mcp-test` was simply never enumerated. A
+    # genuine runaway (>3 commits) still trips. Mirrors `bug-state.py` via the
+    # shared `lazy_core` module (the bug pipeline routes its own MCP gate here).
+    "mcp-test": 3,
     # Pipeline-advancing terminal pseudo-skills (`__mark_complete__` /
     # `__mark_fixed__`). These do NOT dispatch a work-skill subagent — they are
     # the orchestrator's own inline documentation cycle, but their `__mark_complete__`
