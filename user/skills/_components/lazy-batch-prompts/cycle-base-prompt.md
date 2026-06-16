@@ -56,6 +56,7 @@
      R14 mcp-test rules ......................... sections: skill-mcp-test-common + variant sections
      R15 loop block (separate file) ............. loop-block.md (appended by emitter)
      R16 cloud deltas ........................... section: cloud-override (+ commit-push folded into hard-contract item 3 / turn-end via modes)
+     R17 terminal stop (C4) ..................... section: terminal-stop
 
      The ONE sanctioned restatement is the pre-return checklist in `turn-end`
      (a checklist may re-walk rules; prose may not).
@@ -371,6 +372,15 @@ Hard contract (sentinel + git hygiene + cloud push + report):
      responsibilities #7). On /execute-plan or /retro cycles, also confirm
      you executed INLINE (zero Agent() calls), wrote failing tests before
      implementing each batch (test-first), and pushed each batch as it landed.
+
+<!-- @section terminal-stop pipelines=feature,bug modes=workstation,cloud skills=all -->
+TERMINAL STOP (HARD — your dispatch is ONE cycle):
+  Your dispatch is exactly ONE cycle. After your single skill returns and you
+  have committed + pushed + written your report, STOP. Do NOT run
+  `lazy-state.py`/`bug-state.py` to find or route a next action. Do NOT begin a
+  second feature. Do NOT run `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart`
+  — those are orchestrator-only and the harness will DENY them in-flight.
+  Routing the next cycle is the orchestrator's job; your job ends at the report.
 
 <!-- @section turn-end pipelines=feature,bug modes=workstation skills=all -->
 TURN-END CONTRACT (HARD — read LAST because it is checked LAST):

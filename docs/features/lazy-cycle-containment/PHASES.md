@@ -255,10 +255,10 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** A new `@section` (terminal stop) appended to every cycle prompt via the shared template `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`, telling the subagent its dispatch ends at commit+push+report. Mirrored across feature/bug/cloud prompt variants.
 
 **Deliverables:**
-- [ ] New `@section` (terminal stop) in `cycle-base-prompt.md`: "Your dispatch is exactly ONE cycle. After your single skill returns and you have committed + pushed + written your report, STOP. Do NOT run `lazy-state.py`/`bug-state.py` to find or route a next action. Do NOT begin a second feature. Do NOT run `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart` — those are orchestrator-only and the harness will DENY them in-flight. Routing the next cycle is the orchestrator's job; your job ends at the report."
-- [ ] Verify the section is picked up by `emit_cycle_prompt` (it re-reads `cycle-base-prompt.md` from disk every probe — already-live, no reload needed).
-- [ ] Mirror to bug/cloud prompt variants (shared template — confirm the section appears in every projected variant).
-- [ ] Tests: `project-skills.py` projection lint asserting the terminal-stop `@section` is present in every cycle-prompt variant; a size check the addition stays within prompt-size budget.
+- [x] New `@section` (terminal stop) in `cycle-base-prompt.md`: "Your dispatch is exactly ONE cycle. After your single skill returns and you have committed + pushed + written your report, STOP. Do NOT run `lazy-state.py`/`bug-state.py` to find or route a next action. Do NOT begin a second feature. Do NOT run `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart` — those are orchestrator-only and the harness will DENY them in-flight. Routing the next cycle is the orchestrator's job; your job ends at the report."
+- [x] Verify the section is picked up by `emit_cycle_prompt` (it re-reads `cycle-base-prompt.md` from disk every probe — already-live, no reload needed).
+- [x] Mirror to bug/cloud prompt variants (shared template — confirm the section appears in every projected variant).
+- [x] Tests: `project-skills.py` projection lint asserting the terminal-stop `@section` is present in every cycle-prompt variant; a size check the addition stays within prompt-size budget.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/project-skills.py` followed by a grep for the terminal-stop section text in each projected cycle-prompt variant returns a hit for every variant.
 
@@ -279,6 +279,13 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 
 **Integration Notes for Next Phase:**
 - `cycle-base-prompt.md` is an AUTO-REFRESHING surface (re-read by `emit_cycle_prompt` every probe) — it is NOT in Phase 1's governing-file reload set and must NOT be flagged for reload (it was never stale). This phase is a good cross-check of Phase 1's auto-refresh-boundary exclusion.
+
+**Implementation Notes (2026-06-15 — Phase 6 implemented, validation pending):**
+- Added the `terminal-stop` `@section` (`pipelines=feature,bug modes=workstation,cloud skills=all`) to `cycle-base-prompt.md`, immediately BEFORE the workstation `turn-end` section so the mode-specific turn-end still reads strictly last in BOTH modes (its "read LAST" invariant preserved). Text matches the SPEC §C4 wording verbatim and aligns with Phase 4's hook `permissionDecisionReason` (STOP after commit+push+report; orchestrator-only ops DENIED in-flight). Added `R17 terminal stop (C4)` to the file's RULE INVENTORY header.
+- Because `skills=all` + both pipelines + both modes, the single section projects into all four cycle-prompt variants (feature/bug × workstation/cloud) — no per-variant duplication, the shared-template mirror is automatic.
+- `emit_cycle_prompt` re-reads `cycle-base-prompt.md` from disk every probe (`base_path.read_text`, no caching) — the section is auto-live on the next probe; it is correctly EXCLUDED from Phase 1's governing-file reload set (auto-refresh boundary).
+- ⚖ policy: projection-lint target for a runtime-assembled surface → the section is NOT inlined by `project-skills.py` (`cycle-base-prompt.md` is consumed by `emit_cycle_prompt`, not via `!cat`), so WU-4 verifies presence by driving the REAL assembler (`emit_cycle_prompt`) over all four variants — the faithful "projection" for this surface — plus a 24k-char size-budget check. (PRODUCT behavior identical to the plan's intent; only the lint mechanism differs.)
+- Tests (WU-4, test-first): added 3 cases to `user/scripts/test_project_skills.py` — section present in every variant, section names the orchestrator-only ops + STOP, and per-variant size budget. Wrote them FIRST (red: 2/3 failed pre-WU-3), then implemented to green. Combined parity+projection suites: 42 passed; `lazy-state.py --test` smoke green; `lint-skills.py --check-projected` clean.
 
 ---
 

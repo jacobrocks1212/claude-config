@@ -508,3 +508,94 @@ def test_fallback_cat_recurses_into_override(tmp_path, ps):
     assert "SHARED_CORE_BODY_SENTINEL" in result
     assert "<!-- BEGIN component: shared-core.md -->" in result
     assert "!`cat" not in result
+
+
+# ---------------------------------------------------------------------------
+# Terminal-stop @section (lazy-cycle-containment Phase 6, C4)
+# ---------------------------------------------------------------------------
+#
+# SPEC §C4 + Validation row "Cycle prompt carries the terminal stop section":
+# the terminal-stop @section in cycle-base-prompt.md must project into EVERY
+# cycle-prompt variant (feature/bug × workstation/cloud). Verified by driving
+# the real assembler (lazy_core.emit_cycle_prompt) — the same function the
+# state scripts call under --emit-prompt — over each variant. A size check
+# guards against the addition blowing the prompt budget.
+
+# A stable substring of the terminal-stop section (SPEC's exact opening words).
+_TERMINAL_STOP_MARKER = "Your dispatch is exactly ONE cycle"
+
+# Generous absolute ceiling: an assembled workstation cycle prompt today is
+# well under 20k chars; the terminal-stop addition is a few hundred chars.
+_CYCLE_PROMPT_SIZE_CEILING = 24000
+
+
+def _load_lazy_core():
+    """Import lazy_core.py from the same scripts dir (hyphen-free, importable)."""
+    scripts_dir = Path(__file__).parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import lazy_core  # noqa: E402
+
+    return lazy_core
+
+
+# The cycle-prompt variants to assert against: (pipeline, cloud, label).
+_CYCLE_PROMPT_VARIANTS = [
+    ("feature", False, "feature/workstation"),
+    ("feature", True, "feature/cloud"),
+    ("bug", False, "bug/workstation"),
+    ("bug", True, "bug/cloud"),
+]
+
+
+def _emit_variant(lazy_core, pipeline: str, cloud: bool) -> str:
+    """Assemble a real execute-plan cycle prompt for one variant; return its text."""
+    repo_root = Path(__file__).resolve().parents[2]
+    state = {
+        "feature_id": "demo-feature",
+        "feature_name": "Demo Feature",
+        "spec_path": str(repo_root / "docs" / "features" / "demo-feature"),
+        "current_step": "Step 7a: execute plan",
+        "sub_skill": "execute-plan",
+        "sub_skill_args": "some/plan.md",
+    }
+    result = lazy_core.emit_cycle_prompt(
+        repo_root, state, pipeline=pipeline, cloud=cloud
+    )
+    assert result is not None, f"{pipeline}/{cloud}: emit returned None (no prompt)"
+    assert result.get("ok") is True, (
+        f"{pipeline}/{cloud}: emit refused: {result.get('refused')}"
+    )
+    return result["prompt"]
+
+
+def test_terminal_stop_section_in_every_cycle_prompt_variant():
+    """The terminal-stop @section must appear in EVERY cycle-prompt variant."""
+    lazy_core = _load_lazy_core()
+    for pipeline, cloud, label in _CYCLE_PROMPT_VARIANTS:
+        prompt = _emit_variant(lazy_core, pipeline, cloud)
+        assert _TERMINAL_STOP_MARKER in prompt, (
+            f"{label}: terminal-stop section "
+            f"({_TERMINAL_STOP_MARKER!r}) missing from the assembled cycle prompt"
+        )
+
+
+def test_terminal_stop_section_names_orchestrator_only_ops():
+    """The terminal-stop section must warn off the orchestrator-only lifecycle ops."""
+    lazy_core = _load_lazy_core()
+    prompt = _emit_variant(lazy_core, "feature", False)
+    # The section tells the subagent NOT to route the next cycle / run lifecycle.
+    assert "--run-end" in prompt
+    assert "orchestrator" in prompt.lower()
+    assert "STOP" in prompt
+
+
+def test_cycle_prompt_within_size_budget():
+    """Adding the terminal-stop section must not blow the cycle-prompt size budget."""
+    lazy_core = _load_lazy_core()
+    for pipeline, cloud, label in _CYCLE_PROMPT_VARIANTS:
+        prompt = _emit_variant(lazy_core, pipeline, cloud)
+        assert len(prompt) <= _CYCLE_PROMPT_SIZE_CEILING, (
+            f"{label}: assembled cycle prompt is {len(prompt)} chars, "
+            f"over the {_CYCLE_PROMPT_SIZE_CEILING} ceiling"
+        )
