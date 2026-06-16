@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1981,11 +1982,17 @@ def test_lazy_state_test_output_matches_baseline():
     # it tests lazy-state.py's --test harness in isolation.
 
     # Run lazy-state.py --test, merging stdout+stderr.
-    result = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"), "--test"],
-        capture_output=True,
-        text=True,
-    )
+    # Pin LAZY_STATE_DIR to an isolated empty temp dir so a live cycle marker /
+    # run marker in the real ~/.claude/state/ cannot leak into the harness (its
+    # internal `bug-state.py --enqueue-adhoc` subprocess inherits this env, and a
+    # leaked cycle marker would trip the C3 refusal and perturb the baseline).
+    with tempfile.TemporaryDirectory(prefix="lazy-state-hermetic-") as _isolated_state:
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"), "--test"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LAZY_STATE_DIR": _isolated_state},
+        )
     live_output = result.stdout + result.stderr
 
     # Normalize with the shared cross-platform helper.
@@ -2028,11 +2035,15 @@ def test_bug_state_test_output_matches_baseline():
     # No _guard() — does not require lazy_core to be importable.
 
     # Run bug-state.py --test, merging stdout+stderr.
-    result = subprocess.run(
-        [sys.executable, str(_SCRIPTS_DIR / "bug-state.py"), "--test"],
-        capture_output=True,
-        text=True,
-    )
+    # Pin LAZY_STATE_DIR to an isolated empty temp dir (see the lazy-state
+    # baseline test above) so a live cycle/run marker cannot perturb the harness.
+    with tempfile.TemporaryDirectory(prefix="bug-state-hermetic-") as _isolated_state:
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "bug-state.py"), "--test"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LAZY_STATE_DIR": _isolated_state},
+        )
     live_output = result.stdout + result.stderr
 
     # Normalize with the shared cross-platform helper.
