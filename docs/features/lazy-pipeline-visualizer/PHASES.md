@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 
 <!-- Implementation of all four phases is complete (part-1 P1, part-2 P2, part-3
      P3+P4). Validation tail RUN 2026-06-15 (mcp-test cycle): all per-phase

@@ -2,7 +2,7 @@
 
 > A live, local web control-plane for the lazy feature **and** bug pipelines: view and drag-reorder the queues, see the worktree/branch fleet and what each is working on, and watch items traverse a unified directed stage-graph computed from the existing `lazy-state.py` / `bug-state.py` JSON.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-06-15
 
