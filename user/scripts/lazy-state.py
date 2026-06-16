@@ -5642,6 +5642,15 @@ def main() -> int:
     # --repeat-count (both may be present simultaneously).
     if args.probe:
         state["git_guards"] = lazy_core.git_guard_status(Path(args.repo_root))
+        # C8 self-edit reload discipline (lazy-cycle-containment Phase 1):
+        # surface whether this run is editing the harness it executes from, plus
+        # the governing-prose files the last commit touched (so the orchestrator's
+        # reload check stays mechanical). Both are best-effort and never raise.
+        state["self_edit_mode"] = lazy_core.self_edit_mode(Path(args.repo_root))
+        if state["self_edit_mode"]:
+            state["governing_files_touched"] = lazy_core.governing_files_touched(
+                Path(args.repo_root)
+            )
         # Counter fold (Phase 1): when a marker is present, fill in absent
         # --forward-cycles / --meta-cycles from the marker's persisted values.
         # Explicit flag values win over marker values (backward compat).

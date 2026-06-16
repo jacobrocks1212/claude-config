@@ -3599,6 +3599,116 @@ def git_guard_status(repo_root: Path) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Phase 1 (lazy-cycle-containment, C8) — Self-edit reload discipline.
+#
+# When a /lazy-batch run executes *inside* claude-config it is editing the very
+# harness it runs from. Most of that harness self-refreshes mid-run and needs NO
+# reload — the AUTO-REFRESH BOUNDARY below. The ONLY surfaces that go stale are
+# the orchestrator's own in-context governing prose: GOVERNING_FILE_SET.
+#
+# AUTO-REFRESH BOUNDARY (documented no-ops — MUST NOT be flagged for reload;
+# they were never stale):
+#   * lazy_core.py / lazy-state.py / bug-state.py — a fresh `python3` subprocess
+#     runs on every probe, so an edit is live on the next probe.
+#   * lazy-batch-prompts/cycle-base-prompt.md (+ addenda + loop-block.md) —
+#     re-read by emit_cycle_prompt() from disk on every probe.
+#   * hook .sh bodies — `bash ~/.claude/hooks/X.sh` reads the file each
+#     invocation, so a body edit is live on the next tool call.
+#   * downstream skill prose (SKILL.md a dispatched subagent loads) — each
+#     dispatched subagent loads its skill fresh, so the edit is live next dispatch.
+# These are EXCLUDED from GOVERNING_FILE_SET by construction.
+#
+# The governing-file set MUST stay in lockstep with the orchestrator's
+# compaction re-read list (lazy-dispatch-template.md + orchestrator-voice.md +
+# completeness-policy.md + the orchestrator's own SKILL.md) — the self-edit
+# reload is the SAME re-read, triggered by a self-edit commit instead of a
+# compaction boundary. Paths are repo-root-relative POSIX strings (the form
+# `git diff --name-only` emits).
+# ---------------------------------------------------------------------------
+GOVERNING_FILE_SET: frozenset[str] = frozenset({
+    # Orchestrator SKILLs the running orchestrator holds in-context (coupled trio).
+    "user/skills/lazy-batch/SKILL.md",
+    "user/skills/lazy-bug-batch/SKILL.md",
+    "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md",
+    # Components the orchestrator holds in-context (the compaction re-read list).
+    "user/skills/_components/orchestrator-voice.md",
+    "user/skills/_components/completeness-policy.md",
+    "user/skills/_components/lazy-dispatch-template.md",
+})
+
+
+def self_edit_mode(repo_root: "str | Path") -> bool:
+    """True iff this run is editing the harness it executes from.
+
+    Returns True when ``~/.claude/skills``, ``~/.claude/scripts``, AND
+    ``~/.claude/hooks`` ALL resolve (after ``os.path.realpath`` symlink
+    resolution) to a path UNDER the run's ``git rev-parse --show-toplevel``.
+
+    This is the semantically-correct predicate — robust to the repo being cloned
+    to any path (it compares resolved real paths, NOT a brittle cwd-basename
+    match). ``~`` is resolved via ``os.path.expanduser``.
+
+    Returns False (never raises) when:
+      * ``repo_root`` is not a git repo (``--show-toplevel`` fails);
+      * any of the three ``~/.claude/*`` paths is missing or resolves OUTSIDE
+        the toplevel;
+      * any OS/subprocess error occurs.
+    """
+    # Resolve the run's git toplevel; non-git repo or any git failure → False.
+    try:
+        proc = _git(Path(repo_root), "rev-parse", "--show-toplevel", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if proc.returncode != 0:
+        return False
+    toplevel_raw = proc.stdout.strip()
+    if not toplevel_raw:
+        return False
+    toplevel = os.path.realpath(toplevel_raw)
+
+    for name in ("skills", "scripts", "hooks"):
+        candidate = os.path.join(os.path.expanduser("~"), ".claude", name)
+        if not os.path.exists(candidate):
+            return False
+        resolved = os.path.realpath(candidate)
+        # Membership test on the resolved real paths: resolved must be the
+        # toplevel itself or a descendant of it.
+        try:
+            common = os.path.commonpath([toplevel, resolved])
+        except ValueError:
+            # Different drives (Windows) or otherwise incomparable → not under.
+            return False
+        if common != toplevel:
+            return False
+    return True
+
+
+def governing_files_touched(repo_root: "str | Path") -> list[str]:
+    """Return the GOVERNING_FILE_SET members touched by the last commit.
+
+    Intersects the last commit's changed files (``git diff --name-only HEAD~1
+    HEAD``; falls back to the root-commit file list when there is no parent)
+    with GOVERNING_FILE_SET. Auto-refresh surfaces never appear (they are not in
+    the set). Best-effort: any git failure returns ``[]`` (the orchestrator's
+    reload check then simply finds nothing to reload).
+    """
+    try:
+        proc = _git(repo_root if isinstance(repo_root, Path) else Path(repo_root),
+                    "diff", "--name-only", "HEAD~1", "HEAD", timeout=30)
+        if proc.returncode != 0:
+            # No parent commit (root commit): list the commit's own files.
+            proc = _git(repo_root if isinstance(repo_root, Path) else Path(repo_root),
+                        "show", "--name-only", "--pretty=format:", "HEAD",
+                        timeout=30)
+            if proc.returncode != 0:
+                return []
+    except (OSError, subprocess.SubprocessError):
+        return []
+    changed = {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+    return sorted(changed & GOVERNING_FILE_SET)
+
+
 def format_cycle_header(
     state: dict,
     *,

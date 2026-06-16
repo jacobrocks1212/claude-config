@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-cycle-containment
-status: In-progress
+status: Complete
 created: 2026-06-15
 complexity: complex
 phases: [1]
@@ -98,9 +98,9 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — self-edit predicate + probe `self_edit_mode` enrichment (lazy_core.py)
-- [ ] WU-2 — orchestrator governing-file reload discipline + new-hook-registration restart surfacing (lazy-batch/SKILL.md prose)
-- [ ] WU-3 — pytest: predicate (symlink fixtures) + governing-file-set membership + auto-refresh-boundary exclusions
+- [x] WU-1 — self-edit predicate + probe `self_edit_mode` enrichment (lazy_core.py)
+- [x] WU-2 — orchestrator governing-file reload discipline + new-hook-registration restart surfacing (lazy-batch/SKILL.md prose)
+- [x] WU-3 — pytest: predicate (symlink fixtures) + governing-file-set membership + auto-refresh-boundary exclusions
 
 ---
 
