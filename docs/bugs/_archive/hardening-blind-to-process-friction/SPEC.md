@@ -2,9 +2,11 @@
 
 > The `/harden-harness` stage only auto-dispatches on routing-layer guard signals; process/behavioral friction (a runaway cycle subagent that tears down the run marker and orchestrator runtime) leaves valid-looking state behind, so no trigger fires and the orchestrator improvises instead of self-healing.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-16
+**Fixed:** 2026-06-16
+**Fix commit:** 0813b0f
 **Placement:** docs/bugs/hardening-blind-to-process-friction
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage + deny-ledger), `docs/specs/lazy-hardening/`, sibling bug `docs/bugs/research-gate-ignores-existing-phases/`
 

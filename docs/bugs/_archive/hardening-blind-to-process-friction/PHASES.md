@@ -1,6 +1,6 @@
 # Implementation Phases — Hardening stage blind to process/behavioral friction
 
-**Status:** In-progress
+**Status:** Fixed
 
 > Phases for [`SPEC.md`](./SPEC.md)
 

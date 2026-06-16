@@ -21,10 +21,10 @@ phases: [3]
 # Implementation Plan — hardening-blind-to-process-friction  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/hardening-blind-to-process-friction/PHASES.md` (hardening-blind-to-process-friction, 3 phases)
+- `docs/bugs/_archive/hardening-blind-to-process-friction/PHASES.md` (hardening-blind-to-process-friction, 3 phases)
 
 **SPEC.md files:**
-- `docs/bugs/hardening-blind-to-process-friction/SPEC.md`
+- `docs/bugs/_archive/hardening-blind-to-process-friction/SPEC.md`
 
 **Total phases:** 3 (this part covers Phase 3)
 **Plan version:** v2 (reference-based — components loaded from disk per step)

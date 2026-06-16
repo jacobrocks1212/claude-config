@@ -6,7 +6,7 @@
 **Severity:** P2
 **Discovered:** 2026-06-16
 **Placement:** docs/bugs/park-mode-halts-on-blocked
-**Related:** `docs/specs/lazy-pipeline-ergonomics/` (park-and-continue), `user/scripts/CLAUDE.md`, sibling harness bugs `docs/bugs/hardening-blind-to-process-friction/`, `docs/bugs/research-gate-ignores-existing-phases/`
+**Related:** `docs/specs/lazy-pipeline-ergonomics/` (park-and-continue), `user/scripts/CLAUDE.md`, sibling harness bugs `docs/bugs/_archive/hardening-blind-to-process-friction/`, `docs/bugs/research-gate-ignores-existing-phases/`
 
 ---
 
