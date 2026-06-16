@@ -245,6 +245,21 @@ def main():
         # main-thread orchestrator dispatch → allow (no self-deny).
         _allow()
 
+    # --- Skill-tool /lazy* intercept (cycle-subagent-runs-orchestrator-work Phase 3,
+    #     defense-in-depth): a subagent must not invoke /lazy* via the Skill tool,
+    #     bypassing every Bash/Agent guard. When agent_id is present AND the skill
+    #     name matches the lazy family regex → DENY. Fail-OPEN: a missing or
+    #     non-string skill name allows (never wedge the pipeline). Main-thread
+    #     (agent_id absent) → allow (orchestrator self-invocation is legitimate). ---
+    _LAZY_SKILL_RE = re.compile(r"^/?lazy(?:-bug)?(?:-batch)?(?:-cloud)?$")
+    if tool_name == "Skill":
+        if is_subagent:
+            skill_name = (payload.get("tool_input") or {}).get("skill", "") or ""
+            if isinstance(skill_name, str) and _LAZY_SKILL_RE.match(skill_name.strip()):
+                _deny(CORRECTIVE)
+        # Main-thread or non-lazy skill → allow.
+        _allow()
+
     if tool_name != "Bash":
         _allow()
 

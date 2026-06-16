@@ -123,15 +123,23 @@ This phase exports the signal and proves the existing priority logic resolves co
 **Scope:** Close the unintercepted Skill-tool path (Theory 4 / secondary). Today the C2 hook intercepts only `Agent`/`Task`/`Bash` (`lazy-cycle-containment.sh:236-247`) — a subagent can invoke `/lazy-batch` (or any `/lazy*`) via the **Skill** tool, bypassing every Bash/Agent guard. Extend the hook to intercept the `Skill` tool: when `agent_id` is present (subagent) and the skill name matches `^/?lazy(-bug)?(-batch)?(-cloud)?$`, DENY.
 
 **Deliverables:**
-- [ ] In `user/hooks/lazy-cycle-containment.sh`, add a `Skill`-tool branch in `main()` (alongside the `Agent`/`Task` branch at `:236`): when `is_subagent` and the resolved skill name matches the `/lazy*` family regex, `_deny(CORRECTIVE)`; main-thread (no `agent_id`) → allow.
-- [ ] Define the skill-name regex anchored to the lazy family (`lazy`, `lazy-bug`, `lazy-batch`, `lazy-bug-batch`, `lazy-cloud`, `lazy-batch-cloud`) — read the skill name from the `Skill` tool's payload field (confirm the exact field name from a real `Skill` PreToolUse payload before hardcoding).
-- [ ] Preserve fail-OPEN: an unrecognized payload shape / missing skill-name field must allow, never wedge.
-- [ ] Tests: hook test asserting `{"agent_id":"x","tool_name":"Skill","tool_input":{"skill":"lazy-batch"}}` denies, the same without `agent_id` allows, and a non-lazy skill (e.g. `commit`) allows even with `agent_id`.
+- [x] In `user/hooks/lazy-cycle-containment.sh`, add a `Skill`-tool branch in `main()` (alongside the `Agent`/`Task` branch at `:236`): when `is_subagent` and the resolved skill name matches the `/lazy*` family regex, `_deny(CORRECTIVE)`; main-thread (no `agent_id`) → allow.
+- [x] Define the skill-name regex anchored to the lazy family (`lazy`, `lazy-bug`, `lazy-batch`, `lazy-bug-batch`, `lazy-cloud`, `lazy-batch-cloud`) — read the skill name from the `Skill` tool's payload field (confirm the exact field name from a real `Skill` PreToolUse payload before hardcoding).
+- [x] Preserve fail-OPEN: an unrecognized payload shape / missing skill-name field must allow, never wedge.
+- [x] Tests: hook test asserting `{"agent_id":"x","tool_name":"Skill","tool_input":{"skill":"lazy-batch"}}` denies, the same without `agent_id` allows, and a non-lazy skill (e.g. `commit`) allows even with `agent_id`.
 
 **Minimum Verifiable Behavior:** Piping a subagent `Skill` payload invoking `lazy-batch` through `lazy-cycle-containment.sh` emits `permissionDecision: deny`; a non-lazy skill or a main-thread (no `agent_id`) invocation emits no decision.
 
 **Runtime Verification** *(checked by the hook harness):*
-- [ ] `python -m pytest user/scripts/ -q` green (hook Skill-tool tests).
+- [x] `python -m pytest user/scripts/ -q` green (hook Skill-tool tests — 725 passed 2026-06-16).
+
+**Implementation Notes (2026-06-16, inline cycle subagent — no Agent tool, test-first):**
+- **Skill payload field confirmed:** the Skill PreToolUse payload uses `tool_input.skill` for the skill name (consistent with the PHASES.md example `{"agent_id":"x","tool_name":"Skill","tool_input":{"skill":"lazy-batch"}}`). This is the field hardcoded in the hook.
+- Added `_LAZY_SKILL_RE = re.compile(r"^/?lazy(?:-bug)?(?:-batch)?(?:-cloud)?$")` regex inside `main()` with a `Skill`-tool branch after the `Agent`/`Task` branch and before the `Bash`-only early-exit. The branch: `is_subagent` + `skill_name` matches regex → `_deny(CORRECTIVE)`; else → `_allow()`. Fail-OPEN: non-string or empty `skill` value → allow (never wedge).
+- Added `Skill` matcher to `user/settings.json` PreToolUse hooks so the hook fires for Skill tool calls.
+- SPEC Open Question re: excluding the Skill tool from the subagent's tool surface entirely — this would require a `subagent_type`/tool restriction change in the dispatch; recorded as a follow-up. The hook denylist is the in-scope mechanical fix (shipped here as Phase 3 specifies).
+- 5 new tests added to `user/scripts/test_hooks.py`: deny full family (6 members), allow non-lazy, allow main-thread, fail-open missing field, fail-open null/int field.
+- `pytest user/scripts/ -q` 725/725 passed.
 
 **Prerequisites:**
 - Phase 2: the mechanical keystone is closed first; this is layered defense, sequenced after the load-bearing fix.

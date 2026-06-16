@@ -178,7 +178,7 @@ Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/
 | `block-terminal-kill.sh` | PreToolUse (Bash) | Blocks process/terminal termination (mobile workflow) |
 | `block-work-repo-git-writes.sh` | PreToolUse (Bash) | Blocks destructive git in work repos |
 | `pr-review-cache-guard.sh` | PreToolUse (Bash) | PR review caching guard |
-| `lazy-cycle-containment.sh` | PreToolUse (Bash, Agent) | While the lazy cycle-subagent marker is present, denies in-flight the routing/lifecycle/recursive-dispatch/2nd-feature-commit ops a runaway needs (fail-OPEN) |
+| `lazy-cycle-containment.sh` | PreToolUse (Bash, Agent, Skill) | While the lazy cycle-subagent marker is present, denies in-flight the routing/lifecycle/recursive-dispatch/2nd-feature-commit ops a runaway needs (fail-OPEN); also denies a subagent invoking any `/lazy*` skill via the Skill tool (defense-in-depth, agent_id-targeted, arming-free) |
 | `fix-line-endings.ps1` | PostToolUse (Edit/Write) | Normalizes line endings |
 | `run-eslint.ps1` | PostToolUse (Edit/Write) | Auto-lints Cognito Forms TS/Vue |
 

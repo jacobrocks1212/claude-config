@@ -30,7 +30,7 @@ phases: [3, 4]
 
 ## Work Units
 
-- [ ] WU-1 — Deny the `/lazy*` Skill-tool path for cycle subagents in the C2 hook (Phase 3)
+- [x] WU-1 — Deny the `/lazy*` Skill-tool path for cycle subagents in the C2 hook (Phase 3)
 - [ ] WU-2 — Reshape `cycle-base-prompt.md` to a worker brief; de-enumerate the orchestrator API (Phase 4)
 
 ## EXECUTION MODEL — READ THIS FIRST

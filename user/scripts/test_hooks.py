@@ -3617,6 +3617,159 @@ def test_containment_agentid_absent_allows_cycle_bracket():
             )
 
 
+# ---------------------------------------------------------------------------
+# cycle-subagent-runs-orchestrator-work Phase 3 — Skill-tool intercept.
+#
+# A subagent invoking a /lazy* skill via the Skill tool must be denied.
+# The Skill PreToolUse payload: {"tool_name":"Skill","tool_input":{"skill":"<name>"}}.
+# The containment hook must intercept the Skill tool when agent_id is present
+# and the skill name matches the lazy family regex.
+# ---------------------------------------------------------------------------
+
+
+def _skill_preToolUse_json(
+    skill_name: str,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """Return a PreToolUse JSON payload for a Skill tool call.
+
+    agent_id: when provided, marks the payload as a SUBAGENT call (D4 trip).
+    skill_name: the skill name, e.g. 'lazy-batch' or 'commit'.
+    """
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Skill",
+        "tool_input": {"skill": skill_name},
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+    return json.dumps(payload)
+
+
+def test_containment_skill_subagent_denies_lazy_family():
+    """SUBAGENT (agent_id present) + Skill tool + lazy family skill → deny.
+
+    cycle-subagent-runs-orchestrator-work Phase 3 (defense-in-depth): the
+    Skill-tool path for /lazy* must be closed for subagents. Each member of the
+    lazy family must be denied individually.
+    """
+    lazy_family = [
+        "lazy", "lazy-bug", "lazy-batch", "lazy-bug-batch",
+        "lazy-cloud", "lazy-batch-cloud",
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for skill_name in lazy_family:
+            result = _run_containment(
+                _skill_preToolUse_json(skill_name, agent_id=_SUBAGENT_AGENT_ID),
+                state_dir,
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent Skill({skill_name!r}) must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_skill_subagent_allows_non_lazy_skill():
+    """SUBAGENT (agent_id) + Skill tool + non-lazy skill → allow.
+
+    Non-lazy skills (e.g. 'commit', 'spec') must never be denied by the
+    lazy-family denylist.
+    """
+    non_lazy_skills = ["commit", "spec", "fix", "explain", "code-review"]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for skill_name in non_lazy_skills:
+            result = _run_containment(
+                _skill_preToolUse_json(skill_name, agent_id=_SUBAGENT_AGENT_ID),
+                state_dir,
+            )
+            assert _containment_decision(result) != "deny", (
+                f"subagent Skill({skill_name!r}) must NOT deny (non-lazy); "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_skill_main_thread_allows_lazy_family():
+    """MAIN-THREAD (no agent_id) + Skill tool + lazy family skill → allow.
+
+    The main-thread orchestrator must never be self-denied when it invokes a
+    /lazy* skill via the Skill tool.
+    """
+    lazy_family = ["lazy", "lazy-batch", "lazy-bug-batch", "lazy-batch-cloud"]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for skill_name in lazy_family:
+            result = _run_containment(
+                _skill_preToolUse_json(skill_name, agent_id=None),
+                state_dir,
+            )
+            assert _containment_decision(result) != "deny", (
+                f"main-thread Skill({skill_name!r}) must NOT deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_skill_fail_open_missing_skill_field():
+    """SUBAGENT (agent_id) + Skill tool + missing 'skill' field in tool_input →
+    allow (fail-OPEN on unrecognized payload shape).
+
+    An unrecognized Skill payload must never wedge the pipeline.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        # Craft a Skill payload with an empty tool_input (no 'skill' key).
+        payload = {
+            "session_id": str(uuid.uuid4()),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Skill",
+            "tool_input": {},   # missing 'skill' field
+            "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+            "agent_id": _SUBAGENT_AGENT_ID,
+        }
+        result = _run_containment(json.dumps(payload), state_dir)
+        assert _containment_decision(result) != "deny", (
+            f"Skill payload with no 'skill' field must fail-OPEN (allow); "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_skill_fail_open_null_skill_field():
+    """SUBAGENT (agent_id) + Skill tool + null 'skill' field → allow (fail-OPEN).
+
+    A null or empty skill name must not deny (fail-OPEN on malformed input).
+    """
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for null_val in [None, "", 123]:
+            payload = {
+                "session_id": str(uuid.uuid4()),
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Skill",
+                "tool_input": {"skill": null_val},
+                "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+                "agent_id": _SUBAGENT_AGENT_ID,
+            }
+            result = _run_containment(json.dumps(payload), state_dir)
+            assert _containment_decision(result) != "deny", (
+                f"Skill payload with skill={null_val!r} must fail-OPEN; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -3741,6 +3894,17 @@ _TESTS = [
      test_containment_agentid_present_denies_cycle_bracket_bug_state),
     ("test_containment_agentid_absent_allows_cycle_bracket",
      test_containment_agentid_absent_allows_cycle_bracket),
+    # cycle-subagent-runs-orchestrator-work Phase 3 — Skill-tool intercept
+    ("test_containment_skill_subagent_denies_lazy_family",
+     test_containment_skill_subagent_denies_lazy_family),
+    ("test_containment_skill_subagent_allows_non_lazy_skill",
+     test_containment_skill_subagent_allows_non_lazy_skill),
+    ("test_containment_skill_main_thread_allows_lazy_family",
+     test_containment_skill_main_thread_allows_lazy_family),
+    ("test_containment_skill_fail_open_missing_skill_field",
+     test_containment_skill_fail_open_missing_skill_field),
+    ("test_containment_skill_fail_open_null_skill_field",
+     test_containment_skill_fail_open_null_skill_field),
 ]
 
 
