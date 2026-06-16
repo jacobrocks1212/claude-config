@@ -2,7 +2,7 @@
 
 > `--park` mode parks `NEEDS_INPUT.md` features and advances the queue, but a `BLOCKED.md` feature is still selected and returns `terminal_reason="blocked"`, forcing the orchestrator into Step 1h resolution instead of deferring it. In an (unattended) park run that is an interruption — park mode should park the blocked feature and move on.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-16
 **Placement:** docs/bugs/park-mode-halts-on-blocked
