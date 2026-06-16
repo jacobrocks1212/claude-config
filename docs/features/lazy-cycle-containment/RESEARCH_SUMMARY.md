@@ -29,6 +29,12 @@
 - **Secondary fixes folded in (operator-chosen "include all"):** recovery-dispatch scope
   hardening (C5), R-V-1 mechanics-silent reinforcement, and the `plan-feature`
   Decision-Classification Ledger (C7).
+- **Self-edit reload discipline (C8) — Phase 1 (operator-chosen "as early as possible"):**
+  detect in-harness runs via the symlink-resolves-under-git-toplevel predicate; re-read ONLY the
+  orchestrator's in-context governing prose after a self-edit cycle (everything else —
+  `lazy_core.py`, the script-read prompt, hook bodies, dispatched-subagent skills — already
+  refreshes on the next probe/dispatch). Landed first so later phases' governing-prose edits take
+  effect on the running orchestrator when this spec is built in-repo.
 
 ## Pitfalls to address during implementation
 

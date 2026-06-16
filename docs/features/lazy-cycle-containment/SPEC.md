@@ -33,6 +33,8 @@ This feature installs a **mechanical, in-flight containment boundary** so a runa
 
 The v1 also folds in the rest of the fallout from the same two 2026-06-16 retros (AlgoBooth overview + claude-config `lazy-pipeline-visualizer`): recovery-dispatch scope hardening, a new retro rule (R-O-9) that *detects* runaways from git+jsonl (always available even when transcripts are reclaimed), an R-V-1 mechanics-silent reinforcement, and the missing `plan-feature` Decision-Classification Ledger.
 
+Finally — because a `/lazy-batch` run *in this repo* is editing the very harness it executes from — v1 adds a **self-edit reload discipline** (C8) so that an orchestration-shape change a cycle lands takes effect on the *running* orchestrator instead of waiting for the next session. The crucial scoping insight: **most of the harness already self-refreshes mid-run** — `lazy-state.py`/`lazy_core.py` is a fresh `python3` subprocess on every probe, `emit_cycle_prompt` re-reads `cycle-base-prompt.md` from disk every probe, hook `.sh` bodies are read fresh per invocation, and each dispatched subagent loads its skill fresh — so the reload discipline targets ONLY the narrow set that does NOT auto-refresh: the orchestrator's own in-context governing prose.
+
 **Key insight that makes the guard cheap and robust:** the inline batch loop *requires* the subagent to call `lazy-state.py` to obtain its next route. Deny that one call in-flight and the loop cannot form at all — everything else is defense-in-depth around that single chokepoint.
 
 ## User Experience
@@ -84,20 +86,30 @@ The "user" here is the operator running `/lazy-batch` (and `/lazy-bug-batch`, `/
 - **R-V-1 reinforcement** (`_components/orchestrator-voice.md`): tighten the silent-mechanics rule at the observed recurring seams — run-start narration, "Running the {ledger} guard." post-return lines, marker-confirm ("the marker confirms forward_cycles=…"), and narrated file reads ("Reading the resolution handler"). Add these to the hard-bans list with examples.
 - **`plan-feature` Decision-Classification Ledger** (`plan-feature/SKILL.md`): require the cycle to emit the structured `### Decision-Classification Ledger` that `/spec --batch` mandates, so the Step 1d.5 input-audit is not the only safety net (its absence let a SPEC-locked state-collapse slip past prose self-classification).
 
+**C8 — Self-edit reload discipline (`lazy_core.py` predicate + orchestrator skills).**
+- **Self-edit predicate** in `lazy_core.py`, surfaced on the probe JSON as `self_edit_mode: true`: returns true when `~/.claude/skills`, `~/.claude/scripts`, AND `~/.claude/hooks` all resolve under the run's `git rev-parse --show-toplevel` — i.e. the run is editing the harness it executes from. This is the semantically-correct predicate (robust to the repo being cloned elsewhere); NOT a brittle cwd-basename match.
+- **Governing-file reload discipline** (orchestrator skill prose): when `self_edit_mode` is true, after every cycle the orchestrator intersects the cycle's commit (`git diff --name-only`) with its **governing-file set** — the files it holds in-context and does NOT get for free from a fresh subprocess/disk-read: `user/skills/lazy-batch/SKILL.md` (+ the bug/cloud twins for those orchestrators) and `user/skills/_components/{orchestrator-voice,completeness-policy,lazy-dispatch-template}.md`. For any hit, re-`Read` that file (via its `~/.claude/...` path) before composing the next dispatch. This is the existing compaction re-read, triggered by self-edit instead of compaction; keep the governing-file set in lockstep with the compaction re-read list.
+- **Auto-refresh boundary (documented no-ops — MUST NOT be "reloaded", they were never stale):** changes to `lazy_core.py`/`lazy-state.py` (fresh `python3` subprocess every probe), `cycle-base-prompt.md`/addenda/`loop-block.md` (re-read by `emit_cycle_prompt` every probe), hook `.sh` bodies (`bash ~/.claude/hooks/X.sh` reads the file each invocation), and downstream skill prose (each dispatched subagent loads its skill fresh) are ALREADY live on the next probe/dispatch. The reload discipline excludes them by construction.
+- **New-hook-registration surfacing:** if a cycle's commit added or removed a hook ENTRY in `settings.json` (not merely edited an already-wired script body), the orchestrator surfaces a `⚠ settings.json hook wiring changed — restart the session to (de)register; the running session still uses the old wiring` (T6) — it does NOT claim the change is live (hook registration is read at session start; only a restart re-registers).
+- Probe enrichment: `emit_cycle_prompt`/`--probe` carry the `self_edit_mode` flag (and optionally a `governing_files_touched` list derived from the last commit) so the orchestrator's reload check stays mechanical.
+
 ### Coupling / blast radius
 
 Touched harness files (all in claude-config): `user/scripts/lazy_core.py` (+ `lazy-state.py`/`bug-state.py` CLI surface), `user/hooks/lazy-cycle-containment.sh` (new), `user/settings.json` (hook wiring), `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`, `.../dispatch-recovery.md`, `user/skills/_components/orchestrator-voice.md`, `user/skills/lazy-batch/SKILL.md` + `lazy-bug-batch` + `repos/algobooth/.claude/skills/lazy-batch-cloud` (the `--cycle-begin`/`--cycle-end` calls around dispatch — coupled trio, mirror per CLAUDE.md), `user/skills/plan-feature/SKILL.md`, `user/skills/lazy-batch-retro/SKILL.md`. The marker/hook are net-new and gated, so interactive behavior is unchanged.
 
 ## Implementation Phases
 
-- **Phase 1 — Cycle-subagent marker (C1).** `lazy_core.py` read/write + `--cycle-begin`/`--cycle-end` CLI; unit tests for set/clear/idempotence/staleness. **Phase kind:** design.
-- **Phase 2 — Refuse-by-construction (C3).** `lazy_core.py` refusals on the orchestrator-only ops when the marker is present; unit tests (refuse-with-marker, allow-without). Land before the hook so the backstop exists first. **Phase kind:** design.
-- **Phase 3 — PreToolUse containment hook (C2).** `lazy-cycle-containment.sh` + `settings.json` wiring; tests driving the hook with crafted Bash payloads (deny next-route probe, deny lifecycle, deny 2nd-feature commit, allow same-feature commit, fast-path exit when marker absent). **Phase kind:** design.
-- **Phase 4 — Orchestrator dispatch wiring (C1 callers).** Add the `--cycle-begin`/`--cycle-end` bracket around every dispatch in `/lazy-batch`, `/lazy-bug-batch`, `/lazy-batch-cloud` (coupled-trio mirror); docs-consistency tests that all three set+clear on all return paths. **Phase kind:** design.
-- **Phase 5 — Cycle-prompt terminal stop condition (C4).** New `@section` in `cycle-base-prompt.md`; projection lint + size check; mirror to bug/cloud. **Phase kind:** design.
-- **Phase 6 — Recovery-dispatch scope hardening (C5).** **Phase kind:** design.
-- **Phase 7 — R-O-9 retro rule + force-cap (C6).** **Phase kind:** design.
-- **Phase 8 — Secondary voice/ledger fixes (C7).** R-V-1 reinforcement + `plan-feature` ledger. **Phase kind:** design.
+> **Phase ordering rationale:** the **self-edit reload discipline is deliberately Phase 1**. Once it lands, every later phase of *this very spec* that edits the orchestrator's governing prose — **Phase 5** (dispatch wiring → `lazy-batch/SKILL.md`) and **Phase 9** (R-V-1 → `orchestrator-voice.md`) — is picked up by the *running* orchestrator if this spec is itself built by `/lazy-batch` in this repo. Install the reload mechanism before the changes that need reloading. (The other phases edit only auto-refreshing surfaces — `lazy_core.py`, the script-read prompt, hook bodies — which are already live on the next probe regardless.)
+
+- **Phase 1 — Self-edit reload discipline (C8).** `lazy_core.py` self-edit predicate (`~/.claude/{skills,scripts,hooks}` resolve under `git toplevel`) + probe `self_edit_mode` flag; orchestrator governing-file reload discipline + the new-hook-registration `⚠ restart` surfacing; unit tests for the predicate (symlinks in/out of toplevel) and the auto-refresh-boundary exclusions. Lands first so the rest of this spec's governing-prose edits take effect on the running orchestrator. **Phase kind:** design.
+- **Phase 2 — Cycle-subagent marker (C1).** `lazy_core.py` read/write + `--cycle-begin`/`--cycle-end` CLI; unit tests for set/clear/idempotence/staleness. **Phase kind:** design.
+- **Phase 3 — Refuse-by-construction (C3).** `lazy_core.py` refusals on the orchestrator-only ops when the marker is present; unit tests (refuse-with-marker, allow-without). Land before the hook so the backstop exists first. **Phase kind:** design.
+- **Phase 4 — PreToolUse containment hook (C2).** `lazy-cycle-containment.sh` + `settings.json` wiring; tests driving the hook with crafted Bash payloads (deny next-route probe, deny lifecycle, deny 2nd-feature commit, allow same-feature commit, fast-path exit when marker absent). **Phase kind:** design.
+- **Phase 5 — Orchestrator dispatch wiring (C1 callers).** Add the `--cycle-begin`/`--cycle-end` bracket around every dispatch in `/lazy-batch`, `/lazy-bug-batch`, `/lazy-batch-cloud` (coupled-trio mirror); docs-consistency tests that all three set+clear on all return paths. **Phase kind:** design.
+- **Phase 6 — Cycle-prompt terminal stop condition (C4).** New `@section` in `cycle-base-prompt.md`; projection lint + size check; mirror to bug/cloud. **Phase kind:** design.
+- **Phase 7 — Recovery-dispatch scope hardening (C5).** **Phase kind:** design.
+- **Phase 8 — R-O-9 retro rule + force-cap (C6).** **Phase kind:** design.
+- **Phase 9 — Secondary voice/ledger fixes (C7).** R-V-1 reinforcement + `plan-feature` ledger. **Phase kind:** design.
 
 ## Validation Criteria
 
@@ -114,11 +126,16 @@ Touched harness files (all in claude-config): `user/scripts/lazy_core.py` (+ `la
 | Cycle prompt carries the terminal stop section | project-skills.py projection | the stop `@section` present in every cycle prompt variant | projection lint |
 | R-O-9 force-caps a runaway | retro over a multi-feature single dispatch | grade `fail` + force-cap from git+jsonl | retro self-test / fixture |
 | plan-feature emits the ledger | `plan-feature --batch` cycle | `### Decision-Classification Ledger` in the return summary | docs-consistency / skill-lint |
+| self_edit_mode true only in-harness | probe in claude-config vs a normal repo | `self_edit_mode: true` iff `~/.claude/{skills,scripts,hooks}` resolve under `git toplevel`; false elsewhere | pytest on the predicate (symlink fixtures) |
+| governing-prose edit triggers re-read | a cycle commits to `lazy-batch/SKILL.md` (self_edit_mode on) | orchestrator re-reads it before the next dispatch | SKILL prose + docs-consistency |
+| auto-refreshing surfaces NOT flagged | a cycle edits `lazy_core.py` / `cycle-base-prompt.md` / a hook body | reload check excludes them (already live) — no false "reload" | pytest on the governing-file set membership |
+| new-hook entry surfaces restart warning | a cycle adds a hook entry to `settings.json` | `⚠ … restart the session to (de)register` (T6), not "live" | SKILL prose / docs-consistency |
 
 ## Open Questions
 
 - **Commit-count ceiling default (25)** — generous backstop; the 2nd-feature tripwire is the real guard. Tunable; revisit if a legitimate single feature ever approaches it.
 - **Meta-dispatch marker `kind`** — whether the hook's deny-set should differ for `meta` (apply-resolution/recovery) vs `real` dispatches. v1 uses one deny-set for all (the allow-list — `--neutralize-sentinel`, `--verify-ledger` — already covers what meta-dispatches legitimately need); split only if a meta-dispatch needs a currently-denied op.
+- **Governing-file set membership (C8)** — the exact files the orchestrator holds in-context and must re-read on self-edit. Must stay in lockstep with the compaction re-read list (`orchestrator-voice.md` + `lazy-dispatch-template.md` + `completeness-policy.md` + the orchestrator's own `SKILL.md`); if that list grows, the self-edit governing set grows with it. Consider a single shared definition both disciplines consume so they cannot drift.
 
 ## Research References
 
