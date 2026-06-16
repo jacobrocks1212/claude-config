@@ -69,7 +69,7 @@
      block become dead. -->
 
 <!-- @section task pipelines=feature,bug modes=workstation skills=all -->
-You are advancing one cycle of the autonomous {pipeline_phrase}.
+Run exactly one skill, then stop. You are one worker in the {pipeline_phrase}.
 
 {item_label}: {item_name} ({item_id})
 Working directory: {cwd}
@@ -85,10 +85,10 @@ Operating mode: batch
     decision — that halt is for a human.
 
 <!-- @section task pipelines=feature,bug modes=cloud skills=all -->
-You are advancing one cycle of the autonomous {pipeline_phrase} in a CLOUD
-Linux session. This container has: no Tauri desktop runtime, no MCP HTTP
-server, no audio device, no Windows-only tooling, and NO persistent state
-(it is reclaimed after the session).
+Run exactly one skill, then stop. You are one worker in the {pipeline_phrase},
+running in a CLOUD Linux session. This container has: no Tauri desktop runtime,
+no MCP HTTP server, no audio device, no Windows-only tooling, and NO persistent
+state (it is reclaimed after the session).
 
 {item_label}: {item_name} ({item_id})
 Working directory: {cwd}
@@ -133,11 +133,12 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
   This subagent does NOT have the `Agent` tool — any Agent() call fails and
   wastes the cycle. Regardless of what the dispatched skill's SKILL.md says about
   spawning sub-subagents (test-agent, impl-agent, research subagents A–G, etc.),
-  perform ALL of it INLINE with Read / Edit / Write. The only surviving
-  prohibition: never invoke another /lazy or /lazy-batch. Do NOT write BLOCKED.md
-  because of this dispatch limit — handling it inline is what this override is
-  for. The dispatched skill's SKILL.md stays authoritative for everything else
-  (batch ordering, sentinels, commit policy, file-shape invariants, plan-checkbox
+  perform ALL of it INLINE with Read / Edit / Write. The dispatch-level
+  prohibition (in addition to the TERMINAL STOP categorical ban on pipeline ops):
+  never invoke another /lazy or /lazy-batch. Do NOT write BLOCKED.md because of
+  this dispatch limit — handling it inline is what this override is for. The
+  dispatched skill's SKILL.md stays authoritative for everything else (batch
+  ordering, sentinels, commit policy, file-shape invariants, plan-checkbox
   semantics) — re-read it from disk if any non-dispatch detail is unclear.
 
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
@@ -145,9 +146,10 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   This cloud subagent does NOT have the `Agent` tool — any Agent() call fails
   and wastes the cycle. Perform ALL skill-mandated sub-subagent work (test-agent,
   impl-agent, research subagents A–G, etc.) INLINE with Read / Edit / Write. The
-  only surviving prohibition: never invoke another /lazy or /lazy-batch. Do NOT
-  write BLOCKED.md because of this dispatch limit (BLOCKED.md is still correct for
-  genuine cloud-RUNTIME limits — Tauri, MCP, audio, Windows-only tooling — via
+  dispatch-level prohibition (in addition to the TERMINAL STOP categorical ban on
+  pipeline ops): never invoke another /lazy or /lazy-batch. Do NOT write BLOCKED.md
+  because of this dispatch limit (BLOCKED.md is still correct for genuine
+  cloud-RUNTIME limits — Tauri, MCP, audio, Windows-only tooling — via
   blocker_kind: cloud-limitation).
   Zero sub-subagent dispatches in a cloud /execute-plan cycle is the EXPECTED state — NOT a contract violation.
   The dispatched skill's SKILL.md stays authoritative for everything else —
@@ -378,9 +380,10 @@ TERMINAL STOP (HARD — your dispatch is ONE cycle):
   Your dispatch is exactly ONE cycle. After your single skill returns and you
   have committed + pushed + written your report, STOP. Do NOT run
   `lazy-state.py`/`bug-state.py` to find or route a next action. Do NOT begin a
-  second feature. Do NOT run `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart`
-  — those are orchestrator-only and the harness will DENY them in-flight.
-  Routing the next cycle is the orchestrator's job; your job ends at the report.
+  second feature. Do NOT run pipeline/orchestration or lifecycle commands, and do
+  not invoke any `/lazy*` skill — those are orchestrator-only and the harness will
+  DENY them in-flight. Routing the next cycle is the orchestrator's job; your job
+  ends at the report.
 
 <!-- @section turn-end pipelines=feature,bug modes=workstation skills=all -->
 TURN-END CONTRACT (HARD — read LAST because it is checked LAST):

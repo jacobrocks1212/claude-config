@@ -581,12 +581,24 @@ def test_terminal_stop_section_in_every_cycle_prompt_variant():
 
 
 def test_terminal_stop_section_names_orchestrator_only_ops():
-    """The terminal-stop section must warn off the orchestrator-only lifecycle ops."""
+    """The terminal-stop section must warn off orchestrator-only lifecycle ops.
+
+    Phase 4 (cycle-subagent-runs-orchestrator-work): the TERMINAL STOP section
+    now uses CATEGORICAL language ("pipeline/orchestration or lifecycle commands")
+    instead of enumerating specific flag names (the enumeration doubles as a
+    how-to and was the Teaching vector identified in Proven Finding 3 / Theory 5).
+    Assertions updated to match the categorical form while still verifying the
+    section is present and the key assurance ("harness will DENY") is retained.
+    """
     lazy_core = _load_lazy_core()
     prompt = _emit_variant(lazy_core, "feature", False)
     # The section tells the subagent NOT to route the next cycle / run lifecycle.
-    assert "--run-end" in prompt
+    # Categorical form (Phase 4 de-enumeration — Proven Finding 3 fix):
+    assert "pipeline/orchestration" in prompt or "lifecycle commands" in prompt, (
+        "TERMINAL STOP must contain categorical prohibition on pipeline/lifecycle ops"
+    )
     assert "orchestrator" in prompt.lower()
+    assert "DENY" in prompt  # The "harness will DENY" assurance must be kept.
     assert "STOP" in prompt
 
 

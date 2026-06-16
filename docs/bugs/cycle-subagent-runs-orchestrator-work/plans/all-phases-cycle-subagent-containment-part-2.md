@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-subagent-runs-orchestrator-work
-status: In-progress
+status: Complete
 created: 2026-06-16
 complexity: complex
 phases: [3, 4]
@@ -31,7 +31,7 @@ phases: [3, 4]
 ## Work Units
 
 - [x] WU-1 — Deny the `/lazy*` Skill-tool path for cycle subagents in the C2 hook (Phase 3)
-- [ ] WU-2 — Reshape `cycle-base-prompt.md` to a worker brief; de-enumerate the orchestrator API (Phase 4)
+- [x] WU-2 — Reshape `cycle-base-prompt.md` to a worker brief; de-enumerate the orchestrator API (Phase 4)
 
 ## EXECUTION MODEL — READ THIS FIRST
 

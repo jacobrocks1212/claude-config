@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — this repo has no Tauri app and no MCP server (per `.claude/skill-config/quality-gates.md`); all changes are to Python state-machine scripts (`lazy_core.py` / `lazy-state.py` / `bug-state.py`), a Bash PreToolUse hook (`lazy-cycle-containment.sh`), and skill/component prose. Validation is the repo's Python `--test` smoke harnesses + `pytest user/scripts/ -q` + `lazy_parity_audit.py --report` + `project-skills.py` / `lint-skills.py`.
 
-**Status:** Not-started
+**Status:** In-progress
 
 ## Root-cause recap (from the concluded investigation)
 
@@ -160,18 +160,28 @@ This phase exports the signal and proves the existing priority logic resolves co
 **Scope:** Lower the *trigger rate* (Theory 5 / Finding 3) by re-shaping `cycle-base-prompt.md` so the cycle prompt reads as a one-shot **worker** brief, not a pipeline-**operator** brief. This is explicitly **complementary and NOT a substitute** for the mechanical guards (a determined model can still read the skills on disk) — it ships only AFTER Phases 1–2 make the "harness will DENY these in-flight" assurance actually true. ⚖ policy: include SPEC fix #4 (complementary) → in-scope as a final phase (scope-class: it lowers occurrence and is fully specified by the concluded SPEC; not shipped as the sole/primary fix).
 
 **Deliverables:**
-- [ ] In `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`, soften the operator framing of the opening line (`:72`, and the cloud variant `:88`) — e.g. lead with "Run exactly one skill, then stop" rather than (or alongside) "You are advancing one cycle of the autonomous {pipeline_phrase}." Keep enough context that the worker knows what artifact it owns.
-- [ ] In the `TERMINAL STOP` section (`:377-383`), state the boundary WITHOUT enumerating the orchestrator API: replace the explicit `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart` list with a categorical instruction (e.g. "Do not run pipeline/orchestration or lifecycle commands, and do not invoke any `/lazy*` skill; if you finish, are blocked, or are unsure, write your report and STOP"). Keep the "the harness will DENY these in-flight" assurance (now true after Phases 1–3) — drop the command catalog that doubles as a how-to.
-- [ ] Leave the `inline-override` "never invoke another /lazy or /lazy-batch" prohibition (`:137`, `:148`) intact — it is still correct; just ensure it no longer reads as the *only* surviving prohibition now that the categorical TERMINAL STOP language covers lifecycle ops.
-- [ ] Re-expand the component and confirm all three orchestrators (lazy-batch, lazy-bug-batch, lazy-batch-cloud) pick up the reshaped prose via projection.
-- [ ] Tests: `project-skills.py` re-expansion is clean (no broken `!cat`); `lint-skills.py --check-projected --check-capabilities` passes; a spot-check that the `{pipeline_phrase}` / cloud-variant token substitution still resolves in the projected output.
+- [x] In `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`, soften the operator framing of the opening line (`:72`, and the cloud variant `:88`) — e.g. lead with "Run exactly one skill, then stop" rather than (or alongside) "You are advancing one cycle of the autonomous {pipeline_phrase}." Keep enough context that the worker knows what artifact it owns.
+- [x] In the `TERMINAL STOP` section (`:377-383`), state the boundary WITHOUT enumerating the orchestrator API: replace the explicit `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart` list with a categorical instruction (e.g. "Do not run pipeline/orchestration or lifecycle commands, and do not invoke any `/lazy*` skill; if you finish, are blocked, or are unsure, write your report and STOP"). Keep the "the harness will DENY these in-flight" assurance (now true after Phases 1–3) — drop the command catalog that doubles as a how-to.
+- [x] Leave the `inline-override` "never invoke another /lazy or /lazy-batch" prohibition (`:137`, `:148`) intact — it is still correct; just ensure it no longer reads as the *only* surviving prohibition now that the categorical TERMINAL STOP language covers lifecycle ops (updated to say "dispatch-level prohibition (in addition to the TERMINAL STOP categorical ban on pipeline ops)").
+- [x] Re-expand the component and confirm all three orchestrators (lazy-batch, lazy-bug-batch, lazy-batch-cloud) pick up the reshaped prose via projection.
+- [x] Tests: `project-skills.py` re-expansion is clean (no broken `!cat`); `lint-skills.py --check-projected --check-capabilities` passes; a spot-check that the `{pipeline_phrase}` / cloud-variant token substitution still resolves in the projected output.
 
 **Minimum Verifiable Behavior:** `python user/scripts/project-skills.py` re-expands with no circular-include / missing-component error, and the projected `cycle-base-prompt` content shows the reshaped worker framing + the de-enumerated TERMINAL STOP (grep the projected output for the absence of the literal `--run-start`/`--run-end` command list inside the cycle prompt).
 
 **Runtime Verification** *(checked by the skill-lint gates):*
-- [ ] `python user/scripts/project-skills.py` clean.
-- [ ] `python user/scripts/lint-skills.py --check-projected --check-capabilities` clean.
-- [ ] `python user/scripts/lazy_parity_audit.py --report` — no unexplained drift across the three orchestrator twins after the prose reshape.
+- [x] `python user/scripts/project-skills.py` clean (2026-06-16: "Skills projected (_default): 80, Errors: none").
+- [x] `python user/scripts/lint-skills.py --check-projected --check-capabilities` clean (2026-06-16: "OK — no broken or embedded !cat patterns found").
+- [x] `python user/scripts/lazy_parity_audit.py --repo-root .` — exit 0, no output (no unexplained drift across orchestrator twins after the prose reshape).
+
+**Implementation Notes (2026-06-16, inline cycle subagent — no Agent tool):**
+- Opened workstation `task` section with "Run exactly one skill, then stop. You are one worker in the {pipeline_phrase}." — `{pipeline_phrase}` token preserved.
+- Cloud `task` section similarly opened with "Run exactly one skill, then stop. You are one worker in the {pipeline_phrase}, running in a CLOUD Linux session."
+- `TERMINAL STOP` section: dropped the explicit command catalog (`--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`/`dev:restart`); replaced with "Do not run pipeline/orchestration or lifecycle commands, and do not invoke any `/lazy*` skill — those are orchestrator-only and the harness will DENY them in-flight." The assurance line is kept; the command catalog (the teaching vector) is removed.
+- `inline-override` and `cloud-override` sections: changed "The only surviving prohibition: never invoke another /lazy or /lazy-batch" to "The dispatch-level prohibition (in addition to the TERMINAL STOP categorical ban on pipeline ops): never invoke another /lazy or /lazy-batch" — so these sections no longer read as the sole safety net.
+- All gates clean. The prompt's `{pipeline_phrase}` / `{item_label}` / etc. tokens unchanged; runtime binding by `emit_cycle_prompt` unaffected.
+
+**Files modified:**
+- `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` — opening framing + TERMINAL STOP reshape + inline/cloud-override wording.
 
 **Prerequisites:**
 - Phases 1–2: the "harness will DENY these in-flight" assurance must be TRUE before the prompt promises it without naming the commands. Sequencing matters — do not ship the prose change ahead of the mechanical guards.
