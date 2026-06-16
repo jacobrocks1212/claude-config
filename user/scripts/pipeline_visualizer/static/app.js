@@ -463,14 +463,66 @@
     return c;
   }
 
+  // ---- Queue drag-reorder write path (Phase 4) ---------------------------
+  var queueLocked = false;          // mirrors /api/state queue_locked
+  var pendingReorder = {};          // track -> optimistic order awaiting reconcile
+  var LOCK_TOOLTIP = "Queue locked — the orchestrator is executing a batch run. " +
+    "Reordering is disabled until the run ends (Decision 11).";
+
+  // POST a new order for one track; pipeline name maps track -> server key.
+  function postReorder(track, order) {
+    var pipeline = track === "bug" ? "bugs" : "features";
+    pendingReorder[track] = order.slice();   // optimistic — reconciled next poll
+    return fetch("/api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pipeline: pipeline, order: order }),
+    }).then(function (resp) {
+      if (!resp.ok) {
+        // 409 (locked) / 400 / 503 — drop the optimistic order; next poll snaps back.
+        delete pendingReorder[track];
+        if (resp.status === 409) queueLocked = true;
+        return resp.json().then(function (j) { throw new Error(j.error || ("HTTP " + resp.status)); },
+          function () { throw new Error("HTTP " + resp.status); });
+      }
+      return resp.json();
+    }).catch(function (err) {
+      console.warn("PV: reorder failed —", err && err.message);
+    });
+  }
+
   function renderQueues(state) {
+    queueLocked = !!state.queue_locked;
+    applyLockBanner();
     renderQueueCol("queue-features", state.features, "feature");
     renderQueueCol("queue-bugs", state.bugs, "bug");
+  }
+
+  function applyLockBanner() {
+    var banner = document.getElementById("queue-lock-banner");
+    if (banner) banner.hidden = !queueLocked;
+  }
+
+  // Reorder `items` to a track's pending optimistic order (if any) so the row
+  // visibly moves on drop before the poll confirms it.
+  function applyPendingOrder(items, track) {
+    var order = pendingReorder[track];
+    if (!order) return items;
+    var byId = {};
+    (items || []).forEach(function (it) { byId[it.feature_id || it.bug_id] = it; });
+    // Only honor the optimistic order while it is still a valid permutation.
+    var ok = order.length === (items || []).length && order.every(function (id) { return byId[id]; });
+    if (!ok) { delete pendingReorder[track]; return items; }
+    // If the server order already matches, the reconcile is done — clear it.
+    var serverOrder = (items || []).map(function (it) { return it.feature_id || it.bug_id; });
+    if (serverOrder.join("") === order.join("")) { delete pendingReorder[track]; return items; }
+    return order.map(function (id) { return byId[id]; });
   }
 
   function renderQueueCol(elId, items, track) {
     var list = document.getElementById(elId);
     list.innerHTML = "";
+    items = applyPendingOrder(items, track);
     if (!items || !items.length) {
       list.appendChild(el("li", "queue-empty", "empty"));
       return;
@@ -479,6 +531,12 @@
       var id = item.feature_id || item.bug_id || "?";
       var stage = item.curated_stage || "Pending";
       var row = el("li", "queue-row");
+      row.setAttribute("data-id", id);
+      row.setAttribute("data-track", track);
+      // Drag handle — visible always; disabled (not hidden) when locked (Decision 11).
+      var handle = el("span", "queue-handle", "⠿");
+      handle.setAttribute("aria-hidden", "true");
+      row.appendChild(handle);
       row.appendChild(chip(track, stage));
       row.appendChild(el("span", "queue-id", id));
       var meta = item.queue_meta || {};
@@ -486,8 +544,53 @@
       if (meta.adhoc) row.appendChild(el("span", "badge badge--adhoc", "ad-hoc"));
       if (meta.stub) row.appendChild(el("span", "badge badge--stub", "stub"));
       if (meta.severity) row.appendChild(el("span", "badge", meta.severity));
+
+      if (queueLocked) {
+        row.classList.add("queue-row--locked");
+        row.setAttribute("title", LOCK_TOOLTIP);
+        row.draggable = false;
+      } else {
+        row.draggable = true;
+        wireRowDrag(row, list, track);
+      }
       list.appendChild(row);
     });
+  }
+
+  // HTML5 drag-and-drop wiring for one row (no build step, no vendored lib).
+  function wireRowDrag(row, list, track) {
+    row.addEventListener("dragstart", function (e) {
+      if (queueLocked) { e.preventDefault(); return; }
+      row.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", row.getAttribute("data-id")); } catch (_) {}
+    });
+    row.addEventListener("dragend", function () {
+      row.classList.remove("dragging");
+      commitDragOrder(list, track);
+    });
+    row.addEventListener("dragover", function (e) {
+      if (queueLocked) return;
+      e.preventDefault();
+      var dragging = list.querySelector(".dragging");
+      if (!dragging || dragging === row) return;
+      var rect = row.getBoundingClientRect();
+      var after = (e.clientY - rect.top) > rect.height / 2;
+      list.insertBefore(dragging, after ? row.nextSibling : row);
+    });
+  }
+
+  // Read the DOM order after a drop and POST it if it changed.
+  function commitDragOrder(list, track) {
+    if (queueLocked) return;
+    var order = Array.prototype.map.call(
+      list.querySelectorAll(".queue-row"),
+      function (r) { return r.getAttribute("data-id"); }
+    );
+    var serverItems = ((window.PV._lastState || {})[track === "bug" ? "bugs" : "features"]) || [];
+    var serverOrder = serverItems.map(function (it) { return it.feature_id || it.bug_id; });
+    if (order.join("") === serverOrder.join("")) return;  // no change
+    postReorder(track, order);
   }
 
   // Build a wi_id -> item lookup so Fleet cards can show shape/color/branch.

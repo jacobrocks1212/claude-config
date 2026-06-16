@@ -152,3 +152,53 @@ between polls and watch the next poll animate the token.
       **drops off** the graph on the next poll.
 - [ ] **Collapsed completion log.** Older completions are not lost — the Complete
       node carries an expandable count/log of recently-dropped items.
+
+---
+
+# Manual Testing — Phase 4 (queue drag-reorder write path)
+
+> Phase 4 makes the Queues pane rows drag-reorderable, writing `queue.json` back
+> via `POST /api/queue` (atomic + AV-lock retry), refused entirely while a batch
+> run-marker is present, with disabled-handle UX. The write path itself is fully
+> automated (`TestQueueWriter*`, `TestPostQueueRoute`); the drag UX + locked
+> visuals below are manual. Decisions 6 + 11.
+
+## Setup
+
+Boot as in the Phase 2 setup against a repo with ≥2 features (and/or ≥2 bugs) in
+`queue.json` so there is something to reorder. To exercise the locked state,
+start a `/lazy-batch` run (or hand-write `~/.claude/state/lazy-run-marker.json`,
+or set `LAZY_STATE_DIR` to a temp dir and drop a marker there) so the server's
+run-marker detection trips.
+
+## Checklist
+
+### Drag-reorder (idle — no run-marker)
+- [ ] **Rows are draggable.** Each Queues row (Features and Bugs) shows a drag
+      handle / grab cursor; you can pick a row up and drop it in a new position.
+- [ ] **Drop persists.** After a drop, the new order is written: re-run
+      `python user/scripts/lazy-state.py --repo-root .` (or reload the page) and
+      the front-of-queue reflects the new order. `queue.json` on disk shows the
+      reordered array (indent=2, trailing newline intact).
+- [ ] **Optimistic + reconciled.** The row visibly moves immediately on drop
+      (optimistic); the next poll (≤2.5s) reconciles against the server's order
+      — no flicker-back-then-forward if the write succeeded.
+- [ ] **Features and Bugs are independent.** Reordering Features does not disturb
+      the Bugs list and vice-versa (separate `pipeline` in the POST).
+
+### Locked state (run-marker present)
+- [ ] **Banner shows.** A "Queue Locked: orchestrator executing" banner appears
+      over/above the Queues pane while the run-marker is present.
+- [ ] **Handles disabled, never hidden.** Drag handles remain visible but are
+      visibly disabled — cursor is `not-allowed` over a row; attempting to drag
+      does nothing (no POST is sent). The rows are NOT removed/hidden.
+- [ ] **Tooltip explains why.** Hovering a disabled row shows a tooltip
+      explaining the queue is locked because the orchestrator is running.
+- [ ] **409 is not destructive.** If a drag somehow fires while locked, the
+      server returns 409 and `queue.json` is byte-identical (no lost/changed
+      order) — the UI snaps the row back on the next poll.
+
+### Unlock recovery
+- [ ] **Clears on run end.** Remove the run-marker (end the `/lazy-batch` run /
+      delete the marker file). Within ≤1 poll the banner clears, handles
+      re-enable (grab cursor returns), and drag-reorder works again.

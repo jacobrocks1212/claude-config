@@ -135,6 +135,23 @@ html, body {
 }
 .queue-id { font-weight: 600; }
 .queue-empty { color: var(--fg-dim); font-style: italic; }
+
+/* ---- Phase 4: drag-reorder + locked-state UX (Decision 11) ---- */
+.queue-row[draggable="true"] { cursor: grab; }
+.queue-row.dragging { opacity: 0.5; cursor: grabbing; }
+.queue-handle {
+  color: var(--fg-dim); font-size: 14px; line-height: 1;
+  cursor: grab; user-select: none; flex: 0 0 auto;
+}
+/* Locked: handle stays VISIBLE but disabled (never hidden). */
+.queue-row--locked { cursor: not-allowed; opacity: 0.75; }
+.queue-row--locked .queue-handle { cursor: not-allowed; color: var(--c-blocked); }
+.queue-lock-banner {
+  margin: 0 0 8px; padding: 6px 10px; border-radius: 6px;
+  background: rgba(255, 65, 54, 0.15); border: 1px solid var(--c-blocked);
+  color: var(--c-blocked); font-weight: 600; font-size: 12px;
+  text-align: center; letter-spacing: 0.03em;
+}
 .badge {
   font-size: 11px; padding: 1px 6px; border-radius: 4px;
   background: #2c3644; color: var(--fg-dim); border: 1px solid var(--border);

@@ -2,6 +2,15 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+
+<!-- Implementation of all four phases is complete (part-1 P1, part-2 P2, part-3
+     P3+P4). Top-level Status is In-progress: the validation tail (repo pytest +
+     lint + operator SKIP_MCP_TEST.md) and the gate-owned Complete flip + COMPLETED.md
+     receipt are still pending. NEVER hand-flip this to Complete — owned by
+     __mark_complete__. -->
+
+
 **MCP runtime:** not-required — claude-config has no MCP server and no Tauri runtime (`.claude/skill-config/capabilities.txt` declares zero capabilities; `quality-gates.md` "MCP exemption"). Validation is the repo's own pytest + lint suite plus a documented manual browser smoke; the Step-9 MCP gate is operator-exempt via `SKIP_MCP_TEST.md`.
 
 ## Cross-feature Integration Notes
@@ -177,8 +186,8 @@ The backend additions (`receipt_present`) are unit-tested with present/absent fi
 - [x] `POST /api/queue` endpoint: body = new ID order for one pipeline (features OR bugs); validates the new order is a permutation of the existing IDs (no add/drop), then writes.
 - [x] Atomic write: read `queue.json` → reorder the array → write temp file → `os.replace`, wrapped in a 3× / 50ms retry catching `PermissionError` for `[WinError 5]` / `[WinError 32]` (Windows Defender file locks). On exhausted retries, return 503 + a clear error the UI surfaces (never silently lose a reorder).
 - [x] Run-marker refusal: detect the batch run-marker; while present, `POST /api/queue` returns 409 and the GET state exposes a `queue_locked: true` flag. Refusal is the floor (Decision 6/11) — intent-log is the documented v2 upgrade, NOT built here.
-- [ ] Frontend drag-reorder: queue rows become draggable (HTML5 DnD or a tiny vendored sortable); on drop, `POST /api/queue` with the new order; optimistic reorder reconciled against the next poll.
-- [ ] Locked-state UX: when `queue_locked`, drag handles are visibly disabled (cursor `not-allowed`), a "Queue Locked: orchestrator executing" banner shows, and a tooltip explains why — handles are disabled, never hidden (Decision 11).
+- [x] Frontend drag-reorder: queue rows become draggable (HTML5 DnD or a tiny vendored sortable); on drop, `POST /api/queue` with the new order; optimistic reorder reconciled against the next poll.
+- [x] Locked-state UX: when `queue_locked`, drag handles are visibly disabled (cursor `not-allowed`), a "Queue Locked: orchestrator executing" banner shows, and a tooltip explains why — handles are disabled, never hidden (Decision 11).
 - [x] Tests: permutation validation (reject add/drop/dupe); atomic-write round-trip (reorder persists, file remains valid JSON, trailing newline preserved to match `lazy-state.py`'s `_atomic_write`); AV-lock retry (monkeypatch `os.replace` to raise `PermissionError [WinError 32]` twice then succeed → write completes within 3 tries, asserted via call count); run-marker refusal (marker present → `POST` returns 409 + `queue.json` byte-identical).
 
 **Minimum Verifiable Behavior:** With no run-marker present, `POST /api/queue` with a reordered ID list updates `queue.json`'s array order atomically and a subsequent `lazy-state.py` run picks the new front-of-queue item; with a run-marker present, the same POST returns 409 and `queue.json` is byte-identical (the SPEC's "Reorder persists (idle)" and "Reorder refused (run active)" validation rows, asserted at the API layer).
@@ -209,3 +218,9 @@ The write path is fully unit-testable in Python: permutation validation, atomic 
 **Integration Notes for Next Phase:**
 - This is the last implementation phase. When Phase 4's work lands and all four phases' deliverables are checked, the implementer sets the top-level PHASES `**Status:**` to `In-progress` (implementation done, validation pending) and lets the state machine route to the validation tail. Do NOT flip to Complete or write COMPLETED.md (gate-owned).
 - v2 backlog (NOT in scope): multi-repo switcher, filesystem-watch liveness, intent-log mid-run reorder concurrency upgrade — recorded in SPEC Open Questions.
+
+**Implementation Notes (2026-06-15 — part-3 / Phase 4, executed inline by /lazy-batch):**
+- **Status:** In-progress (all Phase 4 deliverables implemented; WU-7 fully TDD-tested, WU-8 manual-checklist; top-level validation tail pending).
+- **WU-7 (TDD, done):** new `queue_writer.py` — the single guarded write path. `reorder_queue(path, order)` reads queue.json (normalizes a bare list to `{"queue": [...]}`, preserving sibling top-level keys + per-entry fields), `validate_permutation` rejects add/drop/dupe (`PermutationError`, NO write), then writes `json.dumps(doc, indent=2) + "\n"` via `tempfile.mkstemp` in the same dir + `os.replace`, matching `lazy-state.py`'s `_atomic_write` convention so `/lazy` reads it cleanly. `os.replace` is wrapped in a 3×/50ms retry catching `PermissionError` whose `winerror ∈ {5,32}` (Windows Defender locks); exhaustion → `QueueWriteError`. `server.py` adds `POST /api/queue` (body `{pipeline, order}`) → `reorder_queue` mapping `PermutationError`→400, `QueueWriteError`→503; refuses with 409 while a run-marker is present BEFORE reading the body; `/api/state` adds a `queue_locked` flag computed at RESPONSE time (NOT cached with the heavy probe) via `_run_marker_present()` → `lazy_core.read_run_marker()` (the SoT; fails open to unlocked if lazy_core is unimportable). Tests: `TestQueueWriterPermutation` (4), `TestQueueWriterAtomic` (2), `TestQueueWriterRetry` (2), `TestPostQueueRoute` (5: idle-persist, 409+byte-identical, queue_locked true/false, bad-permutation 400). Run-marker fixtures use a `LAZY_STATE_DIR` temp override.
+- **WU-8 (manual-checklist, done):** `app.js` — Queues rows gain a visible drag handle (`⠿`) and HTML5 DnD (no build step / no vendored lib): `dragstart`/`dragover`/`dragend` reorder the DOM, `commitDragOrder` POSTs the new order only when it changed. Optimistic reorder via a module-level `pendingReorder[track]` applied in `applyPendingOrder` and cleared once the server order reconciles on the next poll (a failed/409 POST drops the optimistic order so the row snaps back). Locked state: `queueLocked` mirrors `state.queue_locked`; locked rows get `queue-row--locked` (cursor `not-allowed`), a tooltip, `draggable=false`, and a "Queue Locked: orchestrator executing" banner (`#queue-lock-banner`) — handles stay VISIBLE, never hidden (Decision 11). Features/Bugs reorder independently (`pipeline` = `features`/`bugs`). `styles.css` adds handle/locked/banner/dragging styles; `index.html` adds the banner div. `node --check` clean. Write-path correctness is fully covered by WU-7's Python tests; the drag UX + locked visuals are in MANUAL_TESTING.md Phase 4.
+- **Part-3 close:** full `python -m pytest user/scripts/ -q` green (575). All four phases' implementation deliverables checked. Per-phase `**Runtime Verification**` rows remain UNCHECKED — owned by the validation tail. Top-level PHASES `**Status:**` set to In-progress (implementation done, validation pending); SPEC/PHASES Complete flip + COMPLETED.md are gate-owned (`__mark_complete__`).

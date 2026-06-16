@@ -29,6 +29,10 @@
       <!-- Bottom-left — Queues -->
       <section id="queues-pane" class="pane queues-pane" aria-label="Queues">
         <h2 class="pane-title">Queues</h2>
+        <!-- Locked-state banner (Decision 11) — shown while a run-marker is present -->
+        <div id="queue-lock-banner" class="queue-lock-banner" hidden>
+          Queue Locked: orchestrator executing
+        </div>
         <div class="queues-cols">
           <div class="queue-col">
             <h3 class="queue-col-title">Features</h3>
