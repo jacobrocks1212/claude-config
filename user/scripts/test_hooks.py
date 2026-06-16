@@ -3554,6 +3554,69 @@ def test_containment_agentid_present_allows_narrow_ops():
             )
 
 
+# ---------------------------------------------------------------------------
+# cycle-subagent-runs-orchestrator-work Phase 2 (KEYSTONE, C2 side) —
+# --cycle-end / --cycle-begin added to LOOP_FORMATION_FLAGS so the arming-free
+# agent_id subagent trip denies a subagent's marker-mutation Bash call (belt-and-
+# suspenders with the C3 refuse_cycle_marker_mutation_if_subagent guard). The
+# main-thread orchestrator (agent_id ABSENT) is never self-denied — its own
+# bracket (--cycle-begin before dispatch, --cycle-end after) must always pass.
+# ---------------------------------------------------------------------------
+
+def test_containment_agentid_present_denies_cycle_bracket_no_marker():
+    """SUBAGENT payload (agent_id) + lazy-state.py --cycle-end / --cycle-begin,
+    NO marker → deny (the agent_id trip is arming-free)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for flag in ("--cycle-end", "--cycle-begin"):
+            result = _run_containment(
+                _bash_preToolUse_json(
+                    f"python3 lazy-state.py {flag}", agent_id=_SUBAGENT_AGENT_ID
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent {flag!r} (no marker) must deny; stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_present_denies_cycle_bracket_bug_state():
+    """SUBAGENT payload + bug-state.py --cycle-end / --cycle-begin → deny (the
+    state-script regex matches bug-state.py too)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for flag in ("--cycle-end", "--cycle-begin"):
+            result = _run_containment(
+                _bash_preToolUse_json(
+                    f"python3 bug-state.py {flag}", agent_id=_SUBAGENT_AGENT_ID
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent bug-state {flag!r} must deny; stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_absent_allows_cycle_bracket():
+    """MAIN-THREAD payload (agent_id absent) + --cycle-end / --cycle-begin →
+    allow (the orchestrator owns the bracket; it must never be self-denied)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for flag in ("--cycle-end", "--cycle-begin"):
+            result = _run_containment(
+                _bash_preToolUse_json(f"python3 lazy-state.py {flag}"), state_dir
+            )
+            assert _containment_decision(result) != "deny", (
+                f"main-thread {flag!r} must NOT deny; stdout: {result.stdout!r}"
+            )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -3670,6 +3733,14 @@ _TESTS = [
      test_containment_agentid_present_allows_unrelated_bash),
     ("test_containment_agentid_present_allows_narrow_ops",
      test_containment_agentid_present_allows_narrow_ops),
+    # cycle-subagent-runs-orchestrator-work Phase 2 (KEYSTONE, C2 side) —
+    # --cycle-end/--cycle-begin in LOOP_FORMATION_FLAGS
+    ("test_containment_agentid_present_denies_cycle_bracket_no_marker",
+     test_containment_agentid_present_denies_cycle_bracket_no_marker),
+    ("test_containment_agentid_present_denies_cycle_bracket_bug_state",
+     test_containment_agentid_present_denies_cycle_bracket_bug_state),
+    ("test_containment_agentid_absent_allows_cycle_bracket",
+     test_containment_agentid_absent_allows_cycle_bracket),
 ]
 
 

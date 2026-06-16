@@ -99,10 +99,16 @@ CORRECTIVE = (
 COMMIT_CEILING = 25
 
 # Loop-formation flags: routing/lifecycle ops only the orchestrator may run.
+# cycle-subagent-runs-orchestrator-work Phase 2 (KEYSTONE, C2 side): --cycle-end
+# / --cycle-begin added here so the arming-free agent_id subagent trip denies a
+# subagent's attempt to clear/arm the containment marker — belt-and-suspenders
+# with the C3 refuse_cycle_marker_mutation_if_subagent guard (lazy_core.py). The
+# main-thread orchestrator (agent_id ABSENT) is never self-denied, so its own
+# bracket (--cycle-begin before dispatch, --cycle-end after) always passes.
 LOOP_FORMATION_FLAGS = (
     "--probe", "--emit-prompt", "--repeat-count", "--repeat-count-peek",
     "--run-start", "--run-end", "--apply-pseudo", "--enqueue-adhoc",
-    "--emit-dispatch",
+    "--emit-dispatch", "--cycle-end", "--cycle-begin",
 )
 # Narrow ops a legitimately-dispatched subagent needs — never denied.
 ALLOW_LISTED_FLAGS = ("--neutralize-sentinel", "--verify-ledger")

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-subagent-runs-orchestrator-work
-status: In-progress
+status: Complete
 created: 2026-06-16
 complexity: complex
 phases: [1, 2]
@@ -34,7 +34,7 @@ phases: [1, 2]
 - [x] WU-2 — Env-var immunity/refusal unit tests + lazy_core cross-ref comment (Phase 1)
 - [x] WU-3 — `refuse_cycle_marker_mutation_if_subagent` guard helper + unit tests (Phase 2)
 - [x] WU-4 — Wire the marker-mutation guard into `--cycle-end`/`--cycle-begin` in both state machines + `--test` fixtures (Phase 2)
-- [ ] WU-5 — Add `--cycle-end`/`--cycle-begin` to C2 hook `LOOP_FORMATION_FLAGS` + hook test (Phase 2)
+- [x] WU-5 — Add `--cycle-end`/`--cycle-begin` to C2 hook `LOOP_FORMATION_FLAGS` + hook test (Phase 2)
 
 ## EXECUTION MODEL — READ THIS FIRST
 
