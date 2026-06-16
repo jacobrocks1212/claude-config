@@ -97,10 +97,10 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — cycle marker read/write/clear helpers + `--cycle-begin`/`--cycle-end` CLI (lazy_core.py + lazy-state.py + bug-state.py)
-- [ ] WU-2 — pytest: marker set/clear/idempotence/staleness
-- [ ] WU-3 — refuse-by-construction guards on orchestrator-only ops when marker present (lazy_core.py)
-- [ ] WU-4 — pytest: refuse-with-marker / allow-without / allow-listed-ops survive
+- [x] WU-1 — cycle marker read/write/clear helpers + `--cycle-begin`/`--cycle-end` CLI (lazy_core.py + lazy-state.py + bug-state.py)
+- [x] WU-2 — pytest: marker set/clear/idempotence/staleness
+- [x] WU-3 — refuse-by-construction guards on orchestrator-only ops when marker present (lazy_core.py)
+- [x] WU-4 — pytest: refuse-with-marker / allow-without / allow-listed-ops survive
 
 ---
 

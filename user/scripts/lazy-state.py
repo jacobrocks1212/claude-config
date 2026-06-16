@@ -5007,6 +5007,29 @@ def main() -> int:
                             "next session. Prints {\"run_marker_deleted\": true|false} "
                             "and exits."
                         ))
+    # lazy-cycle-containment C1 (Phase 2): the cycle-subagent marker bracket.
+    # The orchestrator issues --cycle-begin immediately before every Agent
+    # dispatch and --cycle-end immediately after the Agent returns (every return
+    # path: success, halt, error).  The marker is the on/off switch the C3
+    # refusals (Phase 3) and the C2 PreToolUse hook (Phase 4) key on.
+    parser.add_argument("--cycle-begin", action="store_true",
+                        help=(
+                            "Write the cycle-subagent marker (lazy-cycle-active.json) "
+                            "before an Agent dispatch. Requires --feature-id and --nonce; "
+                            "optional --kind real|meta (default real). Self-healing: "
+                            "overwrites a stale marker and logs. Prints the marker JSON "
+                            "and exits."
+                        ))
+    parser.add_argument("--cycle-end", action="store_true",
+                        help=(
+                            "Clear the cycle-subagent marker after an Agent returns. "
+                            "Idempotent (no-op if already absent). Prints "
+                            "{\"cycle_marker_cleared\": true|false} and exits."
+                        ))
+    parser.add_argument("--nonce", default=None,
+                        help="Dispatch nonce (hex) for --cycle-begin.")
+    parser.add_argument("--kind", choices=["real", "meta"], default="real",
+                        help="Dispatch kind for --cycle-begin (real|meta; default real).")
     # Phase 3/4: --emit-dispatch <class> assembles and registers a fully-bound
     # dispatch prompt for one of the seven dispatch classes (six from Phase 3
     # plus the Phase 4 'hardening' class).  It is an
@@ -5165,7 +5188,30 @@ def main() -> int:
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator
     # scripting (e.g. ``python lazy-state.py --run-start --cloud --max-cycles 20``).
+    # lazy-cycle-containment C1 (Phase 2): cycle-marker bracket dispatch.  Like
+    # all action flags these exit immediately.  They are NOT guarded by the C3
+    # refusal — the orchestrator owns the bracket, and the marker is its own
+    # subject (refusing --cycle-begin under a stale marker would prevent the
+    # self-healing overwrite).
+    if args.cycle_begin:
+        if not args.feature_id or not args.nonce:
+            _die("--cycle-begin requires --feature-id and --nonce")
+        marker = lazy_core.write_cycle_marker(
+            feature_id=args.feature_id, nonce=args.nonce, kind=args.kind,
+        )
+        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        return 0
+
+    if args.cycle_end:
+        cleared = lazy_core.clear_cycle_marker()
+        sys.stdout.write(json.dumps({"cycle_marker_cleared": cleared}, indent=2) + "\n")
+        return 0
+
     if args.run_start:
+        # lazy-cycle-containment C3 (Phase 3): refuse the orchestrator-only op if
+        # a cycle subagent is mid-dispatch (the cycle marker is present).  Zero
+        # side effects on refusal (the guard exits before write_run_marker).
+        lazy_core.refuse_if_cycle_active("--run-start")
         # Write the marker for the feature pipeline.  cloud, repo_root, and
         # max_cycles are taken from the matching existing flags so no new flags
         # are needed for those values.
@@ -5206,6 +5252,9 @@ def main() -> int:
         return 0
 
     if args.run_end:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch.  Guard fires before any marker/registry deletion.
+        lazy_core.refuse_if_cycle_active("--run-end")
         # Phase 7: the run-end reason reuses the existing free-text --reason flag
         # (default "terminal"; "checkpoint" triggers the WU-7.4 checkpoint write).
         reason = args.reason or "terminal"
@@ -5361,6 +5410,9 @@ def main() -> int:
     # Phase 3: --emit-dispatch exits immediately like all other action flags.
     # Pipeline is always "feature" for lazy-state.py (the feature pipeline script).
     if args.emit_dispatch is not None:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch.  Guard fires before any prompt assembly / registry write.
+        lazy_core.refuse_if_cycle_active("--emit-dispatch")
         cls = args.emit_dispatch
         # ISSUE 3 (d8-effect-chains live run): the ENTIRE handler is wrapped so it
         # NEVER emits non-JSON / partial output. Any failure — a bad --context-file
@@ -5471,6 +5523,9 @@ def main() -> int:
         return 0 if result["ok"] else 1
 
     if args.apply_pseudo is not None:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch.  Guard fires before any SPEC/PHASES/sentinel mutation.
+        lazy_core.refuse_if_cycle_active("--apply-pseudo")
         name, spec = args.apply_pseudo
         result = lazy_core.apply_pseudo(
             Path(args.repo_root), name, Path(spec),
@@ -5482,6 +5537,9 @@ def main() -> int:
         return 0 if result["ok"] else 1
 
     if args.enqueue_adhoc:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch.  Guard fires before any queue.json mutation.
+        lazy_core.refuse_if_cycle_active("--enqueue-adhoc")
         if not args.id or not args.name:
             _die("--enqueue-adhoc requires --id and --name")
         result = enqueue_adhoc(

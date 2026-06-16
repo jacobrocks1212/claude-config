@@ -3581,6 +3581,33 @@ def main() -> int:
             "and exits."
         ),
     )
+    # lazy-cycle-containment C1 (Phase 2): cycle-subagent marker bracket —
+    # coupled-pair mirror of lazy-state.py (shared lazy_core backing). Bug
+    # pipeline scopes by --bug-id, so --cycle-begin uses --bug-id for feature_id.
+    parser.add_argument(
+        "--cycle-begin", action="store_true",
+        help=(
+            "Write the cycle-subagent marker (lazy-cycle-active.json) before an "
+            "Agent dispatch. Requires --bug-id and --nonce; optional --kind "
+            "real|meta (default real). Self-healing: overwrites a stale marker "
+            "and logs. Prints the marker JSON and exits."
+        ),
+    )
+    parser.add_argument(
+        "--cycle-end", action="store_true",
+        help=(
+            "Clear the cycle-subagent marker after an Agent returns. Idempotent. "
+            "Prints {\"cycle_marker_cleared\": true|false} and exits."
+        ),
+    )
+    parser.add_argument(
+        "--nonce", default=None,
+        help="Dispatch nonce (hex) for --cycle-begin.",
+    )
+    parser.add_argument(
+        "--kind", choices=["real", "meta"], default="real",
+        help="Dispatch kind for --cycle-begin (real|meta; default real).",
+    )
     # Phase 3: --emit-dispatch <class> — coupled-pair mirror of lazy-state.py.
     # Pipeline is always "bug" for bug-state.py (the bug pipeline script).
     parser.add_argument(
@@ -3665,7 +3692,27 @@ def main() -> int:
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator
     # scripting (e.g. ``python bug-state.py --run-start --cloud --max-cycles 20``).
+    # lazy-cycle-containment C1 (Phase 2): cycle-marker bracket dispatch
+    # (coupled-pair mirror of lazy-state.py). NOT guarded by C3 — the
+    # orchestrator owns the bracket and the marker is its own subject.
+    if args.cycle_begin:
+        if not args.bug_id or not args.nonce:
+            _die("--cycle-begin requires --bug-id and --nonce")
+        marker = lazy_core.write_cycle_marker(
+            feature_id=args.bug_id, nonce=args.nonce, kind=args.kind,
+        )
+        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        return 0
+
+    if args.cycle_end:
+        cleared = lazy_core.clear_cycle_marker()
+        sys.stdout.write(json.dumps({"cycle_marker_cleared": cleared}, indent=2) + "\n")
+        return 0
+
     if args.run_start:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch (coupled-pair mirror). Zero side effects on refusal.
+        lazy_core.refuse_if_cycle_active("--run-start")
         # Write the marker for the bug pipeline.  cloud, repo_root, and
         # max_cycles are taken from the matching existing flags so no new flags
         # are needed for those values.
@@ -3701,6 +3748,9 @@ def main() -> int:
         return 0
 
     if args.run_end:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch (coupled-pair mirror). Guard fires before any deletion.
+        lazy_core.refuse_if_cycle_active("--run-end")
         # Phase 7: the run-end reason reuses the existing free-text --reason flag
         # (default "terminal"; "checkpoint" triggers the WU-7.4 checkpoint write).
         reason = args.reason or "terminal"
@@ -3819,6 +3869,9 @@ def main() -> int:
     # Phase 3: --emit-dispatch exits immediately like all other action flags.
     # Pipeline is always "bug" for bug-state.py.
     if args.emit_dispatch is not None:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch (coupled-pair mirror). Fires before any prompt assembly.
+        lazy_core.refuse_if_cycle_active("--emit-dispatch")
         cls = args.emit_dispatch
         context: dict = {}
         for kv in (args.context or []):
@@ -3887,6 +3940,9 @@ def main() -> int:
         return 0 if result["ok"] else 1
 
     if args.apply_pseudo is not None:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch (coupled-pair mirror). Fires before any SPEC/PHASES write.
+        lazy_core.refuse_if_cycle_active("--apply-pseudo")
         name, spec = args.apply_pseudo
         result = lazy_core.apply_pseudo(
             Path(args.repo_root), name, Path(spec),
@@ -3906,6 +3962,9 @@ def main() -> int:
         return 0 if result["ok"] else 1
 
     if args.enqueue_adhoc:
+        # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
+        # mid-dispatch (coupled-pair mirror). Fires before any queue.json write.
+        lazy_core.refuse_if_cycle_active("--enqueue-adhoc")
         if not args.id:
             _die("--enqueue-adhoc requires --id")
         if not args.name:

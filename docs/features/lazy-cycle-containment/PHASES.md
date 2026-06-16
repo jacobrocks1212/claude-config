@@ -68,11 +68,11 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** Add the cycle-subagent context marker (`~/.claude/state/lazy-cycle-active.json`) read/write to `lazy_core.py` plus the `--cycle-begin` / `--cycle-end` CLI on `lazy-state.py` (and `bug-state.py`). Script-owned; the orchestrator never hand-writes it. The on/off switch every later layer keys on.
 
 **Deliverables:**
-- [ ] `lazy_core.py` marker read/write helpers (`read_cycle_marker()`, `write_cycle_marker(...)`, `clear_cycle_marker()`). Marker carries: `feature_id`, dispatch `nonce`, `kind` (`real`|`meta`), `started_at`, parent `session_id`, `commit_tally`.
-- [ ] `lazy-state.py --cycle-begin --feature-id <id> --nonce <hex> [--kind real|meta]` writes the marker. Self-healing staleness: if a marker already exists (a prior dispatch crashed without `--cycle-end`), overwrite it and log the event (orchestrator is single-threaded — only one dispatch in flight).
-- [ ] `lazy-state.py --cycle-end` clears the marker; idempotent (no-op if already absent), zero error on a missing marker.
-- [ ] Mirror `--cycle-begin` / `--cycle-end` onto `bug-state.py` (shared `lazy_core.py` backing).
-- [ ] Tests: `pytest` for set → marker file appears with all fields; clear → file deleted; idempotent re-clear is a no-op; staleness (a `--cycle-begin` over an existing marker overwrites + logs).
+- [x] `lazy_core.py` marker read/write helpers (`read_cycle_marker()`, `write_cycle_marker(...)`, `clear_cycle_marker()`). Marker carries: `feature_id`, dispatch `nonce`, `kind` (`real`|`meta`), `started_at`, parent `session_id`, `commit_tally`.
+- [x] `lazy-state.py --cycle-begin --feature-id <id> --nonce <hex> [--kind real|meta]` writes the marker. Self-healing staleness: if a marker already exists (a prior dispatch crashed without `--cycle-end`), overwrite it and log the event (orchestrator is single-threaded — only one dispatch in flight).
+- [x] `lazy-state.py --cycle-end` clears the marker; idempotent (no-op if already absent), zero error on a missing marker.
+- [x] Mirror `--cycle-begin` / `--cycle-end` onto `bug-state.py` (shared `lazy_core.py` backing).
+- [x] Tests: `pytest` for set → marker file appears with all fields; clear → file deleted; idempotent re-clear is a no-op; staleness (a `--cycle-begin` over an existing marker overwrites + logs).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --cycle-begin --feature-id x --nonce abc` then `ls ~/.claude/state/lazy-cycle-active.json` shows the file with `feature_id: x`; `--cycle-end` deletes it; a second `--cycle-end` exits 0 with no error.
 
@@ -97,6 +97,13 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 - `read_cycle_marker()` is the single predicate Phase 3's refusals and Phase 4's hook both consult (`test -f` for the hook fast-path; structured read for the refusals).
 - The allow-list ops a legitimately-dispatched subagent needs (`--neutralize-sentinel`, `--verify-ledger`) must NOT be entangled with the marker — they stay callable with the marker present.
 
+**Implementation Notes (2026-06-15 — Phase 2 implemented, validation pending):**
+- `lazy_core.py`: added `write_cycle_marker(feature_id, nonce, *, kind="real", session_id=None, now=None)`, `read_cycle_marker()`, `clear_cycle_marker()` + `_CYCLE_MARKER_FILENAME = "lazy-cycle-active.json"` (sibling of `_MARKER_FILENAME` in the same `claude_state_dir()` dir, honoring `LAZY_STATE_DIR`). Marker carries `feature_id`/`nonce`/`kind`/`started_at` (ISO-8601 'Z', via `fromtimestamp(tz=utc)` — not the deprecated `utcfromtimestamp`)/`session_id`/`commit_tally: 0`. Self-healing staleness: an existing marker is overwritten and a `_diag()` breadcrumb logged.
+- `session_id` is best-effort from env (`CLAUDE_SESSION_ID` / `CLAUDE_CODE_SESSION_ID`), else None. `read_cycle_marker` is read-only (never creates the dir) and treats corrupt JSON as None. `clear_cycle_marker` is idempotent (False on missing, True on delete).
+- `lazy-state.py`: `--cycle-begin --feature-id <id> --nonce <hex> [--kind real|meta]` and `--cycle-end` flags + handlers (exit-immediately action flags). `--cycle-begin` requires `--feature-id` + `--nonce`; the cycle handlers are NOT C3-guarded (the orchestrator owns the bracket).
+- `bug-state.py`: mirrored `--cycle-begin`/`--cycle-end` (uses `--bug-id` for the marker's `feature_id`) + `--nonce`/`--kind`.
+- Tests: 9 new `test_lazy_core.py` cases (`TestCycleMarker`-equivalent functions): symbols present, set-all-fields, read→none-after-clear, read-none-when-absent (+ no dir side-effect), idempotent re-clear, staleness overwrite+log, `kind=meta` round-trip, corrupt-file→None. Full suite: 424 passed. Both `--test` smoke harnesses stay green (default output byte-identical). Integration: `--cycle-begin`/`--cycle-end` round-trip confirmed on the CLI.
+
 ---
 
 ### Phase 3: Refuse-by-construction (C3)
@@ -106,10 +113,10 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** `lazy_core.py` refuses the orchestrator-only state-script operations when the cycle marker is present — the belt-and-suspenders backstop if the C2 hook is disabled/bypassed. Lands BEFORE the hook (Phase 4) so the backstop exists first.
 
 **Deliverables:**
-- [ ] `--run-end`, `--run-start`, `--apply-pseudo`, `--enqueue-adhoc`, `--emit-dispatch` REFUSE (exit non-zero, ZERO side effects, corrective message) when `lazy-cycle-active.json` is present.
-- [ ] Safe-for-orchestrator by construction: the orchestrator sets the marker → dispatches → clears on return → only then runs these ops, so the refusal bites ONLY a subagent calling them mid-dispatch. Document this invariant in code comments.
-- [ ] The allow-listed ops (`--neutralize-sentinel`, `--verify-ledger`) and all read/probe ops continue to work with the marker present (no over-broad refusal).
-- [ ] Tests: `pytest` — each refused op with marker present → non-zero exit + zero side effects (assert no file written / queue unchanged) + corrective message on stderr; same ops with marker absent → normal success; allow-listed ops succeed with marker present.
+- [x] `--run-end`, `--run-start`, `--apply-pseudo`, `--enqueue-adhoc`, `--emit-dispatch` REFUSE (exit non-zero, ZERO side effects, corrective message) when `lazy-cycle-active.json` is present.
+- [x] Safe-for-orchestrator by construction: the orchestrator sets the marker → dispatches → clears on return → only then runs these ops, so the refusal bites ONLY a subagent calling them mid-dispatch. Document this invariant in code comments.
+- [x] The allow-listed ops (`--neutralize-sentinel`, `--verify-ledger`) and all read/probe ops continue to work with the marker present (no over-broad refusal).
+- [x] Tests: `pytest` — each refused op with marker present → non-zero exit + zero side effects (assert no file written / queue unchanged) + corrective message on stderr; same ops with marker absent → normal success; allow-listed ops succeed with marker present.
 
 **Minimum Verifiable Behavior:** with `lazy-cycle-active.json` present, `python3 user/scripts/lazy-state.py --run-end <run>` exits non-zero, prints a corrective message, and leaves the run marker untouched; with the cycle marker absent, the same call succeeds.
 
@@ -132,6 +139,12 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Integration Notes for Next Phase:**
 - The set of refused ops here MUST match the C2 hook's deny-set for loop-formation/lifecycle (Phase 4) — they are intentionally redundant (defense-in-depth). Keep the two lists in lockstep; a divergence is a coverage hole.
 - The corrective message wording can be shared/echoed by the hook so the subagent sees a consistent reason whether the hook or the script catches it.
+
+**Implementation Notes (2026-06-15 — Phase 3 implemented, validation pending):**
+- `lazy_core.py`: added `CYCLE_REFUSED_OPS` frozenset (`--run-end`, `--run-start`, `--apply-pseudo`, `--enqueue-adhoc`, `--emit-dispatch`) + `refuse_if_cycle_active(op_name)`. When `read_cycle_marker()` is not None it writes a corrective message to **stderr** (names the op + the marker's `feature_id` + "STOP after commit/push/report") and `sys.exit(3)`; when the marker is absent it returns silently. A documented invariant comment block explains the orchestrator's set→dispatch→clear→run ordering and the lockstep requirement with the C2 hook deny-set (Phase 4).
+- The guard is invoked at the **entry** of each guarded CLI handler in BOTH `lazy-state.py` and `bug-state.py`, BEFORE any side effect (marker/registry deletion, prompt assembly, SPEC/PHASES/queue mutation) — so a refused op leaves state untouched. Allow-listed ops (`--neutralize-sentinel`, `--verify-ledger`) and all read/probe ops are deliberately NOT guarded (a legitimately-dispatched subagent needs them).
+- The refused-op set EXACTLY matches the SPEC §C3 set and is asserted by `test_refuse_guard_op_set_matches_spec` so the Phase-4 hook deny-set cannot silently drift from it.
+- Tests: 6 new `test_lazy_core.py` cases: symbol present, fires-with-marker (all 5 ops → non-zero exit + op-named stderr message), no-op-without-marker (all 5), refused-op-leaves-run-marker-untouched (zero side effects), allow-listed-ops-not-in-set, op-set-matches-spec. Full suite: 424 passed. Integration: `--run-end`/`--enqueue-adhoc` refuse (exit 3, corrective stderr) with a real marker present; `--run-start` succeeds with the marker cleared.
 
 ---
 

@@ -4865,6 +4865,210 @@ def delete_run_marker(clear_registry: bool = False) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Cycle-subagent marker API (lazy-cycle-containment C1 / Phase 2)
+#
+# The cycle marker (`lazy-cycle-active.json`) is the SIBLING of the run marker
+# (`lazy-run-marker.json`) in the same state dir (respecting LAZY_STATE_DIR).
+# It says "a dispatched cycle subagent is currently executing" — the on/off
+# switch the C3 refusals (Phase 3) and the C2 PreToolUse hook (Phase 4) key on.
+# Script-owned: the orchestrator never hand-writes it; it issues
+# `--cycle-begin`/`--cycle-end` around every Agent dispatch.
+# ---------------------------------------------------------------------------
+
+# Cycle-marker filename inside the state dir (sibling of _MARKER_FILENAME).
+_CYCLE_MARKER_FILENAME = "lazy-cycle-active.json"
+
+
+def write_cycle_marker(
+    feature_id: str,
+    nonce: str,
+    *,
+    kind: str = "real",
+    session_id: str | None = None,
+    now: float | None = None,
+) -> dict:
+    """Write (or overwrite) the cycle-subagent marker to the state dir.
+
+    Called by `--cycle-begin` immediately before every Agent dispatch.
+
+    Fields written:
+      - feature_id (str): the single feature this dispatch may touch (the C2
+        hook's 2nd-feature tripwire compares staged paths against it).
+      - nonce (str): the dispatch nonce.
+      - kind (str): "real" (a real-skill cycle) | "meta" (input-audit,
+        apply-resolution, recovery, hardening, coherence-recovery,
+        needs-runtime-redispatch). Default "real".
+      - started_at (str): ISO-8601 UTC timestamp ending in 'Z'.
+      - session_id (str|None): the parent orchestrator session id, best-effort
+        from the env (CLAUDE_SESSION_ID / CLAUDE_CODE_SESSION_ID) when not
+        passed explicitly; None when unavailable.
+      - commit_tally (int): starts at 0; the C2 hook (Phase 4) increments it on
+        each allowed `git commit` for the commit-count backstop.
+
+    Self-healing staleness: if a marker already EXISTS (a prior dispatch crashed
+    without `--cycle-end`), it is OVERWRITTEN and the event logged. The
+    orchestrator is single-threaded — only one dispatch is ever in flight — so
+    overwrite-and-log is the correct recovery, never a hard error.
+
+    Args:
+        feature_id: the feature this dispatch is scoped to.
+        nonce: the dispatch nonce.
+        kind: "real" | "meta" (default "real").
+        session_id: parent session id; None → best-effort env lookup.
+        now: epoch float for started_at (injectable for tests; defaults to
+             time.time()).
+
+    Returns:
+        The marker dict that was written.
+    """
+    if now is None:
+        now = time.time()
+    if session_id is None:
+        session_id = (
+            os.environ.get("CLAUDE_SESSION_ID")
+            or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        )
+    state_dir = claude_state_dir()
+    marker_path = state_dir / _CYCLE_MARKER_FILENAME
+
+    # Self-healing staleness: an existing marker means a prior dispatch never
+    # cleared — overwrite it and log the event (single-threaded orchestrator).
+    if marker_path.exists():
+        prior_id = None
+        try:
+            prior = json.loads(marker_path.read_text(encoding="utf-8"))
+            if isinstance(prior, dict):
+                prior_id = prior.get("feature_id")
+        except (OSError, json.JSONDecodeError):
+            prior_id = "<unreadable>"
+        _diag(
+            f"cycle marker overwrite (stale prior dispatch never --cycle-end'd): "
+            f"prior feature_id={prior_id!r} → new feature_id={feature_id!r}"
+        )
+
+    # Use fromtimestamp(tz=utc) — the deprecated utcfromtimestamp() warns in
+    # Python ≥3.12 (mirrors write_run_marker's started_at formatting).
+    started_at = (
+        datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+    )
+    marker = {
+        "feature_id": feature_id,
+        "nonce": nonce,
+        "kind": kind,
+        "started_at": started_at,
+        "session_id": session_id,
+        "commit_tally": 0,
+    }
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
+def read_cycle_marker() -> dict | None:
+    """Read the cycle-subagent marker from the state dir, or None if absent.
+
+    This is the single predicate the C3 refusals (Phase 3) and the C2 hook
+    fast-path (Phase 4) both consult. Read-only: never creates the state dir.
+    A corrupt/unparseable marker reads as None (never bricks a caller) — the
+    C2 hook fast-path uses a bare `test -f`, so the worst case of a corrupt
+    marker is that the script-side refusals treat it as absent while the hook
+    still denies; the orchestrator's next `--cycle-begin`/`--cycle-end`
+    rewrites/clears it.
+
+    Returns:
+        The parsed marker dict if present and valid, otherwise None.
+    """
+    marker_path = claude_state_dir(create=False) / _CYCLE_MARKER_FILENAME
+    if not marker_path.exists():
+        return None
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, dict):
+            return None
+        return marker
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def clear_cycle_marker() -> bool:
+    """Delete the cycle-subagent marker. Idempotent.
+
+    Called by `--cycle-end` after every Agent return (success, halt, error).
+    A missing marker is a no-op: returns False, raises nothing, exits cleanly.
+
+    Returns:
+        True if the marker existed and was deleted; False if already absent.
+    """
+    marker_path = claude_state_dir(create=False) / _CYCLE_MARKER_FILENAME
+    if not marker_path.exists():
+        return False
+    try:
+        marker_path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Refuse-by-construction (lazy-cycle-containment C3 / Phase 3)
+#
+# The orchestrator-only state-script operations REFUSE when the cycle marker is
+# present — the belt-and-suspenders backstop if the C2 hook (Phase 4) is
+# disabled or bypassed. Safe for the orchestrator BY CONSTRUCTION: the
+# orchestrator sets the marker → dispatches → clears the marker on return →
+# only THEN runs these ops. They never execute with the marker present in
+# correct orchestrator flow; the refusal bites ONLY a subagent calling them
+# mid-dispatch.
+#
+# CYCLE_REFUSED_OPS MUST stay in lockstep with the C2 hook's loop-formation /
+# lifecycle deny-set (Phase 4) — they are intentionally redundant
+# defense-in-depth. A divergence is a coverage hole. The allow-listed ops a
+# legitimately-dispatched subagent needs (`--neutralize-sentinel`,
+# `--verify-ledger`) and all read/probe ops are deliberately NOT in this set.
+# ---------------------------------------------------------------------------
+
+CYCLE_REFUSED_OPS: frozenset[str] = frozenset({
+    "--run-end",
+    "--run-start",
+    "--apply-pseudo",
+    "--enqueue-adhoc",
+    "--emit-dispatch",
+})
+
+
+def refuse_if_cycle_active(op_name: str) -> None:
+    """Refuse an orchestrator-only op if the cycle marker is present.
+
+    Invoked at the ENTRY of each guarded CLI handler (`--run-end`, `--run-start`,
+    `--apply-pseudo`, `--enqueue-adhoc`, `--emit-dispatch`) in lazy-state.py and
+    bug-state.py, BEFORE any side effect (marker write/delete, queue mutation,
+    prompt emission) so a refused op leaves state untouched.
+
+    When `read_cycle_marker()` is not None: print a corrective message to stderr
+    and exit non-zero with ZERO side effects. When the marker is absent: return
+    silently (the orchestrator's normal flow runs these ops between cycles, with
+    the marker cleared, so the guard is a no-op there).
+
+    Args:
+        op_name: the CLI flag being guarded (e.g. "--run-end"). Echoed in the
+                 corrective message so the subagent sees exactly what it tried.
+    """
+    marker = read_cycle_marker()
+    if marker is None:
+        return
+    feature_id = marker.get("feature_id", "<unknown>")
+    sys.stderr.write(
+        f"REFUSED: `{op_name}` is an orchestrator-only operation and you are a "
+        f"single cycle subagent (the lazy-cycle-active marker is present for "
+        f"feature '{feature_id}'). STOP after your commit + push + report — "
+        f"routing the next cycle, lifecycle teardown ({op_name}), enqueuing, and "
+        f"completion are the orchestrator's job. This op was refused with zero "
+        f"side effects.\n"
+    )
+    sys.exit(3)
+
+
+# ---------------------------------------------------------------------------
 # Prompt-registry API
 # ---------------------------------------------------------------------------
 

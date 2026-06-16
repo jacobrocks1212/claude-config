@@ -14493,5 +14493,259 @@ def main() -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 (lazy-cycle-containment C1) — cycle-subagent marker
+#
+# The cycle marker (lazy-cycle-active.json) is the sibling of the run marker.
+# Hermetic via LAZY_STATE_DIR temp dirs (same discipline as Phase 1/7).
+# ---------------------------------------------------------------------------
+
+_CYCLE_MARKER_FILENAME = "lazy-cycle-active.json"
+
+
+def test_cycle_marker_symbols_present():
+    """Phase 2 public symbols exist on lazy_core."""
+    _guard()
+    for name in ("read_cycle_marker", "write_cycle_marker", "clear_cycle_marker"):
+        assert hasattr(lazy_core, name), f"Phase 2 missing {name}"
+
+
+def test_cycle_marker_set_writes_all_fields():
+    """write_cycle_marker → file appears with feature_id/nonce/kind/commit_tally
+    and a parseable started_at; default kind is 'real'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            marker = lazy_core.write_cycle_marker(feature_id="x", nonce="abc")
+            path = Path(td) / _CYCLE_MARKER_FILENAME
+            assert path.exists(), "cycle marker file must appear after write"
+            on_disk = json.loads(path.read_text(encoding="utf-8"))
+            assert on_disk["feature_id"] == "x", on_disk
+            assert on_disk["nonce"] == "abc", on_disk
+            assert on_disk["kind"] == "real", on_disk
+            assert on_disk["commit_tally"] == 0, on_disk
+            assert "session_id" in on_disk, on_disk
+            # started_at parses as the ISO-8601 UTC 'Z' format we write.
+            import datetime as _dt
+            _dt.datetime.strptime(on_disk["started_at"], "%Y-%m-%dT%H:%M:%SZ")
+            # The returned dict mirrors what was written.
+            assert marker["feature_id"] == "x"
+            assert marker["nonce"] == "abc"
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_marker_read_returns_dict_then_none_after_clear():
+    """read_cycle_marker returns the parsed dict when present and None after a
+    clear; the file is gone after clear."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_cycle_marker(feature_id="y", nonce="def")
+            got = lazy_core.read_cycle_marker()
+            assert got is not None and got["feature_id"] == "y", got
+            lazy_core.clear_cycle_marker()
+            assert not (Path(td) / _CYCLE_MARKER_FILENAME).exists(), "file gone after clear"
+            assert lazy_core.read_cycle_marker() is None, "read returns None after clear"
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_marker_read_none_when_absent():
+    """read_cycle_marker returns None when no marker exists (and never creates
+    the state dir as a side effect)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"  # does NOT exist
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.read_cycle_marker() is None
+            assert not state_dir.exists(), "read path must not create the state dir"
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_marker_clear_idempotent():
+    """A clear with no marker present is a no-op: returns False, raises nothing.
+    A second clear after a real clear is also a no-op."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Clear with nothing present → no-op, no raise.
+            assert lazy_core.clear_cycle_marker() is False
+            lazy_core.write_cycle_marker(feature_id="z", nonce="0")
+            assert lazy_core.clear_cycle_marker() is True, "first clear deletes"
+            assert lazy_core.clear_cycle_marker() is False, "re-clear is a no-op"
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_marker_staleness_overwrites_and_logs():
+    """write_cycle_marker over an existing marker OVERWRITES (new feature_id/nonce
+    win) and logs the overwrite event (orchestrator is single-threaded)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.clear_diagnostics()
+            lazy_core.write_cycle_marker(feature_id="first", nonce="111")
+            lazy_core.write_cycle_marker(feature_id="second", nonce="222")
+            got = lazy_core.read_cycle_marker()
+            assert got["feature_id"] == "second", got
+            assert got["nonce"] == "222", got
+            # The overwrite logged a breadcrumb to the shared diagnostics list.
+            diags = "\n".join(lazy_core._DIAGNOSTICS)
+            assert "overwr" in diags.lower() or "stale" in diags.lower(), (
+                f"expected an overwrite/staleness breadcrumb, got: {diags!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_marker_kind_meta_round_trips():
+    """kind='meta' round-trips through write → read."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_cycle_marker(feature_id="m", nonce="m1", kind="meta")
+            got = lazy_core.read_cycle_marker()
+            assert got["kind"] == "meta", got
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_marker_corrupt_file_read_returns_none():
+    """A corrupt/unparseable cycle marker reads as None (never bricks a caller)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            path = Path(td) / _CYCLE_MARKER_FILENAME
+            path.write_text("{ not json", encoding="utf-8")
+            assert lazy_core.read_cycle_marker() is None
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 (lazy-cycle-containment C3) — refuse-by-construction
+#
+# The orchestrator-only state-script ops REFUSE (exit non-zero, zero side
+# effects, corrective message) when the cycle marker is present.  The guard is
+# refuse_if_cycle_active(op_name) in lazy_core; the CLI handlers in
+# lazy-state.py / bug-state.py invoke it at the top of each guarded op.
+# ---------------------------------------------------------------------------
+
+_GUARDED_OPS = ["--run-end", "--run-start", "--apply-pseudo", "--enqueue-adhoc", "--emit-dispatch"]
+
+
+def test_refuse_guard_symbol_present():
+    """refuse_if_cycle_active exists on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "refuse_if_cycle_active"), "Phase 3 missing refuse_if_cycle_active"
+
+
+def _capture_refusal(op):
+    """Invoke the guard, capturing (exit_code_or_None, stderr_text).
+
+    Returns (code, msg): code is the SystemExit code (None if the guard did NOT
+    exit), msg is whatever the guard wrote to stderr.
+    """
+    import io as _io
+    buf = _io.StringIO()
+    real_stderr = sys.stderr
+    sys.stderr = buf
+    code = None
+    try:
+        lazy_core.refuse_if_cycle_active(op)
+    except SystemExit as exc:
+        code = exc.code if exc.code is not None else 0
+    finally:
+        sys.stderr = real_stderr
+    return code, buf.getvalue()
+
+
+def test_refuse_guard_fires_with_marker_present():
+    """refuse_if_cycle_active(op) with a cycle marker present exits non-zero and
+    prints a corrective message to stderr — for EVERY guarded op."""
+    _guard()
+    for op in _GUARDED_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+                code, msg = _capture_refusal(op)
+                assert code is not None and code != 0, f"{op} must exit non-zero under marker"
+                assert op in msg, f"{op} corrective message must name the op, got: {msg!r}"
+                assert "cycle" in msg.lower(), f"{op} message must mention the cycle marker"
+            finally:
+                _clear_state_dir()
+
+
+def test_refuse_guard_noop_without_marker():
+    """refuse_if_cycle_active(op) with NO marker present returns normally (no
+    raise, no exit) so the orchestrator flow is unaffected — for every op."""
+    _guard()
+    for op in _GUARDED_OPS:
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                # No marker written. Guard must be a silent no-op.
+                lazy_core.refuse_if_cycle_active(op)  # must NOT raise / exit
+            finally:
+                _clear_state_dir()
+
+
+def test_refuse_guard_leaves_run_marker_untouched():
+    """A refused op leaves state untouched: the run marker on disk before the
+    refusal is identical after it (zero side effects)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False, repo_root="/r")
+            run_path = Path(td) / "lazy-run-marker.json"
+            before = run_path.read_text(encoding="utf-8")
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            code, _ = _capture_refusal("--run-end")
+            assert code is not None and code != 0, "guard must refuse"
+            after = run_path.read_text(encoding="utf-8")
+            assert before == after, "refused op must not mutate the run marker"
+        finally:
+            _clear_state_dir()
+
+
+def test_refuse_guard_allow_listed_ops_not_guarded():
+    """Allow-listed ops (--neutralize-sentinel, --verify-ledger) are NOT in the
+    refusal set — invoking the guard for them is a no-op even with a marker
+    present (a legitimately-dispatched subagent needs them)."""
+    _guard()
+    for op in ("--neutralize-sentinel", "--verify-ledger"):
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+                # The guard is only invoked for the orchestrator-only ops; these
+                # ops never call it, so we assert membership in the guarded set.
+                assert op not in lazy_core.CYCLE_REFUSED_OPS, (
+                    f"{op} must NOT be a refused op (allow-listed)"
+                )
+            finally:
+                _clear_state_dir()
+
+
+def test_refuse_guard_op_set_matches_spec():
+    """The refused-op set is exactly the C3 set (kept in lockstep with the C2
+    hook deny-set — Phase 4)."""
+    _guard()
+    assert set(lazy_core.CYCLE_REFUSED_OPS) == set(_GUARDED_OPS), (
+        f"refused-op set drift: {sorted(lazy_core.CYCLE_REFUSED_OPS)}"
+    )
+
+
 if __name__ == "__main__":
     sys.exit(main())

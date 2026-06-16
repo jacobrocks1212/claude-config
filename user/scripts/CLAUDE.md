@@ -127,9 +127,13 @@ python3 lazy-state.py --repeat-count                       # fold a repeat_count
 python3 lazy-state.py --probe --forward-cycles N --meta-cycles M --max-cycles K  # fold git_guards (clean_tree/head_matches_origin/unpushed) + a pre-formatted cycle_header line into the probe JSON; byte-identical default without the flag; --repeat-count-peek reads marker-persisted counters without advancing them
 python3 lazy-state.py --run-start                          # write the run marker to the state dir (pipeline=feature); gates registry writes and counter advances for this run; uses --cloud, --repo-root, --max-cycles when present; prints marker JSON and exits
 python3 lazy-state.py --run-end                            # delete the run marker and the prompt registry from the state dir; call on every terminal run path; prints {"run_marker_deleted": true|false} and exits
+# --- lazy-cycle-containment C1/C3 (cycle-subagent marker; same flags on bug-state.py, which uses --bug-id) ---
+python3 lazy-state.py --cycle-begin --feature-id <id> --nonce <hex> [--kind real|meta]  # write the cycle-subagent marker (lazy-cycle-active.json, sibling of the run marker) immediately BEFORE every Agent dispatch; self-healing (overwrites a stale marker + logs); prints marker JSON. The marker carries feature_id/nonce/kind/started_at/session_id/commit_tally.
+python3 lazy-state.py --cycle-end                          # clear the cycle marker immediately AFTER every Agent return (success/halt/error); idempotent; prints {"cycle_marker_cleared": true|false}
+# C3 refuse-by-construction: while the cycle marker is present, --run-end/--run-start/--apply-pseudo/--enqueue-adhoc/--emit-dispatch REFUSE (exit 3, corrective stderr, ZERO side effects) — they are orchestrator-only. --neutralize-sentinel/--verify-ledger + all reads stay callable (a dispatched subagent needs them). The refused-op set is lockstep with the C2 PreToolUse hook deny-set (lazy-cycle-containment.sh).
 ```
 
-Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json), `1` ledger/pseudo-skill failure (`--verify-ledger`/`--apply-pseudo`/`--neutralize-sentinel` not ok).
+Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json), `1` ledger/pseudo-skill failure (`--verify-ledger`/`--apply-pseudo`/`--neutralize-sentinel` not ok), `3` C3 cycle-containment refusal (an orchestrator-only op invoked while the cycle marker is present).
 
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 
