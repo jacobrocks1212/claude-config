@@ -89,7 +89,7 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-4 — static-asset serving + vendored Cytoscape/dagre + server static-root (TDD on serving)
+- [x] WU-4 — static-asset serving + vendored Cytoscape/dagre + server static-root (TDD on serving)
 - [ ] WU-5 — three-pane shell (HTML/CSS/JS): poll loop, live dot + Connection-Lost guard, layout bootstrap, encoding, queues/fleet/triage panes (manual UI)
 
 ---

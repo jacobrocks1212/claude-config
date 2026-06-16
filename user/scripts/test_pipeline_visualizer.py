@@ -469,5 +469,103 @@ class TestServer:
             server_mod.probe_state = real_probe
 
 
+# ---------------------------------------------------------------------------
+# WU-4 — static-asset serving (Phase 2)
+# ---------------------------------------------------------------------------
+
+class TestStaticServing:
+    """The server serves the bundled static frontend; API routes still win."""
+
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def test_root_serves_index_html(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/")
+            assert resp.status == 200
+            ctype = resp.getheader("Content-Type") or ""
+            assert "text/html" in ctype
+            # The shipped index.html, not a directory listing.
+            assert b"<html" in body.lower() or b"<!doctype html" in body.lower()
+        finally:
+            httpd.shutdown()
+
+    def test_app_js_served(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/static/app.js")
+            assert resp.status == 200
+            ctype = resp.getheader("Content-Type") or ""
+            assert "javascript" in ctype or "ecmascript" in ctype
+            assert len(body) > 0
+        finally:
+            httpd.shutdown()
+
+    def test_styles_css_served(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/static/styles.css")
+            assert resp.status == 200
+            ctype = resp.getheader("Content-Type") or ""
+            assert "css" in ctype
+        finally:
+            httpd.shutdown()
+
+    def test_vendored_cytoscape_served(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/static/cytoscape.umd.js")
+            assert resp.status == 200
+            assert len(body) > 0
+        finally:
+            httpd.shutdown()
+
+    def test_api_state_still_wins_over_static(self, tmp_path):
+        # Regression: API routes must be matched BEFORE the static fallthrough,
+        # so /api/state returns JSON (not a 404 file-not-found).
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/api/state")
+            assert resp.status == 200
+            ctype = resp.getheader("Content-Type") or ""
+            assert "application/json" in ctype
+            parsed = json.loads(body)
+            assert isinstance(parsed["features"], list)
+        finally:
+            httpd.shutdown()
+
+    def test_api_queue_still_wins_over_static(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/api/queue")
+            assert resp.status == 200
+            assert "application/json" in (resp.getheader("Content-Type") or "")
+        finally:
+            httpd.shutdown()
+
+    def test_path_traversal_does_not_serve_source(self, tmp_path):
+        # GET /static/../server.py must NOT serve the backend source file.
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, body = self._get(port, "/static/../server.py")
+            # Either normalized away (404) or redirected — never the source bytes.
+            assert b"ThreadingHTTPServer" not in body
+            assert b"def make_server" not in body
+        finally:
+            httpd.shutdown()
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
