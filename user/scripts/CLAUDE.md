@@ -115,7 +115,8 @@ python3 lazy-state.py --cloud               # cloud variant
 python3 lazy-state.py --real-device auto    # resolve host audio capability from env
 python3 lazy-state.py --skip-needs-research # batch: skip research-pending items
 python3 lazy-state.py --repo-root <path>    # operate on a specific repo
-python3 lazy-state.py --park-needs-input    # batch --park mode: skip (park) NEEDS_INPUT items into parked[] instead of halting (BLOCKED still halts; output byte-identical without the flag)
+python3 lazy-state.py --park-needs-input    # batch --park mode: skip (park) NEEDS_INPUT items into parked[] instead of halting (BLOCKED still halts UNLESS --park-blocked is also active; output byte-identical without the flag)
+python3 lazy-state.py --park-blocked        # batch --park mode companion: skip (park) a feature/bug-local BLOCKED.md into parked[] (sentinel_kind: blocked) instead of halting on terminal_reason=blocked; --park passes BOTH flags. Global/env terminals (cloud/device/research/scoped-id) still halt. Output byte-identical without the flag. Same flag on bug-state.py.
 python3 lazy-state.py --enqueue-adhoc …     # prepend an ad-hoc item to the queue
 python3 lazy-state.py --backfill-receipts   # grandfather pre-gate completions
 python3 lazy-state.py --test                # run the in-file fixture smoke tests
@@ -134,6 +135,8 @@ python3 lazy-state.py --cycle-end                          # clear the cycle mar
 ```
 
 Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json), `1` ledger/pseudo-skill failure (`--verify-ledger`/`--apply-pseudo`/`--neutralize-sentinel` not ok), `3` C3 cycle-containment refusal (an orchestrator-only op invoked while the cycle marker is present).
+
+**Park-mode terminal — `queue-exhausted-all-parked`.** Under `--park` (i.e. `--park-needs-input` and/or `--park-blocked`), when the queue advances past every workable item and ONLY parked items remain (`current is None` with a non-empty `parked[]`), `compute_state` returns the honest distinct terminal `queue-exhausted-all-parked` — NOT `all-features-complete` / `all-bugs-fixed` (which would be a false completion). It is the fallback AFTER the specific global terminals (`cloud-queue-exhausted`, `device-queue-exhausted`, `queue-blocked-on-research`/`all-remaining-deferred`, `scoped-id-not-found`) and BEFORE all-complete. The orchestrator flushes the parked items (needs-input + blocked) before stopping. Same terminal on both `lazy-state.py` and `bug-state.py`.
 
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 

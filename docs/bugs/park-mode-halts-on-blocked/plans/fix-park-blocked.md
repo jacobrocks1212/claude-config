@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: park-mode-halts-on-blocked
-status: In-progress
+status: Complete
 created: 2026-06-16
 complexity: complex
 phases: [1, 2, 3, 4, 5, 6]
@@ -29,7 +29,7 @@ phases: [1, 2, 3, 4, 5, 6]
 - [x] WU-3 — lazy_core.build_parked_entry: add sentinel_kind field (+ test_lazy_core.py characterization)
 - [x] WU-4 — Orchestrator wiring: lazy-batch + lazy-bug-batch + lazy-batch-cloud SKILL.md
 - [x] WU-5 — parked-flush.md: surface blocked-parked items (blocked-specific affordance)
-- [ ] WU-6 — user/scripts/CLAUDE.md: document --park-blocked + queue-exhausted-all-parked
+- [x] WU-6 — user/scripts/CLAUDE.md: document --park-blocked + queue-exhausted-all-parked
 
 ## EXECUTION MODEL — READ THIS FIRST
 

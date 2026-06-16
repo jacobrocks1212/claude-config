@@ -225,9 +225,12 @@ No code execution. Validate by: (1) `lint-skills.py` + `project-skills.py` clean
 **Scope:** Document the new `--park-blocked` flag and the `queue-exhausted-all-parked` terminal so the source-of-truth doc for the lazy pipeline matches the code (SPEC Affected Area: `user/scripts/CLAUDE.md` documents the current intent verbatim and must be revised).
 
 **Deliverables:**
-- [ ] `user/scripts/CLAUDE.md` CLI-surface block: add a `--park-blocked` line next to `--park-needs-input`, describing it as the companion flag that parks feature/bug-local `BLOCKED.md` items (both scripts), output byte-identical without the flag.
-- [ ] Revise the existing `--park-needs-input` line's parenthetical — it currently reads "(BLOCKED still halts; …)", which is no longer true when `--park-blocked` is also passed. Clarify: BLOCKED still halts UNLESS `--park-blocked` is also active.
-- [ ] Note the new `queue-exhausted-all-parked` terminal in the lifecycle/terminal documentation.
+- [x] `user/scripts/CLAUDE.md` CLI-surface block: add a `--park-blocked` line next to `--park-needs-input`, describing it as the companion flag that parks feature/bug-local `BLOCKED.md` items (both scripts), output byte-identical without the flag.
+- [x] Revise the existing `--park-needs-input` line's parenthetical — it currently reads "(BLOCKED still halts; …)", which is no longer true when `--park-blocked` is also passed. Clarified: BLOCKED still halts UNLESS `--park-blocked` is also active.
+- [x] Note the new `queue-exhausted-all-parked` terminal in the lifecycle/terminal documentation.
+
+**Implementation Notes (2026-06-16):**
+- Done. `user/scripts/CLAUDE.md` CLI-surface block: added the `--park-blocked` line (companion flag, parks feature/bug-local BLOCKED.md, `sentinel_kind: blocked`, global/env terminals still halt, byte-identical default, same flag on bug-state.py); corrected the stale `--park-needs-input` parenthetical to "BLOCKED still halts UNLESS --park-blocked is also active"; added a "Park-mode terminal — `queue-exhausted-all-parked`" note after the Exit-codes block documenting the precedence + flush behavior on both scripts. Doc names match the implemented flag/terminal exactly (grep-confirmed).
 
 **Minimum Verifiable Behavior:** Documentation. Verification: a grep of `user/scripts/CLAUDE.md` shows `--park-blocked` documented and the stale "BLOCKED still halts" claim corrected.
 
