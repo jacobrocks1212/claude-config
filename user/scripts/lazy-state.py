@@ -871,15 +871,22 @@ def realign_is_fresh(spec_dir: Path, hard_complete_upstream_dirs: list[Path]) ->
         # current sha256 differs from the recorded value triggers a re-realign.
         for ud in hard_complete_upstream_dirs:
             dir_name = ud.name
-            if dir_name not in recorded_hashes:
-                # Upstream not recorded — treat as stale (plan was written
-                # before this dependency was added, or for a different set).
-                return False
             current_sha = _phases_sha(ud)
             if current_sha is None:
-                # Upstream has no PHASES.md — skip (same as before; can't
-                # compare a hash for a file that doesn't exist).
+                # Upstream has no PHASES.md — skip. A hashless upstream cannot
+                # be hashed, so it can never appear in upstream_phases_hashes;
+                # it contributes no PHASES-hash drift and MUST NOT force
+                # staleness. This guard MUST precede the not-in-recorded_hashes
+                # check below — otherwise a hard-complete upstream that was
+                # never decomposed (e.g. audio-pipeline-v2, SPEC-only) makes
+                # realign_is_fresh return False forever, deadlocking Step 4.6
+                # (infinite realign loop blocking the whole queue).
                 continue
+            if dir_name not in recorded_hashes:
+                # Upstream HAS a PHASES.md but the plan never recorded its hash
+                # — treat as stale (plan was written before this dependency was
+                # added, or for a different set).
+                return False
             if current_sha != recorded_hashes[dir_name]:
                 # Hash mismatch: upstream PHASES.md changed since the realign
                 # plan was written → stale → re-realign needed.
@@ -4337,6 +4344,66 @@ def run_smoke_tests() -> int:
                 f"(missing-helper RED — impl must extract it): {exc}"
             )
             print(f"  FAIL [{fix_name_s10}]: helper not defined — {exc}")
+
+        # -------------------------------------------------------------------
+        # Regression guard: realign_is_fresh must NOT force staleness for a
+        # hard-complete upstream that has NO PHASES.md (direct helper unit test).
+        # -------------------------------------------------------------------
+        # Deadlock repro (2026-06-16, mcp-audio-quality-observability): a
+        # downstream depends hard on TWO complete upstreams — one decomposed
+        # (mcp-testing: has PHASES.md, hash recorded + matching) and one older
+        # SPEC-only feature (audio-pipeline-v2: no PHASES.md, never decomposed →
+        # unhashable → never appears in upstream_phases_hashes). The hash-path
+        # loop used to check `dir_name not in recorded_hashes → return False`
+        # BEFORE the `current_sha is None → continue` guard, so the hashless
+        # upstream forced realign_is_fresh → False forever → Step 4.6 re-fired
+        # every cycle (infinite realign loop blocking the whole queue).
+        # GREEN after fix: the None-guard precedes the not-recorded check, so a
+        # hashless upstream is skipped and freshness is decided by the hashed
+        # upstreams alone.
+        fix_name_rhf = "realign-fresh-hashless-upstream-not-stale"
+        rhf_root = td_path / fix_name_rhf
+        rhf_down = rhf_root / "down"
+        (rhf_down / "plans").mkdir(parents=True, exist_ok=True)
+        # Hashed upstream: PHASES.md present, hash recorded + matching.
+        rhf_up_hashed = rhf_root / "up-hashed"
+        rhf_up_hashed.mkdir(parents=True, exist_ok=True)
+        (rhf_up_hashed / "PHASES.md").write_text("# Phases\n\n- [x] done\n")
+        rhf_hashed_sha = _phases_sha(rhf_up_hashed)
+        # Hashless upstream: SPEC.md only, NO PHASES.md (the deadlock trigger).
+        rhf_up_nophases = rhf_root / "up-nophases"
+        rhf_up_nophases.mkdir(parents=True, exist_ok=True)
+        (rhf_up_nophases / "SPEC.md").write_text("# Up\n\n**Status:** Complete\n")
+        # A correct realign plan records ONLY the hashable upstream (the
+        # hashless one cannot be hashed, so it is legitimately omitted).
+        (rhf_down / "plans" / "realign-2026-06-16.md").write_text(
+            "---\n"
+            "kind: realign-plan\n"
+            "upstream_phases_hashes:\n"
+            f"  up-hashed: {rhf_hashed_sha}\n"
+            "---\n\n# Realign plan\n"
+        )
+        # Both upstreams are hard-complete; the hashless one MUST NOT force stale.
+        rhf_fresh = realign_is_fresh(rhf_down, [rhf_up_hashed, rhf_up_nophases])
+        if rhf_fresh is not True:
+            failures.append(
+                f"[{fix_name_rhf}] realign_is_fresh returned {rhf_fresh!r}; a "
+                "hard-complete upstream with no PHASES.md must be SKIPPED, not "
+                "treated as stale (deadlock guard — Step 4.6 infinite loop)"
+            )
+        # Negative control: genuine drift on the HASHED upstream must still
+        # report stale even with the hashless upstream present — the None-guard
+        # reorder must not mask real PHASES.md changes.
+        (rhf_up_hashed / "PHASES.md").write_text("# Phases\n\n- [x] CHANGED\n")
+        rhf_stale = realign_is_fresh(rhf_down, [rhf_up_hashed, rhf_up_nophases])
+        if rhf_stale is not False:
+            failures.append(
+                f"[{fix_name_rhf}] realign_is_fresh returned {rhf_stale!r} after "
+                "the hashed upstream PHASES.md changed; genuine drift must still "
+                "report stale (the None-guard reorder must not mask real changes)"
+            )
+        print(f"  {'PASS' if (rhf_fresh is True and rhf_stale is False) else 'FAIL'} "
+              f"[{fix_name_rhf}] hashless upstream skipped; real drift still stale")
 
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
