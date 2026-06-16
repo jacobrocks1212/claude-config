@@ -1,16 +1,36 @@
 #!/bin/bash
-# lazy-cycle-containment.sh — PreToolUse containment hook (lazy-cycle-containment C2).
+# lazy-cycle-containment.sh — PreToolUse containment hook (lazy-cycle-containment
+# C2; recursion/lifecycle re-targeted on agent_id by
+# hardening-blind-to-process-friction Phase 1 / D4).
 #
-# While a CYCLE-SUBAGENT marker (~/.claude/state/lazy-cycle-active.json) is
-# present, a single dispatched cycle subagent is executing.  This hook DENIES
-# in-flight the tool calls a RUNAWAY needs so a loop cannot form: the
-# next-route lazy-state.py/bug-state.py probe (loop-formation), the
-# orchestrator-only lifecycle commands, recursive Agent dispatch, and commits
-# crossing into a second feature / past a generous commit ceiling.
+# TWO INDEPENDENT TRIPS:
 #
-# Fast path: if the cycle marker is ABSENT, exit 0 silently without starting
-# Python — one `test -f` per PreToolUse event, zero overhead for interactive
-# sessions and for the orchestrator BETWEEN cycles.
+# 1. agent_id-targeted (D4 — arming-free, the load-bearing recursion trip):
+#    a dispatched cycle subagent is EXACTLY the context where the PreToolUse
+#    payload carries an `agent_id` field (Claude Code injects it ONLY when the
+#    hook fires from within a subagent; it is ABSENT on the main thread —
+#    confirmed against the installed version's hook-input schema). So whenever
+#    `agent_id` is present this hook DENIES the recursion/lifecycle/routing ops
+#    a runaway needs to form a loop: recursive Agent/Task dispatch, a nested
+#    /lazy-batch invocation, the orchestrator-only lazy-state.py/bug-state.py
+#    routing+lifecycle flags, and dev:kill/dev:restart — with NO marker arming
+#    required. When `agent_id` is ABSENT (the main-thread orchestrator) all of
+#    these are ALLOWED, so the orchestrator is never self-denied (this fixes the
+#    Proven-Finding-#3 self-deny defect — the orchestrator's own legitimate
+#    cycle dispatch + between-cycle lifecycle ops always pass).
+#
+# 2. marker-gated (retained complementary carrier): while the CYCLE-SUBAGENT
+#    marker (~/.claude/state/lazy-cycle-active.json) is present, the 2nd-feature
+#    commit tripwire + commit-count backstop fire (feature_id/commit_tally are
+#    read from the marker). These stay marker-gated; only recursion/lifecycle/
+#    routing moved to agent_id.
+#
+# Fast path: when the cycle marker is ABSENT *and* the payload carries no
+# `agent_id` (the common interactive / main-thread case), the inline Python
+# fast-allows immediately — zero deny evaluation. The bash side no longer
+# short-circuits on marker-absence (the agent_id trip must run even with no
+# marker), so the inline Python always evaluates; the no-marker+no-agent_id
+# fast-allow keeps the common case cheap.
 #
 # Fail-OPEN: any internal error (malformed JSON, missing python, unexpected
 # state) writes a hook-error.json breadcrumb and ALLOWS — a broken hook must
@@ -28,10 +48,10 @@
 STATE_DIR="${LAZY_STATE_DIR:-$HOME/.claude/state}"
 MARKER="$STATE_DIR/lazy-cycle-active.json"
 
-# Fast path: no cycle marker → exit 0 silently (interactive / between-cycles).
-if [ ! -f "$MARKER" ]; then
-  exit 0
-fi
+# NOTE (D4): the bash fast-path no longer exits on marker-absence — the inline
+# Python must evaluate `agent_id` even when no marker is armed. The Python body
+# fast-allows immediately for the common no-marker + no-agent_id case, so the
+# only added cost for interactive/main-thread events is one short Python start.
 
 # Resolve python interpreter: prefer python3, fall back to python.
 if command -v python3 >/dev/null 2>&1; then
@@ -93,6 +113,12 @@ LIFECYCLE_PATTERNS = (
     "dev:kill", "dev:restart", "kill-port 3333", "kill-port 1420",
 )
 
+# Recursive batch invocation: a dispatched cycle subagent must never start a
+# nested /lazy* batch orchestrator (the literal runaway path). Matches a
+# /lazy-batch (or /lazy-bug-batch / -cloud) slash-command token anywhere in the
+# Bash command.
+_LAZY_BATCH_RE = re.compile(r"/lazy(?:-bug)?-batch(?:-cloud)?\b")
+
 # Carve-out shared roots: always allowed in a commit even when not under the
 # marker's feature dir (these are cross-feature shared state, not a 2nd feature).
 CARVE_OUT_PATHS = ("docs/features/queue.json", "docs/features/ROADMAP.md", "CLAUDE.md")
@@ -136,8 +162,18 @@ def _deny(reason):
 
 
 def _read_marker():
-    with open(MARKER, encoding="utf-8") as fh:
-        return json.load(fh)
+    """Return the cycle marker dict, or None if absent/unreadable.
+
+    D4: the marker may legitimately be ABSENT (the agent_id trip is arming-free).
+    An unreadable/corrupt marker reads as None — the marker-gated tripwires then
+    no-op, while the agent_id trip is unaffected (it does not consult the marker).
+    """
+    try:
+        with open(MARKER, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def _staged_paths():
@@ -180,13 +216,28 @@ def _increment_tally(marker):
 def main():
     raw = sys.stdin.read()
     payload = json.loads(raw)            # JSONDecodeError → caught → fail-open
-    marker = _read_marker()              # marker present (bash fast-path passed)
+    marker = _read_marker()              # may be None (D4: arming-free trip)
+
+    # D4: a dispatched cycle subagent is exactly the context where `agent_id` is
+    # present. It drives the recursion/lifecycle/routing deny — with no marker
+    # arming required. The main-thread orchestrator (agent_id absent) is never
+    # self-denied for these ops.
+    is_subagent = bool(payload.get("agent_id"))
+
+    # Fast-allow the common cheap case: not a subagent AND no marker → there is
+    # nothing this hook can trip (recursion/lifecycle/routing need a subagent;
+    # the commit tripwires need a marker).
+    if not is_subagent and marker is None:
+        _allow()
 
     tool_name = payload.get("tool_name", "")
 
-    # --- Recursive dispatch: any Agent tool call under the marker is denied. ---
-    if tool_name == "Agent":
-        _deny(CORRECTIVE)
+    # --- Recursive dispatch: Agent/Task tool call from a subagent is denied. ---
+    if tool_name in ("Agent", "Task"):
+        if is_subagent:
+            _deny(CORRECTIVE)
+        # main-thread orchestrator dispatch → allow (no self-deny).
+        _allow()
 
     if tool_name != "Bash":
         _allow()
@@ -195,22 +246,29 @@ def main():
     if not command:
         _allow()
 
-    # --- Loop-formation: lazy-state.py / bug-state.py routing flags. ---
-    if _STATE_PY_RE.search(command):
-        if any(flag in command for flag in ALLOW_LISTED_FLAGS):
-            _allow()
-        if any(flag in command for flag in LOOP_FORMATION_FLAGS):
+    if is_subagent:
+        # --- Recursive batch invocation (the literal runaway path). ---
+        if _LAZY_BATCH_RE.search(command):
             _deny(CORRECTIVE)
-        # state-script call with no routing flag (e.g. a read) → allow.
-        _allow()
 
-    # --- Runtime-lifecycle commands. ---
-    for pat in LIFECYCLE_PATTERNS:
-        if pat in command:
-            _deny(CORRECTIVE)
+        # --- Loop-formation: lazy-state.py / bug-state.py routing flags. ---
+        if _STATE_PY_RE.search(command):
+            if any(flag in command for flag in ALLOW_LISTED_FLAGS):
+                _allow()
+            if any(flag in command for flag in LOOP_FORMATION_FLAGS):
+                _deny(CORRECTIVE)
+            # state-script call with no routing flag (e.g. a read) → allow.
+            _allow()
+
+        # --- Runtime-lifecycle commands. ---
+        for pat in LIFECYCLE_PATTERNS:
+            if pat in command:
+                _deny(CORRECTIVE)
 
     # --- git commit: 2nd-feature tripwire + commit-count backstop. ---
-    if re.search(r"\bgit\s+commit\b", command):
+    # Retained marker-gated (feature_id/commit_tally live on the marker); skip
+    # entirely when no marker is armed.
+    if marker is not None and re.search(r"\bgit\s+commit\b", command):
         feature_id = marker.get("feature_id")
         # Commit-count backstop (read BEFORE incrementing).
         if int(marker.get("commit_tally", 0)) >= COMMIT_CEILING:

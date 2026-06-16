@@ -2905,6 +2905,10 @@ def test_p7_meta_dispatch_by_reference_via_guard():
 
 _CONTAINMENT_SH = _HOOKS_DIR / "lazy-cycle-containment.sh"
 
+# A synthetic subagent identifier — its mere PRESENCE in a PreToolUse payload
+# marks the call as coming from within a dispatched subagent (D4 trip).
+_SUBAGENT_AGENT_ID = "agent_" + uuid.uuid4().hex[:16]
+
 
 def _bash_preToolUse_json(
     command: str,
@@ -3032,14 +3036,19 @@ def test_containment_fast_path_no_marker_allows():
 
 
 def test_containment_denies_next_route_probe():
-    """Marker present + `lazy-state.py --probe` → deny + corrective reason."""
+    """Subagent (agent_id) + marker + `lazy-state.py --probe` → deny + corrective
+    reason.  (D4: the routing deny now keys on agent_id; a live cycle subagent
+    carries both the marker and agent_id, so this exercises that real path.)"""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
         _write_cycle_marker_in_dir(state_dir)
         result = _run_containment(
-            _bash_preToolUse_json("python3 ~/.claude/scripts/lazy-state.py --probe"),
+            _bash_preToolUse_json(
+                "python3 ~/.claude/scripts/lazy-state.py --probe",
+                agent_id=_SUBAGENT_AGENT_ID,
+            ),
             state_dir,
         )
         assert result.returncode == 0
@@ -3054,7 +3063,8 @@ def test_containment_denies_next_route_probe():
 
 
 def test_containment_denies_loop_formation_flags():
-    """Each loop-formation flag under the marker → deny."""
+    """Each loop-formation flag from a subagent (agent_id) under the marker →
+    deny.  (D4: routing deny keys on agent_id.)"""
     _guard()
     flags = [
         "--emit-prompt", "--repeat-count", "--repeat-count-peek",
@@ -3067,7 +3077,10 @@ def test_containment_denies_loop_formation_flags():
         _write_cycle_marker_in_dir(state_dir)
         for flag in flags:
             result = _run_containment(
-                _bash_preToolUse_json(f"python3 lazy-state.py {flag}"), state_dir
+                _bash_preToolUse_json(
+                    f"python3 lazy-state.py {flag}", agent_id=_SUBAGENT_AGENT_ID
+                ),
+                state_dir,
             )
             assert _containment_decision(result) == "deny", (
                 f"loop-formation flag {flag!r} under marker must deny; "
@@ -3076,7 +3089,8 @@ def test_containment_denies_loop_formation_flags():
 
 
 def test_containment_denies_lifecycle_commands():
-    """Runtime-lifecycle commands under the marker → deny."""
+    """Runtime-lifecycle commands from a subagent (agent_id) under the marker →
+    deny.  (D4: lifecycle deny keys on agent_id.)"""
     _guard()
     cmds = [
         "npm run dev:kill", "npm run dev:restart",
@@ -3088,7 +3102,9 @@ def test_containment_denies_lifecycle_commands():
         state_dir.mkdir()
         _write_cycle_marker_in_dir(state_dir)
         for cmd in cmds:
-            result = _run_containment(_bash_preToolUse_json(cmd), state_dir)
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
             assert _containment_decision(result) == "deny", (
                 f"lifecycle command {cmd!r} under marker must deny; "
                 f"stdout: {result.stdout!r}"
@@ -3130,13 +3146,16 @@ def test_containment_allows_unrelated_bash():
 
 
 def test_containment_denies_recursive_agent_dispatch():
-    """An Agent tool call while the marker is present → deny."""
+    """A recursive Agent tool call from a subagent (agent_id) while the marker is
+    present → deny.  (D4: recursion deny keys on agent_id.)"""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
         _write_cycle_marker_in_dir(state_dir)
-        result = _run_containment(_agent_preToolUse_json(), state_dir)
+        result = _run_containment(
+            _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
+        )
         assert _containment_decision(result) == "deny", (
             f"Agent dispatch under marker must deny; stdout: {result.stdout!r}"
         )
@@ -3276,8 +3295,6 @@ def test_containment_fail_open_on_malformed_json():
 # The marker-gated 2nd-feature tripwire + commit-ceiling backstop are retained
 # unchanged (they read feature_id/commit_tally from the marker).
 # ===========================================================================
-
-_SUBAGENT_AGENT_ID = "agent_" + uuid.uuid4().hex[:16]
 
 
 def test_containment_agentid_present_denies_recursive_agent_no_marker():
