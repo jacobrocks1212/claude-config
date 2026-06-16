@@ -127,10 +127,16 @@ Same four fixture shapes as Phase 1, bug-flavored (ids `blocked-bug`/`workable-b
 **Scope:** Add a `sentinel_kind` field to the parked-entry record so the flush (Phase 5) can distinguish a blocked-parked item from a needs-input one without inspecting the filesystem (SPEC Open-Q2 / D4 sentinel-kind field). Shared helper → benefits both pipelines at once.
 
 **Deliverables:**
-- [ ] `build_parked_entry(item_id, sentinel_path)` returns an additional key `"sentinel_kind"`: `"blocked"` when `sentinel_path.name == "BLOCKED.md"`, `"needs-input"` when `sentinel_path.name == "NEEDS_INPUT.md"`, else `"unknown"` (defensive — never raises). The existing four keys (`id`, `sentinel`, `decision_count`, `parked_since`) are unchanged and keep their positions; this is purely additive.
-- [ ] `decision_count` semantics for a BLOCKED.md sentinel: a BLOCKED.md has no `decisions:` list, so `decision_count` is `0` (the existing "absent/empty/not-a-list → 0" path already handles this — verify, do not special-case).
-- [ ] Update the `build_parked_entry` docstring contract block (`:471–485`) to document `sentinel_kind`.
-- [ ] Tests: `test_lazy_core.py` characterization — `sentinel_kind == "blocked"` for a BLOCKED.md path, `"needs-input"` for a NEEDS_INPUT.md path, `"unknown"` for an unrecognized name; existing keys still present and correct.
+- [x] `build_parked_entry(item_id, sentinel_path)` returns an additional key `"sentinel_kind"`: `"blocked"` when `sentinel_path.name == "BLOCKED.md"`, `"needs-input"` when `sentinel_path.name == "NEEDS_INPUT.md"`, else `"unknown"` (defensive — never raises). The existing four keys (`id`, `sentinel`, `decision_count`, `parked_since`) are unchanged and keep their positions; this is purely additive.
+- [x] `decision_count` semantics for a BLOCKED.md sentinel: a BLOCKED.md has no `decisions:` list, so `decision_count` is `0` (the existing "absent/empty/not-a-list → 0" path already handles this — verified, not special-cased).
+- [x] Update the `build_parked_entry` docstring contract block (`:471–485`) to document `sentinel_kind`.
+- [x] Tests: `test_lazy_core.py` characterization — `sentinel_kind == "blocked"` for a BLOCKED.md path, `"needs-input"` for a NEEDS_INPUT.md path, `"unknown"` for an unrecognized name; existing keys still present and correct.
+
+**Implementation Notes (2026-06-16):**
+- Done. `sentinel_kind` derived from `sentinel_path.name` immediately before the return dict in `build_parked_entry` (`lazy_core.py` ~`:495–510`); docstring contract block updated to document the new key + the BLOCKED.md→decision_count 0 path. Purely additive; the four existing keys are unchanged and keep their positions.
+- Tests: three new RED-first characterization tests in `test_lazy_core.py` (`..._sentinel_kind_blocked`, `..._needs_input`, `..._unknown`), registered in the runner list. Confirmed RED (`KeyError: 'sentinel_kind'`) before impl; now PASS. Total `test_lazy_core.py` 387→390.
+- **Baseline note (plan deviation, documented):** the plan expected both `--test` baselines to regenerate in P3. They did NOT change — `sentinel_kind` lands in the returned dict but the `--test` harness print lines only emit `id`/`decision_count`/dispatched-id, never the full parked record, so the byte-pinned baselines are unaffected. Confirmed by `git status` showing only `lazy_core.py` + `test_lazy_core.py` modified, and both smoke suites + the baseline-comparison tests green. No hand-edit needed.
+- Gates: `test_lazy_core.py` 390/390; `lazy_coord.py --test` green; `lazy-state.py --test` + `bug-state.py --test` green (hermetic, isolated `LAZY_STATE_DIR`).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` (or the project's test runner for it) passes including the new `sentinel_kind` assertions. Re-running `lazy-state.py --test` and `bug-state.py --test` still passes — the additive field appears in their parked fixtures' output (baselines updated to include it).
 

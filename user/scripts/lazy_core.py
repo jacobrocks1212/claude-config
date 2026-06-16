@@ -463,19 +463,29 @@ def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md
 def build_parked_entry(item_id: str, sentinel_path: Path) -> dict[str, Any]:
     """Build a parked-entry record for use in the ``parked[]`` output array.
 
-    Called by lazy-state.py and bug-state.py when ``--park-needs-input`` mode
-    is active and a queue entry carries an unresolved NEEDS_INPUT.md.  The
-    returned dict is appended to the module-level ``_PARKED`` list in each
+    Called by lazy-state.py and bug-state.py when park mode
+    (``--park-needs-input`` and/or ``--park-blocked``) is active and a queue
+    entry carries an unresolved NEEDS_INPUT.md or a feature/bug-local BLOCKED.md.
+    The returned dict is appended to the module-level ``_PARKED`` list in each
     script so the orchestrator can surface every parked item without halting.
 
-    Contract (locked by WU-1 Phase 4 tests in test_lazy_core.py):
+    Contract (locked by WU-1 Phase 4 + park-mode-halts-on-blocked Phase 3 tests
+    in test_lazy_core.py):
       - ``"id"``             → ``item_id`` (str), unchanged.
       - ``"sentinel"``       → ``str(sentinel_path)``.
       - ``"decision_count"`` → ``len(decisions)`` where ``decisions`` is the
                                ``decisions:`` YAML list in the NEEDS_INPUT.md
-                               frontmatter; **0** if absent, empty, or not a list.
+                               frontmatter; **0** if absent, empty, or not a list
+                               (a BLOCKED.md has no ``decisions:`` list → 0).
       - ``"parked_since"``   → the ``date:`` frontmatter value (str), or
                                ``None`` if absent.
+      - ``"sentinel_kind"``  → derived from ``sentinel_path.name``:
+                               ``"blocked"`` for ``BLOCKED.md``,
+                               ``"needs-input"`` for ``NEEDS_INPUT.md``,
+                               else ``"unknown"`` (defensive — never raises).
+                               Lets the flush distinguish a blocked-parked item
+                               from a needs-input one without filesystem
+                               inspection (SPEC D4).
 
     Reuses ``parse_sentinel()`` for frontmatter parsing.  Missing file,
     missing field, and wrong-type (scalar) inputs are handled defensively and
@@ -494,11 +504,20 @@ def build_parked_entry(item_id: str, sentinel_path: Path) -> dict[str, Any]:
     # Coerce to str if present (YAML may deserialize dates as date objects).
     if parked_since is not None:
         parked_since = str(parked_since)
+    # sentinel_kind: derive from the sentinel filename (additive, never raises).
+    name = sentinel_path.name
+    if name == "BLOCKED.md":
+        sentinel_kind = "blocked"
+    elif name == "NEEDS_INPUT.md":
+        sentinel_kind = "needs-input"
+    else:
+        sentinel_kind = "unknown"
     return {
         "id": item_id,
         "sentinel": str(sentinel_path),
         "decision_count": decision_count,
         "parked_since": parked_since,
+        "sentinel_kind": sentinel_kind,
     }
 
 

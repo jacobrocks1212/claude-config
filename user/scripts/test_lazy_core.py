@@ -693,6 +693,79 @@ def test_build_parked_entry_malformed_decisions_is_zero():
     )
 
 
+def test_build_parked_entry_sentinel_kind_blocked():
+    """A BLOCKED.md sentinel path → sentinel_kind == 'blocked'
+    (bug park-mode-halts-on-blocked, Phase 3 / SPEC D4)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "feature_id: feat-blocked\n"
+        "phase: Spec\n"
+        "blocked_at: 2026-06-16T00:00:00Z\n"
+        "retry_count: 0\n"
+        "---\n\n# Blocked\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.build_parked_entry("feat-blocked", p)
+    assert result["sentinel_kind"] == "blocked", (
+        f"BLOCKED.md must yield sentinel_kind 'blocked', got {result.get('sentinel_kind')!r}"
+    )
+    # A BLOCKED.md has no decisions: list → decision_count 0 via the existing path.
+    assert result["decision_count"] == 0, (
+        f"BLOCKED.md must yield decision_count 0, got {result['decision_count']}"
+    )
+    # Existing four keys still present and correct.
+    assert result["id"] == "feat-blocked"
+    assert result["sentinel"] == str(p)
+    assert "parked_since" in result
+
+
+def test_build_parked_entry_sentinel_kind_needs_input():
+    """A NEEDS_INPUT.md sentinel path → sentinel_kind == 'needs-input'."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-ni\n"
+        "written_by: spec-phases\n"
+        "decisions:\n"
+        "  - Choose strategy\n"
+        "date: 2026-06-16\n"
+        "---\n\n# Needs Input\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.build_parked_entry("feat-ni", p)
+    assert result["sentinel_kind"] == "needs-input", (
+        f"NEEDS_INPUT.md must yield sentinel_kind 'needs-input', got {result.get('sentinel_kind')!r}"
+    )
+    # Additive — existing keys unchanged.
+    assert result["decision_count"] == 1
+    assert result["parked_since"] == "2026-06-16"
+
+
+def test_build_parked_entry_sentinel_kind_unknown():
+    """An unrecognized sentinel filename → sentinel_kind == 'unknown' (no raise)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: other\n"
+        "feature_id: feat-other\n"
+        "---\n\n# Other\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "SOMETHING_ELSE.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.build_parked_entry("feat-other", p)
+    assert result["sentinel_kind"] == "unknown", (
+        f"unrecognized sentinel must yield sentinel_kind 'unknown', got {result.get('sentinel_kind')!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests: spec_status
 # ---------------------------------------------------------------------------
@@ -13353,6 +13426,10 @@ _TESTS = [
     ("test_build_parked_entry_missing_decisions_is_zero", test_build_parked_entry_missing_decisions_is_zero),
     ("test_build_parked_entry_missing_date_is_none", test_build_parked_entry_missing_date_is_none),
     ("test_build_parked_entry_malformed_decisions_is_zero", test_build_parked_entry_malformed_decisions_is_zero),
+    # build_parked_entry sentinel_kind — bug park-mode-halts-on-blocked Phase 3
+    ("test_build_parked_entry_sentinel_kind_blocked", test_build_parked_entry_sentinel_kind_blocked),
+    ("test_build_parked_entry_sentinel_kind_needs_input", test_build_parked_entry_sentinel_kind_needs_input),
+    ("test_build_parked_entry_sentinel_kind_unknown", test_build_parked_entry_sentinel_kind_unknown),
     # verify_ledger — WU-1 completion-ledger verdict (Phase 5)
     ("test_verify_ledger_all_green_passes", test_verify_ledger_all_green_passes),
     ("test_verify_ledger_dirty_tree_fails", test_verify_ledger_dirty_tree_fails),
