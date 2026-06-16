@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-cycle-containment
-status: In-progress
+status: Complete
 created: 2026-06-15
 complexity: complex
 phases: [4]
@@ -96,9 +96,9 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — `lazy-cycle-containment.sh` hook: fast-path exit, loop-formation/lifecycle/recursive-dispatch deny, fail-OPEN (user/hooks/)
-- [ ] WU-2 — second-feature commit tripwire + commit-count backstop (tally increment) in the hook
-- [ ] WU-3 — `settings.json` PreToolUse wiring (Bash + Agent) + bash hook-test harness (deny/allow/fast-path/fail-open)
+- [x] WU-1 — `lazy-cycle-containment.sh` hook: fast-path exit, loop-formation/lifecycle/recursive-dispatch deny, fail-OPEN (user/hooks/)
+- [x] WU-2 — second-feature commit tripwire + commit-count backstop (tally increment) in the hook
+- [x] WU-3 — `settings.json` PreToolUse wiring (Bash + Agent) + bash hook-test harness (deny/allow/fast-path/fail-open)
 
 ---
 
