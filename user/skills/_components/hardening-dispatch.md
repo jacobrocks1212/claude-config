@@ -49,13 +49,31 @@ All seven keys below must be supplied via `--context key=value`:
 
 | Key | What to supply |
 |-----|---------------|
-| `denied_prompt_summary` | One-line summary of the prompt that was denied or refused |
-| `denial_reason` | The `permissionDecisionReason` from the guard, or the no-route reason string |
+| `denied_prompt_summary` | One-line summary of the prompt that was denied or refused. For `process-friction` entries, `build_hardening_emit_command` binds `friction_reason` here automatically. |
+| `denial_reason` | The `permissionDecisionReason` from the guard, or the no-route reason string. For `process-friction` entries, `build_hardening_emit_command` binds `friction_detail` here automatically. |
 | `probe_json` | The probe JSON (`--probe` output) from the turn where the failure occurred |
 | `registry_state` | Relevant registry entries (or `"empty"` if no marker was present) |
-| `trigger_kind` | One of: `validate-deny`, `no-route`, `inject-hook-error`, `manual` |
+| `trigger_kind` | One of: `validate-deny`, `no-route`, `inject-hook-error`, `process-friction`, `manual` |
 | `item_id` | The feature/bug ID currently in flight (e.g. `feat-d9-example`) |
 | `cwd` | Working directory — `$(pwd)` or the repo root |
+
+### `process-friction` trigger — context binding notes
+
+When `trigger_kind=process-friction`, the `--emit-dispatch hardening` command is typically
+consumed verbatim from the probe's `hardening_emit_command` field (the probe pre-composes it).
+`build_hardening_emit_command` in `lazy_core.py` binds the keys as follows for this entry kind:
+
+| Standard key | What it carries for process-friction |
+|---|---|
+| `denied_prompt_summary` | `friction_reason` from the ledger entry (e.g. `cycle-bracket-break` or `unexpected-commits`) |
+| `denial_reason` | `friction_detail` from the ledger entry (human-readable description of the signal) |
+| `probe_json` | The probe JSON at the time the debt was surfaced |
+| `registry_state` | `"process-friction-entry"` (no prompt registry involved) |
+
+The `/harden-harness` skill receives these keys through the same `{denied_prompt_summary}` /
+`{denial_reason}` template slots — no template change is required. The `trigger_kind` value
+`process-friction` is the discriminator that tells the hardening agent to interpret those slots
+as the friction signal rather than a guard denial.
 
 ## Depth cap
 

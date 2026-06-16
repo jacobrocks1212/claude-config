@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: hardening-blind-to-process-friction
-status: In-progress
+status: Complete
 created: 2026-06-15
 complexity: mechanical
 phases: [3]
@@ -88,8 +88,8 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — Add process-friction trigger to hardening-routing prose (lazy-batch, harden-harness, lazy-bug-batch, lazy-batch-cloud)
-- [ ] WU-2 — Add `trigger_kind=process-friction` to dispatch templates + update trigger-surface docs
+- [x] WU-1 — Add process-friction trigger to hardening-routing prose (lazy-batch, harden-harness, lazy-bug-batch, lazy-batch-cloud)
+- [x] WU-2 — Add `trigger_kind=process-friction` to dispatch templates + update trigger-surface docs
 
 ---
 

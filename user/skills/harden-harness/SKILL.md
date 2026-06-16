@@ -1,6 +1,6 @@
 ---
 name: harden-harness
-description: USE WHEN a marked orchestrator run hits a misroute (validate-deny), a no-route condition (cycle_prompt_refused, marker/state divergence), an inject-hook error against a live marker, or manually for harness friction observed outside enforcement. The harness-hardening stage: root-causes why the route broke, implements mechanical fixes autonomously under full gates, and surfaces contract/policy forks via NEEDS_INPUT.md.
+description: USE WHEN a marked orchestrator run hits a misroute (validate-deny), a no-route condition (cycle_prompt_refused, marker/state divergence), an inject-hook error against a live marker, a process-friction ledger entry (torn cycle bracket or unexpected commits), or manually for harness friction observed outside enforcement. The harness-hardening stage: root-causes why the route broke, implements mechanical fixes autonomously under full gates, and surfaces contract/policy forks via NEEDS_INPUT.md.
 argument-hint: [description of the observed friction or no-route condition]
 ---
 
@@ -19,7 +19,7 @@ touches the target repo's source code.
 
 ## Triggers
 
-This skill fires in four situations (triggers 1–3 arrive via `--emit-dispatch hardening` dispatch from a marked run; trigger 4 is direct manual invocation):
+This skill fires in five situations (triggers 1–4 arrive via `--emit-dispatch hardening` dispatch from a marked run; trigger 5 is direct manual invocation):
 
 1. **Validate-deny fired (misroute):** the `lazy-dispatch-guard.sh` PreToolUse hook denied an
    `Agent` dispatch because its prompt was not script-emitted this turn. Dispatched with the
@@ -34,7 +34,18 @@ This skill fires in four situations (triggers 1–3 arrive via `--emit-dispatch 
    hook errored while a run marker was present (a `HOOK_ERROR` breadcrumb was written to the
    state dir). A hook bug IS a harness bug and triggers this stage.
 
-4. **Manual invocation:** `/harden-harness <description>` from any session, for harness
+4. **Process-friction (a `kind: process-friction` deny-ledger entry):** `--cycle-end` detected
+   a torn cycle bracket (a dispatched subagent ran `--run-end` / overwrote the run marker) or
+   unexpected commits (HEAD advanced beyond the per-subskill budget), and appended a
+   `kind: process-friction` entry to `lazy-deny-ledger.jsonl`. The probe withholds the forward
+   route (`route_overridden_by: "pending-hardening-debt"`) exactly like a guard deny, and
+   `build_hardening_emit_command` binds `trigger_kind=process-friction` with `friction_reason`
+   and `friction_detail` context keys. **Fires even when the runaway's output was salvaged**
+   (D2: signal, not noise — accepting the output and hardening the bypass are orthogonal).
+   Root-cause class for this trigger: `missing-contract` + `hook-defect` (prevention gap and
+   detection gap per Proven Finding #1 of `hardening-blind-to-process-friction`).
+
+5. **Manual invocation:** `/harden-harness <description>` from any session, for harness
    friction observed outside enforcement (e.g., confusing skill prose, a missing dispatch
    class for a real scenario, a script edge case noticed during a non-marked run).
 
@@ -246,7 +257,7 @@ The commit prefix is load-bearing for retro grading: the HARDENING.md log cites 
 
 Structured summary:
 
-- `trigger_kind`: one of validate-deny | no-route | inject-hook-error | manual
+- `trigger_kind`: one of validate-deny | no-route | inject-hook-error | process-friction | manual
 - `divergence_point`: one-line naming the step and dispatch class
 - `root_cause_class`: one of missing-emit-section | unbound-token | ambiguous-prose | script-defect | missing-contract | hook-defect
 - `action`: "mechanical-fix" (with commit hash) or "needs-input" (with path)

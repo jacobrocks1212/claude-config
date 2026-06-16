@@ -663,7 +663,10 @@ python3 ~/.claude/scripts/lazy-state.py \
 **Trigger 3 — HOOK_ERROR breadcrumb in an injected banner:**  
 If a LAZY-ROUTE banner carries a `HOOK_ERROR` breadcrumb (the inject hook failed open and recorded the error), emit a hardening dispatch with `trigger_kind=inject-hook-error` and `denial_reason` set to the breadcrumb text.
 
-**All three triggers → hardening dispatch:**  
+**Trigger 4 — process-friction (a `kind: process-friction` deny-ledger entry):**  
+If the probe returns `route_overridden_by: "pending-hardening-debt"` and the oldest unacked ledger entry carries `kind: process-friction` (written by `--cycle-end` on a torn cycle bracket or unexpected commits), emit a hardening dispatch with `trigger_kind=process-friction`. Use the `hardening_emit_command` from the probe JSON verbatim — it already binds `friction_reason` and `friction_detail` in the `--context` keys instead of `denied_prompt_summary`/`denial_reason` (the `build_hardening_emit_command` function in `lazy_core.py` handles this automatically based on the entry's `kind`). This trigger fires **even when the runaway's work was salvaged** (D2: signal, not noise — accepting the output and hardening the bypass are orthogonal).
+
+**All four triggers → hardening dispatch:**  
 Parse the `--emit-dispatch hardening` output JSON (`dispatch_prompt`, `dispatch_model`, `dispatch_class`) and dispatch `dispatch_prompt` VERBATIM as an `Agent` call using `dispatch_model` (always `"opus"`). The prompt was registered at emit time; the guard will ALLOW it. Reference: `~/.claude/skills/_components/hardening-dispatch.md` for the full seven required `--context` keys.
 
 **Depth cap (HARD — no recursion).** A denial of a hardening dispatch has TWO shapes; the guard's reason text discriminates them, and the recovery branches differently.

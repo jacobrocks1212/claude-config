@@ -445,6 +445,9 @@ Dispatch the `dispatch_prompt` **VERBATIM** as an Opus `Agent` call. Because it 
 
 **Trigger 3 — inject hook HOOK_ERROR breadcrumb:** If the `LAZY-ROUTE (hook-injected, turn N):` banner contains a `HOOK_ERROR` marker (the inject hook itself errored during probe execution), treat this as a no-route condition and follow Trigger 2 above with `trigger_kind=inject-hook-error`.
 
+**Trigger 4 — process-friction (a `kind: process-friction` deny-ledger entry):**  
+If the probe returns `route_overridden_by: "pending-hardening-debt"` and the oldest unacked ledger entry carries `kind: process-friction` (written by `lazy-state.py --cloud --cycle-end` on a torn cycle bracket or unexpected commits), emit a hardening dispatch with `trigger_kind=process-friction`. Use the `hardening_emit_command` from the probe JSON verbatim — it already binds `friction_reason` and `friction_detail` in the `--context` keys instead of `denied_prompt_summary`/`denial_reason` (the `build_hardening_emit_command` function in `lazy_core.py` handles this automatically based on the entry's `kind`). This trigger fires **even when the runaway's work was salvaged** (D2: signal, not noise — accepting the output and hardening the bypass are orthogonal). This trigger is **shared** with `/lazy-batch` (not a cloud divergence) — the process-friction ledger entry is written by the same `lazy_core.cycle_end_friction_check` function regardless of cloud flag.
+
 **Depth cap (two deny shapes — the guard's reason text discriminates):**
 
 - **(a) Ordinary corrective recipe on the hardening dispatch (hash mismatch — a transcription slip on YOUR copy of the emitted `dispatch_prompt`, NOT recursion):** re-run `python3 ~/.claude/scripts/lazy-state.py --emit-dispatch hardening …` (fresh nonce, same `--context` keys) and make exactly ONE verbatim re-dispatch attempt, copying `dispatch_prompt` mechanically. A second recipe denial then falls through to the halt protocol below.

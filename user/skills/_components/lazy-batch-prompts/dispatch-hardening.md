@@ -1,10 +1,14 @@
 <!-- @requires denied_prompt_summary,denial_reason,probe_json,registry_state,trigger_kind,item_id,cwd -->
 <!-- dispatch-hardening.md — emitted by emit_dispatch_prompt("hardening", ...)
      The harness-hardening stage dispatch: sent whenever a validate-deny fires, the probe
-     returns no-route, the inject hook errors, or an operator triggers manually. This is the
-     self-improvement loop — an Opus subagent that root-causes WHY the route broke and either
-     fixes the harness mechanically under full gates or surfaces a NEEDS_INPUT.md for genuine
-     design forks. The hardening stage is to the HARNESS what /investigate is to the target repo.
+     returns no-route, the inject hook errors, a process-friction ledger entry withholds the
+     forward route, or an operator triggers manually. This is the self-improvement loop — an
+     Opus subagent that root-causes WHY the route broke and either fixes the harness
+     mechanically under full gates or surfaces a NEEDS_INPUT.md for genuine design forks.
+     The hardening stage is to the HARNESS what /investigate is to the target repo.
+     Valid trigger_kind values: validate-deny | no-route | inject-hook-error | process-friction | manual
+     For process-friction entries, build_hardening_emit_command binds friction_reason into
+     denied_prompt_summary and friction_detail into denial_reason automatically.
      TOKENS: standard pipeline tokens + @requires keys above. -->
 
 <!-- @section role pipelines=feature,bug modes=workstation,cloud -->
