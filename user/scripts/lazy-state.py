@@ -5359,6 +5359,95 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_pb_dual}] SystemExit: {exc.code}")
             print(f"  FAIL [{fix_pb_dual}] SystemExit: {exc.code}")
 
+        # -------------------------------------------------------------------
+        # Fixture: cycle-marker-mutation guard (cycle-subagent-runs-orchestrator-
+        # work Phase 2, KEYSTONE). A SUBAGENT-context --cycle-end (no
+        # LAZY_ORCHESTRATOR, marker on disk) is REFUSED (exit 3) and the marker
+        # file STILL EXISTS afterward (zero side effects — the friction check +
+        # clear never run). The ORCHESTRATOR --cycle-end (LAZY_ORCHESTRATOR=1)
+        # clears the marker and exits 0. Same pair for --cycle-begin. Driven via
+        # subprocess so the actual CLI handler (guard → handler body) runs.
+        # -------------------------------------------------------------------
+        fix_cmg = "cycle-marker-mutation-guard"
+        cmg_state = td_path / "cmg-state"
+        cmg_state.mkdir(parents=True, exist_ok=True)
+        cmg_marker = cmg_state / "lazy-cycle-active.json"
+        _this_script = str(Path(__file__).resolve())
+
+        def _cmg_env(orchestrator: bool) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(cmg_state)
+            if orchestrator:
+                e["LAZY_ORCHESTRATOR"] = "1"
+            return e
+
+        def _write_cmg_marker() -> None:
+            cmg_marker.write_text(
+                json.dumps({"feature_id": "feat-cmg", "nonce": "n", "kind": "real",
+                            "commit_tally": 0, "started_at": "2026-06-16T00:00:00Z",
+                            "session_id": None}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+        cmg_ok = True
+        # (a) subagent --cycle-end → refused, marker survives.
+        _write_cmg_marker()
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-end", "--repo-root", str(td_path)],
+            capture_output=True, text=True, env=_cmg_env(orchestrator=False),
+        )
+        if r.returncode != 3:
+            failures.append(f"[{fix_cmg}] subagent --cycle-end must exit 3; got {r.returncode}")
+            cmg_ok = False
+        if not cmg_marker.exists():
+            failures.append(f"[{fix_cmg}] subagent --cycle-end must NOT delete the marker")
+            cmg_ok = False
+        # (b) orchestrator --cycle-end → clears marker, exit 0.
+        _write_cmg_marker()
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-end", "--repo-root", str(td_path)],
+            capture_output=True, text=True, env=_cmg_env(orchestrator=True),
+        )
+        if r.returncode != 0:
+            failures.append(f"[{fix_cmg}] orchestrator --cycle-end must exit 0; got {r.returncode}")
+            cmg_ok = False
+        if cmg_marker.exists():
+            failures.append(f"[{fix_cmg}] orchestrator --cycle-end must clear the marker")
+            cmg_ok = False
+        # (c) subagent --cycle-begin → refused, marker survives (re-arm blocked).
+        _write_cmg_marker()
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-begin", "--feature-id", "feat-cmg",
+             "--nonce", "deadbeef", "--repo-root", str(td_path)],
+            capture_output=True, text=True, env=_cmg_env(orchestrator=False),
+        )
+        if r.returncode != 3:
+            failures.append(f"[{fix_cmg}] subagent --cycle-begin must exit 3; got {r.returncode}")
+            cmg_ok = False
+        if not cmg_marker.exists():
+            failures.append(f"[{fix_cmg}] subagent --cycle-begin must NOT mutate the marker")
+            cmg_ok = False
+        # (d) orchestrator --cycle-begin → self-healing overwrite, exit 0.
+        _write_cmg_marker()
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-begin", "--feature-id", "feat-cmg2",
+             "--nonce", "cafe", "--repo-root", str(td_path)],
+            capture_output=True, text=True, env=_cmg_env(orchestrator=True),
+        )
+        if r.returncode != 0:
+            failures.append(f"[{fix_cmg}] orchestrator --cycle-begin must exit 0; got {r.returncode}")
+            cmg_ok = False
+        if cmg_marker.exists():
+            try:
+                _ovr = json.loads(cmg_marker.read_text(encoding="utf-8"))
+                if _ovr.get("feature_id") != "feat-cmg2":
+                    failures.append(f"[{fix_cmg}] orchestrator --cycle-begin must overwrite the marker")
+                    cmg_ok = False
+            except (OSError, json.JSONDecodeError):
+                pass
+        print(f"  {'PASS' if cmg_ok else 'FAIL'} [{fix_cmg}] subagent cycle-end/begin refused, orchestrator allowed")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -5709,11 +5798,17 @@ def main() -> int:
     # like all other action flags so they compose cleanly with orchestrator
     # scripting (e.g. ``python lazy-state.py --run-start --cloud --max-cycles 20``).
     # lazy-cycle-containment C1 (Phase 2): cycle-marker bracket dispatch.  Like
-    # all action flags these exit immediately.  They are NOT guarded by the C3
-    # refusal — the orchestrator owns the bracket, and the marker is its own
-    # subject (refusing --cycle-begin under a stale marker would prevent the
-    # self-healing overwrite).
+    # all action flags these exit immediately.
+    # cycle-subagent-runs-orchestrator-work Phase 2 (KEYSTONE): a SUBAGENT must
+    # not arm/clear the containment marker. Guard at the ENTRY of both handlers,
+    # BEFORE any marker write/clear, via the dedicated marker-mutation guard
+    # (keys on the POSITIVE LAZY_ORCHESTRATOR signal — NOT the plain
+    # refuse_if_cycle_active marker-fallback, which would refuse the
+    # orchestrator's own bracket because --cycle-begin/--cycle-end run WHILE the
+    # marker is present). The orchestrator exports LAZY_ORCHESTRATOR=1 (Phase 1),
+    # so its self-healing overwrite + bracket teardown are unaffected.
     if args.cycle_begin:
+        lazy_core.refuse_cycle_marker_mutation_if_subagent("--cycle-begin")
         if not args.feature_id or not args.nonce:
             _die("--cycle-begin requires --feature-id and --nonce")
         # hardening-blind-to-process-friction Phase 2 (D1): snapshot the run
@@ -5733,6 +5828,11 @@ def main() -> int:
         return 0
 
     if args.cycle_end:
+        # cycle-subagent-runs-orchestrator-work Phase 2 (KEYSTONE): refuse a
+        # subagent's marker clear BEFORE the friction check / clear_cycle_marker
+        # run (zero side effects). The orchestrator (LAZY_ORCHESTRATOR=1) is
+        # allowed to clear its own bracket under its live marker.
+        lazy_core.refuse_cycle_marker_mutation_if_subagent("--cycle-end")
         # hardening-blind-to-process-friction Phase 2 (D1): check the two
         # process-friction signals BEFORE clearing the marker; on a hit, append a
         # kind: process-friction entry to the deny ledger (best-effort, never

@@ -47,5 +47,6 @@
   PASS [bug-park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
   PASS [bug-park-blocked-and-needs-input-single-park] dispatched='workable-bug', blocked-bug park count=1
   PASS [bug-park-blocked-reenter-under-flag] blocked-bug parked under flag=True, dispatched='workable-bug'
+  PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
 
 All smoke tests passed.

@@ -83,5 +83,6 @@
   PASS [park-blocked-default-halt] default: terminal_reason='blocked', parked key absent=True
   PASS [park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
   PASS [park-blocked-and-needs-input-single-park] dispatched='workable-feat', blocked-feat park count=1
+  PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
 
 All smoke tests passed.
