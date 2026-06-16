@@ -5123,6 +5123,7 @@ def write_cycle_marker(
     run_started_at: str | None = None,
     begin_head_sha: str | None = None,
     sub_skill: str | None = None,
+    sub_skill_args: str | None = None,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the cycle-subagent marker to the state dir.
@@ -5155,6 +5156,14 @@ def write_cycle_marker(
         per-sub_skill commit budget from this — WITHOUT it the detector falls back
         to the conservative default budget (1) and false-positives on a normal
         multi-commit cycle (e.g. execute-plan's test+impl commits, budget 3).
+      - sub_skill_args (str|None): the dispatched sub_skill_args (for an
+        execute-plan cycle this is the PLAN PART path). None for callers that omit
+        it. cycle_end_friction_check uses it to read the plan's declared phase
+        count and SCALE the execute-plan commit budget (one commit per phase is
+        the normal /execute-plan cadence — a 6-phase plan legitimately makes ~6
+        commits, which the fixed budget of 3 false-positived as unexpected-commits;
+        hardening Round 20 D2). Additive (default None) → legacy markers degrade to
+        the fixed per-sub_skill budget, never a crash.
 
     Self-healing staleness: if a marker already EXISTS (a prior dispatch crashed
     without `--cycle-end`), it is OVERWRITTEN and the event logged. The
@@ -5221,6 +5230,11 @@ def write_cycle_marker(
         # (default None) → legacy markers/fixtures degrade to the default budget,
         # never a crash.
         "sub_skill": sub_skill,
+        # hardening Round 20 (D2): the dispatched sub_skill_args (plan part path for
+        # an execute-plan cycle) so cycle_end_friction_check can scale the
+        # execute-plan commit budget by the plan's declared phase count. Additive
+        # (default None) → legacy markers degrade to the fixed per-sub_skill budget.
+        "sub_skill_args": sub_skill_args,
     }
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
@@ -5307,6 +5321,51 @@ _CYCLE_COMMIT_BUDGET: dict[str, int] = {
     "__mark_fixed__": 3,
 }
 
+# Slack added on top of the plan's phase count for a phase-scaled execute-plan
+# budget (hardening Round 20 D2): /execute-plan commits once per phase, but a phase
+# may split into a test commit + an impl commit (TDD cadence), so allow a small
+# constant cushion above the phase count before a cycle is deemed a runaway.
+_EXECUTE_PLAN_PHASE_BUDGET_SLACK = 2
+
+
+def _execute_plan_commit_budget(
+    sub_skill: str | None, sub_skill_args: str | None
+) -> int | None:
+    """Phase-scaled commit budget for an execute-plan cycle (hardening Round 20 D2).
+
+    /execute-plan commits once per phase (the standard per-phase gate+commit
+    cadence), so a legitimate single-part plan with N phases makes ~N commits. The
+    fixed per-sub_skill table budget (3) false-positived ``unexpected-commits`` on
+    any plan with 4+ phases. This derives a budget of ``phase_count + slack`` from
+    the dispatched plan part's ``phases:`` frontmatter (the plan part path is the
+    execute-plan ``sub_skill_args``).
+
+    Returns the scaled budget, or ``None`` when it cannot be computed — for ANY of:
+    a non-execute-plan sub_skill, a missing/blank sub_skill_args, an unreadable
+    plan file, or a plan with no parseable ``phases:`` field. A ``None`` return
+    makes ``detect_cycle_bracket_friction`` fall back to the fixed table budget, so
+    the worst case is the pre-Round-20 behavior — never a false negative, never a
+    crash.
+
+    The sub_skill_args may carry trailing flags (e.g. ``"<plan>.md --batch"``);
+    only the leading whitespace-delimited token is treated as the plan path
+    (mirrors the plan-arg extraction already used in the probe-enrichment path).
+    """
+    if sub_skill != "execute-plan":
+        return None
+    if not sub_skill_args:
+        return None
+    plan_token = str(sub_skill_args).split()[0] if str(sub_skill_args).split() else ""
+    if not plan_token:
+        return None
+    try:
+        phase_set = _plan_phase_set(Path(plan_token))
+    except Exception:  # noqa: BLE001
+        return None
+    if not phase_set:
+        return None
+    return len(phase_set) + _EXECUTE_PLAN_PHASE_BUDGET_SLACK
+
 
 def detect_cycle_bracket_friction(
     marker: dict,
@@ -5315,6 +5374,7 @@ def detect_cycle_bracket_friction(
     sub_skill: str | None,
     *,
     commits_since: int | None = None,
+    budget_override: int | None = None,
     now: float | None = None,
 ) -> dict | None:
     """Detect process-friction at --cycle-end: a torn cycle bracket or unexpected
@@ -5351,6 +5411,13 @@ def detect_cycle_bracket_friction(
         commits_since: number of commits HEAD advanced since
             ``marker['begin_head_sha']`` (caller computes via ``git rev-list
             --count begin..HEAD``); None/degraded disables signal (b).
+        budget_override: an explicit commit budget that SUPERSEDES the per-sub_skill
+            table lookup when provided (hardening Round 20 D2). The caller
+            (cycle_end_friction_check) computes this for an execute-plan cycle by
+            reading the plan part's declared phase count, so a normal one-commit-
+            per-phase /execute-plan cadence (e.g. a 6-phase plan → ~6 commits) does
+            NOT false-positive against the fixed table budget of 3. None → fall back
+            to the per-sub_skill table (legacy behavior, never a crash).
         now: unused placeholder for caller symmetry / future timing fields.
 
     Returns:
@@ -5411,9 +5478,17 @@ def detect_cycle_bracket_friction(
     if marker.get("kind") == "meta":
         return None
     if begin_head_sha is not None and commits_since is not None:
-        budget = _CYCLE_COMMIT_BUDGET.get(
-            sub_skill or "", _CYCLE_COMMIT_BUDGET_DEFAULT
-        )
+        # hardening Round 20 (D2): an explicit budget_override (e.g. a phase-scaled
+        # execute-plan budget the caller derived from the plan frontmatter)
+        # supersedes the fixed per-sub_skill table. Only a POSITIVE override is
+        # honored — a None/degraded computation falls back to the table so the
+        # signal never accidentally disables.
+        if isinstance(budget_override, int) and budget_override > 0:
+            budget = budget_override
+        else:
+            budget = _CYCLE_COMMIT_BUDGET.get(
+                sub_skill or "", _CYCLE_COMMIT_BUDGET_DEFAULT
+            )
         if commits_since > budget:
             return {
                 "reason": "unexpected-commits",
@@ -5510,12 +5585,28 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     # normal multi-commit cycle (e.g. execute-plan test+impl, budget 3) that the
     # forced sub_skill=None previously squeezed under the default budget of 1.
     marker_sub_skill = marker.get("sub_skill")
+
+    # hardening Round 20 (D2): for an execute-plan cycle, scale the commit budget
+    # by the plan part's declared phase count. /execute-plan commits once per phase
+    # (the standard per-phase gate+commit cadence), so a legitimate N-phase single-
+    # part plan makes ~N commits — which the fixed table budget of 3 false-positived
+    # as unexpected-commits on any plan with 4+ phases. The plan part path is the
+    # dispatched sub_skill_args (lazy-state.py routes execute-plan with
+    # sub_skill_args=str(plan)). Read the phase count via the existing
+    # _plan_phase_set helper and allow one commit per phase plus a small slack for
+    # the test+impl split within a phase. A genuine runaway (many commits beyond the
+    # plan's phase count) still trips. Best-effort: an unreadable plan / no phases:
+    # field / non-execute-plan cycle → None → the detector falls back to the fixed
+    # per-sub_skill table (never a false NEGATIVE, never a crash).
+    budget_override = _execute_plan_commit_budget(marker_sub_skill, marker.get("sub_skill_args"))
+
     descriptor = detect_cycle_bracket_friction(
         marker,
         current_run_started_at=current_run_started_at,
         current_head_sha=current_head_sha,
         sub_skill=marker_sub_skill,
         commits_since=commits_since,
+        budget_override=budget_override,
     )
 
     # (5) log the friction as hardening debt (fail-open).
@@ -7032,6 +7123,59 @@ def ack_oldest_deny(now: float | None = None) -> dict | None:
         # as not-applied so callers do not over-count.  The next emission retries.
         return None
     return target
+
+
+def ack_all_unacked_denies(now: float | None = None) -> int:
+    """Ack EVERY unacked deny-ledger entry (operator override), rewriting the ledger.
+
+    The operator-override counterpart to ``ack_oldest_deny`` (which retires exactly
+    ONE unit of debt per hardening dispatch).  Called by the ``--run-end
+    --ack-unhardened`` path: when the operator explicitly authorizes retiring the
+    run while hardening debt is still pending, that authorization must actually
+    CLEAR the debt — otherwise the entries stay ``acked: false`` on disk and the
+    NEXT run's advancing probe keeps withholding the forward route over
+    ``pending-hardening-debt`` that the operator already discharged (the
+    unclearable-debt deadlock — turn-routing-enforcement hardening Round 20).
+
+    The override clears ALL unacked entries REGARDLESS of kind (validate-deny
+    denials AND ``kind: process-friction`` entries) and REGARDLESS of any
+    ``session_id`` field — ``pending_hardening()`` itself never filtered by
+    session, so a session-less process-friction entry (written by ``--cycle-end``
+    with no session_id) is exactly the entry that previously could never be
+    discharged by the operator.  The operator override is a deliberate, audited
+    blanket ack; it is the ONLY ack path that retires more than one entry.
+
+    Args:
+        now: epoch float for acked_ts (injectable for hermetic tests).
+
+    Returns:
+        The number of entries that were flipped from unacked → acked (0 when the
+        ledger was already clean — a no-op, not an error).  On a rewrite failure
+        the on-disk ledger is left unchanged and 0 is returned (the caller must
+        not over-report the discharge).
+    """
+    if now is None:
+        now = time.time()
+    entries = read_deny_ledger()
+    acked_count = 0
+    for entry in entries:
+        if not entry.get("acked", False):
+            entry["acked"] = True
+            entry["acked_ts"] = now
+            acked_count += 1
+    if acked_count == 0:
+        # Nothing pending — no-op, no rewrite.
+        return 0
+    # Rewrite the whole ledger (one JSON object per line) atomically.
+    try:
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        body = "".join(json.dumps(e) + "\n" for e in entries)
+        _atomic_write(ledger_path, body)
+    except Exception:  # noqa: BLE001
+        # A rewrite failure leaves the on-disk ledger unchanged; report 0 acked so
+        # the caller does not claim a discharge that did not persist.
+        return 0
+    return acked_count
 
 
 # ---------------------------------------------------------------------------

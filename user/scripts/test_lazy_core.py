@@ -9049,6 +9049,177 @@ def test_run_end_refuses_on_unacked_deny():
         out3 = json.loads(r3.stdout)
         assert out3["run_marker_deleted"] is True, out3
         assert "override" in out3 and "OVERRIDE" in out3["override"], out3
+        # hardening Round 20 (DEFECT-1): the override must ACTUALLY CLEAR the debt,
+        # not merely note it. After --ack-unhardened, pending_hardening() must be 0
+        # so the NEXT run's advancing probe does not keep withholding the route.
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 0, (
+                "operator-authorized --ack-unhardened must clear ALL pending "
+                "hardening debt, not just bypass the gate"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_all_unacked_denies_clears_sessionless_friction():
+    """ack_all_unacked_denies() flips EVERY unacked entry to acked — including a
+    kind: process-friction entry that has NO session_id (the unclearable-debt
+    case, hardening Round 20 DEFECT-1). Mixed validate-deny + process-friction
+    are all cleared; an already-acked entry is left untouched; empty → 0."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "ackall-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # empty ledger → 0, no-op.
+            assert lazy_core.ack_all_unacked_denies() == 0
+
+            # session-less process-friction entry (exactly what --cycle-end writes:
+            # append_friction_ledger_entry stamps NO session_id field).
+            assert lazy_core.append_friction_ledger_entry(
+                "unexpected-commits", "HEAD advanced 6 commits", now=1.0,
+            ) is True
+            # a normal validate-deny entry too.
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="c" * 12,
+                reason_head="r", prompt_head="p", now=2.0,
+            )
+            assert lazy_core.pending_hardening() == 2
+
+            # confirm the friction entry truly has no session_id on disk.
+            ledger = lazy_core.read_deny_ledger()
+            friction = [e for e in ledger if e.get("kind") == "process-friction"]
+            assert len(friction) == 1
+            assert "session_id" not in friction[0], (
+                "the friction entry must be session-less (the deadlock trigger)"
+            )
+
+            # blanket ack clears BOTH regardless of kind/session.
+            n = lazy_core.ack_all_unacked_denies(now=9.0)
+            assert n == 2, f"expected 2 entries acked, got {n}"
+            assert lazy_core.pending_hardening() == 0
+
+            # idempotent: a second call acks nothing (all already acked).
+            assert lazy_core.ack_all_unacked_denies() == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_run_end_ack_unhardened_clears_sessionless_friction():
+    """Subprocess end-to-end (hardening Round 20 DEFECT-1): a marked run with a
+    SESSION-LESS kind: process-friction entry refuses --run-end without the
+    override, and --run-end --ack-unhardened both deletes the marker AND drains
+    the ledger so the NEXT run's probe no longer withholds the forward route."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "ackfric-state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        assert run(["--run-start", "--max-cycles", "5"]).returncode == 0
+        # seed a session-less process-friction entry (the --cycle-end shape).
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.append_friction_ledger_entry(
+                "unexpected-commits", "torn cycle / commits", now=1.0,
+            ) is True
+            assert lazy_core.pending_hardening() == 1
+        finally:
+            _clear_state_dir()
+
+        # without the override, --run-end refuses (debt remains).
+        r = run(["--run-end"])
+        assert r.returncode == 1, r.stdout
+        assert json.loads(r.stdout)["pending_hardening"] == 1
+
+        # operator override: deletes the marker AND clears the debt.
+        r2 = run(["--run-end", "--ack-unhardened"])
+        assert r2.returncode == 0, r2.stdout
+        out2 = json.loads(r2.stdout)
+        assert out2["run_marker_deleted"] is True, out2
+        assert "override" in out2 and "OVERRIDE" in out2["override"], out2
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 0, (
+                "session-less process-friction debt must be cleared by the "
+                "operator override (the unclearable-debt deadlock fix)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_execute_plan_commit_budget_scales_with_phase_count():
+    """hardening Round 20 (DEFECT-2): _execute_plan_commit_budget reads the plan
+    part's phase count and scales the budget so a normal one-commit-per-phase
+    /execute-plan cycle does NOT false-positive; the detector honors the override
+    and a true runaway still trips. Non-execute-plan / unreadable / no-phases
+    inputs degrade to None (fall back to the fixed table)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        plan = root / "plan-part-1.md"
+        # a 6-phase single-part plan.
+        plan.write_text(
+            "---\nkind: implementation-plan\nstatus: ready\n"
+            "phases: [1, 2, 3, 4, 5, 6]\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        # scaled budget = 6 phases + slack.
+        budget = lazy_core._execute_plan_commit_budget("execute-plan", str(plan))
+        assert budget == 6 + lazy_core._EXECUTE_PLAN_PHASE_BUDGET_SLACK, budget
+
+        # trailing flags on the args are tolerated (only the leading token is path).
+        assert lazy_core._execute_plan_commit_budget(
+            "execute-plan", f"{plan} --batch"
+        ) == budget
+
+        # non-execute-plan / blank / unreadable / no-phases → None (table fallback).
+        assert lazy_core._execute_plan_commit_budget("mcp-test", str(plan)) is None
+        assert lazy_core._execute_plan_commit_budget("execute-plan", None) is None
+        assert lazy_core._execute_plan_commit_budget(
+            "execute-plan", str(root / "missing.md")
+        ) is None
+        nophases = root / "nophases.md"
+        nophases.write_text("---\nkind: implementation-plan\n---\nbody\n", encoding="utf-8")
+        assert lazy_core._execute_plan_commit_budget("execute-plan", str(nophases)) is None
+
+        # detector honors the override: 6 commits on a 6-phase plan does NOT trip
+        # (budget 8) but a runaway of 9 commits DOES.
+        marker = {
+            "run_started_at": "2026-06-16T13:31:00Z",
+            "begin_head_sha": "d" * 40,
+            "kind": "real",
+        }
+        assert lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-16T13:31:00Z",
+            current_head_sha="e" * 40, sub_skill="execute-plan",
+            commits_since=6, budget_override=budget,
+        ) is None
+        runaway = lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-16T13:31:00Z",
+            current_head_sha="e" * 40, sub_skill="execute-plan",
+            commits_since=9, budget_override=budget,
+        )
+        assert runaway is not None and runaway["reason"] == "unexpected-commits"
+
+        # WITHOUT the override, the same 6-commit cycle false-positives against the
+        # fixed table budget of 3 — proving the override is what fixes the defect.
+        false_pos = lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-16T13:31:00Z",
+            current_head_sha="e" * 40, sub_skill="execute-plan",
+            commits_since=6, budget_override=None,
+        )
+        assert false_pos is not None and false_pos["reason"] == "unexpected-commits"
 
 
 def test_checkpoint_round_trip():

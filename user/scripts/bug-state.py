@@ -3965,6 +3965,16 @@ def main() -> int:
             "budget instead of the conservative default. Optional."
         ),
     )
+    parser.add_argument(
+        "--sub-skill-args", default=None,
+        help=(
+            "Dispatched sub_skill_args for --cycle-begin (coupled-pair mirror of "
+            "lazy-state.py). For an execute-plan cycle this is the PLAN PART path; "
+            "--cycle-end reads its phase count to scale the execute-plan commit "
+            "budget (hardening Round 20). Optional — omitting it degrades to the "
+            "fixed per-sub_skill budget."
+        ),
+    )
     # Phase 3: --emit-dispatch <class> — coupled-pair mirror of lazy-state.py.
     # Pipeline is always "bug" for bug-state.py (the bug pipeline script).
     parser.add_argument(
@@ -4065,7 +4075,7 @@ def main() -> int:
         marker = lazy_core.write_cycle_marker(
             feature_id=args.bug_id, nonce=args.nonce, kind=args.kind,
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
-            sub_skill=args.sub_skill,
+            sub_skill=args.sub_skill, sub_skill_args=args.sub_skill_args,
         )
         sys.stdout.write(json.dumps(marker, indent=2) + "\n")
         return 0
@@ -4154,9 +4164,19 @@ def main() -> int:
                     "pending_hardening": pending,
                 }, indent=2) + "\n")
                 return 1
+            # Override path: the operator authorized retiring the run, so the
+            # authorization must ACTUALLY CLEAR the pending debt — flip every
+            # unacked entry to acked (regardless of kind/session_id) before
+            # deleting the marker.  Without this the entries linger acked:false
+            # and the NEXT run's advancing probe keeps withholding the forward
+            # route over pending-hardening-debt the operator already discharged
+            # (the unclearable-debt deadlock — hardening Round 20; session-less
+            # process-friction entries from --cycle-end were the trigger).
+            # Coupled-pair mirror of lazy-state.py.
+            acked_n = lazy_core.ack_all_unacked_denies()
             override_note = (
-                f"OVERRIDE: --ack-unhardened retired the run with {pending} "
-                f"unacked guard denial(s) still pending in the deny ledger."
+                f"OVERRIDE: --ack-unhardened retired the run and acked {acked_n} "
+                f"pending deny-ledger entry(ies) (operator-authorized blanket ack)."
             )
 
         # -----------------------------------------------------------------------
