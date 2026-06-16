@@ -91,8 +91,8 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — `--cycle-begin`/`--cycle-end` dispatch bracket across the coupled trio (lazy-batch + lazy-bug-batch + lazy-batch-cloud SKILLs) + State Machine Summary updates + governing-prose reload mirror
-- [ ] WU-2 — docs-consistency test: all three orchestrators set begin-before + end-after on every return path
+- [x] WU-1 — `--cycle-begin`/`--cycle-end` dispatch bracket across the coupled trio (lazy-batch + lazy-bug-batch + lazy-batch-cloud SKILLs) + State Machine Summary updates + governing-prose reload mirror
+- [x] WU-2 — docs-consistency test: all three orchestrators set begin-before + end-after on every return path
 - [ ] WU-3 — cycle-prompt terminal-stop `@section` in cycle-base-prompt.md + mirror to bug/cloud variants
 - [ ] WU-4 — projection lint: terminal-stop section present in every projected cycle-prompt variant + size check
 

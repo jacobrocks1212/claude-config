@@ -497,15 +497,30 @@ the orchestrator's cross-check (it still drives the T2 `(sonnet, loop-resolution
 fires but `cycle_model` came back `"opus"`, re-run the probe WITH `--repeat-count --emit-prompt --max-cycles {max_cycles}` (no `--forward-cycles`/`--meta-cycles` — counters live in the marker)
 rather than hand-appending the block.
 
+**Governing-file reload discipline (self-edit mode — C8; mirrored from `/lazy-batch` §1d).** When the Step 1a probe reports `self_edit_mode: true`, this run is editing the harness it executes from, so a cycle that commits to the orchestrator's own in-context governing prose makes the copy you hold stale. After EVERY cycle, intersect the cycle's commit (`git diff --name-only`, or read the probe's `governing_files_touched` list) with the **governing-file set** and re-`Read` any hit via its `~/.claude/...` path BEFORE composing the next dispatch:
+- `user/skills/lazy-bug-batch/SKILL.md` (THIS file) + the `user/skills/lazy-batch/SKILL.md` and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` twins
+- `user/skills/_components/orchestrator-voice.md`, `user/skills/_components/completeness-policy.md`, `user/skills/_components/lazy-dispatch-template.md`
+
+This is the SAME re-read as the compaction discipline above (triggered by a self-edit commit instead of a compaction boundary) and the governing-file set MUST stay in lockstep with that compaction re-read list. The re-read is a silent mechanic. **Auto-refresh boundary (documented no-ops — never reload):** `lazy_core.py`/`bug-state.py`/`lazy-state.py` (fresh subprocess every probe), `lazy-batch-prompts/cycle-base-prompt.md` + addenda + `loop-block.md` (re-read by `emit_cycle_prompt` every probe), hook `.sh` bodies, and downstream skill prose are ALREADY live on the next probe/dispatch and are EXCLUDED from the set by construction. **New-hook-registration restart surfacing (T6):** if a cycle's commit added/removed a hook ENTRY in `settings.json` (NOT merely a script-body edit, which is an auto-refresh no-op), surface `⚠ settings.json hook wiring changed — restart the session to (de)register; the running session still uses the old wiring` — do NOT claim the change is live.
+
+**Cycle-marker dispatch bracket (C1 — lazy-cycle-containment; mirrors `/lazy-batch` §1d with `bug-state.py`).** EVERY `Agent` dispatch (the real-skill cycle below AND every meta-dispatch: input-audit §1d.5, apply-resolution, recovery, coherence-recovery, hardening §1d.1, needs-runtime-redispatch §1d.0, investigation) MUST be bracketed: `bug-state.py --cycle-begin --bug-id {bug_id} --nonce {dispatch_nonce} --kind real|meta` IMMEDIATELY before, `bug-state.py --cycle-end` IMMEDIATELY after on EVERY return path (success / halt / error). The begin writes the cycle-subagent marker (`~/.claude/state/lazy-cycle-active.json`; `--bug-id` maps to the marker's `feature_id`); it is self-healing (a stale marker is overwritten + logged) and NOT C3-guarded. The end is idempotent (zero error if absent) — clear it on ALL THREE return paths because a dangling `--cycle-begin` would block the orchestrator's own next ops (`--run-end`, `--apply-pseudo`, the next probe's `--emit-dispatch`) via the C3 refusal; self-healing staleness is a crash-only backstop, not a substitute. Both are silent mechanics.
+
 Dispatch:
 
 ```
+# 1. Set the cycle marker (C1):
+python3 ~/.claude/scripts/bug-state.py --cycle-begin --bug-id {bug_id} --nonce {dispatch_nonce} --kind real
+
+# 2. Dispatch:
 Agent({
   description: "lazy-bug-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {bug_name}",
   subagent_type: "general-purpose",
   model: <the probe's cycle_model>,
   prompt: <the probe's cycle_prompt_ref if present, otherwise cycle_prompt verbatim>
 })
+
+# 3. Clear the cycle marker (C1) — on EVERY return path (success / halt / error):
+python3 ~/.claude/scripts/bug-state.py --cycle-end
 ```
 
 #### 1d.1. Denial recovery (validate-deny guard + hardening dispatch)
@@ -839,6 +854,7 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
 - **No research/ingest steps.** Unlike `/lazy-batch`, this skill has no Step 0.5 pre-loop ingest check, no `needs-research` halt path, no `--allow-research-skip` flag, and no in-session resume protocol for research uploads. Bugs do not undergo Gemini deep research.
 - **Coupling rule:** changes to `/lazy-batch`'s shared algorithm (hard constraints, cycle loop shape, resolution modes, pseudo-skill post-actions, cycle output discipline) must be mirrored here unless bug-pipeline-scoped per the differences table above.
 - **Hook machinery (Phase 5 — turn-routing-enforcement).** `--run-start` (Step 0.55, uses `bug-state.py`) activates the inject + validate-deny hooks scoped to the run. `--run-end` (every terminal path, §1c.6) deletes the marker + registry. The hardening dispatch (`--emit-dispatch hardening`) is the self-repair signal — depth hard-capped at 1. All non-cycle dispatch classes are emitted via `--emit-dispatch <class>` and dispatched VERBATIM.
+- **Cycle-containment machinery (lazy-cycle-containment — C1/C2/C3).** EVERY `Agent` dispatch (real cycle §1d + every meta-dispatch) is bracketed: `bug-state.py --cycle-begin --bug-id <id> --nonce <hex> [--kind real|meta]` IMMEDIATELY before, `bug-state.py --cycle-end` IMMEDIATELY after on EVERY return path (success / halt / error). The begin writes the cycle-subagent marker (`~/.claude/state/lazy-cycle-active.json`; `--bug-id` maps to the marker's `feature_id`); while it is present the C2 PreToolUse hook (`lazy-cycle-containment.sh`) DENIES in-flight the ops a runaway needs (next-route probe/emit, run-lifecycle, 2nd-feature commit, recursive `Agent`) and the C3 state-script refusals reject `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`--emit-dispatch` (exit 3, zero side effects). The orchestrator clears the marker before its own next ops, so the refusal bites ONLY a subagent calling them mid-dispatch. Identical across the coupled trio (the bug orchestrator brackets with `bug-state.py`; cloud passes `--cloud` to `lazy-state.py`).
 
 <!-- COUPLED-PAIR DIFF (lazy-bug-batch vs lazy-batch / lazy-batch-cloud) — Phase 5 turn-routing-enforcement
      lazy-bug-batch differences from lazy-batch:
@@ -875,4 +891,13 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
        Mirrored verbatim across lazy-batch / lazy-bug-batch / lazy-batch-cloud (cloud keeps
        lazy-state.py --cloud paths). Script contract: lazy_core.py read_run_marker path B is now
        non-destructive (concurrent interactive sessions never delete a live run's marker). -->
+<!-- lazy-cycle-containment Phase 5 (2026-06-15) — coupled-trio mirror note:
+       - C1 dispatch bracket: §1d "Cycle-marker dispatch bracket" — bug-state.py --cycle-begin
+         (--bug-id maps to the marker's feature_id) IMMEDIATELY before every Agent dispatch (real +
+         every meta-dispatch), bug-state.py --cycle-end IMMEDIATELY after on EVERY return path.
+       - C8 governing-file reload discipline + auto-refresh boundary + new-hook restart surfacing
+         (§1d): authored canonically in lazy-batch (Phase 1); MIRRORED here in this Phase-5 cycle.
+       - Hook-machinery Note: added the C1/C2/C3 cycle-containment bullet.
+       Mirrored across all three; bug orchestrator brackets with bug-state.py; cloud passes --cloud.
+       The bracket itself is NOT a cloud divergence (identical shape). -->
 

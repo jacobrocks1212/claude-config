@@ -526,3 +526,91 @@ class TestLiveZeroDrift:
             "lazy-bug-status has parity drift vs lazy-status:\n"
             + "\n".join(f"  {f}" for f in findings)
         )
+
+
+# ===========================================================================
+# Class 3 — Cycle-marker dispatch bracket (lazy-cycle-containment Phase 5, C1)
+# ===========================================================================
+#
+# SPEC §C1 + Validation row "All three orchestrators bracket every dispatch":
+# the coupled trio (lazy-batch + lazy-bug-batch + lazy-batch-cloud) must each
+# wrap every Agent dispatch with `--cycle-begin` (immediately before) and
+# `--cycle-end` (immediately after, on EVERY return path: success, halt, error).
+# This is a docs-consistency check over the SKILL.md prose — no pipeline run.
+
+# The coupled trio: (derived-name, repo-relative SKILL.md path, state script).
+_CYCLE_BRACKET_TRIO: list[tuple[str, str, str]] = [
+    ("lazy-batch", "user/skills/lazy-batch/SKILL.md", "lazy-state.py"),
+    ("lazy-bug-batch", "user/skills/lazy-bug-batch/SKILL.md", "bug-state.py"),
+    (
+        "lazy-batch-cloud",
+        "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md",
+        "lazy-state.py",
+    ),
+]
+
+
+def _read_trio_skill(repo_root: Path, rel_path: str) -> str:
+    p = repo_root / rel_path
+    assert p.exists(), f"coupled-trio SKILL.md not found: {p}"
+    return p.read_text(encoding="utf-8")
+
+
+class TestCycleBracket:
+    """
+    The C1 dispatch bracket must be present + mirrored across the coupled trio,
+    and each bracket must document --cycle-end on every return path.
+    """
+
+    def test_each_orchestrator_has_nonzero_begin_and_end(self) -> None:
+        """Every SKILL in the trio carries >=1 --cycle-begin and >=1 --cycle-end."""
+        repo_root = Path(__file__).resolve().parents[2]
+        for name, rel_path, _script in _CYCLE_BRACKET_TRIO:
+            text = _read_trio_skill(repo_root, rel_path)
+            begins = text.count("--cycle-begin")
+            ends = text.count("--cycle-end")
+            assert begins >= 1, f"{name}: expected >=1 --cycle-begin, found {begins}"
+            assert ends >= 1, f"{name}: expected >=1 --cycle-end, found {ends}"
+
+    def test_each_orchestrator_uses_correct_state_script(self) -> None:
+        """The bug orchestrator brackets with bug-state.py; the others lazy-state.py."""
+        repo_root = Path(__file__).resolve().parents[2]
+        for name, rel_path, script in _CYCLE_BRACKET_TRIO:
+            text = _read_trio_skill(repo_root, rel_path)
+            # The bracket block must reference the orchestrator's own state script.
+            assert f"{script} --cycle-begin" in text or f"{script} \\\n" in text or (
+                "--cycle-begin" in text and script in text
+            ), f"{name}: --cycle-begin not associated with {script}"
+
+    def test_each_orchestrator_documents_all_return_paths(self) -> None:
+        """
+        Each SKILL's bracket prose names the three return paths for --cycle-end —
+        an orphan --cycle-begin without a matching end on every path is the
+        failure C1 guards against.
+        """
+        repo_root = Path(__file__).resolve().parents[2]
+        for name, rel_path, _script in _CYCLE_BRACKET_TRIO:
+            text = _read_trio_skill(repo_root, rel_path).lower()
+            # "every return path (success, halt, error)" wording (or close).
+            assert "success" in text and "halt" in text and "error" in text, (
+                f"{name}: bracket prose must name success/halt/error return paths"
+            )
+            assert "return path" in text, (
+                f"{name}: bracket prose must reference 'return path' for --cycle-end"
+            )
+
+    def test_bracket_is_mirrored_across_trio(self) -> None:
+        """
+        Parity: all three carry the bracket (non-zero begin+end in each). A bracket
+        present in one but absent in another is coupled-trio drift.
+        """
+        repo_root = Path(__file__).resolve().parents[2]
+        present = []
+        for name, rel_path, _script in _CYCLE_BRACKET_TRIO:
+            text = _read_trio_skill(repo_root, rel_path)
+            present.append(("--cycle-begin" in text and "--cycle-end" in text))
+        assert all(present), (
+            "coupled-trio drift: the --cycle-begin/--cycle-end bracket must appear "
+            f"in ALL three orchestrators, got presence={present} "
+            f"for {[n for n, _, _ in _CYCLE_BRACKET_TRIO]}"
+        )

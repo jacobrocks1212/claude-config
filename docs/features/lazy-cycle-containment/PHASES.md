@@ -209,11 +209,11 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** Add the `--cycle-begin` / `--cycle-end` bracket around EVERY dispatch in `/lazy-batch`, `/lazy-bug-batch`, `/lazy-batch-cloud` (the coupled trio — mirror per CLAUDE.md). `--cycle-begin` immediately before every `Agent` dispatch (real-skill AND meta-dispatches: input-audit, apply-resolution, recovery, hardening, coherence-recovery, needs-runtime-redispatch); `--cycle-end` immediately after the `Agent` returns on EVERY return path (success, halt, error).
 
 **Deliverables:**
-- [ ] `user/skills/lazy-batch/SKILL.md`: `--cycle-begin --feature-id <id> --nonce <hex> [--kind real|meta]` before each dispatch; `--cycle-end` after each return on all three return paths (success, halt, error).
-- [ ] `user/skills/lazy-bug-batch/SKILL.md`: same bracket, mirrored (bug pipeline twin).
-- [ ] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`: same bracket, mirrored (cloud twin); update its "Differences from /lazy-batch" block only if cloud genuinely diverges (it should not — the bracket is identical).
-- [ ] Update each file's State Machine Summary / orchestration-shape block at the bottom so the dispatch table reflects the new begin/end bracket (per CLAUDE.md coupled-pair rule).
-- [ ] Tests: docs-consistency grep that all three orchestrators set `--cycle-begin` before AND clear `--cycle-end` after each dispatch on all return paths (no orphan begin without a matching end on any path).
+- [x] `user/skills/lazy-batch/SKILL.md`: `--cycle-begin --feature-id <id> --nonce <hex> [--kind real|meta]` before each dispatch; `--cycle-end` after each return on all three return paths (success, halt, error).
+- [x] `user/skills/lazy-bug-batch/SKILL.md`: same bracket, mirrored (bug pipeline twin).
+- [x] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`: same bracket, mirrored (cloud twin); update its "Differences from /lazy-batch" block only if cloud genuinely diverges (it should not — the bracket is identical).
+- [x] Update each file's State Machine Summary / orchestration-shape block at the bottom so the dispatch table reflects the new begin/end bracket (per CLAUDE.md coupled-pair rule).
+- [x] Tests: docs-consistency grep that all three orchestrators set `--cycle-begin` before AND clear `--cycle-end` after each dispatch on all return paths (no orphan begin without a matching end on any path).
 
 **Minimum Verifiable Behavior:** `grep -c -- '--cycle-begin'` and `grep -c -- '--cycle-end'` across each of the three SKILLs return matching, non-zero counts, and each `--cycle-end` is paired to a return path (success/halt/error) — verifiable by a docs-consistency script without running the pipeline.
 
@@ -238,6 +238,13 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Integration Notes for Next Phase:**
 - This is the highest-coupling phase — the trio MUST stay mirrored. Any reviewer must diff all three after the edit (CLAUDE.md coupling rule).
 - The nonce/kind passed at `--cycle-begin` flows into the marker (Phase 2) which the hook (Phase 4) reads — verify the `--feature-id` the orchestrator passes matches the feature the dispatch is for (the 2nd-feature tripwire depends on it being correct).
+
+**Implementation Notes (2026-06-15 — Phase 5 implemented, validation pending):**
+- Added a dedicated **"Cycle-marker dispatch bracket (C1)"** block to each SKILL's §1d, immediately above the `Dispatch:` Agent block: `--cycle-begin --feature-id/--bug-id <id> --nonce <hex> [--kind real|meta]` IMMEDIATELY before the dispatch, `--cycle-end` IMMEDIATELY after on EVERY return path (success/halt/error), with the dangling-begin → C3-refusal rationale and "self-healing is a crash-only backstop, not a substitute" note. The `Dispatch:` code block now shows the 3-step set→dispatch→clear sequence. The block declares it applies to the real cycle AND every meta-dispatch (input-audit, apply-resolution, recovery, coherence-recovery, hardening, needs-runtime-redispatch, investigation) — one canonical statement rather than littering `--cycle-begin`/`--cycle-end` at every `--emit-dispatch` site (⚖ policy: bracket documentation placement → one canonical §1d block covering all dispatch sites).
+- State Machine Summary updated in all three: added a **"Cycle-containment machinery (C1/C2/C3)"** bullet to the Notes/Hook-machinery section; cloud's "Differences from /lazy-batch" table now lists the bracket + C8 reload as IDENTICAL (--cloud the only delta); a Phase-5 coupled-trio mirror HTML comment was appended to each file's tail.
+- **C8 mirror (WU-1 scope):** part-1 authored the governing-file reload discipline + auto-refresh boundary + new-hook-registration restart surfacing ONLY in `lazy-batch/SKILL.md` (Phase 1). This cycle MIRRORED that full block into `lazy-bug-batch/SKILL.md` (bug-state.py bindings, THIS-file in the governing set) and `lazy-batch-cloud/SKILL.md` (--cloud probe, THIS-file in the governing set) — closing the coupled-trio gap in one cycle as the plan WU-1 directed.
+- Bracket state script per orchestrator: `lazy-batch` → `lazy-state.py`; `lazy-bug-batch` → `bug-state.py` (`--bug-id` maps to the marker's `feature_id`); `lazy-batch-cloud` → `lazy-state.py --cloud`. The bracket shape is identical across all three (parity-of-shape, not a literal char diff) — the intended divergences (cloud `--cloud`, bug `bug-state.py`/`--bug-id`) are preserved, nothing flattened.
+- Tests (WU-2, test-first): added `TestCycleBracket` (4 cases) to `user/scripts/test_lazy_parity.py` — non-zero begin+end per SKILL, correct state-script association, all-three-return-paths prose (success/halt/error + "return path"), and coupled-trio mirror presence. Wrote them FIRST (red: 3/4 failed pre-WU-1), then implemented to green. Full parity suite: 20 passed (incl. live zero-drift — no heading-parity regression).
 
 ---
 
