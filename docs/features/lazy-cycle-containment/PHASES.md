@@ -332,10 +332,10 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 **Scope:** Add **R-O-9 (single-cycle containment)** to `user/skills/lazy-batch-retro/SKILL.md` §4a and a hard force-cap to §5c. From git (`git log <window>`) + the parent jsonl dispatch list (both always available even when `/tmp` transcripts are reclaimed), compute commits-per-dispatch and features-per-dispatch; force-cap any run where a single dispatch touches >1 feature OR calls a run-lifecycle command. This is the detection layer R-EP-1/2 cannot provide (they invert under the inline-override branch).
 
 **Deliverables:**
-- [ ] §4a: add R-O-9 (single-cycle containment) — define the metric (commits-per-dispatch, features-per-dispatch) computed from `git log <window>` + the parent jsonl dispatch list.
-- [ ] §5c: hard force-cap when a single dispatch touches >1 feature OR calls a run-lifecycle command (`--run-end`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`) → grade `fail` + force-cap.
-- [ ] Document that R-O-9 is the git+jsonl-keyed detection (always available) that complements (does not replace) R-EP-1/2.
-- [ ] Tests: a retro self-test / fixture over a multi-feature single dispatch → grade `fail` + force-cap from git+jsonl evidence.
+- [x] §4a: add R-O-9 (single-cycle containment) — define the metric (commits-per-dispatch, features-per-dispatch) computed from `git log <window>` + the parent jsonl dispatch list.
+- [x] §5c: hard force-cap when a single dispatch touches >1 feature OR calls a run-lifecycle command (`--run-end`/`--apply-pseudo`/`--enqueue-adhoc`/`dev:kill`) → grade `fail` + force-cap.
+- [x] Document that R-O-9 is the git+jsonl-keyed detection (always available) that complements (does not replace) R-EP-1/2.
+- [x] Tests: a retro self-test / fixture over a multi-feature single dispatch → grade `fail` + force-cap from git+jsonl evidence.
 
 **Minimum Verifiable Behavior:** running the retro (or its self-test fixture) over a fixture run whose git+jsonl shows one dispatch touching 2 features produces a `fail` grade with the R-O-9 force-cap cited.
 
@@ -354,6 +354,12 @@ These are live code on disk now; nothing is blocked on a queued upstream. Phase 
 
 **Integration Notes for Next Phase:**
 - R-O-9 is the always-available detection backstop to the in-flight prevention (C1–C4). Its evidence base (git + jsonl) is deliberately independent of transcripts so it survives transcript reclamation.
+
+**Implementation Notes (2026-06-15 — Phase 8 implemented, validation pending):**
+- `lazy-batch-retro/SKILL.md` §4a: added **R-O-9 (single-cycle containment)** as a HARD orchestrator-level rule (placed after R-O-8). Defines commits-per-dispatch / features-per-dispatch computed from `git log <dispatch-window>` ∩ `docs/{features,bugs}/<id>/` + the parent jsonl's lifecycle Bash calls; a dispatch is a runaway iff `features-per-dispatch > 1` OR it issued any run-lifecycle command. Points the auditor at the `retro_ro9.py` helper. Explicitly documents that R-O-9 COMPLEMENTS (does not replace) R-EP-1/2, which invert/`n/a` under the inline-override branch and cannot see a runaway.
+- `lazy-batch-retro/SKILL.md` §5c: added a second **Force-cap rule (R-O-9)** — any R-O-9 `fail` force-caps the run's headline grade at `fail`, fires independently of the R-EP cap, and survives transcript reclamation (git+jsonl evidence always available).
+- ⚖ policy: R-O-9 self-test as prose-only vs extractable helper → extractable helper. Added `user/scripts/retro_ro9.py` — a pure, stdlib-only `grade_ro9(dispatches)` returning `{grade, force_cap, offending, metrics}`, with `LIFECYCLE_COMMANDS` lockstep with `lazy_core.CYCLE_REFUSED_OPS` (C3) + the dev:* hook deny-set. This gives a real fixture-driven force-cap self-test (SPEC validation row "grade fail + force-cap from git+jsonl"), not a docs-only assertion.
+- Tests (WU-3, test-first): `user/scripts/test_retro_ro9.py` — clean-run → no cap; multi-feature single dispatch → fail + force-cap; lifecycle-call single dispatch → fail + force-cap; per-dispatch metrics; + 2 docs-consistency assertions (R-O-9 in §4a, force-cap in §5c, complements R-EP-1/2). Wrote them FIRST (red: 6/6 — module + prose absent), then implemented to green.
 
 ---
 
