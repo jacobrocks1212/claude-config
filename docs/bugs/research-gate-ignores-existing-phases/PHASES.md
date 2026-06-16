@@ -78,11 +78,13 @@ Pure unit characterization in `test_lazy_core.py` (the helper is domain-agnostic
 
 **Scope:** Insert the root-cause fix (SPEC D1 / Theory 1): a guard BEFORE the Step-5 research gate that, when `PHASES.md` exists with implementation evidence, emits a diagnostic and falls through to Step 6 instead of routing to `needs-research`. This is the behavioral change the whole bug is about. (SPEC Affected Area row "Research gate".)
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] In `compute_state()`, immediately BEFORE the Step-5 block (`lazy-state.py:~1493`, the `research = spec_path / "RESEARCH.md"` line / the `if not research.exists() and not research_summary.exists():` gate), add: read `phases_file = spec_path / "PHASES.md"`; if `phases_file.exists()`, read its text and, if `lazy_core.phases_show_implementation(phases_text)` is `True`, emit `_diag("Step 5 research gate skipped: PHASES.md present with implementation evidence — feature is past pre-planning research")` (D3) and DO NOT enter/return from the research gate — fall through to Step 6. (SPEC D1 / D3.)
-- [ ] The guard fires ONLY when no `RESEARCH.md`/`RESEARCH_SUMMARY.md` is present (i.e. it is the only thing that would otherwise route to research). When research already exists, the existing Step-5/6 path is unchanged — the guard is a structural no-op there. This preserves byte-identical behavior on every existing path that already has research.
-- [ ] **No double-read:** the `PHASES.md` text read by the guard is reused by Step 6 (`phases_text = phases_file.read_text(...)` at `:1574`) — refactor so the file is read at most once per invocation (e.g. read into a local at the guard and reuse, or guard reads only when reaching the gate-skippable branch). Do NOT introduce a second `read_text` on the same path in the same `compute_state` call.
-- [ ] Tests: new `lazy-state.py --test` fixtures (see Testing Strategy) — the core anti-regression net.
+- [x] In `compute_state()`, immediately BEFORE the Step-5 block (`lazy-state.py:~1493`, the `research = spec_path / "RESEARCH.md"` line / the `if not research.exists() and not research_summary.exists():` gate), add: read `phases_file = spec_path / "PHASES.md"`; if `phases_file.exists()`, read its text and, if `lazy_core.phases_show_implementation(phases_text)` is `True`, emit `_diag("Step 5 research gate skipped: PHASES.md present with implementation evidence — feature is past pre-planning research")` (D3) and DO NOT enter/return from the research gate — fall through to Step 6. (SPEC D1 / D3.)
+- [x] The guard fires ONLY when no `RESEARCH.md`/`RESEARCH_SUMMARY.md` is present (i.e. it is the only thing that would otherwise route to research). When research already exists, the existing Step-5/6 path is unchanged — the guard is a structural no-op there. This preserves byte-identical behavior on every existing path that already has research.
+- [x] **No double-read:** the `PHASES.md` text read by the guard is reused by Step 6 (`phases_text = phases_file.read_text(...)` at `:1574`) — refactor so the file is read at most once per invocation (e.g. read into a local at the guard and reuse, or guard reads only when reaching the gate-skippable branch). Do NOT introduce a second `read_text` on the same path in the same `compute_state` call.
+- [x] Tests: new `lazy-state.py --test` fixtures (see Testing Strategy) — the core anti-regression net.
 
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test` passes including the new fixtures, and the no-PHASES research path stays byte-identical to the regenerated baseline. Concretely: a temp-dir feature with `SPEC.md` (Ready) + a `PHASES.md` containing an `In-progress` phase + **no** `RESEARCH.md` routes to Step 6/7 (a planning or execute-plan action — NOT `terminal_reason="needs-research"` and NOT `sub_skill="spec"` research-prompt generation). The SAME feature with NO `PHASES.md` still routes to research as before.
 
@@ -103,6 +105,14 @@ Write each fixture's assertion FIRST and confirm it fails RED against the unmodi
 **Integration Notes for Next Phase:**
 - The behavioral fix lives entirely here + Phase 1. Phase 3 is lockstep wrapper PROSE only — no logic. After Phase 2, run the full shared-import gate: `lazy-state.py --test`, `bug-state.py --test`, `test_lazy_core.py` (and `lazy_coord.py --test` for completeness).
 - The `_diag` string `"Step 5 research gate skipped: PHASES.md present with implementation evidence …"` is the visible-in-probe contract D3 requires — keep it stable so a retro/probe can grep for it.
+
+#### Implementation Notes (Phase 2)
+
+- Inserted the pre-Step-5 guard in `compute_state()` (`lazy-state.py`, immediately before the Step-5 research-gate `research = spec_path / "RESEARCH.md"` block). The guard defines `phases_file` once, reads its text into `phases_text_cached` ONLY when no `RESEARCH.md`/`RESEARCH_SUMMARY.md` is present AND `PHASES.md` exists, sets `skip_research_for_phases = True` and emits the exact D3 `_diag(...)` string when `lazy_core.phases_show_implementation(...)` is True. The Step-5 gate condition was extended with `not skip_research_for_phases`, so an implemented feature falls through to Step 6/7.
+- **No double-read:** Step 6 no longer redefines `phases_file` (single definition), and Step 6's `phases_text` reuses `phases_text_cached` when present, only re-reading on the research-present path where the guard never ran. The file is opened at most once per invocation on the gate-skippable path.
+- Four `--test` fixtures added (`research-gate-skipped-when-phases-implemented`, `-fires-when-no-phases`, `-fires-when-phases-stub`, `research-path-byte-identical-when-research-present`) plus a D3-diagnostic extra-assertion on fixture 1. Confirmed fixture 1 RED first (returned the research-prompt `/spec` dispatch), then GREEN.
+- Baseline regenerated via `test_lazy_core._normalize_smoke_output` in an isolated `LAZY_STATE_DIR` (never hand-edited): diff is exactly the 4 new fixture lines added; every pre-existing line (incl. the no-PHASES research path) byte-identical.
+- Full shared-import gate GREEN: `test_lazy_core.py` 397/397 (incl. the baseline-match test); `lazy-state.py --test` all pass; `bug-state.py --test` all pass; `lazy_coord.py --test` all pass. (The smoke runs use `LAZY_ORCHESTRATOR=1` + isolated state dir only to bypass the live cycle marker's C3 refusal of the harness's internal `bug-state.py --enqueue-adhoc` subprocess — an environmental interaction, not a code defect.)
 
 ---
 

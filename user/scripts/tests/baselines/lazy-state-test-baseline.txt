@@ -17,6 +17,10 @@
   [adhoc-brief] cloud=False skip_nr=False real_device=True: Step 4: ad-hoc brief → spec
   [all-complete] cloud=False skip_nr=False real_device=True: all-features-complete
   [needs-research] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research
+  [research-gate-skipped-when-phases-implemented] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [research-gate-fires-when-no-phases] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [research-gate-fires-when-phases-stub] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [research-path-byte-identical-when-research-present] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [stub-pre-gemini-marker] cloud=False skip_nr=False real_device=True: Step 4.5: stub-spec detected
   [stub-queue-flag-only] cloud=False skip_nr=False real_device=True: Step 4.5: stub-spec detected
   [needs-realign] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed

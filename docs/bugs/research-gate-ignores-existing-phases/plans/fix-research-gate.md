@@ -27,7 +27,7 @@ source_commit: 982dc12
 ## Work Units
 
 - [x] WU-1 — lazy_core.phases_show_implementation predicate (+ test_lazy_core.py characterization, TDD)
-- [ ] WU-2 — lazy-state.py: pre-Step-5 guard skips research when PHASES.md shows implementation (+ --test fixtures, TDD)
+- [x] WU-2 — lazy-state.py: pre-Step-5 guard skips research when PHASES.md shows implementation (+ --test fixtures, TDD)
 - [ ] WU-3 — Lockstep wrapper prose: lazy/SKILL.md + lazy-cloud/SKILL.md Step-5 note
 
 ## EXECUTION MODEL — READ THIS FIRST

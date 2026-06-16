@@ -1496,7 +1496,33 @@ def compute_state(
     research_prompt = spec_path / "RESEARCH_PROMPT.md"
     needs_research_file = spec_path / "NEEDS_RESEARCH.md"
 
-    if not research.exists() and not research_summary.exists():
+    # Pre-Step-5 guard (research-gate-ignores-existing-phases): the research
+    # gate is a PRE-planning stage — a feature whose PHASES.md already shows
+    # implementation evidence is past it, so re-running research wastes a Gemini
+    # round-trip and loops the pipeline. When the file would otherwise route to
+    # research (no RESEARCH*.md present) BUT PHASES.md exists with implementation
+    # evidence, emit a diagnostic (D3 — never a silent skip) and fall through to
+    # Step 6. The PHASES.md text read here is cached and reused at Step 6 so the
+    # file is opened at most once per compute_state invocation. When research
+    # already exists this branch never executes, so every existing path is
+    # byte-identical (structural no-op).
+    phases_file = spec_path / "PHASES.md"
+    phases_text_cached: str | None = None
+    skip_research_for_phases = False
+    if not research.exists() and not research_summary.exists() and phases_file.exists():
+        phases_text_cached = phases_file.read_text(encoding="utf-8")
+        if lazy_core.phases_show_implementation(phases_text_cached):
+            skip_research_for_phases = True
+            _diag(
+                "Step 5 research gate skipped: PHASES.md present with "
+                "implementation evidence — feature is past pre-planning research"
+            )
+
+    if (
+        not skip_research_for_phases
+        and not research.exists()
+        and not research_summary.exists()
+    ):
         # Persistent halt: if a NEEDS_RESEARCH sentinel is already present, the
         # orchestrator already dropped one in a prior cycle — surface and stop.
         if needs_research_file.exists():
@@ -1545,7 +1571,8 @@ def compute_state(
         )
 
     # Step 6: PHASES.md
-    phases_file = spec_path / "PHASES.md"
+    # `phases_file` was defined at the pre-Step-5 guard above; do not redefine it
+    # (single definition per compute_state invocation).
     if not phases_file.exists():
         # Consolidated planning: dispatch /plan-feature (which runs /spec-phases
         # THEN /write-plan back-to-back) instead of /spec-phases alone. This
@@ -1571,7 +1598,14 @@ def compute_state(
             sub_skill_args=f"{spec_path_str}/SPEC.md",
         )
 
-    phases_text = phases_file.read_text(encoding="utf-8")
+    # Reuse the text already read by the pre-Step-5 guard when available
+    # (no double read); only read here on the path where the guard did not run
+    # (research present, so phases_text_cached is None).
+    phases_text = (
+        phases_text_cached
+        if phases_text_cached is not None
+        else phases_file.read_text(encoding="utf-8")
+    )
     unchecked, checked = count_deliverables(phases_text)
 
     # Step 7: Phase completion
@@ -3153,6 +3187,107 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # No RESEARCH.md, no RESEARCH_SUMMARY.md, no RESEARCH_PROMPT.md →
         # Step 5 will dispatch /spec (generate research prompt).
 
+    elif name == "research-gate-skipped-when-phases-implemented":
+        # research-gate-ignores-existing-phases P2 — the core symptom.
+        # SPEC (Draft, non-stub) + a PHASES.md with one In-progress phase + a
+        # plan on disk + NO RESEARCH*.md. Pre-fix (RED): the Step-5 gate sees no
+        # research files and dispatches /spec for research-prompt generation,
+        # wasting a Gemini round-trip on an already-implemented feature. Post-fix
+        # (GREEN): the pre-Step-5 guard detects implementation evidence in
+        # PHASES.md, emits the D3 diagnostic, and falls through to Step 7
+        # (execute-plan).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-rgs", "name": "Feature RGS",
+                 "spec_dir": "feat-rgs", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        rgs = features / "feat-rgs"
+        rgs.mkdir()
+        (rgs / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # PHASES.md with an In-progress phase → implementation evidence.
+        (rgs / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n**Status:** In-progress\n"
+            "- [ ] Build the thing\n- [ ] Tests\n"
+        )
+        # A plan on disk so Step 7 dispatches execute-plan deterministically.
+        (rgs / "plans").mkdir()
+        (rgs / "plans" / "all-phases-rgs.md").write_text("# Plan\n")
+        # No RESEARCH.md / RESEARCH_SUMMARY.md / RESEARCH_PROMPT.md.
+
+    elif name == "research-gate-fires-when-no-phases":
+        # research-gate-ignores-existing-phases P2 — unchanged default guard.
+        # SPEC (Draft) + NO PHASES.md + NO RESEARCH*.md → the pre-Step-5 guard
+        # is a no-op (no PHASES.md) and Step 5 still dispatches /spec for
+        # research-prompt generation, exactly as before the fix.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-rgn", "name": "Feature RGN",
+                 "spec_dir": "feat-rgn", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        rgn = features / "feat-rgn"
+        rgn.mkdir()
+        (rgn / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # No PHASES.md, no research files → Step 5 generates a research prompt.
+
+    elif name == "research-gate-fires-when-phases-stub":
+        # research-gate-ignores-existing-phases P2 — SPEC Open-Q1 / D2.
+        # SPEC (Draft) + an empty-stub PHASES.md (no '## Phase' headings parsed)
+        # + NO RESEARCH*.md. The predicate returns False for zero parsed phases,
+        # so a stub PHASES.md must NOT suppress research — Step 5 still
+        # dispatches /spec for research-prompt generation.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-rgstub", "name": "Feature RGSTUB",
+                 "spec_dir": "feat-rgstub", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        rgstub = features / "feat-rgstub"
+        rgstub.mkdir()
+        (rgstub / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        # Stub PHASES.md: preamble only, NO phase headings → zero parsed phases.
+        (rgstub / "PHASES.md").write_text(
+            "# Implementation Phases\n\nTo be drafted after research concludes.\n"
+        )
+        # No research files → Step 5 generates a research prompt.
+
+    elif name == "research-path-byte-identical-when-research-present":
+        # research-gate-ignores-existing-phases P2 — guard is a structural no-op
+        # whenever research already exists. SPEC + an implemented PHASES.md +
+        # RESEARCH_SUMMARY.md present + a plan → the guard's `not research` /
+        # `not research_summary` precondition is False, so it never runs; the
+        # feature reaches Step 7 (execute-plan) exactly as today.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-rgbi", "name": "Feature RGBI",
+                 "spec_dir": "feat-rgbi", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        rgbi = features / "feat-rgbi"
+        rgbi.mkdir()
+        (rgbi / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (rgbi / "RESEARCH.md").write_text("# Research\n")
+        (rgbi / "RESEARCH_SUMMARY.md").write_text("# Summary\n")
+        (rgbi / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n**Status:** In-progress\n"
+            "- [ ] Build the thing\n- [ ] Tests\n"
+        )
+        (rgbi / "plans").mkdir()
+        (rgbi / "plans" / "all-phases-rgbi.md").write_text("# Plan\n")
+
     elif name == "is-stub-prose-mention-not-stub":
         # Fixture B — substring-collision bug in is_stub_spec.
         # The SPEC.md has a non-stub **Status:** (just "Draft", no "(pre-Gemini)"
@@ -3600,6 +3735,32 @@ def run_smoke_tests() -> int:
             }),
             ("all-complete", False, False, {"terminal_reason": "all-features-complete"}),
             ("needs-research", False, False, {"terminal_reason": "needs-research"}),
+            # research-gate-ignores-existing-phases P2 — the pre-Step-5 guard.
+            # SPEC + In-progress PHASES.md + plan + NO research → past research,
+            # routes to execute-plan (NOT needs-research / spec research prompt).
+            ("research-gate-skipped-when-phases-implemented", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-rgs",
+            }),
+            # No PHASES.md → guard no-op → research still fires (unchanged).
+            ("research-gate-fires-when-no-phases", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-rgn",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # Stub PHASES.md (zero parsed phases) → predicate False → research
+            # still fires (SPEC Open-Q1 / D2 — a stub must not suppress research).
+            ("research-gate-fires-when-phases-stub", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-rgstub",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # Research already present → guard never runs → execute-plan exactly
+            # as today (byte-identical no-op on the existing path).
+            ("research-path-byte-identical-when-research-present", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-rgbi",
+            }),
             # Canonical `> Draft (pre-Gemini)` SPEC trailer → Step 4.5 stub
             # dispatch, NOT needs-research. Without this match, the script
             # would halt the queue waiting on Gemini for a SPEC whose baseline
@@ -3956,6 +4117,17 @@ def run_smoke_tests() -> int:
                     failures.append(
                         f"[{name}] expected diagnostics warning about legacy "
                         f"plan; got diagnostics={diag!r}"
+                    )
+            if name == "research-gate-skipped-when-phases-implemented":
+                # D3 (no silent skip): the guard MUST emit the greppable
+                # diagnostic when it bypasses the research gate.
+                diag = got.get("diagnostics") or []
+                if not any(
+                    "Step 5 research gate skipped" in d for d in diag
+                ):
+                    failures.append(
+                        f"[{name}] expected the D3 'Step 5 research gate "
+                        f"skipped' diagnostic; got diagnostics={diag!r}"
                     )
             if name == "research-pending-only" and skip_nr:
                 diag = got.get("diagnostics") or []
