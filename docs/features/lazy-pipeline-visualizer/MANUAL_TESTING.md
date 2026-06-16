@@ -85,3 +85,70 @@
       never presented as live.
 - [ ] **Recovery.** Restart the server; on the next successful poll the dot
       returns green, the dim/banner clear, and data resumes.
+
+---
+
+# Manual Testing — Phase 3 (unified two-track graph + traversal animation)
+
+> Phase 3 upgrades the static render into the live two-track graph with poll-diff
+> animation, per-node scaling, side-state ejection, drill-down, and Complete
+> fade-and-drop (Decisions 10 + 13). The backend `receipt_present` slice is
+> automated (`TestReceiptPresent`); the graph behaviors below are manual.
+
+## Setup (fixture with multiple stages)
+
+Seed a temp repo whose items span several curated stages so the graph has
+something to animate. Easiest path: copy this repo's `docs/features/queue.json`
+(or hand-author one) with 2–3 features at different `current_step`s, plus a
+`docs/bugs/queue.json` with a bug or two, then boot as in the Phase 2 setup and
+open the page. To exercise an advance, hand-edit a fixture sentinel / SPEC status
+between polls and watch the next poll animate the token.
+
+## Checklist
+
+### Unified two-track graph (Decision 10)
+- [ ] **One shared canvas, two tracks.** Feature tokens (circles) ride the **top**
+      track; bug tokens (squares) ride the **bottom** track; stage columns are
+      vertically aligned so a shared-fleet contention reads at a glance.
+- [ ] **No clear+redraw.** Watch the graph across several polls with the data
+      unchanged — tokens do NOT flicker/disappear-and-reappear each poll (the
+      poll path is a `cy.add`/`cy.remove`/`animate` diff, never a full redraw).
+
+### Traversal animation
+- [ ] **Single-stage advance tweens.** Advance one item by one curated stage
+      (edit a fixture). On the next poll its token **animates** (~400ms,
+      ease-in-out-cubic) to the next stage's coordinate — it does not teleport.
+- [ ] **Multi-stage jump arcs/fades.** Advance an item by 2+ curated stages at
+      once. The token **arcs (or fades out/in)** to the destination rather than
+      sliding through the skipped node(s) — no false "it was here" implication.
+
+### Per-node representation scaling
+- [ ] **1–5 items = individual tokens.** A stage holding ≤5 items shows each as a
+      separate token in a micro-grid.
+- [ ] **6–20 items = count badge.** A stage holding 6–20 items collapses to a
+      single **count badge**; clicking it opens a **popover** listing the items.
+- [ ] **20+ items = swimlane.** A stage holding 20+ items collapses to a sortable
+      swimlane/table (or, at minimum, a clearly distinct high-count treatment).
+
+### Side-state ejection
+- [ ] **Off-track ejection.** A Blocked / Needs-input / Deferred token visibly
+      **ejects** onto a parallel Y-axis off the main track (not sitting inline).
+- [ ] **Shapes hold.** Needs-input = hexagon, Blocked = octagon, Deferred =
+      dashed/ghosted — same encoding as Phase 2.
+- [ ] **Settled-node border-pulse.** The stage node the ejected token came from
+      **border-pulses** so the eye is drawn to the stall.
+
+### Drill-down
+- [ ] **Click a curated node → panel.** Clicking any curated stage node opens a
+      panel listing the literal `current_step` / `terminal_reason` value(s) the
+      items on that node roll up (the full machine behind the curated rollup).
+- [ ] **Dismiss.** Clicking elsewhere / a close affordance dismisses the panel.
+
+### Complete fade-and-drop (Decision 13)
+- [ ] **Fade ~10s after Complete.** A token reaching **Complete** stays full
+      opacity briefly, then fades to ~50% about 10s later.
+- [ ] **Drop once receipted.** Once the item's `COMPLETED.md` / `FIXED.md`
+      receipt exists (`receipt_present:true` from the backend), the faded token
+      **drops off** the graph on the next poll.
+- [ ] **Collapsed completion log.** Older completions are not lost — the Complete
+      node carries an expandable count/log of recently-dropped items.

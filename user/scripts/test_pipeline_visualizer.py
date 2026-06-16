@@ -567,5 +567,125 @@ class TestStaticServing:
             httpd.shutdown()
 
 
+# ---------------------------------------------------------------------------
+# WU-6 — receipt_present (Phase 3 backend slice)
+# ---------------------------------------------------------------------------
+
+_VALID_COMPLETED = (
+    "---\n"
+    "kind: completed\n"
+    "feature_id: demo-feat\n"
+    "provenance: gate-verified\n"
+    "date: 2026-06-15\n"
+    "---\n\n# Completed\n"
+)
+_VALID_FIXED = (
+    "---\n"
+    "kind: fixed\n"
+    "bug_id: demo-bug\n"
+    "provenance: gate-verified\n"
+    "date: 2026-06-15\n"
+    "---\n\n# Fixed\n"
+)
+
+
+def _seed_completed_feature_repo(tmp_path: Path, feature_id="demo-feat",
+                                 receipt: str | None = None) -> Path:
+    """Seed a feature repo and, when `receipt` is given, drop a COMPLETED.md
+    into the item's spec dir so probe should report receipt_present=True."""
+    repo_root = _seed_feature_repo(tmp_path, feature_id=feature_id)
+    if receipt is not None:
+        spec_dir = repo_root / "docs" / "features" / feature_id
+        (spec_dir / "COMPLETED.md").write_text(receipt, encoding="utf-8")
+    return repo_root
+
+
+def _seed_bug_repo(tmp_path: Path, bug_id="demo-bug", receipt: str | None = None) -> Path:
+    bugs = tmp_path / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    (bugs / "queue.json").write_text(
+        json.dumps({"queue": [
+            {"id": bug_id, "name": "Demo Bug", "spec_dir": bug_id, "tier": 1,
+             "severity": "high"}
+        ]}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    spec_dir = bugs / bug_id
+    spec_dir.mkdir()
+    (spec_dir / "SPEC.md").write_text(
+        "# Demo Bug\n\n**Status:** Draft\n", encoding="utf-8"
+    )
+    if receipt is not None:
+        (spec_dir / "FIXED.md").write_text(receipt, encoding="utf-8")
+    # A features dir must exist for probe_state to not error on the queue read.
+    (tmp_path / "docs" / "features").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs" / "features" / "queue.json").write_text(
+        json.dumps({"queue": []}, indent=2) + "\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+class TestReceiptPresent:
+    """probe attaches per-item receipt_present (COMPLETED.md / FIXED.md stat).
+
+    receipt_present is the signal Phase 3's UI uses to drop a completed token.
+    It is a read-only stat check — no state-script change.
+    """
+
+    def test_feature_without_receipt_is_false(self, tmp_path):
+        from pipeline_visualizer.probe import probe_state
+        repo_root = _seed_completed_feature_repo(tmp_path, receipt=None)
+        state = probe_state(repo_root)
+        feat = state["features"][0]
+        assert feat["receipt_present"] is False
+
+    def test_feature_with_completed_receipt_is_true(self, tmp_path):
+        from pipeline_visualizer.probe import probe_state
+        repo_root = _seed_completed_feature_repo(tmp_path, receipt=_VALID_COMPLETED)
+        state = probe_state(repo_root)
+        feat = state["features"][0]
+        assert feat["receipt_present"] is True
+
+    def test_bug_without_receipt_is_false(self, tmp_path):
+        from pipeline_visualizer.probe import probe_state
+        repo_root = _seed_bug_repo(tmp_path, receipt=None)
+        state = probe_state(repo_root)
+        bug = state["bugs"][0]
+        assert bug["receipt_present"] is False
+
+    def test_bug_with_fixed_receipt_is_true(self, tmp_path):
+        from pipeline_visualizer.probe import probe_state
+        repo_root = _seed_bug_repo(tmp_path, receipt=_VALID_FIXED)
+        state = probe_state(repo_root)
+        bug = state["bugs"][0]
+        assert bug["receipt_present"] is True
+
+    def test_receipt_present_is_per_item_path(self, tmp_path):
+        # The stat must target the item's OWN spec dir — a receipt in feature A's
+        # dir must not mark feature B as receipted.
+        from pipeline_visualizer.probe import probe_state
+        features = tmp_path / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "feat-a", "name": "Feat A", "spec_dir": "feat-a", "tier": 1},
+                {"id": "feat-b", "name": "Feat B", "spec_dir": "feat-b", "tier": 1},
+            ]}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        for fid in ("feat-a", "feat-b"):
+            d = features / fid
+            d.mkdir()
+            (d / "SPEC.md").write_text("# x\n\n**Status:** Draft\n", encoding="utf-8")
+        (features / "feat-a" / "COMPLETED.md").write_text(
+            _VALID_COMPLETED.replace("demo-feat", "feat-a"), encoding="utf-8"
+        )
+        state = probe_state(tmp_path)
+        by_id = {f["feature_id"]: f for f in state["features"]}
+        assert by_id["feat-a"]["receipt_present"] is True
+        assert by_id["feat-b"]["receipt_present"] is False
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

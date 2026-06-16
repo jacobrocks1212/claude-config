@@ -89,6 +89,39 @@ def _run_state_script(script: Path, repo_root: Path, scope_flag: str, scope_id: 
         return json.dumps({"feature_id": scope_id, "error": f"subprocess failed: {exc}"})
 
 
+def _item_dir(item: dict, queue_entry: dict, pipeline_dir: Path) -> Optional[Path]:
+    """Resolve the on-disk directory for one queue item.
+
+    Prefers the state script's own ``spec_path`` (absolute, authoritative); falls
+    back to ``<pipeline_dir>/<spec_dir or id>`` when the script did not emit one
+    (e.g. a malformed/unparseable item).
+    """
+    spec_path = item.get("spec_path")
+    if spec_path:
+        return Path(spec_path)
+    sub = queue_entry.get("spec_dir") or queue_entry.get("id")
+    if sub:
+        return pipeline_dir / sub
+    return None
+
+
+def receipt_present(item_dir: Optional[Path], receipt_filename: str) -> bool:
+    """True iff the completion receipt exists in the item's dir (read-only stat).
+
+    This is a presence check only — the durable content-validity gate lives in
+    lazy_core.has_completion_receipt and is owned by ``__mark_complete__``. The
+    visualizer only needs to know WHEN a completed token may drop off the graph
+    (Decision 13), so a plain ``stat`` of COMPLETED.md / FIXED.md is sufficient
+    and never re-infers state.
+    """
+    if item_dir is None:
+        return False
+    try:
+        return (item_dir / receipt_filename).exists()
+    except OSError:
+        return False
+
+
 def read_queue(path) -> list:
     """Read a queue.json file; return its `queue` array (order preserved).
     Missing file → empty list (not an error)."""
@@ -148,6 +181,10 @@ def probe_state(repo_root) -> dict:
             "adhoc": entry.get("adhoc", entry.get("ad_hoc")),
             "stub": entry.get("stub"),
         })
+        # Decision 13: the UI drops a completed token once its receipt exists.
+        item["receipt_present"] = receipt_present(
+            _item_dir(item, entry, features_dir), "COMPLETED.md"
+        )
         features.append(item)
 
     bugs = []
@@ -162,6 +199,9 @@ def probe_state(repo_root) -> dict:
             "adhoc": entry.get("adhoc", entry.get("ad_hoc")),
             "severity": entry.get("severity"),
         })
+        item["receipt_present"] = receipt_present(
+            _item_dir(item, entry, bugs_dir), "FIXED.md"
+        )
         bugs.append(item)
 
     leases = read_leases(repo_root / "docs" / "work" / "leases.json")

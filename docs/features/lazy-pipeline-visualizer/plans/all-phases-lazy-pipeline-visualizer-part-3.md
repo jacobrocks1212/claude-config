@@ -90,7 +90,7 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-6 — backend `receipt_present` (TDD) + unified two-track graph, traversal animation, per-node scaling, side-state ejection, drill-down, Complete fade-and-drop (manual UI)
+- [x] WU-6 — backend `receipt_present` (TDD) + unified two-track graph, traversal animation, per-node scaling, side-state ejection, drill-down, Complete fade-and-drop (manual UI)
 - [ ] WU-7 — `queue_writer` (permutation-validated atomic reorder + AV-lock retry) + `POST /api/queue` route + run-marker refusal + `queue_locked` flag (TDD)
 - [ ] WU-8 — frontend drag-reorder + locked-state UX (banner, `not-allowed`, tooltip) (manual UI)
 

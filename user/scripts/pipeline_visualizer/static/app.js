@@ -127,20 +127,122 @@
         { selector: 'node[kind="token"][ghost="1"]', style: {
           "background-opacity": 0, "border-style": "dashed", "opacity": 0.6,
         }},
+        // Per-node count badge / swimlane (6–20 / 20+ items collapse).
+        { selector: 'node[kind="badge"]', style: {
+          "label": "data(label)", "font-size": 9, "color": "#fff",
+          "text-valign": "center", "text-halign": "center",
+          "width": 26, "height": 22, "z-index": 11,
+          "background-color": "data(color)", "border-width": 2,
+          "border-color": "#e6edf3", "shape": "data(shape)",
+        }},
+        { selector: 'node[kind="badge"][scale="swimlane"]', style: {
+          "width": 40, "height": 22, "border-style": "double",
+        }},
+        // Border-pulse on a stage node that has ejected a side-state token.
+        { selector: 'node.pulse', style: {
+          "border-color": "#FF851B", "border-width": 3,
+        }},
       ],
     });
     cy.fit(undefined, 30);
+    wireGraphInteractions();
+    startPulseAnimation();
     layoutReady = true;
   }
 
+  // ---- Drill-down + popover + pulse animation ----------------------------
+  function closeDrillPanel() {
+    var p = document.getElementById("drill-panel");
+    if (p) p.hidden = true;
+  }
+
+  function literalsForStage(track, stage) {
+    // List the live literal current_step / terminal_reason values rolling up to
+    // this curated node, from the last polled state (the full machine behind 6).
+    var st = window.PV._lastState || { features: [], bugs: [] };
+    var items = track === "bug" ? st.bugs : st.features;
+    var lits = [];
+    (items || []).forEach(function (it) {
+      if ((it.curated_stage || "Pending") === stage) {
+        var id = it.feature_id || it.bug_id;
+        var lit = it.terminal_reason || it.current_step || "(no literal — Pending)";
+        lits.push({ id: id, literal: lit });
+      }
+    });
+    return lits;
+  }
+
+  function openDrillPanel(title, rows) {
+    var p = document.getElementById("drill-panel");
+    if (!p) return;
+    p.innerHTML = "";
+    var h = el("div", "drill-title", title);
+    var close = el("button", "drill-close", "×");
+    close.addEventListener("click", closeDrillPanel);
+    h.appendChild(close);
+    p.appendChild(h);
+    var ul = el("ul", "drill-list");
+    if (!rows.length) {
+      ul.appendChild(el("li", "drill-empty", "no items"));
+    } else {
+      rows.forEach(function (r) {
+        var li = el("li", "drill-row");
+        li.appendChild(el("span", "drill-id", r.id || "?"));
+        li.appendChild(el("span", "drill-lit", r.literal != null ? r.literal : ""));
+        ul.appendChild(li);
+      });
+    }
+    p.appendChild(ul);
+    p.hidden = false;
+  }
+
+  function wireGraphInteractions() {
+    // Click a curated stage node → drill-down panel of literal sub-states.
+    cy.on("tap", 'node[kind="stage"]', function (evt) {
+      var n = evt.target;
+      var track = n.data("track"), stage = n.data("stage");
+      var rows = literalsForStage(track, stage);
+      openDrillPanel(track + " · " + stage, rows.map(function (r) {
+        return { id: r.id, literal: r.literal };
+      }));
+    });
+    // Click a count badge → popover list of the collapsed items.
+    cy.on("tap", 'node[kind="badge"]', function (evt) {
+      var n = evt.target;
+      var members = (window.PV._badges || {})[n.id()] || [];
+      openDrillPanel("Items on " + (n.data("anchorId") || "node"),
+        members.map(function (m) {
+          return { id: m.id, literal: m.item.curated_stage || "Pending" };
+        }));
+    });
+    // Click empty canvas → dismiss.
+    cy.on("tap", function (evt) { if (evt.target === cy) closeDrillPanel(); });
+  }
+
+  // Border-pulse for ejected side-states: oscillate the .pulse border width.
+  function startPulseAnimation() {
+    var on = false;
+    setInterval(function () {
+      if (!cy) return;
+      on = !on;
+      cy.nodes(".pulse").style("border-width", on ? 4 : 2);
+    }, 600);
+  }
+
   // ---- Token mapping -----------------------------------------------------
-  // Map a curated_stage -> the track node it sits on. Side-states snap to the
-  // nearest workflow anchor on that track (offset visually via Y in Phase 3).
+  // Phase 3 constants for per-node scaling + Complete fade-and-drop (Decision 13).
+  var SCALE_BADGE_MIN = 6;     // 6–20 items on a node → count badge + popover
+  var SCALE_SWIMLANE_MIN = 21; // 20+ items → swimlane/table collapse
+  var COMPLETE_FADE_MS = 10000;        // fade to ~50% ~10s after reaching Complete
+  var COMPLETE_FADE_OPACITY = 0.5;
+  var ANIM_DURATION_MS = 400;          // single-stage tween
+  var MULTI_STAGE_ARC_MS = 600;        // arc/fade for a multi-stage jump
+
+  // Map a curated_stage -> the track node it sits on. Side-states anchor on the
+  // nearest workflow node but EJECT off-track on a parallel Y-axis (Phase 3).
   function anchorStageFor(track, curated) {
     var stages = track === "bug" ? BUG_STAGES : FEATURE_STAGES;
     if (stages.indexOf(curated) !== -1) return curated;
-    // Side-states have no dedicated column in Phase 2 — anchor near Implement so
-    // the token is visible; the triage strip is the authoritative side-state surface.
     if (SIDE_STAGES.indexOf(curated) !== -1) return "Implement";
     return "Pending";
   }
@@ -148,12 +250,9 @@
   function tokenVisual(item, track) {
     var stage = item.curated_stage || "Pending";
     var color = STAGE_COLOR[stage] || STAGE_COLOR.Pending;
-    var shapeMap = {
-      "Needs-input": "hexagon",
-      "Blocked": "octagon",
-    };
+    var shapeMap = { "Needs-input": "hexagon", "Blocked": "octagon" };
     var baseShape = track === "bug" ? "rectangle" : "ellipse";
-    var shape = shapeMap[stage] || (stage === "Deferred" ? baseShape : baseShape);
+    var shape = shapeMap[stage] || baseShape;
     return {
       color: color,
       shape: shape,
@@ -162,38 +261,192 @@
     };
   }
 
+  function stageIndex(track, stage) {
+    var stages = track === "bug" ? BUG_STAGES : FEATURE_STAGES;
+    return stages.indexOf(stage);
+  }
+
+  // Per-item position within a stage's micro-grid (deterministic by slot k).
+  function gridOffset(track, k, ejected) {
+    var dx = (k % 3) * 10 - 10;
+    var laneBase = track === "bug" ? 26 : -26;
+    var dy = Math.floor(k / 3) * 16 + laneBase;
+    if (ejected) {
+      // Side-states branch onto a parallel Y-axis FURTHER off the track.
+      dy += (track === "bug" ? 52 : -52);
+    }
+    return { dx: dx, dy: dy };
+  }
+
+  // ---- Module-level token bookkeeping (survives across polls) -------------
+  var tokenSeen = {};        // tokId -> last curated_stage (diff source of truth)
+  var completeSince = {};    // tokId -> epoch ms first observed on Complete
+  var completionLog = [];    // recently-dropped completed items (collapsed log)
+
+  function tokId(track, id) { return "tok:" + track + ":" + id; }
+
+  // Group items by the curated node they occupy (for per-node scaling).
+  function groupByNode(items, track) {
+    var byNode = {};
+    (items || []).forEach(function (item, i) {
+      var id = item.feature_id || item.bug_id || ("item-" + i);
+      var stage = item.curated_stage || "Pending";
+      var anchor = anchorStageFor(track, stage);
+      var anchorId = trackNodeId(track, anchor);
+      (byNode[anchorId] = byNode[anchorId] || []).push(
+        { id: id, item: item, stage: stage, anchor: anchor }
+      );
+    });
+    return byNode;
+  }
+
+  // Poll-diff render: add new tokens, animate moved tokens, remove gone tokens,
+  // collapse high-count nodes to badges. NEVER clear+redraw the whole graph.
   function renderGraphTokens(state) {
     if (!cy) return;
-    cy.nodes('[kind="token"]').remove();   // full re-render per poll (Phase 2)
-    var batch = [];
+    var now = Date.now();
+    var liveTokIds = {};       // tokIds present this poll (drives removal)
+    var liveBadgeIds = {};
+
     function place(items, track) {
-      var perStageCount = {};
-      (items || []).forEach(function (item, i) {
-        var id = (item.feature_id || item.bug_id || ("item-" + i));
-        var stage = item.curated_stage || "Pending";
-        var anchor = anchorStageFor(track, stage);
-        var anchorId = trackNodeId(track, anchor);
+      var byNode = groupByNode(items, track);
+      Object.keys(byNode).forEach(function (anchorId) {
+        var members = byNode[anchorId];
         var base = stageCoords[anchorId] || { x: 0, y: 0 };
-        // Micro-grid offset so multiple tokens on one stage don't fully overlap.
-        var k = perStageCount[anchorId] || 0;
-        perStageCount[anchorId] = k + 1;
-        var dx = (k % 3) * 8 - 8;
-        var dy = Math.floor(k / 3) * 14 + (track === "bug" ? 22 : -22);
-        var vis = tokenVisual(item, track);
-        batch.push({
-          group: "nodes",
-          data: {
-            id: "tok:" + track + ":" + id, kind: "token", label: "",
-            color: vis.color, shape: vis.shape, hollow: vis.hollow, ghost: vis.ghost,
-            itemId: id, stage: stage, track: track,
-          },
-          position: { x: base.x + dx, y: base.y + dy },
+        var count = members.length;
+
+        if (count >= SCALE_BADGE_MIN) {
+          // Per-node scaling: collapse to a count badge (6–20) or swimlane (20+).
+          var swim = count >= SCALE_SWIMLANE_MIN;
+          var badgeId = "badge:" + anchorId;
+          liveBadgeIds[badgeId] = members;
+          var sample = members[0];
+          var vis = tokenVisual(sample.item, track);
+          var dy = track === "bug" ? 26 : -26;
+          var existing = cy.getElementById(badgeId);
+          if (existing.empty()) {
+            cy.add({ group: "nodes", data: {
+              id: badgeId, kind: "badge", label: (swim ? "▤ " : "") + count,
+              color: vis.color, shape: swim ? "round-rectangle" : "ellipse",
+              track: track, anchorId: anchorId, scale: swim ? "swimlane" : "badge",
+            }, position: { x: base.x, y: base.y + dy } });
+          } else {
+            existing.data("label", (swim ? "▤ " : "") + count);
+            existing.data("scale", swim ? "swimlane" : "badge");
+          }
+          // Any individual tokens previously on this node are superseded by the badge.
+          members.forEach(function (m) {
+            var tid = tokId(track, m.id);
+            if (!cy.getElementById(tid).empty()) cy.getElementById(tid).remove();
+            delete tokenSeen[tid];
+          });
+          return;
+        }
+
+        // 1–5 items: individual animated tokens in a micro-grid.
+        members.forEach(function (m, k) {
+          var tid = tokId(track, m.id);
+          liveTokIds[tid] = true;
+          var ejected = SIDE_STAGES.indexOf(m.stage) !== -1;
+          var off = gridOffset(track, k, ejected);
+          var target = { x: base.x + off.dx, y: base.y + off.dy };
+          var vis = tokenVisual(m.item, track);
+          var receipt = !!m.item.receipt_present;
+          var node = cy.getElementById(tid);
+
+          if (node.empty()) {
+            cy.add({ group: "nodes", data: {
+              id: tid, kind: "token", label: "",
+              color: vis.color, shape: vis.shape, hollow: vis.hollow, ghost: vis.ghost,
+              itemId: m.id, stage: m.stage, track: track,
+              ejected: ejected ? "1" : "0",
+            }, position: target });
+            tokenSeen[tid] = m.stage;
+          } else {
+            // Diff: update visuals + animate to the new coordinate if it moved.
+            node.data("color", vis.color);
+            node.data("shape", vis.shape);
+            node.data("hollow", vis.hollow);
+            node.data("ghost", vis.ghost);
+            node.data("stage", m.stage);
+            node.data("ejected", ejected ? "1" : "0");
+            var prevStage = tokenSeen[tid];
+            var jump = Math.abs(stageIndex(track, m.stage) - stageIndex(track, prevStage));
+            var p = node.position();
+            if (Math.abs(p.x - target.x) > 0.5 || Math.abs(p.y - target.y) > 0.5) {
+              if (jump > 1 && prevStage && m.stage) {
+                // Multi-stage jump: arc/fade rather than tween through skipped nodes.
+                node.animate({ style: { opacity: 0 } }, { duration: MULTI_STAGE_ARC_MS / 2,
+                  complete: function () {
+                    node.position(target);
+                    node.animate({ style: { opacity: 1 } }, { duration: MULTI_STAGE_ARC_MS / 2 });
+                  } });
+              } else {
+                node.animate({ position: target }, {
+                  duration: ANIM_DURATION_MS, easing: "ease-in-out-cubic" });
+              }
+            }
+            tokenSeen[tid] = m.stage;
+          }
+
+          // Complete fade-and-drop (Decision 13).
+          if (m.stage === "Complete") {
+            if (!completeSince[tid]) completeSince[tid] = now;
+            var age = now - completeSince[tid];
+            if (age >= COMPLETE_FADE_MS) {
+              cy.getElementById(tid).style("opacity", COMPLETE_FADE_OPACITY);
+            }
+            if (receipt) {
+              // Drop the token; record it in the collapsed completion log.
+              completionLog.unshift({ id: m.id, track: track, at: now });
+              if (completionLog.length > 50) completionLog.pop();
+              cy.getElementById(tid).remove();
+              delete liveTokIds[tid];
+              delete tokenSeen[tid];
+              delete completeSince[tid];
+            }
+          } else if (completeSince[tid]) {
+            delete completeSince[tid];   // moved back off Complete (rare) — reset
+          }
+
+          // Border-pulse the settled stage node when a side-state is ejected.
+          if (ejected) {
+            var stageNode = cy.getElementById(anchorId);
+            if (!stageNode.empty()) stageNode.addClass("pulse");
+          }
         });
       });
     }
+
     place(state.features, "feature");
     place(state.bugs, "bug");
-    if (batch.length) cy.add(batch);
+
+    // Remove tokens that vanished from the state entirely (not via fade-drop).
+    cy.nodes('[kind="token"]').forEach(function (n) {
+      if (!liveTokIds[n.id()]) {
+        delete tokenSeen[n.id()];
+        delete completeSince[n.id()];
+        n.remove();
+      }
+    });
+    // Remove stale count badges.
+    cy.nodes('[kind="badge"]').forEach(function (n) {
+      if (!liveBadgeIds[n.id()]) n.remove();
+    });
+    // Clear border-pulse on nodes with no current ejection.
+    var pulsedAnchors = {};
+    cy.nodes('[kind="token"][ejected="1"]').forEach(function (n) {
+      var stage = n.data("stage");
+      var anchor = anchorStageFor(n.data("track"), stage);
+      pulsedAnchors[trackNodeId(n.data("track"), anchor)] = true;
+    });
+    cy.nodes(".pulse").forEach(function (n) {
+      if (!pulsedAnchors[n.id()]) n.removeClass("pulse");
+    });
+
+    // Stash badge membership so the popover/drill-down can list the items.
+    window.PV._badges = liveBadgeIds;
+    window.PV._completionLog = completionLog;
   }
 
   // ---- Pane renderers ----------------------------------------------------
@@ -347,6 +600,7 @@
   }
 
   function renderAll(state) {
+    window.PV._lastState = state;   // drill-down reads the latest polled state
     renderGraphTokens(state);
     renderQueues(state);
     renderFleet(state);
@@ -368,6 +622,17 @@
       });
   }
 
+  // ---- Expose internals (MUST precede start() — renderAll writes PV._lastState) ----
+  window.PV = {
+    get cy() { return cy; },
+    get stageCoords() { return stageCoords; },
+    get layoutReady() { return layoutReady; },
+    poll: poll,
+    _lastState: null,
+    _badges: {},
+    _completionLog: [],
+  };
+
   // ---- Boot --------------------------------------------------------------
   function start() {
     bootstrapLayout();
@@ -381,12 +646,4 @@
   } else {
     start();
   }
-
-  // Expose internals for Phase 3 / manual debugging.
-  window.PV = {
-    get cy() { return cy; },
-    get stageCoords() { return stageCoords; },
-    get layoutReady() { return layoutReady; },
-    poll: poll,
-  };
 })();

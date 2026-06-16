@@ -1,5 +1,7 @@
 /* Lazy Pipeline Visualizer — three-pane layout + colorblind-safe encoding.
- * Phase 2: static read-only render. No animation (Phase 3), no drag (Phase 4). */
+ * Phase 2: static read-only render. Phase 3: two-track graph + traversal
+ * animation + drill-down popover (graph behaviors live in app.js). Phase 4:
+ * drag-reorder + locked-state UX (added below in WU-8). */
 
 :root {
   /* Color & shape encoding (SPEC "Color & shape encoding" table) */
@@ -79,8 +81,39 @@ html, body {
 .triage-item[data-stage="Deferred"]    { border-color: var(--c-deferred); }
 
 /* ---- Graph (hero) ---- */
-.graph-pane { grid-area: graph; padding: 0; }
+.graph-pane { grid-area: graph; padding: 0; position: relative; }
 .cy { width: 100%; height: 100%; min-height: 240px; }
+
+/* ---- Phase 3: drill-down / count-badge popover ---- */
+/* Two-track layout, side-state ejection offsets, traversal animation, and the
+   Complete fade-and-drop are driven by Cytoscape node positions/styles in
+   app.js (preset coords + per-token Y-lane offsets); the panel below is the only
+   DOM surface Phase 3 adds. */
+.drill-panel {
+  position: absolute; top: 10px; right: 10px; z-index: 50;
+  width: min(320px, 60%); max-height: 70%; overflow: auto;
+  background: var(--bg-pane); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.drill-title {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--fg-dim); margin-bottom: 6px;
+}
+.drill-close {
+  background: none; border: none; color: var(--fg-dim);
+  font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.drill-close:hover { color: var(--fg); }
+.drill-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.drill-empty { color: var(--fg-dim); font-style: italic; }
+.drill-row {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 4px 6px; border-radius: 4px; background: var(--bg-row);
+}
+.drill-id { font-weight: 600; flex: 0 0 auto; }
+.drill-lit { color: var(--fg-dim); font-size: 12px; word-break: break-word; }
 
 /* ---- Bottom row: queues + fleet ---- */
 .bottom-row {
