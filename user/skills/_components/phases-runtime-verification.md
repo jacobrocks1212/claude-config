@@ -42,6 +42,20 @@
   unrelated bold lead. The unticked RV boxes themselves are correct and must
   stay `- [ ]` — they belong to the mcp-test cycle, not the implementer.
 
+  REGEX-LOCKSTEP (HARD — for harness maintainers, not phase authors): the set of
+  recognized verification-subsection header phrases is enumerated in
+  `lazy_core._VERIFICATION_SECTION_RE` (with the full canonical list in the
+  comment immediately above it). It currently covers: "Runtime Verification",
+  "MCP Integration Test" / "MCP (test) assertion(s)", "Reachability smoke", and
+  the retry_count>=2 escalation "Full-chain seam audit" / "seam audit" / "seam
+  re-validation" family (the last authored by `blocked-resolution.md`). When you
+  add a NEW verification or escalation subsection-header convention to THIS
+  component or to `blocked-resolution.md`, you MUST also add its phrase to that
+  regex AND a regression fixture to `test_lazy_core.py` — otherwise its only
+  unchecked rows read as plannable implementation work and Step 7a loops on
+  write-plan forever (two consecutive single-phrase gaps in one run, 2026-06-16,
+  motivated this lockstep note).
+
   ╔══════════════════════════════════════════════════════════════════════════╗
   ║  GATE-OWNED ROW BAN — pipeline-owned actions are never checkbox rows     ║
   ╚══════════════════════════════════════════════════════════════════════════╝

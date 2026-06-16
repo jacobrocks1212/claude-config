@@ -449,6 +449,53 @@ def test_ruvonly_reachability_smoke_heading():
     assert result is True, f"expected True, got {result}"
 
 
+def test_ruvonly_full_chain_seam_audit_bold_subsection():
+    """A '**Full-chain seam audit (...):**' sibling bold subsection counts as
+    verification-only — its rows are post-fix live-MCP seam re-probes + the
+    certifying /mcp-test row, all owned by /mcp-test, not plannable
+    implementation deliverables.
+
+    Regression for the d8-session-format Phase 9 no-progress loop (2026-06-16
+    hardening round, SECOND consecutive regex-gap class this run after
+    'Reachability smoke' / Round 24 / d8d02ef): every implementation deliverable
+    was [x] and the only plan was Complete, but the unchecked re-probe seam rows
+    + the 'Workstation: /mcp-test ... passes' row sat under the bold
+    ``**Full-chain seam audit (HARD — retry_count >= 2 escalation; ...):**``
+    header. Before the fix _VERIFICATION_SECTION_RE did not match 'Full-chain
+    seam audit' / 'seam audit', so those rows read as implementation work, the
+    detector returned False, and Step 7a looped on write-plan forever. The
+    'Full-chain seam audit' header is the retry_count>=2 escalation convention
+    authored by _components/blocked-resolution.md (step 1a/6), so it recurs on
+    EVERY escalated feature.
+    """
+    _guard()
+    text = (
+        "### Phase 9: Session format end-to-end\n"
+        "- [x] Implementation complete\n"
+        "**Full-chain seam audit (HARD — retry_count >= 2 escalation; "
+        "consumes INVESTIGATION.md ## Seam Table):**\n"
+        "- [ ] seam: user surface → IPC re-probe passes post-fix\n"
+        "- [ ] seam: IPC → engine re-probe passes post-fix\n"
+        "- [ ] Workstation: /mcp-test session-format-end-to-end passes\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (full-chain seam-audit bold subsection is "
+        f"verification-only), got {result}."
+    )
+
+
+def test_ruvonly_seam_audit_heading_variants():
+    """The shorter '### Seam Audit' / '### Seam Re-validation' heading forms are
+    also verification sections (heading-form mirrors of the escalation
+    bold-subsection case)."""
+    _guard()
+    for header in ("### Seam Audit", "### Seam Re-validation", "### Full-Chain Seam Audit"):
+        text = f"{header}\n- [ ] live-probe each seam to final observable\n"
+        result = lazy_core.remaining_unchecked_are_verification_only(text)
+        assert result is True, f"expected True for header {header!r}, got {result}"
+
+
 # ---------------------------------------------------------------------------
 # Tests: fence-awareness — count_deliverables
 # ---------------------------------------------------------------------------
@@ -13732,6 +13779,14 @@ _TESTS = [
     ("test_ruvonly_mixed_outside", test_ruvonly_mixed_outside),
     ("test_ruvonly_bold_marker_format", test_ruvonly_bold_marker_format),
     ("test_ruvonly_mcp_integration_test_heading", test_ruvonly_mcp_integration_test_heading),
+    # verification-section convention coverage — reachability smoke (Round 24,
+    # d8d02ef) and full-chain seam audit (this round). These regression tests
+    # were authored but originally NEVER registered in _TESTS, so they never ran
+    # (dead-code regression coverage); registering them here closes that gap.
+    ("test_ruvonly_reachability_smoke_bold_subsection", test_ruvonly_reachability_smoke_bold_subsection),
+    ("test_ruvonly_reachability_smoke_heading", test_ruvonly_reachability_smoke_heading),
+    ("test_ruvonly_full_chain_seam_audit_bold_subsection", test_ruvonly_full_chain_seam_audit_bold_subsection),
+    ("test_ruvonly_seam_audit_heading_variants", test_ruvonly_seam_audit_heading_variants),
     # fence-awareness: count_deliverables
     ("test_count_deliverables_skips_fenced_checkboxes", test_count_deliverables_skips_fenced_checkboxes),
     ("test_count_deliverables_multiple_fences", test_count_deliverables_multiple_fences),

@@ -1243,21 +1243,60 @@ def count_deliverables(phases_text: str) -> tuple[int, int]:
 # a subsection are workstation-only runtime/MCP checks that cloud cannot tick
 # and that the workstation /mcp-test step (not /write-plan) is responsible for.
 #
-# "reachability smoke" is a /spec-phases-authored convention
-# (_components/phases-runtime-verification.md): every phase that introduces a
-# new user-facing API surface carries one in-phase reachability-smoke row — a
-# single live MCP call proving the surface is callable end-to-end, owned by
-# /mcp-test, not /write-plan. The canonical convention nests the row UNDER
-# Runtime Verification, but authors also emit it as its own sibling bold
-# subsection header (e.g. ``**Reachability smoke (new API surface introduced
-# this phase):**``). That sibling header must itself be recognized as a
-# verification boundary, otherwise its only unchecked row reads as plannable
-# implementation work and Step 7a loops on write-plan forever even though every
-# implementation plan part is Complete (live no-progress loop: d8-session-format
-# Phase 8, 2026-06-16 hardening round).
+# CANONICAL VERIFICATION-SUBSECTION HEADER SET (the source of truth this regex
+# must stay in lockstep with). Every header below is authored by a /spec-phases
+# or /blocked-resolution component, nests gate-owned (`/mcp-test`) unchecked
+# rows, and must be recognized as a verification boundary — otherwise its only
+# unchecked rows read as plannable implementation work and Step 7a loops on
+# write-plan forever even though every implementation plan part is Complete. The
+# whole family is gate-owned re-probe / certification work, NOT /write-plan or
+# /execute-plan deliverables. Two consecutive single-phrase gaps in one run
+# (`reachability smoke` Round 24 / d8d02ef, then `full-chain seam audit` this
+# round) motivated enumerating the FULL convention set here rather than patching
+# one phrase per incident:
+#
+#   1. "Runtime Verification"          — _components/phases-runtime-verification.md
+#                                         (the canonical nesting heading/bold marker).
+#   2. "MCP Integration Test" /
+#      "MCP (test )?assertion(s)"      — same component (gate assertion subsection).
+#   3. "Reachability smoke"            — same component: every phase introducing a
+#                                         new user-facing API surface carries one
+#                                         in-phase reachability-smoke row (a single
+#                                         live MCP call proving the surface is
+#                                         callable end-to-end), often emitted as its
+#                                         own sibling bold header
+#                                         ``**Reachability smoke (...):**``.
+#   4. "Full-chain seam audit" /
+#      "seam audit" /
+#      "seam re-validation"            — _components/blocked-resolution.md step 1a/6
+#                                         + phases-runtime-verification.md: the
+#                                         retry_count>=2 escalation convention. A
+#                                         corrective phase at escalation MUST carry a
+#                                         full-chain seam-audit deliverable —
+#                                         enumerate every boundary in the failing
+#                                         path and live-probe each seam post-fix to
+#                                         the final observable BEFORE full
+#                                         re-validation. Those rows (plus the
+#                                         certifying ``Workstation: /mcp-test ...
+#                                         passes`` row) are all live-MCP re-probe
+#                                         assertions owned by /mcp-test, so the
+#                                         ``**Full-chain seam audit (HARD — retry_count
+#                                         >= 2 escalation ...):**`` sibling header is
+#                                         a verification boundary. (Live no-progress
+#                                         loop: d8-session-format Phase 9, 2026-06-16
+#                                         hardening round.)
+#
+# When a NEW verification/escalation subsection convention is added to either
+# component, add it here AND add a regression fixture to test_lazy_core.py — do
+# NOT wait for it to manifest as a production no-progress loop.
 _VERIFICATION_SECTION_RE = re.compile(
     r"runtime\s+verification|reachability\s+smoke"
-    r"|mcp\s+(?:integration\s+test|test\s+assertion|assertion)",
+    r"|mcp\s+(?:integration\s+test|test\s+assertion|assertion)"
+    # Escalation (retry_count >= 2) seam-audit convention — blocked-resolution.md.
+    # ``full[- ]chain\s+seam`` covers "full-chain seam audit"/"full chain seam
+    # audit"; the bare ``seam\s+(?:audit|re-?validation)`` covers the shorter
+    # "seam audit" / "seam re-validation" / "seam revalidation" header forms.
+    r"|full[-\s]chain\s+seam|seam\s+(?:audit|re-?validation)",
     re.IGNORECASE,
 )
 
