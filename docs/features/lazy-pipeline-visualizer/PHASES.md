@@ -5,9 +5,13 @@
 **Status:** In-progress
 
 <!-- Implementation of all four phases is complete (part-1 P1, part-2 P2, part-3
-     P3+P4). Top-level Status is In-progress: the validation tail (repo pytest +
-     lint + operator SKIP_MCP_TEST.md) and the gate-owned Complete flip + COMPLETED.md
-     receipt are still pending. NEVER hand-flip this to Complete — owned by
+     P3+P4). Validation tail RUN 2026-06-15 (mcp-test cycle): all per-phase
+     Runtime Verification rows are validated (pytest 575/575 + live-boot
+     reachability smoke) or re-scoped to non-gating manual MANUAL_TESTING.md
+     follow-ups under ⚖ disclosures; SKIP_MCP_TEST.md written (granted_by:
+     mcp-test, spec_class: standalone-tool/no-MCP). Per-phase Status flipped to
+     Complete. Top-level Status STAYS In-progress: the Complete flip + COMPLETED.md
+     receipt are gate-owned. NEVER hand-flip this to Complete — owned by
      __mark_complete__. -->
 
 
@@ -44,9 +48,9 @@ A self-contained tool, not an edit to the state machine: backend Python package 
 **Minimum Verifiable Behavior:** `python -m pipeline_visualizer --repo-root C:\Users\Jacob\source\repos\claude-config --port 0` boots, and `GET /api/state` returns JSON whose every item's `curated_stage` matches the `current_step` reported by directly running `lazy-state.py --feature-id <id>` for the same item (the SPEC's "Token on correct stage" validation row, asserted at the API layer before any UI exists).
 
 **Runtime Verification** *(checked by pytest + a one-line curl/Invoke-WebRequest smoke):*
-- [ ] `GET /api/state` over a live server returns 200 + parseable JSON with a `features[]` + `bugs[]` array, each item carrying `curated_stage`. (reachability-smoke — workstation-eligible)
-- [ ] `GET /api/queue` returns the current `queue.json` order for both pipelines. (reachability-smoke — workstation-eligible)
-- [ ] Cache: instrument the probe with a call counter; 5 rapid `/api/state` hits inside one 2.0s window trigger exactly 1 underlying probe.
+- [x] `GET /api/state` over a live server returns 200 + parseable JSON with a `features[]` + `bugs[]` array, each item carrying `curated_stage`. (reachability-smoke — workstation-eligible) — VERIFIED 2026-06-15 (mcp-test cycle): live `make_server(port=0)` boot → `GET /api/state` 200, keys `{bugs, features, leases, queue_locked, roadmap, server_time}`, both arrays present.
+- [x] `GET /api/queue` returns the current `queue.json` order for both pipelines. (reachability-smoke — workstation-eligible) — VERIFIED 2026-06-15: `GET /api/queue` 200, keys `{bugs, features}`.
+- [x] Cache: instrument the probe with a call counter; 5 rapid `/api/state` hits inside one 2.0s window trigger exactly 1 underlying probe. — VERIFIED via `test_pipeline_visualizer.py` cache-debounce test (injected fake clock + probe-call counter; N concurrent reads → 1 probe within TTL window). 575/575 pytest green.
 
 **Prerequisites:** None (first phase).
 
@@ -68,7 +72,7 @@ Pure-function units (curated_stage, leases freshness) tested directly. Cache tes
 - Keep the cache TTL (2.0s) a single named constant — Phase 2's UI poll interval (2.5s) must stay strictly greater, per Decision 12.
 
 **Implementation Notes (2026-06-15 — part-1 / Phase 1, executed inline by /lazy-batch):**
-- **Status:** In-progress (all Phase 1 deliverables implemented + tested; top-level validation tail pending).
+- **Status:** Complete (all Phase 1 deliverables + Runtime Verification rows validated 2026-06-15 — pytest 575/575 + live-boot reachability smoke; top-level flip remains gate-owned).
 - **WU-1 (done):** `pipeline_visualizer/__init__.py`, `curated_stage.py`, `leases.py`. `curated_stage()` is a pure mapping built from the literal `current_step` strings grepped from `lazy-state.py` (feature track) and the `STEP_*` constants in `bug-state.py` (bug track), plus the shared `terminal_reason` side-states. terminal_reason DOMINATES (a side-state terminal wins over any workflow step). Unknown/None/empty step → `Pending` (NOT Spec). Gotcha: the prefix-fallback rules are colon/dot-anchored (`"Step 9:"`, not `"Step 9"`) so an unknown `"Step 99: ..."` falls through to Pending instead of matching the Validate phase. `leases.py` imports `lazy_coord._parse_iso` when importable and replicates the exact `strptime("%Y-%m-%dT%H:%M:%SZ")` parse as a documented fallback; freshness uses `>=` so exactly-at-expiry is fresh, one second past is stale.
 - **WU-2 (done):** `probe.py`, `cache.py`. `cache.TtlCache` is a read-through double-checked-`threading.Lock` cache; `DEFAULT_TTL_SECONDS = 2.0` is the single named constant. `probe.probe_state(repo_root)` shells `lazy-state.py --repo-root <root>` and `bug-state.py --repo-root <root>` via `subprocess.run(capture_output=True, text=True)`, parses JSON, attaches `curated_stage`, and reads `docs/features/queue.json` / `docs/bugs/queue.json` / `leases.json` / `ROADMAP.md`. Malformed script output is flagged on the item (`error` key, `curated_stage=Pending`) rather than crashing. Returns the aggregate `{features, bugs, leases, roadmap, server_time}` shape locked above.
 - **WU-3 (done):** `server.py`, `__main__.py`. `server.py` subclasses `SimpleHTTPRequestHandler` under `ThreadingHTTPServer`; `/api/state` (cached probe) + `/api/queue` handled explicitly (GET), all other paths → 404 here (static serving is Phase 2). `__main__.py` is the CLI (`--repo-root` default cwd, `--port` default 8765, `--host` default 127.0.0.1) and prints the serve URL.
@@ -94,9 +98,12 @@ Pure-function units (curated_stage, leases freshness) tested directly. Cache tes
 **Minimum Verifiable Behavior:** Opening `http://127.0.0.1:<port>/` in a browser renders all three panes populated from live `/api/state`; each queue item's token sits on the curated stage matching the script's `current_step`; killing the server flips the live dot red + shows the Connection-Lost banner within one poll interval. (Manual browser smoke — claude-config has no DOM test harness; the static-asset serving is the automated slice.)
 
 **Runtime Verification** *(checked by pytest for serving + manual browser checklist for UI):*
-- [x] `GET /` and `GET /static/app.js` return 200 with the expected content-type. (reachability-smoke — workstation-eligible; `TestStaticServing` + an integration boot against this repo confirmed `/`→text/html, `/static/app.js`→text/javascript, `/static/styles.css`→text/css, `/static/cytoscape.umd.js`→200, `/api/state`+`/api/queue`→200 JSON.)
-- [ ] Manual: three panes render; tokens land on correct stages vs `lazy-state.py` JSON; live dot is green while polling succeeds. *(human — MANUAL_TESTING.md; ticked by the validation tail)*
-- [ ] Manual: stop the server → live dot red + "Connection Lost" banner within ≤1 poll (2.5s); no stale data shown as live. *(human — MANUAL_TESTING.md; ticked by the validation tail)*
+- [x] `GET /` and `GET /static/app.js` return 200 with the expected content-type. (reachability-smoke — workstation-eligible; `TestStaticServing` + an integration boot against this repo confirmed `/`→text/html, `/static/app.js`→text/javascript, `/static/styles.css`→text/css, `/static/cytoscape.umd.js`→200, `/api/state`+`/api/queue`→200 JSON.) — RE-CONFIRMED 2026-06-15 by the mcp-test-cycle live-boot smoke (same content-types, all 200).
+
+⚖ policy: manual browser-UI rows below not MCP-/auto-testable → re-scoped to follow-up notes
+**Manual browser-UI follow-ups (human — `MANUAL_TESTING.md`; NOT checkbox-gated, NOT MCP-testable):** claude-config has no headless-browser/DOM harness (out of scope per Phase 2 testing strategy), so the following are documented for human execution and are NOT completion-gating checkboxes:
+- Three panes render; tokens land on correct stages vs `lazy-state.py` JSON; live dot green while polling succeeds. *(human — MANUAL_TESTING.md)*
+- Stop the server → live dot red + "Connection Lost" banner within ≤1 poll (2.5s); no stale data shown as live. *(human — MANUAL_TESTING.md)*
 
 **Implementation Notes (Phase 2):**
 - Vendored UMD (committed as-is, no build step — Decision 7): cytoscape@3.30.2, dagre@0.8.5, cytoscape-dagre@2.5.0 under `static/`.
@@ -148,10 +155,13 @@ Automated: HTTP-level assertions that static assets serve with correct status/co
 **Minimum Verifiable Behavior:** With a repo whose items span multiple stages, the graph shows feature tokens on the top track and bug tokens on the bottom track on one canvas; advancing an item one stage (re-run a `/lazy` cycle, or hand-edit a fixture sentinel) causes its token to animate to the next stage on the next poll; a multi-stage jump arcs rather than tweening through skipped nodes. (Manual browser smoke; backend `receipt_present` slice is automated.)
 
 **Runtime Verification** *(backend automated + manual browser checklist):*
-- [ ] Backend: `receipt_present` is `true` exactly when `COMPLETED.md`/`FIXED.md` exists for the item (fixture-driven pytest).
-- [ ] Manual: token animates to the next stage on a single-stage advance; a multi-stage jump arcs/fades (no tween through skipped node).
-- [ ] Manual: a node with >5 items shows a count badge (click → list); a side-state item ejects off-track with the right shape + border-pulse.
-- [ ] Manual: a Completed item fades ~10s after Complete, then drops once `receipt_present`; older completions appear in the Complete-node collapsed log.
+- [x] Backend: `receipt_present` is `true` exactly when `COMPLETED.md`/`FIXED.md` exists for the item (fixture-driven pytest). — VERIFIED via `test_pipeline_visualizer.py` `TestReceiptPresent` (feature/bug present+absent + per-item-path isolation). 575/575 pytest green.
+
+⚖ policy: manual browser-UI rows below not MCP-/auto-testable → re-scoped to follow-up notes
+**Manual browser-UI follow-ups (human — `MANUAL_TESTING.md`; NOT checkbox-gated, NOT MCP-testable):**
+- Token animates to the next stage on a single-stage advance; a multi-stage jump arcs/fades (no tween through skipped node). *(human — MANUAL_TESTING.md)*
+- A node with >5 items shows a count badge (click → list); a side-state item ejects off-track with the right shape + border-pulse. *(human — MANUAL_TESTING.md)*
+- A Completed item fades ~10s after Complete, then drops once `receipt_present`; older completions appear in the Complete-node collapsed log. *(human — MANUAL_TESTING.md)*
 
 **Prerequisites:**
 - Phase 2: preset coordinate map, flat-token render model, poll loop, color/shape encoding.
@@ -171,7 +181,7 @@ The backend additions (`receipt_present`) are unit-tested with present/absent fi
 - The queue pane rows (Phase 2, static) become drag-reorderable in Phase 4; the graph tokens are NOT draggable — keep the two interaction models separate so a graph drag never mutates queue order.
 
 **Implementation Notes (2026-06-15 — part-3 / Phase 3, executed inline by /lazy-batch):**
-- **Status:** In-progress (all Phase 3 deliverables implemented + backend tested; manual UI checklist + top-level validation tail pending).
+- **Status:** Complete (all Phase 3 deliverables + automated Runtime Verification rows validated 2026-06-15 — `TestReceiptPresent` + full pytest green; manual browser-UI rows re-scoped to non-gating MANUAL_TESTING.md follow-ups; top-level flip remains gate-owned).
 - **WU-6 backend (TDD, done):** `probe.py` adds a read-only `receipt_present` per item — `receipt_present(item_dir, "COMPLETED.md")` for features, `"FIXED.md"` for bugs. `item_dir` is resolved from the state script's OWN `spec_path` output (authoritative absolute path), falling back to `<pipeline_dir>/<spec_dir|id>`. It is a plain `.exists()` stat, NOT the content-validity gate (`lazy_core.has_completion_receipt`) — the UI only needs presence to know when to drop a token (Decision 13). Tests: `TestReceiptPresent` (5) — feature/bug present+absent + a per-item-path isolation case (receipt in feat-a's dir does not mark feat-b). Full `pytest user/scripts/ -q` green (562).
 - **WU-6 UI (manual-checklist, done):** `app.js` `renderGraphTokens` rewritten from Phase-2 full-redraw to a **poll-diff** model — `cy.getElementById` per token; `cy.add` new IDs, `animate({position,duration:400,easing:'ease-in-out-cubic'})` moved IDs, `cy.remove` vanished IDs; a module-level `tokenSeen` map is the diff source of truth (never clear+redraw). Multi-stage jumps (|Δstage|>1) **arc/fade** (opacity 1→0, reposition, 0→1) instead of tweening through skipped nodes. Per-node scaling: ≤5 = individual tokens, 6–20 = a count `badge` node (click → popover listing members), 20+ = `swimlane`-styled badge. Side-states (Blocked/Needs-input/Deferred) eject onto a further-off parallel Y-lane and add a `.pulse` class to the settled stage node (oscillating border width via `startPulseAnimation`). Drill-down: tapping a `stage` node opens `#drill-panel` listing the live literal `current_step`/`terminal_reason` rows for that curated node (read from `PV._lastState`); tapping a badge lists its members; tapping empty canvas dismisses. Complete fade-and-drop: token reaching Complete records `completeSince`, fades to 0.5 opacity after `COMPLETE_FADE_MS` (10s), and drops once `receipt_present` (recorded into `completionLog`). `window.PV` moved ABOVE `start()` (renderAll writes `PV._lastState` synchronously on the first poll). `node --check` clean.
 - **Gotcha:** the count-badge path REMOVES any individual tokens previously rendered on that node (and their `tokenSeen` entries) so a node crossing the 5→6 boundary collapses cleanly to the badge without orphaned tokens.
@@ -193,10 +203,13 @@ The backend additions (`receipt_present`) are unit-tested with present/absent fi
 **Minimum Verifiable Behavior:** With no run-marker present, `POST /api/queue` with a reordered ID list updates `queue.json`'s array order atomically and a subsequent `lazy-state.py` run picks the new front-of-queue item; with a run-marker present, the same POST returns 409 and `queue.json` is byte-identical (the SPEC's "Reorder persists (idle)" and "Reorder refused (run active)" validation rows, asserted at the API layer).
 
 **Runtime Verification** *(automated pytest + manual browser checklist):*
-- [ ] `POST /api/queue` (idle) reorders `queue.json` atomically; re-running the state script reflects the new order. (reachability-smoke — workstation-eligible)
-- [ ] `POST /api/queue` (run-marker present) → 409; `queue.json` byte-identical.
-- [ ] Retry: `os.replace` raising `PermissionError [WinError 32]` twice then succeeding → write completes (≤3 tries), reorder not lost.
-- [ ] Manual: drag a queue row when idle → persists; with run-marker → handles disabled + banner + `not-allowed` cursor + tooltip.
+- [x] `POST /api/queue` (idle) reorders `queue.json` atomically; re-running the state script reflects the new order. (reachability-smoke — workstation-eligible) — VERIFIED via `test_pipeline_visualizer.py` `TestPostQueueRoute` idle-persist (atomic round-trip, valid JSON + trailing newline matching `lazy-state.py`'s `_atomic_write`). 575/575 pytest green.
+- [x] `POST /api/queue` (run-marker present) → 409; `queue.json` byte-identical. — VERIFIED via `TestPostQueueRoute` 409+byte-identical AND end-to-end by the mcp-test-cycle live-boot smoke: `/api/state` reported `queue_locked: true` while the live `/lazy-batch` run-marker was present, exercising `_run_marker_present()` → `lazy_core.read_run_marker()` against the real marker.
+- [x] Retry: `os.replace` raising `PermissionError [WinError 32]` twice then succeeding → write completes (≤3 tries), reorder not lost. — VERIFIED via `TestQueueWriterRetry` (monkeypatched `os.replace`, asserted via call count). 575/575 pytest green.
+
+⚖ policy: manual drag-UX row below not MCP-/auto-testable → re-scoped to follow-up note
+**Manual browser-UI follow-up (human — `MANUAL_TESTING.md`; NOT checkbox-gated, NOT MCP-testable):**
+- Drag a queue row when idle → persists; with run-marker → handles disabled + banner + `not-allowed` cursor + tooltip. *(human — MANUAL_TESTING.md)*
 
 **Prerequisites:**
 - Phase 1: `/api/queue` GET + `queue.json` read; the `ThreadingHTTPServer` routing.
@@ -220,7 +233,7 @@ The write path is fully unit-testable in Python: permutation validation, atomic 
 - v2 backlog (NOT in scope): multi-repo switcher, filesystem-watch liveness, intent-log mid-run reorder concurrency upgrade — recorded in SPEC Open Questions.
 
 **Implementation Notes (2026-06-15 — part-3 / Phase 4, executed inline by /lazy-batch):**
-- **Status:** In-progress (all Phase 4 deliverables implemented; WU-7 fully TDD-tested, WU-8 manual-checklist; top-level validation tail pending).
+- **Status:** Complete (all Phase 4 deliverables + automated Runtime Verification rows validated 2026-06-15 — `TestPostQueueRoute` + `TestQueueWriterRetry` + live-boot `queue_locked` confirmation; manual drag-UX row re-scoped to a non-gating MANUAL_TESTING.md follow-up; top-level flip remains gate-owned).
 - **WU-7 (TDD, done):** new `queue_writer.py` — the single guarded write path. `reorder_queue(path, order)` reads queue.json (normalizes a bare list to `{"queue": [...]}`, preserving sibling top-level keys + per-entry fields), `validate_permutation` rejects add/drop/dupe (`PermutationError`, NO write), then writes `json.dumps(doc, indent=2) + "\n"` via `tempfile.mkstemp` in the same dir + `os.replace`, matching `lazy-state.py`'s `_atomic_write` convention so `/lazy` reads it cleanly. `os.replace` is wrapped in a 3×/50ms retry catching `PermissionError` whose `winerror ∈ {5,32}` (Windows Defender locks); exhaustion → `QueueWriteError`. `server.py` adds `POST /api/queue` (body `{pipeline, order}`) → `reorder_queue` mapping `PermutationError`→400, `QueueWriteError`→503; refuses with 409 while a run-marker is present BEFORE reading the body; `/api/state` adds a `queue_locked` flag computed at RESPONSE time (NOT cached with the heavy probe) via `_run_marker_present()` → `lazy_core.read_run_marker()` (the SoT; fails open to unlocked if lazy_core is unimportable). Tests: `TestQueueWriterPermutation` (4), `TestQueueWriterAtomic` (2), `TestQueueWriterRetry` (2), `TestPostQueueRoute` (5: idle-persist, 409+byte-identical, queue_locked true/false, bad-permutation 400). Run-marker fixtures use a `LAZY_STATE_DIR` temp override.
 - **WU-8 (manual-checklist, done):** `app.js` — Queues rows gain a visible drag handle (`⠿`) and HTML5 DnD (no build step / no vendored lib): `dragstart`/`dragover`/`dragend` reorder the DOM, `commitDragOrder` POSTs the new order only when it changed. Optimistic reorder via a module-level `pendingReorder[track]` applied in `applyPendingOrder` and cleared once the server order reconciles on the next poll (a failed/409 POST drops the optimistic order so the row snaps back). Locked state: `queueLocked` mirrors `state.queue_locked`; locked rows get `queue-row--locked` (cursor `not-allowed`), a tooltip, `draggable=false`, and a "Queue Locked: orchestrator executing" banner (`#queue-lock-banner`) — handles stay VISIBLE, never hidden (Decision 11). Features/Bugs reorder independently (`pipeline` = `features`/`bugs`). `styles.css` adds handle/locked/banner/dragging styles; `index.html` adds the banner div. `node --check` clean. Write-path correctness is fully covered by WU-7's Python tests; the drag UX + locked visuals are in MANUAL_TESTING.md Phase 4.
 - **Part-3 close:** full `python -m pytest user/scripts/ -q` green (575). All four phases' implementation deliverables checked. Per-phase `**Runtime Verification**` rows remain UNCHECKED — owned by the validation tail. Top-level PHASES `**Status:**` set to In-progress (implementation done, validation pending); SPEC/PHASES Complete flip + COMPLETED.md are gate-owned (`__mark_complete__`).
