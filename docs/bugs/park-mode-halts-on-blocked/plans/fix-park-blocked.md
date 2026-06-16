@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: park-mode-halts-on-blocked
-status: Ready
+status: In-progress
 created: 2026-06-16
 complexity: complex
 phases: [1, 2, 3, 4, 5, 6]
@@ -24,7 +24,7 @@ phases: [1, 2, 3, 4, 5, 6]
 
 ## Work Units
 
-- [ ] WU-1 — lazy-state.py: --park-blocked flag, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
+- [x] WU-1 — lazy-state.py: --park-blocked flag, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
 - [ ] WU-2 — bug-state.py: mirror --park-blocked, BLOCKED park branch, all-parked terminal (+ TDD fixtures)
 - [ ] WU-3 — lazy_core.build_parked_entry: add sentinel_kind field (+ test_lazy_core.py characterization)
 - [ ] WU-4 — Orchestrator wiring: lazy-batch + lazy-bug-batch + lazy-batch-cloud SKILL.md

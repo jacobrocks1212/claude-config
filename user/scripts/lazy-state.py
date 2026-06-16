@@ -151,8 +151,9 @@ def _state(
 # start of each compute_state() call alongside lazy_core._DIAGNOSTICS.
 _DEVICE_DEFERRED: list[str] = []
 
-# Park mode: when True (--park-needs-input flag), NEEDS_INPUT.md items are
-# skipped (parked) instead of halting. The parked items accumulate in _PARKED.
+# Park mode: when True (--park-needs-input and/or --park-blocked flag),
+# NEEDS_INPUT.md and/or feature-local BLOCKED.md items are skipped (parked)
+# instead of halting. The parked items accumulate in _PARKED.
 # Reset at the start of each compute_state() call, alongside _DEVICE_DEFERRED.
 _PARKED: list = []
 _PARK_MODE: bool = False
@@ -1061,6 +1062,7 @@ def compute_state(
     real_device: bool = True,
     scope_feature_id: str | None = None,
     park_needs_input: bool = False,
+    park_blocked: bool = False,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -1083,7 +1085,7 @@ def compute_state(
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED
-    _PARK_MODE = park_needs_input
+    _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
     repo_root = repo_root.resolve()
 
@@ -1245,11 +1247,27 @@ def compute_state(
             if research_pending:
                 research_pending_skipped.append(name)
                 continue
+        # Park-mode (BLOCKED): if --park-blocked is active and this feature has a
+        # BLOCKED.md, skip (park) it instead of halting the queue with
+        # terminal_reason="blocked". The item re-enters automatically once the
+        # block is resolved/renamed. Evaluated BEFORE the NEEDS_INPUT park branch
+        # so a feature carrying BOTH sentinels parks exactly ONCE (this branch
+        # `continue`s, so the NEEDS_INPUT branch is not reached for it). This is
+        # the root-cause fix for park-mode-halts-on-blocked (SPEC D1).
+        if park_blocked and (spec_path / "BLOCKED.md").exists():
+            _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "BLOCKED.md"))
+            _diag(
+                f"parked: {name} — feature-local BLOCKED.md; skipped (park mode). "
+                "Re-enters when resolved."
+            )
+            continue
         # Park-mode: if --park-needs-input is active and this feature has an
         # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
         # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
-        # BLOCKED.md retains precedence: a feature carrying BOTH BLOCKED.md and
-        # NEEDS_INPUT.md must still halt as "blocked", not be silently parked.
+        # BLOCKED.md retains precedence when --park-blocked is NOT set: a feature
+        # carrying BOTH BLOCKED.md and NEEDS_INPUT.md must still halt as "blocked",
+        # not be silently parked. (When --park-blocked IS set, the BLOCKED park
+        # branch above already parked + continued, so this guard is moot.)
         if (
             park_needs_input
             and (spec_path / "NEEDS_INPUT.md").exists()
@@ -1315,6 +1333,20 @@ def compute_state(
                     f"--feature-id '{scope_feature_id}' matched no entry in "
                     "docs/features/queue.json — check the id (typo?) or that the "
                     "feature is queued. No cycle was dispatched."
+                ),
+            )
+        # Honest all-parked terminal (SPEC D3): when every remaining feature was
+        # parked this probe (NEEDS_INPUT and/or BLOCKED) so current is None with a
+        # non-empty _PARKED, return a distinct terminal — NOT all-features-complete,
+        # which would be a false completion. Placed as the fallback AFTER the
+        # specific global terminals above (cloud/device/research/scoped-id keep
+        # their precedence per D2) and BEFORE all-features-complete.
+        if _PARKED:
+            return _state(
+                terminal_reason="queue-exhausted-all-parked",
+                notify_message=(
+                    f"Queue exhausted — {len(_PARKED)} feature(s) parked "
+                    "(blocked/needs-input); surfaced at the end-of-run flush."
                 ),
             )
         return _state(
@@ -4936,6 +4968,216 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_park_blocked_precedence}] SystemExit: {exc.code}")
             print(f"  FAIL [{fix_park_blocked_precedence}] SystemExit: {exc.code}")
 
+        # -------------------------------------------------------------------
+        # Fixture WU-1-park-blocked: --park-blocked mode
+        # (bug park-mode-halts-on-blocked, Phase 1)
+        #
+        # Two-feature queue in a FRESH root (independent of the needs-input
+        # fixture above):
+        #   blocked-feat  — carries BLOCKED.md (no NEEDS_INPUT.md)
+        #   workable-feat — actionable (Draft, SPEC+RESEARCH present)
+        #
+        # Sub-fixture 1 (park-blocked-mode-skip): park_blocked=True →
+        #   blocked-feat parked, workable-feat dispatched.
+        # Sub-fixture 2 (park-blocked-default-halt): no flag → terminal_reason
+        #   "blocked", "parked" key ABSENT (byte-identical to today).
+        # Sub-fixture 3 (park-blocked-all-parked-terminal): every remaining
+        #   feature parked → terminal_reason "queue-exhausted-all-parked".
+        # Sub-fixture 4 (park-blocked-and-needs-input-single-park): a feature
+        #   carrying BOTH sentinels parks exactly ONCE under both flags.
+        # -------------------------------------------------------------------
+        pb_root = td_path / "park-blocked"
+        pb_features = pb_root / "docs" / "features"
+        pb_features.mkdir(parents=True, exist_ok=True)
+        (pb_features / "ROADMAP.md").write_text("# Roadmap\n")
+        (pb_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "blocked-feat", "name": "Blocked Feature",
+                 "spec_dir": "blocked-feat", "tier": 1},
+                {"id": "workable-feat", "name": "Workable Feature",
+                 "spec_dir": "workable-feat", "tier": 1},
+            ]
+        }))
+        # blocked-feat: Draft spec + RESEARCH + BLOCKED.md (no NEEDS_INPUT.md)
+        pb_blocked_dir = pb_features / "blocked-feat"
+        pb_blocked_dir.mkdir()
+        (pb_blocked_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (pb_blocked_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (pb_blocked_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+        _write_yaml_sentinel(
+            pb_blocked_dir / "BLOCKED.md", "blocked",
+            feature_id="blocked-feat", phase="Spec",
+            blocked_at="2026-06-16T00:00:00Z", retry_count=0,
+        )
+        # workable-feat: actionable
+        pb_workable_dir = pb_features / "workable-feat"
+        pb_workable_dir.mkdir()
+        (pb_workable_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (pb_workable_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (pb_workable_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+
+        # Sub-fixture 1: park_blocked=True → blocked-feat parked, workable dispatched.
+        fix_pb_skip = "park-blocked-mode-skip"
+        try:
+            got_pb_skip = compute_state(
+                pb_root, cloud=False, real_device=True, park_blocked=True
+            )
+            pbskip_ok = True
+            if got_pb_skip.get("terminal_reason") == "blocked":
+                failures.append(
+                    f"[{fix_pb_skip}] terminal_reason must NOT be 'blocked' under "
+                    f"park_blocked; got {got_pb_skip.get('terminal_reason')!r}"
+                )
+                pbskip_ok = False
+            if got_pb_skip.get("feature_id") != "workable-feat":
+                failures.append(
+                    f"[{fix_pb_skip}] expected feature_id='workable-feat', "
+                    f"got {got_pb_skip.get('feature_id')!r}"
+                )
+                pbskip_ok = False
+            pb_parked = got_pb_skip.get("parked")
+            if not isinstance(pb_parked, list) or len(pb_parked) != 1:
+                failures.append(
+                    f"[{fix_pb_skip}] expected parked=[...1 entry...], got {pb_parked!r}"
+                )
+                pbskip_ok = False
+            elif pb_parked[0].get("id") != "blocked-feat":
+                failures.append(
+                    f"[{fix_pb_skip}] parked[0].id must be 'blocked-feat', "
+                    f"got {pb_parked[0].get('id')!r}"
+                )
+                pbskip_ok = False
+            elif not str(pb_parked[0].get("sentinel", "")).endswith("BLOCKED.md"):
+                failures.append(
+                    f"[{fix_pb_skip}] parked[0].sentinel must end in BLOCKED.md, "
+                    f"got {pb_parked[0].get('sentinel')!r}"
+                )
+                pbskip_ok = False
+            print(
+                f"  {'PASS' if pbskip_ok else 'FAIL'} [{fix_pb_skip}] "
+                f"dispatched={got_pb_skip.get('feature_id')!r}, "
+                f"parked count={len(pb_parked) if isinstance(pb_parked, list) else 'N/A'}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_pb_skip}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pb_skip}] SystemExit: {exc.code}")
+
+        # Sub-fixture 2: NO flag → terminal_reason "blocked", "parked" key ABSENT.
+        fix_pb_default = "park-blocked-default-halt"
+        try:
+            got_pb_default = compute_state(pb_root, cloud=False, real_device=True)
+            pbdef_ok = True
+            if got_pb_default.get("terminal_reason") != "blocked":
+                failures.append(
+                    f"[{fix_pb_default}] expected terminal_reason='blocked', "
+                    f"got {got_pb_default.get('terminal_reason')!r}"
+                )
+                pbdef_ok = False
+            if "parked" in got_pb_default:
+                failures.append(
+                    f"[{fix_pb_default}] 'parked' key must be absent in default mode; "
+                    f"got parked={got_pb_default['parked']!r}"
+                )
+                pbdef_ok = False
+            print(
+                f"  {'PASS' if pbdef_ok else 'FAIL'} [{fix_pb_default}] "
+                f"default: terminal_reason={got_pb_default.get('terminal_reason')!r}, "
+                f"parked key absent={('parked' not in got_pb_default)}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_pb_default}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pb_default}] SystemExit: {exc.code}")
+
+        # Sub-fixture 3: all-parked terminal. Mark workable-feat ALSO blocked so
+        # every remaining feature is parked → queue-exhausted-all-parked.
+        fix_pb_allparked = "park-blocked-all-parked-terminal"
+        try:
+            _write_yaml_sentinel(
+                pb_workable_dir / "BLOCKED.md", "blocked",
+                feature_id="workable-feat", phase="Spec",
+                blocked_at="2026-06-16T00:00:00Z", retry_count=0,
+            )
+            got_pb_all = compute_state(
+                pb_root, cloud=False, real_device=True,
+                park_needs_input=True, park_blocked=True,
+            )
+            pball_ok = True
+            if got_pb_all.get("terminal_reason") != "queue-exhausted-all-parked":
+                failures.append(
+                    f"[{fix_pb_allparked}] expected terminal_reason="
+                    f"'queue-exhausted-all-parked', got "
+                    f"{got_pb_all.get('terminal_reason')!r}"
+                )
+                pball_ok = False
+            pb_all_parked = got_pb_all.get("parked")
+            if not isinstance(pb_all_parked, list) or len(pb_all_parked) < 1:
+                failures.append(
+                    f"[{fix_pb_allparked}] expected non-empty parked[], "
+                    f"got {pb_all_parked!r}"
+                )
+                pball_ok = False
+            print(
+                f"  {'PASS' if pball_ok else 'FAIL'} [{fix_pb_allparked}] "
+                f"terminal_reason={got_pb_all.get('terminal_reason')!r}, "
+                f"parked count={len(pb_all_parked) if isinstance(pb_all_parked, list) else 'N/A'}"
+            )
+            # cleanup: remove the workable BLOCKED.md so sub-fixture 4 has a clean
+            # "workable" feature to dispatch.
+            (pb_workable_dir / "BLOCKED.md").unlink()
+        except SystemExit as exc:
+            failures.append(f"[{fix_pb_allparked}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pb_allparked}] SystemExit: {exc.code}")
+
+        # Sub-fixture 4: dual-sentinel single-park. blocked-feat carries BOTH
+        # BLOCKED.md and NEEDS_INPUT.md; under both flags it parks exactly ONCE
+        # and workable-feat is dispatched.
+        fix_pb_dual = "park-blocked-and-needs-input-single-park"
+        try:
+            (pb_blocked_dir / "NEEDS_INPUT.md").write_text(
+                "---\n"
+                "kind: needs-input\n"
+                "feature_id: blocked-feat\n"
+                "written_by: spec-phases\n"
+                "decisions:\n"
+                "  - Choose strategy\n"
+                "date: 2026-06-16\n"
+                "---\n\n# Needs Input\n",
+                encoding="utf-8",
+            )
+            got_pb_dual = compute_state(
+                pb_root, cloud=False, real_device=True,
+                park_needs_input=True, park_blocked=True,
+            )
+            pbdual_ok = True
+            if got_pb_dual.get("feature_id") != "workable-feat":
+                failures.append(
+                    f"[{fix_pb_dual}] expected feature_id='workable-feat', "
+                    f"got {got_pb_dual.get('feature_id')!r}"
+                )
+                pbdual_ok = False
+            pb_dual_parked = got_pb_dual.get("parked", [])
+            dual_ids = [e.get("id") for e in pb_dual_parked if isinstance(e, dict)]
+            if dual_ids.count("blocked-feat") != 1:
+                failures.append(
+                    f"[{fix_pb_dual}] blocked-feat must appear EXACTLY once in "
+                    f"parked[]; got ids={dual_ids!r}"
+                )
+                pbdual_ok = False
+            print(
+                f"  {'PASS' if pbdual_ok else 'FAIL'} [{fix_pb_dual}] "
+                f"dispatched={got_pb_dual.get('feature_id')!r}, "
+                f"blocked-feat park count={dual_ids.count('blocked-feat')}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_pb_dual}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pb_dual}] SystemExit: {exc.code}")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -4999,6 +5241,18 @@ def main() -> int:
                             "re-enters automatically once NEEDS_INPUT.md is resolved/renamed. "
                             "Without this flag, output is byte-identical to the default behavior "
                             "('parked' key is entirely absent and the needs-input halt fires as today)."
+                        ))
+    parser.add_argument("--park-blocked", action="store_true",
+                        help=(
+                            "OPT-IN park mode (companion to --park-needs-input): when active, a "
+                            "feature carrying a feature-local BLOCKED.md is SKIPPED (parked) rather "
+                            "than halting the queue with terminal_reason='blocked'. The parked item "
+                            "is reported in the 'parked[]' array and re-enters automatically once "
+                            "the block is resolved/renamed. Global/environment terminals "
+                            "(cloud/device/research/scoped-id) still halt. When every remaining "
+                            "feature is parked, the honest 'queue-exhausted-all-parked' terminal "
+                            "fires instead of 'all-features-complete'. Without this flag, output is "
+                            "byte-identical to the default behavior (BLOCKED still halts)."
                         ))
     parser.add_argument("--verify-ledger", default=None, metavar="SPEC_PATH",
                         help=(
@@ -5690,6 +5944,7 @@ def main() -> int:
         real_device=resolve_real_device(args.real_device),
         scope_feature_id=args.feature_id,
         park_needs_input=args.park_needs_input,
+        park_blocked=args.park_blocked,
     )
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.
