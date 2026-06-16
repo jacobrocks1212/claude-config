@@ -2906,8 +2906,18 @@ def test_p7_meta_dispatch_by_reference_via_guard():
 _CONTAINMENT_SH = _HOOKS_DIR / "lazy-cycle-containment.sh"
 
 
-def _bash_preToolUse_json(command: str, session_id: str | None = None) -> str:
-    """Return a PreToolUse JSON payload for a Bash tool call."""
+def _bash_preToolUse_json(
+    command: str,
+    session_id: str | None = None,
+    agent_id: str | None = None,
+) -> str:
+    """Return a PreToolUse JSON payload for a Bash tool call.
+
+    agent_id: when provided, marks the payload as a SUBAGENT call (the field
+    Claude Code injects only when the hook fires from within a subagent —
+    confirmed against the installed version's hook-input schema). Absent ⇒
+    main-thread orchestrator call.
+    """
     if session_id is None:
         session_id = str(uuid.uuid4())
     payload = {
@@ -2920,11 +2930,21 @@ def _bash_preToolUse_json(command: str, session_id: str | None = None) -> str:
         "tool_input": {"command": command},
         "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
     }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
     return json.dumps(payload)
 
 
-def _agent_preToolUse_json(session_id: str | None = None) -> str:
-    """Return a PreToolUse JSON payload for an Agent tool call."""
+def _agent_preToolUse_json(
+    session_id: str | None = None,
+    agent_id: str | None = None,
+) -> str:
+    """Return a PreToolUse JSON payload for an Agent tool call.
+
+    agent_id: when provided, marks the payload as a SUBAGENT call (recursive
+    dispatch from within an already-dispatched cycle subagent). Absent ⇒ the
+    main-thread orchestrator's own legitimate Agent dispatch.
+    """
     if session_id is None:
         session_id = str(uuid.uuid4())
     payload = {
@@ -2941,6 +2961,8 @@ def _agent_preToolUse_json(session_id: str | None = None) -> str:
         },
         "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
     }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
     return json.dumps(payload)
 
 
@@ -3236,6 +3258,224 @@ def test_containment_fail_open_on_malformed_json():
         )
 
 
+# ===========================================================================
+# hardening-blind-to-process-friction Phase 1 (D4) — agent_id-targeted
+# containment.  The recursion/lifecycle/routing deny logic no longer depends on
+# the orchestrator arming a cycle marker; it trips whenever the PreToolUse
+# payload carries `agent_id` (the field Claude Code injects ONLY when the hook
+# fires from within a subagent — confirmed against the installed version's
+# hook-input schema: `agent_id?: "Subagent identifier. Present only when the
+# hook fires from within a subagent ... Absent for the main thread"`).
+#
+#   - agent_id PRESENT  (subagent) → deny recursive Agent dispatch, /lazy-batch
+#     invocation, lazy-state/bug-state routing+lifecycle flags, dev:kill/restart
+#     — REGARDLESS of whether a cycle marker is present (arming-free).
+#   - agent_id ABSENT   (main-thread orchestrator) → allow all of the above; the
+#     orchestrator is never self-denied.
+#
+# The marker-gated 2nd-feature tripwire + commit-ceiling backstop are retained
+# unchanged (they read feature_id/commit_tally from the marker).
+# ===========================================================================
+
+_SUBAGENT_AGENT_ID = "agent_" + uuid.uuid4().hex[:16]
+
+
+def test_containment_agentid_present_denies_recursive_agent_no_marker():
+    """SUBAGENT-shaped payload (agent_id present) + recursive Agent call, with
+    NO cycle marker → deny.  This is the literal D4 fix: containment fires
+    without any marker arming."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
+        )
+        assert result.returncode == 0, (
+            f"hook must exit 0; got {result.returncode}; stderr: {result.stderr!r}"
+        )
+        assert _containment_decision(result) == "deny", (
+            f"subagent Agent dispatch (agent_id present, no marker) must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_absent_allows_main_thread_agent_no_marker():
+    """MAIN-THREAD payload (agent_id absent) + Agent call, NO marker → allow.
+    The orchestrator's own legitimate cycle dispatch must never be self-denied
+    (the Proven-Finding-#3 defect)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(_agent_preToolUse_json(), state_dir)
+        assert result.returncode == 0
+        assert _containment_decision(result) != "deny", (
+            f"main-thread Agent dispatch (agent_id absent) must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_present_denies_recursive_agent_with_marker():
+    """SUBAGENT payload + Agent call WITH a marker present → still deny (the
+    agent_id trip and the legacy marker path agree)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(
+            _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"subagent Agent dispatch (agent_id present, marker present) must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_present_denies_lazy_batch_invocation():
+    """SUBAGENT payload invoking /lazy-batch in a Bash command, NO marker →
+    deny (recursive batch is the literal runaway path)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in ("claude -p '/lazy-batch 25'", "/lazy-batch 10"):
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent /lazy-batch invocation {cmd!r} must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_absent_allows_lazy_batch_invocation():
+    """MAIN-THREAD payload (agent_id absent) invoking /lazy-batch → allow (the
+    orchestrator may invoke the batch)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json("claude -p '/lazy-batch 25'"), state_dir
+        )
+        assert _containment_decision(result) != "deny", (
+            f"main-thread /lazy-batch invocation must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_present_denies_routing_flags_no_marker():
+    """SUBAGENT payload + each loop-formation routing flag, NO marker → deny."""
+    _guard()
+    flags = [
+        "--probe", "--emit-prompt", "--repeat-count", "--run-start",
+        "--run-end", "--apply-pseudo", "--enqueue-adhoc", "--emit-dispatch",
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for flag in flags:
+            result = _run_containment(
+                _bash_preToolUse_json(
+                    f"python3 lazy-state.py {flag}", agent_id=_SUBAGENT_AGENT_ID
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent routing flag {flag!r} (no marker) must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_absent_allows_routing_flags_no_marker():
+    """MAIN-THREAD payload + routing flags, NO marker → allow (the orchestrator
+    runs these between cycles)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for flag in ("--run-end", "--emit-prompt", "--probe"):
+            result = _run_containment(
+                _bash_preToolUse_json(f"python3 lazy-state.py {flag}"), state_dir
+            )
+            assert _containment_decision(result) != "deny", (
+                f"main-thread routing flag {flag!r} must NOT deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_present_denies_lifecycle_no_marker():
+    """SUBAGENT payload + dev:kill / dev:restart, NO marker → deny."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in ("npm run dev:kill", "npm run dev:restart"):
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent lifecycle {cmd!r} (no marker) must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_absent_allows_lifecycle_no_marker():
+    """MAIN-THREAD payload + dev:kill, NO marker → allow (the orchestrator owns
+    the dev runtime)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json("npm run dev:kill"), state_dir
+        )
+        assert _containment_decision(result) != "deny", (
+            f"main-thread dev:kill must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_present_allows_unrelated_bash():
+    """SUBAGENT payload + the subagent's REAL work (running tests) → allow.  The
+    agent_id trip denies only recursion/lifecycle/routing, not ordinary work."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json(
+                "python3 -m pytest user/scripts/test_hooks.py",
+                agent_id=_SUBAGENT_AGENT_ID,
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"subagent's real work (pytest) must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_present_allows_narrow_ops():
+    """SUBAGENT payload + allow-listed state-script ops (--neutralize-sentinel,
+    --verify-ledger) → allow even though agent_id is present."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in (
+            "python3 lazy-state.py --neutralize-sentinel docs/features/x/BLOCKED.md",
+            "python3 lazy-state.py --verify-ledger docs/features/x/SPEC.md",
+        ):
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) != "deny", (
+                f"subagent allow-listed op {cmd!r} must NOT deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -3329,6 +3569,29 @@ _TESTS = [
      test_containment_commit_count_backstop_denies),
     ("test_containment_fail_open_on_malformed_json",
      test_containment_fail_open_on_malformed_json),
+    # hardening-blind-to-process-friction Phase 1 (D4) — agent_id-targeted trip
+    ("test_containment_agentid_present_denies_recursive_agent_no_marker",
+     test_containment_agentid_present_denies_recursive_agent_no_marker),
+    ("test_containment_agentid_absent_allows_main_thread_agent_no_marker",
+     test_containment_agentid_absent_allows_main_thread_agent_no_marker),
+    ("test_containment_agentid_present_denies_recursive_agent_with_marker",
+     test_containment_agentid_present_denies_recursive_agent_with_marker),
+    ("test_containment_agentid_present_denies_lazy_batch_invocation",
+     test_containment_agentid_present_denies_lazy_batch_invocation),
+    ("test_containment_agentid_absent_allows_lazy_batch_invocation",
+     test_containment_agentid_absent_allows_lazy_batch_invocation),
+    ("test_containment_agentid_present_denies_routing_flags_no_marker",
+     test_containment_agentid_present_denies_routing_flags_no_marker),
+    ("test_containment_agentid_absent_allows_routing_flags_no_marker",
+     test_containment_agentid_absent_allows_routing_flags_no_marker),
+    ("test_containment_agentid_present_denies_lifecycle_no_marker",
+     test_containment_agentid_present_denies_lifecycle_no_marker),
+    ("test_containment_agentid_absent_allows_lifecycle_no_marker",
+     test_containment_agentid_absent_allows_lifecycle_no_marker),
+    ("test_containment_agentid_present_allows_unrelated_bash",
+     test_containment_agentid_present_allows_unrelated_bash),
+    ("test_containment_agentid_present_allows_narrow_ops",
+     test_containment_agentid_present_allows_narrow_ops),
 ]
 
 
