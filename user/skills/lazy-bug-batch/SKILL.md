@@ -246,12 +246,16 @@ every probe (null on pseudo-skill/terminal probes, always safe). Step 1d consume
 **Step 1a — probe ONCE per cycle (F2 double-probe debounce).** Run exactly ONE advancing, dispatch-bound `--repeat-count --emit-prompt` probe per cycle — the one whose `cycle_prompt` you actually dispatch — and use `--repeat-count-peek` for EVERY inspection / sanity / out-of-band probe so that only the single dispatch-bound probe advances the streaks. Probing a route twice with no dispatch between (an inspection probe, then the dispatch-bound probe) is a re-read, not a re-attempt, and historically inflated `step_repeat_count` into false `LOOP DETECTED` blocks. `update_repeat_counts` now defends this in depth: when a run marker is present it debounces a re-read via the registry consume-count delta (an unchanged consumed-emission count between two identical step probes ⇒ no dispatch landed ⇒ `step_repeat_count` is HELD, not incremented), so a genuine same-step oscillation (a real dispatch — hence a consume — between repeats) still trips while a benign double-probe no longer does. This note is the behavioral complement: even with the script debounce, keep to one advancing probe + peek for inspection.
 
 **Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation
-flag), append `--park-needs-input` to EVERY `bug-state.py` probe invocation in this step (base
-or enriched form alike). With the flag, the script skips bugs carrying an unresolved
-`NEEDS_INPUT.md` instead of halting on `needs-input` and reports them in a `parked[]` array on
-the JSON output — the input to the Step 1g park path and the §1c.6 park notifications. When
-`park_mode == false`, call the script plain (no `--park-needs-input`) — existing behavior,
-byte-for-byte; the `parked[]` key never appears.
+flag), append BOTH `--park-needs-input` AND `--park-blocked` to EVERY `bug-state.py` probe
+invocation in this step (base or enriched form alike). With these flags, the script skips bugs
+carrying an unresolved `NEEDS_INPUT.md` (instead of halting on `needs-input`) OR a bug-local
+`BLOCKED.md` (instead of halting on `blocked`), and reports them in a `parked[]` array on
+the JSON output — each entry tagged `sentinel_kind` (`needs-input` | `blocked`) — the input to
+the Step 1g park path, the Step 1g-flush, and the §1c.6 park notifications. When every remaining
+bug is parked, the script returns the distinct `queue-exhausted-all-parked` terminal (handled in
+Step 1b). When `park_mode == false`, call the script plain (NEITHER flag) — existing behavior,
+byte-for-byte; the `parked[]` key never appears, and a bug-local `BLOCKED.md` still halts on
+`blocked` (Step 1h).
 
 **Note:** `bug-state.py` does not support `--skip-needs-research` (no research in the bug
 pipeline — never pass it).
@@ -264,7 +268,13 @@ If `terminal_reason` is set:
   `completeness-policy.md` §3 — sequencing-only blockers auto-resolve (add-phase + fix now, or
   spin-off + dependency-gate + requeue), logged + notified, no question; only a genuine product
   fork re-prints `BLOCKED.md` and `AskUserQuestion`s the resolution path, enacts it, resumes —
-  UNLESS "Halt for manual fix".
+  UNLESS "Halt for manual fix". **Park-mode exception (`park_mode == true`):** this terminal is
+  NOT reached for a bug-local block — the `--park-blocked` probe flag (Step 1a) parks the blocked
+  bug into `parked[]` and advances the queue, so Step 1h does NOT fire for it; the block is
+  deferred to the Step 1g-flush (which re-prints the `BLOCKED.md` body and runs the SAME
+  resolution affordance at run-end). Per SPEC D5 this includes escalation/mcp-validation
+  per-bug blocks — park mode defers everything parkable. Only the global/environment terminals
+  below still halt mid-run.
 - **`needs-input`**: see Step 1g (decision-resume mode). Auto-resolves scope-class decisions per
   D7 first; resolves the remaining product-class decisions inline via `AskUserQuestion`, resumes.
 - **`completion-unverified`**: a bug's SPEC claims Fixed but no FIXED.md receipt exists. See
@@ -272,6 +282,7 @@ If `terminal_reason` is set:
   receipt via `bug-state.py --backfill-receipts` / defer & continue / halt). Do NOT auto-flip.
 - **`stale_upstream`**: upstream item changed since materialize. See Step 1i.
 - **`all-bugs-fixed`**: Run `python3 ~/.claude/scripts/bug-state.py --run-end`, then PushNotification `"ALL BUGS FIXED — queue cleared after {forward_cycles} forward + {meta_cycles} meta /lazy-bug-batch cycle(s)."`, print final batch report, STOP.
+- **`queue-exhausted-all-parked`** (`--park` mode only): the queue advanced past every workable bug and every remaining bug is parked (blocked and/or needs-input). HONEST distinct terminal — NOT `all-bugs-fixed` (the queue is not cleared) and distinct from `all-remaining-deferred` (operator `DEFERRED.md` park). FIRST fire the Step 1g-flush (triggers (b)/(c)) so every parked item — needs-input AND blocked (`sentinel_kind`) — is surfaced and resolved at run-end; THEN run `python3 ~/.claude/scripts/bug-state.py --run-end`, PushNotification `"Queue exhausted — {parked_count} bug(s) parked (blocked/needs-input); surfaced at flush."`, print final batch report, STOP. Do NOT report success.
 - **`all-remaining-deferred`**: every open bug has `DEFERRED.md` (a deliberate park). Run `--run-end`, then PushNotification with `notify_message`, print final batch report, STOP. (Not routed to Step 1i — re-include a bug by deleting its `DEFERRED.md`.)
 - **`queue-missing`**: `docs/bugs/queue.json` missing (the queue is optional; on-disk bugs are
   auto-discovered — informational). Run `--run-end`, then PushNotification with `notify_message`,
@@ -305,8 +316,9 @@ Print final batch report, STOP.
 
 Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline token bindings:
 
-1. **park** — message: `"parked {bug_name} — {N} decision(s) parked so far this run"`. **Chat line (T5):** each newly-notified park also emits the single-line T5 park block to chat — `⏸ parked {bug_name} — {N} decision(s) · notified ({parked_count} parked this run)` — governed by the SAME dedup set as the notification (per `/lazy-batch` §1c.6 item 1).
-2. **halt** — on every terminal/halt: `all-bugs-fixed`, `all-remaining-deferred`,
+1. **park** — wording branches on the entry's `sentinel_kind` (per `/lazy-batch` §1c.6 item 1). For a **needs-input** park: message `"parked {bug_name} — {N} decision(s) parked so far this run"`, T5 chat line `⏸ parked {bug_name} — {N} decision(s) · notified ({parked_count} parked this run)`. For a **blocked** park (`sentinel_kind == "blocked"`, `decision_count == 0`): message `"parked {bug_name} — BLOCKED ({phase}); deferred to flush ({parked_count} parked this run)"`, T5 chat line `⏸ parked {bug_name} — BLOCKED ({phase}) · notified ({parked_count} parked this run)` (read `{phase}` from the parked entry / the `BLOCKED.md` frontmatter). Both branches share the SAME dedup set.
+2. **halt** — on every terminal/halt: `all-bugs-fixed`, `queue-exhausted-all-parked` (`--park`
+   mode — after the flush), `all-remaining-deferred`,
    `queue-missing`, `BLOCKED` halt-for-manual, `NEEDS_INPUT` halt, `max-cycles`,
    `device-queue-exhausted`, script-error, and any future obstacle terminal.
 
@@ -687,8 +699,11 @@ See `~/.claude/skills/_components/decision-resume.md`
 
 **Park mode — processing `parked[]` output (`--park` only):** When `park_mode == true` and the
 probe returns a non-empty `parked[]` array, park each item: increment `parked_count` and fire
-`PushNotification({ message: "parked {bug_name} — {parked_count} decision(s) parked so far this run" })`.
-Continue queue walk. Flush later via Step 1g-flush.
+the §1c.6 park notification, branching on the entry's `sentinel_kind` — a **needs-input** entry
+fires `"parked {bug_name} — {parked_count} decision(s) parked so far this run"`; a **blocked**
+entry (`sentinel_kind == "blocked"`) fires `"parked {bug_name} — BLOCKED ({phase}); deferred to
+flush ({parked_count} parked this run)"`. Continue the queue walk. Flush later via Step 1g-flush
+(which handles both kinds — decision-context for needs-input, BLOCKED-body affordance for blocked).
 
 ---
 
