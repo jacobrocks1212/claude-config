@@ -2887,6 +2887,355 @@ def test_p7_meta_dispatch_by_reference_via_guard():
         )
 
 
+# ===========================================================================
+# Phase 4 (lazy-cycle-containment C2) — PreToolUse containment hook tests.
+#
+# Drives user/hooks/lazy-cycle-containment.sh with crafted PreToolUse JSON
+# payloads + a tmp LAZY_STATE_DIR.  The hook's contract:
+#   - fast-path ALLOW (exit 0, no stdout) when the cycle marker is ABSENT
+#   - while the marker is present, DENY (permissionDecision: deny + corrective
+#     reason) loop-formation / lifecycle / recursive-dispatch / 2nd-feature
+#     commit / over-ceiling commit; ALLOW the narrow ops + same-feature commit
+#   - fail-OPEN (ALLOW + breadcrumb) on malformed input
+#
+# The 2nd-feature commit tripwire shells `git diff --cached --name-only`; for
+# hermetic tests the hook honors a LAZY_CYCLE_STAGED_PATHS env override
+# (newline-separated staged paths) so no temp git repo is required.
+# ===========================================================================
+
+_CONTAINMENT_SH = _HOOKS_DIR / "lazy-cycle-containment.sh"
+
+
+def _bash_preToolUse_json(command: str, session_id: str | None = None) -> str:
+    """Return a PreToolUse JSON payload for a Bash tool call."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    }
+    return json.dumps(payload)
+
+
+def _agent_preToolUse_json(session_id: str | None = None) -> str:
+    """Return a PreToolUse JSON payload for an Agent tool call."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Agent",
+        "tool_input": {
+            "description": "recursive dispatch",
+            "prompt": "do a thing",
+            "subagent_type": "general-purpose",
+        },
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    }
+    return json.dumps(payload)
+
+
+def _write_cycle_marker_in_dir(
+    state_dir: Path,
+    feature_id: str = "feat-A",
+    commit_tally: int = 0,
+) -> None:
+    """Write a cycle-subagent marker into *state_dir* via lazy_core, optionally
+    overriding commit_tally (lazy_core always writes 0; tests that exercise the
+    ceiling patch the value on disk after writing)."""
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_cycle_marker(feature_id, "deadbeef", now=time.time())
+    finally:
+        _clear_state_dir()
+    if commit_tally != 0:
+        marker_path = state_dir / "lazy-cycle-active.json"
+        data = json.loads(marker_path.read_text(encoding="utf-8"))
+        data["commit_tally"] = commit_tally
+        marker_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _run_containment(
+    stdin_text: str, state_dir: Path, staged_paths: list[str] | None = None
+) -> subprocess.CompletedProcess:
+    """Run the containment hook with stdin_text + a tmp state dir.  When
+    staged_paths is provided, set LAZY_CYCLE_STAGED_PATHS so the 2nd-feature
+    tripwire reads the fixture instead of real `git diff --cached`."""
+    env = _base_env(state_dir)
+    if staged_paths is not None:
+        env["LAZY_CYCLE_STAGED_PATHS"] = "\n".join(staged_paths)
+    return _run_bash(_CONTAINMENT_SH, stdin_text, env)
+
+
+def _containment_decision(result: subprocess.CompletedProcess) -> str | None:
+    """Extract permissionDecision from the hook's stdout, or None if no JSON /
+    empty stdout (fast-path allow)."""
+    out = result.stdout.strip()
+    if not out:
+        return None
+    payload = json.loads(out)
+    return payload.get("hookSpecificOutput", {}).get("permissionDecision")
+
+
+def test_containment_hook_file_exists():
+    """The containment hook script must exist on disk."""
+    assert _CONTAINMENT_SH.exists(), (
+        f"lazy-cycle-containment.sh missing — Phase 4 not implemented: {_CONTAINMENT_SH}"
+    )
+
+
+def test_containment_fast_path_no_marker_allows():
+    """Marker ABSENT + any Bash payload → fast-path ALLOW (exit 0, no deny)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json("python3 lazy-state.py --probe"), state_dir
+        )
+        assert result.returncode == 0, (
+            f"fast-path must exit 0; got {result.returncode}; stderr: {result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"fast-path (no marker) must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_next_route_probe():
+    """Marker present + `lazy-state.py --probe` → deny + corrective reason."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(
+            _bash_preToolUse_json("python3 ~/.claude/scripts/lazy-state.py --probe"),
+            state_dir,
+        )
+        assert result.returncode == 0
+        assert _containment_decision(result) == "deny", (
+            f"--probe under marker must deny; stdout: {result.stdout!r}"
+        )
+        payload = json.loads(result.stdout.strip())
+        reason = payload["hookSpecificOutput"].get("permissionDecisionReason", "")
+        assert "orchestrator" in reason.lower() or "stop" in reason.lower(), (
+            f"deny reason must be corrective; got {reason!r}"
+        )
+
+
+def test_containment_denies_loop_formation_flags():
+    """Each loop-formation flag under the marker → deny."""
+    _guard()
+    flags = [
+        "--emit-prompt", "--repeat-count", "--repeat-count-peek",
+        "--run-start", "--run-end", "--apply-pseudo",
+        "--enqueue-adhoc", "--emit-dispatch",
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for flag in flags:
+            result = _run_containment(
+                _bash_preToolUse_json(f"python3 lazy-state.py {flag}"), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"loop-formation flag {flag!r} under marker must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_denies_lifecycle_commands():
+    """Runtime-lifecycle commands under the marker → deny."""
+    _guard()
+    cmds = [
+        "npm run dev:kill", "npm run dev:restart",
+        "dev:kill", "dev:restart",
+        "kill-port 3333", "kill-port 1420",
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in cmds:
+            result = _run_containment(_bash_preToolUse_json(cmd), state_dir)
+            assert _containment_decision(result) == "deny", (
+                f"lifecycle command {cmd!r} under marker must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_allows_narrow_ops():
+    """Allow-listed ops (--neutralize-sentinel, --verify-ledger) → ALLOW."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in (
+            "python3 lazy-state.py --neutralize-sentinel docs/features/x/BLOCKED.md",
+            "python3 lazy-state.py --verify-ledger docs/features/x/SPEC.md",
+        ):
+            result = _run_containment(_bash_preToolUse_json(cmd), state_dir)
+            assert _containment_decision(result) != "deny", (
+                f"allow-listed op {cmd!r} must NOT deny; stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_allows_unrelated_bash():
+    """An unrelated Bash command under the marker (the subagent's real work,
+    e.g. running tests) → ALLOW."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(
+            _bash_preToolUse_json("python3 -m pytest user/scripts/test_hooks.py"),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"unrelated Bash under marker must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_recursive_agent_dispatch():
+    """An Agent tool call while the marker is present → deny."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(_agent_preToolUse_json(), state_dir)
+        assert _containment_decision(result) == "deny", (
+            f"Agent dispatch under marker must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_second_feature_commit():
+    """A `git commit` staging a DIFFERENT feature dir than the marker's
+    feature_id → deny (staged-path fixture)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=["docs/features/feat-B/SPEC.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"2nd-feature commit must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_same_feature_commit():
+    """A `git commit` staging only the marker's own feature dir → ALLOW."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=["docs/features/feat-A/SPEC.md",
+                          "docs/features/feat-A/PHASES.md"],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"same-feature commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_carve_out_commit():
+    """A `git commit` staging only carve-out shared roots (queue.json,
+    ROADMAP.md, repo-root CLAUDE.md) → ALLOW even though they are not under the
+    feature dir."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'roadmap'"),
+            state_dir,
+            staged_paths=["docs/features/queue.json",
+                          "docs/features/ROADMAP.md",
+                          "CLAUDE.md"],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"carve-out commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_increments_commit_tally_on_allow():
+    """An ALLOWED same-feature `git commit` increments commit_tally in the
+    marker (read-modify-write)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        marker_path = state_dir / "lazy-cycle-active.json"
+        before = json.loads(marker_path.read_text(encoding="utf-8"))["commit_tally"]
+        _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=["docs/features/feat-A/SPEC.md"],
+        )
+        after = json.loads(marker_path.read_text(encoding="utf-8"))["commit_tally"]
+        assert after == before + 1, (
+            f"commit_tally must increment on allowed commit; {before} → {after}"
+        )
+
+
+def test_containment_commit_count_backstop_denies():
+    """A `git commit` when commit_tally is already at the ceiling (25) → deny."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A", commit_tally=25)
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'too many'"),
+            state_dir,
+            staged_paths=["docs/features/feat-A/SPEC.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"commit at/over ceiling must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_fail_open_on_malformed_json():
+    """Malformed PreToolUse JSON with the marker present → ALLOW (fail-OPEN) +
+    a breadcrumb; never a wedge."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment("{ this is not valid json", state_dir)
+        assert result.returncode == 0, (
+            f"fail-open must exit 0; got {result.returncode}; stderr: {result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"malformed input must NOT deny (fail-open); stdout: {result.stdout!r}"
+        )
+        breadcrumb = state_dir / "hook-error.json"
+        assert breadcrumb.exists(), (
+            "fail-open must write a hook-error.json breadcrumb"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -2954,6 +3303,32 @@ _TESTS = [
     # Phase 7 (lazy-validation-readiness) — meta dispatch-by-reference via --emit-dispatch
     ("test_p7_meta_dispatch_by_reference_via_guard",
      test_p7_meta_dispatch_by_reference_via_guard),
+    # Phase 4 (lazy-cycle-containment C2) — PreToolUse containment hook
+    ("test_containment_hook_file_exists",         test_containment_hook_file_exists),
+    ("test_containment_fast_path_no_marker_allows",
+     test_containment_fast_path_no_marker_allows),
+    ("test_containment_denies_next_route_probe",
+     test_containment_denies_next_route_probe),
+    ("test_containment_denies_loop_formation_flags",
+     test_containment_denies_loop_formation_flags),
+    ("test_containment_denies_lifecycle_commands",
+     test_containment_denies_lifecycle_commands),
+    ("test_containment_allows_narrow_ops",        test_containment_allows_narrow_ops),
+    ("test_containment_allows_unrelated_bash",    test_containment_allows_unrelated_bash),
+    ("test_containment_denies_recursive_agent_dispatch",
+     test_containment_denies_recursive_agent_dispatch),
+    ("test_containment_denies_second_feature_commit",
+     test_containment_denies_second_feature_commit),
+    ("test_containment_allows_same_feature_commit",
+     test_containment_allows_same_feature_commit),
+    ("test_containment_allows_carve_out_commit",
+     test_containment_allows_carve_out_commit),
+    ("test_containment_increments_commit_tally_on_allow",
+     test_containment_increments_commit_tally_on_allow),
+    ("test_containment_commit_count_backstop_denies",
+     test_containment_commit_count_backstop_denies),
+    ("test_containment_fail_open_on_malformed_json",
+     test_containment_fail_open_on_malformed_json),
 ]
 
 
