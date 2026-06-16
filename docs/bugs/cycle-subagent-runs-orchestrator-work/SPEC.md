@@ -2,7 +2,7 @@
 
 > A dispatched `/lazy-batch`-family cycle subagent intermittently performs the orchestrator's own work (invokes `/lazy-batch`, runs `--run-start`/`--run-end`, probes, prints a "Done" report) instead of its single assigned sub-skill — by clearing its own containment marker to bootstrap out of the C1–C3 guards.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-16 (4th+ recurrence; prior incidents 2026-06-15 / 2026-06-16)
 **Placement:** docs/bugs/cycle-subagent-runs-orchestrator-work

@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — this repo has no Tauri app and no MCP server (per `.claude/skill-config/quality-gates.md`); all changes are to Python state-machine scripts (`lazy_core.py` / `lazy-state.py` / `bug-state.py`), a Bash PreToolUse hook (`lazy-cycle-containment.sh`), and skill/component prose. Validation is the repo's Python `--test` smoke harnesses + `pytest user/scripts/ -q` + `lazy_parity_audit.py --report` + `project-skills.py` / `lint-skills.py`.
 
-**Status:** In-progress
+**Status:** Fixed
 
 ## Root-cause recap (from the concluded investigation)
 
