@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: hardening-blind-to-process-friction
-status: Ready
+status: Complete
 created: 2026-06-15
 complexity: complex
 phases: [2]
@@ -95,10 +95,10 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Extend cycle marker with run-identity + HEAD snapshot (`write_cycle_marker` + `--cycle-begin`)
-- [ ] WU-2 — `detect_cycle_bracket_friction` pure detector (D1 a+b)
-- [ ] WU-3 — `append_friction_ledger_entry` + `build_hardening_emit_command` process-friction binding
-- [ ] WU-4 — Wire `--cycle-end` detector → ledger (lazy-state + bug-state) + baseline regen
+- [x] WU-1 — Extend cycle marker with run-identity + HEAD snapshot (`write_cycle_marker` + `--cycle-begin`)
+- [x] WU-2 — `detect_cycle_bracket_friction` pure detector (D1 a+b)
+- [x] WU-3 — `append_friction_ledger_entry` + `build_hardening_emit_command` process-friction binding
+- [x] WU-4 — Wire `--cycle-end` detector → ledger (lazy-state + bug-state) + baseline regen (no regen needed — baselines byte-identical)
 
 ---
 

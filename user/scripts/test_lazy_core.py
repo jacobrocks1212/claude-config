@@ -14730,6 +14730,332 @@ def test_cycle_marker_corrupt_file_read_returns_none():
 
 
 # ---------------------------------------------------------------------------
+# hardening-blind-to-process-friction Phase 2 — process-friction detector
+# → deny ledger.  --cycle-begin snapshots run identity + HEAD; --cycle-end
+# checks the two D1 signals (bracket-break, unexpected-commits) and on either
+# appends a kind: process-friction entry to the SAME lazy-deny-ledger.jsonl so
+# pending_hardening()/--run-end consume it identically to a guard deny.
+# ---------------------------------------------------------------------------
+
+
+def test_cycle_marker_run_identity_head_fields_additive():
+    """WU-1: write_cycle_marker persists additive run_started_at + begin_head_sha
+    fields when passed; existing 6-field callers (omitting them) still write a
+    valid marker with those fields defaulting to None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Additive fields supplied.
+            marker = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n1",
+                run_started_at="2026-06-15T00:00:00Z",
+                begin_head_sha="deadbeefcafe",
+            )
+            assert marker["run_started_at"] == "2026-06-15T00:00:00Z", marker
+            assert marker["begin_head_sha"] == "deadbeefcafe", marker
+            on_disk = json.loads(
+                (Path(td) / _CYCLE_MARKER_FILENAME).read_text(encoding="utf-8")
+            )
+            assert on_disk["run_started_at"] == "2026-06-15T00:00:00Z", on_disk
+            assert on_disk["begin_head_sha"] == "deadbeefcafe", on_disk
+            # Legacy 6-field caller: the additive fields default to None,
+            # everything else unchanged.
+            legacy = lazy_core.write_cycle_marker(feature_id="g", nonce="n2")
+            assert legacy["run_started_at"] is None, legacy
+            assert legacy["begin_head_sha"] is None, legacy
+            assert legacy["feature_id"] == "g" and legacy["commit_tally"] == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_detect_cycle_bracket_friction_symbols_present():
+    """WU-2/3: the new public symbols exist on lazy_core."""
+    _guard()
+    for name in ("detect_cycle_bracket_friction", "append_friction_ledger_entry"):
+        assert hasattr(lazy_core, name), f"Phase 2 missing {name}"
+
+
+def test_detect_friction_clean_bracket_returns_none():
+    """WU-2: a clean bracket — run identity unchanged, HEAD within budget —
+    returns None (no false positive)."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-15T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-15T00:00:00Z",
+        current_head_sha="aaaa1111",
+        sub_skill="execute-plan",
+        commits_since=0,
+    )
+    assert got is None, got
+
+
+def test_detect_friction_torn_bracket_run_identity_changed():
+    """WU-2: the run identity present at begin differs at end (a dispatched cycle
+    ran --run-end / a new run started) → descriptor with reason cycle-bracket-break."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-15T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-15T09:99:99Z",  # changed
+        current_head_sha="aaaa1111",
+        sub_skill="execute-plan",
+        commits_since=0,
+    )
+    assert got is not None, "changed run identity must trip"
+    assert got["reason"] == "cycle-bracket-break", got
+
+
+def test_detect_friction_torn_bracket_run_marker_now_absent():
+    """WU-2: the run marker was present at begin (non-null run_started_at) but is
+    absent at end (current is None) → cycle-bracket-break."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-15T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at=None,  # run marker gone
+        current_head_sha="aaaa1111",
+        sub_skill="execute-plan",
+        commits_since=0,
+    )
+    assert got is not None and got["reason"] == "cycle-bracket-break", got
+
+
+def test_detect_friction_over_budget_commits():
+    """WU-2: HEAD advanced beyond the conservative per-sub_skill budget → descriptor
+    with reason unexpected-commits."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-15T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-15T00:00:00Z",  # identity intact
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=5,  # well beyond the 1-commit budget
+    )
+    assert got is not None and got["reason"] == "unexpected-commits", got
+    assert "5" in got.get("detail", ""), got
+
+
+def test_detect_friction_within_commit_budget_returns_none():
+    """WU-2: a single commit (within the conservative budget) and intact identity
+    → None."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-15T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-15T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=1,
+    )
+    assert got is None, got
+
+
+def test_detect_friction_degraded_inputs_return_none():
+    """WU-2: null run_started_at / begin_head_sha in the marker (degraded snapshot)
+    → None, never a false positive, no crash."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": None,
+        "begin_head_sha": None,
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at=None,
+        current_head_sha=None,
+        sub_skill="execute-plan",
+        commits_since=99,
+    )
+    assert got is None, got
+    # An entirely empty marker also degrades gracefully.
+    assert lazy_core.detect_cycle_bracket_friction(
+        {}, current_run_started_at="x", current_head_sha="y",
+        sub_skill="execute-plan", commits_since=0,
+    ) is None
+
+
+def test_append_friction_ledger_entry_round_trips():
+    """WU-3: append_friction_ledger_entry appends a kind: process-friction,
+    acked: false line to the SAME deny ledger; pending_hardening() then ≥1 and
+    the entry is readable via read_deny_ledger."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.pending_hardening() == 0
+            ok = lazy_core.append_friction_ledger_entry(
+                "cycle-bracket-break",
+                "run identity changed mid-cycle",
+                now=123.0,
+            )
+            assert ok is True
+            assert lazy_core.pending_hardening() == 1
+            entries = lazy_core.read_deny_ledger()
+            assert len(entries) == 1, entries
+            e = entries[0]
+            assert e["kind"] == "process-friction", e
+            assert e["acked"] is False, e
+            assert e["reason_head"] == "cycle-bracket-break", e
+            assert "run identity changed" in e["detail"], e
+        finally:
+            _clear_state_dir()
+
+
+def test_append_friction_ledger_entry_shares_ledger_with_denies():
+    """WU-3: friction entries and deny entries co-exist in the SAME ledger and
+    both count toward pending_hardening()."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_deny_ledger_entry(
+                "tu1", "abc123abc123", "validate-deny reason", "prompt head",
+            )
+            lazy_core.append_friction_ledger_entry(
+                "unexpected-commits", "HEAD advanced 4 beyond budget",
+            )
+            assert lazy_core.pending_hardening() == 2
+        finally:
+            _clear_state_dir()
+
+
+def test_build_hardening_emit_command_process_friction_binding():
+    """WU-3: build_hardening_emit_command given a process-friction oldest entry
+    emits trigger_kind=process-friction and surfaces the friction detail, NOT the
+    deny-specific denied_prompt_summary/denial_reason bindings."""
+    _guard()
+    friction_entry = {
+        "ts": 1.0,
+        "kind": "process-friction",
+        "reason_head": "cycle-bracket-break",
+        "detail": "run identity changed mid-cycle",
+        "acked": False,
+    }
+    cmd = lazy_core.build_hardening_emit_command(
+        "lazy-state.py",
+        item_id="my-bug",
+        oldest_deny=friction_entry,
+        probe_summary="probe",
+        registry_summary="empty",
+        cwd="/repo",
+    )
+    assert "trigger_kind=process-friction" in cmd, cmd
+    assert "cycle-bracket-break" in cmd, cmd
+    assert "run identity changed mid-cycle" in cmd, cmd
+    # The deny-specific keys must NOT be bound for a friction entry.
+    assert "denied_prompt_summary=" not in cmd, cmd
+    assert "denial_reason=" not in cmd, cmd
+
+
+def test_cycle_end_friction_check_symbol_present():
+    """WU-4: the --cycle-end I/O wiring helper exists on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "cycle_end_friction_check"), (
+        "Phase 2 missing cycle_end_friction_check"
+    )
+
+
+def test_cycle_end_friction_check_clean_bracket_no_entry(tmp_path):
+    """WU-4: a clean bracket (run identity intact, HEAD unchanged) appends NO
+    ledger entry; the helper returns None and pending_hardening() stays 0."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Write a marker whose begin-snapshot matches the live values.  We
+            # can't easily fake a live run marker here, so use the degraded path:
+            # null begin run identity + null begin head → both signals off → None.
+            lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n",
+                run_started_at=None, begin_head_sha=None,
+            )
+            desc = lazy_core.cycle_end_friction_check(repo_root=Path(td))
+            assert desc is None, desc
+            assert lazy_core.pending_hardening() == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_end_friction_check_torn_bracket_appends_entry(tmp_path):
+    """WU-4: a torn bracket — begin snapshot had a run identity that is absent at
+    --cycle-end (no live run marker) — appends a kind: process-friction ledger
+    entry and pending_hardening() ≥ 1.  The helper resolves the CURRENT run
+    identity itself (None, since no run marker is on disk)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Simulate --cycle-begin having snapshotted a live run identity that
+            # is now gone (the dispatched cycle ran --run-end).
+            lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n",
+                run_started_at="2026-06-15T00:00:00Z",
+                begin_head_sha="aaaa1111",
+            )
+            assert lazy_core.read_run_marker() is None, "no run marker on disk"
+            desc = lazy_core.cycle_end_friction_check(repo_root=Path(td))
+            assert desc is not None and desc["reason"] == "cycle-bracket-break", desc
+            assert lazy_core.pending_hardening() == 1
+            entry = lazy_core.read_deny_ledger()[0]
+            assert entry["kind"] == "process-friction", entry
+            assert entry["acked"] is False, entry
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_end_friction_check_no_marker_is_noop(tmp_path):
+    """WU-4: --cycle-end with no marker present is a safe no-op — None, no crash,
+    no ledger entry."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.cycle_end_friction_check(repo_root=Path(td)) is None
+            assert lazy_core.pending_hardening() == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_build_hardening_emit_command_validate_deny_unchanged():
+    """WU-3: a normal deny entry still emits trigger_kind=validate-deny with the
+    denied_prompt_summary/denial_reason bindings (no regression)."""
+    _guard()
+    deny_entry = {
+        "ts": 1.0, "tool_use_id": "tu", "denied_sha12": "abc",
+        "reason_head": "some deny reason", "prompt_head": "some prompt",
+        "acked": False,
+    }
+    cmd = lazy_core.build_hardening_emit_command(
+        "lazy-state.py",
+        item_id="feat",
+        oldest_deny=deny_entry,
+        probe_summary="probe",
+        registry_summary="empty",
+        cwd="/repo",
+    )
+    assert "trigger_kind=validate-deny" in cmd, cmd
+    assert "denied_prompt_summary=" in cmd, cmd
+    assert "denial_reason=" in cmd, cmd
+
+
+# ---------------------------------------------------------------------------
 # Phase 3 (lazy-cycle-containment C3) — refuse-by-construction
 #
 # The orchestrator-only state-script ops REFUSE (exit non-zero, zero side

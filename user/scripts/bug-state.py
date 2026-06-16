@@ -3753,15 +3753,30 @@ def main() -> int:
     if args.cycle_begin:
         if not args.bug_id or not args.nonce:
             _die("--cycle-begin requires --bug-id and --nonce")
+        # hardening-blind-to-process-friction Phase 2 (D1) — coupled-pair mirror
+        # of lazy-state.py: snapshot the live run identity + current HEAD sha into
+        # the cycle marker so --cycle-end can detect a torn bracket / unexpected
+        # commits. Best-effort: missing run marker / non-git tree → None.
+        run_marker = lazy_core.read_run_marker()
+        run_started_at = (run_marker or {}).get("started_at")
+        begin_head_sha = lazy_core.head_sha_snapshot(Path(args.repo_root))
         marker = lazy_core.write_cycle_marker(
             feature_id=args.bug_id, nonce=args.nonce, kind=args.kind,
+            run_started_at=run_started_at, begin_head_sha=begin_head_sha,
         )
         sys.stdout.write(json.dumps(marker, indent=2) + "\n")
         return 0
 
     if args.cycle_end:
+        # hardening-blind-to-process-friction Phase 2 (D1) — coupled-pair mirror:
+        # check the two process-friction signals BEFORE clearing the marker; on a
+        # hit append a kind: process-friction entry to the deny ledger.
+        friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         cleared = lazy_core.clear_cycle_marker()
-        sys.stdout.write(json.dumps({"cycle_marker_cleared": cleared}, indent=2) + "\n")
+        out: dict = {"cycle_marker_cleared": cleared}
+        if friction is not None:
+            out["process_friction"] = friction
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
     if args.run_start:

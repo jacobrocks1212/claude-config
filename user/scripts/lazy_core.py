@@ -5021,6 +5021,8 @@ def write_cycle_marker(
     *,
     kind: str = "real",
     session_id: str | None = None,
+    run_started_at: str | None = None,
+    begin_head_sha: str | None = None,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the cycle-subagent marker to the state dir.
@@ -5040,6 +5042,14 @@ def write_cycle_marker(
         passed explicitly; None when unavailable.
       - commit_tally (int): starts at 0; the C2 hook (Phase 4) increments it on
         each allowed `git commit` for the commit-count backstop.
+      - run_started_at (str|None): the owning run marker's ``started_at`` snapshot
+        at --cycle-begin (the stable run identity). None when no run marker was
+        present. Used by detect_cycle_bracket_friction (hardening-blind-to-
+        process-friction Phase 2) to detect a torn cycle bracket — a dispatched
+        cycle that ran --run-end / overwrote the run marker.
+      - begin_head_sha (str|None): ``git rev-parse HEAD`` snapshot at --cycle-begin.
+        None when not a git tree / degraded. Used to detect unexpected commits
+        (HEAD advanced beyond the per-sub_skill budget by --cycle-end).
 
     Self-healing staleness: if a marker already EXISTS (a prior dispatch crashed
     without `--cycle-end`), it is OVERWRITTEN and the event logged. The
@@ -5095,6 +5105,11 @@ def write_cycle_marker(
         "started_at": started_at,
         "session_id": session_id,
         "commit_tally": 0,
+        # hardening-blind-to-process-friction Phase 2: additive run-identity +
+        # HEAD snapshot (default None so existing 6-field callers/fixtures are
+        # unbroken). --cycle-begin populates these.
+        "run_started_at": run_started_at,
+        "begin_head_sha": begin_head_sha,
     }
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
@@ -5143,6 +5158,215 @@ def clear_cycle_marker() -> bool:
         return True
     except OSError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Process-friction detector (hardening-blind-to-process-friction Phase 2 / D1)
+#
+# The conservative expected-commit budget per dispatched sub_skill. Most cycles
+# commit 0–1 times (one atomic gate+commit per plan-part / batch completion);
+# anything beyond the budget is "unexpected commits" hardening signal. The budget
+# is deliberately generous (defensible default = 1 for every sub_skill) so the
+# detector never false-positives on a legitimate single-commit cycle — only a
+# genuinely runaway cycle that strings several commits trips D1(b). A sub_skill
+# absent from the map falls back to the default. (D1-out: no runtime-death
+# heuristic — both signals are deterministic on-disk facts.)
+# ---------------------------------------------------------------------------
+_CYCLE_COMMIT_BUDGET_DEFAULT = 1
+_CYCLE_COMMIT_BUDGET: dict[str, int] = {
+    # Multi-batch plan execution may legitimately commit once per batch; allow a
+    # slightly higher ceiling so a normal multi-batch /execute-plan cycle is not
+    # flagged, while a true runaway (many commits) still trips.
+    "execute-plan": 3,
+    "retro-feature": 3,
+}
+
+
+def detect_cycle_bracket_friction(
+    marker: dict,
+    current_run_started_at: str | None,
+    current_head_sha: str | None,
+    sub_skill: str | None,
+    *,
+    commits_since: int | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """Detect process-friction at --cycle-end: a torn cycle bracket or unexpected
+    commits (hardening-blind-to-process-friction Phase 2, Locked Decision D1).
+
+    Pure function — NO I/O. The caller (--cycle-end) supplies the live values:
+    the cycle marker as snapshotted at --cycle-begin, the CURRENT run identity
+    and HEAD sha resolved fresh at --cycle-end, the dispatched sub_skill, and the
+    number of commits HEAD advanced since ``marker['begin_head_sha']``.
+
+    Two deterministic on-disk signals (D1):
+      (a) cycle-bracket-break — the run identity present at --cycle-begin
+          (``marker['run_started_at']``) is absent or CHANGED at --cycle-end
+          (the dispatched cycle ran --run-end, started a new run, or overwrote the
+          run marker). A null begin-snapshot disables this signal (degraded
+          --cycle-begin had no run marker to snapshot → no false positive).
+      (b) unexpected-commits — HEAD advanced by more than the conservative
+          per-sub_skill budget beyond ``marker['begin_head_sha']``. A null
+          begin-snapshot or a null/None ``commits_since`` disables this signal.
+
+    Args:
+        marker: the cycle marker dict from read_cycle_marker() (snapshotted at
+            --cycle-begin). May lack the additive fields (legacy/partial) → those
+            signals degrade to off.
+        current_run_started_at: the run marker's ``started_at`` resolved NOW, or
+            None when no run marker is present.
+        current_head_sha: ``git rev-parse HEAD`` resolved NOW, or None (degraded).
+        sub_skill: the dispatched sub_skill name (selects the commit budget).
+        commits_since: number of commits HEAD advanced since
+            ``marker['begin_head_sha']`` (caller computes via ``git rev-list
+            --count begin..HEAD``); None/degraded disables signal (b).
+        now: unused placeholder for caller symmetry / future timing fields.
+
+    Returns:
+        A friction descriptor ``{"reason": <str>, "detail": <str>, ...}`` on the
+        FIRST signal that trips (bracket-break checked before commits), or None
+        when the bracket is clean / inputs are degraded.
+    """
+    if not isinstance(marker, dict):
+        return None
+    begin_run_started_at = marker.get("run_started_at")
+    begin_head_sha = marker.get("begin_head_sha")
+
+    # --- Signal (a): cycle-bracket-break ------------------------------------
+    # Only meaningful when --cycle-begin actually snapshotted a run identity.
+    # A null begin snapshot means there was no run marker to compare against —
+    # degrade to off (never a false positive).
+    if begin_run_started_at is not None:
+        if current_run_started_at != begin_run_started_at:
+            absent = current_run_started_at is None
+            detail = (
+                "run marker absent at --cycle-end (present at --cycle-begin: "
+                f"started_at={begin_run_started_at!r})"
+                if absent
+                else (
+                    "run identity changed mid-cycle: begin started_at="
+                    f"{begin_run_started_at!r} != end started_at="
+                    f"{current_run_started_at!r}"
+                )
+            )
+            return {
+                "reason": "cycle-bracket-break",
+                "detail": detail,
+                "sub_skill": sub_skill,
+            }
+
+    # --- Signal (b): unexpected-commits -------------------------------------
+    # Requires a known begin HEAD snapshot AND a known commit count.
+    if begin_head_sha is not None and commits_since is not None:
+        budget = _CYCLE_COMMIT_BUDGET.get(
+            sub_skill or "", _CYCLE_COMMIT_BUDGET_DEFAULT
+        )
+        if commits_since > budget:
+            return {
+                "reason": "unexpected-commits",
+                "detail": (
+                    f"HEAD advanced {commits_since} commits since --cycle-begin "
+                    f"(begin_head_sha={(begin_head_sha or '')[:12]}, "
+                    f"sub_skill={sub_skill!r}, budget={budget})"
+                ),
+                "sub_skill": sub_skill,
+                "commits_since": commits_since,
+            }
+
+    return None
+
+
+def head_sha_snapshot(repo_root: Path | None = None) -> str | None:
+    """Best-effort ``git rev-parse HEAD`` against repo_root (cwd default).
+
+    Returns the full HEAD sha string, or None when not a git tree / git fails /
+    any OS-level error — callers treat None as a degraded snapshot (the
+    unexpected-commits signal disables, never a false positive). Used by
+    --cycle-begin to snapshot the begin HEAD into the cycle marker.
+    """
+    root = repo_root or Path.cwd()
+    try:
+        proc = _git(root, "rev-parse", "HEAD")
+        if proc.returncode == 0:
+            return (proc.stdout or "").strip() or None
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
+    """--cycle-end I/O wiring (hardening-blind-to-process-friction Phase 2 / D1).
+
+    Called by the ``--cycle-end`` handler in BOTH state machines (lazy-state.py
+    and bug-state.py) BEFORE it clears the cycle marker. It:
+      1. reads the cycle marker (the --cycle-begin snapshot); a missing/partial
+         marker → None no-op (the bracket was never armed or already cleared);
+      2. resolves the CURRENT run identity (``read_run_marker().started_at``,
+         None when no run marker is live) and the CURRENT HEAD sha;
+      3. computes how many commits HEAD advanced since the snapshotted
+         ``begin_head_sha`` (``git rev-list --count <begin>..HEAD``);
+      4. calls the pure detect_cycle_bracket_friction(...);
+      5. on a non-None descriptor, appends a kind: process-friction entry to the
+         deny ledger via append_friction_ledger_entry(...).
+
+    Every git/marker read is best-effort: a degraded input (no git tree, no run
+    marker, unreadable marker) yields None signals, never a false positive and
+    never a crash — the --cycle-end clear must always proceed.
+
+    Args:
+        repo_root: the repo to resolve HEAD / commit-count against. Defaults to
+            cwd. Degrades to no-commit-signal when not a git tree.
+
+    Returns:
+        The friction descriptor that was logged, or None when the bracket was
+        clean / inputs were degraded / no marker was present.
+    """
+    marker = read_cycle_marker()
+    if not isinstance(marker, dict):
+        return None
+
+    # (2) current run identity — None when no run marker is live (the torn-bracket
+    # signal). read_run_marker swallows its own errors and returns None.
+    try:
+        live_run = read_run_marker()
+    except Exception:  # noqa: BLE001
+        live_run = None
+    current_run_started_at = (live_run or {}).get("started_at")
+
+    # (2/3) current HEAD + commits-since-begin — best-effort git reads.
+    root = (repo_root or Path.cwd())
+    commits_since: int | None = None
+    begin_head_sha = marker.get("begin_head_sha")
+    current_head_sha = head_sha_snapshot(root)
+    if begin_head_sha:
+        try:
+            count_proc = _git(
+                root, "rev-list", "--count", f"{begin_head_sha}..HEAD"
+            )
+            if count_proc.returncode == 0:
+                commits_since = int((count_proc.stdout or "").strip() or "0")
+        except Exception:  # noqa: BLE001  (incl. ValueError from int())
+            commits_since = None
+
+    # (4) the cycle marker does not carry the dispatched sub_skill name, so the
+    # detector uses the conservative DEFAULT commit budget (sub_skill=None). The
+    # bracket-break signal — the literal incident (a runaway that ran --run-end) —
+    # is sub_skill-independent and fully covered.
+    descriptor = detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at=current_run_started_at,
+        current_head_sha=current_head_sha,
+        sub_skill=None,
+        commits_since=commits_since,
+    )
+
+    # (5) log the friction as hardening debt (fail-open).
+    if descriptor is not None:
+        append_friction_ledger_entry(
+            descriptor.get("reason", ""),
+            descriptor.get("detail", ""),
+        )
+    return descriptor
 
 
 # ---------------------------------------------------------------------------
@@ -6031,6 +6255,61 @@ def append_deny_ledger_entry(
         return False
 
 
+def append_friction_ledger_entry(
+    reason_head: str,
+    detail: str,
+    now: float | None = None,
+) -> bool:
+    """Append one process-friction entry to the SAME deny ledger (JSONL).
+
+    hardening-blind-to-process-friction Phase 2 (D1): when --cycle-end detects a
+    torn cycle bracket or unexpected commits, it records the friction as
+    hardening debt by appending to ``lazy-deny-ledger.jsonl`` — the SAME file the
+    guard's denies use. A ``kind: "process-friction"`` discriminator lets a single
+    reader walk denies + friction, while the existing consumers
+    (``pending_hardening()`` / ``oldest_unacked_deny()`` / the ``--run-end`` gate /
+    the ``--emit-prompt`` probe's withholding) count any unacked entry unchanged —
+    so a runaway self-announces as hardening debt with NO new routing machinery.
+
+    Entry shape (one JSON object per line):
+        {"ts": <epoch float>, "kind": "process-friction",
+         "reason_head": <≤200 chars — the signal: cycle-bracket-break /
+         unexpected-commits>, "detail": <≤200 chars — the human-readable
+         specifics>, "acked": false}
+
+    Best-effort / fail-open — identical contract to append_deny_ledger_entry: the
+    caller wraps this, and it additionally swallows its own write errors and
+    returns False rather than raising, so a ledger-write failure never derails the
+    --cycle-end marker clear.
+
+    Args:
+        reason_head: the friction signal name (e.g. "cycle-bracket-break"),
+            truncated to the head-char cap.
+        detail: the human-readable specifics of the friction, truncated to the cap.
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "kind": "process-friction",
+            "reason_head": (reason_head or "")[:_LEDGER_HEAD_CHARS],
+            "detail": (detail or "")[:_LEDGER_HEAD_CHARS],
+            "acked": False,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
 def append_auto_readmit_event(
     tool_use_id: str,
     readmitted_sha12: str,
@@ -6412,12 +6691,34 @@ def build_hardening_emit_command(
     Returns:
         A single shell command string, safe to paste into bash.
     """
-    denied_prompt_summary = (oldest_deny or {}).get("prompt_head", "") or ""
-    denial_reason = (oldest_deny or {}).get("reason_head", "") or ""
-
     def _ctx(key: str, value: str) -> str:
         # shlex.quote escapes the VALUE only; the key=value join stays literal.
         return f"--context {key}={shlex.quote(value)}"
+
+    entry = oldest_deny or {}
+
+    # hardening-blind-to-process-friction Phase 2: a process-friction entry
+    # (kind: "process-friction", from a torn cycle bracket / unexpected commits)
+    # binds trigger_kind=process-friction and surfaces the friction reason+detail
+    # instead of the deny-specific denied_prompt_summary/denial_reason.
+    if entry.get("kind") == "process-friction":
+        friction_reason = entry.get("reason_head", "") or ""
+        friction_detail = entry.get("detail", "") or ""
+        parts = [
+            f"python3 ~/.claude/scripts/{state_script_name}",
+            "--emit-dispatch hardening",
+            _ctx("trigger_kind", "process-friction"),
+            _ctx("item_id", item_id or ""),
+            _ctx("friction_reason", friction_reason),
+            _ctx("friction_detail", friction_detail),
+            _ctx("probe_json", probe_summary),
+            _ctx("registry_state", registry_summary),
+            _ctx("cwd", cwd or ""),
+        ]
+        return " ".join(parts)
+
+    denied_prompt_summary = entry.get("prompt_head", "") or ""
+    denial_reason = entry.get("reason_head", "") or ""
 
     parts = [
         f"python3 ~/.claude/scripts/{state_script_name}",
