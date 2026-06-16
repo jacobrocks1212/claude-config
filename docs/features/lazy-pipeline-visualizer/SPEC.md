@@ -58,6 +58,7 @@ The backend is a **renderer, not a second state machine**: it shells the existin
 
 ### Graph behavior
 - **Tokens, not compound nodes.** Stage nodes are a fixed background map; each item is a separate token (circle=feature, square=bug) positioned in a micro-grid around its current stage. Tokens carry ID + priority color.
+- **Pending/Queue entry node.** Each track opens with a dedicated `Pending` entry node at its head (left of `Spec`) matching the SPEC encoding table's first-class Pending/Queue state. Queued-but-unstarted items (unknown / `None` `current_step`, i.e. enqueued before `/spec` has run) render there as Gray/hollow tokens (per the Color & shape encoding table) and **animate into `Spec`** when `/spec` starts — giving an honest backlog-depth signal rather than collapsing queued work onto the active Spec stage. This is the one extra preset column beyond the curated rollup's workflow nodes.
 - **Per-node representation scaling:** 1–5 items = individual animated tokens; 6–20 = a count badge (click → popover list); 20+ = that node collapses to a sortable swimlane/table. Applied per-node.
 - **Traversal animation:** on a poll diff, a token whose stage changed animates (`duration:400, ease-in-out-cubic`) to the new stage's coordinate. Multi-stage jumps **arc/fade** rather than tweening through skipped nodes (no false-intermediate-state implication).
 - **Side-states** branch off the track on a parallel Y-axis; the token visibly "ejects" from the flow; the settled node border-pulses.
@@ -93,6 +94,7 @@ browser frontend  ──HTTP poll 2.5s──▶  ThreadingHTTPServer  ──(TTL
 ### Curated-node rollup (display mapping)
 | Curated node | Feature literal states | Bug literal states |
 |---|---|---|
+| Pending | unknown / `None` `current_step`; queued-but-unstarted (no `/spec` yet) | unknown / `None` `current_step`; queued-but-unstarted |
 | Spec | Step 4 / 4.5 / 4.6 (spec, stub, realign) | Step 4 (spec-bug / investigate) |
 | Research | Step 5 (prompt / integrate / needs-research) | — (bug track omits Research) |
 | Plan | Step 6, Step 7a write-plan | Step 6 write-plan |
