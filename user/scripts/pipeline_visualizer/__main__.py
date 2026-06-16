@@ -10,6 +10,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
+
+# Ensure the parent scripts/ dir is importable so `python -m pipeline_visualizer`
+# (and the package's `import lazy_coord` probe dependency) resolve regardless of
+# the cwd the operator launches from — matches the documented MANUAL_TESTING boot.
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from .server import make_server
 

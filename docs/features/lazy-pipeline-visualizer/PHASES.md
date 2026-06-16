@@ -72,22 +72,29 @@ Pure-function units (curated_stage, leases freshness) tested directly. Cache tes
 **Scope:** The browser frontend: three-pane layout (hero graph region + bottom-left queues + bottom-right fleet), color/shape encoding, headless→preset layout bootstrap, polling loop with the live dot + Connection-Lost guard. Read-only — no graph traversal animation yet (Phase 3), no reorder writes yet (Phase 4). The graph region renders the static stage map with tokens at their current stage (no animation).
 
 **Deliverables:**
-- [ ] `pipeline_visualizer/static/index.html` — three-pane shell (hero graph / queues / fleet) + persistent triage strip + footer live dot.
-- [ ] `pipeline_visualizer/static/app.js` — poll loop (interval 2.5s) `fetch('/api/state')`; on 200 render panes; on fail/timeout flip the live dot red, dim the screen, show "Connection Lost" banner (never render stale-as-live).
+- [x] `pipeline_visualizer/static/index.html` — three-pane shell (hero graph / queues / fleet) + persistent triage strip + footer live dot. (WU-5)
+- [x] `pipeline_visualizer/static/app.js` — poll loop (interval 2.5s) `fetch('/api/state')`; on 200 render panes; on fail/timeout flip the live dot red, dim the screen, show "Connection Lost" banner (never render stale-as-live). (WU-5; AbortController hard timeout 2.0s trips the guard on a hung probe.)
 - [x] `pipeline_visualizer/static/cytoscape.umd.js` + `dagre.js` + the Cytoscape-dagre adapter — vendored UMD (no build step), referenced by `<script>` per Decision 7. (WU-4: cytoscape@3.30.2, dagre@0.8.5, cytoscape-dagre@2.5.0 committed as-is.)
-- [ ] Layout bootstrap: on first load, build the stage-node graph, run `dagre rankDir:'LR'` in a **headless** Cytoscape instance, extract settled `(x,y)` for both tracks, then render the live canvas with the `preset` layout (immutable positions). Never run a layout on poll.
-- [ ] Color + shape encoding (redundant / colorblind-safe) from the SPEC table: Pending gray/hollow, Running blue/▶, Complete green/✓, Needs-Input orange/hexagon, Blocked red/octagon, Deferred purple/dashed-ghost.
-- [ ] Queues pane: two parallel vertical lists (Features, Bugs) from `/api/queue`; rows show ID + tier/ad-hoc/stub badges. Static (drag wiring is Phase 4).
-- [ ] Fleet pane: grid of `wt-NN` slot cards from `leases[]`; each badges leased item ID + shape/color + derived branch + heartbeat freshness + worker pid. Empty when `leases[]` is empty (single-threaded `/lazy-batch`).
-- [ ] Triage strip: "Action Required" bar listing every item whose `curated_stage` is a side-state (Blocked / Needs-Input / Deferred).
+- [x] Layout bootstrap: on first load, build the stage-node graph, run `dagre rankDir:'LR'` in a **headless** Cytoscape instance, extract settled `(x,y)` for both tracks, then render the live canvas with the `preset` layout (immutable positions). Never run a layout on poll. (WU-5; settled coords exposed as `window.PV_STAGE_COORDS` for Phase 3.)
+- [x] Color + shape encoding (redundant / colorblind-safe) from the SPEC table: Pending gray/hollow, Running blue/▶, Complete green/✓, Needs-Input orange/hexagon, Blocked red/octagon, Deferred purple/dashed-ghost. (WU-5)
+- [x] Queues pane: two parallel vertical lists (Features, Bugs) from `/api/queue`; rows show ID + tier/ad-hoc/stub badges. Static (drag wiring is Phase 4). (WU-5; rendered from `/api/state` features/bugs which carry `queue_meta` badges — same order as `/api/queue`.)
+- [x] Fleet pane: grid of `wt-NN` slot cards from `leases[]`; each badges leased item ID + shape/color + derived branch + heartbeat freshness + worker pid. Empty when `leases[]` is empty (single-threaded `/lazy-batch`). (WU-5; explicit "no active workers" empty state.)
+- [x] Triage strip: "Action Required" bar listing every item whose `curated_stage` is a side-state (Blocked / Needs-Input / Deferred). (WU-5)
 - [x] Tests: a Python-side test asserting the static assets are served (`GET /` → `index.html` 200, `GET /static/app.js` → 200) and a documented manual browser smoke checklist (the UI behaviors are validated manually — claude-config has no headless-browser harness; recorded in MANUAL_TESTING.md). (WU-4: `TestStaticServing` 7 cases incl. API-wins-over-static regression + path-traversal guard. Manual checklist authored in WU-5.)
 
 **Minimum Verifiable Behavior:** Opening `http://127.0.0.1:<port>/` in a browser renders all three panes populated from live `/api/state`; each queue item's token sits on the curated stage matching the script's `current_step`; killing the server flips the live dot red + shows the Connection-Lost banner within one poll interval. (Manual browser smoke — claude-config has no DOM test harness; the static-asset serving is the automated slice.)
 
 **Runtime Verification** *(checked by pytest for serving + manual browser checklist for UI):*
-- [ ] `GET /` and `GET /static/app.js` return 200 with the expected content-type. (reachability-smoke — workstation-eligible)
-- [ ] Manual: three panes render; tokens land on correct stages vs `lazy-state.py` JSON; live dot is green while polling succeeds.
-- [ ] Manual: stop the server → live dot red + "Connection Lost" banner within ≤1 poll (2.5s); no stale data shown as live.
+- [x] `GET /` and `GET /static/app.js` return 200 with the expected content-type. (reachability-smoke — workstation-eligible; `TestStaticServing` + an integration boot against this repo confirmed `/`→text/html, `/static/app.js`→text/javascript, `/static/styles.css`→text/css, `/static/cytoscape.umd.js`→200, `/api/state`+`/api/queue`→200 JSON.)
+- [ ] Manual: three panes render; tokens land on correct stages vs `lazy-state.py` JSON; live dot is green while polling succeeds. *(human — MANUAL_TESTING.md; ticked by the validation tail)*
+- [ ] Manual: stop the server → live dot red + "Connection Lost" banner within ≤1 poll (2.5s); no stale data shown as live. *(human — MANUAL_TESTING.md; ticked by the validation tail)*
+
+**Implementation Notes (Phase 2):**
+- Vendored UMD (committed as-is, no build step — Decision 7): cytoscape@3.30.2, dagre@0.8.5, cytoscape-dagre@2.5.0 under `static/`.
+- Static serving: `server.py` roots `SimpleHTTPRequestHandler` at `static/` via the `directory=` kwarg; `do_GET` matches `/api/*` (query-string-tolerant) BEFORE the static fallthrough, rewrites `/static/<x>`→`/<x>`. The `directory=` root confines reads (path-traversal can't reach backend source — asserted).
+- `__main__.py` self-adds `user/scripts/` to `sys.path` so the probe's canonical `import lazy_coord` resolves when launched from outside the scripts dir (else it falls back to a replicated `_parse_iso`). The `-m pipeline_visualizer` invocation itself still needs cwd=`user/scripts` or `PYTHONPATH` — both documented in MANUAL_TESTING.md.
+- Layout: headless dagre `rankDir:'LR'` settles once; live canvas uses `preset` (immutable). Settled stage→(x,y) map exposed as `window.PV_STAGE_COORDS` — the Phase 3 animation substrate. Tokens are FLAT peers (no `parent:` / compound nodes), z-index 10 above stage nodes. Full re-render per poll (Phase 3 swaps to cy.add/remove + animate diff).
+- The repo under test currently has no `docs/features/queue.json`, so a live boot shows empty panes — populated rendering is verified against a seeded fixture per the manual checklist.
 
 **Prerequisites:**
 - Phase 1: `/api/state` + `/api/queue` JSON contract and static-asset serving from the `ThreadingHTTPServer`.

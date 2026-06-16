@@ -2,11 +2,60 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lazy Pipeline Visualizer</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <div id="app">Lazy Pipeline Visualizer — bootstrapping…</div>
+  <!-- Screen-dim overlay + Connection-Lost banner (hidden until a poll fails) -->
+  <div id="dim-overlay" class="dim-overlay" hidden></div>
+  <div id="connection-banner" class="connection-banner" hidden>Connection Lost</div>
+
+  <div id="app" class="app">
+    <!-- Triage strip — persistent "Action Required" bar -->
+    <section id="triage" class="triage" aria-label="Action Required">
+      <h2 class="triage-title">Action Required</h2>
+      <ul id="triage-list" class="triage-list"></ul>
+    </section>
+
+    <!-- Hero — full-width pipeline graph -->
+    <section id="graph-pane" class="pane graph-pane" aria-label="Pipeline Graph">
+      <div id="cy" class="cy"></div>
+    </section>
+
+    <div class="bottom-row">
+      <!-- Bottom-left — Queues -->
+      <section id="queues-pane" class="pane queues-pane" aria-label="Queues">
+        <h2 class="pane-title">Queues</h2>
+        <div class="queues-cols">
+          <div class="queue-col">
+            <h3 class="queue-col-title">Features</h3>
+            <ul id="queue-features" class="queue-list"></ul>
+          </div>
+          <div class="queue-col">
+            <h3 class="queue-col-title">Bugs</h3>
+            <ul id="queue-bugs" class="queue-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom-right — Fleet -->
+      <section id="fleet-pane" class="pane fleet-pane" aria-label="Worktree Fleet">
+        <h2 class="pane-title">Fleet</h2>
+        <div id="fleet-grid" class="fleet-grid"></div>
+      </section>
+    </div>
+
+    <!-- Footer — live indicator -->
+    <footer class="footer">
+      <span id="live-dot" class="live-dot live-dot--unknown" aria-hidden="true"></span>
+      <span id="live-label" class="live-label">Connecting…</span>
+      <span class="footer-spacer"></span>
+      <span id="server-time" class="server-time"></span>
+    </footer>
+  </div>
+
+  <!-- Vendored UMD (no build step) — Decision 7 -->
   <script src="/static/cytoscape.umd.js"></script>
   <script src="/static/dagre.js"></script>
   <script src="/static/cytoscape-dagre.js"></script>

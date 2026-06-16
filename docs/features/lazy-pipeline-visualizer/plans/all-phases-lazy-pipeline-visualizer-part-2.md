@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-pipeline-visualizer
-status: In-progress
+status: Complete
 complexity: complex
 phases: [2]
 ---
@@ -90,7 +90,7 @@ This plan references reusable component files by path instead of inlining their 
 ## Work Units
 
 - [x] WU-4 — static-asset serving + vendored Cytoscape/dagre + server static-root (TDD on serving)
-- [ ] WU-5 — three-pane shell (HTML/CSS/JS): poll loop, live dot + Connection-Lost guard, layout bootstrap, encoding, queues/fleet/triage panes (manual UI)
+- [x] WU-5 — three-pane shell (HTML/CSS/JS): poll loop, live dot + Connection-Lost guard, layout bootstrap, encoding, queues/fleet/triage panes (manual UI)
 
 ---
 
