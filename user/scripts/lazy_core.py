@@ -2049,9 +2049,16 @@ def apply_pseudo(
     JSON-dump unconditionally):
       - ``flipped_phases`` (``__mark_complete__`` / ``__mark_fixed__``): phase
         headings the completion-coherence gate auto-flipped to Complete.
-      - ``warnings`` (``__write_validated_from_results__``): non-fatal
-        freshness caveats (legacy results without ``validated_commit``, or an
-        unresolvable HEAD); also echoed to stderr.
+      - ``queue_trimmed`` (``__mark_complete__`` / ``__mark_fixed__``): True iff
+        the completed feature's entry was removed from
+        ``docs/features/queue.json`` this call. Always False for the bug/fixed
+        path (whose queue trim lives in ``archive_fixed`` step 6). Prevents the
+        AlgoBooth ``queue.no-completed`` consistency error on feature completion.
+      - ``warnings`` (``__write_validated_from_results__``,
+        ``__mark_complete__``): non-fatal caveats — freshness caveats (legacy
+        results without ``validated_commit``, or an unresolvable HEAD) or a
+        malformed ``docs/features/queue.json`` that could not be auto-trimmed;
+        also echoed to stderr.
 
     Parameters
     ----------
@@ -2810,11 +2817,84 @@ def apply_pseudo(
                 cleanup_path.unlink()
                 deleted.append(cleanup_name)
 
+        # --- (d) Trim the completed feature's entry from the feature queue ---
+        # Symmetric to the BUG pipeline, whose ``archive_fixed`` (step 6) removes
+        # the fixed bug from ``docs/bugs/queue.json``. The feature pipeline has no
+        # archive step — a completed feature stays in place and only its SPEC
+        # status flips — so WITHOUT this trim the feature's queue.json entry
+        # lingers forever. AlgoBooth's check-docs-consistency.ts ``queue.no-completed``
+        # rule then HARD-ERRORS on every feature completion (the queue is the
+        # active-work list; a Complete/Superseded entry is pure noise). Match on
+        # ``spec_dir`` (== this dir's name) OR ``id`` (== feature_id), mirroring
+        # the bug trim's match keys. Idempotent: only rewrites when an entry was
+        # actually removed (a re-run after the receipt-noop above never reaches
+        # here, and a queue already trimmed is a no-write pass).
+        #
+        # ONLY the feature (complete) path trims here — the bug (fixed) path's
+        # queue lives at docs/bugs/queue.json and is trimmed by archive_fixed,
+        # so trimming it here too would be a no-op at best and a double-author at
+        # worst. Gate on ``not is_fixed``.
+        #
+        # Malformed-queue policy: unlike archive_fixed (which refuses with a
+        # PARTIAL-STATE diagnostic because its move already happened and the
+        # consumer commits), the receipt + status flips here are the completion's
+        # core and are already on disk. Refusing post-write would mis-report the
+        # completion as failed. So a malformed queue.json degrades to a
+        # non-fatal ``warnings`` entry — the completion stands; the operator is
+        # told the queue could not be auto-trimmed and must be fixed by hand
+        # (the lingering entry will surface as the same queue.no-completed error
+        # this trim exists to prevent, so the signal is preserved either way).
+        queue_trimmed = False
+        queue_warnings: list[str] = []
+        if not is_fixed:
+            queue_path = repo_root / "docs" / "features" / "queue.json"
+            if queue_path.exists():
+                try:
+                    qdata = json.loads(queue_path.read_text(encoding="utf-8"))
+                    qitems = qdata.get("queue", [])
+                    if isinstance(qitems, list):
+                        kept = [
+                            e for e in qitems
+                            if not (
+                                isinstance(e, dict)
+                                and (
+                                    e.get("spec_dir") == spec_path.name
+                                    or e.get("id") == feature_id
+                                )
+                            )
+                        ]
+                        if len(kept) != len(qitems):
+                            qdata["queue"] = kept
+                            _atomic_write(
+                                queue_path, json.dumps(qdata, indent=2) + "\n"
+                            )
+                            queue_trimmed = True
+                    else:
+                        queue_warnings.append(
+                            "docs/features/queue.json 'queue' field is not an "
+                            "array — could not auto-trim the completed entry"
+                        )
+                except (json.JSONDecodeError, OSError) as exc:
+                    queue_warnings.append(
+                        f"docs/features/queue.json could not be auto-trimmed "
+                        f"({exc}) — fix it by hand to clear the queue.no-completed "
+                        "error"
+                    )
+
         # Attach the Phase 9 WU-1 ``flipped_phases`` key (the per-phase headings
         # the completion-coherence gate auto-flipped to Complete this call).
         # Empty list when nothing needed flipping; documented in the docstring.
         result = _ok(wrote, deleted)
         result["flipped_phases"] = flipped_phases
+        # WU: feature-queue trim — True iff a queue.json entry was removed this
+        # call (always False for the bug/fixed path, whose trim lives in
+        # archive_fixed). Callers may JSON-dump unconditionally.
+        result["queue_trimmed"] = queue_trimmed
+        if queue_warnings:
+            existing_warnings = result.get("warnings") or []
+            result["warnings"] = existing_warnings + queue_warnings
+            for w in queue_warnings:
+                print(f"WARNING: {w}", file=sys.stderr)
         return result
 
     else:

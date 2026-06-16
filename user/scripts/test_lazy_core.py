@@ -3915,6 +3915,165 @@ def test_apply_pseudo_mark_complete_writes_receipt_flips_and_cleans():
         )
 
 
+# ---- Test 10b: feature-queue trim on completion (queue.no-completed prevention) ----
+
+def _write_features_queue(repo_root: Path, ids: list[str]) -> Path:
+    """Write a docs/features/queue.json with one entry per id (id == spec_dir)."""
+    features = repo_root / "docs" / "features"
+    features.mkdir(parents=True, exist_ok=True)
+    p = features / "queue.json"
+    p.write_text(
+        json.dumps(
+            {"queue": [{"id": i, "spec_dir": i, "name": i} for i in ids]},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_apply_pseudo_mark_complete_trims_feature_queue():
+    """__mark_complete__ must remove the completed feature's entry from
+    docs/features/queue.json (symmetric to the bug pipeline's archive_fixed
+    step-6 trim). Without it, AlgoBooth's check-docs-consistency.ts
+    queue.no-completed rule HARD-ERRORS on every feature completion.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        # spec dir name must match the queue entry's spec_dir/id.
+        spec_dir = repo_root / "docs" / "features" / "mcp-testing"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Queue has the completing feature PLUS an unrelated one that must survive.
+        queue_path = _write_features_queue(
+            repo_root, ["mcp-testing", "other-feature"]
+        )
+
+        result = lazy_core.apply_pseudo(
+            repo_root,
+            "__mark_complete__",
+            spec_dir,
+            feature_id="mcp-testing",
+            date="2026-06-10",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["queue_trimmed"] is True, (
+            f"expected queue_trimmed=True, got {result}"
+        )
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+        ids = [e["id"] for e in data["queue"]]
+        assert "mcp-testing" not in ids, (
+            f"completed feature still in queue.json: {ids}"
+        )
+        assert "other-feature" in ids, (
+            f"unrelated feature was wrongly removed: {ids}"
+        )
+        # Valid JSON preserved (re-parse already proved it) + trailing newline.
+        assert queue_path.read_text(encoding="utf-8").endswith("\n")
+
+
+def test_apply_pseudo_mark_complete_queue_trim_behind_receipt_noop():
+    """The queue trim sits BEHIND the receipt-noop guard: when COMPLETED.md
+    already exists the call short-circuits to noop BEFORE the trim, so an
+    entry that somehow lingered in the queue is NOT mutated on the noop re-run
+    (queue_trimmed False, queue byte-identical). This mirrors the canonical
+    idempotency test (pre-write the receipt + leave VALIDATED.md), and proves
+    the trim never fires on an already-receipted dir.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "mcp-testing"
+        spec_dir.mkdir(parents=True)
+        # Pre-write a valid receipt → the noop path will be taken.
+        lazy_core.write_completed_receipt(
+            spec_dir / "COMPLETED.md",
+            feature_id="mcp-testing",
+            date="2026-06-10",
+            provenance="gated",
+        )
+        _write_validated_md(spec_dir)
+        # The queue still carries the entry (simulates a never-trimmed legacy
+        # state) — the noop re-run must NOT touch it.
+        queue_path = _write_features_queue(repo_root, ["mcp-testing", "other"])
+        before = queue_path.read_text(encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="mcp-testing", date="2026-06-10",
+        )
+        assert result["noop"] is True, f"expected noop=True, got {result}"
+        assert result.get("queue_trimmed", False) is False, (
+            "queue trim fired on an already-receipted (noop) dir"
+        )
+        assert queue_path.read_text(encoding="utf-8") == before, (
+            "queue.json was mutated on the noop re-run"
+        )
+
+
+def test_apply_pseudo_mark_fixed_does_not_trim_feature_queue():
+    """The bug/fixed path must NOT touch docs/features/queue.json — its queue
+    lives at docs/bugs/queue.json and is trimmed by archive_fixed. Guards
+    against the trim firing on the wrong pipeline.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "bugs" / "some-bug"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # A features queue that happens to share the spec name must be untouched.
+        queue_path = _write_features_queue(repo_root, ["some-bug"])
+        before = queue_path.read_text(encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_fixed__", spec_dir,
+            feature_id="some-bug", date="2026-06-10",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result.get("queue_trimmed", False) is False, (
+            "fixed path wrongly reported a feature-queue trim"
+        )
+        assert queue_path.read_text(encoding="utf-8") == before, (
+            "fixed path wrongly mutated docs/features/queue.json"
+        )
+
+
+def test_apply_pseudo_mark_complete_malformed_queue_warns_not_refuses():
+    """A malformed docs/features/queue.json must NOT fail the completion (the
+    receipt + status flips are already written). It degrades to a non-fatal
+    warning so the completion stands and the operator is told to fix the queue.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "mcp-testing"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        features = repo_root / "docs" / "features"
+        features.mkdir(parents=True, exist_ok=True)
+        (features / "queue.json").write_text("{ this is not json", encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="mcp-testing", date="2026-06-10",
+        )
+        # Completion still succeeds.
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["refused"] is None, f"expected refused=None, got {result}"
+        assert (spec_dir / "COMPLETED.md").exists(), "receipt not written"
+        assert result["queue_trimmed"] is False
+        assert result.get("warnings"), "expected a non-fatal queue warning"
+        assert any("queue.json" in w for w in result["warnings"]), (
+            f"warning did not mention queue.json: {result['warnings']}"
+        )
+
+
 # ---- Test 11 ----
 
 def test_apply_pseudo_mark_complete_refuses_without_validation_evidence():
