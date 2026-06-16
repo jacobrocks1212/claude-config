@@ -14758,5 +14758,172 @@ def test_refuse_guard_op_set_matches_spec():
     )
 
 
+# ---------------------------------------------------------------------------
+# Follow-up: structural MCP-skip short-circuit (no-app-surface repos)
+#   repo_has_no_app_surface / phases_mcp_runtime_not_required helpers,
+#   skip_waiver_refusal(granted_by: pipeline-structural) re-verification, and
+#   the __grant_skip_no_mcp_surface__ pseudo-skill (write / refuse / noop /
+#   round-trip into __write_validated_from_skip__).
+# ---------------------------------------------------------------------------
+
+def _write_not_required_phases(spec: Path) -> None:
+    spec.mkdir(parents=True, exist_ok=True)
+    (spec / "PHASES.md").write_text(
+        "# Phases\n\n**MCP runtime:** not-required\n\n### Phase 1\n- [x] x\n",
+        encoding="utf-8",
+    )
+
+
+def test_repo_has_no_app_surface_empty_repo():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        assert lazy_core.repo_has_no_app_surface(Path(td)) is True
+
+
+def test_repo_has_no_app_surface_false_with_package_json():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "package.json").write_text("{}\n", encoding="utf-8")
+        assert lazy_core.repo_has_no_app_surface(Path(td)) is False
+
+
+def test_repo_has_no_app_surface_false_with_src_tauri():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "src-tauri").mkdir()
+        assert lazy_core.repo_has_no_app_surface(Path(td)) is False
+
+
+def test_phases_mcp_runtime_not_required_true():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_not_required_phases(spec)
+        assert lazy_core.phases_mcp_runtime_not_required(spec) is True
+
+
+def test_phases_mcp_runtime_not_required_false_when_required_or_absent():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        spec.mkdir()
+        (spec / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] x\n", encoding="utf-8"
+        )
+        assert lazy_core.phases_mcp_runtime_not_required(spec) is False
+        (spec / "PHASES.md").write_text(
+            "# Phases\n\n**MCP runtime:** required\n", encoding="utf-8"
+        )
+        assert lazy_core.phases_mcp_runtime_not_required(spec) is False
+        spec2 = Path(td) / "spec2"
+        spec2.mkdir()
+        assert lazy_core.phases_mcp_runtime_not_required(spec2) is False
+
+
+def test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        meta = {"granted_by": "pipeline-structural"}
+        assert lazy_core.skip_waiver_refusal(meta, Path(td)) is None
+
+
+def test_skip_waiver_refusal_pipeline_structural_refuses_app_repo():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "package.json").write_text("{}\n", encoding="utf-8")
+        refusal = lazy_core.skip_waiver_refusal(
+            {"granted_by": "pipeline-structural"}, Path(td)
+        )
+        assert refusal is not None and "app surface" in refusal
+
+
+def test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root():
+    _guard()
+    # No repo_root → cannot re-verify the predicate → refuse (safe default).
+    assert lazy_core.skip_waiver_refusal({"granted_by": "pipeline-structural"}) is not None
+
+
+def test_apply_pseudo_grant_skip_no_mcp_surface_writes():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_not_required_phases(spec)
+        result = lazy_core.apply_pseudo(
+            Path(td), "__grant_skip_no_mcp_surface__", spec, date="2026-06-16"
+        )
+        assert result["ok"] is True and result["noop"] is False, result
+        skip_path = spec / "SKIP_MCP_TEST.md"
+        assert skip_path.exists()
+        parsed = lazy_core.parse_sentinel(skip_path)
+        assert parsed.get("kind") == "skip-mcp-test"
+        assert parsed.get("granted_by") == "pipeline-structural"
+        assert str(parsed.get("spec_class", "")).strip(), "spec_class must be cited"
+        # The grant must validate downstream — re-verified, no app surface here.
+        assert lazy_core.skip_waiver_refusal(parsed, Path(td)) is None
+
+
+def test_apply_pseudo_grant_skip_refuses_with_app_surface():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "package.json").write_text("{}\n", encoding="utf-8")
+        spec = Path(td) / "spec"
+        _write_not_required_phases(spec)
+        result = lazy_core.apply_pseudo(
+            Path(td), "__grant_skip_no_mcp_surface__", spec, date="2026-06-16"
+        )
+        assert result["ok"] is False and result["refused"], result
+        assert not (spec / "SKIP_MCP_TEST.md").exists()
+
+
+def test_apply_pseudo_grant_skip_refuses_without_not_required():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        spec.mkdir()
+        (spec / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [x] x\n", encoding="utf-8"
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__grant_skip_no_mcp_surface__", spec, date="2026-06-16"
+        )
+        assert result["ok"] is False and result["refused"], result
+        assert not (spec / "SKIP_MCP_TEST.md").exists()
+
+
+def test_apply_pseudo_grant_skip_idempotent_noop():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_not_required_phases(spec)
+        first = lazy_core.apply_pseudo(
+            Path(td), "__grant_skip_no_mcp_surface__", spec, date="2026-06-16"
+        )
+        assert first["noop"] is False
+        content1 = (spec / "SKIP_MCP_TEST.md").read_text(encoding="utf-8")
+        second = lazy_core.apply_pseudo(
+            Path(td), "__grant_skip_no_mcp_surface__", spec, date="2026-06-16"
+        )
+        assert second["ok"] is True and second["noop"] is True, second
+        assert (spec / "SKIP_MCP_TEST.md").read_text(encoding="utf-8") == content1
+
+
+def test_apply_pseudo_grant_skip_then_validated_roundtrip():
+    """grant structural skip → __write_validated_from_skip__ accepts it
+    (re-verified) and writes VALIDATED.md."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_not_required_phases(spec)
+        grant = lazy_core.apply_pseudo(
+            Path(td), "__grant_skip_no_mcp_surface__", spec, date="2026-06-16"
+        )
+        assert grant["ok"] is True
+        validated = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_skip__", spec, date="2026-06-16"
+        )
+        assert validated["ok"] is True and validated["refused"] is None, validated
+        assert (spec / "VALIDATED.md").exists()
+
+
 if __name__ == "__main__":
     sys.exit(main())

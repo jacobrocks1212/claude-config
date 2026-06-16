@@ -178,7 +178,55 @@ def parse_sentinel(path: Path) -> dict[str, Any] | None:
 _PIPELINE_SKIPPED_BY = ("lazy", "lazy-cloud", "pipeline")
 
 
-def skip_waiver_refusal(meta: dict[str, Any] | None) -> str | None:
+# App-surface detection for the structural MCP-skip short-circuit
+# (lazy-cycle-containment follow-up). A repo with NO Tauri app and NO npm
+# package has no MCP-reachable / dev-server surface at all, so a feature whose
+# PHASES declares `**MCP runtime:** not-required` is MECHANICALLY untestable.
+# The pipeline may grant the MCP skip inline (no /mcp-test subagent) WITHOUT
+# weakening skip_waiver_refusal: that gate RE-VERIFIES this same predicate
+# before accepting a ``granted_by: pipeline-structural`` waiver, so a repo that
+# actually has an app surface can never auto-waive.
+_APP_SURFACE_MARKERS = ("src-tauri", "package.json")
+
+
+def repo_has_no_app_surface(repo_root: Path) -> bool:
+    """True iff repo_root contains neither a ``src-tauri/`` dir nor ``package.json``.
+
+    Mechanical proof that the repo has no Tauri/MCP/npm surface to drive an MCP
+    HTTP tool against. Conservative by design: ANY marker present → False (an app
+    surface may exist, so the skip must be EARNED by /mcp-test, not auto-granted),
+    and an unreadable repo root → False (cannot prove absence).
+    """
+    try:
+        if (repo_root / "src-tauri").is_dir():
+            return False
+        if (repo_root / "package.json").is_file():
+            return False
+    except OSError:
+        return False
+    return True
+
+
+def phases_mcp_runtime_not_required(spec_path: Path) -> bool:
+    """True iff ``spec_path/PHASES.md`` declares ``**MCP runtime:** not-required``.
+
+    The PHASES ``**MCP runtime:**`` line is authored by /spec-phases at
+    decomposition time and is ROUTING, not a waiver — it gates the structural
+    MCP-skip short-circuit alongside repo_has_no_app_surface().
+    """
+    phases_path = spec_path / "PHASES.md"
+    if not phases_path.exists():
+        return False
+    try:
+        text = phases_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(re.search(r"(?mi)^\*\*MCP runtime:\*\*\s*not-required\b", text))
+
+
+def skip_waiver_refusal(
+    meta: dict[str, Any] | None, repo_root: Path | None = None
+) -> str | None:
     """Return a refusal reason when a SKIP_MCP_TEST.md waiver lacks trustworthy provenance.
 
     Single source of truth for the Step-9 / pseudo-skill provenance gate —
@@ -194,6 +242,14 @@ def skip_waiver_refusal(meta: dict[str, Any] | None) -> str | None:
         the sentinel also carries a non-empty ``spec_class`` field citing the
         untestable class it verified — the citation is what distinguishes a
         verified structural assessment from a convenience skip.
+      - ``pipeline-structural`` — auto-granted inline by the state machine for a
+        ``**MCP runtime:** not-required`` feature in a repo with no app surface
+        (lazy-cycle-containment follow-up). Accepted ONLY when ``repo_root`` is
+        provided AND ``repo_has_no_app_surface(repo_root)`` RE-VERIFIES (no
+        ``src-tauri/`` and no ``package.json``). This re-check is what keeps the
+        gate intact: an app repo re-verifies to False and the waiver is refused,
+        so a structural grant can never vacuously validate a feature that
+        actually has an MCP-reachable surface.
       - ``pipeline`` (or any unrecognized value) — self-granted by a
         non-validation pipeline step: refused.
       - absent — legacy files predate the field. Accepted UNLESS ``skipped_by``
@@ -214,6 +270,19 @@ def skip_waiver_refusal(meta: dict[str, Any] | None) -> str | None:
             "mcp-test-granted skip must cite the untestable class it verified "
             "against docs/features/mcp-testing/SPEC.md (add `spec_class: "
             "<class>`), or an operator must confirm via granted_by: operator."
+        )
+    if granted == "pipeline-structural":
+        # Structural auto-grant: accept ONLY when the no-app-surface predicate
+        # re-verifies against the live repo. This does not weaken the gate — it
+        # is a mechanical re-proof, not a trust-the-sentinel bypass.
+        if repo_root is not None and repo_has_no_app_surface(repo_root):
+            return None
+        return (
+            "is granted_by: pipeline-structural but the repo has an app surface "
+            "(src-tauri/ or package.json present) or the structural check could "
+            "not be re-verified — a structural skip is valid ONLY in a repo with "
+            "no MCP-reachable surface. Run /mcp-test to earn the skip, or have an "
+            "operator confirm via granted_by: operator."
         )
     if granted is None:
         if meta.get("skipped_by") in _PIPELINE_SKIPPED_BY:
@@ -2114,6 +2183,71 @@ def apply_pseudo(
     # Dispatch
     # ---------------------------------------------------------------------------
 
+    if name == "__grant_skip_no_mcp_surface__":
+        # Structural MCP-skip auto-grant (lazy-cycle-containment follow-up).
+        # Eliminates the wasted /mcp-test Opus dispatch for a `**MCP runtime:**
+        # not-required` feature in a repo that has NO app surface at all
+        # (no src-tauri/, no package.json) — there is provably nothing to boot
+        # and nothing to probe. Writes SKIP_MCP_TEST.md inline so the next probe
+        # routes straight to __write_validated_from_skip__ (no subagent).
+        #
+        # Defense in depth — refuse unless BOTH structural conditions hold, so
+        # this can never auto-waive a feature that actually has an MCP surface.
+        # The grant carries granted_by: pipeline-structural, which
+        # skip_waiver_refusal RE-VERIFIES against the same predicate downstream.
+        if not repo_has_no_app_surface(repo_root):
+            return _refused(
+                "repo has an app surface (src-tauri/ or package.json present) — "
+                "a structural MCP-skip grant is valid ONLY in a repo with no "
+                "MCP-reachable surface; route to /mcp-test instead"
+            )
+        if not phases_mcp_runtime_not_required(spec_path):
+            return _refused(
+                "PHASES.md does not declare `**MCP runtime:** not-required` — a "
+                "structural MCP-skip grant requires the plan to route the feature "
+                "as not-required first"
+            )
+        skip_path = spec_path / "SKIP_MCP_TEST.md"
+        existing_skip = parse_sentinel(skip_path)
+        # Idempotency: a skip sentinel already on disk → noop (never clobber a
+        # richer operator / mcp-test grant).
+        if skip_path.exists() and existing_skip is not None and existing_skip.get(
+            "kind"
+        ) == "skip-mcp-test":
+            return _noop()
+        head = _current_head(repo_root)
+        commit_line = f"validated_commit: {head}\n" if head else ""
+        content = (
+            "---\n"
+            "kind: skip-mcp-test\n"
+            f"feature_id: {feature_id}\n"
+            "reason: repo has no MCP-reachable surface (no src-tauri/, no "
+            "package.json) — nothing to boot, nothing to probe; the MCP gate is "
+            "structurally vacuous.\n"
+            "alternative_validation: per-phase quality gates ran during "
+            "/execute-plan (tests + lint green on each plan part before commit); "
+            "this repo has no Tauri app or dev server to validate against.\n"
+            f"date: {date}\n"
+            "skipped_by: pipeline\n"
+            "granted_by: pipeline-structural\n"
+            "spec_class: standalone — no app integration (no Tauri/MCP surface "
+            "in repo)\n"
+            f"{commit_line}"
+            "---\n"
+            "\n"
+            "# MCP Test Skip — structural (no app surface)\n"
+            "\n"
+            "Granted inline by the state machine: this repo contains no "
+            "`src-tauri/` and no `package.json`, so there is no MCP HTTP server / "
+            "dev runtime to drive any MCP tool against. The `**MCP runtime:** "
+            "not-required` PHASES declaration is re-verified structurally here, so "
+            "no /mcp-test subagent is dispatched. `skip_waiver_refusal()` re-checks "
+            "the same structural predicate before this waiver can validate — an app "
+            "repo (src-tauri/ or package.json present) would be refused.\n"
+        )
+        _atomic_write(skip_path, content)
+        return _ok(["SKIP_MCP_TEST.md"])
+
     if name == "__write_validated_from_skip__":
         # Gate: SKIP_MCP_TEST.md must be present and parseable.
         skip_path = spec_path / "SKIP_MCP_TEST.md"
@@ -2124,8 +2258,10 @@ def apply_pseudo(
         # consults in lazy-state.py / bug-state.py Step 9: a pipeline-self-
         # granted skip (and a pipeline-authored skip that simply OMITS
         # granted_by, and an mcp-test grant missing its spec_class citation)
-        # must NOT vacuously validate.
-        _waiver_refusal = skip_waiver_refusal(skip_meta)
+        # must NOT vacuously validate. repo_root is passed so a
+        # granted_by: pipeline-structural waiver re-verifies the no-app-surface
+        # predicate.
+        _waiver_refusal = skip_waiver_refusal(skip_meta, repo_root)
         if _waiver_refusal:
             return _refused(f"SKIP_MCP_TEST.md {_waiver_refusal}")
         # Idempotency: if VALIDATED.md already exists as kind=validated → noop.

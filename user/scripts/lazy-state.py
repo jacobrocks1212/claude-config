@@ -93,6 +93,8 @@ from lazy_core import (
     write_completed_receipt,
     has_completion_receipt,
     skip_waiver_refusal,
+    repo_has_no_app_surface,
+    phases_mcp_runtime_not_required,
     spec_status,
 )
 
@@ -1765,7 +1767,7 @@ def compute_state(
             # validate — the pipeline cannot waive its own MCP requirement.
             # Accepted: operator grants, legacy no-provenance files, and
             # mcp-test grants carrying a spec_class citation.
-            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {}, repo_root)
             if _skip_refusal:
                 return _state(
                     **common,
@@ -1790,7 +1792,7 @@ def compute_state(
                 # mcp-test grant missing its spec_class citation must NOT
                 # vacuously validate. Accepted: operator grants, legacy
                 # no-provenance files, mcp-test grants with a spec_class citation.
-                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {}, repo_root)
                 if _skip_refusal:
                     return _state(
                         **common,
@@ -1837,6 +1839,24 @@ def compute_state(
                         sub_skill="__write_validated_from_results__",
                         sub_skill_args=spec_path_str,
                     )
+            # Structural MCP-skip short-circuit (lazy-cycle-containment
+            # follow-up): a `**MCP runtime:** not-required` feature in a repo
+            # with NO app surface (no src-tauri/, no package.json) is
+            # mechanically untestable — grant the skip INLINE via a pseudo-skill
+            # instead of dispatching a (wasted) /mcp-test Opus cycle whose only
+            # job would be to confirm the obvious and write the same sentinel.
+            # The grant carries granted_by: pipeline-structural, which the very
+            # next probe's skip_waiver_refusal RE-VERIFIES (no-app-surface
+            # predicate), so this does NOT weaken the provenance gate.
+            if phases_mcp_runtime_not_required(spec_path) and repo_has_no_app_surface(
+                repo_root
+            ):
+                return _state(
+                    **common,
+                    current_step="Step 9: structural MCP-skip (no app surface)",
+                    sub_skill="__grant_skip_no_mcp_surface__",
+                    sub_skill_args=spec_path_str,
+                )
             # Run MCP tests
             return _state(
                 **common,
@@ -2538,6 +2558,26 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (p / "RESEARCH.md").write_text("# R\n")
         (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
         (p / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "phases-complete-no-mcp-surface":
+        # All phases complete; PHASES declares `**MCP runtime:** not-required`
+        # and the temp repo has NO app surface (no src-tauri/, no package.json).
+        # Step 9 should short-circuit to the inline structural skip grant
+        # (__grant_skip_no_mcp_surface__) instead of dispatching /mcp-test.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-noms", "name": "Feature NOMS",
+                 "spec_dir": "feat-noms", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-noms"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text(
+            "# Phases\n\n**MCP runtime:** not-required\n\n### Phase 1\n- [x] Done\n"
+        )
     elif name == "phases-complete-retro-done":
         # All phases complete + a stale RETRO_DONE.md on disk, no VALIDATED.md
         # yet. Retro unwired: RETRO_DONE.md is ignored for routing — Step 9
@@ -3577,6 +3617,13 @@ def run_smoke_tests() -> int:
                 "sub_skill": "mcp-test",
                 "feature_id": "feat-pcnr",
                 "current_step": "Step 9: run MCP tests",
+            }),
+            # PHASES not-required + no app surface → Step 9 short-circuits to the
+            # inline structural skip grant (no /mcp-test dispatch).
+            ("phases-complete-no-mcp-surface", False, False, {
+                "sub_skill": "__grant_skip_no_mcp_surface__",
+                "feature_id": "feat-noms",
+                "current_step": "Step 9: structural MCP-skip (no app surface)",
             }),
             # A stale RETRO_DONE.md on disk does NOT change routing (ignored) →
             # still Step 9 mcp test.

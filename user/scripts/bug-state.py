@@ -94,6 +94,8 @@ from lazy_core import (
     write_completed_receipt,
     has_completion_receipt,
     skip_waiver_refusal,
+    repo_has_no_app_surface,
+    phases_mcp_runtime_not_required,
     spec_status,
 )
 
@@ -959,7 +961,7 @@ def compute_state(
             # spec_class citation must NOT vacuously validate. Accepted:
             # operator grants, legacy no-provenance files, and mcp-test grants
             # carrying a spec_class citation.
-            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+            _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {}, repo_root)
             if _skip_refusal:
                 return _bug_state(
                     **common,
@@ -985,7 +987,7 @@ def compute_state(
                 # its spec_class citation must NOT vacuously validate. Accepted:
                 # operator grants, legacy no-provenance files, and mcp-test
                 # grants carrying a spec_class citation.
-                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {})
+                _skip_refusal = skip_waiver_refusal(parse_sentinel(skip_mcp_file) or {}, repo_root)
                 if _skip_refusal:
                     return _bug_state(
                         **common,
@@ -1031,6 +1033,21 @@ def compute_state(
                         sub_skill="__write_validated_from_results__",
                         sub_skill_args=spec_dir_str,
                     )
+            # Structural MCP-skip short-circuit (lazy-cycle-containment
+            # follow-up — mirrors lazy-state.py's Step 9): a `**MCP runtime:**
+            # not-required` bug fix in a repo with NO app surface (no src-tauri/,
+            # no package.json) is mechanically untestable — grant the skip INLINE
+            # via a pseudo-skill instead of a wasted /mcp-test cycle. The grant's
+            # granted_by: pipeline-structural is re-verified by skip_waiver_refusal.
+            if phases_mcp_runtime_not_required(spec_dir) and repo_has_no_app_surface(
+                repo_root
+            ):
+                return _bug_state(
+                    **common,
+                    current_step="Step 9: structural MCP-skip (no app surface)",
+                    sub_skill="__grant_skip_no_mcp_surface__",
+                    sub_skill_args=spec_dir_str,
+                )
             # Run MCP tests.
             return _bug_state(
                 **common,
@@ -1333,6 +1350,34 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             "- [x] Root cause identified\n"
             "- [x] Implement fix\n"
             "- [x] Add regression test\n",
+            encoding="utf-8",
+        )
+
+    elif name == "phases-complete-no-mcp-surface":
+        # All PHASES checked; PHASES declares `**MCP runtime:** not-required` and
+        # the temp repo has NO app surface (no src-tauri/, no package.json) →
+        # Step 9 short-circuits to the inline structural skip grant.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-noms", "name": "No MCP Surface",
+                 "spec_dir": "bug-noms"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-noms"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# No MCP Surface\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-04-20\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "**MCP runtime:** not-required\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
             encoding="utf-8",
         )
 
@@ -2500,6 +2545,16 @@ def run_smoke_tests() -> int:
                 "feature_id": "bug-pcnr",
                 "sub_skill": SKILL_MCP_TEST,
                 "current_step": STEP_MCP,
+            },
+        ),
+        # 4b. PHASES not-required + no app surface → Step 9 short-circuits to
+        # the inline structural skip grant (no /mcp-test dispatch).
+        (
+            "phases-complete-no-mcp-surface", False, True,
+            {
+                "feature_id": "bug-noms",
+                "sub_skill": "__grant_skip_no_mcp_surface__",
+                "current_step": "Step 9: structural MCP-skip (no app surface)",
             },
         ),
         # 5. Retro done, no VALIDATED.md, non-cloud non-device host → mcp-test

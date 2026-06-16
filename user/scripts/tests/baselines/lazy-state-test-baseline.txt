@@ -30,6 +30,7 @@
   [research-pending-skip] cloud=False skip_nr=True real_device=True: Step 6: plan feature (phases + plan)
   [research-pending-only] cloud=False skip_nr=True real_device=True: queue-blocked-on-research
   [phases-complete-no-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [phases-complete-no-mcp-surface] cloud=False skip_nr=False real_device=True: Step 9: structural MCP-skip (no app surface)
   [phases-complete-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [phases-complete-no-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test
   [phases-complete-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test

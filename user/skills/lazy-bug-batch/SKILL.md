@@ -327,6 +327,16 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
 
 If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-skills:
 
+- **`__grant_skip_no_mcp_surface__`** — same as `/lazy-batch` Step 1c.5: emitted at Step 9 when
+  the bug's PHASES declares `**MCP runtime:** not-required` AND the repo has no app surface
+  (no `src-tauri/`, no `package.json`). Run
+  `python3 ~/.claude/scripts/bug-state.py --apply-pseudo __grant_skip_no_mcp_surface__ <spec_path>`
+  (the script writes SKIP_MCP_TEST.md with `granted_by: pipeline-structural`, re-verified by
+  `skip_waiver_refusal`; idempotent; refuses if the repo has an app surface or PHASES is not
+  `not-required`), then commit + push per policy. The structural short-circuit that avoids a
+  wasted `/mcp-test` cycle; the next probe routes to `__write_validated_from_skip__`.
+  Pipeline-advancing → `forward_cycles`.
+
 - **`__write_validated_from_skip__`** — same as `/lazy-batch` Step 1c.5: run
   `python3 ~/.claude/scripts/bug-state.py --apply-pseudo __write_validated_from_skip__ <spec_path>`
   (the script writes VALIDATED.md from SKIP_MCP_TEST.md), then commit + push per policy.
