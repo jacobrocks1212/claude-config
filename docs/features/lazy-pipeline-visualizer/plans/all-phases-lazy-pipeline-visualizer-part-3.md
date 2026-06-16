@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-pipeline-visualizer
-status: In-progress
+status: Complete
 complexity: complex
 phases: [3, 4]
 ---
