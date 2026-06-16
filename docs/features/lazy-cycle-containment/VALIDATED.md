@@ -1,0 +1,11 @@
+---
+kind: validated
+feature_id: lazy-cycle-containment
+date: 2026-06-15
+mcp_scenarios: []
+result: all-passing
+---
+
+# Validated
+
+Validated from SKIP_MCP_TEST.md — MCP test was explicitly skipped per the skip sentinel; validation recorded by apply_pseudo.
