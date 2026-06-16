@@ -2,6 +2,7 @@
 name: mcp-test
 description: Resolve a YAML scenario, ensure MCP runtime readiness, run the deterministic engine (scripts/mcp-test/run.ts), read the compact verdict.json, forward the engine-written sentinel, and reconcile PHASES — haiku happy path, Sonnet only on failure
 argument-hint: <test description — e.g. "test mix knob crossfade" or "verify queue fire sequence" or a scenario id>
+model: haiku
 ---
 
 # MCP Test — Informed Dispatcher (deterministic engine)

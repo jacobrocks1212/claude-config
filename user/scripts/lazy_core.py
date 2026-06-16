@@ -4429,8 +4429,20 @@ def emit_cycle_prompt(
     # below: a `complex`/opus part that loops (repeat_count>=2) still flips to
     # sonnet (sonnet ∧ sonnet = sonnet), and a `mechanical`/sonnet part stays
     # sonnet — the two never conflict because both only ever DOWNGRADE to sonnet.
-    model = "opus"
     norm_sub_skill = norm_skill  # already leading-"/"-stripped above
+    # Per-sub_skill base model tier. mcp-test is the Informed Dispatcher happy
+    # path (resolve scenario → run the deterministic engine → read the small
+    # verdict → forward the engine-written sentinel → reconcile PHASES); the
+    # model drives no MCP API and judges no assertion, so haiku suffices. Every
+    # other sub_skill keeps the conservative opus base. The loop-block downgrade
+    # below sets model = "sonnet" UNCONDITIONALLY — from this haiku base that is
+    # the correct ESCALATION (a stuck mechanical cycle earns a stronger model);
+    # from the opus base it is the existing cost-saving downgrade. The single
+    # "sonnet" literal is right for both bases, so no tier-max arithmetic is
+    # needed. Opus-on-failure for mcp-test is handled separately by the
+    # needs-runtime-redispatch recovery path (dispatch_model "opus", tagged
+    # "(opus, recovery)"), not here.
+    model = "haiku" if norm_sub_skill == "mcp-test" else "opus"
     if norm_sub_skill in ("execute-plan", "execute_plan"):
         plan_arg = state.get("sub_skill_args")
         if plan_arg:

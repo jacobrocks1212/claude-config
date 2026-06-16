@@ -7403,6 +7403,47 @@ def test_emit_cycle_prompt_loop_append_and_model_flip():
     assert "LOOP DETECTED" not in none["prompt"], "loop block appended at repeat_count=None"
 
 
+def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
+    """A happy-path mcp-test cycle (no loop) dispatches on haiku — the Informed
+    Dispatcher base tier (run the deterministic engine, read the small verdict;
+    no MCP API driven by the model, no assertions model-judged). repeat_count 1
+    and None both → 'haiku'. Regression for docs/bugs/mcp-test-haiku-tier-unwired
+    (the 'haiku happy path' was description-only prose, wired into zero paths).
+    """
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        for rc in (1, None):
+            state = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
+            r = lazy_core.emit_cycle_prompt(
+                repo, state, pipeline="feature", cloud=False,
+                repeat_count=rc, template_dir=_REAL_TEMPLATE_DIR,
+            )
+            assert r is not None and r.get("ok") is True, f"rc={rc}: {r}"
+            assert r["model"] == "haiku", f"rc={rc}: mcp-test expected haiku, got {r['model']!r}"
+
+
+def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
+    """A looping (repeat_count>=2) mcp-test cycle ESCALATES from the haiku base to
+    sonnet — the loop block's unconditional 'sonnet' target composes correctly
+    with the cheaper base (a stuck mechanical cycle gets a stronger model)."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        state = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=2, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "sonnet", f"looping mcp-test expected sonnet, got {r['model']!r}"
+    assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping mcp-test"
+
+
 # --- Phase 9: per-part complexity model tiering (lazy-validation-readiness) ---
 #
 # The /execute-plan cycle's dispatch model is selected from the current plan
@@ -13975,6 +14016,9 @@ _TESTS = [
     ("test_emit_cycle_prompt_bug_tokens_real_template", test_emit_cycle_prompt_bug_tokens_real_template),
     ("test_emit_cycle_prompt_pseudo_and_idle_return_none", test_emit_cycle_prompt_pseudo_and_idle_return_none),
     ("test_emit_cycle_prompt_loop_append_and_model_flip", test_emit_cycle_prompt_loop_append_and_model_flip),
+    # mcp-test-haiku-tier-unwired — per-sub_skill base model tier
+    ("test_emit_cycle_prompt_mcp_test_cycle_model_haiku", test_emit_cycle_prompt_mcp_test_cycle_model_haiku),
+    ("test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet", test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet),
     # Phase 9 (lazy-validation-readiness) — per-part complexity model tiering
     ("test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet", test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet),
     ("test_emit_cycle_prompt_complex_part_cycle_model_opus", test_emit_cycle_prompt_complex_part_cycle_model_opus),

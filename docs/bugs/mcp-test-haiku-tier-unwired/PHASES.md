@@ -32,11 +32,17 @@ No path is net-new — the fix extends an existing, well-tested selector. No des
 **Scope:** Give `emit_cycle_prompt` a per-`sub_skill` base model tier so a happy-path `mcp-test` cycle dispatches on **haiku**, escalating to **sonnet** on the loop block. Root-cause fix (SPEC Proven Findings 1–3).
 
 **Deliverables:**
-- [ ] `emit_cycle_prompt` selects `model = "haiku"` when `norm_sub_skill == "mcp-test"`, else `"opus"` (the existing base). `norm_sub_skill` is computed before the base assignment. The execute-plan mechanical→sonnet branch and the loop→sonnet branch are unchanged.
-- [ ] Two RED-first tests in `test_lazy_core.py`, registered in the runner list:
+- [x] `emit_cycle_prompt` selects `model = "haiku"` when `norm_sub_skill == "mcp-test"`, else `"opus"` (the existing base). `norm_sub_skill` is computed before the base assignment. The execute-plan mechanical→sonnet branch and the loop→sonnet branch are unchanged.
+- [x] Two RED-first tests in `test_lazy_core.py`, registered in the runner list:
   - `test_emit_cycle_prompt_mcp_test_cycle_model_haiku` — `sub_skill="/mcp-test"`, `repeat_count` 1 and None → `model == "haiku"`.
   - `test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet` — `sub_skill="/mcp-test"`, `repeat_count=2` → `model == "sonnet"` AND `"LOOP DETECTED"` present (escalation composes with the loop block).
-- [ ] (Optional, same phase) `mcp-test/SKILL.md` frontmatter gains `model: haiku` so an interactive `/mcp-test` honors the intent too.
+- [x] (Optional, same phase) `mcp-test/SKILL.md` frontmatter gains `model: haiku` so an interactive `/mcp-test` honors the intent too.
+
+**Implementation Notes (2026-06-16):**
+- Done (operator-directed manual `/lazy-bug-batch` walk — the AlgoBooth feature run held the global run marker, so the orchestrator machinery was driven inline). `emit_cycle_prompt` (`lazy_core.py`): `norm_sub_skill` moved above the base assignment; `model = "haiku" if norm_sub_skill == "mcp-test" else "opus"` replaces the unconditional `model = "opus"`. Both downgrade branches untouched.
+- Tests: two RED-first tests added after `test_emit_cycle_prompt_loop_append_and_model_flip` and registered in the runner list. Confirmed RED (haiku test returned `opus`; loop test passed pre-fix because the loop block already forces sonnet — it documents the escalation invariant). Now GREEN.
+- `mcp-test/SKILL.md` frontmatter gained `model: haiku`.
+- Gates: `test_lazy_core.py` 399/399; `lazy-state.py --test` + `bug-state.py --test` green (byte-pinned baselines unaffected — the `--test` harnesses emit no `mcp-test` cycle_model line); `lint-skills.py` clean.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` passes including the two new tests; the new tests fail RED against the unmodified selector (model `opus` for the non-loop case) for the right reason before the fix. `lazy-state.py --test` and `bug-state.py --test` stay green (the byte-pinned baselines are unaffected — the `--test` harnesses never emit a `mcp-test` cycle_model line).
 

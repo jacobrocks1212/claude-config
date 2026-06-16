@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: mcp-test-haiku-tier-unwired
-status: Ready
+status: Complete
 created: 2026-06-16
 complexity: mechanical
 phases: [1]
@@ -24,7 +24,7 @@ phases: [1]
 
 ## Work Units
 
-- [ ] WU-1 — emit_cycle_prompt: mcp-test → haiku base tier (loop still escalates to sonnet) + two RED-first tests in test_lazy_core.py + optional `model: haiku` frontmatter on mcp-test/SKILL.md
+- [x] WU-1 — emit_cycle_prompt: mcp-test → haiku base tier (loop still escalates to sonnet) + two RED-first tests in test_lazy_core.py + optional `model: haiku` frontmatter on mcp-test/SKILL.md
 
 ## EXECUTION MODEL
 
