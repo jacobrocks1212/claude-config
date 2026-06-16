@@ -584,10 +584,10 @@ The loop-guard evaluation itself is silent — never announce "no loop-guard fir
 
 ```bash
 # IMMEDIATELY before the Agent dispatch (real cycle: --kind real; any meta-dispatch: --kind meta):
-python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind real
+python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind real --sub-skill {sub_skill}
 ```
 
-`--cycle-begin` writes `~/.claude/state/lazy-cycle-active.json` (self-healing: a stale marker from a crashed prior dispatch is overwritten + logged — the orchestrator is single-threaded, only one dispatch is ever in flight). `{dispatch_nonce}` is the dispatch's nonce (reuse the probe's `cycle_prompt_ref`/registry nonce when present, else any fresh hex). Pass `--feature-id` matching the feature this dispatch is for — the hook's 2nd-feature commit tripwire keys on it. `--cycle-begin` is NOT C3-guarded (the orchestrator owns the bracket); it is callable between cycles.
+`--cycle-begin` writes `~/.claude/state/lazy-cycle-active.json` (self-healing: a stale marker from a crashed prior dispatch is overwritten + logged — the orchestrator is single-threaded, only one dispatch is ever in flight). `{dispatch_nonce}` is the dispatch's nonce (reuse the probe's `cycle_prompt_ref`/registry nonce when present, else any fresh hex). Pass `--feature-id` matching the feature this dispatch is for — the hook's 2nd-feature commit tripwire keys on it. Pass `--sub-skill {sub_skill}` (the probe's `sub_skill` for this cycle) so `--cycle-end`'s process-friction detector picks the correct per-sub_skill commit budget — without it the detector falls back to the conservative default (budget 1) and false-positives `unexpected-commits` on a normal multi-commit cycle (e.g. `execute-plan`'s test+impl commits, budget 3). `--cycle-begin` is NOT C3-guarded (the orchestrator owns the bracket); it is callable between cycles.
 
 ```bash
 # IMMEDIATELY after the Agent returns — on EVERY return path (success, halt-with-sentinel, error):
@@ -600,7 +600,7 @@ Dispatch:
 
 ```
 # 1. Set the cycle marker (C1):
-python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind real
+python3 ~/.claude/scripts/lazy-state.py --cycle-begin --feature-id {feature_id} --nonce {dispatch_nonce} --kind real --sub-skill {sub_skill}
 
 # 2. Dispatch:
 Agent({

@@ -14751,19 +14751,23 @@ def test_cycle_marker_run_identity_head_fields_additive():
                 feature_id="f", nonce="n1",
                 run_started_at="2026-06-15T00:00:00Z",
                 begin_head_sha="deadbeefcafe",
+                sub_skill="execute-plan",
             )
             assert marker["run_started_at"] == "2026-06-15T00:00:00Z", marker
             assert marker["begin_head_sha"] == "deadbeefcafe", marker
+            assert marker["sub_skill"] == "execute-plan", marker
             on_disk = json.loads(
                 (Path(td) / _CYCLE_MARKER_FILENAME).read_text(encoding="utf-8")
             )
             assert on_disk["run_started_at"] == "2026-06-15T00:00:00Z", on_disk
             assert on_disk["begin_head_sha"] == "deadbeefcafe", on_disk
+            assert on_disk["sub_skill"] == "execute-plan", on_disk
             # Legacy 6-field caller: the additive fields default to None,
             # everything else unchanged.
             legacy = lazy_core.write_cycle_marker(feature_id="g", nonce="n2")
             assert legacy["run_started_at"] is None, legacy
             assert legacy["begin_head_sha"] is None, legacy
+            assert legacy["sub_skill"] is None, legacy
             assert legacy["feature_id"] == "g" and legacy["commit_tally"] == 0
         finally:
             _clear_state_dir()
@@ -14938,8 +14942,12 @@ def test_append_friction_ledger_entry_shares_ledger_with_denies():
 
 def test_build_hardening_emit_command_process_friction_binding():
     """WU-3: build_hardening_emit_command given a process-friction oldest entry
-    emits trigger_kind=process-friction and surfaces the friction detail, NOT the
-    deny-specific denied_prompt_summary/denial_reason bindings."""
+    emits trigger_kind=process-friction and binds the friction reason/detail INTO
+    the @requires evidence keys (friction_reason → denied_prompt_summary,
+    friction_detail → denial_reason) so the dispatch-hardening.md template — which
+    @requires those shared keys for every trigger_kind — actually resolves.
+    Binding friction-specific context keys instead left the required keys unbound
+    and emit_dispatch_prompt refused the whole route (the broken-route defect)."""
     _guard()
     friction_entry = {
         "ts": 1.0,
@@ -14957,11 +14965,40 @@ def test_build_hardening_emit_command_process_friction_binding():
         cwd="/repo",
     )
     assert "trigger_kind=process-friction" in cmd, cmd
-    assert "cycle-bracket-break" in cmd, cmd
+    # The friction reason/detail are bound INTO the shared @requires evidence keys.
+    assert "denied_prompt_summary=cycle-bracket-break" in cmd, cmd
+    assert "denial_reason=" in cmd, cmd
     assert "run identity changed mid-cycle" in cmd, cmd
-    # The deny-specific keys must NOT be bound for a friction entry.
-    assert "denied_prompt_summary=" not in cmd, cmd
-    assert "denial_reason=" not in cmd, cmd
+    # The friction-specific key names must NOT leak (they are not in @requires and
+    # would be inert residue / an unbound-token refusal in the template).
+    assert "friction_reason=" not in cmd, cmd
+    assert "friction_detail=" not in cmd, cmd
+
+
+def test_process_friction_context_resolves_hardening_template():
+    """Regression (broken-hardening-route defect): the context keys
+    build_hardening_emit_command produces for a process-friction entry MUST
+    satisfy dispatch-hardening.md's @requires so emit_dispatch_prompt resolves the
+    route. Before the fix, the friction branch emitted friction_reason/
+    friction_detail and emit_dispatch_prompt REFUSED with 'requires context key
+    denied_prompt_summary'. This couples build_hardening_emit_command's bindings to
+    the template's @requires so the two cannot silently drift again."""
+    _guard()
+    # The exact context dict the emit command supplies (mirrors the --context
+    # bindings build_hardening_emit_command emits for a process-friction entry).
+    ctx = {
+        "trigger_kind": "process-friction",
+        "item_id": "hardening-blind-to-process-friction",
+        "denied_prompt_summary": "unexpected-commits",
+        "denial_reason": "HEAD advanced 2 commits since --cycle-begin",
+        "probe_json": "step=Step 9 pending_hardening=1",
+        "registry_state": "5 entries, 4 unconsumed",
+        "cwd": "/repo",
+    }
+    res = lazy_core.emit_dispatch_prompt("hardening", ctx, pipeline="feature")
+    assert res.get("ok") is True, res  # must NOT refuse
+    assert "process-friction" in res["prompt"], res
+    assert "unexpected-commits" in res["prompt"], res
 
 
 def test_cycle_end_friction_check_symbol_present():
@@ -15016,6 +15053,88 @@ def test_cycle_end_friction_check_torn_bracket_appends_entry(tmp_path):
             entry = lazy_core.read_deny_ledger()[0]
             assert entry["kind"] == "process-friction", entry
             assert entry["acked"] is False, entry
+        finally:
+            _clear_state_dir()
+
+
+def _init_temp_git_repo(root: Path) -> str:
+    """Init a hermetic git repo at root with one initial commit; return its HEAD sha.
+
+    Used by the process-friction false-positive regression test below, which needs
+    cycle_end_friction_check to compute a REAL commits_since via git.
+    """
+    lazy_core._git(root, "init", "-q")
+    lazy_core._git(root, "config", "user.email", "t@t.t")
+    lazy_core._git(root, "config", "user.name", "t")
+    lazy_core._git(root, "config", "commit.gpgsign", "false")
+    (root / "f0.txt").write_text("0", encoding="utf-8")
+    lazy_core._git(root, "add", "-A")
+    lazy_core._git(root, "commit", "-q", "-m", "c0")
+    proc = lazy_core._git(root, "rev-parse", "HEAD")
+    return (proc.stdout or "").strip()
+
+
+def _git_commit_file(root: Path, name: str) -> None:
+    (root / name).write_text(name, encoding="utf-8")
+    lazy_core._git(root, "add", "-A")
+    lazy_core._git(root, "commit", "-q", "-m", name)
+
+
+def test_cycle_end_friction_check_no_false_positive_on_execute_plan_multi_commit(tmp_path):
+    """Regression (process-friction false-positive defect): a normal execute-plan
+    cycle that legitimately commits TWICE (test commit + impl commit) must NOT trip
+    unexpected-commits. The marker now persists sub_skill='execute-plan' (budget 3),
+    so cycle_end_friction_check recovers the correct budget instead of forcing
+    sub_skill=None → default budget 1, which flagged every multi-commit cycle."""
+    _guard()
+    with tempfile.TemporaryDirectory() as repo_td, \
+            tempfile.TemporaryDirectory() as state_td:
+        _set_state_dir(Path(state_td))
+        try:
+            repo = Path(repo_td)
+            begin_sha = _init_temp_git_repo(repo)
+            # --cycle-begin snapshot: degraded run identity (no live run marker →
+            # bracket-break signal off, isolating the unexpected-commits signal),
+            # the real begin HEAD, and the dispatched sub_skill.
+            lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n",
+                run_started_at=None, begin_head_sha=begin_sha,
+                sub_skill="execute-plan",
+            )
+            # Two legitimate commits (test + impl) — within execute-plan's budget 3.
+            _git_commit_file(repo, "test.txt")
+            _git_commit_file(repo, "impl.txt")
+            desc = lazy_core.cycle_end_friction_check(repo_root=repo)
+            assert desc is None, (
+                "execute-plan budget (3) must absorb a 2-commit cycle; got "
+                f"false-positive: {desc}"
+            )
+            assert lazy_core.pending_hardening() == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_cycle_end_friction_check_runaway_commits_still_trips(tmp_path):
+    """Inverse guard: a genuine runaway (commits beyond even the execute-plan
+    budget of 3) STILL trips unexpected-commits — the fix raises the correct
+    budget, it does not disable the signal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as repo_td, \
+            tempfile.TemporaryDirectory() as state_td:
+        _set_state_dir(Path(state_td))
+        try:
+            repo = Path(repo_td)
+            begin_sha = _init_temp_git_repo(repo)
+            lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n",
+                run_started_at=None, begin_head_sha=begin_sha,
+                sub_skill="execute-plan",
+            )
+            for i in range(5):  # 5 > execute-plan budget 3
+                _git_commit_file(repo, f"runaway{i}.txt")
+            desc = lazy_core.cycle_end_friction_check(repo_root=repo)
+            assert desc is not None and desc["reason"] == "unexpected-commits", desc
+            assert lazy_core.pending_hardening() == 1
         finally:
             _clear_state_dir()
 

@@ -5095,6 +5095,16 @@ def main() -> int:
                         help="Dispatch nonce (hex) for --cycle-begin.")
     parser.add_argument("--kind", choices=["real", "meta"], default="real",
                         help="Dispatch kind for --cycle-begin (real|meta; default real).")
+    parser.add_argument("--sub-skill", default=None,
+                        help=(
+                            "Dispatched sub_skill name for --cycle-begin (e.g. "
+                            "execute-plan). Persisted into the cycle marker so "
+                            "--cycle-end's process-friction detector selects the "
+                            "correct per-sub_skill commit budget instead of the "
+                            "conservative default (which false-positives on a "
+                            "normal multi-commit cycle). Optional — omitting it "
+                            "degrades to the default budget."
+                        ))
     # Phase 3/4: --emit-dispatch <class> assembles and registers a fully-bound
     # dispatch prompt for one of the seven dispatch classes (six from Phase 3
     # plus the Phase 4 'hardening' class).  It is an
@@ -5272,6 +5282,7 @@ def main() -> int:
         marker = lazy_core.write_cycle_marker(
             feature_id=args.feature_id, nonce=args.nonce, kind=args.kind,
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
+            sub_skill=args.sub_skill,
         )
         sys.stdout.write(json.dumps(marker, indent=2) + "\n")
         return 0

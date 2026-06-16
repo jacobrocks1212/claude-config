@@ -5023,6 +5023,7 @@ def write_cycle_marker(
     session_id: str | None = None,
     run_started_at: str | None = None,
     begin_head_sha: str | None = None,
+    sub_skill: str | None = None,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the cycle-subagent marker to the state dir.
@@ -5050,6 +5051,11 @@ def write_cycle_marker(
       - begin_head_sha (str|None): ``git rev-parse HEAD`` snapshot at --cycle-begin.
         None when not a git tree / degraded. Used to detect unexpected commits
         (HEAD advanced beyond the per-sub_skill budget by --cycle-end).
+      - sub_skill (str|None): the dispatched sub_skill name (e.g. "execute-plan").
+        None for callers that omit it. detect_cycle_bracket_friction selects the
+        per-sub_skill commit budget from this — WITHOUT it the detector falls back
+        to the conservative default budget (1) and false-positives on a normal
+        multi-commit cycle (e.g. execute-plan's test+impl commits, budget 3).
 
     Self-healing staleness: if a marker already EXISTS (a prior dispatch crashed
     without `--cycle-end`), it is OVERWRITTEN and the event logged. The
@@ -5110,6 +5116,12 @@ def write_cycle_marker(
         # unbroken). --cycle-begin populates these.
         "run_started_at": run_started_at,
         "begin_head_sha": begin_head_sha,
+        # hardening-blind-to-process-friction (false-positive fix): the dispatched
+        # sub_skill, so cycle_end_friction_check can recover the correct per-sub_skill
+        # commit budget instead of forcing the conservative default. Additive
+        # (default None) → legacy markers/fixtures degrade to the default budget,
+        # never a crash.
+        "sub_skill": sub_skill,
     }
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
@@ -5348,15 +5360,20 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
         except Exception:  # noqa: BLE001  (incl. ValueError from int())
             commits_since = None
 
-    # (4) the cycle marker does not carry the dispatched sub_skill name, so the
-    # detector uses the conservative DEFAULT commit budget (sub_skill=None). The
-    # bracket-break signal — the literal incident (a runaway that ran --run-end) —
-    # is sub_skill-independent and fully covered.
+    # (4) recover the dispatched sub_skill from the marker (--cycle-begin persists
+    # it) so the unexpected-commits detector selects the CORRECT per-sub_skill
+    # commit budget. A legacy/partial marker without the field reads None → the
+    # detector falls back to the conservative default budget (never a crash). The
+    # bracket-break signal is sub_skill-independent and was always fully covered;
+    # this fix stops the unexpected-commits signal from false-positiving on a
+    # normal multi-commit cycle (e.g. execute-plan test+impl, budget 3) that the
+    # forced sub_skill=None previously squeezed under the default budget of 1.
+    marker_sub_skill = marker.get("sub_skill")
     descriptor = detect_cycle_bracket_friction(
         marker,
         current_run_started_at=current_run_started_at,
         current_head_sha=current_head_sha,
-        sub_skill=None,
+        sub_skill=marker_sub_skill,
         commits_since=commits_since,
     )
 
@@ -6699,8 +6716,17 @@ def build_hardening_emit_command(
 
     # hardening-blind-to-process-friction Phase 2: a process-friction entry
     # (kind: "process-friction", from a torn cycle bracket / unexpected commits)
-    # binds trigger_kind=process-friction and surfaces the friction reason+detail
-    # instead of the deny-specific denied_prompt_summary/denial_reason.
+    # binds trigger_kind=process-friction and surfaces the friction reason+detail.
+    #
+    # The dispatch-hardening.md template @requires the SHARED evidence keys
+    # (denied_prompt_summary / denial_reason) for EVERY trigger_kind — it has a
+    # single evidence section, not a friction-specific one.  So the friction
+    # reason+detail MUST be bound INTO those keys (friction_reason →
+    # denied_prompt_summary, friction_detail → denial_reason), exactly as the
+    # template header + hardening-dispatch.md document.  Emitting friction-specific
+    # context keys instead left denied_prompt_summary/denial_reason unbound, and
+    # emit_dispatch_prompt refused the whole route ("requires context key
+    # 'denied_prompt_summary' which is absent") — the broken-hardening-route defect.
     if entry.get("kind") == "process-friction":
         friction_reason = entry.get("reason_head", "") or ""
         friction_detail = entry.get("detail", "") or ""
@@ -6709,8 +6735,8 @@ def build_hardening_emit_command(
             "--emit-dispatch hardening",
             _ctx("trigger_kind", "process-friction"),
             _ctx("item_id", item_id or ""),
-            _ctx("friction_reason", friction_reason),
-            _ctx("friction_detail", friction_detail),
+            _ctx("denied_prompt_summary", friction_reason),
+            _ctx("denial_reason", friction_detail),
             _ctx("probe_json", probe_summary),
             _ctx("registry_state", registry_summary),
             _ctx("cwd", cwd or ""),

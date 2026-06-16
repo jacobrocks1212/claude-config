@@ -3663,6 +3663,15 @@ def main() -> int:
         "--kind", choices=["real", "meta"], default="real",
         help="Dispatch kind for --cycle-begin (real|meta; default real).",
     )
+    parser.add_argument(
+        "--sub-skill", default=None,
+        help=(
+            "Dispatched sub_skill name for --cycle-begin (coupled-pair mirror of "
+            "lazy-state.py). Persisted into the cycle marker so --cycle-end's "
+            "process-friction detector selects the correct per-sub_skill commit "
+            "budget instead of the conservative default. Optional."
+        ),
+    )
     # Phase 3: --emit-dispatch <class> — coupled-pair mirror of lazy-state.py.
     # Pipeline is always "bug" for bug-state.py (the bug pipeline script).
     parser.add_argument(
@@ -3763,6 +3772,7 @@ def main() -> int:
         marker = lazy_core.write_cycle_marker(
             feature_id=args.bug_id, nonce=args.nonce, kind=args.kind,
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
+            sub_skill=args.sub_skill,
         )
         sys.stdout.write(json.dumps(marker, indent=2) + "\n")
         return 0
