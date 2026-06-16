@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: research-gate-ignores-existing-phases
-status: Ready
+status: In-progress
 created: 2026-06-16
 complexity: complex
 phases: [1, 2, 3]
