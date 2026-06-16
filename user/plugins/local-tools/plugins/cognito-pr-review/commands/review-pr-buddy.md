@@ -77,7 +77,16 @@ For each chunk, in order, run these six steps:
 
 #### 1. Orient
 
-State a one-line objective for this chunk. If the chunk's `**Complexity:**` is `non-trivial` (or missing/ambiguous — treat as `non-trivial`), additionally give a senior-architect teach of what changed and why it matters relative to the journey Objective: concise, insightful, grounded in the cached diff and journey context — not a dump of the raw diff. For `trivial` chunks, the one-liner is the whole orientation. Deep teaching beyond the standard orient is available on explicit reviewer request ("explain this in depth").
+Open the chunk with a titled header: `### {chunk title} — {files}`. The
+`{chunk title}` is a short, semantically logical title you compose (≈ 2–6 words)
+based on what actually changed in the chunk — sharpen the journey group name into a
+crisper title when one fits; don't just echo file names. `{files}` lists **every**
+file in the chunk's `**Files:**`. For a file that appears in only this chunk, the
+bare path is enough; for a file that appears in **more than one chunk's** `**Files:**`,
+append this chunk's line range (`path:start-end`, comma-separated if several) so the
+reviewer knows which portion of the file this chunk covers.
+
+Then state a one-line objective for this chunk. If the chunk's `**Complexity:**` is `non-trivial` (or missing/ambiguous — treat as `non-trivial`), additionally give a senior-architect teach of what changed and why it matters relative to the journey Objective: concise, insightful, grounded in the cached diff and journey context — not a dump of the raw diff. For `trivial` chunks, the one-liner is the whole orientation. Deep teaching beyond the standard orient is available on explicit reviewer request ("explain this in depth").
 
 Under the same `non-trivial` gate (not a new branch — this rides the existing condition), additionally render at least one compact ASCII diagram of the chunk's behavioral thread alongside the prose teach. For `trivial` chunks, no diagram is rendered.
 
