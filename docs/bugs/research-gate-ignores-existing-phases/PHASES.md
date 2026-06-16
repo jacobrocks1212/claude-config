@@ -2,6 +2,9 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+> All three phases implemented and committed; validation tail (mark-fixed gate) pending. Do NOT flip to Fixed here — that is the `__mark_fixed__` gate's responsibility after the validation tail.
+
 **MCP runtime:** not-required — harness-internal Python state machine + thin skill-wrapper prose; no AlgoBooth app surface, no Tauri/MCP HTTP server. Verification is the in-file `--test` smoke harness (`lazy-state.py --test`) + `test_lazy_core.py`, the canonical regression net per `user/scripts/CLAUDE.md`.
 
 ## Validated Assumptions
@@ -120,10 +123,12 @@ Write each fixture's assertion FIRST and confirm it fails RED against the unmodi
 
 **Scope:** Update the two paired wrappers' Step-5 state-machine PROSE so they accurately describe the new gate behavior (research is skipped when PHASES.md already shows implementation). This is the coupled-pair rule from the repo `CLAUDE.md` (`/lazy` ↔ `/lazy-cloud`): a state-machine change must keep the paired wrappers in sync. No logic lands here — the wrappers are thin and the logic is in the script.
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `user/skills/lazy/SKILL.md`: in the state-machine prose summary (`:270`) and/or the Step-4.5-vs-5 explainer (`:272–275`), add a sentence: the Step-5 research gate is **skipped** when `PHASES.md` already exists with implementation evidence (any phase Complete/In-progress, a checked deliverable, or an Implementation Notes block) — the pipeline falls through to Step 6, because a feature with implemented phases is past the pre-planning research stage. Reference that the predicate + diagnostic live in `lazy-state.py`/`lazy_core.py` (state-machine logic stays in the script).
-- [ ] `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md`: mirror the same prose note at its Step-5 mention (`:133`/`:90` neighborhood). The only intended divergence remains the `--cloud` flag.
-- [ ] Immediately after editing both, diff them against each other and confirm the Step-5 prose matches (modulo the documented `--cloud` divergence), per the coupling rule's "diff the other immediately afterward" directive.
+- [x] `user/skills/lazy/SKILL.md`: in the state-machine prose summary (`:270`) and/or the Step-4.5-vs-5 explainer (`:272–275`), add a sentence: the Step-5 research gate is **skipped** when `PHASES.md` already exists with implementation evidence (any phase Complete/In-progress, a checked deliverable, or an Implementation Notes block) — the pipeline falls through to Step 6, because a feature with implemented phases is past the pre-planning research stage. Reference that the predicate + diagnostic live in `lazy-state.py`/`lazy_core.py` (state-machine logic stays in the script).
+- [x] `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md`: mirror the same prose note at its Step-5 mention (`:133`/`:90` neighborhood). The only intended divergence remains the `--cloud` flag.
+- [x] Immediately after editing both, diff them against each other and confirm the Step-5 prose matches (modulo the documented `--cloud` divergence), per the coupling rule's "diff the other immediately afterward" directive.
 
 **Minimum Verifiable Behavior:** Documentation/prose. Structural verification: `python ~/.claude/scripts/lint-skills.py` is clean (no broken `!cat` injections), `python ~/.claude/scripts/project-skills.py` re-projects both wrappers without errors, and a grep of both SKILL.md files shows the new "research gate skipped when PHASES.md shows implementation" prose in each. The behavioral proof lives in Phase 1–2's `--test` fixtures (the wrapper is a thin shell around the script per `user/scripts/CLAUDE.md`).
 
@@ -138,6 +143,13 @@ No code execution. Cross-check: (1) `lint-skills.py` clean; (2) `project-skills.
 
 **Integration Notes for Next Phase:**
 - This is the terminal phase. After it, the research gate consults PHASES.md before firing, the wrappers describe it accurately, and the `--test` suite pins the behavior.
+
+#### Implementation Notes (Phase 3)
+
+- Added the "Research is a PRE-planning gate — skipped when `PHASES.md` already shows implementation" note to `user/skills/lazy/SKILL.md` (in the Step-4.5-vs-5 explainer, just after the research-pending bullet) and mirrored it in `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` (State Machine Summary, after the step-ordering paragraph). Only intended divergence: lazy-cloud appends one trailing sentence noting the guard is shared (`--cloud` runs the same state machine), per the coupled-pair rule.
+- Diffed the two prose blocks against each other immediately after editing: identical modulo the documented cloud trailing sentence.
+- `user/scripts/CLAUDE.md`: **no change needed** — the fix adds no CLI surface, no new flag, and no new terminal_reason; the research gate's behavior is internal to `compute_state` and documented by SPEC/PHASES + the wrapper prose (MANDATORY RULE 7 confirmed).
+- Gates: `python user/scripts/lint-skills.py` → "OK — no broken or embedded !cat patterns found." `python user/scripts/project-skills.py` → 80 skills / 91 components projected, "Errors: none" (both wrappers re-project cleanly). Grep confirms the new note present in EACH SKILL.md.
 
 ---
 

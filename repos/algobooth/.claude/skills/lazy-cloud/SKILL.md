@@ -263,6 +263,8 @@ The state machine lives in `~/.claude/scripts/lazy-state.py`. Pass `--cloud` to 
 
 **Current step ordering after phases complete:** Step 9 MCP test (deferred in cloud) → Step 10 mark complete. The Step 8 `/retro` step is unwired (operator decision, 2026-06) — once phases are complete the pipeline routes directly to the MCP gate.
 
+**Research is a PRE-planning gate — skipped when `PHASES.md` already shows implementation.** Step 5 only routes a feature to research when it has NOT yet been planned. A pre-Step-5 guard in `lazy-state.py` (`compute_state`) checks, when no `RESEARCH*.md` is present, whether `PHASES.md` already exists with implementation evidence — any phase `Complete`/`In-progress`, ≥1 checked deliverable, or an `## Implementation Notes` block (the `lazy_core.phases_show_implementation` predicate). If so it emits a `_diag("Step 5 research gate skipped: …")` and falls through to Step 6, because a feature with implemented phases is past the pre-planning research stage — re-running Gemini there is wasted work. An empty-stub `PHASES.md` (zero parsed phases) does NOT count as evidence, so a stub never suppresses legitimate research. The predicate + diagnostic live in `lazy-state.py`/`lazy_core.py`; this wrapper carries no logic. (Cloud runs the same `--cloud` state machine — the guard is shared, not cloud-specific.)
+
 ```
 [ad-hoc task supplied?]  → Step 0.3 enqueue at top of queue (Bash, once) → fall through
 lazy-state.py --cloud → JSON {sub_skill, sub_skill_args, terminal_reason}
