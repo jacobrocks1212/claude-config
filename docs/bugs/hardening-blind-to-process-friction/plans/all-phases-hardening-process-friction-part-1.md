@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: hardening-blind-to-process-friction
-status: Ready
+status: In-progress
 created: 2026-06-15
 complexity: complex
 phases: [1]
