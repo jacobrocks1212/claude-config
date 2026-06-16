@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 > All three phases implemented and committed; validation tail (mark-fixed gate) pending. Do NOT flip to Fixed here — that is the `__mark_fixed__` gate's responsibility after the validation tail.
 
 **MCP runtime:** not-required — harness-internal Python state machine + thin skill-wrapper prose; no AlgoBooth app surface, no Tauri/MCP HTTP server. Verification is the in-file `--test` smoke harness (`lazy-state.py --test`) + `test_lazy_core.py`, the canonical regression net per `user/scripts/CLAUDE.md`.

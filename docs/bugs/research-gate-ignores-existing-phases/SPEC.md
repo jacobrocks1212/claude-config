@@ -2,7 +2,7 @@
 
 > `lazy-state.py`'s Step 5 research gate decides solely on RESEARCH*.md presence and never inspects PHASES.md, so a feature whose phases are already implemented gets routed to `needs-research` — wasting a full Gemini research prompt + ingest round-trip on work that is already done.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-16
 **Placement:** docs/bugs/research-gate-ignores-existing-phases
