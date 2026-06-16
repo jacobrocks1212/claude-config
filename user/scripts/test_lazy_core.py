@@ -15088,6 +15088,51 @@ def test_detect_friction_degraded_inputs_return_none():
     ) is None
 
 
+def test_detect_friction_meta_cycle_exempt_from_unexpected_commits():
+    """D-A (2026-06-16): a kind='meta' cycle (hardening/input-audit/recovery/
+    apply-resolution) is an orchestrator-driven remediation dispatch that
+    legitimately commits an unbounded number of times and carries sub_skill=None.
+    Signal (b) unexpected-commits MUST be exempt for it — otherwise every meta
+    cycle (e.g. a hardening cycle committing a script fix + a hardening-log
+    append) re-trips at its own --cycle-end, a self-perpetuating loop. Signal (a)
+    bracket-break is NOT exempt (a meta cycle that tears the run bracket is real
+    corruption)."""
+    _guard()
+    meta_marker = {
+        "feature_id": "f", "nonce": "n", "kind": "meta",
+        "run_started_at": "2026-06-16T00:00:00Z", "begin_head_sha": "aaaa1111",
+    }
+    # Many commits, sub_skill=None (the meta default) → NO unexpected-commits trip.
+    got = lazy_core.detect_cycle_bracket_friction(
+        meta_marker,
+        current_run_started_at="2026-06-16T00:00:00Z",  # identity intact
+        current_head_sha="bbbb2222",
+        sub_skill=None,  # meta cycles carry no sub_skill
+        commits_since=9,  # far beyond the default budget of 1
+    )
+    assert got is None, got
+    # Signal (a) bracket-break STILL trips for a meta cycle (run identity changed
+    # — exactly the D-B clobber). The exemption is signal (b) only.
+    torn = lazy_core.detect_cycle_bracket_friction(
+        meta_marker,
+        current_run_started_at="2026-06-16T99:99:99Z",  # identity changed
+        current_head_sha="bbbb2222",
+        sub_skill=None,
+        commits_since=9,
+    )
+    assert torn is not None and torn["reason"] == "cycle-bracket-break", torn
+    # Control: the SAME multi-commit shape on a kind='real' cycle still trips (b).
+    real_marker = dict(meta_marker, kind="real")
+    real = lazy_core.detect_cycle_bracket_friction(
+        real_marker,
+        current_run_started_at="2026-06-16T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill=None,
+        commits_since=9,
+    )
+    assert real is not None and real["reason"] == "unexpected-commits", real
+
+
 def test_append_friction_ledger_entry_round_trips():
     """WU-3: append_friction_ledger_entry appends a kind: process-friction,
     acked: false line to the SAME deny ledger; pending_hardening() then ≥1 and
@@ -15481,6 +15526,116 @@ def test_refuse_guard_op_set_matches_spec():
     assert set(lazy_core.CYCLE_REFUSED_OPS) == set(_GUARDED_OPS), (
         f"refused-op set drift: {sorted(lazy_core.CYCLE_REFUSED_OPS)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# D-B (hardening-blind-to-process-friction, 2026-06-16) — refuse_run_start_clobber
+#
+# --run-start must REFUSE overwriting a live run marker owned by a DIFFERENT
+# pipeline (a nested feature --run-start clobbering an active bug run marker).
+# Same-pipeline re-run-start (checkpoint resume) is ALLOWED. A >24h-stale marker
+# is a presumed-dead run and may be overwritten. Reads the marker RAW so the
+# session-id staleness path cannot mask the live owner.
+# ---------------------------------------------------------------------------
+
+def _capture_clobber_refusal(incoming_pipeline, now=None):
+    """Invoke refuse_run_start_clobber, capturing (exit_code_or_None, stderr)."""
+    import io as _io
+    buf = _io.StringIO()
+    real_stderr = sys.stderr
+    sys.stderr = buf
+    code = None
+    try:
+        if now is None:
+            lazy_core.refuse_run_start_clobber(incoming_pipeline)
+        else:
+            lazy_core.refuse_run_start_clobber(incoming_pipeline, now=now)
+    except SystemExit as exc:
+        code = exc.code if exc.code is not None else 0
+    finally:
+        sys.stderr = real_stderr
+    return code, buf.getvalue()
+
+
+def test_run_start_clobber_symbol_present():
+    """refuse_run_start_clobber exists on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "refuse_run_start_clobber"), "D-B missing refuse_run_start_clobber"
+
+
+def test_run_start_clobber_refuses_cross_pipeline_live_marker():
+    """A feature --run-start over a LIVE bug marker (different pipeline) refuses
+    (exit 3, names both pipelines) and leaves the existing marker untouched."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Live bug run marker (now-ish started_at).
+            lazy_core.write_run_marker(pipeline="bug", cloud=False, repo_root="/r", now=1_000_000.0)
+            run_path = Path(td) / "lazy-run-marker.json"
+            before = run_path.read_text(encoding="utf-8")
+            code, msg = _capture_clobber_refusal("feature", now=1_000_010.0)
+            assert code == 3, f"cross-pipeline clobber must exit 3, got {code}"
+            assert "bug" in msg and "feature" in msg, msg
+            assert run_path.read_text(encoding="utf-8") == before, "marker must be untouched"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_allows_same_pipeline_resume():
+    """A feature --run-start over a LIVE feature marker (same pipeline =
+    checkpoint resume) does NOT refuse — write_run_marker proceeds to overwrite."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0)
+            code, _ = _capture_clobber_refusal("feature", now=1_000_010.0)
+            assert code is None, "same-pipeline re-run-start must NOT refuse (resume)"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_allows_when_no_marker():
+    """No existing marker → no refusal (the normal first --run-start)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            code, _ = _capture_clobber_refusal("feature", now=1_000_010.0)
+            assert code is None, "no marker must not refuse"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_allows_over_age_stale_marker():
+    """A >24h-stale cross-pipeline marker is a presumed-dead crashed run and may
+    be overwritten — no refusal (mirrors read_run_marker age-staleness path A)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Bug marker started_at far in the past relative to `now`.
+            lazy_core.write_run_marker(pipeline="bug", cloud=False, repo_root="/r", now=1_000_000.0)
+            # now is >24h (86400s) after started_at → age-stale → no refusal.
+            code, _ = _capture_clobber_refusal("feature", now=1_000_000.0 + 90_000.0)
+            assert code is None, "age-stale cross-pipeline marker must not refuse"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_corrupt_marker_fails_open():
+    """A corrupt/unparseable marker fails open (no refusal) — write_run_marker
+    overwrites it (mirrors the corrupt-file handling in read_run_marker)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            (Path(td) / "lazy-run-marker.json").write_text("{ not json", encoding="utf-8")
+            code, _ = _capture_clobber_refusal("feature")
+            assert code is None, "corrupt marker must fail open (no refusal)"
+        finally:
+            _clear_state_dir()
 
 
 # ---------------------------------------------------------------------------

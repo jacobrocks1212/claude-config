@@ -5305,6 +5305,11 @@ def main() -> int:
         # a cycle subagent is mid-dispatch (the cycle marker is present).  Zero
         # side effects on refusal (the guard exits before write_run_marker).
         lazy_core.refuse_if_cycle_active("--run-start")
+        # D-B (hardening-blind-to-process-friction, 2026-06-16): refuse to CLOBBER
+        # a live run marker owned by a DIFFERENT pipeline (e.g. a nested feature
+        # --run-start overwriting an active bug run marker). Same-pipeline
+        # re-run-start (checkpoint resume) is allowed. Zero side effects on refusal.
+        lazy_core.refuse_run_start_clobber("feature")
         # Write the marker for the feature pipeline.  cloud, repo_root, and
         # max_cycles are taken from the matching existing flags so no new flags
         # are needed for those values.

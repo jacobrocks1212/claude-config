@@ -3793,6 +3793,11 @@ def main() -> int:
         # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
         # mid-dispatch (coupled-pair mirror). Zero side effects on refusal.
         lazy_core.refuse_if_cycle_active("--run-start")
+        # D-B (hardening-blind-to-process-friction, 2026-06-16): refuse to CLOBBER
+        # a live run marker owned by a DIFFERENT pipeline (coupled-pair mirror of
+        # lazy-state.py). A nested feature --run-start must NOT overwrite this
+        # active bug run marker. Same-pipeline resume is allowed. Zero side effects.
+        lazy_core.refuse_run_start_clobber("bug")
         # Write the marker for the bug pipeline.  cloud, repo_root, and
         # max_cycles are taken from the matching existing flags so no new flags
         # are needed for those values.

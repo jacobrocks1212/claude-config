@@ -5315,6 +5315,11 @@ def detect_cycle_bracket_friction(
       (b) unexpected-commits — HEAD advanced by more than the conservative
           per-sub_skill budget beyond ``marker['begin_head_sha']``. A null
           begin-snapshot or a null/None ``commits_since`` disables this signal.
+          EXEMPT when ``marker['kind'] == 'meta'``: a meta cycle is an
+          orchestrator-driven remediation dispatch (hardening / input-audit /
+          recovery / apply-resolution) that legitimately commits an unbounded
+          number of times and carries no sub_skill to budget — signal (b) is
+          skipped entirely for it (signal (a) still applies).
 
     Args:
         marker: the cycle marker dict from read_cycle_marker() (snapshotted at
@@ -5364,6 +5369,28 @@ def detect_cycle_bracket_friction(
 
     # --- Signal (b): unexpected-commits -------------------------------------
     # Requires a known begin HEAD snapshot AND a known commit count.
+    #
+    # META-CYCLE EXEMPTION (hardening-blind-to-process-friction, 2026-06-16 D-A):
+    # a cycle whose marker kind=="meta" (hardening / input-audit / recovery /
+    # apply-resolution / coherence-recovery / needs-runtime-redispatch) is an
+    # ORCHESTRATOR-DRIVEN remediation dispatch, NOT a runaway real-skill subagent.
+    # A meta cycle legitimately commits an UNBOUNDED number of times (e.g. a
+    # hardening cycle commits a script fix AND a hardening-log append; an
+    # apply-resolution cycle commits each resolved sentinel) and carries
+    # sub_skill=None (no work-skill is dispatched), so the per-sub_skill budget
+    # defaults to 1 and 2+ legit commits tripped `unexpected-commits` on EVERY
+    # meta cycle — a self-perpetuating loop where each hardening cycle re-tripped
+    # at its own --cycle-end (Rounds 16/17 chased the symptom via the pseudo-skill
+    # budget rows + mandatory --sub-skill prose, but a meta cycle has no sub_skill
+    # to budget; the structural fix is to exempt kind==meta from signal (b)).
+    # Signal (a) bracket-break is NOT exempted — a meta cycle that tears the run
+    # bracket (overwrites/ends the run marker, e.g. the D-B clobber) is genuine
+    # corruption and must still self-announce.  The exemption is read from the
+    # marker dict the caller already passes (cycle_end_friction_check threads the
+    # live marker), so it is effective for the meta hardening cycle running THIS
+    # very dispatch — it cannot re-trip at its own --cycle-end.
+    if marker.get("kind") == "meta":
+        return None
     if begin_head_sha is not None and commits_since is not None:
         budget = _CYCLE_COMMIT_BUDGET.get(
             sub_skill or "", _CYCLE_COMMIT_BUDGET_DEFAULT
@@ -5584,6 +5611,96 @@ def refuse_if_cycle_active(op_name: str) -> None:
         f"routing the next cycle, lifecycle teardown ({op_name}), enqueuing, and "
         f"completion are the orchestrator's job. This op was refused with zero "
         f"side effects.\n"
+    )
+    sys.exit(3)
+
+
+def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None) -> None:
+    """Refuse a ``--run-start`` that would CLOBBER a live run marker owned by a
+    DIFFERENT pipeline (hardening-blind-to-process-friction, 2026-06-16 D-B).
+
+    Invoked at the ENTRY of each ``--run-start`` handler (lazy-state.py pipeline
+    "feature" / bug-state.py pipeline "bug"), AFTER ``refuse_if_cycle_active`` and
+    BEFORE ``write_run_marker`` — so a refused clobber leaves the existing marker
+    and all registry/counter state untouched.
+
+    THE DEFECT THIS CLOSES: a nested ``/lazy`` (feature) dispatched mid-run ran
+    ``lazy-state.py --run-start`` and ``write_run_marker`` UNCONDITIONALLY
+    overwrote the ACTIVE bug run marker (pipeline:bug session X → pipeline:feature
+    session Y).  That silently re-pointed the run identity, breaking the
+    validate-deny / ack guard for the real orchestrator session — the bug run's
+    hardening debt could never ack because its marker no longer existed.
+
+    DISCRIMINATOR (why pipeline, not session_id): at ``--run-start`` the INCOMING
+    run has no session_id yet — ``write_run_marker`` writes it bind-pending
+    (None), to be stamped by the inject hook on first firing.  So an incoming-vs-
+    existing session_id compare is impossible here.  The robust, mechanical
+    discriminator is the PIPELINE field: a feature ``--run-start`` clobbering a
+    live ``bug`` marker (or vice versa) is exactly the D-B signature and is ALWAYS
+    a cross-run accident.  A SAME-pipeline re-``--run-start`` is the legitimate
+    checkpoint-resume case (the same run continuing after a sanctioned pause) and
+    is ALLOWED to overwrite — the resume path restores its own counters.
+
+    Reads the marker file RAW (not via ``read_run_marker``) so the session-id
+    staleness path (path B, which returns None for a non-owner caller and would
+    hide the very marker we must protect) cannot mask the live owner.  Only the
+    24h AGE staleness is honored: a marker older than ``_MARKER_STALE_SECONDS`` is
+    a presumed-dead crashed run and may be freely overwritten (no refusal).
+
+    Fail-open: a missing / unreadable / corrupt / unparseable marker, or a marker
+    with no/blank pipeline field, never refuses — only an age-fresh, well-formed,
+    DIFFERENT-pipeline marker triggers the exit-3 refusal.
+
+    Args:
+        incoming_pipeline: the pipeline of the run being started ("feature" |
+            "bug").
+        now: epoch float for age comparison (injectable for hermetic tests;
+            defaults to time.time()).
+    """
+    if now is None:
+        now = time.time()
+    marker_path = claude_state_dir(create=False) / _MARKER_FILENAME
+    if not marker_path.exists():
+        return
+    try:
+        existing = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(existing, dict):
+            return  # corrupt root → fail-open (write_run_marker will overwrite)
+    except (OSError, json.JSONDecodeError):
+        return  # unreadable / unparseable → fail-open
+
+    # Age staleness: a >24h-old marker is a presumed-dead crashed run — overwriting
+    # it is the documented recovery (mirrors read_run_marker path A), so do NOT
+    # refuse.  Any parse failure on started_at degrades to "not age-stale" so we
+    # err toward protecting a live marker (conservative).
+    started_at_str = existing.get("started_at", "")
+    try:
+        started_dt = datetime.datetime.strptime(started_at_str, "%Y-%m-%dT%H:%M:%SZ")
+        started_epoch = (started_dt - datetime.datetime(1970, 1, 1)).total_seconds()
+    except (ValueError, TypeError):
+        started_epoch = now  # unparseable → treat as fresh (protect, don't clobber)
+    if now - started_epoch > _MARKER_STALE_SECONDS:
+        return  # presumed-dead crashed run → safe to overwrite, no refusal
+
+    existing_pipeline = (existing.get("pipeline") or "").strip()
+    if not existing_pipeline:
+        return  # no pipeline field → fail-open
+    if existing_pipeline == incoming_pipeline:
+        return  # same-pipeline re-run-start (checkpoint resume) → allow overwrite
+
+    # Live, well-formed, DIFFERENT-pipeline marker → refuse the clobber.
+    existing_session = existing.get("session_id")
+    sys.stderr.write(
+        f"REFUSED: `--run-start` (pipeline={incoming_pipeline!r}) would CLOBBER an "
+        f"ACTIVE run marker owned by a DIFFERENT pipeline "
+        f"(pipeline={existing_pipeline!r}, session_id={existing_session!r}, "
+        f"started_at={started_at_str!r}). Overwriting it silently re-points the run "
+        f"identity and breaks the validate-deny/ack guard for the live "
+        f"{existing_pipeline} orchestrator (the D-B clobber). This is almost always "
+        f"a nested/off-task pipeline dispatched inside another run — STOP and do "
+        f"NOT start a {incoming_pipeline} run here. If the {existing_pipeline} run is "
+        f"genuinely dead, end it first (`--run-end`) from its own orchestrator. This "
+        f"op was refused with ZERO side effects (the existing marker is untouched).\n"
     )
     sys.exit(3)
 

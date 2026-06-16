@@ -2643,6 +2643,67 @@ def test_f2a_guard_ref_stale_nonce_denies():
         )
 
 
+def test_dc_guard_bare_ref_no_marker_denies_not_allows():
+    """D-C (2026-06-16): a bare '@@lazy-ref nonce=<hex>' token dispatched while NO
+    live run marker is present must DENY, NOT silently allow the literal token
+    through to the subagent. Previously the marker-absent fast-path returned None
+    (silent allow), so a subagent received the bare token and improvised an
+    off-task run (this is the exact mechanism the D-B marker clobber triggered).
+    The deny reason names the unresolved-by-reference defect and prescribes the
+    verbatim dispatch_prompt."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        # NO run marker written → marker-absent path.
+        bogus_nonce = "deadbeef" * 4
+        ref_token = f"@@lazy-ref nonce={bogus_nonce}"
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+        stdin_text = _e1_preToolUse_json(ref_token, tool_use_id=tool_use_id)
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        assert output, "guard must DENY (emit JSON) for a bare ref token with no marker"
+        payload = json.loads(output)
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"bare @@lazy-ref with no live marker must be DENIED, not silently "
+            f"allowed; got {hso.get('permissionDecision')!r}; output: {output!r}"
+        )
+        reason = hso.get("permissionDecisionReason", "").lower()
+        assert "by-reference" in reason and "verbatim" in reason, (
+            f"deny reason must name the unresolved-by-reference defect and "
+            f"prescribe the verbatim prompt; got {reason!r}"
+        )
+
+
+def test_dc_guard_non_ref_no_marker_still_allows():
+    """D-C regression guard: the D-C deny is SCOPED to bare ref tokens only — a
+    normal (non-ref) prompt with no marker still gets the fast-path silent allow
+    (exit 0, no deny). The bare-ref deny must not broaden into a general
+    marker-absent deny."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        # A normal dispatch prompt, NOT a ref token, with no marker present.
+        stdin_text = _e1_preToolUse_json("Implement Phase 3 of the plan verbatim.")
+        result = _run_guard_py(stdin_text, env)
+        assert result.returncode == 0, f"guard must exit 0; stderr: {result.stderr!r}"
+        output = result.stdout.strip()
+        # Marker-absent non-ref path is a silent allow → either no output, or an
+        # explicit allow. Never a deny.
+        if output:
+            payload = json.loads(output)
+            decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+            assert decision != "deny", (
+                f"non-ref prompt with no marker must NOT be denied; got {decision!r}"
+            )
+
+
 def test_f2a_guard_ref_hardening_class_allows_and_acks():
     """F2a (guard): a by-reference dispatch of a HARDENING-class fresh nonce must
     ALLOW + consume + write updatedInput + ack the oldest hardening debt.

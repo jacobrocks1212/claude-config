@@ -208,6 +208,24 @@ _TRANSCRIPTION_SLIP_REASON = (
 )
 
 
+_UNRESOLVED_REF_REASON = (
+    "unresolved by-reference dispatch token — the Agent prompt is a bare "
+    "`@@lazy-ref nonce=<hex>` token that could NOT be resolved to a registered, "
+    "fresh, run-start-gated emission (no live owner run marker for this session, or "
+    "the nonce is expired/consumed/unknown). A bare `@@lazy-ref` token is MEANINGLESS "
+    "to a subagent — if it reached one it would silently improvise an off-task run "
+    "(hardening-blind-to-process-friction D-C). The by-reference token is resolvable "
+    "ONLY by this PreToolUse guard while the OWNING orchestrator session's run marker "
+    "is live; it is NOT a portable prompt. Corrective action: dispatch the probe's "
+    "VERBATIM `dispatch_prompt` (the fully-expanded text) — that is the only safe form "
+    "for an Agent dispatch. Do NOT pass `dispatch_prompt_ref` / a bare `@@lazy-ref` "
+    "token as the Agent prompt. Re-run the Step 1a probe (`--emit-prompt` / "
+    "`--emit-dispatch <class>`) and dispatch its emitted prompt text directly. This "
+    "denial is itself routed to the hardening stage per the inline-unbounded cadence "
+    "(locked decision 4)."
+)
+
+
 def _default_deny_reason() -> str:
     """Return the standard corrective deny reason for an unregistered/stale prompt."""
     return _CORRECTIVE_RECIPE
@@ -519,6 +537,22 @@ def guard(stdin_text: str) -> str | None:
 
     prompt = tool_input["prompt"]
 
+    # -------------------------------------------------------------------------
+    # D-C (hardening-blind-to-process-friction, 2026-06-16): a bare `@@lazy-ref`
+    # token must NEVER reach a subagent unresolved.  The by-reference token is
+    # resolvable ONLY here (the F2a branch below) and ONLY while the owning run
+    # marker is live; it is not a portable prompt.  Detect the bare-ref shape up
+    # front so it can NEVER slip through the `marker is None` fast-path allow:
+    # without a live owner marker the F2a branch cannot run, so a bare ref token
+    # at that point is definitionally unresolvable → DENY (not the silent allow a
+    # non-ref prompt gets).  This is the exact mechanism that let the clobbered-
+    # marker run pass a bare `@@lazy-ref` to a subagent, which then improvised an
+    # off-task /lazy (the D-B clobber).  A ref token WITH a live marker continues
+    # to the F2a branch and is resolved+consumed normally; only when that fails
+    # (expired/consumed/unknown nonce) does it fall to the hash-lookup, which now
+    # reports the ref-specific corrective reason rather than the generic recipe.
+    _is_bare_ref = _REF_RE.match(prompt.strip()) is not None
+
     # Check whether a valid run marker is present.
     # Pass the hook-input session_id so staleness path B (session mismatch) can
     # fire in production: if the marker is bound to a different session_id (a
@@ -528,6 +562,11 @@ def guard(stdin_text: str) -> str | None:
     # (this guard firing from a non-owner session must never disarm the owner).
     marker = lazy_core.read_run_marker(session_id=session_id)
     if marker is None:
+        # D-C: a bare `@@lazy-ref` token with NO live owner marker is
+        # definitionally unresolvable — DENY it rather than allowing the literal
+        # token through to the subagent (which would then improvise off-task).
+        if _is_bare_ref:
+            return _deny_json(_UNRESOLVED_REF_REASON)
         # No active run — fast path allow (marker-absent path is handled by the
         # bash wrapper before reaching python, but guard against it here too).
         return None
@@ -598,6 +637,20 @@ def guard(stdin_text: str) -> str | None:
         # Any unexpected error in the reference branch → fail-open (fall through
         # to normal hash-lookup path, which will deny if not registered).
         pass
+
+    # D-C: if the prompt is a bare `@@lazy-ref` token and we reached here, the F2a
+    # branch did NOT resolve+consume it (nonce expired/consumed/unknown, or a TOCTOU
+    # race).  The literal token hashes to nothing registered, so the hash-lookup
+    # path below would deny with the GENERIC recipe — but the precise, actionable
+    # diagnosis is "this is an unresolved by-reference token; dispatch the verbatim
+    # prompt instead".  Deny here with the ref-specific corrective reason and ledger
+    # it as hardening debt (a bare ref reaching the guard unresolved IS a harness
+    # gap to route).  Never an ALLOW — a literal token must never reach a subagent.
+    if _is_bare_ref:
+        return _deny_and_ledger(
+            _UNRESOLVED_REF_REASON,
+            tool_use_id=tool_use_id, sha=lazy_core.prompt_sha256(prompt), prompt=prompt,
+        )
 
     # Hash the prompt (CRLF-normalized).
     sha = lazy_core.prompt_sha256(prompt)
