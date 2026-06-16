@@ -1242,8 +1242,22 @@ def count_deliverables(phases_text: str) -> tuple[int, int]:
 # Matches the title text of a "verification-only" subsection — rows under such
 # a subsection are workstation-only runtime/MCP checks that cloud cannot tick
 # and that the workstation /mcp-test step (not /write-plan) is responsible for.
+#
+# "reachability smoke" is a /spec-phases-authored convention
+# (_components/phases-runtime-verification.md): every phase that introduces a
+# new user-facing API surface carries one in-phase reachability-smoke row — a
+# single live MCP call proving the surface is callable end-to-end, owned by
+# /mcp-test, not /write-plan. The canonical convention nests the row UNDER
+# Runtime Verification, but authors also emit it as its own sibling bold
+# subsection header (e.g. ``**Reachability smoke (new API surface introduced
+# this phase):**``). That sibling header must itself be recognized as a
+# verification boundary, otherwise its only unchecked row reads as plannable
+# implementation work and Step 7a loops on write-plan forever even though every
+# implementation plan part is Complete (live no-progress loop: d8-session-format
+# Phase 8, 2026-06-16 hardening round).
 _VERIFICATION_SECTION_RE = re.compile(
-    r"runtime\s+verification|mcp\s+(?:integration\s+test|test\s+assertion|assertion)",
+    r"runtime\s+verification|reachability\s+smoke"
+    r"|mcp\s+(?:integration\s+test|test\s+assertion|assertion)",
     re.IGNORECASE,
 )
 

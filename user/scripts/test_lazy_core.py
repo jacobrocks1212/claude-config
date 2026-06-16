@@ -406,6 +406,49 @@ def test_ruvonly_mcp_integration_test_heading():
     assert result is True, f"expected True, got {result}"
 
 
+def test_ruvonly_reachability_smoke_bold_subsection():
+    """A '**Reachability smoke ...**' sibling bold subsection counts as
+    verification-only — its row is a live MCP call owned by /mcp-test, not a
+    plannable implementation deliverable.
+
+    Regression for the d8-session-format Phase 8 no-progress loop (2026-06-16
+    hardening round): the only non-RuntimeVerification unchecked row sat under a
+    bold ``**Reachability smoke (new API surface introduced this phase):**``
+    header. Before the fix _VERIFICATION_SECTION_RE did not match
+    'Reachability smoke', so the row read as implementation work, the detector
+    returned False, and Step 7a looped on write-plan even though every plan part
+    was Complete. 'Reachability smoke (new API surface ...)' is a /spec-phases
+    authoring convention so this recurs across features.
+    """
+    _guard()
+    text = (
+        "### Phase 8: Session format finalize\n"
+        "- [x] Implementation complete\n"
+        "**Reachability smoke (new API surface introduced this phase):**\n"
+        "- [ ] reachability smoke (reachability-smoke — workstation-eligible): "
+        "MCP call to trigger_file_menu_action returns a non-error response and "
+        "the action is confirmed via get_session_events.\n"
+        "**Runtime Verification**\n"
+        "- [ ] No console errors on session save\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (reachability-smoke bold subsection is verification-only), got {result}."
+    )
+
+
+def test_ruvonly_reachability_smoke_heading():
+    """An '### Reachability Smoke' markdown heading is also a verification
+    section (heading-form mirror of the bold-subsection case)."""
+    _guard()
+    text = (
+        "### Reachability Smoke\n"
+        "- [ ] MCP call to new tool returns non-error\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, f"expected True, got {result}"
+
+
 # ---------------------------------------------------------------------------
 # Tests: fence-awareness — count_deliverables
 # ---------------------------------------------------------------------------
