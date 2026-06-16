@@ -98,6 +98,16 @@ Resolved with the operator (these are harness-design decisions and remain the op
 - **D3 — Fix both prevention and detection (defense in depth):** add the detection→debt-ledger→hardening path so any future bypass self-announces, **and** make prevention robust per D4.
 - **D4 — Arming-free, `agent_id`-targeted prevention (supersedes the marker-armed C2 approach for the recursion case):** stop depending on an orchestrator-written marker. A dispatched cycle subagent is exactly the context where the PreToolUse `agent_id` field is **present**, so the C2 hook should — whenever `agent_id` is present (caller is a subagent) — **deny** recursive `Agent`/`Task` dispatch, `/lazy-batch` invocation, and `lazy-state.py`/`bug-state.py` routing+lifecycle flags (`--run-start/--run-end/--apply-pseudo/--emit-dispatch/--probe/--emit-prompt/…`) and `dev:kill`/`dev:restart`, while **allowing** the orchestrator (`agent_id` absent) to dispatch and run lifecycle ops. This removes the LLM-dependent `--cycle-begin` arming as the load-bearing trip and fixes the orchestrator-self-deny defect in one move. (The cycle marker can remain as a *complementary* carrier of `feature_id`/`commit_tally` for the 2nd-feature/commit-ceiling tripwires, but recursion/lifecycle containment must not depend on it being armed.)
 
+## Implementation Phases
+
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown. Boundary rationale: **Phase 1** (`agent_id`-targeted containment, D4) ships the prevention fix that addresses the literal incident and is independently verifiable; **Phase 2** (process-friction detector → deny ledger, D1/D3) adds the deterministic detector so any future bypass self-announces; **Phase 3** (process-friction hardening trigger, D2) is the prose layer consuming Phase 2's ledger entry, last because it has nothing to route until the entry shape exists.
+
+Planning decisions resolved from the Open Questions below (scope-class — these shape *how* the fix is built, not user-visible behavior):
+- **Run-id identity:** `--cycle-begin` snapshots the run marker's `started_at` (the stable run identity); no dedicated `run_id` field is added.
+- **Unexpected-commits detection:** compare HEAD at `--cycle-end` against the SHA snapshotted at `--cycle-begin`, plus a conservative per-`sub_skill` expected-commit budget.
+- **Ledger reuse:** the process-friction signal reuses `lazy-deny-ledger.jsonl` with a `kind: process-friction` discriminator (NOT a sibling file) — the probe + `--run-end` gate already consume that ledger.
+- **Marker overwrite-protection** (the `write_cycle_marker` non-owner question) is **deferred**: D4 moves recursion/lifecycle containment off the marker entirely, so the self-heal overwrite is no longer load-bearing for prevention; the marker is retained only as the `feature_id`/`commit_tally`/run-identity carrier.
+
 ## Affected Area
 
 | Component | Files | Impact |
