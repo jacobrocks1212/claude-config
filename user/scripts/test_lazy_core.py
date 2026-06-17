@@ -17711,5 +17711,130 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# harness-hardening-retro-fixes Phase 1 (WU-2) — over-fit detector presence gate
+# ---------------------------------------------------------------------------
+#
+# The over-fit detector in harden-harness/SKILL.md Step 3 is LLM-executed prose
+# (this repo's MCP gate is operator-exempt), so the verifiable proof is a
+# presence gate: assert the four smell signals, the recurrence threshold, the
+# generalization-bound discipline, and the /spec-vs-/spec-bug choice rule are all
+# findable in the SKILL.md text. RED before WU-1 authored the prose; GREEN after.
+
+def test_harden_harness_overfit_prose_present():
+    """harness-hardening-retro-fixes Phase 1 / WU-2 contract: the over-fit
+    detector subsection in harden-harness/SKILL.md Step 3 enumerates:
+      - all four over-fit smell signals;
+      - the recurrence threshold (phrase-match → first occurrence; non-phrase → >=2);
+      - the generalization-bound discipline (smallest class + cite instance + name boundary);
+      - the /spec vs /spec-bug spin-off choice rule + the adhoc-enqueue front-enqueue path;
+      - the no-double-blocking + self-recursion-guard-preserved notes.
+
+    RED reason (before WU-1): none of these strings are present in SKILL.md.
+    """
+    _guard()  # mirror harness conventions for a consistent failure shape
+
+    assert _HARDEN_SKILL_PATH.exists(), (
+        f"harden-harness SKILL.md missing at {_HARDEN_SKILL_PATH}"
+    )
+    text = _HARDEN_SKILL_PATH.read_text(encoding="utf-8")
+    lower = text.lower()
+
+    # --- Over-fit detector subsection exists ---
+    assert "over-fit detector" in lower, (
+        "SKILL.md Step 3 must contain an 'over-fit detector' subsection (WU-1); "
+        "not found"
+    )
+
+    # --- Smell signal 1: literal-phrase-to-matcher ---
+    assert "literal-phrase-to-matcher" in lower or (
+        "literal phrase" in lower and "matcher" in lower
+    ), (
+        "Over-fit detector must enumerate smell signal 1 "
+        "(literal phrase added to a matcher / regex / header list / keyword set)"
+    )
+
+    # --- Smell signal 2: class recurred >=2 in the hardening log ---
+    assert "recurred" in lower and "hardening log" in lower, (
+        "Over-fit detector must enumerate smell signal 2 "
+        "(root-cause class recurred >=2 in the hardening log)"
+    )
+
+    # --- Smell signal 3: agent self-flags the fix as narrow ---
+    assert "self-flag" in lower or "will gap again" in lower, (
+        "Over-fit detector must enumerate smell signal 3 "
+        "(agent self-flags the fix as narrow — 'this will gap again on the next variant')"
+    )
+
+    # --- Smell signal 4: repeated deterministic dance (toolify candidate) ---
+    assert "deterministic dance" in lower and "toolify" in lower, (
+        "Over-fit detector must enumerate smell signal 4 "
+        "(repeated deterministic dance — toolify candidate per the framework's bar)"
+    )
+
+    # --- Recurrence threshold (SPEC Open Question 1): phrase-match first; non-phrase >=2 ---
+    assert "recurrence threshold" in lower, (
+        "Over-fit detector must state the recurrence threshold explicitly"
+    )
+    assert "first occurrence" in lower, (
+        "Recurrence threshold must say a phrase-match patch spins off on the FIRST occurrence"
+    )
+    assert ">=2" in text or "≥2" in text or ">= 2" in text or "≥ 2" in text, (
+        "Recurrence threshold must say a non-phrase recurrence needs >=2 occurrences"
+    )
+
+    # --- Generalization bound ("most general within reason") ---
+    assert "generalization bound" in lower, (
+        "Over-fit detector must state the generalization-bound discipline"
+    )
+    assert "smallest class" in lower, (
+        "Generalization bound must target the smallest class subsuming the instance + neighbors"
+    )
+    assert "class boundary" in lower, (
+        "Generalization bound must require naming the class boundary explicitly"
+    )
+
+    # --- Spin-off action + choice rule + adhoc-enqueue front-enqueue ---
+    assert "spin-off action" in lower, (
+        "Over-fit detector must describe the spin-off action"
+    )
+    # Choice rule: structural/new-capability -> /spec; defect/regression/toolify -> /spec-bug.
+    assert "/spec-bug" in text and "/spec" in text, (
+        "Spin-off action must state the /spec vs /spec-bug choice rule"
+    )
+    assert "front-enqueue" in lower, (
+        "Spin-off action must front-enqueue the generalization spec"
+    )
+    assert "adhoc-enqueue" in lower, (
+        "Spin-off action must invoke via the adhoc-enqueue protocol "
+        "(references _components/adhoc-enqueue.md --type bug path)"
+    )
+
+    # --- No double-blocking + self-recursion guard preserved ---
+    assert "no double-blocking" in lower or "never block" in lower, (
+        "Over-fit detector must state no-double-blocking (the instance is already fixed, "
+        "so the spin-off never blocks the current run)"
+    )
+    assert "self-recursion guard" in lower, (
+        "Over-fit detector must state the self-recursion-guard-preserved note "
+        "(a spin-off is an enqueue, not a recursive hardening dispatch)"
+    )
+
+    # --- Step 4 round template records BOTH patch AND spin-off ---
+    assert "over-fit spin-off" in lower, (
+        "Step 4 round template must gain an 'Over-fit spin-off:' record line"
+    )
+    # --- Return format gains a spinoff field ---
+    assert "spinoff" in lower, (
+        "Return format must gain a 'spinoff' field (id + reason, or none)"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_harden_harness_overfit_prose_present",
+     test_harden_harness_overfit_prose_present),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

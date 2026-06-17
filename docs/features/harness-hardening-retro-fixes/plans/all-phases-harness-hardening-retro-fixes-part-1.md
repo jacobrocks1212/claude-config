@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: harness-hardening-retro-fixes
-status: Ready
+status: In-progress
 created: 2026-06-17
 complexity: complex
 phases: [1, 2]
@@ -96,8 +96,8 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — harden-harness over-fit detector + spin-off prose (Phase 1)
-- [ ] WU-2 — Phase 1 over-fit-detector tests / presence gate
+- [x] WU-1 — harden-harness over-fit detector + spin-off prose (Phase 1)
+- [x] WU-2 — Phase 1 over-fit-detector tests / presence gate
 - [ ] WU-3 — verification-only canonical marker SSOT + detector rekey (lazy_core)
 - [ ] WU-4 — producers emit the canonical marker (phases-runtime-verification + blocked-resolution)
 - [ ] WU-5 — Phase 2 detector tests (novel-header, un-migrated-warning, lockstep)

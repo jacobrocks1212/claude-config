@@ -135,6 +135,81 @@ Plus:
 Commit under the `harden(<area>):` prefix (see §Commit discipline below). Commits stay
 local — do NOT `git push`; the orchestrator/operator owns pushes for claude-config.
 
+#### Over-fit detector (anti-overfit reflex — runs AFTER the mechanical fix lands)
+
+The mechanical fix ALWAYS lands first (the run is never left broken / never blocked). Then,
+BEFORE writing the Step 4 round, run the over-fit detector to decide whether to ALSO spin off
+a generalized `/spec` or `/spec-bug` for the broader *class* this fix is a symptom of. The
+instance is already fixed, so a spin-off is queued work — it never blocks the current run.
+
+**Why this exists.** Two consecutive hardening rounds once patched the same
+verification-regex class back-to-back (each added another literal phrase to a matcher); the
+durable fix was structural. The over-fit detector stops that whack-a-mole: it notices when a
+fix is fitting to *observed data* rather than to *structure*, and spins off the generalization.
+
+**Over-fit smell signals (ANY ONE trips a spin-off):**
+
+1. **Literal-phrase-to-matcher.** The fix adds a literal phrase/string to a matcher — a
+   regex alternation, a header list, a keyword set, an allow-list. This is fitting to the
+   observed instance, not to the structure that generates the class. (Canonical example: adding
+   another `|seam\s+audit` alternative to `_VERIFICATION_SECTION_RE`.)
+2. **Class recurred ≥2 in the hardening log.** The root-cause *class* (signature match against
+   prior rounds in `hardening-log/YYYY-MM.md` — same root-cause class + same component/symbol)
+   has now been hit at least twice. Grep the current and prior months' logs for the
+   classification + the file/symbol touched before deciding.
+3. **Agent self-flags the fix as narrow.** While implementing, you recognize "this will gap
+   again on the next variant" — the fix handles this case but not the obvious near-neighbor
+   cases the same structure will produce.
+4. **Repeated deterministic dance (toolify candidate).** The friction is a repeated
+   deterministic multi-step dance that meets the upstream framework's deterministic-only bar
+   (deterministic AND repeated ≥2 runs AND token-heavy — see
+   `docs/features/unified-pipeline-orchestrator/toolify-bar.md`). This is in-run
+   dance-recurrence detection — do NOT shell `toolify-miner.py` mid-cycle (the offline miner
+   *proposes*; harden-harness performs its own in-run detection and spins off the same
+   `/spec-bug` the miner's promotion checklist step 7 describes).
+
+**Recurrence threshold (resolved this cycle — SPEC Open Question 1).**
+- A **phrase-match patch** (signal 1) spins off on the **FIRST occurrence** — a phrase-match
+  fix is over-fit by construction, so it does not wait for a recurrence.
+- A **non-phrase** recurrence (signals 2–4) needs **≥2** occurrences of the class before it
+  spins off (one structural fix is not yet evidence of a pattern).
+
+**Generalization bound ("most general within reason").** The spun-off spec targets the
+**smallest class that subsumes the observed instance and its near neighbors** — NOT a
+speculative rewrite. The problem statement MUST:
+- cite the concrete instance(s) as evidence (the round number(s), the file/symbol, the
+  literal phrase added);
+- name the **class boundary** explicitly (what is in the class, what is deliberately out);
+- propose no behavior beyond subsuming the cited instance + its near neighbors.
+This keeps generalization honest and reviewable. When in doubt, draw the boundary tighter and
+let a later round widen it.
+
+**Spin-off action.** Compose the generalized problem statement (the *class*, not the
+instance), then invoke the generalization skill via the `adhoc-enqueue` protocol,
+**front-enqueued** so it is worked next:
+
+- **Choice rule:** structural redesigns + new capabilities → **`/spec`**; defects /
+  regressions + toolify-this-dance → **`/spec-bug`**.
+- Use the `--type bug` front-enqueue path for the `/spec-bug` route (see
+  `~/.claude/skills/_components/adhoc-enqueue.md` → routes to `bug-state.py --enqueue-adhoc`,
+  seeding `docs/bugs/<id>/` + `ADHOC_BRIEF.md`). Use the default `--type feature` path for the
+  `/spec` route. Do NOT re-implement enqueue logic — that path is upstream-owned and shipped.
+- **Cross-reference both ways:** the spun-off doc names this hardening round + the instance as
+  its origin; the Step 4 round names the spun-off item id.
+
+**No double-blocking.** Because the instance is already fixed, the spin-off NEVER blocks the
+current run — it is queued work, surfaced via the Step 4 round + a `PushNotification`. Do NOT
+write `BLOCKED.md` for a spin-off.
+
+**Self-recursion guard preserved.** A spin-off is a `/spec`/`/spec-bug` enqueue, NOT a
+recursive hardening dispatch, so it does NOT trip the existing depth-1 hardening guard (see
+§Cadence → "Self-recursion guard"). The depth guard only fires on a denied *hardening-class*
+dispatch; an `adhoc-enqueue` of a spec/bug is a different class entirely.
+
+**No over-fit smell → no spin-off.** A fix that changes *structure* (not a phrase) and whose
+class has not recurred is the healthy case: land the mechanical fix, record `spinoff: none` in
+the round + Return format, and continue. Do NOT manufacture a spurious spin-off.
+
 **Contract / policy / design forks** (new pipeline steps, authority changes, gate semantics
 changes, anything an operator would want to own):
 
@@ -183,6 +258,10 @@ template (the harness's own hypothesis-ledger discipline):
   - Mechanical fix applied: <description>. Gates run: test_lazy_core.py N/N, test_hooks.py N/N, lint-skills.py OK, --test suites OK. Commit: <hash>.
   - NEEDS_INPUT.md written: <path>. Decisions: <decision titles>.
 
+**Over-fit spin-off:** <one of:>
+  - none — fix is structural / class has not recurred; no over-fit smell tripped.
+  - harden(spinoff): <smell signal(s) that tripped — e.g. "literal-phrase-to-matcher (signal 1)"> → front-enqueued <`/spec`|`/spec-bug`> `<item_id>` for the class «<one-line class boundary>». Cited instance(s): <round#(s) / file:symbol / phrase>. PushNotification sent.
+
 **Gates run:**
   test_lazy_core.py: <N/N>
   test_hooks.py: <N/N>
@@ -190,6 +269,10 @@ template (the harness's own hypothesis-ledger discipline):
   lazy-state.py --test: OK | FAIL
   bug-state.py --test: OK | FAIL
 ```
+
+When the over-fit detector trips, the round records BOTH the mechanical patch (the `**Action:**`
+line) AND the spin-off (the `**Over-fit spin-off:**` line with the front-enqueued item id) — the
+patch is never elided in favor of only the spin-off, nor vice-versa.
 
 If the hardening log directory or the current month's file does not yet exist, create it.
 
@@ -251,6 +334,10 @@ The commit prefix is load-bearing for retro grading: the HARDENING.md log cites 
 2. Either:
    - A committed mechanical fix (under full gates, `harden(<area>):` prefix), OR
    - A `NEEDS_INPUT.md` written to the relevant spec dir.
+   PLUS, when the over-fit detector trips: a front-enqueued `/spec`/`/spec-bug` for the
+   generalized class (via `adhoc-enqueue`), recorded in the round's `**Over-fit spin-off:**`
+   line and surfaced via `PushNotification`. The mechanical fix and the spin-off are both
+   emitted — the spin-off never replaces the immediate fix.
 3. Return summary to the dispatching orchestrator (see §Return format below).
 
 ## Return format (to the dispatching orchestrator)
@@ -261,5 +348,6 @@ Structured summary:
 - `divergence_point`: one-line naming the step and dispatch class
 - `root_cause_class`: one of missing-emit-section | unbound-token | ambiguous-prose | script-defect | missing-contract | hook-defect
 - `action`: "mechanical-fix" (with commit hash) or "needs-input" (with path)
+- `spinoff`: the over-fit spin-off, if any — `<item_id> (reason: <smell signal + one-line class>)`, or `none`. When non-`none`, the orchestrator fires a `PushNotification` ("spun off `<item_id>` — `<reason>`") and adds a D7 digest entry; the front-enqueued item is worked next.
 - `gates_run`: summary of counts (test_lazy_core.py N/N, test_hooks.py N/N, etc.)
 - `log_path`: path to the hardening-log round (e.g. docs/specs/turn-routing-enforcement/hardening-log/2026-06.md)
