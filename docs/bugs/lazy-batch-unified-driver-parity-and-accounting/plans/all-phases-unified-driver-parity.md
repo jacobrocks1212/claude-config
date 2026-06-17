@@ -104,8 +104,8 @@ All three phases are independent (no cross-phase dependency edges). They are exe
 
 ## Work Units
 
-- [ ] WU-1 — Item 1: consume-independent forward/meta counter advance in `lazy_core` + `--apply-pseudo` call-site (Fix-A)
-- [ ] WU-2 — Item 1: hermetic tests for the state-change advance + idempotence + meta-routing + Theory-1b
+- [x] WU-1 — Item 1: consume-independent forward/meta counter advance in `lazy_core` + `--apply-pseudo` call-site (Fix-A)
+- [x] WU-2 — Item 1: hermetic tests for the state-change advance + idempotence + meta-routing + Theory-1b
 - [ ] WU-3 — Item 3: `_load_bug_queue_for_merged` bare-except → `_diag` breadcrumb + breadcrumb test
 - [ ] WU-4 — Item 3: unified-driver-loop fallthrough prose mirrored across `/lazy-batch` ↔ `/lazy-batch-cloud` (option b)
 - [ ] WU-5 — Item 2: `__mark_fixed__` block (incl. `--archive-fixed` chain) added to `/lazy-batch` + `/lazy-batch-cloud` Step 1c.5

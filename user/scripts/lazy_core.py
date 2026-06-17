@@ -7700,6 +7700,93 @@ def advance_meta_cycle() -> dict | None:
     return marker
 
 
+# Forward-advancing pseudo-skills: inline (--apply-pseudo) terminals that ADVANCE
+# the pipeline a step (write a receipt / flip status / archive), as opposed to
+# cleanup/meta pseudo-skills. A forward-advancing pseudo-skill counts toward the
+# forward budget (forward_cycles); any other __-prefixed (or falsy) sub_skill is
+# meta. Kept here as the SSOT for the Fix-A classifier (item 1,
+# lazy-batch-unified-driver-parity-and-accounting Phase 1).
+_FORWARD_ADVANCING_PSEUDO_SKILLS = frozenset({
+    "__mark_complete__",
+    "__mark_fixed__",
+    "__write_validated_from_skip__",
+    "__write_validated_from_results__",
+    "__grant_skip_no_mcp_surface__",
+    "__flip_plan_complete_cloud_saturated__",
+})
+
+
+def advance_forward_cycle(state: dict) -> dict | None:
+    """Fix-A (item 1): a CONSUME-INDEPENDENT forward/meta advance keyed on a change
+    in the marker-recorded ``(feature_id, current_step, sub_skill)`` tuple.
+
+    ROOT CAUSE (lazy-batch-unified-driver-parity-and-accounting, 2026-06-17):
+    forward-advancing inline pseudo-skills (``__mark_complete__``/``__mark_fixed__``/
+    ``__write_validated_*``/``__grant_skip_no_mcp_surface__``/
+    ``__flip_plan_complete_cloud_saturated__``) run via ``--apply-pseudo`` — they
+    dispatch no Agent, trigger no guard ALLOW, and increment no registry consume.
+    ``advance_run_counters`` gates on a consume rise, so the forward budget never
+    advances for them (and ``advance_meta_cycle`` only covers ``--emit-dispatch``
+    meta calls). This helper closes that gap by advancing on a genuine STATE
+    CHANGE — independent of the consume oracle.
+
+    The marker carries ``last_advance_state_key``: the
+    ``[feature_id, current_step, sub_skill]`` tuple at which a counter was last
+    advanced (a JSON list; a legacy marker without the key is treated as None, so
+    the first state change always advances). The advance fires iff the current
+    tuple DIFFERS from the recorded one — so a bare probe/inject re-fire with the
+    SAME tuple is a no-op (preserves the idempotence that the consume-gated
+    ``advance_run_counters`` provides for re-fires). On advance the key is updated.
+
+    Classification (a forward-advancing pseudo-skill OR a real sub_skill →
+    ``forward_cycles``; any other ``__``-prefixed / falsy sub_skill → ``meta_cycles``):
+      - real sub_skill (truthy, not ``__``-prefixed) → forward
+      - ``__``-prefixed AND in ``_FORWARD_ADVANCING_PSEUDO_SKILLS`` → forward
+      - any other ``__``-prefixed, OR falsy sub_skill → meta
+
+    Marker-gated: returns None (no write) when no run marker is present, mirroring
+    ``advance_meta_cycle``. When the tuple is unchanged, returns the marker
+    UNCHANGED (no write).
+
+    Args:
+        state: the resolved probe/apply state dict (reads ``sub_skill``,
+               ``feature_id``, ``current_step``).
+
+    Returns:
+        The marker dict (advanced or unchanged); None when no marker.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+
+    sub_skill = state.get("sub_skill")
+    # The advance key — JSON-serializable list (json.loads round-trips a tuple to a
+    # list, so compare as lists for stable equality across re-reads).
+    current_key = [
+        state.get("feature_id"),
+        state.get("current_step"),
+        sub_skill,
+    ]
+    prior_key = marker.get("last_advance_state_key")
+    if prior_key == current_key:
+        # Same state — a bare re-fire. Do NOT advance, do NOT write.
+        return marker
+
+    # Classify: forward iff a real skill OR a forward-advancing pseudo-skill.
+    is_real = bool(sub_skill) and not str(sub_skill).startswith("__")
+    is_forward_pseudo = sub_skill in _FORWARD_ADVANCING_PSEUDO_SKILLS
+    if is_real or is_forward_pseudo:
+        marker["forward_cycles"] = marker.get("forward_cycles", 0) + 1
+    else:
+        marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
+
+    marker["last_advance_state_key"] = current_key
+
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
 # ---------------------------------------------------------------------------
 # Phase 7 WU-7.1 — Deny ledger (routed hardening debt)
 # ---------------------------------------------------------------------------

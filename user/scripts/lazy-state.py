@@ -6527,6 +6527,25 @@ def main() -> int:
             date=args.apply_date, reason=args.reason,
             deferred_step=args.deferred_step,
         )
+        # Item-1 Fix-A (lazy-batch-unified-driver-parity-and-accounting Phase 1):
+        # forward-advancing pseudo-skills run inline here (no Agent, no guard
+        # ALLOW, no consume), so advance_run_counters never advances the forward
+        # budget for them. After a SUCCESSFUL forward-advancing pseudo-skill apply,
+        # advance the consume-independent forward/meta counter. The state key uses
+        # the spec dir slug as feature_id and the pseudo-skill name as the step, so
+        # each distinct apply is a distinct (feature_id, step, sub_skill) tuple —
+        # idempotent if the same apply re-fires. Marker-gated (no-op when no run).
+        if result.get("ok") and name in lazy_core._FORWARD_ADVANCING_PSEUDO_SKILLS:
+            try:
+                lazy_core.advance_forward_cycle({
+                    "sub_skill": name,
+                    "feature_id": Path(spec).resolve().parent.name,
+                    "current_step": name,
+                })
+            except Exception as exc:  # noqa: BLE001 — fail-open, never block apply
+                lazy_core._diag(
+                    f"--apply-pseudo {name}: forward-cycle advance failed ({exc})"
+                )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 

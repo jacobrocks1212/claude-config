@@ -18613,5 +18613,217 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# lazy-batch-unified-driver-parity-and-accounting Phase 1 (Fix-A) — Item 1.
+# ---------------------------------------------------------------------------
+#
+# advance_forward_cycle(state): a CONSUME-INDEPENDENT forward/meta advance keyed
+# on a change in the marker-recorded (feature_id, current_step, sub_skill)
+# tuple. Inline pseudo-skills (__mark_complete__/__mark_fixed__/__write_validated_*
+# /__grant_skip_no_mcp_surface__/__flip_plan_complete_cloud_saturated__) run via
+# --apply-pseudo, dispatch no Agent, trigger no guard ALLOW, and increment no
+# registry consume — so the consume-gated advance_run_counters never advances for
+# them. Fix-A advances on a genuine (feature_id, current_step, sub_skill) state
+# change persisted in last_advance_state_key, independent of the consume oracle.
+# This also closes Theory-1b (a verbatim real-skill dispatch that misses a consume
+# still advances on the state change).
+
+
+def test_advance_forward_cycle_state_change_no_consume_advances():
+    """WU-1 RED test (item-1 regression): a forward-advancing pseudo-skill apply
+    with a CHANGED (feature_id, current_step, sub_skill) tuple and NO consume
+    increment still advances forward_cycles by exactly 1.
+
+    Against pre-fix advance_run_counters this FAILS (it gates on
+    current_consume <= prior_consume → no consume → returns the marker unchanged,
+    forward_cycles stays 0). advance_forward_cycle advances on the state change.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            # NO dispatch consume — the inline pseudo-skill path is consume-free.
+            state = {
+                "sub_skill": "__mark_fixed__",
+                "feature_id": "bug-x",
+                "current_step": "mark-fixed",
+            }
+            # __mark_fixed__ is a forward-advancing pseudo-skill: it advances the
+            # pipeline (writes the FIXED receipt + archives), so it counts toward
+            # forward_cycles (the forward budget), NOT meta_cycles.
+            updated = lazy_core.advance_forward_cycle(state)
+            assert updated is not None, (
+                "advance_forward_cycle must return the updated marker when a marker "
+                "is present"
+            )
+            assert updated["forward_cycles"] == 1, (
+                f"a forward-advancing pseudo-skill state change with no consume must "
+                f"advance forward_cycles to 1, got {updated['forward_cycles']!r}"
+            )
+            assert updated.get("last_advance_state_key") == [
+                "bug-x", "mark-fixed", "__mark_fixed__",
+            ], (
+                f"the advance must persist the (feature_id, current_step, sub_skill) "
+                f"key, got {updated.get('last_advance_state_key')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+    # No marker → returns None (marker-gated, mirrors advance_meta_cycle).
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.advance_forward_cycle(
+                {"sub_skill": "__mark_fixed__", "feature_id": "b", "current_step": "s"}
+            ) is None, "advance_forward_cycle must return None when no marker present"
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_forward_cycle_idempotent_across_refires():
+    """WU-2 case (b): a repeated identical (feature_id, current_step, sub_skill)
+    with no consume does NOT advance again — idempotent across re-fires (preserves
+    the consume-gated no-op invariant for bare probe/inject re-fires)."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            state = {
+                "sub_skill": "/execute-plan",
+                "feature_id": "feat-x",
+                "current_step": "execute-plan",
+            }
+            m1 = lazy_core.advance_forward_cycle(state)
+            assert m1["forward_cycles"] == 1, m1
+            # Same tuple, three re-fires → no further advance.
+            for _ in range(3):
+                mN = lazy_core.advance_forward_cycle(state)
+                assert mN["forward_cycles"] == 1, (
+                    f"identical state key must NOT advance again, got "
+                    f"{mN['forward_cycles']!r}"
+                )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_forward_cycle_pseudo_cleanup_routes_meta():
+    """WU-2 case (c): a __-prefixed cleanup-class pseudo-skill that is NOT a
+    forward-advancing terminal routes to meta_cycles, not forward_cycles.
+
+    The classifier mirrors advance_run_counters: a forward-advancing pseudo-skill
+    is one in lazy_core._FORWARD_ADVANCING_PSEUDO_SKILLS; any other __-prefixed or
+    falsy sub_skill is meta."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            state = {
+                "sub_skill": "__neutralize_sentinel__",
+                "feature_id": "feat-x",
+                "current_step": "cleanup",
+            }
+            m = lazy_core.advance_forward_cycle(state)
+            assert m["meta_cycles"] == 1, (
+                f"a non-forward __-prefixed cleanup pseudo-skill must route to "
+                f"meta_cycles, got meta={m['meta_cycles']!r} fwd={m['forward_cycles']!r}"
+            )
+            assert m["forward_cycles"] == 0, (
+                f"forward_cycles must stay 0 for a meta cleanup, got "
+                f"{m['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_forward_cycle_verbatim_real_skill_theory_1b():
+    """WU-2 case (d) — Theory-1b closure: a real-skill sub_skill change advances
+    forward_cycles once even on a verbatim (consume-missed) dispatch.
+
+    No consume is simulated (the verbatim dispatch missed the guard ALLOW), yet the
+    state change drives the advance."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            # First real cycle.
+            s1 = {"sub_skill": "/plan-feature", "feature_id": "feat-x",
+                  "current_step": "plan-feature"}
+            m1 = lazy_core.advance_forward_cycle(s1)
+            assert m1["forward_cycles"] == 1, m1
+            # Second real cycle — different current_step → advances again, no consume.
+            s2 = {"sub_skill": "/execute-plan", "feature_id": "feat-x",
+                  "current_step": "execute-plan"}
+            m2 = lazy_core.advance_forward_cycle(s2)
+            assert m2["forward_cycles"] == 2, (
+                f"a verbatim real-skill state change must advance forward_cycles to "
+                f"2 with no consume (Theory-1b), got {m2['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_forward_cycle_legacy_marker_no_state_key_advances():
+    """A legacy marker lacking last_advance_state_key defaults to None → the first
+    state-change always advances (consistent with the legacy-watermark treatment in
+    advance_run_counters)."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            # Simulate a legacy marker: strip the new field if present.
+            marker_path = Path(td) / lazy_core._MARKER_FILENAME
+            m = json.loads(marker_path.read_text(encoding="utf-8"))
+            m.pop("last_advance_state_key", None)
+            marker_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+            updated = lazy_core.advance_forward_cycle(
+                {"sub_skill": "/execute-plan", "feature_id": "f", "current_step": "x"}
+            )
+            assert updated["forward_cycles"] == 1, (
+                f"legacy marker (no last_advance_state_key) must advance on first "
+                f"state change, got {updated['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    ("test_advance_forward_cycle_state_change_no_consume_advances",
+     test_advance_forward_cycle_state_change_no_consume_advances),
+    ("test_advance_forward_cycle_idempotent_across_refires",
+     test_advance_forward_cycle_idempotent_across_refires),
+    ("test_advance_forward_cycle_pseudo_cleanup_routes_meta",
+     test_advance_forward_cycle_pseudo_cleanup_routes_meta),
+    ("test_advance_forward_cycle_verbatim_real_skill_theory_1b",
+     test_advance_forward_cycle_verbatim_real_skill_theory_1b),
+    ("test_advance_forward_cycle_legacy_marker_no_state_key_advances",
+     test_advance_forward_cycle_legacy_marker_no_state_key_advances),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())
