@@ -126,7 +126,10 @@ for a fix real).
 1. **Anti-overfit engine in `/harden-harness`.** Over-fit smell detector (incl. hardening-log
    signature recurrence), generalization-bound discipline, `/spec`/`/spec-bug` front spin-off
    via `adhoc-enqueue`, hardening-log + PushNotification surfacing. Wire the toolify-candidate
-   trigger to the miner from `unified-pipeline-orchestrator`.
+   trigger to the toolify framework's deterministic-only bar + promotion checklist from
+   `unified-pipeline-orchestrator` (the offline `toolify-miner.py` *proposes*; harden-harness
+   performs the in-run dance-recurrence detection and spins off a `/spec-bug` per the framework's
+   promotion checklist — it does not invoke the offline miner mid-cycle).
 2. **Verification-detector structural redesign.** Canonical marker SSOT; `/spec-phases` +
    `/blocked-resolution` emit it; detector rekeyed; deprecation shim for un-migrated producers;
    lockstep test.
