@@ -108,7 +108,7 @@ All three phases are independent (no cross-phase dependency edges). They are exe
 - [x] WU-2 — Item 1: hermetic tests for the state-change advance + idempotence + meta-routing + Theory-1b
 - [x] WU-3 — Item 3: `_load_bug_queue_for_merged` bare-except → `_diag` breadcrumb + breadcrumb test
 - [x] WU-4 — Item 3: unified-driver-loop fallthrough prose mirrored across `/lazy-batch` ↔ `/lazy-batch-cloud` (option b)
-- [ ] WU-5 — Item 2: `__mark_fixed__` block (incl. `--archive-fixed` chain) added to `/lazy-batch` + `/lazy-batch-cloud` Step 1c.5
+- [x] WU-5 — Item 2: `__mark_fixed__` block (incl. `--archive-fixed` chain) added to `/lazy-batch` + `/lazy-batch-cloud` Step 1c.5
 - [ ] WU-6 — Item 2: `--archive-fixed` parity predicate in `lazy_parity_audit.py` + parity-predicate test
 
 ---
