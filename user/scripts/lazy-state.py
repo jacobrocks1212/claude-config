@@ -278,7 +278,15 @@ def _load_bug_queue_for_merged(repo_root: Path) -> list[dict[str, Any]]:
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod.load_bug_queue(repo_root)
-    except Exception:  # noqa: BLE001 — degrade to features-only on any load error
+    except Exception as exc:  # noqa: BLE001 — degrade to features-only on load error
+        # item-3 (lazy-batch-unified-driver-parity-and-accounting Phase 2): a bug-
+        # side load failure used to degrade SILENTLY (bare-except → []), hiding a
+        # real bug from the merged view with no diagnostic. Emit a breadcrumb so
+        # the failure is observable in merged-view diagnostics, then STILL fail
+        # open (return []) so a feature-only repo's merged head is unaffected.
+        _diag(
+            f"merged-view bug-side load failed ({exc}) — degrading to features-only"
+        )
         return []
 
 

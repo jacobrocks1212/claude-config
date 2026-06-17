@@ -18825,5 +18825,107 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# lazy-batch-unified-driver-parity-and-accounting Phase 2 (item 3) — WU-3.
+# ---------------------------------------------------------------------------
+#
+# _load_bug_queue_for_merged (lazy-state.py) wraps the dynamic bug-state.py
+# load_bug_queue in a bare `except Exception: return []` — a bug-side load failure
+# silently degrades the merged view to features-only with NO diagnostic. WU-3
+# replaces the bare-except with a _diag(...) breadcrumb before degrading, so the
+# silent failure becomes observable in the merged-view diagnostics while still
+# failing open (returns []).
+
+
+def _load_lazy_state_module():
+    """Import lazy-state.py (hyphenated) in-process for white-box testing."""
+    import importlib.util as _ilu
+    path = _SCRIPTS_DIR / "lazy-state.py"
+    spec = _ilu.spec_from_file_location("_lazy_state_for_test", str(path))
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_load_bug_queue_for_merged_breadcrumb_on_load_failure():
+    """WU-3 (RED against the bare-except): when the bug-side loader raises,
+    _load_bug_queue_for_merged emits a _diag breadcrumb AND still returns [].
+
+    Forces the failure by monkeypatching importlib.util.module_from_spec (which the
+    function calls to materialize bug-state.py) to return a fake module whose
+    load_bug_queue raises. Pre-fix the bare-except swallows the error silently (no
+    breadcrumb) — RED. Post-fix a _DIAGNOSTICS entry naming the failure appears.
+    """
+    _guard()
+    import importlib.util as _ilu
+    ls = _load_lazy_state_module()
+
+    class _FakeMod:
+        @staticmethod
+        def load_bug_queue(repo_root):
+            raise RuntimeError("forced bug-side load failure")
+
+    real_module_from_spec = _ilu.module_from_spec
+
+    def _fake_module_from_spec(spec):
+        # Only intercept the bug-state load (the function names it
+        # "_bug_state_for_merged"); pass everything else through untouched.
+        if getattr(spec, "name", "") == "_bug_state_for_merged":
+            return _FakeMod()
+        return real_module_from_spec(spec)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # The function only reaches the load (and thus the failure) when
+        # bug-state.py exists — it does, as a sibling of lazy-state.py.
+        lazy_core.clear_diagnostics()
+        _ilu.module_from_spec = _fake_module_from_spec
+        try:
+            result = ls._load_bug_queue_for_merged(root)
+        finally:
+            _ilu.module_from_spec = real_module_from_spec
+
+        assert result == [], (
+            f"a bug-side load failure must still fail-open to [], got {result!r}"
+        )
+        breadcrumbs = [d for d in lazy_core._DIAGNOSTICS
+                       if "merged-view bug-side load" in d
+                       or "bug-side load failed" in d]
+        assert breadcrumbs, (
+            "a forced bug-side load failure must emit a _diag breadcrumb naming the "
+            f"failure; _DIAGNOSTICS={lazy_core._DIAGNOSTICS!r}"
+        )
+
+
+def test_load_bug_queue_for_merged_no_breadcrumb_on_clean_load():
+    """WU-3 negative: a clean load (no exception) emits NO breadcrumb — the
+    breadcrumb is for genuine failures only, not the expected early-outs."""
+    _guard()
+    ls = _load_lazy_state_module()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # No docs/bugs/queue.json → load_bug_queue returns its own result cleanly
+        # (an on-disk-fallback walk over an empty tree → []). No exception, so no
+        # breadcrumb.
+        (root / "docs" / "bugs").mkdir(parents=True)
+        lazy_core.clear_diagnostics()
+        result = ls._load_bug_queue_for_merged(root)
+        assert isinstance(result, list), result
+        failure_crumbs = [d for d in lazy_core._DIAGNOSTICS
+                          if "bug-side load failed" in d
+                          or "merged-view bug-side load" in d]
+        assert not failure_crumbs, (
+            f"a clean load must not emit a failure breadcrumb; got {failure_crumbs!r}"
+        )
+
+
+_TESTS = _TESTS + [
+    ("test_load_bug_queue_for_merged_breadcrumb_on_load_failure",
+     test_load_bug_queue_for_merged_breadcrumb_on_load_failure),
+    ("test_load_bug_queue_for_merged_no_breadcrumb_on_clean_load",
+     test_load_bug_queue_for_merged_no_breadcrumb_on_clean_load),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())
