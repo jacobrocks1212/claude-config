@@ -3284,6 +3284,115 @@ def test_verify_ledger_feature_level_reports_source():
 
 
 # ---------------------------------------------------------------------------
+# Tests: verify_ledger — harness-hardening-retro-fixes Phase 3 (WU-2)
+# plan_complete absent-by-design (plan-less / realign-only) vs incomplete
+# ---------------------------------------------------------------------------
+#
+# A plan-less or realign-only feature has NO implementation plan and never
+# needed one. The pre-fix feature-level rule
+# (``plan_complete = any_complete AND no_incomplete``) returns False for such a
+# feature (any_complete is False because there is no Complete *implementation*
+# plan), producing a benign-but-noisy false-alarm ``plan_complete:false`` and a
+# recovery chase. The fix treats "no implementation plan present and none
+# required" as absent-by-design → True, while preserving the incomplete-plan
+# regression (a real incomplete implementation plan still returns False).
+#
+# TDD note: tests (a) + (b) below assert ``plan_complete:true`` for the
+# plan-less / realign-only fixtures — RED before WU-1 (the pre-fix branch
+# returns False); GREEN once WU-1 adds the absent-by-design branch. Test (c) is
+# the regression guard and is GREEN both before and after (the fix must not
+# vacuously pass a real incomplete plan).
+
+
+def test_verify_ledger_plan_less_feature_absent_by_design_passes():
+    """(a) Plan-less feature: PHASES.md present, all deliverables checked, NO
+    implementation plan on disk (no ``plans/`` dir at all) →
+    ``plan_complete:true`` (absent-by-design) and ``ok:true``."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        # NO plans/ directory — genuinely plan-less.
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["plan_complete"] is True, (
+        f"plan-less feature must be absent-by-design plan_complete=True: "
+        f"{result['checks']}"
+    )
+    assert result["ok"] is True, (
+        f"plan-less feature with all deliverables checked + clean git should be "
+        f"ok=True: {result}"
+    )
+
+
+def test_verify_ledger_realign_only_feature_absent_by_design_passes():
+    """(b) Realign-only feature: only ``plans/realign-*.md`` present (no
+    implementation plan) → ``plan_complete:true`` (absent-by-design)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        plans.mkdir(parents=True)
+        # Only a realign plan — find_implementation_plans skips realign-*.md, so
+        # there is no IMPLEMENTATION plan: absent-by-design.
+        (plans / "realign-2026-06-17.md").write_text(
+            "---\n"
+            "kind: realign-plan\n"
+            "status: Complete\n"
+            "---\n\n"
+            "# Realign\n",
+            encoding="utf-8",
+        )
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["plan_complete"] is True, (
+        f"realign-only feature must be absent-by-design plan_complete=True: "
+        f"{result['checks']}"
+    )
+
+
+def test_verify_ledger_incomplete_plan_still_fails_regression_guard():
+    """(c) Regression guard: a feature WITH an incomplete (status: Ready)
+    implementation plan still returns ``plan_complete:false`` — the
+    absent-by-design fix must NOT vacuously pass a real incomplete plan."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        plans.mkdir(parents=True)
+        # A real implementation plan that is NOT Complete — there IS a plan on
+        # disk, so the absent-by-design branch must not fire.
+        (plans / "plan-phase-1.md").write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "status: Ready\n"
+            "phases:\n"
+            "  - 1\n"
+            "---\n\n"
+            "# Implementation Plan\n",
+            encoding="utf-8",
+        )
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["plan_complete"] is False, (
+        f"a real incomplete implementation plan must still fail plan_complete: "
+        f"{result['checks']}"
+    )
+    assert result["failing_check"] == "plan_complete", (
+        f"incomplete-plan regression must report failing_check='plan_complete': "
+        f"{result['failing_check']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
 # ---------------------------------------------------------------------------
 
@@ -17971,6 +18080,19 @@ _TESTS = _TESTS + [
      test_ruvonly_novel_header_without_marker_warns_and_fails),
     ("test_ruvonly_marker_lockstep_producers_match_ssot",
      test_ruvonly_marker_lockstep_producers_match_ssot),
+]
+
+
+# ---------------------------------------------------------------------------
+# harness-hardening-retro-fixes Phase 3 (WU-2) — plan_complete absent-by-design.
+# ---------------------------------------------------------------------------
+_TESTS = _TESTS + [
+    ("test_verify_ledger_plan_less_feature_absent_by_design_passes",
+     test_verify_ledger_plan_less_feature_absent_by_design_passes),
+    ("test_verify_ledger_realign_only_feature_absent_by_design_passes",
+     test_verify_ledger_realign_only_feature_absent_by_design_passes),
+    ("test_verify_ledger_incomplete_plan_still_fails_regression_guard",
+     test_verify_ledger_incomplete_plan_still_fails_regression_guard),
 ]
 
 

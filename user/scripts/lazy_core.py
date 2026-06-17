@@ -1115,6 +1115,34 @@ def find_implementation_plans(spec_dir: Path) -> list[Path]:
     return plans
 
 
+def _implementation_plans_exist(spec_dir: Path) -> bool:
+    """Return True iff at least one IMPLEMENTATION plan file exists on disk,
+    regardless of its frontmatter status (Ready / In-progress / Complete / none).
+
+    "Implementation plan" excludes ``realign-*.md`` / ``retro-*.md`` (mirrors the
+    filter in ``find_implementation_plans``) and the legacy ``PLAN.md``. Used by
+    ``verify_ledger`` (harness-hardening-retro-fixes Phase 3) to distinguish
+    *absent-by-design* (a plan-less / realign-only feature — no implementation
+    plan, none required → ``plan_complete`` is True) from *incomplete* (an
+    implementation plan exists but is not Complete → ``plan_complete`` stays
+    False). Unlike ``find_implementation_plans``, this does NOT filter out
+    Complete plans — it answers the pure existence question.
+    """
+    plans_dir = spec_dir / "plans"
+    if plans_dir.exists():
+        for p in sorted(plans_dir.iterdir()):
+            if not p.is_file() or p.suffix != ".md":
+                continue
+            name = p.name
+            if name.startswith("retro-") or name.startswith("realign-"):
+                continue
+            return True
+    legacy = spec_dir / "PLAN.md"
+    if legacy.exists():
+        return True
+    return False
+
+
 def _has_any_complete_plan(spec_dir: Path) -> bool:
     """Return True iff at least one non-retro/non-realign implementation plan
     has frontmatter ``status: Complete``.
@@ -1960,8 +1988,15 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
        every such plan has ``status: Complete`` in its frontmatter. Uses
        ``_has_any_complete_plan`` (at least one Complete) combined with
        ``find_implementation_plans`` (no non-Complete plans remain), which together
-       are equivalent to "all plans exist and all are Complete". False when no
-       plans have been authored at all, or any plan has a non-Complete status.
+       are equivalent to "all plans exist and all are Complete". False when any
+       plan has a non-Complete status.
+       ABSENT-BY-DESIGN (harness-hardening-retro-fixes Phase 3): a feature with
+       NO implementation plan on disk and none required (only ``realign-*.md`` /
+       ``retro-*.md``, or no plans at all — ``_implementation_plans_exist`` is
+       False) is treated as plan_complete=True (a diagnostic notes it fired),
+       NOT a false-alarm False. A feature WITH an incomplete implementation plan
+       still returns False (the regression guard). Feature-level only — the
+       plan-SCOPED branch reads the named plan's own status and is unaffected.
 
     4. ``deliverables_done`` — zero real (non-verification) unchecked
        deliverables remain. The SURFACE this reads depends on scope (see below).
@@ -2088,6 +2123,26 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
         any_complete = _has_any_complete_plan(spec_path)
         incomplete_plans = find_implementation_plans(spec_path)
         plan_complete = any_complete and len(incomplete_plans) == 0
+        # --- absent-by-design (harness-hardening-retro-fixes Phase 3, WU-1) ---
+        # A plan-less / realign-plan-only feature has NO implementation plan and
+        # never needed one. The rule above returns False for it (any_complete is
+        # False — there is no Complete IMPLEMENTATION plan), producing a
+        # benign-but-noisy false-alarm plan_complete:false + recovery chase.
+        # Distinguish absent-by-design (no implementation plan present, none
+        # required) from incomplete (an implementation plan exists but is not
+        # Complete): when there are zero incomplete plans AND no Complete plan
+        # AND genuinely NO implementation plan on disk (only realign-*/retro-*,
+        # or no plans at all — _implementation_plans_exist is False), treat
+        # plan_complete as True (absent-by-design). A feature WITH an incomplete
+        # implementation plan keeps plan_complete=False (the regression guard) —
+        # _implementation_plans_exist is True in that case.
+        if not plan_complete and len(incomplete_plans) == 0 and not any_complete:
+            if not _implementation_plans_exist(spec_path):
+                plan_complete = True
+                _diag(
+                    "plan_complete: no implementation plan required "
+                    "(absent-by-design)"
+                )
 
     # --- check 4: no real (non-verification) unchecked deliverables ---
     #
