@@ -1,16 +1,3 @@
 {
-  "queue": [
-    {
-      "id": "lazy-pipeline-visualizer",
-      "name": "Lazy Pipeline Visualizer",
-      "spec_dir": "lazy-pipeline-visualizer",
-      "tier": 1
-    },
-    {
-      "id": "lazy-cycle-containment",
-      "name": "Lazy Cycle Containment",
-      "spec_dir": "lazy-cycle-containment",
-      "tier": 1
-    }
-  ]
+  "queue": []
 }
