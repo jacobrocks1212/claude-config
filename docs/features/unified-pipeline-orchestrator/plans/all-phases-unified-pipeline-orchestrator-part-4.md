@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: unified-pipeline-orchestrator
-status: In-progress
+status: Complete
 created: 2026-06-17
 phases: [4]
 complexity: complex
@@ -95,9 +95,9 @@ Before executing each step, `Read` the listed component files from disk. Do NOT 
 
 ## Work Units
 
-- [ ] WU-1 — `toolify-miner.py` parser + signature normalization + ranking
-- [ ] WU-2 — Deterministic-only bar (classifier) + signature-granularity tuning
-- [ ] WU-3 — Bar/schema/promotion-checklist doc + miner tests
+- [x] WU-1 — `toolify-miner.py` parser + signature normalization + ranking
+- [x] WU-2 — Deterministic-only bar (classifier) + signature-granularity tuning
+- [x] WU-3 — Bar/schema/promotion-checklist doc + miner tests
 
 ## Phase: unified-pipeline-orchestrator P4 — Toolify miner + deterministic-only bar
 

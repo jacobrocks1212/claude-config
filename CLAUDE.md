@@ -155,6 +155,7 @@ When adding to a coupled pair, also update each file's State Machine Summary / o
 | `lint-skills.py` | Validates skills: broken injections, embedded patterns, capabilities |
 | `validate-plan.py` | Validates PHASES.md plan structure |
 | `gemini-research.py` | Google Gemini deep research tool |
+| `toolify-miner.py` | Offline session-log toolification miner (stdlib-only, **READ-ONLY over logs**): parses `~/.claude/projects/**/*.jsonl` (+ `subagents/agent-*.jsonl`), normalizes orchestrator tool-call sequences into argument-shape signatures, ranks by `occurrences × est_tokens_per_occurrence`, and applies the deterministic-only bar (above-bar iff deterministic AND repeated AND token-heavy). Emits markdown + JSON; never mutates logs. The miner *proposes* — promotion is deliberate (see `docs/features/unified-pipeline-orchestrator/toolify-bar.md`) |
 | `analyze_har.py` | HTTP Archive file analysis |
 | `pipeline_visualizer/` | Local web control-plane for the lazy feature/bug pipelines: `python -m pipeline_visualizer --repo-root <repo>` serves a graph/queues/fleet dashboard (`/api/state`, `/api/queue`) by shelling `lazy-state.py`/`bug-state.py` (stdlib-only renderer, never re-infers state) |
 | `fix-line-endings.ps1` | CRLF/LF normalization (PostToolUse hook) |
