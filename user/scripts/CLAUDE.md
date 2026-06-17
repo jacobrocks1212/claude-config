@@ -139,6 +139,50 @@ Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.
 
 **Park-mode terminal — `queue-exhausted-all-parked`.** Under `--park` (i.e. `--park-needs-input` and/or `--park-blocked`), when the queue advances past every workable item and ONLY parked items remain (`current is None` with a non-empty `parked[]`), `compute_state` returns the honest distinct terminal `queue-exhausted-all-parked` — NOT `all-features-complete` / `all-bugs-fixed` (which would be a false completion). It is the fallback AFTER the specific global terminals (`cloud-queue-exhausted`, `device-queue-exhausted`, `queue-blocked-on-research`/`all-remaining-deferred`, `scoped-id-not-found`) and BEFORE all-complete. The orchestrator flushes the parked items (needs-input + blocked) before stopping. Same terminal on both `lazy-state.py` and `bug-state.py`.
 
+## Per-repo keyed state dir (multi-repo-concurrent-runs)
+
+All run-scoped state — the run marker, the prompt registry, the deny-ledger, the cycle-subagent
+marker, and the run checkpoint — resolves its path through **one chokepoint**,
+`lazy_core.claude_state_dir()`. As of the `multi-repo-concurrent-runs` feature, that chokepoint
+is **scoped per repo**, so a `/lazy-batch` run in one repo neither blocks nor is blocked by a run
+in another repo (it also kills stale-marker contagion across repos).
+
+- **Resolution rule.** `LAZY_STATE_DIR` **set** → `claude_state_dir()` returns it EXACTLY (no
+  keying, no migration). This is the hermetic-test + hook-pipe-test path, preserving every
+  fixture's path semantics byte-for-byte. `LAZY_STATE_DIR` **unset** (production) →
+  `~/.claude/state/<repo_key>/`. The 24 internal callers are unchanged — they all inherit the
+  per-repo subdir for free.
+- **`repo_key(repo_root)`** is the ONE canonical derivation: `sha1` of the normalized real path
+  (`os.path.realpath` → forward slashes → strip trailing slash → lowercase a Windows drive
+  letter). It is normalization-invariant (trailing-slash / separator / drive-case variants of the
+  same path collapse to one key) and lives ONLY in Python — the bash hooks never re-derive it.
+- **Active-repo binding.** The active repo is bound ONCE at each script's `main()` via
+  `lazy_core.set_active_repo_root(args.repo_root)` (immediately after `parse_args()` in BOTH
+  `lazy-state.py` and `bug-state.py`). `active_repo_root()` returns that binding, falling back to
+  the cwd git-toplevel. A single process operates on exactly one repo, so the module-level active
+  repo is unambiguous; concurrent runs in different repos are different processes with different
+  subdirs and never collide. `bug-state.py` inherits the keyed dir purely by importing
+  `lazy_core` — it shares a repo's subdir with the feature pipeline (mutually exclusive within a
+  repo, correct: same git tree; cross-repo isolated). `lazy_parity_audit.py` asserts both scripts
+  carry this binding.
+- **Same-repo refusal / cross-repo concurrency.** `refuse_run_start_clobber` reads the keyed
+  dir's marker raw: a live, non-stale, DIFFERENT-pipeline marker in *this* repo's subdir refuses a
+  second `--run-start` (exit 3, zero side effects, naming the in-flight run). A different repo is a
+  different subdir → never refuses. Age-staleness (24h) makes a presumed-dead marker reclaimable.
+- **Legacy migration.** On the first production `claude_state_dir()` resolution (env unset),
+  `migrate_legacy_state_dir()` moves any legacy un-keyed base-dir files (`lazy-run-marker.json`,
+  `lazy-prompt-registry.json`, `lazy-deny-ledger.jsonl`, `lazy-cycle-active.json`,
+  `lazy-run-checkpoint.json`) into the keyed subdir for the marker's recorded `repo_root`, then
+  removes the base copies. Idempotent (once-per-process guard); a marker with no resolvable
+  `repo_root` is treated as stale and removed. It NEVER touches a `LAZY_STATE_DIR`-overridden dir.
+- **Hooks gate via `--marker-present`.** The three enforcement hooks
+  (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, `lazy-cycle-containment.sh`) no longer read
+  the base-dir marker file directly. They call `lazy-state.py --marker-present --repo-root <cwd>`
+  (read-only; exit 0 present / 1 absent) so Python owns ALL repo-key derivation. A marker for a
+  *different* repo resolves to a different subdir → absent → the hook is a no-op. Fail-OPEN: a
+  query error falls back to current behavior. The `pipeline_visualizer` likewise binds the
+  visualized repo before reading the marker so it shows that repo's live run.
+
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 
 The concurrency plane lets multiple `lazy-worker` sessions run different queue items at once
