@@ -3877,6 +3877,13 @@ def main() -> int:
         help="Bug severity, e.g. P0/P1/P2/Low (optional for --enqueue-adhoc).",
     )
     parser.add_argument(
+        "--type", dest="adhoc_type", choices=["bug"], default="bug",
+        help=("Ad-hoc enqueue target pipeline. Accepts only 'bug' (this is the "
+              "bug state script); present so the unified-pipeline-orchestrator "
+              "'bug-state.py --enqueue-adhoc --type bug' form parses cleanly. "
+              "No behavior change — bug-state always enqueues a bug."),
+    )
+    parser.add_argument(
         "--bug-id", default=None,
         help="Scope this run to a single bug by id. Absent → default behavior.",
     )

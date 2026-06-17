@@ -95,7 +95,7 @@ Before executing each step, `Read` the listed component files from disk. Do NOT 
 
 ## Work Units
 
-- [ ] WU-1 — `--type {feature|bug}` CLI routing on `--enqueue-adhoc`
+- [x] WU-1 — `--type {feature|bug}` CLI routing on `--enqueue-adhoc`
 - [ ] WU-2 — `adhoc-enqueue.md` shared protocol `--type bug` path + projection
 
 ## Phase: unified-pipeline-orchestrator P3 — Ad-hoc enqueue `--type bug`

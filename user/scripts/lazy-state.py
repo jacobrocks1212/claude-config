@@ -371,6 +371,80 @@ def enqueue_adhoc(
     }
 
 
+def enqueue_adhoc_bug(
+    repo_root: Path,
+    bug_id: str,
+    name: str,
+    brief: str = "",
+    spec_dir: str | None = None,
+    severity: str | None = None,
+) -> dict[str, Any]:
+    """Route an ad-hoc item into docs/bugs/queue.json (the bug pipeline).
+
+    unified-pipeline-orchestrator Phase 3: the `--type bug` path of the shared
+    ad-hoc enqueue surface. The queue entry is written by the EXISTING
+    ``bug-state.py --enqueue-adhoc`` (which already writes a ``spec_dir``-keyed
+    ``docs/bugs/queue.json`` entry — fixtures 12/13) — we do NOT reimplement it.
+    This wrapper adds the bug-doc seeding (``docs/bugs/<slug>/ADHOC_BRIEF.md``)
+    around that subprocess call, mirroring ``materialize_wi``'s bug route.
+
+    Idempotent: a second call with the same id is a no-op (bug-state.py's
+    enqueue skips a duplicate id without raising; the brief is only seeded when
+    absent), so this never raises on a duplicate.
+    """
+    repo_root = repo_root.resolve()
+    if not re.match(r"^[a-z0-9][a-z0-9-]*$", bug_id):
+        _die(f"invalid bug_id (must be kebab-case): {bug_id!r}")
+    spec_dir = spec_dir or bug_id
+    bugs_dir = repo_root / "docs" / "bugs"
+    bugs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Call bug-state.py --enqueue-adhoc via subprocess (idempotent skip-on-dup).
+    # Mirrors materialize_wi's bug route: assert LAZY_ORCHESTRATOR=1 in the child
+    # env so the C3 guard does not refuse this legitimate orchestrator-side
+    # enqueue when an ambient cycle marker is present (hermetic against a marker).
+    cmd = [
+        sys.executable,
+        str(Path(__file__).parent / "bug-state.py"),
+        "--enqueue-adhoc",
+        "--id", bug_id,
+        "--name", name,
+        "--spec-dir", spec_dir,
+        "--repo-root", str(repo_root),
+    ]
+    if severity:
+        cmd += ["--severity", severity]
+    _enqueue_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+    subprocess.run(cmd, check=True, env=_enqueue_env)
+
+    # Seed the bug-doc shape: docs/bugs/<slug>/ADHOC_BRIEF.md (idempotent).
+    item_dir = bugs_dir / spec_dir
+    item_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    brief_file = item_dir / "ADHOC_BRIEF.md"
+    if not brief_file.exists():
+        brief_file.write_text(
+            "---\n"
+            "kind: adhoc-brief\n"
+            f"bug_id: {bug_id}\n"
+            "enqueued_by: lazy-adhoc\n"
+            f"date: {today}\n"
+            "---\n\n"
+            f"# Ad-hoc bug: {name}\n\n"
+            f"{brief.strip() or '(brief not supplied — infer from context during /spec-bug)'}\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "enqueued": True,
+        "bug_id": bug_id,
+        "bug_name": name,
+        "spec_dir": spec_dir,
+        "brief_path": str(brief_file),
+        "queue": "docs/bugs/queue.json",
+    }
+
+
 def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
     """Materialize an ADO work item from ado-mirror.json into a doc pipeline.
 
@@ -4476,6 +4550,50 @@ def run_smoke_tests() -> int:
             pass
         print("  [enqueue] enqueue_adhoc prepend + brief + roadmap: ok")
 
+        # Functional check (unified-pipeline-orchestrator P3 WU-1):
+        # enqueue_adhoc_bug routes an ad-hoc item into docs/bugs/queue.json via
+        # the existing bug-state.py enqueue, seeds docs/bugs/<slug>/, and is
+        # idempotent on a duplicate id (no raise, no second entry).
+        enqb_root = td_path / "enqueue-bug-test"
+        enqb_root.mkdir(parents=True, exist_ok=True)
+        resb = enqueue_adhoc_bug(
+            enqb_root, "adhoc-bug-1", "Adhoc Bug 1", "Fix the bug thing"
+        )
+        enqb_bugs = enqb_root / "docs" / "bugs"
+        enqb_queue_path = enqb_bugs / "queue.json"
+        if not enqb_queue_path.exists():
+            failures.append("[enqueue-bug] docs/bugs/queue.json was not written")
+        else:
+            enqb_queue = json.loads(enqb_queue_path.read_text())
+            if enqb_queue["queue"][0].get("id") != "adhoc-bug-1":
+                failures.append(
+                    f"[enqueue-bug] expected adhoc-bug-1 at queue[0]; got "
+                    f"{enqb_queue['queue'][0].get('id')!r}"
+                )
+            if enqb_queue["queue"][0].get("spec_dir") != "adhoc-bug-1":
+                failures.append(
+                    "[enqueue-bug] queue[0] missing spec_dir-keyed entry"
+                )
+        if not resb.get("enqueued"):
+            failures.append("[enqueue-bug] enqueue_adhoc_bug did not report enqueued=True")
+        enqb_brief = enqb_bugs / "adhoc-bug-1" / "ADHOC_BRIEF.md"
+        if not enqb_brief.exists():
+            failures.append("[enqueue-bug] docs/bugs/<slug>/ADHOC_BRIEF.md not seeded")
+        elif "Fix the bug thing" not in enqb_brief.read_text():
+            failures.append("[enqueue-bug] ADHOC_BRIEF.md missing the brief text")
+        # Idempotent: a second call with the same id is a no-op (no raise, queue unchanged).
+        try:
+            enqueue_adhoc_bug(enqb_root, "adhoc-bug-1", "Dup Bug", "x")
+        except SystemExit:
+            failures.append("[enqueue-bug] duplicate id raised instead of no-op")
+        enqb_queue2 = json.loads(enqb_queue_path.read_text())
+        if len(enqb_queue2["queue"]) != 1:
+            failures.append(
+                f"[enqueue-bug] duplicate enqueue changed queue length; "
+                f"expected 1, got {len(enqb_queue2['queue'])}"
+            )
+        print("  [enqueue-bug] enqueue_adhoc_bug routes to docs/bugs + idempotent: ok")
+
         # -------------------------------------------------------------------
         # Fixture WU-3.3-1: feature materialize (User Story → docs/features)
         # -------------------------------------------------------------------
@@ -5593,6 +5711,11 @@ def main() -> int:
                         help="One-paragraph ad-hoc task brief (seeds ADHOC_BRIEF.md).")
     parser.add_argument("--spec-dir", default=None,
                         help="Spec dir under docs/features/ (default: same as --id).")
+    parser.add_argument("--type", dest="adhoc_type", choices=["feature", "bug"],
+                        default="feature",
+                        help=("Ad-hoc enqueue target pipeline (default: feature). "
+                              "--type bug routes into docs/bugs/queue.json via the "
+                              "existing bug-state.py enqueue."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
     parser.add_argument("--materialize-wi", type=int, default=None,
@@ -6362,14 +6485,25 @@ def main() -> int:
         lazy_core.refuse_if_cycle_active("--enqueue-adhoc")
         if not args.id or not args.name:
             _die("--enqueue-adhoc requires --id and --name")
-        result = enqueue_adhoc(
-            Path(args.repo_root),
-            args.id,
-            args.name,
-            args.brief,
-            args.spec_dir,
-            args.tier,
-        )
+        if args.adhoc_type == "bug":
+            # unified-pipeline-orchestrator P3: route into docs/bugs/queue.json
+            # via the existing bug-state.py enqueue (do NOT reimplement it).
+            result = enqueue_adhoc_bug(
+                Path(args.repo_root),
+                args.id,
+                args.name,
+                args.brief,
+                args.spec_dir,
+            )
+        else:
+            result = enqueue_adhoc(
+                Path(args.repo_root),
+                args.id,
+                args.name,
+                args.brief,
+                args.spec_dir,
+                args.tier,
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
