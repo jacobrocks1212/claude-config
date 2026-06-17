@@ -5839,6 +5839,12 @@ def main() -> int:
                         ))
     args = parser.parse_args()
 
+    # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
+    # scopes all run-scoped state (marker/registry/ledger/cycle/checkpoint) to
+    # this repo's subdir.  --repo-root defaults to os.getcwd(), so an explicit
+    # flag or the cwd both bind correctly.  No-op when LAZY_STATE_DIR is set.
+    lazy_core.set_active_repo_root(args.repo_root)
+
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
     # without advancing) are mutually exclusive — a single probe cannot both
     # advance and peek the persisted streak.

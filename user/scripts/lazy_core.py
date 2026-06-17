@@ -4882,6 +4882,143 @@ _LEDGER_HEAD_CHARS: int = 200
 _MARKER_STALE_SECONDS: float = 24 * 3600  # 24 hours
 
 
+# ---------------------------------------------------------------------------
+# Per-repo state-dir scoping (multi-repo-concurrent-runs)
+#
+# The run-scoped state (marker, prompt registry, deny-ledger, cycle marker,
+# checkpoint) all resolve their paths through claude_state_dir().  To let a
+# lazy run in one repo neither block nor be blocked by a run in another repo,
+# claude_state_dir() is scoped PER REPO at this single chokepoint — when
+# LAZY_STATE_DIR is unset (production), it returns
+# ``~/.claude/state/<repo_key>/`` instead of the shared base dir.  When
+# LAZY_STATE_DIR IS set (hermetic unit tests + hook pipe-tests) the override is
+# returned EXACTLY, so every existing test's path semantics are preserved
+# byte-for-byte.
+#
+# The active repo is set ONCE per process at each state script's main() via
+# set_active_repo_root(); the 24 internal claude_state_dir() callers need no
+# signature change.  A single lazy-state.py / bug-state.py invocation operates
+# on exactly one repo, so the module-level active repo is unambiguous; two
+# concurrent runs in different repos are different processes resolving to
+# different subdirs, so they never collide on marker, registry, ledger, or
+# cycle counters.
+# ---------------------------------------------------------------------------
+
+# The active repo root for this process.  None = fall back to the cwd's git
+# toplevel (set_active_repo_root is the precise binding done at main()).
+_active_repo_root: str | None = None
+
+# One-shot guard so the legacy-base-dir migration runs at most once per process.
+_legacy_state_migrated: bool = False
+
+# Run-scoped state filenames that live directly under the state dir and must
+# migrate together from the legacy (un-keyed) base dir into the keyed subdir.
+_LEGACY_STATE_FILENAMES: tuple[str, ...] = (
+    "lazy-run-marker.json",
+    "lazy-prompt-registry.json",
+    "lazy-deny-ledger.jsonl",
+    "lazy-cycle-active.json",
+    "lazy-run-checkpoint.json",
+)
+
+
+def set_active_repo_root(repo_root: str | None) -> None:
+    """Bind the active repo root for this process (called once at main()).
+
+    Passing a falsy value clears the binding, reverting active_repo_root() to
+    the cwd-git-toplevel fallback.  Idempotent within a process.
+    """
+    global _active_repo_root
+    _active_repo_root = str(repo_root) if repo_root else None
+
+
+def active_repo_root() -> str:
+    """Return the active repo root: the explicit binding, else the cwd's git
+    toplevel, else the cwd itself.  Always returns a non-empty string."""
+    if _active_repo_root:
+        return _active_repo_root
+    try:
+        cp = _git(Path.cwd(), "rev-parse", "--show-toplevel")
+        top = (cp.stdout or "").strip()
+        if cp.returncode == 0 and top:
+            return top
+    except Exception:  # noqa: BLE001
+        pass
+    return str(Path.cwd())
+
+
+def repo_key(repo_root: str) -> str:
+    """The ONE canonical per-repo state-dir key.  SHA-1 of the normalized real
+    path (resolve symlinks → forward slashes → strip trailing slash → lowercase
+    a Windows drive letter).  Single source of truth — the bash hooks never
+    re-derive this; they call ``lazy-state.py --marker-present`` which routes
+    through here.  Normalization-invariant: trailing-slash / separator /
+    drive-case variants of the same path collapse to one key."""
+    norm = os.path.realpath(str(repo_root)).replace("\\", "/").rstrip("/")
+    if len(norm) >= 2 and norm[1] == ":":  # lowercase a Windows drive letter
+        norm = norm[0].lower() + norm[1:]
+    if not norm:  # realpath of an empty string can normalize to cwd; guard anyway
+        norm = "/"
+    return hashlib.sha1(norm.encode("utf-8")).hexdigest()
+
+
+def migrate_legacy_state_dir(base: Path) -> bool:
+    """Move legacy un-keyed base-dir run state into the per-repo keyed subdir.
+
+    Runs at most once per process (the ``_legacy_state_migrated`` guard).
+    Best-effort and idempotent:
+      - No legacy ``lazy-run-marker.json`` in ``base`` → nothing to migrate
+        (fresh machine / already migrated) → returns False.
+      - A legacy marker whose ``repo_root`` cannot be resolved → the marker is
+        treated as stale and removed; no subdir is created.
+      - Otherwise the five run-scoped files are moved into
+        ``base/<repo_key(marker.repo_root)>/`` (a file already present at the
+        target wins; the legacy copy is dropped).
+
+    NEVER called for a LAZY_STATE_DIR-overridden dir (that path returns the
+    override verbatim before reaching here), so hermetic tests are untouched.
+    """
+    global _legacy_state_migrated
+    if _legacy_state_migrated:
+        return False
+    _legacy_state_migrated = True
+    legacy_marker = base / _MARKER_FILENAME
+    if not legacy_marker.exists():
+        return False
+    try:
+        m = json.loads(legacy_marker.read_text(encoding="utf-8"))
+        rr = m.get("repo_root") if isinstance(m, dict) else None
+    except (OSError, json.JSONDecodeError, ValueError):
+        rr = None
+    if not rr:
+        # Unresolvable owner — the marker belongs to no readable repo; drop it.
+        try:
+            legacy_marker.unlink()
+        except OSError:
+            pass
+        return False
+    target = base / repo_key(rr)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    moved = False
+    for name in _LEGACY_STATE_FILENAMES:
+        src = base / name
+        if not (src.exists() and src.is_file()):
+            continue
+        dst = target / name
+        try:
+            if dst.exists():
+                src.unlink()  # target already populated — drop the legacy copy
+            else:
+                src.replace(dst)
+            moved = True
+        except OSError:
+            pass
+    return moved
+
+
 def claude_state_dir(create: bool = True) -> Path:
     """Return the Claude state directory, optionally creating it on demand.
 
@@ -4909,9 +5046,17 @@ def claude_state_dir(create: bool = True) -> Path:
     """
     override = os.environ.get("LAZY_STATE_DIR")
     if override:
+        # Hermetic override: return the exact dir (tests + hook pipe-tests).
+        # No per-repo keying, no migration — preserves byte-for-byte path
+        # semantics for every test that sets LAZY_STATE_DIR.
         d = Path(override)
     else:
-        d = Path.home() / ".claude" / "state"
+        # Production: scope the state dir per repo so concurrent runs in
+        # different repos are isolated.  Migrate any legacy un-keyed base-dir
+        # state into the keyed subdir once, then resolve the active repo's dir.
+        base = Path.home() / ".claude" / "state"
+        migrate_legacy_state_dir(base)
+        d = base / repo_key(active_repo_root())
     if create:
         d.mkdir(parents=True, exist_ok=True)
     return d

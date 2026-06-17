@@ -15260,6 +15260,183 @@ def test_lazy_batch_skill_carries_reload_discipline_prose():
     )
 
 
+# ---------------------------------------------------------------------------
+# multi-repo-concurrent-runs — per-repo state-dir scoping (Phase 1)
+# ---------------------------------------------------------------------------
+
+def _mrcr_with_temp_home(td: str):
+    """Context-free helper: point HOME + USERPROFILE at td, clear LAZY_STATE_DIR,
+    and reset the per-process migration + active-repo globals so each keyed-dir
+    test starts clean.  Returns a dict of prior env values to restore."""
+    prior = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE", "LAZY_STATE_DIR")}
+    os.environ["HOME"] = td
+    os.environ["USERPROFILE"] = td
+    os.environ.pop("LAZY_STATE_DIR", None)
+    lazy_core._legacy_state_migrated = False
+    lazy_core.set_active_repo_root(None)
+    return prior
+
+
+def _mrcr_restore_env(prior: dict) -> None:
+    for k, v in prior.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    lazy_core._legacy_state_migrated = False
+    lazy_core.set_active_repo_root(None)
+
+
+def test_repo_key_present_and_normalization_invariant():
+    """repo_key is stable and collapses trailing-slash / separator / drive-case
+    variants of the same path to one key; distinct repos → distinct keys."""
+    _guard()
+    assert hasattr(lazy_core, "repo_key"), "lazy_core.repo_key must exist"
+    k = lazy_core.repo_key("/tmp/repoA")
+    assert k == lazy_core.repo_key("/tmp/repoA"), "deterministic"
+    assert k == lazy_core.repo_key("/tmp/repoA/"), "trailing slash collapses"
+    assert k == lazy_core.repo_key("/tmp/repoA\\"), "backslash trailing collapses"
+    assert k != lazy_core.repo_key("/tmp/repoB"), "distinct repos → distinct keys"
+    assert isinstance(k, str) and len(k) >= 16, "key is a non-trivial hex digest"
+
+
+def test_claude_state_dir_env_override_is_exact():
+    """LAZY_STATE_DIR set → claude_state_dir returns it EXACTLY (no per-repo
+    keying), preserving every hermetic test's path semantics byte-for-byte."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.set_active_repo_root("/some/repo")  # must NOT affect override
+            got = lazy_core.claude_state_dir()
+            assert Path(got) == Path(td), (got, td)
+        finally:
+            _clear_state_dir()
+            lazy_core.set_active_repo_root(None)
+
+
+def test_claude_state_dir_keyed_per_repo_when_unset():
+    """LAZY_STATE_DIR unset → claude_state_dir is ~/.claude/state/<repo_key>/,
+    distinct per active repo."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        prior = _mrcr_with_temp_home(td)
+        try:
+            lazy_core.set_active_repo_root("/tmp/repoA")
+            da = lazy_core.claude_state_dir()
+            lazy_core.set_active_repo_root("/tmp/repoB")
+            db = lazy_core.claude_state_dir()
+            assert da != db, (da, db)
+            assert da.name == lazy_core.repo_key("/tmp/repoA"), da
+            assert db.name == lazy_core.repo_key("/tmp/repoB"), db
+            assert da.parent == Path(td) / ".claude" / "state", da
+        finally:
+            _mrcr_restore_env(prior)
+
+
+def test_per_repo_marker_independence_when_unset():
+    """Two active repos each hold an independent run marker — neither read sees
+    the other's marker."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        prior = _mrcr_with_temp_home(td)
+        try:
+            lazy_core.set_active_repo_root("/tmp/repoA")
+            lazy_core.write_run_marker(pipeline="feature", cloud=False,
+                                       repo_root="/tmp/repoA", max_cycles=20)
+            lazy_core.set_active_repo_root("/tmp/repoB")
+            assert lazy_core.read_run_marker() is None, "repoB sees no marker"
+            lazy_core.write_run_marker(pipeline="bug", cloud=False,
+                                       repo_root="/tmp/repoB", max_cycles=5)
+            mb = lazy_core.read_run_marker()
+            assert mb is not None and mb["pipeline"] == "bug", mb
+            lazy_core.set_active_repo_root("/tmp/repoA")
+            ma = lazy_core.read_run_marker()
+            assert ma is not None and ma["pipeline"] == "feature", ma
+            # Ending repoA's run must not touch repoB's marker.
+            lazy_core.delete_run_marker()
+            assert lazy_core.read_run_marker() is None, "repoA marker cleared"
+            lazy_core.set_active_repo_root("/tmp/repoB")
+            assert lazy_core.read_run_marker() is not None, "repoB marker intact"
+        finally:
+            _mrcr_restore_env(prior)
+
+
+def test_migrate_legacy_state_dir_moves_and_removes():
+    """A legacy un-keyed base-dir marker (+ siblings) migrates into the keyed
+    subdir for its repo_root and the base copies are removed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        prior = _mrcr_with_temp_home(td)
+        try:
+            base = Path(td) / ".claude" / "state"
+            base.mkdir(parents=True, exist_ok=True)
+            (base / "lazy-run-marker.json").write_text(
+                json.dumps({"pipeline": "feature", "repo_root": "/tmp/legacyRepo",
+                            "started_at": "2999-01-01T00:00:00Z"}),
+                encoding="utf-8")
+            (base / "lazy-prompt-registry.json").write_text("{}", encoding="utf-8")
+            (base / "lazy-deny-ledger.jsonl").write_text("", encoding="utf-8")
+            moved = lazy_core.migrate_legacy_state_dir(base)
+            assert moved is True
+            keyed = base / lazy_core.repo_key("/tmp/legacyRepo")
+            assert (keyed / "lazy-run-marker.json").exists(), "marker migrated"
+            assert (keyed / "lazy-prompt-registry.json").exists(), "registry migrated"
+            assert not (base / "lazy-run-marker.json").exists(), "base marker removed"
+            assert not (base / "lazy-prompt-registry.json").exists(), "base registry removed"
+        finally:
+            _mrcr_restore_env(prior)
+
+
+def test_migrate_legacy_unresolvable_repo_root_removes_marker():
+    """A legacy marker whose repo_root cannot be resolved is treated as stale and
+    removed; no keyed subdir is created."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        prior = _mrcr_with_temp_home(td)
+        try:
+            base = Path(td) / ".claude" / "state"
+            base.mkdir(parents=True, exist_ok=True)
+            (base / "lazy-run-marker.json").write_text(
+                json.dumps({"pipeline": "feature"}), encoding="utf-8")  # no repo_root
+            moved = lazy_core.migrate_legacy_state_dir(base)
+            assert moved is False
+            assert not (base / "lazy-run-marker.json").exists(), "stale marker removed"
+        finally:
+            _mrcr_restore_env(prior)
+
+
+def test_migrate_legacy_noop_when_absent():
+    """No legacy marker → migration is a no-op returning False (fresh machine)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        prior = _mrcr_with_temp_home(td)
+        try:
+            base = Path(td) / ".claude" / "state"
+            base.mkdir(parents=True, exist_ok=True)
+            assert lazy_core.migrate_legacy_state_dir(base) is False
+        finally:
+            _mrcr_restore_env(prior)
+
+
+_TESTS = _TESTS + [
+    ("test_repo_key_present_and_normalization_invariant",
+     test_repo_key_present_and_normalization_invariant),
+    ("test_claude_state_dir_env_override_is_exact",
+     test_claude_state_dir_env_override_is_exact),
+    ("test_claude_state_dir_keyed_per_repo_when_unset",
+     test_claude_state_dir_keyed_per_repo_when_unset),
+    ("test_per_repo_marker_independence_when_unset",
+     test_per_repo_marker_independence_when_unset),
+    ("test_migrate_legacy_state_dir_moves_and_removes",
+     test_migrate_legacy_state_dir_moves_and_removes),
+    ("test_migrate_legacy_unresolvable_repo_root_removes_marker",
+     test_migrate_legacy_unresolvable_repo_root_removes_marker),
+    ("test_migrate_legacy_noop_when_absent",
+     test_migrate_legacy_noop_when_absent),
+]
+
+
 _TESTS = _TESTS + [
     ("test_self_edit_mode_symbol_present", test_self_edit_mode_symbol_present),
     ("test_self_edit_mode_true_inside_toplevel",

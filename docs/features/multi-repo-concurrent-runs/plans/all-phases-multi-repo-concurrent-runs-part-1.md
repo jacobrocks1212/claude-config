@@ -53,11 +53,17 @@ NOT by threading `repo_root` through 25 marker call sites.
 
 ## Phase 1 — Repo-scoped `claude_state_dir()` core
 
-- [ ] WU-1.1 — TDD: failing `test_lazy_core.py` cases (registered in `_TESTS`) for `repo_key` (stable; normalization-invariant — trailing slash / separator / drive-case variants collapse; distinct repos → distinct keys). Then implement `repo_key` in `lazy_core.py`.
-- [ ] WU-1.2 — TDD: with a temp `HOME` and `LAZY_STATE_DIR` UNSET, `set_active_repo_root("/repoA")` → `claude_state_dir()` ends in `/state/<keyA>/`; switching to `/repoB` → `<keyB>/`; the two are distinct and each holds its own marker. AND `LAZY_STATE_DIR` set → returns it exactly (existing behavior). Then implement `_active_repo_root`/`set_active_repo_root`/`active_repo_root` + the keyed `claude_state_dir()`; call `set_active_repo_root` at `lazy-state.py` and `bug-state.py` `main()`.
-- [ ] WU-1.3 — TDD: `--run-start` same-repo refusal (live non-stale marker in this repo's subdir → non-zero exit + `started_at`/`forward_cycles` diagnostic; age-stale → reclaim); a different active repo does NOT refuse. Then implement (extend `refuse_run_start_clobber` / the `--run-start` handler).
-- [ ] WU-1.4 — TDD: `migrate_legacy_state_dir()` moves base-dir files (marker/registry/ledger/cycle/checkpoint) into the keyed subdir for the marker's `repo_root` then removes the base copies; idempotent; unresolvable `repo_root` → marker treated stale + removed; never touches a `LAZY_STATE_DIR` dir. Wire it into the first production `claude_state_dir()` resolution.
-- [ ] WU-1.5 — Run the FULL gate suite; existing `LAZY_STATE_DIR` marker tests must stay green unchanged. Regenerate a `--test` baseline ONLY if a fixture legitimately changed (not expected). All green.
+- [x] WU-1.1 — `repo_key()` in `lazy_core.py` + `test_repo_key_present_and_normalization_invariant` (registered in `_TESTS`).
+- [x] WU-1.2 — `_active_repo_root`/`set_active_repo_root`/`active_repo_root` + keyed `claude_state_dir()` (env-set→exact, unset→`~/.claude/state/<key>/`); `set_active_repo_root(args.repo_root)` wired at both `lazy-state.py` and `bug-state.py` `main()`. Tests: env-override-exact, keyed-per-repo, per-repo marker independence.
+- [x] WU-1.3 — Same-repo cross-pipeline refusal is INHERITED: `refuse_run_start_clobber` reads `read_run_marker()` which now resolves the keyed dir, so a same-repo different-pipeline run refuses and a different repo never does. Same-pipeline re-`--run-start` (checkpoint resume) preserved by design — no aggressive same-pipeline refusal added (it would break resume; not needed for cross-repo isolation). Verified by `test_per_repo_marker_independence_when_unset`.
+- [x] WU-1.4 — `migrate_legacy_state_dir()` moves the 5 base-dir files into the keyed subdir + removes base copies; idempotent (`_legacy_state_migrated`); unresolvable `repo_root` → marker removed; never touches a `LAZY_STATE_DIR` dir. Wired into `claude_state_dir()`. Tests: moves-and-removes, unresolvable-removed, noop-when-absent.
+- [x] WU-1.5 — FULL gate suite green: `test_lazy_core.py` all pass (7 new + 403 prior), `lazy-state.py --test` OK, `bug-state.py --test` OK, `test_hooks.py` OK, `lint-skills.py` OK. No `--test` baseline change needed (fixtures set `LAZY_STATE_DIR` → exact-dir path unchanged).
+
+**Implementation Notes (2026-06-16 — Phase 1 complete, validation pending):**
+- `lazy_core.py`: added `repo_key` (sha1 of normalized realpath; drive-case + trailing-slash + separator invariant), `_active_repo_root`/`set_active_repo_root`/`active_repo_root` (cwd-git-toplevel fallback), `migrate_legacy_state_dir` (+ `_legacy_state_migrated` once-guard, `_LEGACY_STATE_FILENAMES`), and the keyed `claude_state_dir()` (env-set returns override EXACTLY; unset returns `~/.claude/state/<key>/` after one-shot migration). The 24 internal `claude_state_dir()` callers are unchanged.
+- `lazy-state.py` + `bug-state.py`: `set_active_repo_root(args.repo_root)` immediately after `parse_args()`.
+- Design refinement vs SPEC: the same-repo refusal is the EXISTING `refuse_run_start_clobber` now operating per-repo (cross-pipeline exclusion within a repo); same-pipeline resume preserved.
+- 7 new tests registered in `_TESTS`; a name-collision (`_restore_env`) was caught + fixed by namespacing the new helpers (`_mrcr_*`).
 
 ## Phase 2 — Hook repo-scoping
 

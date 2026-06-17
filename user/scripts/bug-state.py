@@ -4138,6 +4138,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
+    # scopes all run-scoped state to this repo's subdir (parity with lazy-state.py).
+    lazy_core.set_active_repo_root(args.repo_root)
+
     # --repeat-count (advances the streak) and --repeat-count-peek (reads it
     # without advancing) are mutually exclusive — a single probe cannot both
     # advance and peek the persisted streak.
