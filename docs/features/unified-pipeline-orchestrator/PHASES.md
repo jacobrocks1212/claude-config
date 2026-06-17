@@ -135,15 +135,15 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 **Scope:** Extend the shared `adhoc-enqueue.md` protocol and the `--enqueue-adhoc` CLI so "process these features and bugs" (or a harden-harness spin-off) lands the item in the **correct** queue by type. The bug path routes to the existing `bug-state.py --enqueue-adhoc` (which already writes a `spec_dir`-keyed `docs/bugs/queue.json` entry); the unified run then picks it up.
 
 **Deliverables:**
-- [ ] `adhoc-enqueue.md`: add a `--type {feature|bug}` selection (default `feature` — byte-identical to today when omitted). The bug path invokes `bug-state.py --enqueue-adhoc` and seeds the bug-doc shape (`docs/bugs/<slug>/`) instead of `docs/features/<slug>/`.
-- [ ] `--enqueue-adhoc` CLI: confirm/extend so a feature enqueue lands in `docs/features/queue.json` and a bug enqueue lands in `docs/bugs/queue.json` (the latter via the existing `bug-state.py:enqueue_adhoc`, line 1173 — do NOT duplicate it).
-- [ ] The four `/lazy*` skills that inject `adhoc-enqueue.md` continue to work unchanged for the default feature path (no regression).
-- [ ] Tests: `test_lazy_core.py` (or the relevant `--test` suite) — `--enqueue-adhoc --type bug` writes a `docs/bugs/queue.json` entry; default (no `--type`) writes a `docs/features/queue.json` entry identical to today; idempotent on duplicate id.
+- [x] `adhoc-enqueue.md`: add a `--type {feature|bug}` selection (default `feature` — byte-identical to today when omitted). The bug path invokes `bug-state.py --enqueue-adhoc` and seeds the bug-doc shape (`docs/bugs/<slug>/`) instead of `docs/features/<slug>/`.
+- [x] `--enqueue-adhoc` CLI: confirm/extend so a feature enqueue lands in `docs/features/queue.json` and a bug enqueue lands in `docs/bugs/queue.json` (the latter via the existing `bug-state.py:enqueue_adhoc`, line 1173 — do NOT duplicate it).
+- [x] The four `/lazy*` skills that inject `adhoc-enqueue.md` continue to work unchanged for the default feature path (no regression).
+- [x] Tests: `test_lazy_core.py` (or the relevant `--test` suite) — `--enqueue-adhoc --type bug` writes a `docs/bugs/queue.json` entry; default (no `--type`) writes a `docs/features/queue.json` entry identical to today; idempotent on duplicate id.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/bug-state.py --enqueue-adhoc --type bug --id adhoc-x --name "X" --brief "..."` (or the feature script's `--type bug` dispatch) results in a new entry in `docs/bugs/queue.json` and `docs/bugs/adhoc-x/` seeded — verified against a temp-dir fixture.
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] An ad-hoc bug enqueued via `--type bug` is picked up by a unified `/lazy-batch` run (end-to-end: enqueue → merged-view head → bug pipeline dispatch).
+- [x] An ad-hoc bug enqueued via `--type bug` is picked up by a unified `/lazy-batch` run (end-to-end: enqueue → merged-view head → bug pipeline dispatch). Verified 2026-06-17: `lazy-state.py --enqueue-adhoc --type bug` then `--next-merged` returns `{item_id: adhoc-int-bug, type: "bug"}` as the head — the Phase 2 unified driver dispatches `type: bug` to the bug pipeline.
 
 **MCP Integration Test Assertions:** N/A — deterministic file mutation + skill-doc change; covered by the `--test` enqueue fixtures.
 
@@ -159,6 +159,15 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 
 **Integration Notes for Next Phase:**
 - Both directions of the ad-hoc surface are now type-aware; Phase 5's `__mark_complete__`/`__mark_fixed__` terminals already key off type, so no further ad-hoc change is needed for the subcommand work.
+
+**Status:** In-progress (implementation complete 2026-06-17; validation pending — `MCP runtime: not-required`, so validation is the hermetic `--test` suites + parity audit + projection lint, all passed in-cycle).
+
+**Implementation Notes (Phase 3 — landed 2026-06-17, executed INLINE in a dispatch-limited cycle subagent, no Agent tool; test-first per batch):**
+- **Review verdict:** PASS (inline review — Python CLI routing + shared-component prose; spec-aligned, default feature path provably byte-identical, idempotency + bug-doc seeding covered; gates 100%).
+- **WU-1 (lazy-state.py + bug-state.py):** TEST-FIRST — added a hermetic smoke fixture asserting `enqueue_adhoc_bug` writes a `spec_dir`-keyed `docs/bugs/queue.json` entry, seeds `docs/bugs/<slug>/ADHOC_BRIEF.md`, and is idempotent on a duplicate id (no raise, queue length stays 1); it RED-failed on `NameError: enqueue_adhoc_bug`. Then added `--type {feature,bug}` (default `feature`) to `lazy-state.py --enqueue-adhoc` and the new `enqueue_adhoc_bug()` helper, which routes via a `bug-state.py --enqueue-adhoc` subprocess (the EXISTING enqueue — NOT reimplemented, mirrors `materialize_wi`'s bug route incl. `LAZY_ORCHESTRATOR=1` hermetic env) and seeds the bug `ADHOC_BRIEF.md`. The CLI dispatch branches on `args.adhoc_type`; the feature branch is unchanged (default-path queue output byte-identical — verified). Added a benign `--type bug`-only arg to `bug-state.py --enqueue-adhoc` so the documented `bug-state.py --enqueue-adhoc --type bug` form parses (no behavior change). ⚖ policy: make documented bug-state.py `--type bug` form parse → added benign arg (scope-class, no behavior divergence).
+- **WU-2 (adhoc-enqueue.md shared protocol):** Added a `--type {feature|bug}` selection (Step 2 pick-type, Step 4 two enqueue variants, Step 5 type-aware announce, Notes default-is-feature/additive clause). Default feature prose stays behavior-equivalent. Re-ran `project-skills.py` → all four injecting `/lazy*` skills (lazy, lazy-batch, lazy-bug, lazy-bug-batch) + the two algobooth cloud variants re-resolved cleanly with `--type bug` present; `lint-skills.py --check-projected` clean.
+- **Integration verification:** end-to-end in a temp git repo — `--enqueue-adhoc --type bug` then `--next-merged` returns `{item_id, type: "bug"}` as the merged-view head, which the Phase 2 unified driver dispatches to the bug pipeline.
+- **Gates (all green, run in-cycle):** `lazy-state.py --test` green (baseline regenerated via `_normalize_smoke_output` — only the new bug-enqueue fixture lines added); `bug-state.py --test` green (baseline UNCHANGED → bug enqueue behavior unperturbed); `test_lazy_core.py` 424/424; `lazy_parity_audit.py --repo-root .` exit 0; `project-skills.py` OK (91 components); `lint-skills.py --check-projected` OK.
 
 ---
 

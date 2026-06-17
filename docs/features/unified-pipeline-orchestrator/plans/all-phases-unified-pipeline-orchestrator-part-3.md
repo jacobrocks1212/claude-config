@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: unified-pipeline-orchestrator
-status: In-progress
+status: Complete
 created: 2026-06-17
 phases: [3]
 complexity: complex
@@ -96,7 +96,7 @@ Before executing each step, `Read` the listed component files from disk. Do NOT 
 ## Work Units
 
 - [x] WU-1 — `--type {feature|bug}` CLI routing on `--enqueue-adhoc`
-- [ ] WU-2 — `adhoc-enqueue.md` shared protocol `--type bug` path + projection
+- [x] WU-2 — `adhoc-enqueue.md` shared protocol `--type bug` path + projection
 
 ## Phase: unified-pipeline-orchestrator P3 — Ad-hoc enqueue `--type bug`
 
