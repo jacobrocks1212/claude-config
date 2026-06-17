@@ -2,7 +2,7 @@
 
 > Three harness defects surfaced in the 2026-06-17 `/lazy-batch` run on `claude-config`: (1) the run-marker cycle counters undercount because pseudo-skill cycles produce no advance signal; (2) the unified driver never archives/trims fixed bugs (it omits the `--archive-fixed` call `/lazy-bug-batch` chains); (3) `/lazy-batch` fails to pick up an on-disk bug that is absent from `queue.json` the way `/lazy-bug-batch` does — defeated by ordering-only merged heads masked by stale untrimmed entries, plus a silent exception-swallow in the merged bug-load bridge.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-17
 **Placement:** docs/bugs/lazy-batch-unified-driver-parity-and-accounting
