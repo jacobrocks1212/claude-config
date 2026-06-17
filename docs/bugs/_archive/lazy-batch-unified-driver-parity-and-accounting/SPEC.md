@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-17
+**Fixed:** 2026-06-17
+**Fix commit:** 092a0d7
 **Placement:** docs/bugs/lazy-batch-unified-driver-parity-and-accounting
 **Related:** `docs/features/unified-pipeline-orchestrator/` (Phase 1 merged-view, Phase 2 unified driver, Phase 5 `--apply-pseudo`); `user/scripts/CLAUDE.md` → "CLI surface" (`--next-merged`, `--apply-pseudo`, `--archive-fixed`); `user/skills/_components/mark-fixed-archive.md`; `user/skills/lazy-batch/SKILL.md` (Step 1 unified driver, Step 1c.5 pseudo-skills); `docs/bugs/operator-checkpoint-resume-counter-reset/` (the bug whose run exposed all three)
 
