@@ -41,9 +41,9 @@ The three items are independent defects with no cross-dependencies, so they are 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/test_lazy_core.py` both exit 0 with the new tests included; the new test for case (a) FAILS against the pre-fix `advance_run_counters` (RED-for-the-right-reason: pre-fix it returns the marker unchanged because `current_consume <= prior_consume`) and PASSES after.
 
 **Runtime Verification** *(checked by the hermetic test harness — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/test_lazy_core.py` exits 0 with the four new advance tests registered and passing.
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` exits 0 (state-machine smoke harness still green; regenerate `tests/baselines/lazy-state-test-baseline.txt` via `_normalize_smoke_output` ONLY if the byte-pinned output legitimately changed).
-- [ ] <!-- verification-only --> `python3 user/scripts/bug-state.py --test` exits 0 (shared `lazy_core` change preserves bug-pipeline behavior).
+- [x] <!-- verification-only --> `python3 user/scripts/test_lazy_core.py` exits 0 with the four new advance tests registered and passing.
+- [x] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` exits 0 (state-machine smoke harness still green; regenerate `tests/baselines/lazy-state-test-baseline.txt` via `_normalize_smoke_output` ONLY if the byte-pinned output legitimately changed).
+- [x] <!-- verification-only --> `python3 user/scripts/bug-state.py --test` exits 0 (shared `lazy_core` change preserves bug-pipeline behavior).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior; counter correctness is fully covered by the hermetic `--test` harnesses (state-machine code, not an MCP surface).
 
@@ -84,10 +84,10 @@ The three items are independent defects with no cross-dependencies, so they are 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` exits 0 with the new breadcrumb test; a manual `python3 user/scripts/lazy-state.py --next-merged` over a fixture with an on-disk-only bug returns the bug in the merged list (proving the bug side loads), and the new `_diag` breadcrumb appears in diagnostics when the bug loader is forced to fail.
 
 **Runtime Verification** *(checked by the hermetic test harness — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/test_lazy_core.py` exits 0 with the `_load_bug_queue_for_merged` breadcrumb test + the on-disk-bug merged-view test registered and passing.
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both exit 0.
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py --repo-root <repo> --merged-view` exits 0 (the option-(b) fallthrough prose is mirrored across `/lazy-batch` ↔ `/lazy-batch-cloud` — existing `_MERGED_VIEW_PREDICATES` still satisfied).
-- [ ] <!-- verification-only --> `python3 user/scripts/lint-skills.py --check-projected` exits clean (the two SKILL prose edits introduce no broken injections / embedded patterns).
+- [x] <!-- verification-only --> `python3 user/scripts/test_lazy_core.py` exits 0 with the `_load_bug_queue_for_merged` breadcrumb test + the on-disk-bug merged-view test registered and passing.
+- [x] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both exit 0.
+- [x] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py --repo-root <repo> --merged-view` exits 0 (the option-(b) fallthrough prose is mirrored across `/lazy-batch` ↔ `/lazy-batch-cloud` — existing `_MERGED_VIEW_PREDICATES` still satisfied).
+- [x] <!-- verification-only --> `python3 user/scripts/lint-skills.py --check-projected` exits clean (the two SKILL prose edits introduce no broken injections / embedded patterns).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior; merged-view pickup is fully covered by the hermetic `--test` harness and `lazy_parity_audit.py`.
 
@@ -129,10 +129,10 @@ The three items are independent defects with no cross-dependencies, so they are 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_parity_audit.py --repo-root <repo> --merged-view` exits 0 AFTER both SKILL files carry the `__mark_fixed__` / `--archive-fixed` chain, and exits 1 (naming the missing driver) if either driver drops it — RED-for-the-right-reason: against the pre-fix `/lazy-batch` (no `__mark_fixed__` block) the new predicate FAILS.
 
 **Runtime Verification** *(checked by the parity audit + lint — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py --repo-root <repo> --merged-view` exits 0 (both drivers chain `--archive-fixed`; the new predicate is satisfied).
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py --repo-root <repo>` exits 0 (full audit — the manifest pairs + state-script + merged-view checks all pass; the new `__mark_fixed__` block did not break the existing `lazy-batch` ↔ `lazy-bug-batch` / `lazy-batch-cloud` parity).
-- [ ] <!-- verification-only --> `python3 user/scripts/test_lazy_core.py` exits 0 with the new `--archive-fixed` parity-predicate test registered and passing.
-- [ ] <!-- verification-only --> `python3 user/scripts/lint-skills.py --check-projected` exits clean (the two SKILL `__mark_fixed__` blocks introduce no broken injections / embedded-pattern violations).
+- [x] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py --repo-root <repo> --merged-view` exits 0 (both drivers chain `--archive-fixed`; the new predicate is satisfied).
+- [x] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py --repo-root <repo>` exits 0 (full audit — the manifest pairs + state-script + merged-view checks all pass; the new `__mark_fixed__` block did not break the existing `lazy-batch` ↔ `lazy-bug-batch` / `lazy-batch-cloud` parity).
+- [x] <!-- verification-only --> `python3 user/scripts/test_lazy_core.py` exits 0 with the new `--archive-fixed` parity-predicate test registered and passing.
+- [x] <!-- verification-only --> `python3 user/scripts/lint-skills.py --check-projected` exits clean (the two SKILL `__mark_fixed__` blocks introduce no broken injections / embedded-pattern violations).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior; archive-chain parity is fully covered by `lazy_parity_audit.py` + `lint-skills.py` (SKILL-prose + orchestration wiring, no MCP surface).
 
