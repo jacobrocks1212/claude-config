@@ -2,7 +2,7 @@
 
 > When an operator concludes a `/lazy-batch` run by an **operator-authorized checkpoint**, clears context, and re-invokes `/lazy-batch <N>`, the resumed run currently *restores* the paused `forward_cycles`/`meta_cycles` instead of starting a fresh budget. The operator wants them reset to 0 in this case.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-17
 **Placement:** docs/bugs/operator-checkpoint-resume-counter-reset
