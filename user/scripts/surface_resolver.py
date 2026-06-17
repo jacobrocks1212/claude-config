@@ -359,6 +359,98 @@ def run_lint(
 
 
 # ---------------------------------------------------------------------------
+# MCP-test model-tier routing (harness-hardening-retro-fixes Phase 4)
+# ---------------------------------------------------------------------------
+
+# A prior MCP-test verdict is "definitive" (no Sonnet escalation needed) only
+# when the run reached a settled, trustworthy conclusion. Everything else —
+# uncertain, an unrepaired harness fault, or a post-heal `genuine` failure that
+# still needs diagnosis — is NON-definitive and forces Sonnet. We enumerate the
+# DEFINITIVE set (allow-list) so an unrecognized/novel verdict label fails safe
+# toward Sonnet rather than silently routing a diagnosis cycle to haiku.
+_DEFINITIVE_MCP_VERDICTS: frozenset[str] = frozenset({
+    "all-passing",   # canonical PASS (MCP_TEST_RESULTS.md result: all-passing)
+    "passing",       # synonym some scenarios use
+    "pass",
+    "all_passing",
+})
+
+
+def route_mcp_test_tier(
+    scenario_path: Path,
+    prior_verdict: Optional[str] = None,
+    yaml_exists: Optional[bool] = None,
+) -> str:
+    """Return the model tier (``"haiku"`` | ``"sonnet"``) the mcp-test cycle
+    should use for ``scenario_path``, derived purely from script-observable
+    state — NOT a per-run human/orchestrator override.
+
+    This is the SCRIPT-DERIVED routing signal that re-scopes the mcp-test haiku
+    tier (harness-hardening-retro-fixes Phase 4 / SPEC §4, Open Question 3):
+    haiku handles only ready-to-run converted-YAML happy paths; scenario
+    authoring, first-run ``.md``→YAML conversion, and diagnosis cycles route to
+    Sonnet BY DEFAULT. ``repos/algobooth/.claude/skills/mcp-test/SKILL.md``
+    consults this helper instead of relying on an orchestrator override.
+
+    Args:
+      scenario_path: the RESOLVED scenario reference (a ``corpus/live/*.yaml``
+        converted scenario, or a legacy ``.md`` awaiting conversion).
+      prior_verdict: the recorded verdict from a prior run (from
+        ``verdict.json`` / ``MCP_TEST_RESULTS.md``), or None if this is the
+        first run. Matched case-insensitively against ``_DEFINITIVE_MCP_VERDICTS``;
+        any value NOT in that allow-list (``uncertain`` / ``harness`` /
+        ``genuine`` / unknown) is treated as adverse.
+      yaml_exists: optional override for "does a converted YAML counterpart
+        exist?". When None (the default), the function performs the one
+        permitted existence check (does the path itself, or — for a ``.md``
+        path — its ``.yaml`` sibling, exist on disk?). Passing an explicit bool
+        keeps the function hermetic (no I/O) for callers that already know.
+
+    Sonnet-forcing conditions (any one → ``"sonnet"``):
+      1. The resolved scenario is a legacy ``.md`` with NO converted
+         ``*.yaml`` counterpart (first-run conversion needed).
+      2. ``prior_verdict`` is non-definitive (``uncertain`` / unrepaired
+         ``harness`` / post-heal ``genuine`` / any non-allow-listed label).
+      3. No scenario exists at all (scenario-authoring needed): the path is
+         absent and no YAML counterpart exists.
+    Otherwise — a ready converted YAML with no adverse prior verdict →
+    ``"haiku"`` (the happy-path default).
+
+    Pure function: the ONLY I/O is the optional existence check when
+    ``yaml_exists is None``; with ``yaml_exists`` supplied it touches no disk.
+    Note: generalizes only to the mcp-test routing decision — it does not infer
+    any other pipeline tier.
+    """
+    # --- condition 2: a non-definitive prior verdict always forces Sonnet,
+    # regardless of YAML readiness (a diagnosis cycle is never a haiku job). ---
+    if prior_verdict is not None:
+        if prior_verdict.strip().lower() not in _DEFINITIVE_MCP_VERDICTS:
+            return "sonnet"
+
+    # --- resolve "is a ready converted YAML present?" ---
+    if yaml_exists is None:
+        suffix = scenario_path.suffix.lower()
+        if suffix == ".yaml" or suffix == ".yml":
+            yaml_present = scenario_path.exists()
+        else:
+            # A legacy .md (or other) path: a converted counterpart is the
+            # sibling .yaml of the same stem.
+            yaml_present = scenario_path.with_suffix(".yaml").exists()
+    else:
+        yaml_present = yaml_exists
+
+    # --- conditions 1 + 3: no ready converted YAML → Sonnet ---
+    # This single check covers BOTH "legacy .md, unconverted" (condition 1) and
+    # "no scenario at all" (condition 3): in either case there is no ready YAML
+    # to run, so the cycle needs Sonnet (conversion or authoring).
+    if not yaml_present:
+        return "sonnet"
+
+    # --- happy path: ready YAML + no adverse prior verdict ---
+    return "haiku"
+
+
+# ---------------------------------------------------------------------------
 # Standalone CLI (informational base mode + --lint mode for F8)
 # ---------------------------------------------------------------------------
 

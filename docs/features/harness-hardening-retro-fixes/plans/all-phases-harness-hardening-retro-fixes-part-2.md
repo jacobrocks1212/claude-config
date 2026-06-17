@@ -98,8 +98,8 @@ This plan references reusable component files by path instead of inlining their 
 
 - [x] WU-1 — verify_ledger plan-less / absent-by-design plan_complete fix (lazy_core)
 - [x] WU-2 — Phase 3 ledger tests (plan-less, realign-only, incomplete-plan regression)
-- [ ] WU-3 — route_mcp_test_tier deterministic routing helper + tests (surface_resolver)
-- [ ] WU-4 — mcp-test SKILL.md model-tier re-scope to the script signal
+- [x] WU-3 — route_mcp_test_tier deterministic routing helper + tests (surface_resolver)
+- [x] WU-4 — mcp-test SKILL.md model-tier re-scope to the script signal
 - [ ] WU-5 — dead-coverage guard + negative-fixture test (test_lazy_core)
 - [ ] WU-6 — wire + document the dead-coverage guard (quality-gates + harden-harness gate list)
 

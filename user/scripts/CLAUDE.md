@@ -219,6 +219,21 @@ never-before-seen verification header no longer gaps the gate.
   form cleanly, fall back to a canonical subsection-header form and re-sync the constant + both
   producers (documented in the constant's docstring).
 
+## mcp-test model-tier routing (harness-hardening-retro-fixes Phase 4)
+
+`surface_resolver.py` owns the **script-derived mcp-test model-tier signal** via
+`route_mcp_test_tier(scenario_path, prior_verdict=None, yaml_exists=None) -> "haiku" | "sonnet"`
+— a pure function (the only I/O is an optional existence check when `yaml_exists is None`). It
+re-scopes the mcp-test haiku tier so haiku handles ONLY ready-to-run converted-YAML happy paths;
+scenario authoring, first-run `.md`→YAML conversion, and diagnosis cycles route to **Sonnet by
+default — not by a per-run orchestrator override**. Sonnet-forcing conditions (any one): (1) legacy
+`.md` with no converted `corpus/live/*.yaml` counterpart; (2) non-definitive prior verdict (anything
+outside the `_DEFINITIVE_MCP_VERDICTS` allow-list — an unknown label fails safe toward Sonnet);
+(3) no scenario at all. `repos/algobooth/.claude/skills/mcp-test/SKILL.md`'s Model-tier section
+consults this helper (repo-scoped prose — not a coupled pair, but picked up by `project-skills.py`
+per-repo projection; re-run it after editing). Tests:
+`test_surface_resolver.py::TestRouteMcpTestTier`.
+
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 
 The concurrency plane lets multiple `lazy-worker` sessions run different queue items at once

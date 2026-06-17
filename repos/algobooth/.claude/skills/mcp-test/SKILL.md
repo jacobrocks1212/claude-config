@@ -29,13 +29,31 @@ reference at [`scripts/mcp-test/CLAUDE.md`](../../scripts/mcp-test/CLAUDE.md).
 
 | Work | Tier | Why |
 |------|------|-----|
-| Scenario resolution, engine invocation, verdict read, sentinel forward, PHASES reconcile | **Haiku** | Mechanical; inputs small and structured (the whole happy path) |
+| Ready converted-YAML scenario: engine invocation, verdict read, sentinel forward, PHASES reconcile | **Haiku** | Mechanical; inputs small and structured (the whole happy path) |
+| Scenario authoring / first-run `.md`→YAML conversion / diagnosis | **Sonnet** | Judgment / construction work — routed by DEFAULT, not by a per-run override |
 | Gate-3 failure classification (flake vs genuine) | **Sonnet** | Judgment over the engine's evidence bundle; conservative *uncertain → genuine* bias |
 | Harness-hardening repair (mechanics only) | **Sonnet** | Edits scenario data / engine under full gates |
 
-The happy path runs on haiku end-to-end. Escalate to Sonnet ONLY when the verdict's classification
-is `uncertain` (Gate 3) or `harness` repair beyond the engine's own self-heal is needed (see Step 5).
-A clean pass that escalates to Sonnet is a defect — the success metric is "single pass on haiku".
+The happy path runs on haiku end-to-end. The frontmatter stays `model: haiku` — haiku is the
+happy-path default; the tier ESCALATES to Sonnet on a **script-derived signal**, not a per-run
+human/orchestrator call.
+
+**The tier is chosen by `route_mcp_test_tier`** in `user/scripts/surface_resolver.py` (symlinked to
+`~/.claude/scripts/surface_resolver.py`) — `route_mcp_test_tier(scenario_path, prior_verdict=None,
+yaml_exists=None) -> "haiku" | "sonnet"`, a pure function over script-observable state. It returns
+`sonnet` for ANY of these conditions WITHOUT needing a human or orchestrator override:
+
+1. **Unconverted scenario** — the resolved scenario is a legacy `.md` with NO converted
+   `corpus/live/*.yaml` counterpart (first-run conversion needed) → `sonnet`.
+2. **Non-definitive prior verdict** — the recorded prior verdict (from `verdict.json` /
+   `MCP_TEST_RESULTS.md`) is `uncertain`, an unrepaired `harness` fault, or a post-heal `genuine`
+   failure (anything outside the definitive `all-passing` allow-list) → `sonnet`.
+3. **No scenario at all** — scenario-authoring is needed → `sonnet`.
+
+Only a **ready converted YAML with no adverse prior verdict** routes to `haiku`. This retires the
+old reliance on an orchestrator override for the diagnosis/authoring case — a `.md`-unconverted or
+prior-non-definitive scenario routes to Sonnet by construction. A clean pass that escalates to
+Sonnet is still a defect — the success metric remains "single pass on haiku" for the happy path.
 
 ---
 

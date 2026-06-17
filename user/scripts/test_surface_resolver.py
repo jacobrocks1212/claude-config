@@ -29,6 +29,7 @@ from surface_resolver import (
     asserted_tools,
     asserted_tools_with_lines,
     registered_tools,
+    route_mcp_test_tier,
     run_lint,
     unresolved_tools,
 )
@@ -754,3 +755,64 @@ class TestRunLint:
         assert not any(str(clean) in m for m in error_msgs), (
             f"Clean scenario path wrongly appears in ERROR: {error_msgs}"
         )
+
+
+# ---------------------------------------------------------------------------
+# harness-hardening-retro-fixes Phase 4 (WU-3) — route_mcp_test_tier
+# ---------------------------------------------------------------------------
+#
+# A SCRIPT-derived routing signal: scenario-authoring / .md-conversion /
+# diagnosis cycles route to Sonnet BY DEFAULT (not by a per-run orchestrator
+# override); haiku is reserved for ready-to-run converted-YAML happy paths.
+# The function is pure (no I/O beyond an optional existence check when
+# yaml_exists is left None) so it is hermetically testable.
+
+class TestRouteMcpTestTier:
+    """route_mcp_test_tier(scenario_path, prior_verdict=None, yaml_exists=None)
+    -> 'haiku' | 'sonnet' — Open-Question-3 conditions, deterministic."""
+
+    def test_ready_yaml_clean_prior_routes_haiku(self, tmp_path: Path):
+        """Happy path: a converted .yaml scenario + no adverse prior verdict →
+        haiku."""
+        yaml = tmp_path / "corpus" / "live" / "play.yaml"
+        yaml.parent.mkdir(parents=True)
+        yaml.write_text("steps: []\n", encoding="utf-8")
+        assert route_mcp_test_tier(yaml, prior_verdict=None) == "haiku"
+
+    def test_yaml_exists_override_clean_prior_routes_haiku(self, tmp_path: Path):
+        """yaml_exists=True override (no disk check) + clean prior → haiku, even
+        for a .md path whose YAML counterpart the caller asserts exists."""
+        md = tmp_path / "corpus" / "live" / "play.md"
+        assert route_mcp_test_tier(md, prior_verdict=None, yaml_exists=True) == "haiku"
+
+    def test_legacy_md_unconverted_routes_sonnet(self, tmp_path: Path):
+        """Condition 1: resolved scenario is a legacy .md with NO converted
+        corpus/live/*.yaml counterpart → sonnet (first-run conversion needed)."""
+        md = tmp_path / "corpus" / "live" / "play.md"
+        md.parent.mkdir(parents=True)
+        md.write_text("1. POST /tools/play\n", encoding="utf-8")
+        # No play.yaml beside it.
+        assert route_mcp_test_tier(md, prior_verdict=None) == "sonnet"
+
+    @pytest.mark.parametrize("verdict", ["uncertain", "harness", "genuine"])
+    def test_prior_non_definitive_verdict_routes_sonnet(self, tmp_path: Path, verdict):
+        """Condition 2: a non-definitive prior verdict (uncertain / unrepaired
+        harness / post-heal genuine) forces sonnet even for a ready YAML."""
+        yaml = tmp_path / "corpus" / "live" / "play.yaml"
+        yaml.parent.mkdir(parents=True)
+        yaml.write_text("steps: []\n", encoding="utf-8")
+        assert route_mcp_test_tier(yaml, prior_verdict=verdict) == "sonnet"
+
+    def test_no_scenario_at_all_routes_sonnet(self, tmp_path: Path):
+        """Condition 3: no scenario exists at all (path absent, no YAML) →
+        sonnet (scenario-authoring needed)."""
+        missing = tmp_path / "corpus" / "live" / "nope.md"
+        assert route_mcp_test_tier(missing, prior_verdict=None) == "sonnet"
+
+    def test_definitive_prior_verdict_is_not_adverse(self, tmp_path: Path):
+        """A definitive prior verdict (e.g. 'all-passing') is NOT adverse — a
+        ready YAML with such a prior still routes haiku."""
+        yaml = tmp_path / "corpus" / "live" / "play.yaml"
+        yaml.parent.mkdir(parents=True)
+        yaml.write_text("steps: []\n", encoding="utf-8")
+        assert route_mcp_test_tier(yaml, prior_verdict="all-passing") == "haiku"
