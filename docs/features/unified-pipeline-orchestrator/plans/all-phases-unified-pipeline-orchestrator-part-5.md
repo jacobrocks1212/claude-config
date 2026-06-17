@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: unified-pipeline-orchestrator
-status: In-progress
+status: Complete
 created: 2026-06-17
 phases: [5]
 complexity: complex
@@ -97,10 +97,10 @@ Before executing each step, `Read` the listed component files from disk. Do NOT 
 
 ## Work Units
 
-- [ ] WU-1 — `--ensure-runtime` subcommand (structured runtime status)
-- [ ] WU-2 — `--gate-coverage <spec_path>` (symlink-resolving Gate-1 verdict) + mcp-coverage-audit.md rewire
-- [ ] WU-3 — Enhance `apply_pseudo __mark_complete__`: ROADMAP strike + resolved-`spec_dir` queue trim
-- [ ] WU-4 — Rewire `/lazy-batch` (+ cloud mirror) to call the three subcommands
+- [x] WU-1 — `--ensure-runtime` subcommand (structured runtime status)
+- [x] WU-2 — `--gate-coverage <spec_path>` (symlink-resolving Gate-1 verdict) + mcp-coverage-audit.md rewire
+- [x] WU-3 — Enhance `apply_pseudo __mark_complete__`: ROADMAP strike + resolved-`spec_dir` queue trim
+- [x] WU-4 — Rewire `/lazy-batch` (+ cloud mirror) to call the three subcommands
 
 ## Phase: unified-pipeline-orchestrator P5 — First three subcommands (proven consumers)
 

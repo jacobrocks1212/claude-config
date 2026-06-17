@@ -6,6 +6,16 @@ This component is the gate. The `__mark_complete__` consumer runs it BEFORE the 
 
 The audit is docs-only — it reads SPEC.md and `mcp-tests/*.md` and runs no Tauri / no MCP server / no shell execution beyond `grep`. It therefore runs identically in cloud and workstation.
 
+> **The audit algorithm now lives in code (unified-pipeline-orchestrator Phase 5).** The deterministic verdict — enumerate the SPEC Locked-Decision surface, grep `mcp-tests/*.md` **resolving symlink / 64-byte-pointer targets** (the Windows blindspot the prose grep silently missed), return covered/uncovered per decision — is the `lazy-state.py --gate-coverage <spec_path>` subcommand (`lazy_core.gate_coverage`). Run it for the mechanical verdict:
+>
+> ```bash
+> python3 ~/.claude/scripts/lazy-state.py --gate-coverage <spec_path>
+> # → JSON {ok, decisions:[{id,title,keywords,covered}], uncovered:[id], scenario_count}
+> # exit 0 iff every decision covered; exit 1 (and a non-empty uncovered[]) otherwise
+> ```
+>
+> The prose **Algorithm** below is retained as the spec of WHAT the subcommand computes (and the fallback when the subcommand is unavailable). The **Step 4 D7 routing** (author coverage / test-exempt acknowledgement) is the consumer's response to a non-empty `uncovered[]` and stays prose — `--gate-coverage` produces the verdict; the consumer acts on it.
+
 ### Inputs
 
 - `{spec_path}` — the feature directory (e.g. `docs/features/d8/d8-stem-management/`).
