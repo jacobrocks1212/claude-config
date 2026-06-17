@@ -2138,6 +2138,86 @@ def _current_head(repo_root: Path) -> str | None:
     return None
 
 
+def _resolve_under_repo(repo_root: Path, value) -> str:
+    """Canonicalize a path that may be absolute, repo-relative, or a bare
+    basename into one comparable string (lowercased, forward-slashed).
+
+    Used by the WU-3 (unified-pipeline-orchestrator P5) queue trim to match a
+    completing feature against a queue entry whose stored ``spec_dir`` may be a
+    path-form value ("docs/features/foo") rather than a bare basename ("foo").
+    Both the completing dir and each entry's spec_dir are run through this so a
+    ``-followups`` entry is matched by its RESOLVED path, not just the basename.
+    """
+    p = Path(value)
+    if not p.is_absolute():
+        p = repo_root / p
+    try:
+        resolved = os.path.realpath(str(p))
+    except OSError:
+        resolved = str(p)
+    return resolved.replace("\\", "/").rstrip("/").lower()
+
+
+# Marker appended to a struck ROADMAP row (and the idempotency sentinel — a row
+# already carrying this token is NOT re-struck).
+_ROADMAP_COMPLETE_TOKEN = "✅ COMPLETE"
+
+
+def _strike_roadmap_row(
+    roadmap_path: Path, repo_root: Path, spec_path: Path, feature_id: str
+) -> bool:
+    """Strike the ROADMAP row(s) referencing the completed feature.
+
+    A row "references" the feature iff it contains the feature_id token OR the
+    spec dir basename as a word. Striking = wrap the row's content in ``~~``
+    strikethrough and append a `` ✅ COMPLETE`` token. Idempotent: a row that
+    already carries the COMPLETE token (or is already ``~~``-wrapped for this
+    feature) is left untouched.
+
+    Returns True iff at least one row was newly struck (the file was rewritten).
+    Matches the WU-3 deliverable; never raises on a malformed ROADMAP — it
+    simply finds no row to strike and returns False (the OSError on read/write
+    is surfaced as a warning by the caller).
+    """
+    text = roadmap_path.read_text(encoding="utf-8")
+    basename = spec_path.name
+    # A row references the feature if it contains the id or the basename as a
+    # whole word (avoids matching a prefix of an unrelated longer slug).
+    tokens = {t for t in (feature_id, basename) if t}
+    token_res = [re.compile(rf"(?<![\w-]){re.escape(t)}(?![\w-])") for t in tokens]
+
+    lines = text.splitlines(keepends=True)
+    changed = False
+    for i, line in enumerate(lines):
+        # Skip lines with no trailing newline handling difference — operate on
+        # the content, re-attach the original line ending.
+        stripped = line.rstrip("\n")
+        eol = line[len(stripped):]
+        if not any(rx.search(stripped) for rx in token_res):
+            continue
+        # Idempotency: already struck for this feature → skip.
+        if _ROADMAP_COMPLETE_TOKEN in stripped:
+            continue
+        content = stripped
+        # For a markdown table row, strike only the inner cells (keep the
+        # leading/trailing pipes structurally intact) so the table still parses;
+        # for a bullet/plain line, strike the whole content.
+        if content.lstrip().startswith("|") and content.rstrip().endswith("|"):
+            inner = content.strip().strip("|")
+            new_inner = f" ~~{inner.strip()}~~  {_ROADMAP_COMPLETE_TOKEN} "
+            # Preserve any leading indentation before the first pipe.
+            lead = content[: len(content) - len(content.lstrip())]
+            new_content = f"{lead}|{new_inner}|"
+        else:
+            new_content = f"~~{content.rstrip()}~~  {_ROADMAP_COMPLETE_TOKEN}"
+        lines[i] = new_content + eol
+        changed = True
+
+    if changed:
+        _atomic_write(roadmap_path, "".join(lines))
+    return changed
+
+
 def apply_pseudo(
     repo_root: Path,
     name: str,
@@ -2248,8 +2328,24 @@ def apply_pseudo(
         Gate: ``spec_path/VALIDATED.md`` OR ``spec_path/SKIP_MCP_TEST.md``
         must be present.  Writes COMPLETED.md (kind: completed, provenance:
         gated), flips SPEC.md/PHASES.md top-level ``**Status:**``, deletes
-        VALIDATED.md / RETRO_DONE.md / DEFERRED_NON_CLOUD.md.  Idempotent on
-        existing COMPLETED.md.
+        VALIDATED.md / RETRO_DONE.md / DEFERRED_NON_CLOUD.md, TRIMS the
+        completed feature's ``docs/features/queue.json`` entry, and STRIKES its
+        ``docs/features/ROADMAP.md`` row.  Idempotent on existing COMPLETED.md.
+
+        WU-3 (unified-pipeline-orchestrator P5) enhancements:
+          - The queue trim now matches by the RESOLVED ``spec_dir`` (each
+            entry's stored ``spec_dir`` resolved against ``repo_root`` and
+            compared to the resolved ``spec_path``), in addition to the legacy
+            basename + ``id`` keys — so a ``-followups`` entry whose stored
+            ``spec_dir`` is a path-form value (not the bare basename) is still
+            trimmed, killing the ``-followups`` queue.no-completed recovery
+            class. The returned dict's ``queue_trimmed`` reports it.
+          - The ROADMAP strike (previously an orchestrator-inline step) is now
+            authored HERE: the row referencing the feature is wrapped in ``~~``
+            strikethrough + a ``✅ COMPLETE`` token. Idempotent (a row already
+            carrying the token is skipped). The returned dict carries
+            ``roadmap_struck`` (True iff a row was newly struck this call;
+            always False on the bug/fixed path and when no ROADMAP.md exists).
 
         Completion-coherence gate (Phase 9 WU-1): when PHASES.md exists, BEFORE
         any write the function makes PHASES.md coherent the way the AlgoBooth
@@ -2978,15 +3074,32 @@ def apply_pseudo(
                     qdata = json.loads(queue_path.read_text(encoding="utf-8"))
                     qitems = qdata.get("queue", [])
                     if isinstance(qitems, list):
+                        # WU-3 (unified-pipeline-orchestrator P5): match by the
+                        # RESOLVED spec_dir, not just the basename. The queue
+                        # entry's stored ``spec_dir`` can be a path-form value
+                        # (e.g. "docs/features/foo-followups") that does NOT
+                        # equal the dir basename (``spec_path.name``). The legacy
+                        # basename-only match MISSED those entries, leaving a
+                        # ``-followups`` feature lingering and tripping AlgoBooth's
+                        # ``queue.no-completed`` consistency error. We now resolve
+                        # BOTH the completing dir and each entry's spec_dir
+                        # (against repo_root) and compare the canonical paths,
+                        # keeping the basename + id matches as additional
+                        # (backward-compatible) keys.
+                        resolved_spec = _resolve_under_repo(repo_root, spec_path)
+
+                        def _entry_matches(e: dict) -> bool:
+                            sd = e.get("spec_dir")
+                            if sd == spec_path.name or e.get("id") == feature_id:
+                                return True
+                            if isinstance(sd, str) and sd:
+                                if _resolve_under_repo(repo_root, sd) == resolved_spec:
+                                    return True
+                            return False
+
                         kept = [
                             e for e in qitems
-                            if not (
-                                isinstance(e, dict)
-                                and (
-                                    e.get("spec_dir") == spec_path.name
-                                    or e.get("id") == feature_id
-                                )
-                            )
+                            if not (isinstance(e, dict) and _entry_matches(e))
                         ]
                         if len(kept) != len(qitems):
                             qdata["queue"] = kept
@@ -3006,6 +3119,33 @@ def apply_pseudo(
                         "error"
                     )
 
+        # --- (e) Strike the completed feature's ROADMAP row ---
+        # WU-3 (unified-pipeline-orchestrator P5): the ROADMAP strikethrough was
+        # previously an orchestrator-inline step (the "one remaining orchestrator
+        # step" after __mark_complete__). Moving it INTO apply_pseudo makes the
+        # completion a single deterministic author for SPEC/PHASES/queue/ROADMAP.
+        # Only the feature (complete) path strikes (bugs have no feature ROADMAP).
+        # Idempotent: a row already struck (already ~~wrapped~~ or carrying a
+        # COMPLETE token) is left untouched, so a re-run is a no-write pass — and
+        # the whole branch sits BEHIND the receipt-noop guard above, so a noop
+        # re-entry never reaches here.
+        roadmap_struck = False
+        if not is_fixed:
+            roadmap_path = repo_root / "docs" / "features" / "ROADMAP.md"
+            if roadmap_path.exists():
+                try:
+                    struck = _strike_roadmap_row(
+                        roadmap_path, repo_root, spec_path, feature_id
+                    )
+                    if struck:
+                        wrote.append("ROADMAP.md")
+                        roadmap_struck = True
+                except OSError as exc:
+                    queue_warnings.append(
+                        f"docs/features/ROADMAP.md could not be auto-struck "
+                        f"({exc}) — strike the completed row by hand"
+                    )
+
         # Attach the Phase 9 WU-1 ``flipped_phases`` key (the per-phase headings
         # the completion-coherence gate auto-flipped to Complete this call).
         # Empty list when nothing needed flipping; documented in the docstring.
@@ -3015,6 +3155,10 @@ def apply_pseudo(
         # call (always False for the bug/fixed path, whose trim lives in
         # archive_fixed). Callers may JSON-dump unconditionally.
         result["queue_trimmed"] = queue_trimmed
+        # WU-3 (unified-pipeline-orchestrator P5): True iff a ROADMAP row was
+        # struck this call (always False for the bug/fixed path and when no
+        # ROADMAP.md exists or the row was already struck).
+        result["roadmap_struck"] = roadmap_struck
         if queue_warnings:
             existing_warnings = result.get("warnings") or []
             result["warnings"] = existing_warnings + queue_warnings
@@ -5090,6 +5234,396 @@ def next_merged(
     or ``None`` when both queues are empty. Thin head-of ``merged_worklist``."""
     worklist = merged_worklist(feature_items, bug_items, repo_root)
     return worklist[0] if worklist else None
+
+
+# ===========================================================================
+# unified-pipeline-orchestrator Phase 5 — first three subcommands
+#
+# Three retro-named deterministic dances promoted from skill prose to code:
+#   1. ensure_runtime() — the Step-1d.0 runtime-ensure dance.
+#   2. gate_coverage()  — the Gate-1 MCP-coverage audit (mcp-coverage-audit.md).
+#   3. apply_pseudo __mark_complete__ enhancement (ROADMAP strike + resolved
+#      spec_dir queue trim) — lives in the existing apply_pseudo above.
+# ===========================================================================
+
+# Default AlgoBooth runtime config. These specifics (TCP 3333 health endpoint,
+# the dev:restart command, the native-source globs, and the MCP tool name we
+# assert) are AlgoBooth-coupled — but lazy-state.py is the repo-AGNOSTIC harness
+# script, so they are PARAMETERIZED here as a default dict, NOT hard-coded into
+# the control flow. A different repo overrides via the `config` argument (or the
+# orchestrator passes a repo-specific config). The SPEC's Locked Decision puts
+# --ensure-runtime ON lazy-state.py; this default dict is the clean
+# parameterization that keeps the AlgoBooth specifics out of the algorithm.
+_ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
+    "health_url": "http://localhost:3333/health",
+    "restart_command": "npm run dev:restart",
+    "mcp_tool_name": "",          # empty → mcp_tools_present check is skipped
+    "native_globs": ["src-tauri", "crates"],
+}
+
+
+def _default_runtime_probe(health_url: str):
+    """Real /health probe (stdlib urllib). Returns (http_code, payload_dict).
+
+    Best-effort + never raises: any error → (0, None) so the caller treats the
+    runtime as down. Only invoked when ``ensure_runtime`` is called WITHOUT an
+    injected ``probe`` (production); tests always inject.
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        with urllib.request.urlopen(health_url, timeout=5) as resp:  # noqa: S310
+            code = resp.getcode() or 0
+            body = resp.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(body)
+            if not isinstance(payload, dict):
+                payload = None
+        except (ValueError, TypeError):
+            payload = None
+        return (code, payload)
+    except (urllib.error.URLError, OSError, ValueError):
+        return (0, None)
+
+
+def _mcp_tool_in_payload(payload: dict | None, tool_name: str) -> bool:
+    """True iff ``tool_name`` appears in the health payload's tool listing.
+
+    Tolerant of the two shapes a /health payload may carry the tool set in:
+      - ``{"tools": ["a", "b"]}`` (list of names), or
+      - ``{"tools": [{"name": "a"}, ...]}`` (list of dicts).
+    Empty ``tool_name`` → vacuously True (no assertion configured).
+    """
+    if not tool_name:
+        return True
+    if not isinstance(payload, dict):
+        return False
+    tools = payload.get("tools")
+    if not isinstance(tools, list):
+        return False
+    for t in tools:
+        if isinstance(t, str) and t == tool_name:
+            return True
+        if isinstance(t, dict) and t.get("name") == tool_name:
+            return True
+    return False
+
+
+def ensure_runtime(
+    repo_root: Path,
+    *,
+    config: dict | None = None,
+    probe=None,
+    restart=None,
+    stale_check=None,
+) -> dict:
+    """Ensure the dev runtime + MCP server are up AND current; return a
+    structured status.
+
+    Collapses the Step-1d.0 runtime-ensure dance (probe /health → staleness
+    check → dev:restart bg → curl-until-200 → assert MCP tool present) into one
+    deterministic call. The three runtime states map to a ``status``:
+
+      - ``"booted"``        — runtime was DOWN (probe non-200) → restarted →
+                              re-probed.
+      - ``"ready"``         — runtime was UP and CURRENT (not stale) → no
+                              restart.
+      - ``"stale-rebuilt"`` — runtime was UP but the native binary was STALE
+                              (a newer native-source commit exists) → restarted.
+
+    The return shape::
+
+        {"status": "ready"|"booted"|"stale-rebuilt",
+         "mcp_tools_present": bool,
+         "health_code": int}
+
+    Determinism / injection (the parameter that makes ``--test`` hermetic):
+      - ``probe``       — callable() -> (http_code:int, payload:dict|None).
+                          Default: real urllib probe of ``config["health_url"]``.
+      - ``restart``     — callable() -> bool (truthy on success). Default: runs
+                          ``config["restart_command"]`` then curls /health until
+                          200 (bounded). Tests inject a no-network stub.
+      - ``stale_check`` — callable() -> bool (True == stale binary). Default:
+                          ``stale_binary.native_source_newer_than`` over
+                          ``config["native_globs"]`` vs the runtime boot stamp
+                          (the orchestrator that knows the boot stamp passes a
+                          bound stale_check; absent one, defaults to NOT stale).
+
+    AlgoBooth specifics (port, restart command, globs, the asserted MCP tool)
+    are read from ``config`` (default ``_ENSURE_RUNTIME_DEFAULT_CONFIG``) — they
+    are NOT hard-coded into the control flow, keeping this shared-harness
+    function repo-agnostic.
+    """
+    cfg = dict(_ENSURE_RUNTIME_DEFAULT_CONFIG)
+    if config:
+        cfg.update(config)
+    health_url = cfg["health_url"]
+    tool_name = cfg.get("mcp_tool_name", "")
+
+    if probe is None:
+        probe = lambda: _default_runtime_probe(health_url)
+    if restart is None:
+        def restart() -> bool:
+            # Fire dev:restart in the background, then poll /health to 200.
+            try:
+                subprocess.Popen(  # noqa: S602 — repo-config command, not user input
+                    shlex.split(cfg["restart_command"]),
+                    cwd=str(repo_root),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except (OSError, ValueError):
+                return False
+            for _ in range(90):  # ~7.5 min ceiling (90 × 5s)
+                code, _payload = probe()
+                if code == 200:
+                    return True
+                time.sleep(5)
+            return False
+    if stale_check is None:
+        # Without an injected stale_check the safe default is NOT stale (the
+        # health=200 gate remains the primary guard — fail-safe direction from
+        # stale_binary.py). The orchestrator binds a real stale_check when it
+        # knows the boot stamp.
+        stale_check = lambda: False
+
+    code, payload = probe()
+    if code != 200:
+        # Runtime DOWN → boot it.
+        restart()
+        code, payload = probe()
+        status = "booted"
+    elif stale_check():
+        # Runtime UP but binary STALE → force a rebuild.
+        restart()
+        code, payload = probe()
+        status = "stale-rebuilt"
+    else:
+        # Runtime UP and CURRENT.
+        status = "ready"
+
+    return {
+        "status": status,
+        "mcp_tools_present": _mcp_tool_in_payload(payload, tool_name),
+        "health_code": code,
+    }
+
+
+# ---------------------------------------------------------------------------
+# gate_coverage — WU-2: deterministic, symlink-resolving Gate-1 verdict.
+#
+# Promotes the mcp-coverage-audit.md algorithm to code: enumerate the SPEC's
+# Locked-Decision surface, grep mcp-tests/*.md (RESOLVING symlink / 64-byte
+# pointer targets — the Windows blindspot), return covered/uncovered per
+# decision.
+# ---------------------------------------------------------------------------
+
+# Words dropped when deriving keyword anchors from a decision title.
+_GATE_COVERAGE_STOPWORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are",
+    "be", "by", "with", "from", "as", "at", "via", "uses", "use", "only",
+    "decision", "must", "should", "will", "that", "this", "it",
+})
+
+
+def _gate_coverage_keywords(title: str) -> list[str]:
+    """Extract the distinctive content words from a decision title (lowercased,
+    stopwords dropped, deduped, order-preserved)."""
+    words = re.findall(r"[A-Za-z][A-Za-z0-9_-]+", title.lower())
+    out: list[str] = []
+    seen: set[str] = set()
+    for w in words:
+        if w in _GATE_COVERAGE_STOPWORDS or len(w) < 3:
+            continue
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out
+
+
+def _parse_locked_decisions(spec_md: str) -> list[dict]:
+    """Parse the SPEC.md Locked-Decision surface into [{id, title, keywords}].
+
+    Priority order (first surface that yields rows wins):
+      1. ``## Locked Decisions`` H2 with a table whose first column is the id.
+      2. ``## Resolved by Research`` H2 with ``- [x]`` bullets.
+      3. ``## Key Decisions`` / ``## Design Decisions`` numbered block.
+    Returns [] when no surface exists (caller passes vacuously).
+    """
+    lines = spec_md.splitlines()
+
+    def _section_body(heading_res: list[str]) -> list[str] | None:
+        for i, ln in enumerate(lines):
+            for pat in heading_res:
+                if re.match(pat, ln.strip(), re.IGNORECASE):
+                    body: list[str] = []
+                    for nxt in lines[i + 1:]:
+                        if re.match(r"^##\s", nxt.strip()):
+                            break
+                        body.append(nxt)
+                    return body
+        return None
+
+    decisions: list[dict] = []
+
+    # --- Surface 1: ## Locked Decisions table ---
+    body = _section_body([r"^##\s+Locked Decisions\b"])
+    if body is not None:
+        for ln in body:
+            s = ln.strip()
+            if not s.startswith("|"):
+                continue
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if len(cells) < 2:
+                continue
+            first = cells[0]
+            # Skip the header row and the |---|---| separator row.
+            if not first or set(first) <= set("-: ") or first.lower() in ("id", "decision"):
+                continue
+            did = first
+            title = cells[1]
+            decisions.append(
+                {"id": did, "title": title, "keywords": _gate_coverage_keywords(title)}
+            )
+        if decisions:
+            return decisions
+
+    # --- Surface 2: ## Resolved by Research checked bullets ---
+    body = _section_body([r"^##\s+Resolved by Research\b"])
+    if body is not None:
+        idx = 0
+        for ln in body:
+            m = re.match(r"^\s*-\s*\[x\]\s+(.*)$", ln, re.IGNORECASE)
+            if m:
+                idx += 1
+                title = m.group(1).strip()
+                # Try to lift a leading id token (R1:, L2 —, etc.).
+                idm = re.match(r"^([A-Z]\d+)\b[:\.\)\-\s]", title)
+                did = idm.group(1) if idm else f"R{idx}"
+                decisions.append(
+                    {"id": did, "title": title,
+                     "keywords": _gate_coverage_keywords(title)}
+                )
+        if decisions:
+            return decisions
+
+    # --- Surface 3: ## Key/Design Decisions numbered block ---
+    body = _section_body([r"^##\s+Key Decisions\b", r"^##\s+Design Decisions\b"])
+    if body is not None:
+        idx = 0
+        for ln in body:
+            m = re.match(r"^\s*\d+[\.\)]\s+(.*)$", ln)
+            if m:
+                idx += 1
+                title = m.group(1).strip()
+                decisions.append(
+                    {"id": f"K{idx}", "title": title,
+                     "keywords": _gate_coverage_keywords(title)}
+                )
+        if decisions:
+            return decisions
+
+    return []
+
+
+def _resolve_scenario_text(path: Path) -> str:
+    """Read an mcp-tests/*.md scenario, RESOLVING symlink / 64-byte pointer
+    targets (the Windows blindspot).
+
+    On a real symlink, ``read_text`` already follows it. But git on Windows
+    without symlink privilege writes a tiny TEXT file whose CONTENT is the
+    relative target path (the "64-byte pointer file"). We detect that case: a
+    small file whose entire content is a single relative path that resolves to
+    an existing file → read the TARGET instead. Best-effort; never raises.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    # Pointer-file heuristic: short, single-line, no newline-y markdown, and the
+    # content resolves to an existing sibling file.
+    stripped = raw.strip()
+    if stripped and "\n" not in stripped and len(stripped) <= 260:
+        # Looks path-like (has a separator or ends in .md) and is not prose.
+        looks_pathish = (
+            stripped.endswith(".md")
+            and ("/" in stripped or "\\" in stripped or stripped == path.name)
+            and " " not in stripped
+        )
+        if looks_pathish:
+            candidate = (path.parent / stripped).resolve()
+            if candidate.exists() and candidate.is_file() and candidate != path.resolve():
+                try:
+                    return candidate.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    return raw
+    return raw
+
+
+def gate_coverage(spec_path: Path) -> dict:
+    """Deterministic Gate-1 MCP-coverage verdict for a feature/bug spec dir.
+
+    Reads ``spec_path/SPEC.md``'s Locked-Decision surface, greps
+    ``spec_path/mcp-tests/*.md`` (RESOLVING symlink / pointer targets), and
+    returns per-decision covered/uncovered.
+
+    A decision is **covered** iff at least one scenario file contains the
+    decision ``id`` as a literal OR contains at least 2 of the decision's
+    keywords (case-insensitive). This mirrors mcp-coverage-audit.md Step 3.
+
+    Return shape::
+
+        {"ok": True,
+         "decisions": [{"id", "title", "keywords", "covered"}, ...],
+         "uncovered": [id, ...],
+         "scenario_count": int}
+
+    A SPEC with no Locked-Decision surface passes vacuously (empty lists). An
+    empty/absent mcp-tests dir → every decision uncovered.
+    """
+    spec_md_path = spec_path / "SPEC.md"
+    spec_md = ""
+    if spec_md_path.exists():
+        try:
+            spec_md = spec_md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            spec_md = ""
+
+    decisions = _parse_locked_decisions(spec_md)
+
+    # Gather (resolved) scenario texts.
+    mcp_dir = spec_path / "mcp-tests"
+    scenario_texts: list[str] = []
+    if mcp_dir.exists() and mcp_dir.is_dir():
+        for p in sorted(mcp_dir.glob("*.md")):
+            scenario_texts.append(_resolve_scenario_text(p))
+
+    result_decisions: list[dict] = []
+    uncovered: list[str] = []
+    for d in decisions:
+        did = d["id"]
+        kws = d["keywords"]
+        covered = False
+        for text in scenario_texts:
+            if did and re.search(rf"\b{re.escape(did)}\b", text):
+                covered = True
+                break
+            low = text.lower()
+            if kws and sum(1 for k in kws if k in low) >= 2:
+                covered = True
+                break
+        entry = {"id": did, "title": d["title"], "keywords": kws, "covered": covered}
+        result_decisions.append(entry)
+        if not covered:
+            uncovered.append(did)
+
+    return {
+        "ok": True,
+        "decisions": result_decisions,
+        "uncovered": uncovered,
+        "scenario_count": len(scenario_texts),
+    }
 
 
 def migrate_legacy_state_dir(base: Path) -> bool:

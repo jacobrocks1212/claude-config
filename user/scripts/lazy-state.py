@@ -5849,6 +5849,30 @@ def main() -> int:
                             "empty. Pure ordering — does not re-infer per-item "
                             "state. Used by the unified /lazy-batch driver."
                         ))
+    # unified-pipeline-orchestrator Phase 5: --ensure-runtime / --gate-coverage —
+    # the first two of the three retro-named deterministic dances promoted to
+    # lazy-state.py subcommands (the third is the enhanced --apply-pseudo
+    # __mark_complete__). Shared impl in lazy_core.py.
+    parser.add_argument("--ensure-runtime", action="store_true",
+                        help=(
+                            "Ensure the dev runtime + MCP server are up AND current; "
+                            "print structured JSON {status: ready|booted|stale-rebuilt, "
+                            "mcp_tools_present, health_code}. Collapses the Step-1d.0 "
+                            "runtime-ensure dance. AlgoBooth specifics (port, restart "
+                            "command, globs, MCP tool) are parameterized in lazy_core's "
+                            "config dict, not hard-coded. Real probe/restart in "
+                            "production; tests inject for determinism."
+                        ))
+    parser.add_argument("--gate-coverage", default=None, metavar="SPEC_PATH",
+                        help=(
+                            "Deterministic Gate-1 MCP-coverage verdict for a feature/bug "
+                            "spec dir: print JSON {ok, decisions:[{id,title,keywords,"
+                            "covered}], uncovered:[id], scenario_count}. Reads SPEC.md's "
+                            "Locked-Decision surface, greps mcp-tests/*.md RESOLVING "
+                            "symlink/64-byte-pointer targets (the Windows blindspot). "
+                            "Exit 1 iff any decision uncovered. Promotes the "
+                            "mcp-coverage-audit.md algorithm to code."
+                        ))
     # lazy-cycle-containment C1 (Phase 2): the cycle-subagent marker bracket.
     # The orchestrator issues --cycle-begin immediately before every Agent
     # dispatch and --cycle-end immediately after the Agent returns (every return
@@ -6085,6 +6109,23 @@ def main() -> int:
         )
         sys.stdout.write(json.dumps(head) + "\n")
         return 0
+
+    # unified-pipeline-orchestrator Phase 5: --ensure-runtime — structured
+    # runtime status (the Step-1d.0 dance). Production uses the real urllib
+    # probe + dev:restart; the AlgoBooth specifics live in lazy_core's default
+    # config dict (repo-agnostic parameterization).
+    if args.ensure_runtime:
+        result = lazy_core.ensure_runtime(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    # unified-pipeline-orchestrator Phase 5: --gate-coverage — deterministic,
+    # symlink-resolving Gate-1 verdict. Exit 1 iff any decision uncovered so the
+    # orchestrator's && chains short-circuit (parity with --verify-ledger).
+    if args.gate_coverage is not None:
+        result = lazy_core.gate_coverage(Path(args.gate_coverage))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if not result["uncovered"] else 1
 
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator

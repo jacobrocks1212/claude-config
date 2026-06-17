@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: unified-pipeline-orchestrator
-status: Ready
+status: In-progress
 created: 2026-06-17
 phases: [5]
 complexity: complex

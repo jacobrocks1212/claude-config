@@ -17250,5 +17250,466 @@ def test_apply_pseudo_grant_skip_then_validated_roundtrip():
         assert (spec / "VALIDATED.md").exists()
 
 
+# ===========================================================================
+# unified-pipeline-orchestrator Phase 5 — first three subcommands
+# ===========================================================================
+#
+# WU-1: ensure_runtime() — structured runtime status with INJECTED probe / now
+#       / restart / stale_check (no real network, deterministic).
+# WU-2: gate_coverage() — symlink-resolving Gate-1 verdict.
+# WU-3: apply_pseudo __mark_complete__ enhancement — ROADMAP strike + resolved
+#       spec_dir queue trim (the -followups regression).
+# ---------------------------------------------------------------------------
+
+
+# ---- WU-1: ensure_runtime ----
+
+_ENSURE_RUNTIME_CONFIG = {
+    "health_url": "http://localhost:3333/health",
+    "restart_command": "npm run dev:restart",
+    "mcp_tool_name": "render_chart",
+    "native_globs": ["src-tauri", "crates"],
+}
+
+
+def test_ensure_runtime_symbol_present():
+    _guard()
+    assert hasattr(lazy_core, "ensure_runtime"), (
+        "lazy_core.ensure_runtime is missing"
+    )
+
+
+def test_ensure_runtime_down_returns_booted():
+    """Runtime down (probe returns non-200 first, 200 after restart) → status
+    'booted'; mcp_tools_present reflects the post-boot payload."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"probe": 0, "restart": 0}
+
+        def probe():
+            calls["probe"] += 1
+            if calls["probe"] == 1:
+                return (0, None)  # down on first probe
+            return (200, {"tools": ["render_chart"]})
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        def stale_check():
+            raise AssertionError("stale_check must not run when runtime is down")
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_ENSURE_RUNTIME_CONFIG,
+            probe=probe,
+            restart=restart,
+            stale_check=stale_check,
+        )
+        assert result["status"] == "booted", result
+        assert result["mcp_tools_present"] is True, result
+        assert calls["restart"] == 1, result
+
+
+def test_ensure_runtime_up_and_current_returns_ready():
+    """Runtime up (200) + not stale → status 'ready'; no restart called."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0}
+
+        def probe():
+            return (200, {"tools": ["render_chart", "list_charts"]})
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        def stale_check():
+            return False  # current
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_ENSURE_RUNTIME_CONFIG,
+            probe=probe,
+            restart=restart,
+            stale_check=stale_check,
+        )
+        assert result["status"] == "ready", result
+        assert result["mcp_tools_present"] is True, result
+        assert calls["restart"] == 0, "must NOT restart a current, live runtime"
+
+
+def test_ensure_runtime_up_but_stale_returns_stale_rebuilt():
+    """Runtime up (200) but stale binary → restart → status 'stale-rebuilt'."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            calls["probe"] += 1
+            return (200, {"tools": ["render_chart"]})
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        def stale_check():
+            return True  # stale → force rebuild
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_ENSURE_RUNTIME_CONFIG,
+            probe=probe,
+            restart=restart,
+            stale_check=stale_check,
+        )
+        assert result["status"] == "stale-rebuilt", result
+        assert result["mcp_tools_present"] is True, result
+        assert calls["restart"] == 1, "stale runtime must trigger exactly one restart"
+
+
+def test_ensure_runtime_mcp_tool_absent_sets_false():
+    """When the configured MCP tool is NOT in the post-boot payload,
+    mcp_tools_present must be False (the assertion is meaningful)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+
+        def probe():
+            return (200, {"tools": ["some_other_tool"]})
+
+        def stale_check():
+            return False
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_ENSURE_RUNTIME_CONFIG,
+            probe=probe,
+            restart=lambda: True,
+            stale_check=stale_check,
+        )
+        assert result["status"] == "ready", result
+        assert result["mcp_tools_present"] is False, (
+            "configured MCP tool absent from payload but mcp_tools_present True"
+        )
+
+
+# ---- WU-2: gate_coverage (symlink-resolving) ----
+
+def _write_spec_with_locked_decisions(spec_dir: Path, decisions: list[tuple[str, str]]):
+    """Write a SPEC.md with a ## Locked Decisions table. Each decision is
+    (id, title)."""
+    rows = "\n".join(f"| {did} | {title} |" for did, title in decisions)
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    (spec_dir / "SPEC.md").write_text(
+        "# Spec\n\n"
+        "**Status:** In-progress\n\n"
+        "## Locked Decisions\n\n"
+        "| ID | Decision |\n"
+        "|----|----------|\n"
+        f"{rows}\n",
+        encoding="utf-8",
+    )
+
+
+def test_gate_coverage_symbol_present():
+    _guard()
+    assert hasattr(lazy_core, "gate_coverage"), "lazy_core.gate_coverage is missing"
+
+
+def test_gate_coverage_covered_and_uncovered_verdict():
+    """A SPEC with one covered + one uncovered Locked Decision returns the
+    correct per-decision verdict."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        _write_spec_with_locked_decisions(
+            spec_dir,
+            [("L1", "tempo sync uses bars"), ("L2", "quantize on export only")],
+        )
+        mcp = spec_dir / "mcp-tests"
+        mcp.mkdir()
+        # Scenario covers L1 (literal id) but not L2.
+        (mcp / "scenario-a.md").write_text(
+            "Validates L1: the tempo sync uses bars decision is exercised.\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.gate_coverage(spec_dir)
+        assert result["ok"] is True, result
+        by_id = {d["id"]: d for d in result["decisions"]}
+        assert by_id["L1"]["covered"] is True, result
+        assert by_id["L2"]["covered"] is False, result
+        assert "L2" in result["uncovered"], result
+        assert "L1" not in result["uncovered"], result
+
+
+def test_gate_coverage_resolves_symlink_pointer_file():
+    """When an mcp-tests/*.md entry is a SYMLINK (or a 64-byte Windows pointer
+    file) whose TARGET carries the decision keyword, coverage must resolve
+    through the pointer rather than missing it."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        _write_spec_with_locked_decisions(spec_dir, [("L1", "loudness normalization target")])
+        mcp = spec_dir / "mcp-tests"
+        mcp.mkdir()
+        # The real scenario lives elsewhere; mcp-tests/ holds only a pointer.
+        target_dir = Path(td) / "canonical"
+        target_dir.mkdir()
+        target = target_dir / "real-scenario.md"
+        target.write_text(
+            "Asserts L1: loudness normalization target met across the run.\n",
+            encoding="utf-8",
+        )
+        link = mcp / "scenario.md"
+        made_real_symlink = False
+        try:
+            link.symlink_to(target)
+            made_real_symlink = True
+        except (OSError, NotImplementedError):
+            # Windows without privilege: simulate the 64-byte pointer file that
+            # git writes when symlink support is off — a tiny text file whose
+            # content is the relative target path.
+            rel = os.path.relpath(target, mcp)
+            link.write_text(rel, encoding="utf-8")
+        result = lazy_core.gate_coverage(spec_dir)
+        by_id = {d["id"]: d for d in result["decisions"]}
+        assert by_id["L1"]["covered"] is True, (
+            f"symlink/pointer target not resolved (made_real_symlink="
+            f"{made_real_symlink}): {result}"
+        )
+
+
+def test_gate_coverage_resolves_pointer_file_unconditionally():
+    """The 64-byte Windows pointer-file case explicitly (no real symlink, ever):
+    an mcp-tests/*.md whose CONTENT is a relative path to the real scenario must
+    resolve through the pointer. Guarantees coverage of the Windows blindspot
+    even on hosts where symlinks succeed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        _write_spec_with_locked_decisions(spec_dir, [("L7", "sidechain ducking curve")])
+        mcp = spec_dir / "mcp-tests"
+        mcp.mkdir()
+        target_dir = Path(td) / "canonical"
+        target_dir.mkdir()
+        target = target_dir / "real.md"
+        target.write_text(
+            "Covers L7: sidechain ducking curve verified.\n", encoding="utf-8"
+        )
+        # ALWAYS a plain text pointer file (the git-on-Windows form), never a
+        # real symlink.
+        rel = os.path.relpath(target, mcp).replace("\\", "/")
+        (mcp / "scenario.md").write_text(rel, encoding="utf-8")
+        result = lazy_core.gate_coverage(spec_dir)
+        by_id = {d["id"]: d for d in result["decisions"]}
+        assert by_id["L7"]["covered"] is True, (
+            f"pointer-file target not resolved: {result}"
+        )
+
+
+def test_gate_coverage_no_locked_decisions_passes_vacuously():
+    """A SPEC with no Locked-Decision surface passes vacuously (ok, empty
+    decisions, empty uncovered)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\nNo decisions here.\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.gate_coverage(spec_dir)
+        assert result["ok"] is True, result
+        assert result["decisions"] == [], result
+        assert result["uncovered"] == [], result
+
+
+def test_gate_coverage_empty_mcp_tests_all_uncovered():
+    """A SPEC with Locked Decisions but an empty/absent mcp-tests dir → all
+    decisions uncovered."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        _write_spec_with_locked_decisions(
+            spec_dir, [("L1", "alpha beta decision"), ("L2", "gamma delta decision")]
+        )
+        result = lazy_core.gate_coverage(spec_dir)
+        assert result["ok"] is True, result
+        assert set(result["uncovered"]) == {"L1", "L2"}, result
+
+
+# ---- WU-3: apply_pseudo __mark_complete__ — ROADMAP strike + resolved-spec_dir trim ----
+
+def _write_roadmap(repo_root: Path, rows: list[str]) -> Path:
+    """Write docs/features/ROADMAP.md with the given lines (each a table row or
+    bullet referencing a feature)."""
+    features = repo_root / "docs" / "features"
+    features.mkdir(parents=True, exist_ok=True)
+    p = features / "ROADMAP.md"
+    p.write_text("# Roadmap\n\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    return p
+
+
+def test_apply_pseudo_mark_complete_strikes_roadmap_row():
+    """Marking a feature complete strikes its ROADMAP row (strikethrough +
+    COMPLETE token), leaving unrelated rows intact."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feature"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        roadmap = _write_roadmap(
+            repo_root,
+            [
+                "| my-feature | Build the thing | tier 1 |",
+                "| other-feature | Build other | tier 2 |",
+            ],
+        )
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="my-feature", date="2026-06-17",
+        )
+        assert result["ok"] is True, result
+        assert result.get("roadmap_struck") is True, result
+        text = roadmap.read_text(encoding="utf-8")
+        # The my-feature row must be struck (contains ~~ strikethrough) and
+        # carry a COMPLETE marker.
+        my_line = [ln for ln in text.splitlines() if "my-feature" in ln][0]
+        assert "~~" in my_line, f"my-feature row not struck: {my_line!r}"
+        assert "COMPLETE" in my_line.upper(), f"no COMPLETE token: {my_line!r}"
+        # The unrelated row is untouched.
+        other_line = [ln for ln in text.splitlines() if "other-feature" in ln][0]
+        assert "~~" not in other_line, f"other-feature wrongly struck: {other_line!r}"
+        assert "ROADMAP.md" in [str(w) for w in result["wrote"]] or any(
+            "ROADMAP.md" in str(w) for w in result["wrote"]
+        ), result
+
+
+def test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike():
+    """No ROADMAP.md present → roadmap_struck False, completion still succeeds."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feature"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="my-feature", date="2026-06-17",
+        )
+        assert result["ok"] is True, result
+        assert result.get("roadmap_struck") is False, result
+
+
+def test_apply_pseudo_mark_complete_idempotent_no_reroite_strike():
+    """An already-receipted dir short-circuits to noop BEFORE the strike — a
+    ROADMAP row already struck is NOT re-mutated on the noop re-run."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feature"
+        spec_dir.mkdir(parents=True)
+        lazy_core.write_completed_receipt(
+            spec_dir / "COMPLETED.md",
+            feature_id="my-feature", date="2026-06-17", provenance="gated",
+        )
+        _write_validated_md(spec_dir)
+        roadmap = _write_roadmap(repo_root, ["| my-feature | thing | tier 1 |"])
+        before = roadmap.read_text(encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="my-feature", date="2026-06-17",
+        )
+        assert result["noop"] is True, result
+        assert roadmap.read_text(encoding="utf-8") == before, (
+            "ROADMAP mutated on the noop re-run"
+        )
+
+
+def test_apply_pseudo_mark_complete_trims_by_resolved_spec_dir_followups():
+    """REGRESSION (-followups class): a queue entry whose stored spec_dir is a
+    PATH (or differs from the dir basename) must STILL be trimmed by matching
+    the RESOLVED spec_dir — not just the basename. Kills the
+    -followups queue-trim-miss / queue.no-completed class."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        # The spec dir basename is "my-feature-followups".
+        spec_dir = repo_root / "docs" / "features" / "my-feature-followups"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # The queue entry's spec_dir is stored as a PATH-form value that does
+        # NOT equal the basename, AND its id does NOT equal the feature_id
+        # passed to apply_pseudo — so the OLD match (spec_dir == spec_path.name
+        # OR id == feature_id) MISSES it entirely, leaving the entry and
+        # tripping queue.no-completed. Only a RESOLVED-spec_dir match catches it.
+        features = repo_root / "docs" / "features"
+        queue_path = features / "queue.json"
+        queue_path.write_text(
+            json.dumps(
+                {
+                    "queue": [
+                        {
+                            "id": "different-queue-id",
+                            "spec_dir": "docs/features/my-feature-followups",
+                            "name": "Follow-ups",
+                        },
+                        {"id": "survivor", "spec_dir": "survivor", "name": "Other"},
+                    ]
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="my-feature-followups", date="2026-06-17",
+        )
+        assert result["ok"] is True, result
+        assert result["queue_trimmed"] is True, (
+            f"-followups entry (path-form spec_dir) was NOT trimmed: {result}"
+        )
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+        ids = [e["id"] for e in data["queue"]]
+        assert "different-queue-id" not in ids, f"entry lingered: {ids}"
+        assert "survivor" in ids, f"unrelated entry wrongly removed: {ids}"
+
+
+_TESTS = _TESTS + [
+    ("test_ensure_runtime_symbol_present", test_ensure_runtime_symbol_present),
+    ("test_ensure_runtime_down_returns_booted", test_ensure_runtime_down_returns_booted),
+    ("test_ensure_runtime_up_and_current_returns_ready",
+     test_ensure_runtime_up_and_current_returns_ready),
+    ("test_ensure_runtime_up_but_stale_returns_stale_rebuilt",
+     test_ensure_runtime_up_but_stale_returns_stale_rebuilt),
+    ("test_ensure_runtime_mcp_tool_absent_sets_false",
+     test_ensure_runtime_mcp_tool_absent_sets_false),
+    ("test_gate_coverage_symbol_present", test_gate_coverage_symbol_present),
+    ("test_gate_coverage_covered_and_uncovered_verdict",
+     test_gate_coverage_covered_and_uncovered_verdict),
+    ("test_gate_coverage_resolves_symlink_pointer_file",
+     test_gate_coverage_resolves_symlink_pointer_file),
+    ("test_gate_coverage_resolves_pointer_file_unconditionally",
+     test_gate_coverage_resolves_pointer_file_unconditionally),
+    ("test_gate_coverage_no_locked_decisions_passes_vacuously",
+     test_gate_coverage_no_locked_decisions_passes_vacuously),
+    ("test_gate_coverage_empty_mcp_tests_all_uncovered",
+     test_gate_coverage_empty_mcp_tests_all_uncovered),
+    ("test_apply_pseudo_mark_complete_strikes_roadmap_row",
+     test_apply_pseudo_mark_complete_strikes_roadmap_row),
+    ("test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike",
+     test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike),
+    ("test_apply_pseudo_mark_complete_idempotent_no_reroite_strike",
+     test_apply_pseudo_mark_complete_idempotent_no_reroite_strike),
+    ("test_apply_pseudo_mark_complete_trims_by_resolved_spec_dir_followups",
+     test_apply_pseudo_mark_complete_trims_by_resolved_spec_dir_followups),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())
