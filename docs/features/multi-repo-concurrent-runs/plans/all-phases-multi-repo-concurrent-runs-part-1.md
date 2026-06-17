@@ -75,12 +75,12 @@ NOT by threading `repo_root` through 25 marker call sites.
 
 ## Phase 3 — bug-state.py parity + pipeline_visualizer
 
-- [ ] WU-3.1 — TDD: `bug-state.py` calls `set_active_repo_root` at `main()`; same-repo refusal + own-state clear identical to `lazy-state.py`; a same-repo feature+bug run is mutually exclusive, cross-repo isolated. Then wire `bug-state.py`.
-- [ ] WU-3.2 — Extend `lazy_parity_audit.py` to assert the active-repo + keyed-state-dir surface is consistent across the two state scripts.
-- [ ] WU-3.3 — Update `pipeline_visualizer` to enumerate `~/.claude/state/<repo-key>/` subdirs (or take a repo arg) instead of the base-dir marker; update `test_pipeline_visualizer.py` for the keyed layout.
-- [ ] WU-3.4 — Run `bug-state.py --test` + `test_lazy_core.py` cross-script case + visualizer tests; regenerate `bug-state` baseline only if fixtures legitimately changed. Gate suite green.
+- [x] WU-3.1 — `bug-state.py` already binds `set_active_repo_root(args.repo_root)` at `main()` (Phase 1, line 4143 — verified, no change needed). Added cross-script test `test_cross_script_same_repo_refuses_keyed_dir_unset` (registered in `_TESTS`): with `LAZY_STATE_DIR` unset + temp HOME, `bug-state --run-start --repo-root A` then `lazy-state --run-start --repo-root A` → REFUSED (exit 3, "REFUSED" stderr); `lazy-state --run-start --repo-root B` → succeeds.
+- [x] WU-3.2 — Extended `lazy_parity_audit.py` with `audit_state_script_parity()` (runs in default whole-repo `audit_all_pairs`): asserts BOTH `lazy-state.py` + `bug-state.py` call `set_active_repo_root(args.repo_root)` at main(). Added `TestStateScriptParity` (3 tests) to `test_lazy_parity.py`. Existing checks intact; CLI exits 0.
+- [x] WU-3.3 — `pipeline_visualizer/server.py`: `_run_marker_present(repo_root)` now binds the active repo (`set_active_repo_root`) before `read_run_marker()` so it reads the visualized repo's keyed subdir. Both call sites pass `repo_root`. `LAZY_STATE_DIR`-override path unchanged → existing 63 tests green. Added `TestKeyedMarkerLookup` (2 tests) for the keyed-layout production path.
+- [x] WU-3.4 — Gates green: `test_lazy_core.py` 412/412, `lazy-state.py --test` OK, `bug-state.py --test` OK, `test_hooks.py` 69/69, `test_pipeline_visualizer.py` 65/65, `lazy_parity_audit.py` exit 0, `test_lazy_parity.py` 23/23. No baseline regenerated (smoke output matched).
 
 ## Phase 4 — Cleanup + docs
 
-- [ ] WU-4.1 — Document the registry in `user/scripts/CLAUDE.md` (registry layout, `repo_key`, same-repo-refusal / cross-repo-concurrency contract, migration); add the root `CLAUDE.md` Hooks-table note (hooks scope by current repo via `--marker-present`); add a `docs/specs/turn-routing-enforcement/` note that the marker is now per-repo.
-- [ ] WU-4.2 — Final full gate suite green; confirm no stale singleton remains on the live machine.
+- [x] WU-4.1 — `user/scripts/CLAUDE.md`: new "Per-repo keyed state dir" section (resolution rule, `repo_key`, active-repo binding, same-repo-refusal / cross-repo-concurrency, migration, hooks via `--marker-present`). Root `CLAUDE.md`: per-repo hook-scoping note after the Hooks table + cycle-containment row update. `docs/specs/turn-routing-enforcement/SPEC.md`: note that the marker is now per-repo (singleton retired except as migration source).
+- [x] WU-4.2 — Full gate suite green (see WU-3.4 + `lint-skills.py --check-projected --check-capabilities` exit 0). Live-machine stale-singleton confirmation deferred to the orchestrator (cannot inspect live `~/.claude/state/` non-destructively as a verification claim here).

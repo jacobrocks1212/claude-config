@@ -27,6 +27,18 @@ Three mechanisms, all gated on a **run marker** so ordinary interactive sessions
 2. **Validate-deny (PreToolUse on `Agent`):** every `Agent` dispatch during a marked run is checked against the script's **prompt registry** (hash + nonce recorded at emit time). A dispatch whose prompt was not script-emitted this turn is **denied** (`permissionDecision: deny`) with a reason that instructs the canonical recovery (re-probe; or route the gap to the hardening stage). Hand-composed dispatch prompts — the source of every measured protocol failure — become unexecutable.
 3. **Harness-hardening stage:** any misroute (denied dispatch), no-route (probe cannot produce a route: `cycle_prompt_refused`, unknown state, marker/state divergence), or hook-detected contract gap dispatches an **Opus subagent → `/harden-harness` skill invocation**. The stage is specialized in hardening claude-config: it analyzes the route the orchestrator took, root-causes the gap (missing contract? ambiguous prose? missing emit section? script defect?), fixes mechanical issues autonomously under full gates, and surfaces genuine harness-design forks to the operator via the existing NEEDS_INPUT triage system. It is the lazy system's self-improvement loop, made a first-class pipeline citizen.
 
+> **Update (`multi-repo-concurrent-runs`, 2026-06-16): the run marker is now per-repo.** All
+> run-scoped state (the run marker, prompt registry, deny-ledger, cycle-subagent marker, and
+> checkpoint) is keyed per repo under `~/.claude/state/<repo_key>/`, resolved at the single
+> `lazy_core.claude_state_dir()` chokepoint (`LAZY_STATE_DIR` set → exact dir; unset → keyed). The
+> global singleton `~/.claude/state/lazy-run-marker.json` is **retired** except as a one-time
+> legacy migration source. The three hooks above no longer read the base-dir marker directly —
+> they scope by the current repo via `lazy-state.py --marker-present --repo-root <cwd>`, so a live
+> run in one repo no longer arms the guard/inject/containment in another repo (and a stale marker
+> in one repo cannot block unrelated work elsewhere). The marker-gated "orchestrator runs only"
+> scope (Decision 2) is unchanged — it is now *per-repo* marker-gated. See
+> `user/scripts/CLAUDE.md` → "Per-repo keyed state dir".
+
 ## Locked Decisions (operator-answered 2026-06-11)
 
 | # | Decision | Choice | Notes |

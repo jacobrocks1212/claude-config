@@ -178,9 +178,18 @@ Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/
 | `block-terminal-kill.sh` | PreToolUse (Bash) | Blocks process/terminal termination (mobile workflow) |
 | `block-work-repo-git-writes.sh` | PreToolUse (Bash) | Blocks destructive git in work repos |
 | `pr-review-cache-guard.sh` | PreToolUse (Bash) | PR review caching guard |
-| `lazy-cycle-containment.sh` | PreToolUse (Bash, Agent, Skill) | While the lazy cycle-subagent marker is present, denies in-flight the routing/lifecycle/recursive-dispatch/2nd-feature-commit ops a runaway needs (fail-OPEN); also denies a subagent invoking any `/lazy*` skill via the Skill tool (defense-in-depth, agent_id-targeted, arming-free) |
+| `lazy-cycle-containment.sh` | PreToolUse (Bash, Agent, Skill) | While the lazy cycle-subagent marker is present (scoped to the current repo), denies in-flight the routing/lifecycle/recursive-dispatch/2nd-feature-commit ops a runaway needs (fail-OPEN); also denies a subagent invoking any `/lazy*` skill via the Skill tool (defense-in-depth, agent_id-targeted, arming-free) |
 | `fix-line-endings.ps1` | PostToolUse (Edit/Write) | Normalizes line endings |
 | `run-eslint.ps1` | PostToolUse (Edit/Write) | Auto-lints Cognito Forms TS/Vue |
+
+> **Per-repo hook scoping (`multi-repo-concurrent-runs`).** The three lazy enforcement hooks —
+> `lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, and `lazy-cycle-containment.sh` — no longer
+> key off the *mere existence* of a global run marker. They scope by the **current repo** by
+> calling `lazy-state.py --marker-present --repo-root <cwd>` (read-only; exit 0 present / 1
+> absent), which resolves the per-repo keyed state dir `~/.claude/state/<repo_key>/`. A live run
+> in repo A no longer arms the guard/inject/containment in a session for repo B, and a stale
+> marker in one repo cannot block unrelated work in another. Fail-OPEN preserved: a query error
+> falls back to prior behavior. See `user/scripts/CLAUDE.md` → "Per-repo keyed state dir".
 
 ## What's NOT Tracked
 

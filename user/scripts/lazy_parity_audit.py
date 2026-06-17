@@ -285,6 +285,54 @@ def audit_pair(
 
 
 # ---------------------------------------------------------------------------
+# State-script parity (multi-repo-concurrent-runs WU-3.2)
+# ---------------------------------------------------------------------------
+
+# The shared per-repo state-dir surface that BOTH state scripts must wire at
+# main() so claude_state_dir() scopes every run-scoped file (marker / registry /
+# deny-ledger / cycle marker / checkpoint) to the active repo's keyed subdir.
+# bug-state.py inherits the keyed dir purely by importing lazy_core, but it MUST
+# still bind the active repo from --repo-root at main() — otherwise it resolves
+# the cwd fallback instead of the orchestrator-supplied repo.  This check makes
+# a silent drop of that binding a hard finding.
+_STATE_SCRIPTS: tuple[str, ...] = ("lazy-state.py", "bug-state.py")
+_ACTIVE_REPO_BINDING_RE = re.compile(
+    r"(?:lazy_core\.)?set_active_repo_root\(\s*args\.repo_root\s*\)"
+)
+
+
+def audit_state_script_parity(repo_root: str | Path) -> list[str]:
+    """Assert the shared per-repo state-dir surface is consistent across the
+    feature and bug state scripts: each must call
+    ``set_active_repo_root(args.repo_root)`` at main().  Returns one finding per
+    script missing the binding; empty means parity holds.
+
+    This is additive — it audits the Python state machines (not the SKILL.md
+    pairs) and runs alongside the manifest pair audit in the default (no
+    ``--pair``) invocation.
+    """
+    repo_root = Path(repo_root)
+    findings: list[str] = []
+    for script in _STATE_SCRIPTS:
+        path = repo_root / "user" / "scripts" / script
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(
+                f"lazy-parity [state-scripts] ERROR: cannot read {script}: {exc}"
+            )
+            continue
+        if _ACTIVE_REPO_BINDING_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must call "
+                f"set_active_repo_root(args.repo_root) at main() so "
+                f"claude_state_dir() scopes run-scoped state per repo "
+                f"(multi-repo-concurrent-runs parity)"
+            )
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Audit all pairs
 # ---------------------------------------------------------------------------
 
@@ -294,7 +342,8 @@ def audit_all_pairs(
 ) -> list[str]:
     """
     Run audit_pair for every pair in the manifest and return the concatenated
-    findings list.  Empty list means all pairs are clean.
+    findings list.  Empty list means all pairs are clean.  Also runs the
+    state-script parity check (the shared per-repo state-dir binding).
     """
     repo_root = Path(repo_root)
 
@@ -305,6 +354,10 @@ def audit_all_pairs(
     for pair in manifest.get("pairs", []):
         pair_name = Path(pair["derived"]).parent.name
         all_findings.extend(audit_pair(repo_root, pair_name, manifest=manifest))
+
+    # State-script parity (multi-repo-concurrent-runs): runs in the default
+    # whole-repo audit, independent of the SKILL.md manifest pairs.
+    all_findings.extend(audit_state_script_parity(repo_root))
 
     return all_findings
 

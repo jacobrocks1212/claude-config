@@ -20,21 +20,37 @@ from .probe import probe_state, read_queue  # noqa: F401 (probe_state monkeypatc
 from .queue_writer import PermutationError, QueueWriteError, reorder_queue
 
 
-def _run_marker_present() -> bool:
-    """True iff a fresh batch run-marker is present (a /lazy-batch run is live).
+def _run_marker_present(repo_root=None) -> bool:
+    """True iff a fresh batch run-marker is present for the visualized repo (a
+    /lazy-batch run is live in it).
 
     Detection delegates to lazy_core.read_run_marker() — the single source of
-    truth for the global run marker (it applies all staleness guards). Reorder
+    truth for the run marker (it applies all staleness guards). Reorder
     writes are refused entirely while it is present (Decisions 6 + 11). If
     lazy_core is unimportable (e.g. a stripped deployment), fail OPEN to closed:
     treat as no marker so the tool stays usable, since the run marker is an
     optimization gate, not a correctness gate (the atomic write is still safe).
+
+    multi-repo-concurrent-runs (Phase 3 WU-3.3): run-scoped state is now keyed
+    per repo under ``~/.claude/state/<repo_key>/``.  read_run_marker() resolves
+    its dir via lazy_core.claude_state_dir() → active_repo_root(), so the
+    visualizer MUST bind the active repo to the repo it is rendering — otherwise
+    it would read whatever repo the cwd-git-toplevel fallback resolves to (often
+    the wrong subdir) and miss the live marker.  We bind ``repo_root`` here on
+    every check so the per-poll marker read targets the visualized repo's keyed
+    subdir.  When LAZY_STATE_DIR is set (the test/pipe-test path) the override
+    wins inside claude_state_dir() regardless of the binding, so existing
+    fixtures are byte-for-byte unaffected.
     """
     try:
         import lazy_core
     except ImportError:
         return False
     try:
+        if repo_root is not None:
+            # Bind the active repo so the keyed state dir matches the rendered
+            # repo (no-op for path resolution when LAZY_STATE_DIR is set).
+            lazy_core.set_active_repo_root(str(repo_root))
         return lazy_core.read_run_marker() is not None
     except Exception:
         return False
@@ -84,7 +100,7 @@ def make_server(repo_root, host: str = "127.0.0.1", port: int = 8765) -> Threadi
             # probe) so a run-marker appearing/clearing reflects on the next poll,
             # not up to one TTL window late. Decisions 6 + 11.
             payload = dict(state)
-            payload["queue_locked"] = _self_mod._run_marker_present()
+            payload["queue_locked"] = _self_mod._run_marker_present(repo_root)
             self._send_json(200, payload)
 
         def _api_queue(self) -> None:
@@ -105,7 +121,7 @@ def make_server(repo_root, host: str = "127.0.0.1", port: int = 8765) -> Threadi
             # The single guarded write path. Body: {pipeline, order:[ids...]}.
             import pipeline_visualizer.server as _self_mod
             # Refuse entirely while a batch run-marker is present (one writer rule).
-            if _self_mod._run_marker_present():
+            if _self_mod._run_marker_present(repo_root):
                 self._send_json(409, {
                     "error": "queue locked — orchestrator run in progress",
                     "queue_locked": True,

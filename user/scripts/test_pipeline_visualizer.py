@@ -929,5 +929,69 @@ class TestPostQueueRoute:
                 httpd.shutdown()
 
 
+# ---------------------------------------------------------------------------
+# multi-repo-concurrent-runs (Phase 3 WU-3.3) — per-repo keyed marker lookup
+# ---------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def _keyed_home(tmp_path):
+    """Point HOME/USERPROFILE at a throwaway dir, clear LAZY_STATE_DIR, and
+    reset lazy_core's per-process migration + active-repo globals so the
+    production keyed-state-dir path (~/.claude/state/<repo_key>/) is exercised
+    instead of the LAZY_STATE_DIR override."""
+    import lazy_core
+    home = tmp_path / "_home"
+    home.mkdir(exist_ok=True)
+    keys = ("HOME", "USERPROFILE", "LAZY_STATE_DIR")
+    prev = {k: _os.environ.get(k) for k in keys}
+    _os.environ["HOME"] = str(home)
+    _os.environ["USERPROFILE"] = str(home)
+    _os.environ.pop("LAZY_STATE_DIR", None)
+    lazy_core._legacy_state_migrated = False
+    lazy_core.set_active_repo_root(None)
+    try:
+        yield home
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        lazy_core._legacy_state_migrated = False
+        lazy_core.set_active_repo_root(None)
+
+
+class TestKeyedMarkerLookup:
+    """WU-3.3: with LAZY_STATE_DIR unset (production), _run_marker_present binds
+    the visualized repo so it reads THAT repo's keyed state subdir — a marker in
+    repo A is seen for A and NOT for B (per-repo isolation)."""
+
+    def test_marker_present_only_for_owning_repo_keyed(self, tmp_path):
+        import lazy_core
+        from pipeline_visualizer.server import _run_marker_present
+
+        repo_a = tmp_path / "repoA"
+        repo_b = tmp_path / "repoB"
+        repo_a.mkdir()
+        repo_b.mkdir()
+
+        with _keyed_home(tmp_path):
+            # Write a live feature marker into repo A's keyed subdir.
+            lazy_core.set_active_repo_root(str(repo_a))
+            lazy_core.write_run_marker(pipeline="feature", cloud=False,
+                                       repo_root=str(repo_a), max_cycles=20)
+            # The visualizer, rendering repo A, sees the marker...
+            assert _run_marker_present(repo_a) is True
+            # ...and rendering repo B (a different keyed subdir) does not.
+            assert _run_marker_present(repo_b) is False
+
+    def test_no_marker_absent_for_any_repo_keyed(self, tmp_path):
+        from pipeline_visualizer.server import _run_marker_present
+        repo = tmp_path / "repoFresh"
+        repo.mkdir()
+        with _keyed_home(tmp_path):
+            assert _run_marker_present(repo) is False
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

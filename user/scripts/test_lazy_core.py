@@ -15463,6 +15463,76 @@ def test_marker_present_cli_absent_then_present_and_readonly():
         )
 
 
+def test_cross_script_same_repo_refuses_keyed_dir_unset():
+    """WU-3.1 cross-script: with LAZY_STATE_DIR UNSET and a temp HOME, a bug
+    --run-start in repo A keys its marker into A's subdir, so a feature
+    --run-start in the SAME repo A is REFUSED (different pipeline clobber, exit
+    3) — but a feature --run-start in a DIFFERENT repo B succeeds (different
+    repo_key → different subdir → no clobber).  This proves bug-state.py and
+    lazy-state.py share the per-repo keyed state dir via the common lazy_core
+    chokepoint.
+
+    Driven via subprocess (not in-process) so each script's main() binds its own
+    active repo from --repo-root and resolves the keyed dir independently — the
+    real cross-process isolation that production exercises.
+    """
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    bug_state = _SCRIPTS_DIR / "bug-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        # Two distinct real directories → two distinct repo_keys.  Using real
+        # dirs keeps os.path.realpath (inside repo_key) deterministic on every OS.
+        repo_a = Path(td) / "repoA"
+        repo_b = Path(td) / "repoB"
+        repo_a.mkdir()
+        repo_b.mkdir()
+        home = Path(td) / "home"
+        home.mkdir()
+
+        # Hermetic env: LAZY_STATE_DIR UNSET (so the keyed-dir path is exercised)
+        # + HOME/USERPROFILE pointed at a throwaway dir (so ~/.claude/state lands
+        # under td, never the real machine state).
+        env = dict(_os_env.environ)
+        env.pop("LAZY_STATE_DIR", None)
+        env["HOME"] = str(home)
+        env["USERPROFILE"] = str(home)
+
+        def run(script, scriptargs):
+            return subprocess.run(
+                [sys.executable, str(script)] + scriptargs,
+                capture_output=True, text=True, env=env,
+            )
+
+        # 1) Bug run-start in repo A → writes the marker into A's keyed subdir.
+        r_bug = run(bug_state, ["--run-start", "--repo-root", str(repo_a),
+                                "--max-cycles", "5"])
+        assert r_bug.returncode == 0, (
+            f"bug --run-start in repo A must succeed, got {r_bug.returncode}: "
+            f"{r_bug.stdout}{r_bug.stderr}"
+        )
+
+        # 2) Feature run-start in the SAME repo A → REFUSED (exit 3) because a
+        #    live different-pipeline ("bug") marker occupies A's keyed subdir.
+        r_same = run(lazy_state, ["--run-start", "--repo-root", str(repo_a),
+                                  "--max-cycles", "5"])
+        assert r_same.returncode == 3, (
+            f"feature --run-start in the SAME repo must be REFUSED (exit 3), got "
+            f"{r_same.returncode}: {r_same.stdout}{r_same.stderr}"
+        )
+        assert "REFUSED" in r_same.stderr, (
+            f"refusal must name the clobber on stderr, got: {r_same.stderr!r}"
+        )
+
+        # 3) Feature run-start in a DIFFERENT repo B → SUCCEEDS (different
+        #    repo_key → different subdir → no clobber of A's marker).
+        r_diff = run(lazy_state, ["--run-start", "--repo-root", str(repo_b),
+                                  "--max-cycles", "5"])
+        assert r_diff.returncode == 0, (
+            f"feature --run-start in a DIFFERENT repo must succeed, got "
+            f"{r_diff.returncode}: {r_diff.stdout}{r_diff.stderr}"
+        )
+
+
 _TESTS = _TESTS + [
     ("test_repo_key_present_and_normalization_invariant",
      test_repo_key_present_and_normalization_invariant),
@@ -15480,6 +15550,8 @@ _TESTS = _TESTS + [
      test_migrate_legacy_noop_when_absent),
     ("test_marker_present_cli_absent_then_present_and_readonly",
      test_marker_present_cli_absent_then_present_and_readonly),
+    ("test_cross_script_same_repo_refuses_keyed_dir_unset",
+     test_cross_script_same_repo_refuses_keyed_dir_unset),
 ]
 
 

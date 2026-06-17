@@ -614,3 +614,59 @@ class TestCycleBracket:
             f"in ALL three orchestrators, got presence={present} "
             f"for {[n for n, _, _ in _CYCLE_BRACKET_TRIO]}"
         )
+
+
+# ===========================================================================
+# Class 4 — State-script per-repo parity (multi-repo-concurrent-runs WU-3.2)
+# ===========================================================================
+
+class TestStateScriptParity:
+    """Both feature + bug state scripts must bind the active repo at main() so
+    claude_state_dir() scopes run-scoped state per repo."""
+
+    def test_live_state_scripts_bind_active_repo(self) -> None:
+        """Hard gate: lazy-state.py AND bug-state.py both call
+        set_active_repo_root(args.repo_root) at main() (the shared per-repo
+        state-dir surface).  Zero findings against the real repo."""
+        repo_root = Path(__file__).resolve().parents[2]
+        findings = lazy_parity_audit.audit_state_script_parity(repo_root)
+        assert findings == [], (
+            "state-script per-repo parity drift:\n"
+            + "\n".join(f"  {f}" for f in findings)
+        )
+
+    def test_audit_state_script_parity_fires_when_binding_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """The check FIRES (one finding) when a state script drops the
+        set_active_repo_root(args.repo_root) binding."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "lazy-state.py").write_text(
+            "def main():\n    lazy_core.set_active_repo_root(args.repo_root)\n",
+            encoding="utf-8",
+        )
+        # bug-state.py is MISSING the binding → must be flagged.
+        (scripts / "bug-state.py").write_text(
+            "def main():\n    pass  # no active-repo binding\n",
+            encoding="utf-8",
+        )
+        findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
+        assert len(findings) == 1, findings
+        assert "bug-state.py" in findings[0]
+        assert "STATE" in findings[0]
+
+    def test_audit_state_script_parity_clean_when_both_bind(
+        self, tmp_path: Path
+    ) -> None:
+        """No findings when both scripts carry the binding (bare or lazy_core.
+        prefixed form)."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "lazy-state.py").write_text(
+            "set_active_repo_root( args.repo_root )\n", encoding="utf-8"
+        )
+        (scripts / "bug-state.py").write_text(
+            "lazy_core.set_active_repo_root(args.repo_root)\n", encoding="utf-8"
+        )
+        assert lazy_parity_audit.audit_state_script_parity(tmp_path) == []
