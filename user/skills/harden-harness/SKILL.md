@@ -124,6 +124,12 @@ python ~/.claude/scripts/bug-state.py --test
 python ~/.claude/scripts/test_hooks.py
 ```
 
+> **Dead-coverage guard (harness-hardening-retro-fixes Phase 5).** `test_lazy_core.py` above
+> includes a self-checking guard (`test_no_orphaned_test_functions`) that FAILS if a round adds
+> a zero-arg `def test_*` to `test_lazy_core.py` but forgets to register it in `_TESTS` — so a
+> hardening round CANNOT land regression tests that never execute (the Round-24 dead-coverage
+> class). If the guard names an orphan, append it to a `_TESTS` list before committing.
+
 Plus:
 - **Coupled-pair mirroring:** changes to `lazy-batch/SKILL.md` must be mirrored in
   `lazy-bug-batch/SKILL.md` (and vice versa), and `lazy-batch-cloud/SKILL.md` kept

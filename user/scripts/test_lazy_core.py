@@ -15,6 +15,7 @@ No third-party dependencies — stdlib only.
 
 from __future__ import annotations
 
+import ast
 import difflib
 import json
 import os
@@ -18093,6 +18094,324 @@ _TESTS = _TESTS + [
      test_verify_ledger_realign_only_feature_absent_by_design_passes),
     ("test_verify_ledger_incomplete_plan_still_fails_regression_guard",
      test_verify_ledger_incomplete_plan_still_fails_regression_guard),
+]
+
+
+# ---------------------------------------------------------------------------
+# harness-hardening-retro-fixes Phase 5 (WU-5) — dead-coverage backlog fix.
+# ---------------------------------------------------------------------------
+#
+# Registering the dead-coverage guard (below) surfaced pre-existing zero-arg
+# `def test_*` functions authored by prior features but never appended to
+# `_TESTS` — the exact Round-24 dead-coverage class the guard exists to catch.
+# They all pass standalone; wiring them in eliminates the real backlog so the
+# guard PASSES on a genuinely-clean suite (not a baseline of tolerated
+# orphans). Parameterized (pytest-fixture) tests are NOT here — they run under
+# `pytest user/scripts/ -q`, not the manual `_TESTS` runner.
+_TESTS = _TESTS + [
+    ("test_ack_all_unacked_denies_clears_sessionless_friction",
+     test_ack_all_unacked_denies_clears_sessionless_friction),
+    ("test_advance_meta_cycle_increments_meta",
+     test_advance_meta_cycle_increments_meta),
+    ("test_advance_run_counters_consume_gated",
+     test_advance_run_counters_consume_gated),
+    ("test_append_friction_ledger_entry_round_trips",
+     test_append_friction_ledger_entry_round_trips),
+    ("test_append_friction_ledger_entry_shares_ledger_with_denies",
+     test_append_friction_ledger_entry_shares_ledger_with_denies),
+    ("test_apply_pseudo_grant_skip_idempotent_noop",
+     test_apply_pseudo_grant_skip_idempotent_noop),
+    ("test_apply_pseudo_grant_skip_no_mcp_surface_writes",
+     test_apply_pseudo_grant_skip_no_mcp_surface_writes),
+    ("test_apply_pseudo_grant_skip_refuses_with_app_surface",
+     test_apply_pseudo_grant_skip_refuses_with_app_surface),
+    ("test_apply_pseudo_grant_skip_refuses_without_not_required",
+     test_apply_pseudo_grant_skip_refuses_without_not_required),
+    ("test_apply_pseudo_grant_skip_then_validated_roundtrip",
+     test_apply_pseudo_grant_skip_then_validated_roundtrip),
+    ("test_apply_pseudo_mark_complete_malformed_queue_warns_not_refuses",
+     test_apply_pseudo_mark_complete_malformed_queue_warns_not_refuses),
+    ("test_apply_pseudo_mark_complete_queue_trim_behind_receipt_noop",
+     test_apply_pseudo_mark_complete_queue_trim_behind_receipt_noop),
+    ("test_apply_pseudo_mark_complete_trims_feature_queue",
+     test_apply_pseudo_mark_complete_trims_feature_queue),
+    ("test_apply_pseudo_mark_fixed_does_not_trim_feature_queue",
+     test_apply_pseudo_mark_fixed_does_not_trim_feature_queue),
+    ("test_build_hardening_emit_command_process_friction_binding",
+     test_build_hardening_emit_command_process_friction_binding),
+    ("test_build_hardening_emit_command_validate_deny_unchanged",
+     test_build_hardening_emit_command_validate_deny_unchanged),
+    ("test_cycle_end_friction_check_symbol_present",
+     test_cycle_end_friction_check_symbol_present),
+    ("test_cycle_marker_clear_idempotent",
+     test_cycle_marker_clear_idempotent),
+    ("test_cycle_marker_corrupt_file_read_returns_none",
+     test_cycle_marker_corrupt_file_read_returns_none),
+    ("test_cycle_marker_kind_meta_round_trips",
+     test_cycle_marker_kind_meta_round_trips),
+    ("test_cycle_marker_read_none_when_absent",
+     test_cycle_marker_read_none_when_absent),
+    ("test_cycle_marker_read_returns_dict_then_none_after_clear",
+     test_cycle_marker_read_returns_dict_then_none_after_clear),
+    ("test_cycle_marker_run_identity_head_fields_additive",
+     test_cycle_marker_run_identity_head_fields_additive),
+    ("test_cycle_marker_set_writes_all_fields",
+     test_cycle_marker_set_writes_all_fields),
+    ("test_cycle_marker_staleness_overwrites_and_logs",
+     test_cycle_marker_staleness_overwrites_and_logs),
+    ("test_cycle_marker_symbols_present",
+     test_cycle_marker_symbols_present),
+    ("test_detect_cycle_bracket_friction_symbols_present",
+     test_detect_cycle_bracket_friction_symbols_present),
+    ("test_detect_friction_clean_bracket_returns_none",
+     test_detect_friction_clean_bracket_returns_none),
+    ("test_detect_friction_degraded_inputs_return_none",
+     test_detect_friction_degraded_inputs_return_none),
+    ("test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget",
+     test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget),
+    ("test_detect_friction_mcp_test_cycle_multi_commit_within_budget",
+     test_detect_friction_mcp_test_cycle_multi_commit_within_budget),
+    ("test_detect_friction_meta_cycle_exempt_from_unexpected_commits",
+     test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
+    ("test_detect_friction_over_budget_commits",
+     test_detect_friction_over_budget_commits),
+    ("test_detect_friction_torn_bracket_run_identity_changed",
+     test_detect_friction_torn_bracket_run_identity_changed),
+    ("test_detect_friction_torn_bracket_run_marker_now_absent",
+     test_detect_friction_torn_bracket_run_marker_now_absent),
+    ("test_detect_friction_within_commit_budget_returns_none",
+     test_detect_friction_within_commit_budget_returns_none),
+    ("test_emit_dispatch_always_emits_json_on_error",
+     test_emit_dispatch_always_emits_json_on_error),
+    ("test_emit_dispatch_context_file_long_value",
+     test_emit_dispatch_context_file_long_value),
+    ("test_env_truthy_helper",
+     test_env_truthy_helper),
+    ("test_execute_plan_commit_budget_scales_with_phase_count",
+     test_execute_plan_commit_budget_scales_with_phase_count),
+    ("test_execute_plan_commit_budget_scales_with_wu_count",
+     test_execute_plan_commit_budget_scales_with_wu_count),
+    ("test_f1_repeat_count_debounce_holds_no_consume_between",
+     test_f1_repeat_count_debounce_holds_no_consume_between),
+    ("test_f1_repeat_count_debounce_increments_with_consume_between",
+     test_f1_repeat_count_debounce_increments_with_consume_between),
+    ("test_f1_repeat_count_debounce_inert_without_marker",
+     test_f1_repeat_count_debounce_inert_without_marker),
+    ("test_f1_repeat_count_debounce_legacy_file_without_consume_key",
+     test_f1_repeat_count_debounce_legacy_file_without_consume_key),
+    ("test_f1_repeat_count_head_reset_wins_over_debounce",
+     test_f1_repeat_count_head_reset_wins_over_debounce),
+    ("test_f1a_default_deny_reason_names_customization_path",
+     test_f1a_default_deny_reason_names_customization_path),
+    ("test_f1a_hardening_cap_reason_unchanged",
+     test_f1a_hardening_cap_reason_unchanged),
+    ("test_f1b_auto_readmit_error_falls_through_to_deny",
+     test_f1b_auto_readmit_error_falls_through_to_deny),
+    ("test_f1b_hardening_class_suffix_never_auto_readmits",
+     test_f1b_hardening_class_suffix_never_auto_readmits),
+    ("test_f1b_in_body_edit_still_denies",
+     test_f1b_in_body_edit_still_denies),
+    ("test_f1b_pure_suffix_cycle_prompt_auto_readmits",
+     test_f1b_pure_suffix_cycle_prompt_auto_readmits),
+    ("test_f1b_register_emission_stores_normalized_prompt_text",
+     test_f1b_register_emission_stores_normalized_prompt_text),
+    ("test_find_implementation_plans_non_series_phase_order_preserved",
+     test_find_implementation_plans_non_series_phase_order_preserved),
+    ("test_find_implementation_plans_part_series_order",
+     test_find_implementation_plans_part_series_order),
+    ("test_load_context_json_coerces_values_to_str",
+     test_load_context_json_coerces_values_to_str),
+    ("test_load_context_json_rejects_malformed",
+     test_load_context_json_rejects_malformed),
+    ("test_load_context_json_rejects_non_object",
+     test_load_context_json_rejects_non_object),
+    ("test_load_context_json_valid_long_value",
+     test_load_context_json_valid_long_value),
+    ("test_marker_mutation_guard_falsey_orchestrator_does_not_grant_immunity",
+     test_marker_mutation_guard_falsey_orchestrator_does_not_grant_immunity),
+    ("test_marker_mutation_guard_noop_no_marker_no_subagent_env",
+     test_marker_mutation_guard_noop_no_marker_no_subagent_env),
+    ("test_marker_mutation_guard_orchestrator_allowed_with_marker",
+     test_marker_mutation_guard_orchestrator_allowed_with_marker),
+    ("test_marker_mutation_guard_orchestrator_overrides_explicit_subagent",
+     test_marker_mutation_guard_orchestrator_overrides_explicit_subagent),
+    ("test_marker_mutation_guard_refuses_explicit_subagent_no_marker",
+     test_marker_mutation_guard_refuses_explicit_subagent_no_marker),
+    ("test_marker_mutation_guard_refuses_marker_present_without_orchestrator_env",
+     test_marker_mutation_guard_refuses_marker_present_without_orchestrator_env),
+    ("test_marker_mutation_guard_symbol_present",
+     test_marker_mutation_guard_symbol_present),
+    ("test_marker_mutation_guard_zero_side_effects_on_refusal",
+     test_marker_mutation_guard_zero_side_effects_on_refusal),
+    ("test_marker_mutation_ops_not_in_cycle_refused_ops",
+     test_marker_mutation_ops_not_in_cycle_refused_ops),
+    ("test_phases_mcp_runtime_not_required_false_when_required_or_absent",
+     test_phases_mcp_runtime_not_required_false_when_required_or_absent),
+    ("test_phases_mcp_runtime_not_required_true",
+     test_phases_mcp_runtime_not_required_true),
+    ("test_plan_series_index_from_filename",
+     test_plan_series_index_from_filename),
+    ("test_plan_series_index_frontmatter_override",
+     test_plan_series_index_frontmatter_override),
+    ("test_plan_sort_key_series_beats_phase",
+     test_plan_sort_key_series_beats_phase),
+    ("test_process_friction_context_resolves_hardening_template",
+     test_process_friction_context_resolves_hardening_template),
+    ("test_refuse_guard_allow_listed_ops_not_guarded",
+     test_refuse_guard_allow_listed_ops_not_guarded),
+    ("test_refuse_guard_explicit_subagent_env_refuses_without_marker",
+     test_refuse_guard_explicit_subagent_env_refuses_without_marker),
+    ("test_refuse_guard_falsey_orchestrator_env_does_not_grant_immunity",
+     test_refuse_guard_falsey_orchestrator_env_does_not_grant_immunity),
+    ("test_refuse_guard_fires_with_marker_present",
+     test_refuse_guard_fires_with_marker_present),
+    ("test_refuse_guard_leaves_run_marker_untouched",
+     test_refuse_guard_leaves_run_marker_untouched),
+    ("test_refuse_guard_marker_backstop_still_refuses_no_env",
+     test_refuse_guard_marker_backstop_still_refuses_no_env),
+    ("test_refuse_guard_noop_without_marker",
+     test_refuse_guard_noop_without_marker),
+    ("test_refuse_guard_op_set_matches_spec",
+     test_refuse_guard_op_set_matches_spec),
+    ("test_refuse_guard_orchestrator_env_never_refuses_even_with_marker",
+     test_refuse_guard_orchestrator_env_never_refuses_even_with_marker),
+    ("test_refuse_guard_orchestrator_env_overrides_explicit_subagent",
+     test_refuse_guard_orchestrator_env_overrides_explicit_subagent),
+    ("test_refuse_guard_symbol_present",
+     test_refuse_guard_symbol_present),
+    ("test_repo_has_no_app_surface_empty_repo",
+     test_repo_has_no_app_surface_empty_repo),
+    ("test_repo_has_no_app_surface_false_with_package_json",
+     test_repo_has_no_app_surface_false_with_package_json),
+    ("test_repo_has_no_app_surface_false_with_src_tauri",
+     test_repo_has_no_app_surface_false_with_src_tauri),
+    ("test_run_end_ack_unhardened_clears_sessionless_friction",
+     test_run_end_ack_unhardened_clears_sessionless_friction),
+    ("test_run_start_clobber_allows_over_age_stale_marker",
+     test_run_start_clobber_allows_over_age_stale_marker),
+    ("test_run_start_clobber_allows_same_pipeline_resume",
+     test_run_start_clobber_allows_same_pipeline_resume),
+    ("test_run_start_clobber_allows_when_no_marker",
+     test_run_start_clobber_allows_when_no_marker),
+    ("test_run_start_clobber_corrupt_marker_fails_open",
+     test_run_start_clobber_corrupt_marker_fails_open),
+    ("test_run_start_clobber_refuses_cross_pipeline_live_marker",
+     test_run_start_clobber_refuses_cross_pipeline_live_marker),
+    ("test_run_start_clobber_symbol_present",
+     test_run_start_clobber_symbol_present),
+    ("test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo",
+     test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo),
+    ("test_skip_waiver_refusal_pipeline_structural_refuses_app_repo",
+     test_skip_waiver_refusal_pipeline_structural_refuses_app_repo),
+    ("test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root",
+     test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root),
+]
+
+
+# ---------------------------------------------------------------------------
+# harness-hardening-retro-fixes Phase 5 (WU-5) — dead-coverage guard.
+# ---------------------------------------------------------------------------
+#
+# The Round-24 dead-coverage class: a `def test_*` function authored but never
+# appended to `_TESTS`, so it NEVER executes (caught only by luck in Round 25).
+# This guard AST-parses the suite module source, collects every top-level
+# `def test_*` name, compares against the names registered across all
+# `_TESTS = ... + [...]` assignments, and FAILS naming any orphan. It is itself
+# registered in `_TESTS` (self-checking — collected and run by the same harness
+# it guards), so `python user/scripts/test_lazy_core.py` fails on any orphan.
+#
+# GENERALIZATION SEAM (⚖ policy: guard scope — this-module vs all script test
+# modules): this guard covers `test_lazy_core.py` — the Round-24 incident's
+# module AND the suite Phases 1–3 of harness-hardening-retro-fixes extend (the
+# load-bearing case). The pure collector `_collect_orphaned_test_names` takes
+# (module_source, registered_names) so it generalizes to ANY `_TESTS`-style
+# manually-registered module in `user/scripts/` (e.g. a future
+# test_surface_resolver-style registry): a sibling module would add its own
+# one-line guard pointing the collector at its own source + registry. We do NOT
+# speculatively scan every file here — only the module that needs it today.
+
+
+def _collect_orphaned_test_names(
+    module_source: str, registered_names: set[str]
+) -> list[str]:
+    """Pure collector: AST-parse ``module_source``, return the sorted list of
+    top-level, ZERO-PARAMETER ``def test_*`` function names NOT present in
+    ``registered_names``.
+
+    AST (``ast.parse``) is used over regex for robustness — it ignores
+    ``def test_*`` strings inside docstrings/comments and only counts genuine
+    top-level function definitions. Async defs are included for completeness.
+    An empty return list means every manual-runner test is registered.
+
+    PARAMETERIZED tests are EXCLUDED: a ``def test_x(tmp_path)`` /
+    ``def test_x(monkeypatch)`` declares a pytest fixture argument and is
+    collected + run by pytest (the gate runs ``pytest user/scripts/ -q``), NOT
+    by the manual ``_TESTS`` runner (which calls ``fn()`` with no args). Such a
+    function is NOT a dead-coverage orphan — it executes under pytest. Only a
+    zero-positional-arg ``def test_*`` is a manual-registry candidate, so only
+    those can be orphaned by a missing ``_TESTS`` entry.
+    """
+    tree = ast.parse(module_source)
+    defined: set[str] = set()
+    for node in tree.body:  # top-level only — registered tests are module-level
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("test_"):
+                continue
+            # Skip pytest-fixture-parameterized tests — they run under pytest,
+            # not the manual _TESTS runner, so absence from _TESTS is correct.
+            if node.args.args or node.args.posonlyargs or node.args.kwonlyargs:
+                continue
+            defined.add(node.name)
+    return sorted(defined - registered_names)
+
+
+def test_no_orphaned_test_functions():
+    """WU-5(a): the dead-coverage guard PASSES on the current, fully-registered
+    suite — every top-level ``def test_*`` in this module is present in
+    ``_TESTS``. If a future edit adds a ``def test_*`` but forgets to register
+    it, this guard FAILS naming the orphan (the Round-24 dead-coverage class is
+    now mechanically impossible to land silently).
+
+    Self-checking: this function is itself a ``def test_*`` registered in
+    ``_TESTS``, so it is collected and run by the same harness it guards.
+    """
+    _guard()
+    module_source = Path(__file__).read_text(encoding="utf-8")
+    registered_names = {name for name, _fn in _TESTS}
+    orphans = _collect_orphaned_test_names(module_source, registered_names)
+    assert orphans == [], (
+        "dead-coverage guard: the following test_* function(s) are defined in "
+        f"test_lazy_core.py but NOT registered in _TESTS (they never execute): "
+        f"{orphans}. Append each to a _TESTS list."
+    )
+
+
+def test_dead_coverage_guard_detects_orphan_by_name():
+    """WU-5(b): negative fixture — feed synthetic module source containing a
+    ``def test_orphan`` that is NOT in its registry, and assert the collector
+    reports ``test_orphan`` by name (proving the guard would catch a real
+    orphan, not vacuously pass)."""
+    _guard()
+    synthetic_source = (
+        "def test_registered_one():\n"
+        "    pass\n"
+        "\n"
+        "def test_orphan():\n"  # defined but NOT registered below
+        "    pass\n"
+        "\n"
+        '_TESTS = [("test_registered_one", test_registered_one)]\n'
+    )
+    registered = {"test_registered_one"}
+    orphans = _collect_orphaned_test_names(synthetic_source, registered)
+    assert orphans == ["test_orphan"], (
+        f"the guard must report the unregistered test_orphan by name; got {orphans}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_no_orphaned_test_functions", test_no_orphaned_test_functions),
+    ("test_dead_coverage_guard_detects_orphan_by_name",
+     test_dead_coverage_guard_detects_orphan_by_name),
 ]
 
 
