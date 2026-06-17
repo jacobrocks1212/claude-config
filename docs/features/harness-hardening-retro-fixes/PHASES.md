@@ -40,7 +40,7 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 **Review verdict:** PASS — inline review (prose-only WU-1 + presence-gate WU-2); test suite 440/440, lint + project-skills clean. Test asserts strings authored in WU-1 that did not exist before, so the gate is non-tautological (would fail if the over-fit detector prose were removed).
 
-**Status:** Complete (implementation; validation via repo Python suite — MCP operator-exempt).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `python user/scripts/lint-skills.py --check-projected --check-capabilities` passes AND `grep -c` confirms the four over-fit smell signals, the recurrence threshold, the generalization bound, and the spin-off `/spec` vs `/spec-bug` choice rule are all present in `harden-harness/SKILL.md` Step 3. If a Python over-fit-decision helper is extracted, `python user/scripts/test_lazy_core.py` shows the new fixtures green; otherwise the presence gate is the verifiable proof.
 
@@ -87,7 +87,7 @@ Verified in isolation by the repo's Python suite: `python user/scripts/test_lazy
 
 **Review verdict:** PASS — inline review (shared-helper rekey + prose producers + 4 new tests); RED-for-the-right-reason confirmed on the novel-header fixture; no lockstep regressions in the full lazy-family gate.
 
-**Status:** Complete (implementation; validation via repo Python suite — MCP operator-exempt).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` shows the novel-header-with-marker fixture passing and the un-migrated-no-marker fixture emitting the deprecation diagnostic; the lockstep test confirms producer prose and detector constant agree.
 
@@ -131,7 +131,7 @@ Hermetic Python characterization tests over `remaining_unchecked_are_verificatio
 
 **Review verdict:** PASS — inline review (shared-helper branch + new helper + 3 tests). Full lazy-family gate green: `test_lazy_core.py` 447/447, `lazy-state.py --test` OK, `bug-state.py --test` OK, `lazy_parity_audit.py` exit 0, lint + project-skills clean. RED-for-the-right-reason confirmed on (a)+(b).
 
-**Status:** Complete (implementation; validation via repo Python suite — MCP operator-exempt).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` shows the plan-less and realign-only fixtures returning `plan_complete:true` while the incomplete-plan regression fixture still returns `plan_complete:false`.
 
@@ -172,7 +172,7 @@ Hermetic `verify_ledger` characterization tests with temp-dir feature fixtures (
 
 **Review verdict:** PASS — inline review (new pure helper + 8 tests + repo-scoped prose). pytest surface_resolver 39/39, project-skills + lint clean.
 
-**Status:** Complete (implementation; validation via repo Python suite — MCP operator-exempt).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `python -m pytest user/scripts/test_surface_resolver.py -q` (or its in-file runner) shows `route_mcp_test_tier` returning `sonnet` for the unconverted-`.md`, prior-non-definitive, and no-scenario cases and `haiku` for the ready-YAML-clean-prior case.
 
@@ -216,7 +216,7 @@ Hermetic pure-function tests of `route_mcp_test_tier` over each enumerated condi
 
 **Review verdict:** PASS — inline review (AST guard + pure collector + 2 tests + 98-orphan backlog fix + docs). Full lazy-family gate green: `pytest user/scripts/ -q` 819 passed, `test_lazy_core.py` 547/547, `lazy-state.py --test` OK, `bug-state.py --test` OK, parity exit 0, lint + project-skills clean. Integration: guard passes on the real suite AND flags the negative fixture.
 
-**Status:** Complete (implementation; validation via repo Python suite — MCP operator-exempt).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` runs the dead-coverage guard as one of its `_TESTS` entries and passes (all `def test_*` registered); a hand-constructed negative fixture proves the guard reports an orphan by name. Bonus reachability proof: this phase's OWN Phases 1-4 fixtures are confirmed registered (the guard would catch them if they were orphaned).
 

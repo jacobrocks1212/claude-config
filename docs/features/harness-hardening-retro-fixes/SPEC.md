@@ -2,7 +2,7 @@
 
 > Fix the concrete findings from the 2026-06-16 lazy-batch retro, and give `/harden-harness` an anti-overfit reflex: fix the instance now, but spin off a generalized `/spec`/`/spec-bug` when it detects it is patching a symptom of a broader class.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-06-16
 
