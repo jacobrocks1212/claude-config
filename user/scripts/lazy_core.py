@@ -4962,6 +4962,136 @@ def repo_key(repo_root: str) -> str:
     return hashlib.sha1(norm.encode("utf-8")).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# Merged work-list view (unified-pipeline-orchestrator Phase 1)
+# ---------------------------------------------------------------------------
+#
+# A thin, stdlib-only ordering layer over the two queues. It does NOT re-infer
+# per-item state — it only orders the queues' items and returns the next
+# actionable head as {item_id, type, repo_root}. The unified driver still calls
+# lazy-state.py / bug-state.py --probe/--emit-prompt per item for the real next
+# action (see PHASES.md Phase 1 Integration Notes).
+#
+# Ordering-field spike (Phase 1, observed against REAL on-disk queues
+# 2026-06-17): the two queues use DIFFERENT field names + scales —
+#   - docs/features/queue.json items carry `tier` (int; observed value 1; lower
+#     number = higher priority by convention). No `priority`/`severity` key.
+#   - docs/bugs/queue.json items carry `severity` (string P0/P1/P2/Low), mapped
+#     to a numeric rank by bug-state.py's _SEVERITY_RANK {P0:0,P1:1,P2:2,Low:3}.
+# So a NORMALIZATION MAP is required — the comparator coerces both to a single
+# "effective priority" (lower = higher priority). This is the resolution of the
+# SPEC Open Question "Ordering field source".
+
+# Severity → numeric rank (mirrors bug-state.py:_SEVERITY_RANK; duplicated here
+# rather than imported because bug-state.py is a hyphenated module that imports
+# lazy_core — a back-import would be circular). Lower = higher priority.
+_MERGED_SEVERITY_RANK: dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
+# Effective priority for an item with no comparable field — sorts last.
+MERGED_PRIORITY_DEFAULT = 99
+# Tie-break on equal effective priority: bugs sort before features.
+_MERGED_TYPE_ORDER: dict[str, int] = {"bug": 0, "feature": 1}
+
+
+def merged_priority(item_type: str, raw_item: dict) -> int:
+    """Normalize a queue item's ordering field to a single numeric effective
+    priority (lower = higher priority), bridging the two queues' divergent
+    field names/scales.
+
+    feature → ``tier`` (int); bug → ``severity`` (P0/P1/P2/Low → rank). A
+    missing / unrecognized field yields ``MERGED_PRIORITY_DEFAULT`` (sorts
+    last) rather than raising — a malformed queue entry must not crash the
+    merged view.
+    """
+    if item_type == "feature":
+        tier = raw_item.get("tier")
+        if isinstance(tier, bool):  # bool is an int subclass — reject it
+            return MERGED_PRIORITY_DEFAULT
+        if isinstance(tier, int):
+            return tier
+        if isinstance(tier, str):
+            try:
+                return int(tier.strip())
+            except (ValueError, AttributeError):
+                return MERGED_PRIORITY_DEFAULT
+        return MERGED_PRIORITY_DEFAULT
+    if item_type == "bug":
+        sev = raw_item.get("severity")
+        if isinstance(sev, str):
+            return _MERGED_SEVERITY_RANK.get(sev.strip(), MERGED_PRIORITY_DEFAULT)
+        return MERGED_PRIORITY_DEFAULT
+    return MERGED_PRIORITY_DEFAULT
+
+
+def merged_worklist(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+) -> list[dict]:
+    """Order both queues into a single work-list and return it as a list of
+    ``{"item_id", "type", "repo_root"}`` dicts (head first).
+
+    Inputs are the items already produced by the EXISTING queue loaders
+    (``lazy-state.load_queue`` for features, ``bug-state.load_bug_queue`` for
+    bugs) — this helper never re-parses queue.json. It is pure ordering: it
+    does NOT call ``compute_state`` or otherwise re-infer per-item state.
+
+    Ordering contract (SPEC + PHASES Phase 1):
+      1. Effective priority ascending (``merged_priority`` — lower = higher
+         priority; feature ``tier`` and bug ``severity`` normalized to one
+         scale).
+      2. Tie on equal priority → ``type == "bug"`` before ``type ==
+         "feature"``.
+      3. Stable for equal (priority, type): each queue's own listed order is
+         preserved (Python's sort is stable, and we seed the input in
+         bug-then-feature, queue-listed order before sorting on (priority,
+         type-rank) only).
+
+    Each input item is expected to carry an id field. Feature loader items use
+    ``id``; bug loader items use ``id`` as well. Items missing an id are
+    skipped (a malformed entry must not produce a None-id head).
+    """
+    annotated: list[tuple[int, int, int, dict]] = []
+    seq = 0
+    # Seed bugs first then features so that, at equal (priority, type-rank),
+    # the stable sort preserves bug-before-feature AND each queue's listed
+    # order. The (priority, type_rank) sort key alone + stable sort + this seed
+    # order yields the full contract.
+    for raw in bug_items:
+        item_id = raw.get("id")
+        if not item_id:
+            continue
+        annotated.append(
+            (merged_priority("bug", raw), _MERGED_TYPE_ORDER["bug"], seq,
+             {"item_id": item_id, "type": "bug", "repo_root": repo_root})
+        )
+        seq += 1
+    for raw in feature_items:
+        item_id = raw.get("id")
+        if not item_id:
+            continue
+        annotated.append(
+            (merged_priority("feature", raw), _MERGED_TYPE_ORDER["feature"], seq,
+             {"item_id": item_id, "type": "feature", "repo_root": repo_root})
+        )
+        seq += 1
+    # Sort by (effective priority, type-rank, original seed seq). The seq tie
+    # breaker guarantees stability across Python versions and is the explicit
+    # within-queue listed-order preservation.
+    annotated.sort(key=lambda t: (t[0], t[1], t[2]))
+    return [entry for (_p, _t, _s, entry) in annotated]
+
+
+def next_merged(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+) -> dict | None:
+    """Return the head of the merged work-list (``{item_id, type, repo_root}``)
+    or ``None`` when both queues are empty. Thin head-of ``merged_worklist``."""
+    worklist = merged_worklist(feature_items, bug_items, repo_root)
+    return worklist[0] if worklist else None
+
+
 def migrate_legacy_state_dir(base: Path) -> bool:
     """Move legacy un-keyed base-dir run state into the per-repo keyed subdir.
 

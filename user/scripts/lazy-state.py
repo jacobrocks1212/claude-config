@@ -253,6 +253,35 @@ def load_queue(repo_root: Path) -> list[dict[str, Any]]:
     return items
 
 
+def _load_bug_queue_for_merged(repo_root: Path) -> list[dict[str, Any]]:
+    """Load docs/bugs/queue.json items for the merged work-list via the
+    EXISTING ``bug-state.py:load_bug_queue`` loader (not a hand-reparse).
+
+    bug-state.py is a hyphenated module so a plain ``import`` won't resolve;
+    load it from its sibling path with importlib. The returned entries each
+    carry at least ``id`` and ``severity`` — exactly what ``merged_priority``
+    needs. Best-effort: if bug-state.py is missing/unloadable, return [] so the
+    merged view degrades to features-only rather than crashing (the unified
+    driver in a feature-only repo must still get its feature head).
+    """
+    import importlib.util
+
+    bug_state_path = Path(__file__).parent / "bug-state.py"
+    if not bug_state_path.exists():
+        return []
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_bug_state_for_merged", str(bug_state_path)
+        )
+        if spec is None or spec.loader is None:
+            return []
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.load_bug_queue(repo_root)
+    except Exception:  # noqa: BLE001 — degrade to features-only on any load error
+        return []
+
+
 def enqueue_adhoc(
     repo_root: Path,
     feature_id: str,
@@ -5683,6 +5712,20 @@ def main() -> int:
                             "read paths): a marker bound to a DIFFERENT session id "
                             "reads as absent (non-destructive session isolation)."
                         ))
+    # unified-pipeline-orchestrator Phase 1: merged work-list view. Reads BOTH
+    # docs/features/queue.json and docs/bugs/queue.json (via the existing
+    # loaders), orders them (priority desc / lower-tier-or-severity first; tie →
+    # bug before feature; stable within each queue), and prints the next
+    # actionable head as JSON {item_id, type, repo_root}. Read-only ordering
+    # ONLY — never re-infers per-item state. Empty on both queues → null.
+    parser.add_argument("--next-merged", action="store_true",
+                        help=(
+                            "Read-only: print the head of the merged feature+bug "
+                            "work-list as JSON {item_id, type, repo_root} (bugs "
+                            "break priority ties), or null when both queues are "
+                            "empty. Pure ordering — does not re-infer per-item "
+                            "state. Used by the unified /lazy-batch driver."
+                        ))
     # lazy-cycle-containment C1 (Phase 2): the cycle-subagent marker bracket.
     # The orchestrator issues --cycle-begin immediately before every Agent
     # dispatch and --cycle-end immediately after the Agent returns (every return
@@ -5899,6 +5942,26 @@ def main() -> int:
     if args.marker_present:
         marker = lazy_core.read_run_marker(session_id=args.session_id)
         return 0 if marker is not None else 1
+
+    # unified-pipeline-orchestrator Phase 1: --next-merged — read-only merged
+    # work-list head. Reuses BOTH existing queue loaders (this script's
+    # load_queue for features; bug-state.py's load_bug_queue for bugs, imported
+    # via importlib because the filename is hyphenated) and the lazy_core
+    # ordering helper (priority normalized across the two queues' divergent
+    # tier/severity fields; bug breaks ties; stable within each queue). Pure
+    # ordering — it NEVER calls compute_state / re-infers per-item state. The
+    # active repo was bound above, so repo_root in the output is the resolved
+    # active repo. Prints JSON {item_id, type, repo_root} or null; exits like
+    # every other action flag.
+    if args.next_merged:
+        repo_root = Path(args.repo_root)
+        feature_items = load_queue(repo_root)
+        bug_items = _load_bug_queue_for_merged(repo_root)
+        head = lazy_core.next_merged(
+            feature_items, bug_items, lazy_core.active_repo_root()
+        )
+        sys.stdout.write(json.dumps(head) + "\n")
+        return 0
 
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator

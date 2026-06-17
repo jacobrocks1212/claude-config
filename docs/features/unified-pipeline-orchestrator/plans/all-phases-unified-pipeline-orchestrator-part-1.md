@@ -94,9 +94,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Merged-view helper + ordering comparator (`--next-merged`)
-- [ ] WU-2 — Resolve ordering-field source (priority/tier normalization)
-- [ ] WU-3 — Merged-view fixtures + `--test` integration
+- [x] WU-1 — Merged-view helper + ordering comparator (`--next-merged`)
+- [x] WU-2 — Resolve ordering-field source (priority/tier normalization)
+- [x] WU-3 — Merged-view fixtures + `--test` integration
 
 ## Phase: unified-pipeline-orchestrator P1 — Merged work-list view + ordering
 

@@ -15533,6 +15533,245 @@ def test_cross_script_same_repo_refuses_keyed_dir_unset():
         )
 
 
+# ---------------------------------------------------------------------------
+# unified-pipeline-orchestrator Phase 1 — merged work-list view
+# ---------------------------------------------------------------------------
+#
+# WU-1: merged-view helper + ordering comparator.
+# WU-2: ordering-field source normalization (feature `tier` vs bug `severity`).
+# WU-3: fixtures covering both-populated / bug-breaks-tie / only-features /
+#       only-bugs / both-empty, plus the live --next-merged CLI over a two-queue
+#       temp-dir fixture.
+#
+# These characterize lazy_core.merged_priority / merged_worklist / next_merged
+# directly (the helper symbols did not exist before this WU — the RED state is
+# an AttributeError on lazy_core, which _guard()/the assertions encode as the
+# ordering contract, not mere absence).
+
+
+def test_merged_symbols_present():
+    """The merged-view public surface exists in lazy_core."""
+    _guard()
+    for sym in ("merged_priority", "merged_worklist", "next_merged",
+                "MERGED_PRIORITY_DEFAULT"):
+        assert hasattr(lazy_core, sym), f"lazy_core.{sym} must exist"
+
+
+def test_merged_priority_normalizes_tier_and_severity():
+    """WU-2: feature `tier` and bug `severity` normalize to one numeric scale
+    (lower = higher priority); unknown/absent fields sort last."""
+    _guard()
+    # Feature tier — int passes through.
+    assert lazy_core.merged_priority("feature", {"tier": 1}) == 1
+    assert lazy_core.merged_priority("feature", {"tier": 2}) == 2
+    # Feature tier as a numeric string — coerced.
+    assert lazy_core.merged_priority("feature", {"tier": "1"}) == 1
+    # Feature missing tier → default (sorts last).
+    assert lazy_core.merged_priority("feature", {}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    # Bug severity → rank (P0 highest priority = lowest number).
+    assert lazy_core.merged_priority("bug", {"severity": "P0"}) == 0
+    assert lazy_core.merged_priority("bug", {"severity": "P1"}) == 1
+    assert lazy_core.merged_priority("bug", {"severity": "P2"}) == 2
+    assert lazy_core.merged_priority("bug", {"severity": "Low"}) == 3
+    # Bug unknown / absent severity → default (sorts last).
+    assert lazy_core.merged_priority("bug", {"severity": "???"}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("bug", {}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    # A bool tier is NOT a valid priority (bool is an int subclass — must reject).
+    assert lazy_core.merged_priority("feature", {"tier": True}) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+def test_merged_worklist_both_populated_ordered_by_priority():
+    """WU-1/WU-3: both queues populated → ordered by effective priority; a
+    higher-priority feature precedes a lower-priority bug regardless of type."""
+    _guard()
+    feats = [{"id": "feat-hi", "tier": 1}, {"id": "feat-lo", "tier": 3}]
+    bugs = [{"id": "bug-mid", "severity": "P2"}]  # rank 2 — between the features
+    wl = lazy_core.merged_worklist(feats, bugs, "/r")
+    ids = [e["item_id"] for e in wl]
+    assert ids == ["feat-hi", "bug-mid", "feat-lo"], ids
+    # Shape contract: each entry is {item_id, type, repo_root}.
+    assert wl[0] == {"item_id": "feat-hi", "type": "feature", "repo_root": "/r"}
+    assert wl[1]["type"] == "bug"
+
+
+def test_merged_worklist_bug_breaks_tie_at_equal_priority():
+    """WU-1: equal effective priority → bug sorts before feature."""
+    _guard()
+    # feature tier 1 (priority 1) vs bug P1 (rank 1) — equal → bug first.
+    feats = [{"id": "feat-a", "tier": 1}]
+    bugs = [{"id": "bug-a", "severity": "P1"}]
+    head = lazy_core.next_merged(feats, bugs, "/r")
+    assert head == {"item_id": "bug-a", "type": "bug", "repo_root": "/r"}, head
+
+
+def test_merged_worklist_only_features_matches_listed_order():
+    """WU-1/WU-3: only features queued → identical to the feature queue's listed
+    order (the head is what lazy-state would return)."""
+    _guard()
+    feats = [{"id": "feat-1", "tier": 1}, {"id": "feat-2", "tier": 1},
+             {"id": "feat-3", "tier": 1}]
+    wl = lazy_core.merged_worklist(feats, [], "/r")
+    assert [e["item_id"] for e in wl] == ["feat-1", "feat-2", "feat-3"]
+    assert all(e["type"] == "feature" for e in wl)
+    assert lazy_core.next_merged(feats, [], "/r")["item_id"] == "feat-1"
+
+
+def test_merged_worklist_only_bugs_matches_listed_order():
+    """WU-1/WU-3: only bugs queued → identical to the bug queue's listed order."""
+    _guard()
+    bugs = [{"id": "bug-1", "severity": "P0"}, {"id": "bug-2", "severity": "P0"}]
+    wl = lazy_core.merged_worklist([], bugs, "/r")
+    assert [e["item_id"] for e in wl] == ["bug-1", "bug-2"]
+    assert all(e["type"] == "bug" for e in wl)
+    assert lazy_core.next_merged([], bugs, "/r")["item_id"] == "bug-1"
+
+
+def test_merged_worklist_both_empty_returns_none():
+    """WU-1/WU-3: both empty → no item (None head, empty work-list)."""
+    _guard()
+    assert lazy_core.merged_worklist([], [], "/r") == []
+    assert lazy_core.next_merged([], [], "/r") is None
+
+
+def test_merged_worklist_stable_within_queue_for_equal_keys():
+    """WU-1: stable for equal (priority, type) — each queue's listed order is
+    preserved among same-priority same-type items."""
+    _guard()
+    feats = [{"id": "f-first", "tier": 2}, {"id": "f-second", "tier": 2}]
+    bugs = [{"id": "b-first", "severity": "P2"}, {"id": "b-second", "severity": "P2"}]
+    # All effective priority 2; bugs (type-rank 0) precede features (type-rank 1),
+    # and within each type listed order is preserved.
+    wl = lazy_core.merged_worklist(feats, bugs, "/r")
+    assert [e["item_id"] for e in wl] == [
+        "b-first", "b-second", "f-first", "f-second"
+    ], [e["item_id"] for e in wl]
+
+
+def test_merged_worklist_skips_idless_entries():
+    """A malformed queue entry missing `id` is skipped — never a None-id head."""
+    _guard()
+    feats = [{"tier": 1}, {"id": "feat-ok", "tier": 1}]  # first is id-less
+    wl = lazy_core.merged_worklist(feats, [], "/r")
+    assert [e["item_id"] for e in wl] == ["feat-ok"]
+
+
+def test_next_merged_cli_over_two_queue_fixture():
+    """WU-3 live integration: `lazy-state.py --next-merged --repo-root <fixture>`
+    over a temp dir with one tier-1 feature and one P0 bug prints the bug as the
+    head (bugs break ties / higher priority). Exercises the real loaders +
+    importlib bug-queue load end-to-end."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        feats_dir = root / "docs" / "features"
+        bugs_dir = root / "docs" / "bugs"
+        feats_dir.mkdir(parents=True)
+        bugs_dir.mkdir(parents=True)
+        # Feature queue: one tier-1 feature.
+        (feats_dir / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "feat-x", "name": "Feature X", "spec_dir": "feat-x", "tier": 1}
+            ]}), encoding="utf-8"
+        )
+        # The bug loader resolves spec_dir to an on-disk dir, so seed it.
+        bug_x = bugs_dir / "bug-x"
+        bug_x.mkdir()
+        (bug_x / "SPEC.md").write_text(
+            "# Bug X\n\n**Severity:** P0\n**Status:** Concluded\n", encoding="utf-8"
+        )
+        (bugs_dir / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "bug-x", "name": "Bug X", "spec_dir": "bug-x", "severity": "P0"}
+            ]}), encoding="utf-8"
+        )
+        # Also seed a feature spec dir so load_queue's downstream is sane (the
+        # merged head only needs ordering, but keep the fixture realistic).
+        (feats_dir / "feat-x").mkdir()
+
+        cp = subprocess.run(
+            [sys.executable, str(lazy_state), "--next-merged",
+             "--repo-root", str(root)],
+            capture_output=True, text=True,
+        )
+        assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
+        head = json.loads(cp.stdout.strip())
+        assert head is not None, "head must not be null with both queues populated"
+        assert head["type"] == "bug", head   # P0 bug (rank 0) beats tier-1 feature
+        assert head["item_id"] == "bug-x", head
+        assert "repo_root" in head and head["repo_root"], head
+
+
+def test_next_merged_cli_only_features_matches_single_head():
+    """WU-3: --next-merged with ONLY features queued returns the same feature
+    lazy-state's single-current head would — single-type behavior unchanged."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        feats_dir = root / "docs" / "features"
+        feats_dir.mkdir(parents=True)
+        (root / "docs" / "bugs").mkdir(parents=True)  # empty bug queue dir
+        (feats_dir / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "feat-only", "name": "Only", "spec_dir": "feat-only", "tier": 1}
+            ]}), encoding="utf-8"
+        )
+        (feats_dir / "feat-only").mkdir()
+        cp = subprocess.run(
+            [sys.executable, str(lazy_state), "--next-merged",
+             "--repo-root", str(root)],
+            capture_output=True, text=True,
+        )
+        assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
+        head = json.loads(cp.stdout.strip())
+        assert head["type"] == "feature" and head["item_id"] == "feat-only", head
+
+
+def test_next_merged_cli_both_empty_prints_null():
+    """WU-3: --next-merged over empty queues prints JSON null (exit 0)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs" / "features").mkdir(parents=True)
+        (root / "docs" / "bugs").mkdir(parents=True)
+        cp = subprocess.run(
+            [sys.executable, str(lazy_state), "--next-merged",
+             "--repo-root", str(root)],
+            capture_output=True, text=True,
+        )
+        assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
+        assert json.loads(cp.stdout.strip()) is None, cp.stdout
+
+
+_TESTS = _TESTS + [
+    ("test_merged_symbols_present", test_merged_symbols_present),
+    ("test_merged_priority_normalizes_tier_and_severity",
+     test_merged_priority_normalizes_tier_and_severity),
+    ("test_merged_worklist_both_populated_ordered_by_priority",
+     test_merged_worklist_both_populated_ordered_by_priority),
+    ("test_merged_worklist_bug_breaks_tie_at_equal_priority",
+     test_merged_worklist_bug_breaks_tie_at_equal_priority),
+    ("test_merged_worklist_only_features_matches_listed_order",
+     test_merged_worklist_only_features_matches_listed_order),
+    ("test_merged_worklist_only_bugs_matches_listed_order",
+     test_merged_worklist_only_bugs_matches_listed_order),
+    ("test_merged_worklist_both_empty_returns_none",
+     test_merged_worklist_both_empty_returns_none),
+    ("test_merged_worklist_stable_within_queue_for_equal_keys",
+     test_merged_worklist_stable_within_queue_for_equal_keys),
+    ("test_merged_worklist_skips_idless_entries",
+     test_merged_worklist_skips_idless_entries),
+    ("test_next_merged_cli_over_two_queue_fixture",
+     test_next_merged_cli_over_two_queue_fixture),
+    ("test_next_merged_cli_only_features_matches_single_head",
+     test_next_merged_cli_only_features_matches_single_head),
+    ("test_next_merged_cli_both_empty_prints_null",
+     test_next_merged_cli_both_empty_prints_null),
+]
+
+
 _TESTS = _TESTS + [
     ("test_repo_key_present_and_normalization_invariant",
      test_repo_key_present_and_normalization_invariant),
