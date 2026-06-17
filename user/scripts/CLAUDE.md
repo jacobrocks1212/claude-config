@@ -179,6 +179,15 @@ in another repo (it also kills stale-marker contagion across repos).
   `lazy-run-checkpoint.json`) into the keyed subdir for the marker's recorded `repo_root`, then
   removes the base copies. Idempotent (once-per-process guard); a marker with no resolvable
   `repo_root` is treated as stale and removed. It NEVER touches a `LAZY_STATE_DIR`-overridden dir.
+- **Checkpoint resume is provenance-branched** (operator-checkpoint-resume-counter-reset, 2026-06-17).
+  `write_run_checkpoint` records an `operator_authorized` flag (threaded from
+  `args.operator_authorized` at the `--run-end --reason checkpoint` site). On `--run-start`,
+  `restore_checkpoint_counters` branches on it: an **operator-authorized** checkpoint (a deliberate
+  `/lazy-batch <N>` re-invoke) NO-OPs the restore → the marker keeps its by-design `0/0` (fresh
+  authorized budget); a **falsy/absent** flag (automatic reliability pause, or a pre-fix checkpoint
+  file) carries the paused `forward_cycles`/`meta_cycles` forward monotonically (HARD CONSTRAINT 8 —
+  an auto-resume cannot silently exceed the authorized `max_cycles`). The branch lives entirely in
+  the shared `lazy_core` helper, so `bug-state.py` inherits it.
 - **Hooks gate via `--marker-present`.** The three enforcement hooks
   (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, `lazy-cycle-containment.sh`) no longer read
   the base-dir marker file directly. They call `lazy-state.py --marker-present --repo-root <cwd>`

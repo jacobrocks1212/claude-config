@@ -2,6 +2,10 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+<!-- Implementation complete (Phases 1-4 landed, 2026-06-17); validation pending. The flip to Fixed + the FIXED.md receipt are owned EXCLUSIVELY by the orchestrator's __mark_fixed__ validation-tail gate — never set here. -->
+
+
 **MCP runtime:** not-required — harness state-machine defect in `lazy-state.py`/`lazy_core.py`; verified entirely by the in-file `--test` smoke harnesses + `test_lazy_core.py`. No AlgoBooth app surface, no Tauri/MCP-reachable behavior (per docs/features/mcp-testing/SPEC.md: pure build/script tooling is outside MCP reach).
 
 ## Provenance
@@ -127,13 +131,13 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 **Scope:** The harness's documented contract currently contradicts the (now-corrected) code. Make `/lazy-batch` Step 1f / Step 5 accurate: a fresh budget on an operator-authorized re-invoke, monotonic carry-forward on an automatic reliability resume. Mirror into `/lazy-batch-cloud` per the coupling rule, and document the cloud operator-pause threading decision.
 
 **Deliverables:**
-- [ ] `user/skills/lazy-batch/SKILL.md` Step 1f (~`:827`) and Step 5 (~`:1291`): replace the "previous session's cycle count is gone / does NOT preserve cycle accounting" prose with the accurate two-class statement — operator-authorized checkpoint resume starts fresh `0/0`; automatic reliability pause carries counters forward (monotonic, cannot exceed authorized `max_cycles`).
-- [ ] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`: mirror the same two-class statement per the coupled-pair rule; in the cloud checkpoint-write description (~`:989`), document that cloud **reliability** checkpoints stay carry-forward (no `--operator-authorized`), and state the decision for a cloud **operator-pause** checkpoint (whether it passes `--operator-authorized` to reset). If it should reset, thread `--operator-authorized` into the cloud `--run-end --reason checkpoint` command; if deferred, leave a one-line documented note with the rationale. (⚖ scope-class — Phase 1's mechanism already supports either choice; this phase records and, if chosen, wires it.)
-- [ ] Update each skill's State Machine Summary / resume-semantics block at the bottom so the dispatch description reflects the two-class behavior (per the coupled-pair contract in the repo CLAUDE.md).
-- [ ] Run `python user/scripts/project-skills.py` and spot-check the projected `/lazy-batch` + `/lazy-batch-cloud` output so the prose change resolves cleanly in both `_default/` and the algobooth per-repo projection.
-- [ ] Run `python user/scripts/lint-skills.py` (and `--check-projected --check-capabilities`) to confirm no broken injections / drift from the prose edits.
+- [x] `user/skills/lazy-batch/SKILL.md` Step 1f and Step 5: replaced the "previous session's cycle count is gone / does NOT preserve cycle accounting" prose with the accurate two-class statement — operator-authorized checkpoint resume starts fresh `0/0`; automatic reliability pause carries counters forward (monotonic, cannot exceed authorized `max_cycles`). Also refined the Notes "no persistence layer" line (checkpoints DO persist counters across one resume) to the two-class framing.
+- [x] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`: mirrored the two-class statement; documented at the unattended-checkpoint arm that cloud checkpoints stay carry-forward (NO `--operator-authorized`) for BOTH triggers (≥2 denials AND operator-pause) — rationale recorded: a cloud checkpoint is an automatic mid-run pause of the same logical run, not a fresh authorized budget. Decision: DEFER threading the flag in cloud (Phase-1 mechanism supports it later if a cloud checkpoint-backed fresh resume is ever wanted). ⚖ scope-class: omitting the flag is the no-behavior-change default (cloud emitted no flag pre-fix either).
+- [x] Updated each skill's State Machine Summary with a checkpoint-resume two-class bullet, and added a "Checkpoint-resume counter semantics" row to the cloud "Differences from /lazy-batch" table (cloud-always-carry-forward is the documented divergence).
+- [x] Ran `python user/scripts/project-skills.py` → 80 skills, no errors (single repo: claude-config; no separate algobooth checkout — cloud skill is repo-scoped here).
+- [x] Ran `python user/scripts/lint-skills.py` and `--check-projected --check-capabilities` → both clean.
 
-**Minimum Verifiable Behavior:** `python user/scripts/lint-skills.py --check-projected --check-capabilities` exits clean after the edits, and a manual diff of `/lazy-batch` vs `/lazy-batch-cloud` confirms the resume-semantics prose is mirrored (only the intended cloud-specific divergence differs).
+**Minimum Verifiable Behavior:** `python user/scripts/lint-skills.py --check-projected --check-capabilities` exits clean after the edits; the resume-semantics prose is mirrored across the pair with the one documented cloud divergence (always carry-forward) tabulated in the Differences table.
 
 **Prerequisites:**
 - Phase 2 + Phase 3: the code must be correct and tests green before the prose is reconciled to it — never reconcile prose to unverified code.
@@ -147,3 +151,10 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 
 **Integration Notes for Next Phase:**
 - This is the terminal implementation phase. When its work lands, the top-level PHASES `**Status:**` moves to `In-progress` (implementation done, validation pending) — the `__mark_fixed__` flip to `Fixed` is owned exclusively by the orchestrator's validation-tail gate, never set here.
+
+**Implementation Notes (2026-06-17):**
+- `/lazy-batch` Step 1f + Step 5 + Notes + State Machine Summary now state the two resume classes accurately (operator-authorized → fresh `0/0`; automatic reliability → monotonic carry-forward).
+- `/lazy-batch-cloud` mirrored: "Cycle accounting at resume" two-class block, the unattended-checkpoint-arm provenance note (cloud stays carry-forward; flag-threading deferred), State Machine Summary bullet, and a new Differences-table row.
+- Cloud operator-pause decision (SPEC Open Question): DEFERRED threading `--operator-authorized` in cloud — a cloud checkpoint is an automatic same-run pause, carry-forward is correct (VERIFIED symptom #3); a cloud fresh budget = a brand-new `/lazy-batch-cloud <N>` with no checkpoint. ⚖ scope-class, no behavior change.
+- Gates: `project-skills.py` clean (80 skills, no errors); `lint-skills.py` + `--check-projected --check-capabilities` both clean.
+- Files modified: `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`.
