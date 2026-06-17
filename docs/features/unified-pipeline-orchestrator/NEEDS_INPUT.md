@@ -26,3 +26,10 @@ These are genuine acceptance criteria, not blind boxes — and per claude-config
 - **Validate now — you provide the AlgoBooth runtime / real logs this session** — If you can point this session at a live AlgoBooth runtime (and your real session-log corpus), I can run the 4 verifications inline, tick them with real evidence, and complete cleanly. Cost: requires switching context to AlgoBooth and a live dev runtime now.
 
 **Recommendation:** Re-scope to a tracked AlgoBooth-side follow-up and complete now — the implementation and hermetic validation are genuinely finished, the deferred rows are live-runtime sanity checks of already-unit-proven harness logic, and tracking them as a dated deferral (rather than silently ticking) preserves the integrity bar while unblocking the queue.
+
+## Resolution
+
+**Decision 1 — How to discharge the 4 AlgoBooth-runtime-only acceptance rows:** **Defer + complete now** (chosen by operator via AskUserQuestion, 2026-06-17).
+resolved_by: operator
+
+Re-scope the 4 live-runtime acceptance rows (Phase 2 live unified two-type run; Phase 4 real-log named-dance surfacing; Phase 5 `--ensure-runtime` against a live AlgoBooth runtime + real `-followups` completion through `check-docs-consistency.ts`) into a dated **"Deferred to AlgoBooth-side validation"** note in PHASES.md Implementation Notes, tick them as deferred-with-tracking so PHASES is coherent for `__mark_complete__`, and write the COMPLETED.md receipt now. The receipt body must record that these 4 rows are deferred to a future AlgoBooth-host run (real, certified evidence pending there — not claimed here).
