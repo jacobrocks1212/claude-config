@@ -1,24 +1,39 @@
 #!/bin/bash
 # lazy-route-inject.sh — UserPromptSubmit / SessionStart / PostCompact inject hook.
 #
-# Fast path: if the run marker is absent, exit 0 silently without starting
-# Python — one test -f per event, zero overhead for interactive sessions.
+# Fast path: if no run marker is present FOR THE CURRENT REPO, exit 0 silently
+# without running the full inject probe — interactive sessions (and sessions in
+# a repo with no live run) pay only the cost of one read-only marker-presence
+# query.
 #
-# Slow path: pipe stdin to lazy_inject.py which runs the full probe form and
-# emits a hookSpecificOutput JSON block with additionalContext containing the
-# LAZY-ROUTE banner, probe evidence, nonce, and (for post-compact events) the
-# re-entry protocol and marker counters.
+# multi-repo-concurrent-runs (Phase 2): the marker is now per-repo. The state
+# dir is keyed by repo (~/.claude/state/<repo-key>/) when LAZY_STATE_DIR is
+# unset, so a raw `test -f "$STATE_DIR/lazy-run-marker.json"` against the BASE
+# dir would always miss. Instead this hook asks the state script
+# (`lazy-state.py --marker-present --repo-root <cwd>`) whether a live marker is
+# present for the event's repo. Python owns ALL repo-key derivation — bash
+# NEVER re-derives it. A marker for a DIFFERENT repo → different subdir →
+# absent → no inject.
+#
+# Slow path: pipe the captured stdin to lazy_inject.py which runs the full probe
+# form and emits a hookSpecificOutput JSON block with additionalContext
+# containing the LAZY-ROUTE banner, probe evidence, nonce, and (for post-compact
+# events) the re-entry protocol and marker counters.
 #
 # Python resolution: python3 preferred (WSL / Linux), falling back to python
 # (Windows git-bash where python3 may not be on PATH).
+#
+# State dir: LAZY_STATE_DIR env var overrides ~/.claude/state/ for hermetic
+# pipe-tests; it is passed through to the --marker-present query unchanged.
+#
+# Fail-OPEN: if the marker query cannot run (no python, missing script, error),
+# fall through to the full inject — a broken query must never silently disable
+# injection (here "fail open" means "do not skip the inject"), and the inject
+# helper fails open on its own internal errors.
 
-# Resolve the state dir (mirrors lazy_core.claude_state_dir() logic).
-STATE_DIR="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-
-# Fast path: no marker -> exit 0 silently (interactive session).
-if [ ! -f "$STATE_DIR/lazy-run-marker.json" ]; then
-  exit 0
-fi
+# Capture stdin ONCE — it is a single stream consumed both by the marker-
+# presence query (to read the event cwd) and by lazy_inject.py.
+PAYLOAD="$(cat)"
 
 # Resolve python interpreter: prefer python3, fall back to python.
 if command -v python3 >/dev/null 2>&1; then
@@ -30,7 +45,7 @@ else
   exit 0
 fi
 
-# Resolve the inject script path relative to this hook's own directory.
+# Resolve the scripts dir relative to this hook's own directory.
 # Builtins only (${0%/*}, cd, pwd) — `dirname` is a coreutils binary that is
 # NOT guaranteed on PATH when git-bash runs non-login (observed: hook env
 # without /usr/bin → "dirname: command not found" → mangled script path).
@@ -42,16 +57,44 @@ case "$SELF" in
   *)   SCRIPT_DIR="$(pwd)" ;;
 esac
 INJECT_PY="$SCRIPT_DIR/../scripts/lazy_inject.py"
+STATE_PY="$SCRIPT_DIR/../scripts/lazy-state.py"
+
+# Extract the event's cwd from the payload (the repo whose marker we consult).
+# On ANY failure CWD stays empty → the marker query is skipped → we fall
+# through to the full inject (fail-OPEN: never skip injection on a parse error).
+CWD="$(printf '%s' "$PAYLOAD" | "$PYTHON" -c \
+  'import sys,json
+try:
+    print((json.load(sys.stdin) or {}).get("cwd","") or "")
+except Exception:
+    pass' 2>/dev/null)"
+
+# Marker-presence gate: only consult it when we have BOTH a cwd and the state
+# script. lazy-state.py --marker-present exits 1 (absent — different repo / no
+# run) → fast-path no-inject; exits 0 (present for this repo) → run the full
+# inject. Any other condition (script missing, crash, non-0/1 exit) → fall
+# through to the inject (fail-OPEN).
+if [ -n "$CWD" ] && [ -f "$STATE_PY" ]; then
+  LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$PYTHON" "$STATE_PY" \
+    --marker-present --repo-root "$CWD" >/dev/null 2>&1
+  MARKER_RC=$?
+  if [ "$MARKER_RC" -eq 1 ]; then
+    # No live marker for this repo → no banner to inject → exit silently.
+    exit 0
+  fi
+  # MARKER_RC == 0 (present) → run the inject.
+  # MARKER_RC anything else (query error) → fail open: run the inject anyway.
+fi
 
 # Fail open when the inject script is missing — a missing script must never
 # prevent the hook from exiting cleanly.  Same rationale as the guard hook:
 # partial checkout or unresolved symlink must not brick a session.
 [ -f "$INJECT_PY" ] || exit 0
 
-# Pipe stdin through the inject CLI.  We do NOT propagate Python's exit code:
-# a non-zero exit from UserPromptSubmit / SessionStart hooks causes Claude Code
-# to surface a blocking error to the user; the inject hook MUST fail open.
-# The Python contract is that any internal error writes a hook-error.json
+# Pipe the captured stdin through the inject CLI.  We do NOT propagate Python's
+# exit code: a non-zero exit from UserPromptSubmit / SessionStart hooks causes
+# Claude Code to surface a blocking error to the user; the inject hook MUST fail
+# open.  The Python contract is that any internal error writes a hook-error.json
 # breadcrumb and exits 0; unconditional exit 0 enforces this from the shell side.
-"$PYTHON" "$INJECT_PY"
+printf '%s' "$PAYLOAD" | "$PYTHON" "$INJECT_PY"
 exit 0

@@ -5663,6 +5663,26 @@ def main() -> int:
                             "next session. Prints {\"run_marker_deleted\": true|false} "
                             "and exits."
                         ))
+    # multi-repo-concurrent-runs Phase 2 (WU-2.1): read-only marker presence
+    # query for the three enforcement hooks.  Resolves the active repo
+    # (--repo-root, default cwd) and asks read_run_marker() — which routes
+    # through the per-repo keyed claude_state_dir() — whether a LIVE marker is
+    # present FOR THIS REPO.  Exits 0 (present) / 1 (absent); read-only (never
+    # creates the state dir).  The bash hooks call this so Python owns ALL
+    # repo-key derivation — bash NEVER re-derives it.
+    parser.add_argument("--marker-present", action="store_true",
+                        help=(
+                            "Read-only: exit 0 if a live run marker is present for "
+                            "the current repo (--repo-root, default cwd), exit 1 if "
+                            "absent. Routes through the per-repo keyed state dir. "
+                            "Used by the enforcement hooks; never creates state."
+                        ))
+    parser.add_argument("--session-id", default=None,
+                        help=(
+                            "Optional session id for --marker-present (and other "
+                            "read paths): a marker bound to a DIFFERENT session id "
+                            "reads as absent (non-destructive session isolation)."
+                        ))
     # lazy-cycle-containment C1 (Phase 2): the cycle-subagent marker bracket.
     # The orchestrator issues --cycle-begin immediately before every Agent
     # dispatch and --cycle-end immediately after the Agent returns (every return
@@ -5866,6 +5886,19 @@ def main() -> int:
             _die(f"--count-phases: cannot read {phases_path}: {exc}")
         sys.stdout.write(f"{len(lazy_core.parse_phases(text))}\n")
         return 0
+
+    # multi-repo-concurrent-runs Phase 2 (WU-2.1): --marker-present — a read-only
+    # presence query for the enforcement hooks.  Exits immediately like every
+    # other action flag.  set_active_repo_root(args.repo_root) ran above, so
+    # read_run_marker() resolves THIS repo's keyed state dir (or the exact
+    # LAZY_STATE_DIR override under hermetic tests).  Read-only:
+    # read_run_marker() uses claude_state_dir(create=False) internally, so a
+    # probe that finds no marker never creates the state dir.  Exit 0 = a live
+    # marker is present for this repo; exit 1 = absent (or stale / session-
+    # mismatched).  Prints nothing (the exit code is the verdict).
+    if args.marker_present:
+        marker = lazy_core.read_run_marker(session_id=args.session_id)
+        return 0 if marker is not None else 1
 
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator

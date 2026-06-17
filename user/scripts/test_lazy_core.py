@@ -15419,6 +15419,50 @@ def test_migrate_legacy_noop_when_absent():
             _mrcr_restore_env(prior)
 
 
+def test_marker_present_cli_absent_then_present_and_readonly():
+    """lazy-state.py --marker-present exits 1 when no marker, 0 when a live
+    marker is present (under a hermetic LAZY_STATE_DIR), and is READ-ONLY — the
+    absent probe must NOT create the state dir."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        # Point LAZY_STATE_DIR at a path that does NOT yet exist so the read-only
+        # contract (no dir creation) is observable.
+        state_dir = Path(td) / "absent-state"
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # No marker → exit 1, AND the read-only probe must not create the dir.
+        r_absent = run(["--marker-present"])
+        assert r_absent.returncode == 1, (
+            f"--marker-present must exit 1 when absent, got {r_absent.returncode}: "
+            f"{r_absent.stdout}{r_absent.stderr}"
+        )
+        assert not state_dir.exists(), (
+            "--marker-present must be read-only — it must not create the state dir"
+        )
+
+        # Start a run (this creates the marker), then the probe → exit 0.
+        assert run(["--run-start", "--max-cycles", "5"]).returncode == 0
+        r_present = run(["--marker-present"])
+        assert r_present.returncode == 0, (
+            f"--marker-present must exit 0 when a live marker is present, got "
+            f"{r_present.returncode}: {r_present.stdout}{r_present.stderr}"
+        )
+
+        # Clear it → probe returns to exit 1.
+        assert run(["--run-end"]).returncode == 0
+        assert run(["--marker-present"]).returncode == 1, (
+            "--marker-present must exit 1 after the marker is cleared"
+        )
+
+
 _TESTS = _TESTS + [
     ("test_repo_key_present_and_normalization_invariant",
      test_repo_key_present_and_normalization_invariant),
@@ -15434,6 +15478,8 @@ _TESTS = _TESTS + [
      test_migrate_legacy_unresolvable_repo_root_removes_marker),
     ("test_migrate_legacy_noop_when_absent",
      test_migrate_legacy_noop_when_absent),
+    ("test_marker_present_cli_absent_then_present_and_readonly",
+     test_marker_present_cli_absent_then_present_and_readonly),
 ]
 
 

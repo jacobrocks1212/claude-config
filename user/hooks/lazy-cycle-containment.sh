@@ -44,9 +44,31 @@
 # `git diff --cached --name-only` so the 2nd-feature tripwire is hermetically
 # testable without a temp git repo.
 
-# Resolve the state dir (mirrors lazy_core.claude_state_dir() logic).
-STATE_DIR="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-MARKER="$STATE_DIR/lazy-cycle-active.json"
+# multi-repo-concurrent-runs (Phase 2 / WU-2.3): the cycle marker
+# (lazy-cycle-active.json) is now per-repo, a sibling of the run marker in the
+# SAME keyed subdir (~/.claude/state/<repo-key>/) when LAZY_STATE_DIR is unset.
+# The embedded Python resolves MARKER repo-aware via lazy_core.claude_state_dir()
+# after binding the active repo to the PreToolUse cwd — repo_key derivation lives
+# ONLY in Python (bash never re-derives it). When LAZY_STATE_DIR IS set (hermetic
+# tests) the override dir is used exactly, preserving every existing pipe-test.
+#
+# We do NOT force-export LAZY_STATE_DIR here: the embedded Python must SEE whether
+# it was genuinely set vs unset (set → exact dir; unset → keyed). We pass the
+# scripts dir so the Python can import lazy_core, plus a fallback base dir for the
+# breadcrumb path if the import is unavailable.
+LCC_BASE_DIR="${LAZY_STATE_DIR:-$HOME/.claude/state}"
+MARKER="$LCC_BASE_DIR/lazy-cycle-active.json"  # fallback path for early failures
+
+# Resolve the scripts dir relative to this hook's own directory so the embedded
+# Python can import lazy_core for the keyed state-dir resolution. Builtins only
+# (${0%/*}, cd, pwd) — `dirname` is not guaranteed on PATH for non-login git-bash.
+# $0 may carry Windows backslashes; normalize to forward slashes first.
+SELF="${0//\\//}"
+case "$SELF" in
+  */*) LCC_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   LCC_SCRIPT_DIR="$(pwd)" ;;
+esac
+LCC_SCRIPTS_DIR="$LCC_SCRIPT_DIR/../scripts"
 
 # NOTE (D4): the bash fast-path no longer exits on marker-absence — the inline
 # Python must evaluate `agent_id` even when no marker is armed. The Python body
@@ -82,10 +104,48 @@ import re
 import sys
 import datetime
 
+# Breadcrumb base dir: the un-keyed base (or the LAZY_STATE_DIR override). The
+# breadcrumb is a best-effort diagnostic and stays at the base — it never needs
+# repo-keying. multi-repo-concurrent-runs (Phase 2 / WU-2.3): MARKER, by
+# contrast, is resolved REPO-AWARE in main() once the PreToolUse cwd is known
+# (see _resolve_marker_path) — the cycle marker is a sibling of the run marker
+# in the per-repo keyed subdir when LAZY_STATE_DIR is unset.
 STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
     os.path.expanduser("~"), ".claude", "state"
 )
+# MARKER starts at the base (fallback for any pre-resolution failure) and is
+# re-bound to the keyed path in main() after the cwd is parsed.
 MARKER = os.path.join(STATE_DIR, "lazy-cycle-active.json")
+
+
+def _resolve_marker_path(cwd):
+    """Return the cycle-marker path for the current repo.
+
+    multi-repo-concurrent-runs (Phase 2 / WU-2.3): the cycle marker lives in the
+    SAME keyed state subdir as the run marker. Resolution mirrors
+    lazy_core.claude_state_dir() EXACTLY — repo_key derivation lives ONLY in
+    Python (this never re-implements it in bash):
+      - LAZY_STATE_DIR set (hermetic tests) → use it exactly (no keying), so
+        every existing pipe-test path is byte-for-byte unchanged.
+      - LAZY_STATE_DIR unset (production) → import lazy_core, bind the active
+        repo to `cwd`, and ask claude_state_dir(create=False) for the keyed dir.
+    Fail-OPEN: if lazy_core cannot be imported / resolved, fall back to the base
+    (un-keyed) path. A wrong marker path only weakens the marker-gated commit
+    tripwires for one event; the load-bearing agent_id recursion trip does not
+    consult the marker, so containment is never broken by a resolution miss.
+    """
+    if os.environ.get("LAZY_STATE_DIR"):
+        return os.path.join(os.environ["LAZY_STATE_DIR"], "lazy-cycle-active.json")
+    try:
+        scripts_dir = os.environ.get("LCC_SCRIPTS_DIR")
+        if scripts_dir and scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import lazy_core
+        lazy_core.set_active_repo_root(cwd or None)
+        keyed = lazy_core.claude_state_dir(create=False)
+        return os.path.join(str(keyed), "lazy-cycle-active.json")
+    except Exception:
+        return MARKER  # base-dir fallback (fail-open)
 
 CORRECTIVE = (
     "you are a single cycle subagent — STOP after your commit+push+report; "
@@ -220,8 +280,15 @@ def _increment_tally(marker):
 
 
 def main():
+    global MARKER
     raw = sys.stdin.read()
     payload = json.loads(raw)            # JSONDecodeError → caught → fail-open
+    # multi-repo-concurrent-runs (Phase 2 / WU-2.3): re-bind MARKER to the
+    # per-repo keyed path using the PreToolUse cwd BEFORE reading it, so the
+    # marker-gated commit tripwires consult THIS repo's cycle marker (a sibling
+    # of its run marker). Fail-open: _resolve_marker_path falls back to the base
+    # path if lazy_core is unavailable.
+    MARKER = _resolve_marker_path(payload.get("cwd", "") or "")
     marker = _read_marker()              # may be None (D4: arming-free trip)
 
     # D4: a dispatched cycle subagent is exactly the context where `agent_id` is
@@ -331,7 +398,14 @@ PYEOF
 # `read -d ''` returns non-zero at EOF even on success — that is expected; the
 # variable is populated.  Run python with the captured body via -c so the
 # hook's real stdin (the PreToolUse payload) reaches python untouched.
-LAZY_STATE_DIR="$STATE_DIR" "$PYTHON" -c "$_LCC_PY"
+#
+# multi-repo-concurrent-runs (Phase 2 / WU-2.3): do NOT force-export
+# LAZY_STATE_DIR — the embedded Python must see whether it was genuinely set
+# (hermetic test → exact dir) or unset (production → keyed dir via lazy_core).
+# LAZY_STATE_DIR (if set in this hook's environment) already passes through to
+# the child. We export LCC_SCRIPTS_DIR so the Python can import lazy_core for the
+# keyed resolution; the embedded body resolves the keyed marker path itself.
+LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" -c "$_LCC_PY"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.

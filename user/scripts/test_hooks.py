@@ -194,6 +194,7 @@ def _e1_preToolUse_json(
     prompt: str,
     tool_use_id: str | None = None,
     session_id: str | None = None,
+    cwd: str | None = None,
 ) -> str:
     """Return a JSON string matching the E1 PreToolUse hook-input shape captured
     in RUNTIME_SPIKE.md.  This is the ground-truth fixture shape.
@@ -202,15 +203,21 @@ def _e1_preToolUse_json(
       session_id, transcript_path, cwd, permission_mode, hook_event_name,
       tool_name ("Agent"), tool_input.{description, prompt, subagent_type},
       tool_use_id
+
+    ``cwd`` (multi-repo-concurrent-runs Phase 2): override the tool-call cwd so a
+    test can fire the hook "from" a specific repo. Default preserves the original
+    spike-captured value so every pre-Phase-2 test is byte-identical.
     """
     if tool_use_id is None:
         tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
     if session_id is None:
         session_id = str(uuid.uuid4())
+    if cwd is None:
+        cwd = "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-turn-routing"
     payload = {
         "session_id": session_id,
         "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
-        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-turn-routing",
+        "cwd": cwd,
         "permission_mode": "default",
         "hook_event_name": "PreToolUse",
         "tool_name": "Agent",
@@ -227,14 +234,21 @@ def _e1_preToolUse_json(
 def _userPromptSubmit_json(
     prompt: str = "what is the current step?",
     session_id: str | None = None,
+    cwd: str | None = None,
 ) -> str:
-    """Return a JSON string matching the E1/E3 UserPromptSubmit hook-input shape."""
+    """Return a JSON string matching the E1/E3 UserPromptSubmit hook-input shape.
+
+    ``cwd`` (multi-repo-concurrent-runs Phase 2): override the event cwd; default
+    preserves the original spike-captured value (pre-Phase-2 tests unchanged).
+    """
     if session_id is None:
         session_id = str(uuid.uuid4())
+    if cwd is None:
+        cwd = "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-turn-routing"
     payload = {
         "session_id": session_id,
         "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
-        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-turn-routing",
+        "cwd": cwd,
         "permission_mode": "default",
         "hook_event_name": "UserPromptSubmit",
         "prompt": prompt,
@@ -3770,6 +3784,189 @@ def test_containment_skill_fail_open_null_skill_field():
             )
 
 
+# ---------------------------------------------------------------------------
+# multi-repo-concurrent-runs (Phase 2 / WU-2.4) — two-repo isolation harness.
+#
+# These tests do NOT pin LAZY_STATE_DIR (that override bypasses per-repo keying
+# and returns one exact dir). Instead they pin HOME/USERPROFILE at a temp dir so
+# the PRODUCTION keyed resolution applies (~/.claude/state/<repo-key>/), create a
+# live run marker for repo-key A only, and fire the hook with the tool-call cwd
+# in repo B (→ no-op) vs repo A (→ enforce, unchanged). Python owns ALL repo-key
+# derivation via lazy-state.py --marker-present; bash never re-derives it.
+# ---------------------------------------------------------------------------
+
+def _keyed_env_no_state_override(home: Path) -> dict:
+    """Subprocess env with HOME/USERPROFILE pinned at *home* and LAZY_STATE_DIR
+    REMOVED, so claude_state_dir() resolves the production keyed subdir."""
+    env = dict(os.environ)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    env.pop("LAZY_STATE_DIR", None)
+    return env
+
+
+def _init_git_repo(path: Path) -> Path:
+    """Create *path* as a real git repo so active_repo_root() (cwd git-toplevel)
+    and repo_key() resolve it consistently. Returns the realpath'd repo root."""
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "-C", str(path), "init", "-q"],
+                   capture_output=True, text=True)
+    return Path(os.path.realpath(str(path)))
+
+
+def _write_keyed_marker(home: Path, repo_root: Path, session_id: str | None = None):
+    """Write a live run marker into the PRODUCTION keyed subdir for *repo_root*
+    under the temp *home* (HOME pinned, LAZY_STATE_DIR cleared)."""
+    prior = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE", "LAZY_STATE_DIR")}
+    os.environ["HOME"] = str(home)
+    os.environ["USERPROFILE"] = str(home)
+    os.environ.pop("LAZY_STATE_DIR", None)
+    lazy_core._legacy_state_migrated = False
+    lazy_core.set_active_repo_root(str(repo_root))
+    try:
+        lazy_core.write_run_marker(
+            pipeline="feature", cloud=False, repo_root=str(repo_root),
+            max_cycles=10, now=time.time(), session_id=session_id,
+        )
+    finally:
+        lazy_core.set_active_repo_root(None)
+        lazy_core._legacy_state_migrated = False
+        for k, v in prior.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_guard_two_repo_isolation_crossrepo_noop_samerepo_enforces():
+    """multi-repo-concurrent-runs (Phase 2): a live marker for repo A must NOT
+    arm the dispatch guard in repo B (cross-repo no-op), while it still denies an
+    unregistered dispatch in repo A (no same-repo regression)."""
+    _guard()
+    assert _GUARD_SH.exists(), f"guard hook missing: {_GUARD_SH}"
+    with tempfile.TemporaryDirectory() as td:
+        home = Path(td) / "home"
+        home.mkdir()
+        repo_a = _init_git_repo(Path(td) / "repoA")
+        repo_b = _init_git_repo(Path(td) / "repoB")
+        env = _keyed_env_no_state_override(home)
+
+        # Live marker for repo A ONLY (production keyed subdir).
+        _write_keyed_marker(home, repo_a)
+
+        unregistered = "This dispatch prompt was never emitted by the script."
+
+        # --- Cross-repo: fired with cwd in repo B → fast-path allow (no-op). ---
+        stdin_b = _e1_preToolUse_json(unregistered, cwd=str(repo_b))
+        res_b = subprocess.run(
+            [_BASH_EXE, str(_GUARD_SH)], input=stdin_b,
+            capture_output=True, text=True, env=env, cwd=str(repo_b),
+        )
+        assert res_b.returncode == 0, (
+            f"cross-repo guard must exit 0; stderr: {res_b.stderr!r}"
+        )
+        assert res_b.stdout.strip() == "", (
+            f"cross-repo guard (marker for A, fired in B) must be a no-op "
+            f"(empty stdout); got: {res_b.stdout!r}"
+        )
+
+        # --- Same-repo: fired with cwd in repo A → deny unregistered dispatch. ---
+        stdin_a = _e1_preToolUse_json(unregistered, cwd=str(repo_a))
+        res_a = subprocess.run(
+            [_BASH_EXE, str(_GUARD_SH)], input=stdin_a,
+            capture_output=True, text=True, env=env, cwd=str(repo_a),
+        )
+        assert res_a.returncode == 0, (
+            f"same-repo guard must exit 0 (deny is in JSON); stderr: {res_a.stderr!r}"
+        )
+        out_a = res_a.stdout.strip()
+        assert out_a != "", (
+            "same-repo guard (marker for A, fired in A) must reach the guard and "
+            "emit deny JSON for an unregistered prompt; got empty stdout"
+        )
+        payload = json.loads(out_a)
+        decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+        assert decision == "deny", (
+            f"same-repo unregistered dispatch must be denied; got {decision!r}"
+        )
+
+
+def test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects():
+    """multi-repo-concurrent-runs (Phase 2): a live marker for repo A must NOT
+    inject the LAZY-ROUTE banner in repo B (cross-repo no-op), while it still
+    injects in repo A (no same-repo regression)."""
+    _guard()
+    assert _INJECT_SH.exists(), f"inject hook missing: {_INJECT_SH}"
+    with tempfile.TemporaryDirectory() as td:
+        home = Path(td) / "home"
+        home.mkdir()
+        # Repo A is a real git repo AND carries the fixture feature queue so the
+        # inject probe has a queue to read.
+        repo_a = _init_git_repo(Path(td) / "repoA")
+        # Build the feature queue directly under repo A so the inject probe's
+        # repo (the marker's repo_root) has a real queue to read.
+        features = repo_a / "docs" / "features"
+        features.mkdir(parents=True, exist_ok=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+            ]}), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        fdir.mkdir(exist_ok=True)
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8")
+        plans = fdir / "plans"
+        plans.mkdir(exist_ok=True)
+        (plans / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+
+        repo_b = _init_git_repo(Path(td) / "repoB")
+        env = _keyed_env_no_state_override(home)
+
+        # Marker BOUND to the owning session (inject is a no-op on an unbound
+        # marker), repo_root = repo A.
+        owner = str(uuid.uuid4())
+        _write_keyed_marker(home, repo_a, session_id=owner)
+
+        # --- Cross-repo: cwd in repo B → no inject (empty stdout). ---
+        stdin_b = _userPromptSubmit_json(session_id=owner, cwd=str(repo_b))
+        res_b = subprocess.run(
+            [_BASH_EXE, str(_INJECT_SH)], input=stdin_b,
+            capture_output=True, text=True, env=env, cwd=str(repo_b),
+        )
+        assert res_b.returncode == 0, (
+            f"cross-repo inject must exit 0; stderr: {res_b.stderr!r}"
+        )
+        assert res_b.stdout.strip() == "", (
+            f"cross-repo inject (marker for A, fired in B) must be a no-op "
+            f"(empty stdout); got: {res_b.stdout!r}"
+        )
+
+        # --- Same-repo: cwd in repo A → inject the LAZY-ROUTE banner. ---
+        stdin_a = _userPromptSubmit_json(session_id=owner, cwd=str(repo_a))
+        res_a = subprocess.run(
+            [_BASH_EXE, str(_INJECT_SH)], input=stdin_a,
+            capture_output=True, text=True, env=env, cwd=str(repo_a),
+        )
+        assert res_a.returncode == 0, (
+            f"same-repo inject must exit 0; stderr: {res_a.stderr!r}"
+        )
+        out_a = res_a.stdout.strip()
+        assert out_a != "", (
+            "same-repo inject (marker for A, fired in A) must emit the banner; "
+            f"got empty stdout; stderr: {res_a.stderr!r}"
+        )
+        ctx = json.loads(out_a).get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert ctx.startswith("LAZY-ROUTE (hook-injected"), (
+            f"same-repo inject must emit the LAZY-ROUTE banner; got: {ctx[:120]!r}"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -3905,6 +4102,11 @@ _TESTS = [
      test_containment_skill_fail_open_missing_skill_field),
     ("test_containment_skill_fail_open_null_skill_field",
      test_containment_skill_fail_open_null_skill_field),
+    # multi-repo-concurrent-runs (Phase 2 / WU-2.4) — two-repo isolation harness
+    ("test_guard_two_repo_isolation_crossrepo_noop_samerepo_enforces",
+     test_guard_two_repo_isolation_crossrepo_noop_samerepo_enforces),
+    ("test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects",
+     test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects),
 ]
 
 

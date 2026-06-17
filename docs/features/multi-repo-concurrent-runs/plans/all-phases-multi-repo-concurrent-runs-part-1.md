@@ -65,12 +65,13 @@ NOT by threading `repo_root` through 25 marker call sites.
 - Design refinement vs SPEC: the same-repo refusal is the EXISTING `refuse_run_start_clobber` now operating per-repo (cross-pipeline exclusion within a repo); same-pipeline resume preserved.
 - 7 new tests registered in `_TESTS`; a name-collision (`_restore_env`) was caught + fixed by namespacing the new helpers (`_mrcr_*`).
 
-## Phase 2 — Hook repo-scoping
+## Phase 2 — Hook repo-scoping  ✅ (subagent, verified)
 
-- [ ] WU-2.1 — TDD: `test_lazy_core.py` (or a CLI test) for `lazy-state.py --marker-present --repo-root <p> [--session-id <id>]` → correct present/absent verdict + exit code, read-only (no state created). Then implement the query (resolves repo via arg or `git rev-parse --show-toplevel`, calls `read_run_marker`).
-- [ ] WU-2.2 — Replace the raw `[ -f lazy-run-marker.json ]` gate in `lazy-dispatch-guard.sh` and `lazy-route-inject.sh` with the `--marker-present` query against the tool-call cwd. Preserve fail-OPEN semantics (a query error must not wedge dispatch — default to the current behavior).
-- [ ] WU-2.3 — Scope `lazy-cycle-containment.sh`'s `lazy-cycle-active.json` lookup to the current repo (per-repo cycle marker path mirrored from `repo_key`); update the embedded Python marker path.
-- [ ] WU-2.4 — TDD: extend `test_hooks.py` with a two-repo isolation harness (marker for key A; hook fired with cwd in B → allow/no-inject; cwd in A → deny/inject unchanged). Gate suite green.
+- [x] WU-2.1 — `lazy-state.py --marker-present [--repo-root] [--session-id]` → exit 0 present / 1 absent, read-only (routes through `read_run_marker`→`claude_state_dir(create=False)`). Test `test_marker_present_cli_absent_then_present_and_readonly` registered in `_TESTS`.
+- [x] WU-2.2 — `lazy-dispatch-guard.sh` + `lazy-route-inject.sh` parse the tool-call `.cwd`, call `--marker-present --repo-root <cwd>`, fast-path allow on exit 1; fail-OPEN on any error (never skips enforcement).
+- [x] WU-2.3 — `lazy-cycle-containment.sh` resolves `lazy-cycle-active.json` via `lazy_core.claude_state_dir()` after binding the payload cwd (keyed subdir when `LAZY_STATE_DIR` unset); fail-open preserved; never re-derives repo_key in bash.
+- [x] WU-2.4 — `test_hooks.py` two-repo isolation tests (guard + inject): marker for key A → hook in B no-ops, hook in A denies/injects unchanged. Registered.
+- [x] Gates: `test_hooks.py` 69/69, `test_lazy_core.py` 411/411, `lazy-state.py --test` OK, `bug-state.py --test` OK, `lint-skills.py` OK — independently re-verified by the orchestrator.
 
 ## Phase 3 — bug-state.py parity + pipeline_visualizer
 
