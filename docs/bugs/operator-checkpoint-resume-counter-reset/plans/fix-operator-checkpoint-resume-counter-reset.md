@@ -82,7 +82,7 @@ This plan references reusable component files by path instead of inlining their 
 
 - [x] WU-1 — Persist `operator_authorized` in the checkpoint payload (Phase 1)
 - [x] WU-2 — Branch `restore_checkpoint_counters` on provenance + fixtures (Phase 2)
-- [ ] WU-3 — Confirm bug-pipeline parity (Phase 3)
+- [x] WU-3 — Confirm bug-pipeline parity (Phase 3)
 - [ ] WU-4 — Reconcile SKILL prose for the coupled pair (Phase 4)
 
 ## Execution Schedule

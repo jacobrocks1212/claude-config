@@ -99,11 +99,11 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 **Scope:** Verify the shared-helper change does not regress the bug pipeline and that the provenance branch behaves identically there. No new `bug-state.py` source logic is expected — this phase is a guard, with a fixture added only if the bug pipeline exercises a checkpoint resume path the feature fixtures don't already cover.
 
 **Deliverables:**
-- [ ] Run `python user/scripts/bug-state.py --test`; confirm green against `tests/baselines/bug-state-test-baseline.txt`.
-- [ ] If `bug-state.py` has (or should have) a checkpoint resume fixture, add an operator-authorized-reset assertion mirroring Phase 2's; otherwise record a one-line note in the plan that the bug pipeline shares the feature fixtures' coverage via `lazy_core` and needs no separate fixture.
-- [ ] Run `python user/scripts/lazy_parity_audit.py` to confirm the two state machines stay in parity after the shared-helper edit.
+- [x] Run `python user/scripts/bug-state.py --test`; confirm green against `tests/baselines/bug-state-test-baseline.txt`. → green (exit 0, baseline unchanged).
+- [x] No separate bug-side fixture added: the provenance branch lives entirely in `lazy_core.restore_checkpoint_counters`, which `bug-state.py` inherits by importing `lazy_core`. The helper-level coverage in `test_lazy_core.py` (Phase 2) certifies the shared logic for BOTH pipelines — there is no bug-pipeline-specific checkpoint-resume path the feature fixtures don't already exercise. No `bug-state.py` source edit, no baseline regeneration.
+- [x] Run `python user/scripts/lazy_parity_audit.py --repo-root .` → parity holds (exit 0) after the shared-helper edit.
 
-**Minimum Verifiable Behavior:** `python user/scripts/bug-state.py --test` exits 0 with output matching the committed baseline (regenerated through `_normalize_smoke_output` only if a fixture was added).
+**Minimum Verifiable Behavior:** `python user/scripts/bug-state.py --test` exits 0 with output matching the committed baseline (no fixture added → baseline unchanged).
 
 **Prerequisites:**
 - Phase 2: the `restore_checkpoint_counters` branch must be in place — this phase verifies its bug-side inheritance.
@@ -116,6 +116,9 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 
 **Integration Notes for Next Phase:**
 - All three state-machine gates (`lazy-state.py --test`, `bug-state.py --test`, `test_lazy_core.py`) plus `lazy_parity_audit.py` must be green before the prose reconciliation in Phase 4 — code is the source of truth; the prose is reconciled to match it, not vice versa.
+
+**Implementation Notes (2026-06-17):**
+- Verification-only phase — no source edit. `bug-state.py --test` green (baseline unchanged); `lazy_parity_audit.py --repo-root .` exit 0. The bug pipeline inherits the Phase-2 branch for free via the `lazy_core` import; helper-level coverage in `test_lazy_core.py` certifies both pipelines, so no separate bug-side checkpoint fixture is warranted. Code (Phases 1-3) is verified green and is the source of truth for the Phase-4 prose reconciliation.
 
 ---
 
