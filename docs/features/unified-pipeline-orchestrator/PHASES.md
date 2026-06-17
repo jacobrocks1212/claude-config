@@ -146,7 +146,7 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 - The driver is now the single consumer of the merged view; Phase 3's ad-hoc `--type bug` items land in `docs/bugs/queue.json` and are picked up by this same merged loop — no driver change needed for Phase 3.
 - Coupled-pair rule (CLAUDE.md): any future orchestration-shape change to the unified driver MUST be mirrored across `/lazy-batch` ↔ `/lazy-batch-cloud`; the parity audit now enforces the merged-view branch.
 
-**Status:** In-progress (implementation complete 2026-06-17; validation pending — feature is `MCP runtime: not-required`, so validation is the hermetic `--test` suites + parity audit, which all passed in-cycle).
+**Status:** Complete
 
 **Implementation Notes (Phase 2 — landed 2026-06-17, executed INLINE in a dispatch-limited cycle subagent, no Agent tool; test-first per batch):**
 - **Review verdict:** PASS (inline review — skill-doc prose + Python audit; spec-aligned, coupled-pair mirrored, no edge cases uncovered; gates 100%).
@@ -188,7 +188,7 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 **Integration Notes for Next Phase:**
 - Both directions of the ad-hoc surface are now type-aware; Phase 5's `__mark_complete__`/`__mark_fixed__` terminals already key off type, so no further ad-hoc change is needed for the subcommand work.
 
-**Status:** In-progress (implementation complete 2026-06-17; validation pending — `MCP runtime: not-required`, so validation is the hermetic `--test` suites + parity audit + projection lint, all passed in-cycle).
+**Status:** Complete
 
 **Implementation Notes (Phase 3 — landed 2026-06-17, executed INLINE in a dispatch-limited cycle subagent, no Agent tool; test-first per batch):**
 - **Review verdict:** PASS (inline review — Python CLI routing + shared-component prose; spec-aligned, default feature path provably byte-identical, idempotency + bug-doc seeding covered; gates 100%).
@@ -231,7 +231,7 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 - The promotion checklist authored here governs how Phase 5's subcommands are landed (deliberate, reviewed, not auto-applied).
 - **Granularity follow-up surfaced (NOT a blocker):** the argument-SHAPE signature clusters value-variants correctly but does not distinguish dances that share a tool+arg-shape (all-Bash dances collapse to `Bash(command,description)` n-grams). Phase 5's three named consumers are already known from the retro, so the miner's by-name surfacing is not on Phase 5's critical path; a finer command-fingerprint axis is a future tuning pass (recorded in `toolify-bar.md` Runtime Verification + the Phase 4 RV row).
 
-**Status:** In-progress (implementation complete 2026-06-17; validation pending — `MCP runtime: not-required`, so validation is the hermetic `test_toolify_miner.py` 19/19 + the full `pytest user/scripts/` 786/786 + `lint-skills`/`project-skills`/`lazy_parity_audit` clean, all passed in-cycle).
+**Status:** Complete
 
 **Implementation Notes (Phase 4 — landed 2026-06-17, executed INLINE in a dispatch-limited cycle subagent, no Agent tool; test-first per batch):**
 - **Review verdict:** PASS (inline review — stdlib Python miner + doc; spec-aligned, read-only-over-logs invariant proven by before/after dir-hash, granularity Open Question closed with both positive and negative assertions, judgment/`--verify-ledger` sequences provably below-bar; gates 100%).
@@ -282,7 +282,7 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 - **`--ensure-runtime` home decision (DESIGN NOTE — surface, do NOT silently descope):** the runtime-ensure dance is **AlgoBooth-specific** (TCP 3333, `npm run dev:restart`, `GET /health`), but `lazy-state.py` lives in the **claude-config harness repo** and is meant to be repo-agnostic. Two honest homes exist: (a) put `--ensure-runtime` in `lazy-state.py` with AlgoBooth specifics read from repo config / env (keeps the toolify framework's "promote dances to subcommands" promise literal), or (b) keep the dance in a repo-scoped AlgoBooth helper and have `--ensure-runtime` be a thin generic shell that delegates. The SPEC explicitly names `--ensure-runtime` as a `lazy-state.py` subcommand (User Experience + Technical Design), so the implementer should follow the SPEC (home = `lazy-state.py`) and parameterize the AlgoBooth specifics out of hard-coded literals — but if implementation reveals the AlgoBooth coupling cannot be cleanly parameterized (a genuine product/architecture fork), raise `NEEDS_INPUT.md` rather than hard-coding AlgoBooth into the shared harness script. Recorded here as required disclosure, not a planning-time halt — the SPEC's locked decision (subcommand on `lazy-state.py`) resolves the default.
 - **Completion (gate-owned):** the `__mark_complete__` gate (now enhanced) flips SPEC.md/PHASES.md `**Status:**` and writes `COMPLETED.md` — these stay gate-owned; no checkbox authors them.
 
-**Status:** In-progress (implementation complete 2026-06-17; validation pending — the three implementable WUs + tests + gates all landed; the live `--ensure-runtime` runtime-state rows, the `--gate-coverage` symlink-on-Windows row, and the real `-followups` completion row are workstation/manual-validated → cloud-deferred, owned by Step-9/manual not `/execute-plan`).
+**Status:** Complete
 
 **Implementation Notes (Phase 5 — landed 2026-06-17, executed INLINE in a dispatch-limited cycle subagent, no Agent tool; test-first per batch):**
 - **Review verdict:** PASS (inline review — Python state-script helpers + skill-doc/component prose; spec-aligned, propagation-checked (`apply_pseudo` signature unchanged, both callers JSON-dump the additive `roadmap_struck` key safely; the bug `is_fixed` path neither strikes ROADMAP nor trims the feature queue), the `-followups` regression genuinely RED before the resolved-`spec_dir` match (fixture's `id` ≠ `feature_id` AND stored `spec_dir` is path-form ≠ basename), symlink + 64-byte-pointer both covered; gates 100%).

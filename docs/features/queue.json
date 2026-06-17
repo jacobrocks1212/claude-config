@@ -1,12 +1,6 @@
 {
   "queue": [
     {
-      "id": "unified-pipeline-orchestrator",
-      "name": "Unified Pipeline Orchestrator + Toolification Framework",
-      "spec_dir": "unified-pipeline-orchestrator",
-      "tier": 1
-    },
-    {
       "id": "harness-hardening-retro-fixes",
       "name": "Harness-Hardening Retro Fixes + Anti-Overfit",
       "spec_dir": "harness-hardening-retro-fixes",

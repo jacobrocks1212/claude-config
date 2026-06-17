@@ -2,7 +2,7 @@
 
 > One lazy-batch run that drains features AND bugs from a merged work-list, plus a framework that mines session logs to promote the orchestrator's repeated deterministic dances into script subcommands.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-06-16
 
