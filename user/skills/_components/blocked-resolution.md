@@ -129,6 +129,20 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        Scope seeds the phase's file list) and BLOCKED.md's `## Seam Enumeration`
        section as the seam checklist. Do NOT author a single-layer fix phase,
        and do NOT bake unproven narrative into the phase as fact.
+       CANONICAL MARKER (harness-hardening-retro-fixes Phase 2): every
+       runtime-verification / full-chain-seam-audit `- [ ]` checkbox the
+       corrective phase authors (the seam-audit re-probe rows, the
+       Runtime-Verification rows) MUST carry the per-row canonical marker
+       `<!-- verification-only -->` right after the checkbox, e.g.
+       `- [ ] <!-- verification-only --> seam: user-surface → IPC live-probe
+       returns a non-error response`. The state-script detector
+       `remaining_unchecked_are_verification_only()` keys off this marker
+       structurally (independent of the header free text — see the
+       full-chain-seam-audit header convention), so these intentionally-unticked
+       rows are recognized as Step-9 mcp-test-owned and never misread as remaining
+       implementation work. The marker string is the SSOT
+       `lazy_core:_VERIFICATION_ONLY_MARKER` — do NOT re-hardcode a divergent
+       string (the lockstep test asserts producer prose == that constant).
 
    • "Defer this {ITEM}; continue the rest of the queue":
        Edit {SPEC_ROOT}/queue.json: move this {ITEM}'s entry to the END of the

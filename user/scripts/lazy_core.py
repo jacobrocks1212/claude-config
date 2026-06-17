@@ -1289,6 +1289,46 @@ def count_deliverables(phases_text: str) -> tuple[int, int]:
 # When a NEW verification/escalation subsection convention is added to either
 # component, add it here AND add a regression fixture to test_lazy_core.py — do
 # NOT wait for it to manifest as a production no-progress loop.
+# ---------------------------------------------------------------------------
+# Verification-only canonical marker (harness-hardening-retro-fixes Phase 2).
+#
+# SINGLE SOURCE OF TRUTH for the structural marker that flags a PHASES.md
+# checkbox row (or its enclosing subsection) as runtime-verification-only —
+# owned by the Step-9 /mcp-test gate, NOT outstanding implementation work.
+#
+# Open Question 2 (canonical marker form) is RESOLVED toward the per-row HTML
+# comment ``<!-- verification-only -->`` rather than a single canonical
+# subsection header, for two reasons:
+#   1. Most robustly machine-detectable in remaining_unchecked_are_verification_only:
+#      a row carries its OWN exemption marker, so no heading-scope bookkeeping is
+#      needed and the detector survives NOVEL subsection phrasing by construction
+#      (a never-before-seen header no longer needs a new regex alternative).
+#   2. Survives the free-text-header whack-a-mole that motivated this feature
+#      (two consecutive hardening rounds each grew _VERIFICATION_SECTION_RE).
+#
+# An HTML comment is invisible in rendered markdown, so it does not clutter the
+# human-readable PHASES.md. It MAY appear on the checkbox row itself OR on the
+# subsection header line (header-scope: it then exempts every row beneath that
+# header until the next phase/section boundary).
+#
+# check-docs-consistency.ts fallback: the marker is a ROW ANNOTATION, not a
+# sentinel, so it does NOT enter that script's SENTINEL_SCHEMAS. If a future
+# edit to check-docs-consistency.ts cannot validate the HTML-comment form
+# cleanly, fall back to a canonical subsection-header form and update BOTH this
+# constant's value AND the producers that reference it by name (the lockstep
+# test asserts producer prose == this constant).
+# ---------------------------------------------------------------------------
+_VERIFICATION_ONLY_MARKER = "<!-- verification-only -->"
+
+
+# DEPRECATION SHIM (Phase 2). The legacy free-text header regex is retained ONLY
+# so un-migrated PHASES.md (rows under a recognized header but WITHOUT the
+# canonical marker) keep exempting cleanly — no regression. But every time the
+# regex (and not the marker) is what exempts a row, the shim appends a
+# _DIAGNOSTICS warning naming the un-migrated subsection so the migration gap is
+# VISIBLE (a future cycle retires the regex once the shim stops firing across all
+# live PHASES.md). New verification-subsection conventions should rely on the
+# marker, NOT grow this regex.
 _VERIFICATION_SECTION_RE = re.compile(
     r"runtime\s+verification|reachability\s+smoke"
     r"|mcp\s+(?:integration\s+test|test\s+assertion|assertion)"
@@ -1302,32 +1342,39 @@ _VERIFICATION_SECTION_RE = re.compile(
 
 
 def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
-    """Return True iff every '- [ ]' line in PHASES.md sits under a
-    Runtime Verification / MCP-assertion subsection.
+    """Return True iff every '- [ ]' line in PHASES.md is runtime-verification-only.
 
     Used by the Step 7 workstation bypass: when all implementation plans are
     Complete and the only remaining unchecked rows are workstation-only
     verification rows, /lazy should fall through to the retro→MCP gate rather
     than loop on write-plan.
 
-    Handles BOTH subsection-marker formats:
-      - Markdown headings: ``### Runtime Verification``,
-        ``## MCP Integration Test``, etc.
-      - Bold markers (the real AlgoBooth PHASES.md format):
-        ``**Runtime Verification** ...``, ``**MCP Integration Test Assertions:**``.
+    A row is verification-exempt when ANY of:
+      - the row itself carries the canonical ``_VERIFICATION_ONLY_MARKER``
+        (per-row HTML comment) — the PRIMARY, structural, header-text-independent
+        path (Phase 2);
+      - its enclosing subsection's HEADER line carries the marker (header-scope);
+      - LEGACY (deprecation shim): its enclosing heading/bold-marker header text
+        matches ``_VERIFICATION_SECTION_RE``. When the regex (and not a marker) is
+        what exempts a row, a ``_DIAGNOSTICS`` warning is appended naming the
+        un-migrated subsection — the rows still exempt (no regression) but the
+        migration gap is surfaced (does NOT silently pass).
 
-    Conservative: any heading or bold-marker subsection header whose title does
-    NOT match the verification pattern leaves verification scope, so a genuine
-    implementation row found outside a verification subsection returns False
-    (caller keeps write-plan / execute-plan). Returns False if no unchecked
-    rows are present.
+    Marker-based exemption is INDEPENDENT of the bold-header/heading free text, so
+    a NOVEL verification-subsection phrasing no longer gaps the gate.
+
+    Conservative: an unchecked row that is neither marker-exempt nor under a
+    regex-matched header returns False (caller keeps write-plan / execute-plan).
+    Returns False if no unchecked rows are present.
 
     Superseded phases: a ``### Phase N:`` (or ``## Phase N:``) heading enters a
-    new phase and resets the superseded flag. The first ``**Status:** Superseded``
-    bold-status line seen inside that phase marks the entire phase exempt — its
-    unchecked boxes are out-of-scope and must not cause a False return.
+    new phase and resets tracking. The first ``**Status:** Superseded`` bold-status
+    line seen inside that phase marks the entire phase exempt.
     """
-    in_verification = False
+    in_verification = False        # legacy: enclosing header matched the regex
+    section_has_marker = False     # marker present on the enclosing header line
+    current_header_text = ""       # for the deprecation-shim diagnostic
+    warned_headers: set[str] = set()  # de-dupe diagnostics per header text
     in_superseded_phase = False
     saw_unchecked = False
     in_fence = False
@@ -1344,14 +1391,19 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
         if heading:
             heading_text = heading.group(1)
             # A Phase-level heading (e.g. "### Phase 10: ...") starts a new phase
-            # block — reset both tracking flags so the new phase begins clean.
+            # block — reset all subsection tracking so the new phase begins clean.
             if re.match(r"Phase\s+\d+", heading_text):
                 in_superseded_phase = False
                 in_verification = False
+                section_has_marker = False
+                current_header_text = ""
             else:
-                # Non-phase heading (e.g. "### Runtime Verification") updates
-                # in_verification as before; does NOT reset superseded tracking.
+                # Non-phase heading (e.g. "### Runtime Verification" or a NOVEL
+                # header). Marker on the header line → header-scope exemption,
+                # text-independent. Else fall back to the legacy regex.
+                section_has_marker = _VERIFICATION_ONLY_MARKER in line
                 in_verification = bool(_VERIFICATION_SECTION_RE.search(heading_text))
+                current_header_text = heading_text
             continue
         # Bold-marker subsection header (e.g. ``**Runtime Verification** ...``).
         # A list item like ``- **x**`` starts with '-', so it is not caught here.
@@ -1360,18 +1412,23 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
             if bold:
                 bold_text = bold.group(1)
                 # Detect a per-phase "**Status:** Superseded" status line.
-                # Mark the entire current phase exempt; do not alter in_verification
-                # because a Superseded phase has no effective verification rows either.
+                # Mark the entire current phase exempt; do not alter scope flags
+                # because a Superseded phase has no effective verification rows.
                 if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
                     in_superseded_phase = True
                     continue
-                # A bold marker ONLY enters/stays in verification scope when its
-                # title matches the verification pattern.  A non-matching bold
-                # (e.g. **Assessment:** or **Status:**) must NOT alter
-                # in_verification — it is prose structure, not a section boundary.
-                if _VERIFICATION_SECTION_RE.search(bold_text):
+                # A bold subsection header enters verification scope via the
+                # marker (text-independent) OR the legacy regex. A non-matching
+                # bold without a marker (e.g. **Assessment:** / **Status:**) is
+                # prose structure, NOT a section boundary — preserve current scope.
+                if _VERIFICATION_ONLY_MARKER in line:
+                    section_has_marker = True
+                    current_header_text = bold_text
+                elif _VERIFICATION_SECTION_RE.search(bold_text):
                     in_verification = True
-                # Non-matching bold: do nothing (preserve current in_verification).
+                    section_has_marker = False
+                    current_header_text = bold_text
+                # else: do nothing (preserve current scope).
                 continue
         if re.match(r"^-\s*\[\s*\]", stripped):
             # Unchecked boxes inside a Superseded phase are out of scope —
@@ -1380,8 +1437,29 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
             if in_superseded_phase:
                 continue
             saw_unchecked = True
-            if not in_verification:
-                return False
+            row_has_marker = _VERIFICATION_ONLY_MARKER in line
+            # PRIMARY: a marker on the row or its enclosing subsection exempts,
+            # independent of header free text.
+            if row_has_marker or section_has_marker:
+                continue
+            # LEGACY deprecation shim: the header matched the regex but neither
+            # the row nor the header carries the canonical marker. Still exempt
+            # (no regression for un-migrated PHASES.md), but surface the gap.
+            if in_verification:
+                if current_header_text not in warned_headers:
+                    warned_headers.add(current_header_text)
+                    _diag(
+                        "verification-only marker absent (un-migrated producer): "
+                        f"unchecked rows under verification subsection "
+                        f"{current_header_text!r} are exempted by the legacy "
+                        f"_VERIFICATION_SECTION_RE deprecation shim, not the "
+                        f"canonical {_VERIFICATION_ONLY_MARKER} marker. The "
+                        f"producer should emit the marker per "
+                        f"lazy_core:_VERIFICATION_ONLY_MARKER."
+                    )
+                continue
+            # Neither marker nor regex-matched header → genuine implementation row.
+            return False
     return saw_unchecked
 
 

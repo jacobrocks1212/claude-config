@@ -42,19 +42,22 @@
   unrelated bold lead. The unticked RV boxes themselves are correct and must
   stay `- [ ]` — they belong to the mcp-test cycle, not the implementer.
 
-  REGEX-LOCKSTEP (HARD — for harness maintainers, not phase authors): the set of
-  recognized verification-subsection header phrases is enumerated in
-  `lazy_core._VERIFICATION_SECTION_RE` (with the full canonical list in the
-  comment immediately above it). It currently covers: "Runtime Verification",
-  "MCP Integration Test" / "MCP (test) assertion(s)", "Reachability smoke", and
-  the retry_count>=2 escalation "Full-chain seam audit" / "seam audit" / "seam
-  re-validation" family (the last authored by `blocked-resolution.md`). When you
-  add a NEW verification or escalation subsection-header convention to THIS
-  component or to `blocked-resolution.md`, you MUST also add its phrase to that
-  regex AND a regression fixture to `test_lazy_core.py` — otherwise its only
-  unchecked rows read as plannable implementation work and Step 7a loops on
-  write-plan forever (two consecutive single-phrase gaps in one run, 2026-06-16,
-  motivated this lockstep note).
+  MARKER-FIRST (harness-hardening-retro-fixes Phase 2 — SUPERSEDES the old
+  regex-lockstep). The detector now keys off the STRUCTURAL canonical marker
+  `<!-- verification-only -->` (SSOT: `lazy_core:_VERIFICATION_ONLY_MARKER`),
+  NOT the subsection header's free text. So a NEW verification/escalation
+  subsection-header convention NO LONGER needs a new regex alternative — just
+  emit the per-row marker on its `- [ ]` rows (as this component and
+  `blocked-resolution.md` now do) and the gate recognizes them regardless of the
+  header phrasing. Do NOT grow `_VERIFICATION_SECTION_RE` — it is now a
+  DEPRECATION SHIM that merely warns (a `_DIAGNOSTICS` entry) when a row was
+  exempted by header-text alone with the marker absent (i.e. an un-migrated
+  producer). The shim still covers: "Runtime Verification", "MCP Integration
+  Test" / "MCP (test) assertion(s)", "Reachability smoke", and the retry_count>=2
+  escalation "Full-chain seam audit" / "seam audit" / "seam re-validation" family
+  — but those are the LEGACY un-migrated cases, not the path new conventions take.
+  (Two consecutive single-phrase regex gaps in one run, 2026-06-16, motivated the
+  move to the structural marker.)
 
   ╔══════════════════════════════════════════════════════════════════════════╗
   ║  GATE-OWNED ROW BAN — pipeline-owned actions are never checkbox rows     ║
@@ -92,10 +95,11 @@
   d8-live-looping reached its Step-9 MCP gate with the documented
   `track(...).record()` API never reachable (0/16 BLOCKED) after eight phases
   — the gap was detectable from the first API phase with one smoke call.
-  Example row:
-  `- [ ] reachability smoke (reachability-smoke — workstation-eligible): MCP
-  call to <new tool/command> returns a non-error response (surface is callable
-  end-to-end; behavioral correctness is asserted in the Step-9 scenario).`
+  Example row (note the canonical marker right after the checkbox):
+  `- [ ] <!-- verification-only --> reachability smoke (reachability-smoke —
+  workstation-eligible): MCP call to <new tool/command> returns a non-error
+  response (surface is callable end-to-end; behavioral correctness is asserted
+  in the Step-9 scenario).`
 
   ╔══════════════════════════════════════════════════════════════════════════╗
   ║  TERMINAL-MCP-STACKING BAN — integration cannot all land in one phase     ║
@@ -118,9 +122,34 @@
   the ban is on deferring the FIRST end-to-end probe past the phase where the
   chain first exists.
 -->
+<!--
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  CANONICAL VERIFICATION-ONLY MARKER (harness-hardening-retro-fixes Ph 2)  ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Every verification / runtime / MCP-assertion / reachability-smoke `- [ ]`
+  checkbox this component authors MUST carry the canonical per-row marker
+  `<!-- verification-only -->` (an HTML comment, invisible in rendered markdown).
+  The state-script detector `remaining_unchecked_are_verification_only()` keys
+  off THIS marker — structurally, independent of the subsection header's free
+  text — so a novel header phrasing no longer gaps the gate (and the legacy
+  `_VERIFICATION_SECTION_RE` is now only a deprecation shim that WARNS when a row
+  is exempted by header-text alone, with the marker absent).
+
+  SSOT: the marker string is owned by `lazy_core:_VERIFICATION_ONLY_MARKER`
+  (`user/scripts/lazy_core.py`). Do NOT re-hardcode a divergent string here — the
+  lockstep test (`test_ruvonly_marker_lockstep_producers_match_ssot`) asserts the
+  value below equals that constant. If the marker form ever changes, change the
+  constant and re-sync this value (and `blocked-resolution.md`).
+
+  Place the marker at the START of each verification row (right after `- [ ] `).
+  A marker on the subsection HEADER line also works (header-scope: exempts every
+  row beneath until the next phase/section boundary) — but the per-row form is
+  preferred for robustness.
+-->
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] {Observable runtime behavior 1 — e.g., "API returns expected response after action"}
-- [ ] {Observable runtime behavior 2 — e.g., "database contains expected records"}
+- [ ] <!-- verification-only --> {Observable runtime behavior 1 — e.g., "API returns expected response after action"}
+- [ ] <!-- verification-only --> {Observable runtime behavior 2 — e.g., "database contains expected records"}
 
 **MCP Integration Test Assertions:**
 {If the feature's SPEC.md has a Validation Criteria table, extract the rows relevant to this phase and express them as concrete assertions a test agent can verify at runtime. Format:}

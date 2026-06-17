@@ -17836,5 +17836,143 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# harness-hardening-retro-fixes Phase 2 (WU-5) — verification-only canonical
+# marker: novel-header (a), un-migrated-warning (b), lockstep (c).
+# ---------------------------------------------------------------------------
+#
+# These exercise the structural canonical marker (`_VERIFICATION_ONLY_MARKER`)
+# that replaces the growing free-text `_VERIFICATION_SECTION_RE`. The detector
+# keys off the marker; the regex is demoted to a deprecation shim that emits a
+# `_DIAGNOSTICS` warning when it WOULD have matched but the marker is absent.
+#
+# TDD note: test (a) was authored RED before WU-3 — a NEVER-BEFORE-SEEN
+# verification header is invisible to the regex, so without marker support the
+# gate returns False (the regression). After WU-3 keys off the marker, it
+# returns True with no regex growth.
+
+# Paths to the two Phase-2 producer components (WU-4) for the lockstep test.
+_PHASES_RUNTIME_VERIFICATION_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "skills" / "_components" / "phases-runtime-verification.md"
+)
+_BLOCKED_RESOLUTION_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "skills" / "_components" / "blocked-resolution.md"
+)
+
+
+def test_verification_only_marker_constant_present():
+    """WU-3: the SSOT marker constant exists and is the per-row HTML comment form
+    resolved for Open Question 2."""
+    _guard()
+    assert hasattr(lazy_core, "_VERIFICATION_ONLY_MARKER"), (
+        "lazy_core must define the SSOT constant _VERIFICATION_ONLY_MARKER (WU-3)"
+    )
+    assert lazy_core._VERIFICATION_ONLY_MARKER == "<!-- verification-only -->", (
+        "Open Question 2 resolved toward the per-row HTML comment form; "
+        f"got {lazy_core._VERIFICATION_ONLY_MARKER!r}"
+    )
+
+
+def test_ruvonly_novel_header_with_marker_passes():
+    """WU-5(a): a verification subsection with a NEVER-BEFORE-SEEN header text +
+    the canonical marker present → gate returns True via the marker (no regex
+    growth). The header text deliberately matches NONE of the legacy regex
+    alternatives."""
+    _guard()
+    text = (
+        "### Phase 1\n"
+        "- [x] Implementation done\n"
+        "### Quantum Flux Capacitor Calibration\n"  # never-before-seen header
+        "- [ ] <!-- verification-only --> live probe returns a non-error response\n"
+        "- [ ] <!-- verification-only --> sustained run shows no dropout\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"novel header + per-row marker must pass via the marker; got {result}"
+    )
+
+
+def test_ruvonly_novel_header_without_marker_warns_and_fails():
+    """WU-5(b): a verification subsection whose header DOES match the legacy regex
+    but whose rows carry NO marker (un-migrated producer) → the deprecation shim
+    emits a _DIAGNOSTICS warning naming the un-migrated case AND still exempts the
+    rows (no regression for un-migrated PHASES.md). Does NOT silently pass clean."""
+    _guard()
+    lazy_core.clear_diagnostics()
+    text = (
+        "### Phase 1\n"
+        "- [x] Implementation done\n"
+        "### Runtime Verification\n"  # matches the legacy regex
+        "- [ ] live probe returns a non-error response\n"  # NO marker
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    # Still exempts (no regression) — the rows are under a regex-matched header.
+    assert result is True, (
+        f"un-migrated regex-matched header must still exempt its rows; got {result}"
+    )
+    # But the gap is surfaced — at least one diagnostic names the un-migrated case.
+    diags = lazy_core._DIAGNOSTICS
+    assert any(
+        "verification-only" in d.lower() and (
+            "un-migrated" in d.lower() or "unmigrated" in d.lower()
+            or "deprecat" in d.lower() or "marker" in d.lower()
+        )
+        for d in diags
+    ), (
+        "deprecation shim must append a _DIAGNOSTICS warning naming the "
+        f"un-migrated (no-marker) verification subsection; got {diags!r}"
+    )
+
+
+def test_ruvonly_marker_lockstep_producers_match_ssot():
+    """WU-5(c): the canonical marker referenced in BOTH producer components
+    (phases-runtime-verification.md, blocked-resolution.md) equals the
+    lazy_core SSOT constant — string equality, no divergent hardcoding."""
+    _guard()
+    marker = lazy_core._VERIFICATION_ONLY_MARKER
+
+    assert _PHASES_RUNTIME_VERIFICATION_PATH.exists(), (
+        f"missing producer component: {_PHASES_RUNTIME_VERIFICATION_PATH}"
+    )
+    assert _BLOCKED_RESOLUTION_PATH.exists(), (
+        f"missing producer component: {_BLOCKED_RESOLUTION_PATH}"
+    )
+    prv = _PHASES_RUNTIME_VERIFICATION_PATH.read_text(encoding="utf-8")
+    bres = _BLOCKED_RESOLUTION_PATH.read_text(encoding="utf-8")
+
+    assert marker in prv, (
+        "phases-runtime-verification.md must reference the canonical marker "
+        f"{marker!r} by value (WU-4); not found"
+    )
+    assert marker in bres, (
+        "blocked-resolution.md must reference the canonical marker "
+        f"{marker!r} by value (WU-4); not found"
+    )
+    # SSOT discipline: each producer must point back at the lazy_core constant
+    # (by name), not silently re-hardcode a divergent string.
+    assert "_VERIFICATION_ONLY_MARKER" in prv, (
+        "phases-runtime-verification.md must name the SSOT constant "
+        "lazy_core:_VERIFICATION_ONLY_MARKER so future edits track the source"
+    )
+    assert "_VERIFICATION_ONLY_MARKER" in bres, (
+        "blocked-resolution.md must name the SSOT constant "
+        "lazy_core:_VERIFICATION_ONLY_MARKER so future edits track the source"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_verification_only_marker_constant_present",
+     test_verification_only_marker_constant_present),
+    ("test_ruvonly_novel_header_with_marker_passes",
+     test_ruvonly_novel_header_with_marker_passes),
+    ("test_ruvonly_novel_header_without_marker_warns_and_fails",
+     test_ruvonly_novel_header_without_marker_warns_and_fails),
+    ("test_ruvonly_marker_lockstep_producers_match_ssot",
+     test_ruvonly_marker_lockstep_producers_match_ssot),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

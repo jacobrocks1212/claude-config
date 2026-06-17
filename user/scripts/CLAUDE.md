@@ -187,6 +187,38 @@ in another repo (it also kills stale-marker contagion across repos).
   query error falls back to current behavior. The `pipeline_visualizer` likewise binds the
   visualized repo before reading the marker so it shows that repo's live run.
 
+## Verification-only canonical marker (harness-hardening-retro-fixes Phase 2)
+
+`remaining_unchecked_are_verification_only(phases_text)` decides whether the only remaining
+unchecked `- [ ]` rows are runtime-verification rows owned by the Step-9 `/mcp-test` gate (so
+`/lazy` falls through to the MCP gate instead of looping on write-plan). It used to detect
+those rows by **matching the subsection header's free text** against `_VERIFICATION_SECTION_RE`
+— a growing regex that gapped the gate every time a producer used a novel header phrasing (two
+consecutive hardening rounds each grew it).
+
+It now keys off a **structural canonical marker**, the SSOT constant
+`lazy_core:_VERIFICATION_ONLY_MARKER = "<!-- verification-only -->"` (a per-row HTML comment,
+invisible in rendered markdown; Open Question 2 resolved toward the per-row form for
+header-text-independent robustness). A `- [ ]` row is verification-exempt when the row OR its
+enclosing subsection header carries the marker — independent of the header free text, so a
+never-before-seen verification header no longer gaps the gate.
+
+- **Producers emit the marker.** `_components/phases-runtime-verification.md` (via `/spec-phases`)
+  and `_components/blocked-resolution.md` (via `/blocked-resolution` seam-audit / RV rows) author
+  the marker right after each verification checkbox, referencing the SSOT constant **by name** —
+  never re-hardcoding a divergent string. A lockstep test
+  (`test_ruvonly_marker_lockstep_producers_match_ssot`) asserts producer prose == the constant.
+- **`_VERIFICATION_SECTION_RE` is now a deprecation shim.** It is retained ONLY so un-migrated
+  PHASES.md (rows under a recognized header but WITHOUT the marker) keep exempting cleanly — no
+  regression. But when the regex (and not a marker) is what exempts a row, the shim appends a
+  `_DIAGNOSTICS` warning naming the un-migrated subsection, surfacing the migration gap (does NOT
+  silently pass). A future cycle retires the regex once the shim stops firing across all live
+  PHASES.md. New verification-subsection conventions should rely on the marker, NOT grow the regex.
+- **check-docs-consistency.ts:** the marker is a ROW ANNOTATION, not a sentinel, so it does NOT
+  enter that script's `SENTINEL_SCHEMAS`. If a future edit there cannot validate the HTML-comment
+  form cleanly, fall back to a canonical subsection-header form and re-sync the constant + both
+  producers (documented in the constant's docstring).
+
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 
 The concurrency plane lets multiple `lazy-worker` sessions run different queue items at once
