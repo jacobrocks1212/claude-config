@@ -67,66 +67,82 @@ sees the other's state.
   `lazy-cycle-containment.sh` (PreToolUse — denies lifecycle/recursive-dispatch ops while the
   cycle-subagent marker is present).
 
-### Target state (per-repo registry)
+### Target state (per-repo state subdir — the chokepoint design)
 
-1. **Marker storage becomes per-repo.** Two viable encodings — pick during `/spec-phases`:
-   - **(chosen baseline) Per-repo marker files** in a directory:
-     `~/.claude/state/run-markers/<repo-key>.json`, where `<repo-key>` is a stable hash/slug
-     of the normalized `repo_root` (mirrors how the claude.ai projects dir slugs paths). One
-     file per active run; absence = no run for that repo.
-   - **(alternative) Single registry file** mapping `<repo-key> → marker-object`. Simpler to
-     enumerate, but concentrates write contention and corruption risk on one file.
-   The per-file encoding is the baseline: lock-free for concurrent distinct repos (different
-   files), and a stale file is trivially attributable to one repo.
+The key realization: every piece of run-scoped state (marker, prompt registry, deny-ledger,
+cycle-subagent marker, checkpoint) resolves its path through **one function** —
+`claude_state_dir()` (24 call sites in `lazy_core.py`). Rather than thread `repo_root` through
+the ~25 `read_run_marker()` / registry / ledger call sites, scope the **entire state
+directory** per repo at that single chokepoint. All run-scoped state becomes per-repo for free.
 
-2. **Repo resolution in every hook.** Each hook computes the current `repo_root` (git
-   top-level of the hook's cwd / the tool call's cwd) and consults only
-   `run-markers/<repo-key>.json`. If that file is absent, the hook is a no-op (allow / no
-   inject). A marker for a *different* repo is invisible to it.
+1. **`claude_state_dir()` becomes repo-scoped (the one change that does the work).**
+   - When `LAZY_STATE_DIR` is **set** (hermetic unit tests + hook pipe-tests) → return it
+     **exactly as today**. The env override means "use this precise dir" — preserving every
+     existing test's path semantics byte-for-byte (no raw-path assertion breaks).
+   - When `LAZY_STATE_DIR` is **unset** (production) → return
+     `~/.claude/state/<repo-key>/`, where `<repo-key>` is a stable SHA-1 of the normalized
+     real `repo_root`. The active repo is set once at `main()` entry from `--repo-root`
+     (cwd git-toplevel fallback); a module-level `_active_repo_root` carries it so the 24
+     internal `claude_state_dir()` callers need no signature change.
+   A single process operates on exactly one repo, so the module-level active repo is
+   unambiguous; concurrent runs in different repos are different processes with different
+   subdirs and never collide on marker, registry, ledger, or counters.
 
-3. **`--run-start` refuses a same-repo second run.** If `run-markers/<repo-key>.json` exists
-   and is not stale, refuse with a diagnostic (the in-flight run's `started_at` /
-   `forward_cycles`). Staleness horizon: a marker is stale if its run ended (a `--run-end`
-   was recorded) or `started_at` is older than a configurable bound AND no cycle advanced
-   within it. A stale marker may be reclaimed (overwritten) by a new `--run-start`.
+2. **Hooks route their check through a thin script query.** The three hooks currently read the
+   *base* dir (`$STATE_DIR/lazy-run-marker.json`) directly — which would now be empty. They
+   are changed to call `lazy-state.py --marker-present --repo-root <cwd>`, so Python owns ALL
+   repo-key derivation (no bash re-implementation) and the hooks stay thin. A marker for a
+   *different* repo resolves to a different subdir → `absent` → the hook is a no-op (allow /
+   no inject). Fail-OPEN preserved: a query error falls back to current behavior.
 
-4. **`--run-end` clears its own repo's marker.** On any terminal stop (clean, checkpoint,
-   max-cycles), remove `run-markers/<repo-key>.json`. This closes the stale-marker class for
-   clean stops; the staleness horizon covers interrupted runs.
+3. **`--run-start` refuses a same-repo second run.** If a live (non-stale) marker exists in
+   *this repo's* state subdir, refuse with a diagnostic (the in-flight run's `started_at` /
+   `forward_cycles`). Staleness: a marker is stale if age > 24h (existing path A) — reclaimable
+   by overwrite. A different repo's run is a different subdir and never triggers the refusal.
 
-5. **`bug-state.py` mirrors the same registry.** Feature and bug runs in the *same* repo
-   still collide (same git tree) and so share one `<repo-key>` slot — a bug run and a feature
-   run in one repo remain mutually exclusive (correct: they'd race the tree). Cross-repo, both
-   are isolated. (Note: the unified orchestrator — `unified-pipeline-orchestrator` — makes the
-   feature/bug exclusivity moot by draining both from one run; this feature only needs the
-   key to be shared per repo.)
+4. **`--run-end` clears only this repo's state.** `delete_run_marker` already removes the
+   marker (+ registry) from `claude_state_dir()`, which is now this repo's subdir — so it
+   touches no other repo's state with no signature change.
 
-6. **Cloud variants.** `lazy-batch-cloud` uses the same marker mechanism; the per-repo key
-   applies identically. No cloud-specific divergence beyond what already exists.
+5. **`bug-state.py` inherits it automatically.** It imports `claude_state_dir` from the shared
+   `lazy_core.py`, so the bug pipeline becomes per-repo with zero `bug-state.py` path changes.
+   A feature run and a bug run in the *same* repo share the subdir (mutually exclusive —
+   correct, same git tree); cross-repo isolated.
+
+6. **Bonus — deny-ledger + registry isolation.** Because the deny-ledger and prompt registry
+   live in `claude_state_dir()` too, they become per-repo for free. This fixes the cross-repo
+   contamination observed live this session (an AlgoBooth run's marker arming the guard in a
+   claude-config session, and its denials surfacing as claude-config's `pending_hardening`).
 
 ### Backward compatibility / migration
 
-- On first `--run-start` after this lands, if a legacy singleton
-  `~/.claude/state/lazy-run-marker.json` exists, migrate it into
-  `run-markers/<repo-key>.json` for its recorded `repo_root`, then remove the singleton. A
-  legacy singleton with no resolvable `repo_root` is treated as stale and removed.
-- The hooks fall back to the legacy singleton path only if the registry directory does not yet
-  exist, so a partially-migrated machine never hard-errors.
+- On first `claude_state_dir()` resolution in production (env unset), if legacy base-dir files
+  exist (`~/.claude/state/{lazy-run-marker.json, lazy-prompt-registry.json,
+  lazy-deny-ledger.jsonl, lazy-cycle-active.json, lazy-run-checkpoint.json}`), migrate them
+  into the keyed subdir for the marker's recorded `repo_root`, then remove the base-dir copies.
+  A legacy marker with no resolvable `repo_root` is treated as stale and removed.
+- Migration is idempotent and runs once; a partially-migrated machine never hard-errors.
+
+### Consumers to update
+
+- The three hooks (via `--marker-present`).
+- `pipeline_visualizer` reads the marker for display — it must enumerate the per-repo subdirs
+  (or accept a repo argument) rather than read the base dir.
 
 ## Implementation Phases
 
-1. **Marker registry core (`lazy-state.py`/`lazy_core.py`).** Per-repo key derivation,
-   read/write of `run-markers/<repo-key>.json`, `--run-start` same-repo refusal + staleness,
-   `--run-end` clears own marker, legacy-singleton migration. Unit tests in
-   `test_lazy_core.py`.
-2. **Hook repo-scoping.** Update `lazy-dispatch-guard.sh`, `lazy-route-inject.sh`,
-   `lazy-cycle-containment.sh` to resolve current `repo_root` and consult only that repo's
-   marker. Extend `test_hooks.py` with a two-repo isolation harness.
-3. **`bug-state.py` parity.** Mirror the registry mechanism; `lazy_parity_audit.py` updated to
-   cover the shared marker surface.
-4. **Cleanup + docs.** Remove the stale marker currently on disk; document the registry in
-   `CLAUDE.md` (Hooks table + a state-layout note); update `turn-routing-enforcement` spec
-   notes.
+1. **Repo-scoped `claude_state_dir()` core (`lazy_core.py`/`lazy-state.py`).** `repo_key`
+   derivation, module-level active-repo set at `main()`, env-set→exact / env-unset→keyed
+   resolution, `--run-start` same-repo refusal, legacy base-dir migration. Unit tests in
+   `test_lazy_core.py` (existing `LAZY_STATE_DIR` tests stay green by construction).
+2. **Hook repo-scoping.** Add `lazy-state.py --marker-present --repo-root <cwd>`; route
+   `lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, `lazy-cycle-containment.sh` through it.
+   Extend `test_hooks.py` with a two-repo isolation harness.
+3. **`bug-state.py` parity + pipeline_visualizer.** Confirm bug pipeline inherits the keyed
+   dir; `lazy_parity_audit.py` covers the surface; update `pipeline_visualizer` to enumerate
+   per-repo subdirs.
+4. **Cleanup + docs.** Document the keyed state-dir layout in `user/scripts/CLAUDE.md` + root
+   `CLAUDE.md` Hooks table; update `turn-routing-enforcement` notes.
 
 ## Validation Criteria
 
@@ -142,12 +158,11 @@ sees the other's state.
 
 ## Open Questions
 
-- **Staleness horizon value.** What wall-clock bound (or "ended-flag only") defines a stale
-  marker for same-repo reclaim? Default proposal: ended-flag OR no cycle advance for a
-  generous bound; finalize in `/spec-phases`. (estimated — verify during Phase 1)
-- **Repo-key derivation.** Hash vs path-slug of normalized `repo_root`; must match between
-  Python writers and bash hook readers. Lock the exact algorithm in Phase 1 so both sides
-  agree byte-for-byte.
+- **Staleness horizon value.** Reuse the existing 24h age staleness (path A) for same-repo
+  reclaim — no new horizon needed. (resolved — reuse existing path A.)
+- **Repo-key derivation.** Resolved by the chokepoint design: key derivation lives ONLY in
+  Python (`repo_key` in `lazy_core.py`); the bash hooks never re-derive it — they call
+  `--marker-present`. No byte-for-byte cross-language matching required.
 
 ## Research References
 

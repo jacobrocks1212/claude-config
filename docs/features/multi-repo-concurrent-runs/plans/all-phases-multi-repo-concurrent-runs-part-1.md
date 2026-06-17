@@ -31,26 +31,33 @@ python user/scripts/test_hooks.py
 python user/scripts/lint-skills.py --check-projected --check-capabilities
 ```
 
-## Key design contract (read before WU-1.1)
+## Key design contract (read before WU-1.1) — CHOKEPOINT design
 
-- **`repo_key(repo_root)`** is the ONE canonical derivation: `sha1(normalized_realpath)` where
-  normalization = `os.path.realpath` → forward slashes → strip trailing slash → lowercase a
-  Windows drive letter. Nothing else re-derives it; the hooks ask the script (WU-2.1) rather
-  than re-implement it in bash.
-- **`run_marker_path(repo_root)`** = `claude_state_dir()/"run-markers"/f"{repo_key}.json"`.
-- Staleness paths A (24h age, delete-on-read) and B (session-id mismatch, non-destructive) are
-  preserved verbatim from the current `read_run_marker` — only path resolution changes.
-- Backward compat: a legacy singleton `lazy-run-marker.json` is migrated to the registry on
-  first touch, then removed.
+Scope the whole run-scoped state dir per repo at `claude_state_dir()` (the 24-call chokepoint),
+NOT by threading `repo_root` through 25 marker call sites.
+
+- **`repo_key(repo_root)`** — ONE canonical derivation: `sha1(normalized_realpath)` (realpath →
+  forward slashes → strip trailing slash → lowercase Windows drive). Python-only; the hooks ask
+  the script (WU-2.1), never re-derive in bash.
+- **Active repo:** module-level `_active_repo_root` + `set_active_repo_root()`; `active_repo_root()`
+  falls back to cwd git-toplevel. Set once at each script's `main()`.
+- **`claude_state_dir()`:** `LAZY_STATE_DIR` set → return it EXACTLY (tests/hook-fixtures
+  unchanged). Unset → `~/.claude/state/<repo_key(active_repo_root())>/`. The 24 callers (marker,
+  registry, deny-ledger, cycle marker, checkpoint) inherit per-repo isolation for free.
+- Staleness path A (24h age) reused for same-repo reclaim; path B (session-id) preserved.
+- Migration: legacy base-dir files moved into the keyed subdir on first production resolution.
+- **HARD:** all new test functions MUST be appended to a `_TESTS` list (the Round-24
+  dead-coverage trap — an unregistered `test_*` never runs).
 
 ---
 
-## Phase 1 — Per-repo marker registry core
+## Phase 1 — Repo-scoped `claude_state_dir()` core
 
-- [ ] WU-1.1 — TDD: add failing `test_lazy_core.py` cases for `repo_key` (stable, normalization-invariant: trailing slash / separator / case variants collapse to one key; distinct repos → distinct keys) and `run_marker_path`. Then implement `repo_key` + `run_marker_path` in `lazy_core.py`.
-- [ ] WU-1.2 — TDD: tests that `write_run_marker(repo_root)` / `read_run_marker(repo_root)` / `delete_run_marker(repo_root)` use the per-repo path; two repos independent; staleness A + B preserved. Then thread `repo_root` through the three functions (default to cwd's git toplevel when omitted, for call-site compatibility).
-- [ ] WU-1.3 — TDD: tests for `--run-start` same-repo refusal (live marker → non-zero exit + diagnostic with `started_at`/`forward_cycles`; stale marker → reclaim), `--run-end` clears only this repo, and legacy-singleton migration (move + remove; unresolvable singleton removed). Then implement in `lazy_core.py` + wire `lazy-state.py` `--run-start`/`--run-end` to pass `repo_root` and surface the refusal exit.
-- [ ] WU-1.4 — Run the gate suite; if `lazy-state.py --test` fixtures legitimately changed, regenerate the byte-pinned baseline via `_normalize_smoke_output` only. All green.
+- [ ] WU-1.1 — TDD: failing `test_lazy_core.py` cases (registered in `_TESTS`) for `repo_key` (stable; normalization-invariant — trailing slash / separator / drive-case variants collapse; distinct repos → distinct keys). Then implement `repo_key` in `lazy_core.py`.
+- [ ] WU-1.2 — TDD: with a temp `HOME` and `LAZY_STATE_DIR` UNSET, `set_active_repo_root("/repoA")` → `claude_state_dir()` ends in `/state/<keyA>/`; switching to `/repoB` → `<keyB>/`; the two are distinct and each holds its own marker. AND `LAZY_STATE_DIR` set → returns it exactly (existing behavior). Then implement `_active_repo_root`/`set_active_repo_root`/`active_repo_root` + the keyed `claude_state_dir()`; call `set_active_repo_root` at `lazy-state.py` and `bug-state.py` `main()`.
+- [ ] WU-1.3 — TDD: `--run-start` same-repo refusal (live non-stale marker in this repo's subdir → non-zero exit + `started_at`/`forward_cycles` diagnostic; age-stale → reclaim); a different active repo does NOT refuse. Then implement (extend `refuse_run_start_clobber` / the `--run-start` handler).
+- [ ] WU-1.4 — TDD: `migrate_legacy_state_dir()` moves base-dir files (marker/registry/ledger/cycle/checkpoint) into the keyed subdir for the marker's `repo_root` then removes the base copies; idempotent; unresolvable `repo_root` → marker treated stale + removed; never touches a `LAZY_STATE_DIR` dir. Wire it into the first production `claude_state_dir()` resolution.
+- [ ] WU-1.5 — Run the FULL gate suite; existing `LAZY_STATE_DIR` marker tests must stay green unchanged. Regenerate a `--test` baseline ONLY if a fixture legitimately changed (not expected). All green.
 
 ## Phase 2 — Hook repo-scoping
 
@@ -59,11 +66,12 @@ python user/scripts/lint-skills.py --check-projected --check-capabilities
 - [ ] WU-2.3 — Scope `lazy-cycle-containment.sh`'s `lazy-cycle-active.json` lookup to the current repo (per-repo cycle marker path mirrored from `repo_key`); update the embedded Python marker path.
 - [ ] WU-2.4 — TDD: extend `test_hooks.py` with a two-repo isolation harness (marker for key A; hook fired with cwd in B → allow/no-inject; cwd in A → deny/inject unchanged). Gate suite green.
 
-## Phase 3 — bug-state.py parity
+## Phase 3 — bug-state.py parity + pipeline_visualizer
 
-- [ ] WU-3.1 — TDD: `bug-state.py --run-start`/`--run-end` pass `repo_root`; same-repo refusal + own-marker clear identical to `lazy-state.py`; a same-repo feature+bug run is mutually exclusive, cross-repo isolated. Then wire `bug-state.py`.
-- [ ] WU-3.2 — Extend `lazy_parity_audit.py` to assert the marker-registry surface is consistent across the two state scripts.
-- [ ] WU-3.3 — Run `bug-state.py --test` + `test_lazy_core.py` cross-script case; regenerate `bug-state` baseline only if fixtures legitimately changed. Gate suite green.
+- [ ] WU-3.1 — TDD: `bug-state.py` calls `set_active_repo_root` at `main()`; same-repo refusal + own-state clear identical to `lazy-state.py`; a same-repo feature+bug run is mutually exclusive, cross-repo isolated. Then wire `bug-state.py`.
+- [ ] WU-3.2 — Extend `lazy_parity_audit.py` to assert the active-repo + keyed-state-dir surface is consistent across the two state scripts.
+- [ ] WU-3.3 — Update `pipeline_visualizer` to enumerate `~/.claude/state/<repo-key>/` subdirs (or take a repo arg) instead of the base-dir marker; update `test_pipeline_visualizer.py` for the keyed layout.
+- [ ] WU-3.4 — Run `bug-state.py --test` + `test_lazy_core.py` cross-script case + visualizer tests; regenerate `bug-state` baseline only if fixtures legitimately changed. Gate suite green.
 
 ## Phase 4 — Cleanup + docs
 
