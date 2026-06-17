@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-batch-unified-driver-parity-and-accounting
-status: Ready
+status: In-progress
 created: 2026-06-17
 complexity: complex
 phases: [1, 2, 3]
