@@ -26,13 +26,20 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 **Scope:** Record whether a checkpoint was operator-authorized at write time, so the resume path can later branch on it. This is the producer half of the fix — no behavior changes yet (restore still carries forward unconditionally until Phase 2), so it lands as a safe, isolated additive schema change.
 
 **Deliverables:**
-- [ ] `lazy_core.write_run_checkpoint`: add an `operator_authorized: bool = False` parameter; persist it as a top-level `operator_authorized` field in the checkpoint dict (default `False` — backward-compatible with pre-fix checkpoint files that lack the field).
-- [ ] `lazy-state.py` checkpoint-write site (`--run-end --reason checkpoint`, ~`:6369`): pass `bool(args.operator_authorized)` through to `write_run_checkpoint`. `args.operator_authorized` is already in scope (parsed `:6018`, used in the attended stop-gate `:6305`).
-- [ ] Tests: `test_lazy_core.py` — assert `write_run_checkpoint(..., operator_authorized=True)` writes `operator_authorized: True`; default omitted-arg writes `False`; round-trips through `consume_run_checkpoint`.
+- [x] `lazy_core.write_run_checkpoint`: add an `operator_authorized: bool = False` parameter; persist it as a top-level `operator_authorized` field in the checkpoint dict (default `False` — backward-compatible with pre-fix checkpoint files that lack the field).
+- [x] `lazy-state.py` checkpoint-write site (`--run-end --reason checkpoint`, ~`:6369`): pass `bool(args.operator_authorized)` through to `write_run_checkpoint`. `args.operator_authorized` is already in scope (parsed `:6018`, used in the attended stop-gate `:6305`).
+- [x] Tests: `test_lazy_core.py` — assert `write_run_checkpoint(..., operator_authorized=True)` writes `operator_authorized: True`; default omitted-arg writes `False`; round-trips through `consume_run_checkpoint`.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` passes a new assertion that a checkpoint written with `operator_authorized=True` reads back `True`, and a default-arg write reads back `False`.
 
 **Prerequisites:** None (first phase).
+
+**Implementation Notes (2026-06-17):**
+- Added `operator_authorized: bool = False` param to `lazy_core.write_run_checkpoint`; persisted as a top-level `operator_authorized` field (coerced via `bool()`), sibling of `counters`/`reason`/`next_route`/`ts`.
+- Threaded `operator_authorized=bool(args.operator_authorized)` into the `lazy-state.py` `--run-end --reason checkpoint` write site (`:6369`). `args.operator_authorized` was already parsed and in scope.
+- Tests (test-first, confirmed RED before impl): `test_write_run_checkpoint_persists_operator_authorized` (unit round-trip True/default-False) + `test_run_end_checkpoint_threads_operator_authorized` (subprocess: `--operator-authorized` → True, omitted → False).
+- Files modified: `user/scripts/lazy_core.py`, `user/scripts/lazy-state.py`, `user/scripts/test_lazy_core.py`.
+- No behavior change yet — restore still carries forward unconditionally until Phase 2. Default `False` keeps pre-fix checkpoint files falsy.
 
 **Files likely modified:**
 - `user/scripts/lazy_core.py` — `write_run_checkpoint` signature + payload (`:8368-8394`).

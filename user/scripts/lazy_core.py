@@ -8369,6 +8369,7 @@ def write_run_checkpoint(
     next_route: str,
     counters: dict,
     now: float | None = None,
+    operator_authorized: bool = False,
 ) -> dict:
     """Write lazy-run-checkpoint.json to the state dir (checkpoint run-end).
 
@@ -8377,6 +8378,13 @@ def write_run_checkpoint(
         counters: the marker's fold counters as folded at run end (e.g.
                   {"forward_cycles": N, "meta_cycles": M, "max_cycles": K}).
         now: epoch float for the ts field (injectable for hermetic tests).
+        operator_authorized: whether this checkpoint was written for a deliberate
+            operator-authorized stop (a `/lazy-batch <N>` re-invoke wants a fresh
+            0/0 budget) vs. an automatic reliability pause (monotonic carry-forward
+            on resume).  Persisted as a top-level field so restore_checkpoint_counters
+            can branch on resume provenance.  Defaults False —
+            backward-compatible: a pre-fix checkpoint file lacking the field reads
+            as falsy, taking the carry-forward path.
 
     Returns:
         The checkpoint dict that was written.
@@ -8387,6 +8395,7 @@ def write_run_checkpoint(
         "reason": "checkpoint",
         "next_route": next_route,
         "counters": counters,
+        "operator_authorized": bool(operator_authorized),
         "ts": now,
     }
     checkpoint_path = claude_state_dir() / _CHECKPOINT_FILENAME

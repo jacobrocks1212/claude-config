@@ -9691,6 +9691,81 @@ def test_checkpoint_round_trip():
 
 
 # ---------------------------------------------------------------------------
+# operator-checkpoint-resume-counter-reset Phase 1: provenance persistence
+#
+# write_run_checkpoint records whether the checkpoint was operator-authorized so
+# the resume path (Phase 2) can branch on it.  Default False — backward-compatible
+# with pre-fix checkpoint files that lack the field.
+# ---------------------------------------------------------------------------
+
+def test_write_run_checkpoint_persists_operator_authorized():
+    """write_run_checkpoint(..., operator_authorized=True) writes a top-level
+    operator_authorized: True that round-trips through consume_run_checkpoint;
+    the default (omitted-arg) write reads back operator_authorized: False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            counters = {"forward_cycles": 3, "meta_cycles": 1, "max_cycles": 9}
+
+            # Explicit operator-authorized write → field True, round-trips.
+            written = lazy_core.write_run_checkpoint(
+                "execute-plan Phase 2", counters, operator_authorized=True,
+            )
+            assert written["operator_authorized"] is True, written
+            consumed = lazy_core.consume_run_checkpoint()
+            assert consumed is not None, "checkpoint must be readable"
+            assert consumed["operator_authorized"] is True, consumed
+
+            # Default (omitted arg) write → field present and False.
+            written2 = lazy_core.write_run_checkpoint("write-plan Phase 5", counters)
+            assert written2["operator_authorized"] is False, written2
+            consumed2 = lazy_core.consume_run_checkpoint()
+            assert consumed2 is not None
+            assert consumed2["operator_authorized"] is False, consumed2
+        finally:
+            _clear_state_dir()
+
+
+def test_run_end_checkpoint_threads_operator_authorized():
+    """Subprocess: --run-end --reason checkpoint --operator-authorized writes a
+    checkpoint whose operator_authorized field is True; omitting the flag writes
+    False.  Threads args.operator_authorized through the write site."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "auth-ckpt-state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        ckpt_path = state_dir / "lazy-run-checkpoint.json"
+
+        # Operator-authorized checkpoint → field True.
+        assert run(["--run-start", "--max-cycles", "9", "--unattended"]).returncode == 0
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "execute-plan Phase 2", "--operator-authorized"])
+        assert r.returncode == 0, f"{r.stdout}{r.stderr}"
+        ckpt = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        assert ckpt["operator_authorized"] is True, ckpt
+        # Consume it (run-start deletes the checkpoint).
+        assert run(["--run-start", "--max-cycles", "9", "--unattended"]).returncode == 0
+
+        # Non-authorized checkpoint (flag omitted) → field False.
+        r2 = run(["--run-end", "--reason", "checkpoint",
+                  "--next-route", "execute-plan Phase 3"])
+        assert r2.returncode == 0, f"{r2.stdout}{r2.stderr}"
+        ckpt2 = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        assert ckpt2["operator_authorized"] is False, ckpt2
+
+
+# ---------------------------------------------------------------------------
 # Regression: ACCIDENTAL mid-run counter reset (2026-06-14)
 #
 # HARD CONSTRAINT 8: forward_cycles AND meta_cycles are monotonic for the LIFE
@@ -14300,6 +14375,9 @@ _TESTS = [
     ("test_guard_deny_ledger_failure_is_fail_open", test_guard_deny_ledger_failure_is_fail_open),
     ("test_run_end_refuses_on_unacked_deny", test_run_end_refuses_on_unacked_deny),
     ("test_checkpoint_round_trip", test_checkpoint_round_trip),
+    # operator-checkpoint-resume-counter-reset Phase 1: provenance persistence
+    ("test_write_run_checkpoint_persists_operator_authorized", test_write_run_checkpoint_persists_operator_authorized),
+    ("test_run_end_checkpoint_threads_operator_authorized", test_run_end_checkpoint_threads_operator_authorized),
     # Regression: accidental mid-run counter reset (2026-06-14) — HC8 monotonicity
     ("test_restore_checkpoint_counters_carries_forward", test_restore_checkpoint_counters_carries_forward),
     ("test_restore_checkpoint_counters_no_checkpoint_is_noop", test_restore_checkpoint_counters_no_checkpoint_is_noop),

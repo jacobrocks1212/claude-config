@@ -6368,6 +6368,7 @@ def main() -> int:
                 }
             checkpoint_written = lazy_core.write_run_checkpoint(
                 args.next_route, counters,
+                operator_authorized=bool(args.operator_authorized),
             )
 
         # Delete the marker AND the registry (both are run-scoped state).
