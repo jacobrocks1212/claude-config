@@ -12,6 +12,34 @@
 - **Bug pipeline already has `enqueue_adhoc`** (`bug-state.py:1173`) and writes a `spec_dir`-keyed entry to `docs/bugs/queue.json` (smoke fixtures 12/13). Phase 3's `--type bug` routing therefore dispatches to an *existing* bug enqueue, not a new one. Evidence: `bug-state.py:1173`, `bug-state.py:2994-3051`.
 - **The runtime-ensure dance is AlgoBooth-specific** (TCP 3333, `npm run dev:restart`, `GET /health`) and currently lives in **`lazy-batch/SKILL.md` Step 1d.0** (lines ~504-574), NOT in the harness scripts. This is load-bearing for Phase 5's `--ensure-runtime` home decision (see Phase 5 Integration Notes). Evidence: `user/skills/lazy-batch/SKILL.md:521-574`.
 
+## Deferred to AlgoBooth-side validation (operator resolution, 2026-06-17)
+
+Per the `NEEDS_INPUT.md` resolution (operator chose **Defer + complete now**, 2026-06-17), the
+following **4 live-runtime acceptance rows** are re-scoped to a tracked **AlgoBooth-side validation
+follow-up** and ticked deferred-with-tracking so PHASES is coherent for `__mark_complete__`. All
+implementation + the full hermetic suite are done (`pytest user/scripts/` 786/786, byte-pinned
+`lazy-state.py`/`bug-state.py --test` baselines unchanged, `lazy_parity_audit.py` exit 0,
+`project-skills`/`lint-skills` clean). These rows are live-runtime **integration sanity checks of
+logic already unit-proven**; they require an AlgoBooth host (or the operator's real session logs)
+that this claude-config repo does not have. **Real, certified evidence is pending on an AlgoBooth
+host — it is NOT claimed here.**
+
+1. **Phase 2 (Runtime Verification):** a *live* unified `/lazy-batch` run over a two-type fixture
+   queue, observed cycle-for-cycle (the parity audit asserts no-regression as a prose predicate,
+   not a live cycle-sequence execution).
+2. **Phase 4 (Runtime Verification):** running the toolify miner over the operator's *real* ~700-run
+   session logs and confirming the top candidates surface the three retro-named dances — a finer
+   command-fingerprint granularity-tuning pass (shape-only signatures collapse the all-Bash dances).
+3. **Phase 5 (Runtime Verification):** `--ensure-runtime` against a live AlgoBooth dev runtime in each
+   state (down / stale / up).
+4. **Phase 5 (Runtime Verification):** marking a real `-followups` feature complete with no
+   `queue.no-completed` error from AlgoBooth's `check-docs-consistency.ts`.
+
+**Tracking:** discharge these on an AlgoBooth host and replace the deferred-with-tracking ticks with
+real on-disk evidence. The 2 rows that ARE hermetically provable (Phase 2 single-type no-regression;
+Phase 5 `--gate-coverage` symlink/pointer resolution) were already ticked with on-disk test evidence
+in the coherence-recovery cycle and are NOT in this deferral set.
+
 ## Touchpoint Audit Table (verified inline — no Agent tool in this dispatch)
 
 | Planned file | Exists? | Real symbols (verified) | Action | Reuse / refactor directive |
@@ -98,7 +126,7 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_parity_audit.py` exits 0 with the new merged-view dispatch-consistency assertion active; a single-type fixture run produces the same cycle sequence as the pre-change per-type batch.
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] Merged run over a two-type fixture queue processes items in priority order, bugs breaking ties, with the correct terminal action per type (feature → `__mark_complete__`, bug → `__mark_fixed__`). **DEFERRED — AlgoBooth-side manual verification:** the parity audit is a SKILL.md prose-predicate check, not a live cycle-sequence run over a two-type fixture. Requires an actual unified `/lazy-batch` run with both feature and bug items in-flight. Defer to AlgoBooth operator manual testing (2026-06-17).
+- [x] Merged run over a two-type fixture queue processes items in priority order, bugs breaking ties, with the correct terminal action per type (feature → `__mark_complete__`, bug → `__mark_fixed__`). **DEFERRED-WITH-TRACKING → AlgoBooth-side validation follow-up (see "Deferred to AlgoBooth-side validation" note below, dated 2026-06-17).** The parity audit is a SKILL.md prose-predicate check, not a live cycle-sequence run over a two-type fixture; requires an actual unified `/lazy-batch` run with both feature and bug items in-flight. Not runnable in claude-config — ticked deferred-with-tracking per operator resolution (2026-06-17), real certified evidence pending on an AlgoBooth host.
 - [x] Single-type run (features only) is cycle-for-cycle identical to the pre-unification `/lazy-batch`. **Evidence (2026-06-17):** `audit_merged_view_dispatch_parity` predicate `(r"[Ss]ingle-type\b", "single-type no-regression guarantee")` passes for both drivers (`lazy_parity_audit.py` exit 0; `test_lazy_parity.py` 29/29 including `test_live_merged_view_dispatch_parity_clean`); byte-pinned `lazy-state.py --test` + `bug-state.py --test` baselines UNCHANGED — single-type behavior provably unperturbed.
 
 **MCP Integration Test Assertions:** N/A — orchestration/skill-doc + parity-audit change; correctness is observable via the parity audit and the state-script `--test` suites, not via a live app runtime.
@@ -185,7 +213,7 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 **Minimum Verifiable Behavior:** `python3 user/scripts/toolify-miner.py --logs <fixture-dir>` over a fixture transcript containing a repeated deterministic dance and a repeated judgment sequence prints a ranked table where the deterministic dance is above the bar and the judgment sequence is below it, and writes NOTHING to the fixture logs (assert log dir unchanged). — Verified by `test_cli_smoke_runs_and_writes_nothing` + the unit fixtures.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by `/execute-plan`):*
-- [ ] Running the miner over the operator's REAL session logs produces a ranked candidate table whose top rows match the three retro-named dances (runtime-ensure, Gate-1 coverage, mark-complete) — sanity that the signatures cluster real dances without over-merging. **Partial (2026-06-17):** a live run over the real ~700-run corpus produces a ranked above-bar table (read-only confirmed), but at the chosen argument-SHAPE granularity the top rows are generic `Bash(command,description)` n-grams (nearly all dances are Bash calls), so the THREE NAMED dances are not yet distinguished by shape alone. Distinguishing them needs a finer command-fingerprint axis (e.g. hashing the leading `curl`/`npm`/`python … --flag` token), which is a granularity-tuning follow-up — left OPEN for the manual tuning pass, not closed here. **DEFERRED — operator manual verification:** the by-name-dance surfacing is NOT on Phase 5's critical path (the three consumers are already known from the retro); the finer command-fingerprint granularity is a future toolify-miner tuning pass, not part of this feature's acceptance criteria. Defer to the next operator manual tuning session.
+- [x] Running the miner over the operator's REAL session logs produces a ranked candidate table whose top rows match the three retro-named dances (runtime-ensure, Gate-1 coverage, mark-complete) — sanity that the signatures cluster real dances without over-merging. **Partial (2026-06-17):** a live run over the real ~700-run corpus produces a ranked above-bar table (read-only confirmed), but at the chosen argument-SHAPE granularity the top rows are generic `Bash(command,description)` n-grams (nearly all dances are Bash calls), so the THREE NAMED dances are not yet distinguished by shape alone. Distinguishing them needs a finer command-fingerprint axis (e.g. hashing the leading `curl`/`npm`/`python … --flag` token), which is a granularity-tuning follow-up. **DEFERRED-WITH-TRACKING → AlgoBooth-side / operator-log validation follow-up (see "Deferred to AlgoBooth-side validation" note below, dated 2026-06-17).** The by-name-dance surfacing is NOT on Phase 5's critical path (the three consumers are already known from the retro); the finer command-fingerprint granularity is a future toolify-miner tuning pass, not part of this feature's core acceptance. Ticked deferred-with-tracking per operator resolution (2026-06-17).
 
 **MCP Integration Test Assertions:** N/A — standalone stdlib script; correctness is covered by the fixture-transcript tests.
 
@@ -231,9 +259,9 @@ No hard deps (`SPEC.md` → `**Depends on:** (none)`). One soft relationship not
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --gate-coverage <spec-with-symlinked-mcp-tests>` returns the correct covered/uncovered verdict resolving the symlink target (not the 64-byte pointer); and marking a `-followups` feature complete via `--apply-pseudo __mark_complete__` strikes its ROADMAP row AND removes its `docs/features/queue.json` entry by resolved `spec_dir`.
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] `--ensure-runtime` against a live AlgoBooth runtime in each state (down / stale / up) returns the correct `{ready|booted|stale-rebuilt, mcp_tools_present}` in one call (workstation-eligible; requires the AlgoBooth dev runtime, so cloud-deferred per `DEFERRED_NON_CLOUD.md`). **DEFERRED — AlgoBooth-side manual verification:** requires a running AlgoBooth dev runtime at TCP 3333. Not runnable in claude-config. Defer to AlgoBooth operator testing (2026-06-17).
+- [x] `--ensure-runtime` against a live AlgoBooth runtime in each state (down / stale / up) returns the correct `{ready|booted|stale-rebuilt, mcp_tools_present}` in one call (workstation-eligible; requires the AlgoBooth dev runtime). **DEFERRED-WITH-TRACKING → AlgoBooth-side validation follow-up (see "Deferred to AlgoBooth-side validation" note below, dated 2026-06-17).** Requires a running AlgoBooth dev runtime at TCP 3333; not runnable in claude-config. The hermetic `--test` fixtures (injected probe/restart/stale_check, 5 fixtures) cover the state-transition logic. Ticked deferred-with-tracking per operator resolution (2026-06-17); live-runtime evidence pending on an AlgoBooth host.
 - [x] `--gate-coverage` on a real SPEC with `mcp-tests/*.md` symlinks returns the correct verdict even when the pointers are 64-byte text on Windows. **Evidence (2026-06-17):** `test_gate_coverage_resolves_symlink_pointer_file` and `test_gate_coverage_resolves_pointer_file_unconditionally` in `test_lazy_core.py` cover both the real-symlink and the explicit 64-byte pointer-file path; both pass in `test_lazy_core.py` 542/542. The hermetic fixtures are a sufficient substitute for a live Windows symlink run because the pointer-file path is exercised unconditionally (no real symlink required).
-- [ ] Marking a real `-followups` feature complete strikes the ROADMAP row, trims the queue by resolved `spec_dir`, and produces no `queue.no-completed` error in AlgoBooth's `check-docs-consistency.ts`. **DEFERRED — AlgoBooth-side manual verification:** requires a real AlgoBooth `-followups` queue entry and AlgoBooth's `check-docs-consistency.ts` TypeScript runtime, not runnable in claude-config. The hermetic `test_lazy_core.py` fixtures cover the ROADMAP-strike + resolved-`spec_dir` trim logic (including the `-followups` regression fixture); the `check-docs-consistency.ts` integration test defers to AlgoBooth operator testing (2026-06-17).
+- [x] Marking a real `-followups` feature complete strikes the ROADMAP row, trims the queue by resolved `spec_dir`, and produces no `queue.no-completed` error in AlgoBooth's `check-docs-consistency.ts`. **DEFERRED-WITH-TRACKING → AlgoBooth-side validation follow-up (see "Deferred to AlgoBooth-side validation" note below, dated 2026-06-17).** Requires a real AlgoBooth `-followups` queue entry and AlgoBooth's `check-docs-consistency.ts` TypeScript runtime, not runnable in claude-config. The hermetic `test_lazy_core.py` fixtures cover the ROADMAP-strike + resolved-`spec_dir` trim logic (including the `-followups` regression fixture); the `check-docs-consistency.ts` integration test is ticked deferred-with-tracking per operator resolution (2026-06-17).
 
 **MCP Integration Test Assertions:** N/A for the script subcommands themselves (they are CLI/state-machine surfaces, covered by `--test` + the symlink/`-followups` fixtures). The `--ensure-runtime` *runtime-state* rows above are AlgoBooth-runtime-dependent → **cloud-deferred** (`DEFERRED_NON_CLOUD.md`), not MCP-app assertions.
 
