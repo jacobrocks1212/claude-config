@@ -2,9 +2,11 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Draft
-<!-- Phases authored 2026-06-16. NOT Complete — the __mark_complete__ integrity gate owns the
-     Complete flip + COMPLETED.md receipt after the validation tail. -->
+**Status:** Complete
+<!-- All 4 phases implemented + validated 2026-06-16 (pytest 412 + hooks 69 + visualizer 65 +
+     parity 23 green; live-validated isolating a concurrent AlgoBooth run). NOT Complete on the
+     SPEC — the __mark_complete__ integrity gate owns the SPEC Complete flip + COMPLETED.md
+     receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (Python state-script + bash hooks). No Tauri app, no MCP-reachable surface; validation is `pytest` on `lazy_core.py` / `test_lazy_core.py`, the `test_hooks.py` bash-hook harness, `lazy-state.py --test` / `bug-state.py --test` smoke baselines, and `lint-skills.py`. This is the `standalone — no app integration` untestable class → `SKIP_MCP_TEST.md` at the MCP gate.
 
