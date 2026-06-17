@@ -1,10 +1,4 @@
 {
   "_note": "Ordering is hybrid: explicit queue order takes precedence; bug-state.py falls back to severity (P0->P1->P2->Low) then Discovered date for bugs absent from this list. These are harness (claude-config) defects investigated 2026-06-16; each SPEC is Status: Concluded, so bug-state.py routes them to /plan-bug.",
-  "queue": [
-    {
-      "id": "operator-checkpoint-resume-counter-reset",
-      "name": "Operator checkpoint-resume should reset cycle counters",
-      "severity": "P2"
-    }
-  ]
+  "queue": []
 }
