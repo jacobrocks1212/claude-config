@@ -18927,5 +18927,108 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# lazy-batch-unified-driver-parity-and-accounting Phase 3 (item 2) — WU-6.
+# ---------------------------------------------------------------------------
+#
+# lazy_parity_audit.audit_merged_view_dispatch_parity asserts BOTH the unified
+# driver (lazy-batch) AND its cloud mirror (lazy-batch-cloud) carry the merged-
+# view dispatch branch. WU-6 adds a (r"--archive-fixed", ...) predicate to
+# _MERGED_VIEW_PREDICATES so the audit ALSO asserts both drivers chain the
+# --archive-fixed follow-up for the bug __mark_fixed__ terminal — the SPEC
+# Coupling/parity requirement. A driver dropping the chain becomes a finding.
+
+
+def _write_merged_view_fixture(repo_root, lazy_batch_text, cloud_text):
+    """Seed a temp repo-root with the two driver SKILL.md files at the exact
+    repo-relative paths lazy_parity_audit._MERGED_VIEW_DRIVER_FILES expects."""
+    lb = repo_root / "user" / "skills" / "lazy-batch" / "SKILL.md"
+    cl = (repo_root / "repos" / "algobooth" / ".claude" / "skills"
+          / "lazy-batch-cloud" / "SKILL.md")
+    lb.parent.mkdir(parents=True, exist_ok=True)
+    cl.parent.mkdir(parents=True, exist_ok=True)
+    lb.write_text(lazy_batch_text, encoding="utf-8")
+    cl.write_text(cloud_text, encoding="utf-8")
+
+
+# A minimal driver-SKILL body satisfying every PRE-EXISTING merged-view predicate
+# (--next-merged, __mark_complete__, __mark_fixed__, bug-state.py, single-type) so
+# the ONLY variable under test is the --archive-fixed chain.
+_MV_BASE = (
+    "Unified driver: probe `lazy-state.py --next-merged`. feature → "
+    "`__mark_complete__`; bug → `bug-state.py` + `__mark_fixed__`. "
+    "single-type runs unchanged.\n"
+)
+
+
+def test_archive_fixed_predicate_present_in_audit():
+    """WU-6 (RED against the pre-WU-6 audit): _MERGED_VIEW_PREDICATES carries an
+    --archive-fixed predicate. Pre-fix the predicate is absent → this fails."""
+    _guard()
+    import lazy_parity_audit
+    patterns = [p for p, _ in lazy_parity_audit._MERGED_VIEW_PREDICATES]
+    assert r"--archive-fixed" in patterns, (
+        "the merged-view parity audit must assert the --archive-fixed chain; "
+        f"patterns={patterns!r}"
+    )
+
+
+def test_archive_fixed_chain_missing_produces_finding():
+    """WU-6: a driver MISSING the --archive-fixed chain produces a merged-view
+    finding naming it; both drivers WITH the chain produce zero archive findings."""
+    _guard()
+    import lazy_parity_audit
+
+    with_chain = _MV_BASE + "Then run `bug-state.py --archive-fixed {spec_path}`.\n"
+
+    # (1) Cloud driver MISSING the chain → a finding against lazy-batch-cloud.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write_merged_view_fixture(root, with_chain, _MV_BASE)  # cloud lacks chain
+        findings = lazy_parity_audit.audit_merged_view_dispatch_parity(root)
+        archive_findings = [f for f in findings if "archive" in f.lower()]
+        assert archive_findings, (
+            "a cloud driver missing the --archive-fixed chain must produce an "
+            f"archive finding; all findings={findings!r}"
+        )
+        assert any("lazy-batch-cloud" in f for f in archive_findings), (
+            f"the finding must name lazy-batch-cloud; got {archive_findings!r}"
+        )
+
+    # (2) BOTH drivers carry the chain → zero archive findings.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write_merged_view_fixture(root, with_chain, with_chain)
+        findings = lazy_parity_audit.audit_merged_view_dispatch_parity(root)
+        archive_findings = [f for f in findings if "archive" in f.lower()]
+        assert not archive_findings, (
+            f"both drivers carry the chain — no archive finding expected; got "
+            f"{archive_findings!r}"
+        )
+
+
+def test_archive_fixed_real_drivers_pass_audit():
+    """WU-6 integration: the REAL lazy-batch + lazy-batch-cloud SKILLs (post-WU-5)
+    both carry the --archive-fixed chain — the full merged-view audit is clean."""
+    _guard()
+    import lazy_parity_audit
+    repo_root = _SCRIPTS_DIR.parent.parent  # user/scripts → repo root
+    findings = lazy_parity_audit.audit_merged_view_dispatch_parity(repo_root)
+    assert findings == [], (
+        f"the real drivers must pass the merged-view parity audit (incl. "
+        f"--archive-fixed); findings={findings!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_archive_fixed_predicate_present_in_audit",
+     test_archive_fixed_predicate_present_in_audit),
+    ("test_archive_fixed_chain_missing_produces_finding",
+     test_archive_fixed_chain_missing_produces_finding),
+    ("test_archive_fixed_real_drivers_pass_audit",
+     test_archive_fixed_real_drivers_pass_audit),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

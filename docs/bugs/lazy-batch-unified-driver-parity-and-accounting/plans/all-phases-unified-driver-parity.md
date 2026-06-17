@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-batch-unified-driver-parity-and-accounting
-status: In-progress
+status: Complete
 created: 2026-06-17
 complexity: complex
 phases: [1, 2, 3]
@@ -109,7 +109,7 @@ All three phases are independent (no cross-phase dependency edges). They are exe
 - [x] WU-3 — Item 3: `_load_bug_queue_for_merged` bare-except → `_diag` breadcrumb + breadcrumb test
 - [x] WU-4 — Item 3: unified-driver-loop fallthrough prose mirrored across `/lazy-batch` ↔ `/lazy-batch-cloud` (option b)
 - [x] WU-5 — Item 2: `__mark_fixed__` block (incl. `--archive-fixed` chain) added to `/lazy-batch` + `/lazy-batch-cloud` Step 1c.5
-- [ ] WU-6 — Item 2: `--archive-fixed` parity predicate in `lazy_parity_audit.py` + parity-predicate test
+- [x] WU-6 — Item 2: `--archive-fixed` parity predicate in `lazy_parity_audit.py` + parity-predicate test
 
 ---
 

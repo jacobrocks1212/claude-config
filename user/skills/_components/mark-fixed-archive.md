@@ -120,12 +120,17 @@ hand-unwind anything — the next `--archive-fixed` call resumes from where it s
 
 ### Coupling note
 
-Consumed by `__mark_fixed__` in the bug-pipeline skills:
+Consumed by `__mark_fixed__` in the bug-pipeline skills AND the unified driver
+(`/lazy-batch` drives BOTH pipelines via the merged view, so its `type == bug`
+terminal chains `--archive-fixed` exactly as the bug-batch does —
+lazy-batch-unified-driver-parity-and-accounting Phase 3):
 - `user/skills/lazy-bug/SKILL.md` Step 3 `__mark_fixed__`
 - `user/skills/lazy-bug-batch/SKILL.md` Step 1c.5 `__mark_fixed__`
+- `user/skills/lazy-batch/SKILL.md` Step 1c.5 `__mark_fixed__` (unified driver)
+- `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` Step 1c.5 `__mark_fixed__` (cloud mirror)
 
 When editing this component, run:
 ```bash
 grep -rn "mark-fixed-archive.md" ~/.claude/skills/ ~/.claude/skills/_components/ --include="*.md"
 ```
-to confirm the blast radius matches the two files above.
+to confirm the blast radius matches the four files above.

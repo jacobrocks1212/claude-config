@@ -368,6 +368,12 @@ _MERGED_VIEW_PREDICATES: tuple[tuple[str, str], ...] = (
     (r"bug-state\.py", "bug-state.py dispatch target"),
     # (e) the single-type no-regression guarantee is asserted.
     (r"[Ss]ingle-type\b", "single-type no-regression guarantee"),
+    # (f) the bug __mark_fixed__ terminal chains the --archive-fixed follow-up
+    #     (lazy-batch-unified-driver-parity-and-accounting Phase 3, item 2): the
+    #     unified driver AND its cloud mirror must archive + de-queue a fixed bug
+    #     exactly as /lazy-bug-batch does.  A driver dropping the chain is the
+    #     SPEC Coupling/parity drift this predicate guards against.
+    (r"--archive-fixed", "bug archive --archive-fixed chain"),
 )
 
 
