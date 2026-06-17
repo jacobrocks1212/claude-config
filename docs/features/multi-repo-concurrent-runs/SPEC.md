@@ -2,7 +2,7 @@
 
 > Make the lazy run-marker and its enforcement hooks per-repo, so a lazy-batch run in one repo neither blocks nor is blocked by a run in another repo.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-06-16
 

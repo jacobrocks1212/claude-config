@@ -1,12 +1,6 @@
 {
   "queue": [
     {
-      "id": "multi-repo-concurrent-runs",
-      "name": "Multi-Repo Concurrent Runs",
-      "spec_dir": "multi-repo-concurrent-runs",
-      "tier": 1
-    },
-    {
       "id": "unified-pipeline-orchestrator",
       "name": "Unified Pipeline Orchestrator + Toolification Framework",
       "spec_dir": "unified-pipeline-orchestrator",
