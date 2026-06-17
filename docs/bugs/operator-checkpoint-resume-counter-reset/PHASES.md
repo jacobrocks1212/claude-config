@@ -59,16 +59,16 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 **Scope:** The consumer half — the actual behavior change. In `restore_checkpoint_counters`, skip the counter carry-forward when the checkpoint was operator-authorized, leaving the marker's by-design `0/0` fresh-budget start. Keep the current carry-forward behavior when the field is falsy/absent (automatic reliability pause; also preserves pre-fix-file backward compatibility).
 
 **Deliverables:**
-- [ ] `lazy_core.restore_checkpoint_counters` (`:8427`): after confirming a usable `counters` dict + active marker, read `checkpoint.get("operator_authorized")`. When **truthy** → return without overwriting `forward_cycles`/`meta_cycles` (the marker keeps its just-written `0/0`); the resume is a fresh authorized budget. When **falsy/absent** → existing behavior (overwrite from `counters`, reset `last_advance_consume_count` to 0).
-- [ ] Update the helper's docstring to document the two-branch semantics (operator-authorized → fresh budget; automatic pause → monotonic carry-forward), superseding the current "ALWAYS carry forward" prose.
-- [ ] `lazy-state.py` `--run-start` consume site (`:6210-6226`): inline comment update so the carry-forward block notes it now only fires for non-authorized resumes (no logic change here — the branch lives in the helper per the placement decision).
-- [ ] Tests — `lazy-state.py --test` + `test_lazy_core.py` fixtures:
+- [x] `lazy_core.restore_checkpoint_counters` (`:8427`): after confirming a usable `counters` dict + active marker, read `checkpoint.get("operator_authorized")`. When **truthy** → return without overwriting `forward_cycles`/`meta_cycles` (the marker keeps its just-written `0/0`); the resume is a fresh authorized budget. When **falsy/absent** → existing behavior (overwrite from `counters`, reset `last_advance_consume_count` to 0).
+- [x] Update the helper's docstring to document the two-branch semantics (operator-authorized → fresh budget; automatic pause → monotonic carry-forward), superseding the current "ALWAYS carry forward" prose.
+- [x] `lazy-state.py` `--run-start` consume site (`:6210-6226`): inline comment update so the carry-forward block notes it now only fires for non-authorized resumes (no logic change here — the branch lives in the helper per the placement decision).
+- [x] Tests — `test_lazy_core.py` fixtures (unit + subprocess e2e):
   - operator-authorized checkpoint → `--run-start` resume resets to `forward_cycles=0`, `meta_cycles=0`.
   - non-authorized checkpoint → `--run-start` resume restores the paused counts (the existing monotonic-carry fixture stays green).
   - pre-fix checkpoint file (no `operator_authorized` field) → restores (backward-compat).
-- [ ] Regenerate the byte-pinned baseline `tests/baselines/lazy-state-test-baseline.txt` ONLY if a new fixture changes `--test` output, via the `_normalize_smoke_output` helper (never by hand).
+- [x] No `lazy-state.py --test` in-file fixture added → baseline `tests/baselines/lazy-state-test-baseline.txt` unchanged (coverage lives in `test_lazy_core.py`). Confirmed `lazy-state.py --test` stays green.
 
-**Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test` passes a new fixture asserting that after a `--run-end --reason checkpoint --operator-authorized` followed by `--run-start`, the marker / echoed output shows `forward_cycles: 0` and `meta_cycles: 0`; the non-authorized fixture still shows the carried counts.
+**Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` passes `test_operator_authorized_checkpoint_resume_resets_e2e` (after `--run-end --reason checkpoint --operator-authorized` + `--run-start`, marker shows `forward_cycles: 0` / `meta_cycles: 0`); the non-authorized `test_checkpoint_resume_preserves_counters_e2e` still shows the carried counts.
 
 **Prerequisites:**
 - Phase 1: the `operator_authorized` field must be persisted in the checkpoint payload for the restore branch to read.
@@ -84,6 +84,13 @@ The discriminator (`args.operator_authorized` at checkpoint-write time) already 
 **Integration Notes for Next Phase:**
 - The branch lives ENTIRELY in `lazy_core.restore_checkpoint_counters` — `bug-state.py` inherits it for free by importing `lazy_core`. Phase 3 only needs to confirm `bug-state.py --test` stays green; no `bug-state.py` source edit is expected.
 - "Truthy" check (`if checkpoint.get("operator_authorized"):`) makes both `False` and a missing field take the carry-forward path uniformly.
+
+**Implementation Notes (2026-06-17):**
+- Added the provenance branch in `lazy_core.restore_checkpoint_counters`: after confirming usable `counters` + active marker, `if checkpoint.get("operator_authorized"): return None` (no-op → marker keeps its just-written `0/0`). Falsy/absent falls through to the unchanged carry-forward path.
+- Rewrote the helper docstring to the two-class semantics (operator-authorized → fresh budget; automatic/legacy → monotonic carry-forward), superseding the "ALWAYS carry forward" prose. Noted the authorized resume is a NEW authorized run, not a within-run reset (no HARD CONSTRAINT 8 violation).
+- Updated the `lazy-state.py` `--run-start` consume-site comment (comment-only; the branch lives in the helper).
+- Tests (test-first, RED confirmed before impl): `test_restore_checkpoint_counters_operator_authorized_resets` + `test_restore_checkpoint_counters_legacy_file_carries_forward` (unit) + `test_operator_authorized_checkpoint_resume_resets_e2e` (subprocess). The non-authorized `test_checkpoint_resume_preserves_counters_e2e` regression guard stays GREEN.
+- Files modified: `user/scripts/lazy_core.py`, `user/scripts/lazy-state.py`, `user/scripts/test_lazy_core.py`. No baseline regenerated (no in-file `--test` fixture added).
 
 ---
 

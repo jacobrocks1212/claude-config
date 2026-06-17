@@ -8447,9 +8447,25 @@ def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
     monotonic for the LIFE of a run and never reset on a within-run transition).
     This is the operator-observed reset.
 
-    Intended semantics (resume-continues-counts): a checkpoint resume is the SAME
-    logical run continuing after a sanctioned pause, so the resumed marker must
-    CARRY FORWARD the paused counts. This helper reads the just-written marker,
+    Two resume classes (operator-checkpoint-resume-counter-reset, 2026-06-17):
+    a checkpoint carries an ``operator_authorized`` flag recorded at write time.
+
+    * **operator-authorized** (``operator_authorized`` truthy) — a DELIBERATE
+      ``/lazy-batch <N>`` re-invoke after an operator-authorized stop. The operator
+      wants a FRESH authorized budget, so this helper does NOT carry the paused
+      counts forward: it returns ``None`` (a no-op), leaving the just-written
+      marker's by-design ``0/0`` start. This is NOT a within-run reset (no HARD
+      CONSTRAINT 8 violation) — it is a NEW authorized run that happens to resume
+      a route, not a within-run transition.
+    * **automatic reliability pause / legacy** (``operator_authorized`` falsy or
+      ABSENT) — an automatic mid-run pause (e.g. cloud ≥2 guard denials) or a
+      pre-fix checkpoint file. The resumed marker must CARRY FORWARD the paused
+      counts so the running total never goes backward mid-run and an auto-resume
+      cannot silently exceed the authorized ``max_cycles`` (HARD CONSTRAINT 8).
+      A truthy-check (``if checkpoint.get("operator_authorized"):``) makes both
+      ``False`` and a missing field take this carry-forward path uniformly.
+
+    For the carry-forward class, this helper reads the just-written marker,
     overwrites ``forward_cycles`` / ``meta_cycles`` from the checkpoint's
     ``counters`` block, and resets ``last_advance_consume_count`` to 0.
 
@@ -8473,7 +8489,8 @@ def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
 
     Returns:
         The updated marker dict when counters were restored; None when there was
-        no checkpoint, no active marker, or no usable counters (no-op).
+        no checkpoint, no active marker, no usable counters, OR the checkpoint was
+        operator-authorized (fresh-budget resume — intentional no-op).
     """
     if not isinstance(checkpoint, dict):
         return None
@@ -8482,6 +8499,13 @@ def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
         return None
     marker = read_run_marker()
     if marker is None:
+        return None
+    # operator-checkpoint-resume-counter-reset (2026-06-17): an operator-authorized
+    # checkpoint is a deliberate stop whose resume wants a FRESH 0/0 budget — skip
+    # the carry-forward so the just-written marker keeps its by-design start. A
+    # truthy-check makes False AND a missing field (pre-fix files / automatic
+    # reliability pauses) fall through to the carry-forward path below.
+    if checkpoint.get("operator_authorized"):
         return None
 
     def _coerce(value: object) -> int:

@@ -9837,6 +9837,74 @@ def test_restore_checkpoint_counters_no_checkpoint_is_noop():
             _clear_state_dir()
 
 
+def test_restore_checkpoint_counters_operator_authorized_resets():
+    """operator-checkpoint-resume-counter-reset Phase 2: an operator-authorized
+    checkpoint resume starts a FRESH budget — restore_checkpoint_counters must NOT
+    overwrite the just-written 0/0 marker.  The deliberate /lazy-batch <N> re-invoke
+    wants a fresh authorized budget, not the paused counts."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Fresh run-start zeros the marker.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            # An operator-authorized checkpoint carrying live paused counts.
+            checkpoint = {
+                "reason": "checkpoint",
+                "next_route": "execute-plan Phase 3",
+                "counters": {"forward_cycles": 7, "meta_cycles": 4, "max_cycles": 25},
+                "operator_authorized": True,
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(checkpoint)
+            # Returns None — no overwrite occurred (marker keeps its 0/0 start).
+            assert restored is None, (
+                "operator-authorized resume must NOT carry counters forward"
+            )
+            on_disk = lazy_core.read_run_marker()
+            assert on_disk["forward_cycles"] == 0, on_disk
+            assert on_disk["meta_cycles"] == 0, on_disk
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_checkpoint_counters_legacy_file_carries_forward():
+    """A pre-fix checkpoint file (no operator_authorized field) takes the
+    carry-forward path — backward compatibility.  Same as a falsy field."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            # Legacy checkpoint — NO operator_authorized field at all.
+            legacy = {
+                "reason": "checkpoint",
+                "next_route": "execute-plan Phase 3",
+                "counters": {"forward_cycles": 6, "meta_cycles": 2, "max_cycles": 25},
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(legacy)
+            assert restored is not None, "legacy file must carry forward"
+            assert restored["forward_cycles"] == 6, restored
+            assert restored["meta_cycles"] == 2, restored
+
+            # An explicit operator_authorized: False is identical (carry-forward).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            explicit_false = dict(legacy, operator_authorized=False)
+            restored2 = lazy_core.restore_checkpoint_counters(explicit_false)
+            assert restored2 is not None
+            assert restored2["forward_cycles"] == 6, restored2
+            assert restored2["meta_cycles"] == 2, restored2
+        finally:
+            _clear_state_dir()
+
+
 def test_restore_checkpoint_counters_coerces_garbage_counts():
     """Malformed counter values in the checkpoint (None / strings / negatives)
     coerce to non-negative ints rather than crashing run-start."""
@@ -9950,6 +10018,54 @@ def test_checkpoint_resume_preserves_counters_e2e():
         assert resumed_marker["meta_cycles"] == 3, resumed_marker
         # Watermark resets to 0 (registry was cleared) so the next dispatch advances.
         assert resumed_marker["last_advance_consume_count"] == 0, resumed_marker
+
+
+def test_operator_authorized_checkpoint_resume_resets_e2e():
+    """operator-checkpoint-resume-counter-reset Phase 2 end-to-end: a checkpoint
+    run-end with --operator-authorized at fwd=N/meta=M, followed by a resuming
+    --run-start, must show fwd=0/meta=0 — a FRESH authorized budget, NOT the
+    paused counts.  Contrast with test_checkpoint_resume_preserves_counters_e2e
+    (the non-authorized path, which carries forward and stays green)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "auth-resume-state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        assert run(["--run-start", "--max-cycles", "25", "--unattended"]).returncode == 0
+        # Seed live counts on the marker (simulating several cycles of progress).
+        marker_path = state_dir / "lazy-run-marker.json"
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker["forward_cycles"] = 8
+        marker["meta_cycles"] = 5
+        marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+
+        # Operator-authorized checkpoint pause (deliberate stop, fresh budget intended).
+        r = run(["--run-end", "--reason", "checkpoint",
+                 "--next-route", "execute-plan Phase 4", "--operator-authorized"])
+        assert r.returncode == 0, f"{r.stdout}{r.stderr}"
+        ckpt = json.loads((state_dir / "lazy-run-checkpoint.json").read_text(encoding="utf-8"))
+        assert ckpt["operator_authorized"] is True, ckpt
+        assert ckpt["counters"]["forward_cycles"] == 8, ckpt
+
+        # Resume: --run-start must RESET to 0/0 (fresh authorized budget).
+        r2 = run(["--run-start", "--max-cycles", "25", "--unattended"])
+        assert r2.returncode == 0
+        out2 = json.loads(r2.stdout)
+        # The checkpoint is still echoed as resume context...
+        assert "resumed_from_checkpoint" in out2, out2
+        # ...but the counters are NOT carried forward.
+        resumed_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert resumed_marker["forward_cycles"] == 0, resumed_marker
+        assert resumed_marker["meta_cycles"] == 0, resumed_marker
 
 
 def test_normalize_widened_equivalence_pairs():
@@ -14382,8 +14498,12 @@ _TESTS = [
     ("test_restore_checkpoint_counters_carries_forward", test_restore_checkpoint_counters_carries_forward),
     ("test_restore_checkpoint_counters_no_checkpoint_is_noop", test_restore_checkpoint_counters_no_checkpoint_is_noop),
     ("test_restore_checkpoint_counters_coerces_garbage_counts", test_restore_checkpoint_counters_coerces_garbage_counts),
+    # operator-checkpoint-resume-counter-reset Phase 2: provenance branch
+    ("test_restore_checkpoint_counters_operator_authorized_resets", test_restore_checkpoint_counters_operator_authorized_resets),
+    ("test_restore_checkpoint_counters_legacy_file_carries_forward", test_restore_checkpoint_counters_legacy_file_carries_forward),
     ("test_marker_advance_round_trips_counters_under_rmw", test_marker_advance_round_trips_counters_under_rmw),
     ("test_checkpoint_resume_preserves_counters_e2e", test_checkpoint_resume_preserves_counters_e2e),
+    ("test_operator_authorized_checkpoint_resume_resets_e2e", test_operator_authorized_checkpoint_resume_resets_e2e),
     ("test_normalize_widened_equivalence_pairs", test_normalize_widened_equivalence_pairs),
     ("test_single_slot_dispatch_templates", test_single_slot_dispatch_templates),
     ("test_emit_dispatch_cycle_header_marker_gated", test_emit_dispatch_cycle_header_marker_gated),

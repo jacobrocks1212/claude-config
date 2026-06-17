@@ -6217,6 +6217,15 @@ def main() -> int:
             # run). restore_checkpoint_counters re-applies the paused counts to the
             # marker; reflect them in the echoed --run-start output so the
             # orchestrator's banner/headers show the continued totals, not 0/0.
+            #
+            # operator-checkpoint-resume-counter-reset (2026-06-17): the carry-forward
+            # now fires ONLY for NON-operator-authorized resumes (automatic
+            # reliability pauses + pre-fix checkpoint files). An operator-authorized
+            # checkpoint is a deliberate /lazy-batch <N> re-invoke wanting a FRESH
+            # 0/0 budget — restore_checkpoint_counters returns None for it (no-op),
+            # so the marker keeps its just-written 0/0 and these lines are skipped.
+            # The branch lives ENTIRELY in the helper (one decision site, shared
+            # with bug-state.py); no logic change here.
             restored = lazy_core.restore_checkpoint_counters(checkpoint)
             if restored is not None:
                 out["forward_cycles"] = restored.get("forward_cycles")
