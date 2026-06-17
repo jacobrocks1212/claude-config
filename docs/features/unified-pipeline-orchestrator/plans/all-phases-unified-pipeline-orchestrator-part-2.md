@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: unified-pipeline-orchestrator
-status: Ready
+status: Complete
 created: 2026-06-17
 phases: [2]
 complexity: complex
@@ -97,9 +97,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Rewire `/lazy-batch` cycle loop to the merged view + State Machine Summary
-- [ ] WU-2 — Mirror into `/lazy-batch-cloud` + converge `/lazy-bug-batch` cross-reference
-- [ ] WU-3 — Extend `lazy_parity_audit.py` with merged-view dispatch-consistency assertion + no-regression guard
+- [x] WU-1 — Rewire `/lazy-batch` cycle loop to the merged view + State Machine Summary
+- [x] WU-2 — Mirror into `/lazy-batch-cloud` + converge `/lazy-bug-batch` cross-reference
+- [x] WU-3 — Extend `lazy_parity_audit.py` with merged-view dispatch-consistency assertion + no-regression guard
 
 ## Phase: unified-pipeline-orchestrator P2 — Unified batch skill (single driver, two state scripts)
 

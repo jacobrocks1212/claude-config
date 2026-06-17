@@ -254,6 +254,40 @@ Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if absent). See Step 0.45.
 - `park_mode = <parsed>` — `true` if `--park` was present, `false` otherwise. When `false`, all halt behavior is byte-for-byte the existing one.
 
+> **Unified driver — merged-view dispatch (single driver, two state scripts; unified-pipeline-orchestrator Phase 2).**
+> `/lazy-batch-cloud` is the cloud mirror of the unified `/lazy-batch` driver — it drives BOTH the feature
+> and bug pipelines. Each cycle it probes the merged work-list head with
+> `python3 ~/.claude/scripts/lazy-state.py --cloud --next-merged --repo-root {cwd}` (Phase-1 surface —
+> read-only ORDERING ONLY; it never re-infers per-item state) to learn the next actionable item's
+> `{item_id, type, repo_root}`, then **type-dispatches the rest of the cycle to the matching state
+> script**:
+>
+> - **`type == "feature"`** → drive this cycle with `lazy-state.py --cloud` exactly as Steps 1a–1e
+>   describe; the type-correct terminal action is `__mark_complete__` (writes `COMPLETED.md`; in cloud,
+>   reachable only once a workstation produced `VALIDATED.md` — otherwise Step 9 defers via
+>   `__write_deferred_non_cloud__`).
+> - **`type == "bug"`** → drive this cycle with `bug-state.py --cloud` (same JSON contract, `docs/bugs/`,
+>   `--bug-id` scoping); the type-correct terminal action is `__mark_fixed__` (writes `FIXED.md`).
+>
+> The merged view normalizes the two queues' divergent ordering fields (feature `tier` / bug `severity`)
+> onto one effective-priority scale and breaks ties bug-before-feature — that ordering lives ENTIRELY in
+> `lazy_core.merged_priority` (Phase 1), NOT in this prose: the driver only CONSUMES the merged head, it
+> never re-implements ordering. Both state machines and all gates run UNCHANGED — this skill carries NO
+> new state-machine logic; the merged probe is the only addition. **This is a coupled-pair mirror of
+> `/lazy-batch`'s merged-view dispatch shape; `--cloud` (already carried on every state-script call) is
+> the only delta — the merged-view branch itself is NOT a cloud divergence.**
+>
+> **No-regression (single-type runs are unchanged).** When only ONE queue is populated, the merged head
+> is simply that queue's head, so the cycle sequence is byte-for-byte identical to the pre-unification
+> per-type batch (a features-only queue runs exactly as `/lazy-batch-cloud` always did, terminal
+> `__mark_complete__`; a bugs-only queue runs exactly as the standalone bug loop, terminal
+> `__mark_fixed__`). Asserted by `lazy_parity_audit.py --merged-view` + a single-type fixture.
+>
+> Steps 1a–1e below are written against `lazy-state.py --cloud` (the feature path). For a `type == "bug"`
+> cycle, substitute `bug-state.py --cloud` for `lazy-state.py --cloud` and `__mark_fixed__` for
+> `__mark_complete__` throughout the cycle body; the dispatch SHAPE is otherwise identical. See the
+> **Differences from `/lazy-batch`** table for the merged-view-dispatch row.
+
 ### 1a. Run lazy-state.py --cloud
 
 **Check for inject-hook banner FIRST.** If the current turn's context contains a `LAZY-ROUTE (hook-injected, turn N):` banner (written by `lazy-route-inject.sh`), the inject hook already ran the probe and routed the turn. The banner is a single `additionalContext` string with the structure:
@@ -854,6 +888,7 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | Aspect | `/lazy-batch` | `/lazy-batch-cloud` |
 |--------|---------------|---------------------|
 | State script invocation | `python3 ~/.claude/scripts/lazy-state.py [--skip-needs-research]` | `python3 ~/.claude/scripts/lazy-state.py --cloud [--skip-needs-research]` |
+| Merged-view dispatch (unified-pipeline-orchestrator Phase 2) | **MIRRORED** — unified driver: each cycle probes the merged head (`lazy-state.py --next-merged`), type-dispatches feature → `lazy-state.py` + `__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`; ordering is `lazy_core.merged_priority`-owned; single-type runs unchanged (no-regression). State Machine Summary table documents the per-type dispatch. | **same merged-view shape**, `--cloud` carried on every state-script call (`lazy-state.py --cloud --next-merged`; bug cycles drive `bug-state.py --cloud`). The merged-view branch itself is NOT a cloud divergence — only `--cloud` differs. Cloud's normal feature terminal stays the deferral chain (`__write_deferred_non_cloud__` at Step 9 until a workstation produces `VALIDATED.md`); the bug terminal `__mark_fixed__` is reachable in cloud (bug validation is docs-only). |
 | `cloud-queue-exhausted` terminal | defensive (unreachable in practice) | normal halt when remaining features await workstation MCP testing |
 | `__write_deferred_non_cloud__` pseudo-skill | not emitted by state script | normal Step 9 action — handled INLINE in Step 1c.5, no subagent dispatch |
 | `__write_validated_from_results__` pseudo-skill | normal Step 9 action — inline | not emitted (cloud cannot produce MCP results) |
@@ -889,6 +924,22 @@ HARD CONSTRAINT 7 (no active waiting) still holds: the halt is clean, the resume
 | `export LAZY_ORCHESTRATOR=1` at Step 0.55 (C3 self-immunity signal — cycle-subagent-runs-orchestrator-work P1) | **MIRRORED (shared)** — both orchestrators export `LAZY_ORCHESTRATOR=1` for the session immediately before `--run-start`, so `refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent` (lazy_core priority 1) grant the orchestrator structural immunity to its own live cycle marker, and the var's ABSENCE marks a subagent. NOT a divergence. | same export, identical placement and rationale. |
 
 All other behavior is identical — coupling is enforced by the state script (one source of truth), not by duplicated prose between the two orchestrators. Step 1c.5 (inline pseudo-skill handling) is shared shape; only the set of pseudo-skills emitted by the state script differs. Step 1f, Step 1g, Step 1h, and Step 1i are also shared shape; both orchestrators reach them via the same state-script terminal reasons. The blocked / needs-input / completion-unverified / needs-spec-input / stale_upstream handling is now the SAME in both (docs-only resolution modes); the only legitimate cloud divergences are the Tauri/MCP deferral, `DEFERRED_NON_CLOUD.md` + `__write_deferred_non_cloud__`, the 3-gate `__mark_complete__`, `__flip_plan_complete_cloud_saturated__`, cloud reclaim recovery (Steps 0.4 / 0.6, guardrails B/C, HARD CONSTRAINT 10), and per-batch/per-WU immediate pushes.
+
+---
+
+## State Machine Summary
+
+`/lazy-batch-cloud` is the cloud mirror of the unified driver for the feature AND bug pipelines (unified-pipeline-orchestrator Phase 2). Each cycle probes the merged head (`lazy-state.py --cloud --next-merged`) and type-dispatches:
+
+| Merged-head `type` | Cycle state script | Per-item lifecycle source | Terminal pseudo-skill | Completion receipt |
+|--------------------|--------------------|---------------------------|-----------------------|--------------------|
+| `feature` | `lazy-state.py --cloud` | `docs/features/` | `__write_deferred_non_cloud__` at Step 9 (defers MCP); `__mark_complete__` (`COMPLETED.md`) only once a workstation produced `VALIDATED.md` | `COMPLETED.md` |
+| `bug` | `bug-state.py --cloud` | `docs/bugs/` (`--bug-id` scoping) | `__mark_fixed__` (bug validation is docs-only — reachable in cloud) | `FIXED.md` |
+
+- **Ordering is script-owned** (`lazy_core.merged_priority`; equal priority → bug before feature). This skill consumes the head only — it never re-implements ordering.
+- **No new state-machine logic in the skill.** Both state machines + gates run unchanged; the merged probe is the sole addition. `--cloud` is the only delta from `/lazy-batch` — the merged-view branch itself is NOT a cloud divergence.
+- **No-regression.** A single-type queue drives the same cycle sequence as the pre-unification per-type batch. Asserted by `lazy_parity_audit.py --merged-view` + a single-type fixture.
+- **Coupled pair.** Mirrors `/lazy-batch`'s State Machine Summary; see the **Differences from `/lazy-batch`** table for the merged-view-dispatch row and CLAUDE.md → Coupled Skill Pairs.
 
 ---
 

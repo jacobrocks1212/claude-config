@@ -891,6 +891,21 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
 
 ---
 
+## State Machine Summary
+
+`/lazy-bug-batch` drives the bug pipeline single-type (over `docs/bugs/` alone). The unified `/lazy-batch` driver (unified-pipeline-orchestrator Phase 2) supersedes it for **mixed** runs that drain both queues; `/lazy-bug-batch` remains for **bug-only** runs (byte-for-byte equivalent to the unified driver over a bugs-only queue — the no-regression guarantee).
+
+| Driver | Merged-head `type` | Cycle state script | Per-item lifecycle source | Terminal pseudo-skill | Completion receipt |
+|--------|--------------------|--------------------|---------------------------|-----------------------|--------------------|
+| `/lazy-bug-batch` (this skill, bug-only) | `bug` | `bug-state.py` | `docs/bugs/` (`--bug-id` scoping) | `__mark_fixed__` | `FIXED.md` |
+| `/lazy-batch` (unified, mixed runs) | `feature` \| `bug` | `lazy-state.py` \| `bug-state.py` | `docs/features/` \| `docs/bugs/` | `__mark_complete__` \| `__mark_fixed__` | `COMPLETED.md` \| `FIXED.md` |
+
+- **When to use which.** Mixed feature+bug pass → `/lazy-batch` (probes the merged head, type-dispatches per cycle). Bug pipeline only → `/lazy-bug-batch`. See `user/skills/lazy-batch/SKILL.md` → State Machine Summary for the unified driver's full per-type dispatch.
+- **Ordering is script-owned** (`lazy_core.merged_priority` in the unified driver; this skill orders `docs/bugs/` by `bug-state.py`'s own severity+date rule). Neither skill re-implements ordering in prose.
+- **Coupled pair.** Changes to the unified driver's shared algorithm mirror here unless bug-pipeline-scoped (Differences table above).
+
+---
+
 ## Notes
 
 - This skill never invokes the work-log MCP tool. Each sub-skill invoked by the cycle subagents logs its own work.
@@ -898,6 +913,7 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
 - Commit policy is delegated to the cycle subagent (which follows `.claude/skill-config/commit-policy.md` or the standard pattern).
 - **No research/ingest steps.** Unlike `/lazy-batch`, this skill has no Step 0.5 pre-loop ingest check, no `needs-research` halt path, no `--allow-research-skip` flag, and no in-session resume protocol for research uploads. Bugs do not undergo Gemini deep research.
 - **Coupling rule:** changes to `/lazy-batch`'s shared algorithm (hard constraints, cycle loop shape, resolution modes, pseudo-skill post-actions, cycle output discipline) must be mirrored here unless bug-pipeline-scoped per the differences table above.
+- **Unified driver supersession (unified-pipeline-orchestrator Phase 2).** As of Phase 2, `/lazy-batch` is the **unified driver** for BOTH pipelines: it probes the merged feature+bug work-list head (`lazy-state.py --next-merged`) and type-dispatches each cycle to `lazy-state.py` (feature → `__mark_complete__`) or `bug-state.py` (bug → `__mark_fixed__`). For a **mixed run** that should drain both queues in one priority-ordered pass, prefer `/lazy-batch` (or `/lazy-batch-cloud`) — it picks up `docs/bugs/queue.json` items via the same merged loop, so a standalone bug loop is NOT needed there. `/lazy-bug-batch` is **retained and NOT deprecated**: it remains the driver for a **single-type bug-only run** (a focused pass over `docs/bugs/` alone). The two are byte-for-byte equivalent for a bugs-only queue (the merged head over a single populated queue IS that queue's head — the no-regression guarantee). Use `/lazy-bug-batch` when you specifically want the bug pipeline only; use `/lazy-batch` when you want both queues drained together. See `user/skills/lazy-batch/SKILL.md` → **State Machine Summary** for the per-type dispatch table.
 - **Hook machinery (Phase 5 — turn-routing-enforcement).** `--run-start` (Step 0.55, uses `bug-state.py`) activates the inject + validate-deny hooks scoped to the run. `--run-end` (every terminal path, §1c.6) deletes the marker + registry. The hardening dispatch (`--emit-dispatch hardening`) is the self-repair signal — depth hard-capped at 1. All non-cycle dispatch classes are emitted via `--emit-dispatch <class>` and dispatched VERBATIM.
 - **Cycle-containment machinery (lazy-cycle-containment — C1/C2/C3).** EVERY `Agent` dispatch (real cycle §1d + every meta-dispatch) is bracketed: `bug-state.py --cycle-begin --bug-id <id> --nonce <hex> [--kind real|meta]` IMMEDIATELY before, `bug-state.py --cycle-end` IMMEDIATELY after on EVERY return path (success / halt / error). The begin writes the cycle-subagent marker (`~/.claude/state/lazy-cycle-active.json`; `--bug-id` maps to the marker's `feature_id`); while it is present the C2 PreToolUse hook (`lazy-cycle-containment.sh`) DENIES in-flight the ops a runaway needs (next-route probe/emit, run-lifecycle, 2nd-feature commit, recursive `Agent`) and the C3 state-script refusals reject `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`--emit-dispatch` (exit 3, zero side effects). The orchestrator clears the marker before its own next ops, so the refusal bites ONLY a subagent calling them mid-dispatch. Identical across the coupled trio (the bug orchestrator brackets with `bug-state.py`; cloud passes `--cloud` to `lazy-state.py`).
 

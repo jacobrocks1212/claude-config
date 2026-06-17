@@ -333,6 +333,83 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Merged-view dispatch parity (unified-pipeline-orchestrator Phase 2)
+# ---------------------------------------------------------------------------
+
+# Phase 2 makes /lazy-batch the shared driver looping over the Phase-1 merged
+# view (`lazy-state.py --next-merged`), type-dispatching each cycle to
+# lazy-state.py (feature → __mark_complete__) or bug-state.py (bug →
+# __mark_fixed__).  The merged-view dispatch branch must be present + consistent
+# across the workstation driver AND its cloud mirror (coupled-pair rule), it must
+# document type-correct terminals, and it must preserve single-type behavior
+# (the no-regression guarantee).  This is a docs-consistency check over the
+# SKILL.md prose — it never re-implements ordering (lazy_core.merged_priority is
+# the single source of "bugs break ties") and never runs a pipeline.
+
+# The unified-driver pair: (name, repo-relative SKILL.md path).  Both the
+# workstation canonical driver and its cloud mirror carry the merged-view branch.
+_MERGED_VIEW_DRIVER_FILES: tuple[tuple[str, str], ...] = (
+    ("lazy-batch", "user/skills/lazy-batch/SKILL.md"),
+    ("lazy-batch-cloud", "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md"),
+)
+
+# Each predicate is (probe regex, human label) that the merged-view dispatch
+# branch must satisfy in EACH driver.  Consistency = every driver passes every
+# predicate; an asymmetry (one driver missing a predicate the other has) is the
+# coupled-pair drift this audit guards against.
+_MERGED_VIEW_PREDICATES: tuple[tuple[str, str], ...] = (
+    # (a) the merged-view probe surface is referenced.
+    (r"--next-merged", "next-merged probe surface"),
+    # (b) the feature-type terminal action is named in the dispatch branch.
+    (r"__mark_complete__", "feature terminal __mark_complete__"),
+    # (c) the bug-type terminal action is named in the dispatch branch.
+    (r"__mark_fixed__", "bug terminal __mark_fixed__"),
+    # (d) the bug state script is named as the bug-type dispatch target.
+    (r"bug-state\.py", "bug-state.py dispatch target"),
+    # (e) the single-type no-regression guarantee is asserted.
+    (r"[Ss]ingle-type\b", "single-type no-regression guarantee"),
+)
+
+
+def audit_merged_view_dispatch_parity(repo_root: str | Path) -> list[str]:
+    """Assert the merged-view dispatch branch (unified-pipeline-orchestrator
+    Phase 2) is present + consistent across the workstation driver and its cloud
+    mirror.
+
+    For each driver, every predicate in ``_MERGED_VIEW_PREDICATES`` must hold;
+    a missing predicate is one finding.  Consistency across the pair is implied:
+    because the SAME predicate set is applied to BOTH drivers, an asymmetry
+    (one driver carries the merged-view branch, the other does not) surfaces as
+    a finding against whichever driver is missing the predicate.
+
+    Returns one finding per (driver, missing-predicate); empty means parity
+    holds.  Additive — audits the SKILL.md prose, not the manifest pairs, and
+    runs alongside the manifest pair audit + state-script parity in the default
+    (no ``--pair``) invocation.
+    """
+    repo_root = Path(repo_root)
+    findings: list[str] = []
+    for name, rel_path in _MERGED_VIEW_DRIVER_FILES:
+        path = repo_root / rel_path
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(
+                f"lazy-parity [merged-view] ERROR: cannot read {name} ({rel_path}): {exc}"
+            )
+            continue
+        for pattern, label in _MERGED_VIEW_PREDICATES:
+            if re.search(pattern, text) is None:
+                findings.append(
+                    f"lazy-parity [merged-view] {name}: missing {label} "
+                    f"(pattern {pattern!r}) — the unified merged-view dispatch "
+                    f"branch must be present + mirrored across the coupled pair "
+                    f"(unified-pipeline-orchestrator Phase 2)"
+                )
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Audit all pairs
 # ---------------------------------------------------------------------------
 
@@ -359,6 +436,12 @@ def audit_all_pairs(
     # whole-repo audit, independent of the SKILL.md manifest pairs.
     all_findings.extend(audit_state_script_parity(repo_root))
 
+    # Merged-view dispatch parity (unified-pipeline-orchestrator Phase 2): the
+    # unified driver + its cloud mirror must carry a consistent merged-view
+    # dispatch branch with type-correct terminals + the single-type no-regression
+    # guarantee.  Also additive to the default whole-repo audit.
+    all_findings.extend(audit_merged_view_dispatch_parity(repo_root))
+
     return all_findings
 
 
@@ -383,13 +466,25 @@ if __name__ == "__main__":
             "If omitted, audit ALL pairs."
         ),
     )
+    parser.add_argument(
+        "--merged-view",
+        action="store_true",
+        help=(
+            "Run ONLY the merged-view dispatch parity check "
+            "(unified-pipeline-orchestrator Phase 2): the unified driver + its "
+            "cloud mirror must carry a consistent merged-view dispatch branch."
+        ),
+    )
     args = parser.parse_args()
 
-    manifest = load_manifest(args.repo_root)
-
-    if args.pair:
+    if args.merged_view:
+        # Targeted merged-view audit — no manifest needed (audits SKILL.md prose).
+        findings = audit_merged_view_dispatch_parity(args.repo_root)
+    elif args.pair:
+        manifest = load_manifest(args.repo_root)
         findings = audit_pair(args.repo_root, args.pair, manifest=manifest)
     else:
+        manifest = load_manifest(args.repo_root)
         findings = audit_all_pairs(args.repo_root, manifest=manifest)
 
     for finding in findings:

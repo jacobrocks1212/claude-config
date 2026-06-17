@@ -228,6 +228,11 @@
           "reason": "In-session resume of uploaded Gemini research — the bug pipeline has no research stage to resume."
         },
         {
+          "heading": "## State Machine Summary",
+          "coverage": "restated",
+          "evidence": "State Machine Summary"
+        },
+        {
           "heading": "## Notes",
           "coverage": "restated",
           "evidence": "## Notes"
@@ -439,6 +444,11 @@
           "heading": "## Step 5: In-Session Resume Protocol (research uploaded via chat)",
           "coverage": "restated",
           "evidence": "Step 5: In-Session Resume Protocol"
+        },
+        {
+          "heading": "## State Machine Summary",
+          "coverage": "restated",
+          "evidence": "State Machine Summary"
         },
         {
           "heading": "## Notes",

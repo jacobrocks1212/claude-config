@@ -670,3 +670,164 @@ class TestStateScriptParity:
             "lazy_core.set_active_repo_root(args.repo_root)\n", encoding="utf-8"
         )
         assert lazy_parity_audit.audit_state_script_parity(tmp_path) == []
+
+
+# ===========================================================================
+# Class 5 — Merged-view dispatch parity (unified-pipeline-orchestrator Phase 2)
+# ===========================================================================
+#
+# Phase 2 makes /lazy-batch the SHARED driver looping over the Phase-1 merged
+# view (`lazy-state.py --next-merged`), type-dispatching each cycle to
+# lazy-state.py (feature → __mark_complete__) or bug-state.py (bug →
+# __mark_fixed__).  The merged-view dispatch branch must be present + consistent
+# across the workstation driver and its cloud mirror (coupled-pair rule), and a
+# single-type run must stay identical to the per-type batch (no-regression
+# guard).  audit_merged_view_dispatch_parity(repo_root) owns this — it audits the
+# SKILL.md prose (no pipeline run), additive to the manifest pair audit + the
+# state-script parity check.
+
+# The unified-driver pair: (name, repo-relative SKILL.md path).  The workstation
+# canonical driver and its cloud mirror BOTH carry the merged-view branch; the
+# bug-batch driver carries the convergence cross-reference (single-type bug runs
+# still use it).
+_MERGED_VIEW_DRIVERS: list[tuple[str, str]] = [
+    ("lazy-batch", "user/skills/lazy-batch/SKILL.md"),
+    (
+        "lazy-batch-cloud",
+        "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md",
+    ),
+]
+
+
+class TestMergedViewDispatchParity:
+    """The merged-view dispatch branch must be present + mirrored across the
+    unified driver and its cloud variant, document type-correct terminals, and
+    preserve single-type behavior."""
+
+    def test_live_merged_view_dispatch_parity_clean(self) -> None:
+        """Hard gate: the real workstation + cloud drivers both carry a
+        consistent merged-view dispatch branch.  Zero findings."""
+        repo_root = Path(__file__).resolve().parents[2]
+        findings = lazy_parity_audit.audit_merged_view_dispatch_parity(repo_root)
+        assert findings == [], (
+            "merged-view dispatch parity drift:\n"
+            + "\n".join(f"  {f}" for f in findings)
+        )
+
+    def test_fires_when_cloud_missing_merged_branch(self, tmp_path: Path) -> None:
+        """The check FIRES when one driver carries the merged-view branch but the
+        other does not (coupled-pair drift)."""
+        skills = tmp_path / "user" / "skills" / "lazy-batch"
+        cloud = (
+            tmp_path / "repos" / "algobooth" / ".claude" / "skills" / "lazy-batch-cloud"
+        )
+        skills.mkdir(parents=True)
+        cloud.mkdir(parents=True)
+        # Workstation driver HAS the merged-view branch + type-dispatch.
+        (skills / "SKILL.md").write_text(
+            "## Unified driver — merged-view dispatch\n"
+            "Probe `lazy-state.py --next-merged` for the head; dispatch feature → "
+            "`lazy-state.py` + `__mark_complete__`, bug → `bug-state.py` + "
+            "`__mark_fixed__`. Single-type run is unchanged.\n",
+            encoding="utf-8",
+        )
+        # Cloud driver is MISSING --next-merged → must be flagged.
+        (cloud / "SKILL.md").write_text(
+            "## Cloud driver\nLoops on lazy-state.py --cloud; no merged view here.\n",
+            encoding="utf-8",
+        )
+        findings = lazy_parity_audit.audit_merged_view_dispatch_parity(tmp_path)
+        assert findings, "expected a finding when cloud lacks the merged-view branch"
+        assert any("lazy-batch-cloud" in f and "next-merged" in f for f in findings), (
+            f"expected a next-merged finding for lazy-batch-cloud; got: {findings}"
+        )
+
+    def test_fires_when_terminal_dispatch_inconsistent(
+        self, tmp_path: Path
+    ) -> None:
+        """The check FIRES when a driver's merged-view branch omits a type-correct
+        terminal action (feature __mark_complete__ / bug __mark_fixed__)."""
+        skills = tmp_path / "user" / "skills" / "lazy-batch"
+        cloud = (
+            tmp_path / "repos" / "algobooth" / ".claude" / "skills" / "lazy-batch-cloud"
+        )
+        skills.mkdir(parents=True)
+        cloud.mkdir(parents=True)
+        full = (
+            "## Unified driver — merged-view dispatch\n"
+            "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
+            "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`. "
+            "Single-type run is unchanged.\n"
+        )
+        (skills / "SKILL.md").write_text(full, encoding="utf-8")
+        # Cloud has --next-merged but NEVER names the bug terminal __mark_fixed__.
+        (cloud / "SKILL.md").write_text(
+            "## Unified driver — merged-view dispatch\n"
+            "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
+            "`__mark_complete__`. Single-type run is unchanged.\n",
+            encoding="utf-8",
+        )
+        findings = lazy_parity_audit.audit_merged_view_dispatch_parity(tmp_path)
+        assert any(
+            "lazy-batch-cloud" in f and "__mark_fixed__" in f for f in findings
+        ), f"expected a __mark_fixed__ consistency finding; got: {findings}"
+
+    def test_fires_when_no_regression_guard_absent(self, tmp_path: Path) -> None:
+        """The check FIRES when a driver's merged-view branch omits the
+        single-type no-regression guarantee."""
+        skills = tmp_path / "user" / "skills" / "lazy-batch"
+        cloud = (
+            tmp_path / "repos" / "algobooth" / ".claude" / "skills" / "lazy-batch-cloud"
+        )
+        skills.mkdir(parents=True)
+        cloud.mkdir(parents=True)
+        full = (
+            "## Unified driver — merged-view dispatch\n"
+            "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
+            "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`. "
+            "Single-type run is unchanged.\n"
+        )
+        (skills / "SKILL.md").write_text(full, encoding="utf-8")
+        # Cloud omits the single-type guarantee phrase.
+        (cloud / "SKILL.md").write_text(
+            "## Unified driver — merged-view dispatch\n"
+            "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
+            "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`.\n",
+            encoding="utf-8",
+        )
+        findings = lazy_parity_audit.audit_merged_view_dispatch_parity(tmp_path)
+        assert any(
+            "lazy-batch-cloud" in f and "single-type" in f.lower() for f in findings
+        ), f"expected a single-type no-regression finding; got: {findings}"
+
+    def test_passes_when_both_drivers_consistent(self, tmp_path: Path) -> None:
+        """No findings when both drivers carry a complete, consistent merged-view
+        dispatch branch."""
+        skills = tmp_path / "user" / "skills" / "lazy-batch"
+        cloud = (
+            tmp_path / "repos" / "algobooth" / ".claude" / "skills" / "lazy-batch-cloud"
+        )
+        skills.mkdir(parents=True)
+        cloud.mkdir(parents=True)
+        full = (
+            "## Unified driver — merged-view dispatch\n"
+            "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
+            "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`. "
+            "Single-type run is unchanged (byte-for-byte identical to the "
+            "per-type batch).\n"
+        )
+        (skills / "SKILL.md").write_text(full, encoding="utf-8")
+        (cloud / "SKILL.md").write_text(full, encoding="utf-8")
+        assert lazy_parity_audit.audit_merged_view_dispatch_parity(tmp_path) == []
+
+    def test_included_in_audit_all_pairs(self) -> None:
+        """audit_all_pairs runs the merged-view dispatch check against the real
+        repo with zero findings (regression: the new check is wired into the
+        default whole-repo audit)."""
+        repo_root = Path(__file__).resolve().parents[2]
+        findings = audit_all_pairs(repo_root)
+        merged_findings = [f for f in findings if "merged-view" in f]
+        assert merged_findings == [], (
+            "audit_all_pairs surfaced merged-view findings:\n"
+            + "\n".join(f"  {f}" for f in merged_findings)
+        )

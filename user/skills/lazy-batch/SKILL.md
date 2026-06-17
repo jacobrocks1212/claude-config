@@ -336,6 +336,39 @@ If `--run-start` fails (script error), surface a T6 `⚠` and STOP before printi
 
 ## Step 1: Cycle Loop
 
+> **Unified driver — merged-view dispatch (single driver, two state scripts; unified-pipeline-orchestrator Phase 2).**
+> `/lazy-batch` is the SHARED driver for BOTH the feature and bug pipelines. Each cycle it
+> probes the merged work-list head with `python3 ~/.claude/scripts/lazy-state.py --next-merged --repo-root {cwd}`
+> (Phase-1 surface — read-only ORDERING ONLY; it never re-infers per-item state) to learn the next
+> actionable item's `{item_id, type, repo_root}`, then **type-dispatches the rest of the cycle to the
+> matching state script**:
+>
+> - **`type == "feature"`** → drive this cycle with `lazy-state.py` exactly as Steps 1a–1e describe;
+>   the type-correct terminal action is `__mark_complete__` (writes `COMPLETED.md`).
+> - **`type == "bug"`** → drive this cycle with `bug-state.py` (same JSON contract, `docs/bugs/`,
+>   `--bug-id` scoping); the type-correct terminal action is `__mark_fixed__` (writes `FIXED.md`).
+>
+> The merged view normalizes the two queues' divergent ordering fields (feature `tier` int / bug
+> `severity` P0..Low) onto one effective-priority scale and breaks ties bug-before-feature — but that
+> ordering lives ENTIRELY in `lazy_core.merged_priority` (Phase 1), NOT in this prose: the driver only
+> CONSUMES the merged head, it never re-implements ordering. Both state machines and all gates run
+> UNCHANGED — this skill carries NO new state-machine logic; the merged probe is the only addition.
+>
+> **No-regression (single-type runs are unchanged).** When only ONE queue is populated, the merged
+> head is simply that queue's head, so the cycle sequence is byte-for-byte identical to the
+> pre-unification per-type batch: a features-only queue runs exactly as `/lazy-batch` always did
+> (drive `lazy-state.py`, terminal `__mark_complete__`); a bugs-only queue runs exactly as the
+> standalone `/lazy-bug-batch` (drive `bug-state.py`, terminal `__mark_fixed__`). The merged probe is
+> additive — `lazy-state.py --next-merged` over a single populated queue returns that queue's head and
+> nothing else. The parity audit (`lazy_parity_audit.py --merged-view`) + a single-type fixture assert
+> this no-regression guarantee.
+>
+> Steps 1a–1e below are written against `lazy-state.py` (the feature path, the common case). For a
+> `type == "bug"` cycle, substitute `bug-state.py` for `lazy-state.py` and `__mark_fixed__` for
+> `__mark_complete__` everywhere in the cycle body; the dispatch SHAPE is otherwise identical (this is
+> the same coupling `/lazy-bug-batch` already documents). See the **State Machine Summary** at the
+> bottom of this skill for the per-type dispatch table.
+
 Repeat:
 
 ### 1a. Run lazy-state.py
@@ -1300,6 +1333,22 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
 - It does NOT skip `/ingest-research` (path ② — direct RESEARCH.md drop). Even if the user pastes content that looks like a finished `RESEARCH.md`, the standardized ingestion produces the matching `RESEARCH_SUMMARY.md`, drops the SPEC trailer, and clears the stub flag — those are mechanical chores worth doing every time.
 - It does NOT auto-resume on a `needs-input` halt. `needs-input` is no longer a halt (Step 1g resumes inline); the in-session resume protocol is specifically for the research-pending halt classes (`needs-research` and `queue-blocked-on-research`).
 - It does NOT preserve cycle accounting across the halt. The new `/lazy-batch <N>` invocation gets a fresh budget — each `/lazy-batch <N>` is an independent bounded run, consistent with the cycle-accounting note in Step 1f.
+
+---
+
+## State Machine Summary
+
+`/lazy-batch` is the unified driver for the feature AND bug pipelines (unified-pipeline-orchestrator Phase 2). Each cycle probes the merged head (`lazy-state.py --next-merged`) and type-dispatches:
+
+| Merged-head `type` | Cycle state script | Per-item lifecycle source | Terminal pseudo-skill | Completion receipt |
+|--------------------|--------------------|---------------------------|-----------------------|--------------------|
+| `feature` | `lazy-state.py` | `docs/features/` (SPEC/PHASES/plans/sentinels) | `__mark_complete__` | `COMPLETED.md` |
+| `bug` | `bug-state.py` | `docs/bugs/` (`--bug-id` scoping) | `__mark_fixed__` | `FIXED.md` |
+
+- **Ordering is script-owned.** The merged head is ordered by `lazy_core.merged_priority` (feature `tier` / bug `severity` normalized to one scale; equal priority → bug before feature). This skill never re-implements ordering — it consumes the head only.
+- **No new state-machine logic in the skill.** Both `lazy-state.py` and `bug-state.py` run their existing state machines + gates unchanged; the merged probe is the sole addition. The Step 1c.5 pseudo-skill handlers, all resolution modes (1f–1i), and the gate suite are type-agnostic in shape (only the state script + terminal name differ by type).
+- **No-regression.** A single-type queue (features-only OR bugs-only) drives the same cycle sequence as the pre-unification per-type batch — the merged head is just that queue's head. Asserted by `lazy_parity_audit.py` (`audit_merged_view_dispatch_parity`) + a single-type fixture.
+- **Coupled pair.** `/lazy-batch` ↔ `/lazy-batch-cloud` mirror this merged-view dispatch shape (cloud passes `--cloud`); `/lazy-bug-batch` remains for standalone single-type bug runs and cross-references this unified driver. See CLAUDE.md → Coupled Skill Pairs.
 
 ---
 
