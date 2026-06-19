@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 14d90bd
 **Placement:** docs/bugs/loop-detected-false-positives-from-probe-and-reboot-churn
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/lazy_core.py` (`update_repeat_counts` — `step_repeat_count` / HEAD-aware `repeat_count`); `user/skills/lazy-batch/SKILL.md` Step 1d loop-guard + Step 1g needs-input resolution; prior fixes `lazy-pipeline-ergonomics` Phase 2 (F2 step-debounce, 973339b) and `lazy-validation-readiness` Phase 1 (F1 dispatch-tuple debounce, 774ef23).
