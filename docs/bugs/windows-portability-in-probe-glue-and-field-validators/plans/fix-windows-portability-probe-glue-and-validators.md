@@ -26,7 +26,7 @@ status_note: In-progress (execute-plan inline cycle 2026-06-19)
 ## Work Units
 
 - [x] WU-1 — Harden probe-glue prose in the coupled `/lazy-batch` ↔ `/lazy-batch-cloud` pair (Phase 1)
-- [ ] WU-2 — Reconcile the `fix-line-endings.ps1` hook-wiring gap in settings.json + CLAUDE.md (Phase 2)
+- [x] WU-2 — Reconcile the `fix-line-endings.ps1` hook-wiring gap in settings.json + CLAUDE.md (Phase 2)
 - [ ] WU-3 — Author the AlgoBooth-side validator follow-up record + reverse-reference (Phase 3)
 
 ## EXECUTION MODEL — READ THIS FIRST

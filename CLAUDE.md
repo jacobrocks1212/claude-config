@@ -158,7 +158,7 @@ When adding to a coupled pair, also update each file's State Machine Summary / o
 | `toolify-miner.py` | Offline session-log toolification miner (stdlib-only, **READ-ONLY over logs**): parses `~/.claude/projects/**/*.jsonl` (+ `subagents/agent-*.jsonl`), normalizes orchestrator tool-call sequences into argument-shape signatures, ranks by `occurrences × est_tokens_per_occurrence`, and applies the deterministic-only bar (above-bar iff deterministic AND repeated AND token-heavy). Emits markdown + JSON; never mutates logs. The miner *proposes* — promotion is deliberate (see `docs/features/unified-pipeline-orchestrator/toolify-bar.md`) |
 | `analyze_har.py` | HTTP Archive file analysis |
 | `pipeline_visualizer/` | Local web control-plane for the lazy feature/bug pipelines: `python -m pipeline_visualizer --repo-root <repo>` serves a graph/queues/fleet dashboard (`/api/state`, `/api/queue`) by shelling `lazy-state.py`/`bug-state.py` (stdlib-only renderer, never re-infers state) |
-| `fix-line-endings.ps1` | CRLF/LF normalization (PostToolUse hook) |
+| `fix-line-endings.ps1` | CRLF/LF normalization script (NOT wired as a hook in `user/settings.json` — see Hooks table note) |
 | `run-eslint.ps1` | Auto-lint TypeScript/Vue on save (PostToolUse hook) |
 
 ### Lint Commands
@@ -181,8 +181,8 @@ Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/
 | `pr-review-cache-guard.sh` | PreToolUse (Bash) | PR review caching guard |
 | `lazy-cycle-containment.sh` | PreToolUse (Bash, Agent, Skill) | While the lazy cycle-subagent marker is present (scoped to the current repo), denies in-flight the routing/lifecycle/recursive-dispatch/2nd-feature-commit ops a runaway needs (fail-OPEN); also denies a subagent invoking any `/lazy*` skill via the Skill tool (defense-in-depth, agent_id-targeted, arming-free) |
 | `block-noncanonical-blocker-write.sh` | PreToolUse (Write, Edit) | Denies writing a mis-named blocker sentinel — a target basename matching `BLOCKED*` + `.md` (case-insensitive) that is NOT exactly `BLOCKED.md` and does NOT contain `_RESOLVED_`. Such a stray is invisible to the `lazy-state.py`/`bug-state.py` Step-3 check and silently loops the pipeline. The deny message names canonical `BLOCKED.md`. Fail-OPEN. Write-time complement to the read-time `lazy_core.detect_noncanonical_blocker` backstop |
-| `fix-line-endings.ps1` | PostToolUse (Edit/Write) | Normalizes line endings |
-| `run-eslint.ps1` | PostToolUse (Edit/Write) | Auto-lints Cognito Forms TS/Vue |
+| `fix-line-endings.ps1` | **NOT registered** (script exists; `user/settings.json` `PostToolUse` is `[]`) | CRLF/LF normalization. **Deliberately left unwired** (`windows-portability-in-probe-glue-and-field-validators`): the script normalizes *to* CRLF (`-replace "\`n", "\`r\`n"`, i.e. it ADDS `\r`), which is exactly what a `\n`-only downstream validator (AlgoBooth `check-docs-consistency.ts`, Symptom B primary) then trips on. A naive global PostToolUse registration would INCREASE `\r`-bearing writes reaching that validator, not reduce them. The real `\r`-tolerance fix is AlgoBooth-side (`.trim()` each frontmatter value before field-type checks — see the bug's PHASES Phase 3 follow-up). Do NOT blind-wire this hook. |
+| `run-eslint.ps1` | **NOT registered** (script exists; `user/settings.json` `PostToolUse` is `[]`) | Auto-lints TypeScript/Vue on save. Per-repo formatting is wired in repo-scoped settings instead (e.g. Cognito Forms registers `format-frontend.ps1` in `repos/cognito-forms/.claude/settings.json`), not at the user level. |
 
 > **Per-repo hook scoping (`multi-repo-concurrent-runs`).** The three lazy enforcement hooks —
 > `lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, and `lazy-cycle-containment.sh` — no longer
