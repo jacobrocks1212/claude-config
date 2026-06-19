@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** a5bdc14
 **Placement:** docs/bugs/mark-complete-skips-roadmap-strike-and-followups-queue-trim
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/lazy_core.py` (`apply_pseudo __mark_complete__`: `_strike_roadmap_row`, `_resolve_under_repo` queue trim); `user/skills/lazy-batch/SKILL.md` Step 1c.5; `docs/features/unified-pipeline-orchestrator/` Phase 5 WU-3.

@@ -2,12 +2,6 @@
   "_note": "Ordering is hybrid: explicit queue order takes precedence; bug-state.py falls back to severity (P0->P1->P2->Low) then Discovered date for bugs absent from this list. The entries below are STUBS (Status: Investigating) sourced from the /lazy-batch session-log audit 2026-06-19 (AlgoBooth, 19 sessions) \u2014 each routes to /spec-bug for root-cause investigation before /plan-bug. operator-checkpoint-resume-counter-reset is Status: Fixed and intentionally omitted from the queue.",
   "queue": [
     {
-      "id": "mark-complete-skips-roadmap-strike-and-followups-queue-trim",
-      "name": "__mark_complete__ skips ROADMAP strike & mis-trims -followups ids",
-      "spec_dir": "mark-complete-skips-roadmap-strike-and-followups-queue-trim",
-      "severity": "P2"
-    },
-    {
       "id": "windows-portability-in-probe-glue-and-field-validators",
       "name": "Windows path & line-ending portability defects (probe glue / validators)",
       "spec_dir": "windows-portability-in-probe-glue-and-field-validators",
