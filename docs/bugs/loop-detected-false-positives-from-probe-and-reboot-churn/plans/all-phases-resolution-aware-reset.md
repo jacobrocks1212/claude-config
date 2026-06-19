@@ -101,9 +101,9 @@ No `**Depends on:**` block on the SPEC — this is a standalone harness fix buil
 
 - [x] WU-1 — Phase 1: symptom-2 regression fixture (reboot re-probe, no dispatch → step_count HELD)
 - [x] WU-2 — Phase 1: symptom-4 regression fixture (double-probe hygiene, no consume → neither counter inflates)
-- [ ] WU-3 — Phase 2: persist the resolution signal (run-marker field at the Step-1g resolution bracket)
-- [ ] WU-4 — Phase 2: symptom-3 reset branch in `update_repeat_counts` (test-first) + docstring + CLAUDE.md
-- [ ] WU-5 — Phase 2: lazy-batch + lazy-bug-batch Step-1g signal-production edit (coupled pair) + confirm Open Question 2
+- [x] WU-3 — Phase 2: persist the resolution signal (run-marker field at the Step-1g resolution bracket)
+- [x] WU-4 — Phase 2: symptom-3 reset branch in `update_repeat_counts` (test-first) + docstring + CLAUDE.md
+- [x] WU-5 — Phase 2: lazy-batch + lazy-bug-batch Step-1g signal-production edit (coupled pair) + confirm Open Question 2
 - [ ] WU-6 — Phase 3: negative fixture — d8 commit-masked loop STILL trips (no reset taken)
 - [ ] WU-7 — Phase 3: negative fixture — reset inert without the resolution signal (signal-gated)
 

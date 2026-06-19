@@ -3534,8 +3534,20 @@ def update_repeat_counts(
        "productive-looking" oscillation where each spurious cycle commits a file
        (HEAD advances → the dispatch streak resets every iteration) while the
        state machine keeps returning to the SAME step. It increments whenever the
-       (feature_id, current_step) pair is unchanged from the prior probe and
-       resets to 1 only when that pair changes — commits in between are ignored.
+       (feature_id, current_step) pair is unchanged from the prior probe.
+       It RESETS to 1 on exactly THREE paths (all "genuine forward progress",
+       never a HEAD/commit reset — that immunity is the d8 design constraint):
+         (a) the step signature (feature_id, current_step) CHANGES;
+         (b) ORDERED-ADVANCE EXEMPTION — step signature unchanged but
+             ``sub_skill_args`` advanced (a multi-part /execute-plan sequence);
+         (c) RESOLUTION-AWARE RESET — the prior cycle was a needs-input
+             RESOLUTION at this exact step signature (the run marker carried a
+             one-shot ``last_resolution_step_key`` recorded by
+             ``record_resolution_signal``).  A resolution is itself an Agent
+             dispatch (it consumes a nonce, defeating the F2 hold), so without
+             (c) the counter would survive a legitimately-resolved blocker.
+             One-shot + signal-gated: fires once across the resolution, never on
+             a missing/legacy/foreign-repo marker.
 
     The persisted JSON shape is
     ``{"signature": [4], "count": int, "head": str|None,
@@ -3752,6 +3764,38 @@ def update_repeat_counts(
     if prior_sig_list is not None:  # validated as a 4-element list when set
         prior_step_args = prior_sig_list[2]
 
+    # --- Resolve the resolution-aware reset signal (symptom 3) ---------------
+    # (loop-detected-false-positives-from-probe-and-reboot-churn) A needs-input
+    # RESOLUTION meta-cycle is itself an Agent dispatch → it consumes a nonce, so
+    # the F2 debounce below CANNOT hold the step counter across it (a dispatch
+    # provably landed).  Without this branch the HEAD-blind step_count survives a
+    # legitimately-resolved blocker and false-trips LOOP-DETECTED.  The resolution
+    # bracket persisted ``last_resolution_step_key`` on the run marker
+    # (record_resolution_signal); read it here keyed on the CURRENT step
+    # signature.  Deterministic + persisted (⚖ D7), never probe-time inference.
+    #
+    # The signal is ONE-SHOT: it is consumed-and-cleared so the reset fires once
+    # across the resolution (not on every subsequent probe — that would
+    # re-introduce d8 HEAD-advance immunity for the resolved step).  In ``peek``
+    # mode we must NOT mutate the marker, so we do a READ-ONLY check there and
+    # leave the consume-and-clear to the real (non-peek) probe.  Marker-gated and
+    # repo-scoped inside the helper; a missing/legacy/foreign marker → False, so
+    # the reset can never spuriously fire.  Reached only when the step signature
+    # is UNCHANGED (the "changed step → fresh streak" branch returns first).
+    _resolution_reset = False
+    if prior_step_sig_list is not None and list(new_step_sig) == prior_step_sig_list:
+        if peek:
+            _marker_peek = read_run_marker()
+            if (
+                _marker_peek is not None
+                and _marker_peek.get("repo_root") is not None
+                and Path(_marker_peek["repo_root"]).resolve() == repo_root.resolve()
+                and _marker_peek.get("last_resolution_step_key") == list(new_step_sig)
+            ):
+                _resolution_reset = True
+        else:
+            _resolution_reset = _consume_resolution_signal(repo_root, new_step_sig)
+
     # --- Compute the step-level count (Phase 10 WU-2 — NO HEAD reset) ---------
     # Deliberately HEAD-BLIND: identical (feature_id, current_step) increments
     # regardless of intervening commits (that is the oscillation-with-commits
@@ -3782,6 +3826,24 @@ def update_repeat_counts(
         prior_step_args is not _MISSING
         and current_step_args != prior_step_args
     ):
+        step_count = 1
+    elif _resolution_reset:
+        # RESOLUTION-AWARE RESET (symptom 3 — the residual fix). The prior cycle
+        # was a needs-input RESOLUTION at this exact step signature (the marker
+        # carried a matching one-shot ``last_resolution_step_key``). A resolution
+        # is genuine forward progress past a legitimately-resolved blocker, NOT
+        # oscillation — so RESET step_count to 1 rather than letting it survive the
+        # resolution dispatch's consume (which defeated the F2 hold above).
+        #
+        # Ordered AFTER the ordered-advance exemption and BEFORE the F2 debounce —
+        # the same "genuine forward progress → reset to 1" shape and the same guard
+        # discipline (fires only on a recorded/known signal; a missing/legacy/
+        # foreign marker yields _resolution_reset=False). HEAD-blindness is
+        # preserved: this adds NO head/commit reset (the d8 commit-masked
+        # oscillation case has NO resolution signal, so it still falls through to
+        # the increment below — symptom-5 design constraint intact). One-shot: the
+        # signal was consumed-and-cleared in the read above, so a subsequent probe
+        # with no fresh signal increments normally.
         step_count = 1
     elif (
         # F2 double-probe debounce: HOLD step_count (do NOT increment) when this
@@ -7958,6 +8020,90 @@ def advance_forward_cycle(state: dict) -> dict | None:
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
+
+
+def record_resolution_signal(state: dict) -> dict | None:
+    """Persist the resolution-aware reset signal on the run marker.
+
+    ROOT CAUSE (loop-detected-false-positives-from-probe-and-reboot-churn,
+    symptom 3 — the sole residual class after the F1/F2 consume-debounce):
+    a needs-input *resolution* meta-cycle is itself an Agent dispatch, so it
+    consumes a registry nonce.  That defeats the F2 double-probe debounce's
+    "no dispatch landed between the two probes" precondition — the HEAD-blind
+    ``step_repeat_count`` therefore SURVIVES a legitimately-resolved blocker and
+    keeps marching toward the LOOP-DETECTED tripwire.
+
+    The fix is a DETERMINISTIC, PERSISTED signal (⚖ D7: a recorded marker field,
+    NOT a racy probe-time re-inference of cleared-sentinel state).  The resolution
+    dispatch bracket calls this helper to record
+    ``last_resolution_step_key = [feature_id, current_step]`` on the run marker.
+    ``update_repeat_counts`` reads it and, on the NEXT probe with the SAME step
+    signature, RESETS ``step_count`` to 1 and CLEARS the field — so the reset
+    fires exactly ONCE across the resolution (one-shot), scoped exactly like the
+    ordered-advance exemption.
+
+    Mirrors the ``last_advance_state_key`` marker-field pattern
+    (``advance_forward_cycle``).  Marker-gated: returns None and writes nothing
+    when no run marker is present (so an ordinary, non-resolution cycle never
+    leaves the signal asserted).  Legacy markers lacking the field simply never
+    trigger the reset (same legacy-tolerance as ``head`` / ``step_*`` /
+    ``consume_count``) — the reset can never spuriously fire on an old marker.
+
+    Args:
+        state: a dict carrying ``feature_id`` and ``current_step`` (the step
+               signature the resolution was applied at).
+
+    Returns:
+        The updated marker dict; None when no marker is present.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+
+    # The step signature the resolution was applied at — a JSON-serializable list
+    # (json round-trips a tuple to a list, so the consumer compares as lists).
+    marker["last_resolution_step_key"] = [
+        state.get("feature_id"),
+        state.get("current_step"),
+    ]
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
+def _consume_resolution_signal(repo_root: Path, step_sig: tuple) -> bool:
+    """Read-and-clear the one-shot resolution signal for ``update_repeat_counts``.
+
+    Returns True iff a run marker for THIS repo is present AND it carries a
+    ``last_resolution_step_key`` equal to ``step_sig`` (the current
+    ``(feature_id, current_step)`` step signature).  On a match the field is
+    CLEARED from the marker (one-shot — the reset fires once across the
+    resolution, not on every subsequent probe) and the marker is re-persisted.
+
+    Repo-scoped exactly like the F2 debounce oracle: a marker bound to a
+    DIFFERENT repo never matches (so a concurrent run in another repo can never
+    reset this repo's step counter).  Fail-safe: any read/parse/path error
+    returns False (the reset simply does not fire — never raises, never weakens
+    the tripwire on a degraded marker).
+    """
+    try:
+        marker = read_run_marker()
+        if marker is None:
+            return False
+        # Repo-scope: only honor a signal whose marker belongs to THIS repo.
+        marker_repo = marker.get("repo_root")
+        if marker_repo is None or Path(marker_repo).resolve() != repo_root.resolve():
+            return False
+        recorded = marker.get("last_resolution_step_key")
+        if recorded != list(step_sig):
+            return False
+        # One-shot: clear the signal and re-persist before returning the match.
+        marker.pop("last_resolution_step_key", None)
+        marker_path = claude_state_dir() / _MARKER_FILENAME
+        _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+        return True
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
 
 
 # ---------------------------------------------------------------------------

@@ -19317,6 +19317,250 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# Tests: loop-detected-false-positives-from-probe-and-reboot-churn
+#   Phase 2 — resolution-aware step_count reset (symptom 3).
+#
+# WU-3: record_resolution_signal persists a one-shot run-marker field
+#       (last_resolution_step_key = [feature_id, current_step]) at the
+#       needs-input resolution dispatch bracket. update_repeat_counts keys on it.
+# WU-4: a step_count reset branch in update_repeat_counts that fires ONCE across
+#       a resolution meta-cycle (a dispatch lands between two same-step probes,
+#       so the F2 consume-debounce does NOT hold) — resetting step_count to 1 and
+#       clearing the signal (one-shot). Ordered AFTER the ordered-advance
+#       exemption and BEFORE the F2 debounce branch.
+# ---------------------------------------------------------------------------
+
+
+def test_record_resolution_signal_persists_step_key():
+    """WU-3: record_resolution_signal writes last_resolution_step_key =
+    [feature_id, current_step] to the run marker and returns the updated marker.
+
+    RED: record_resolution_signal missing on lazy_core → AttributeError.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            state = {
+                "feature_id": "feat-res",
+                "current_step": "Step 7a: execute plan",
+            }
+            updated = lazy_core.record_resolution_signal(state)
+            assert updated is not None, (
+                "record_resolution_signal must return the updated marker when a "
+                "marker is present"
+            )
+            assert updated.get("last_resolution_step_key") == [
+                "feat-res", "Step 7a: execute plan",
+            ], (
+                f"the resolution signal must persist the [feature_id, current_step] "
+                f"step key, got {updated.get('last_resolution_step_key')!r}"
+            )
+            # Persisted to disk (re-read confirms it survives).
+            marker_path = Path(td) / lazy_core._MARKER_FILENAME
+            on_disk = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert on_disk.get("last_resolution_step_key") == [
+                "feat-res", "Step 7a: execute plan",
+            ], f"signal must be on disk, got {on_disk!r}"
+        finally:
+            _clear_state_dir()
+
+
+def test_record_resolution_signal_marker_gated():
+    """WU-3: record_resolution_signal is marker-gated — returns None and writes
+    nothing when no run marker is present (an ordinary cycle never leaves the
+    signal asserted)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))  # empty — no marker
+        try:
+            result = lazy_core.record_resolution_signal(
+                {"feature_id": "f", "current_step": "s"}
+            )
+            assert result is None, (
+                f"record_resolution_signal must return None when no marker present, "
+                f"got {result!r}"
+            )
+            assert not (Path(td) / lazy_core._MARKER_FILENAME).exists(), (
+                "no marker → no marker file created as a side effect"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_symptom3_resolution_reset():
+    """WU-4 / SYMPTOM 3 (the residual fix): a needs-input resolution meta-cycle
+    is an Agent dispatch (consume-count RISES), so the F2 debounce does NOT hold
+    the step counter across it. Without the reset, step_repeat_count survives a
+    LEGITIMATELY-resolved blocker and keeps marching toward LOOP-DETECTED.
+
+    With the resolution signal recorded (record_resolution_signal) and the step
+    signature unchanged across the resolution, step_repeat_count must RESET to 1.
+
+    RED: pre-fix update_repeat_counts increments 1 → 2 here (a consume landed
+    between the two same-step probes, so the F2 hold does not apply and there is
+    no reset branch). GREEN: the new resolution-reset branch resets to 1.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # First probe: establishes step_count = 1 for this step signature.
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # A needs-input resolution meta-cycle runs: it is an Agent dispatch, so a
+        # registry consume lands (the F2 debounce will NOT hold), AND the
+        # resolution bracket records the signal keyed on this step signature.
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.record_resolution_signal(
+                {"feature_id": _STATE_A["feature_id"],
+                 "current_step": _STATE_A["current_step"]}
+            )
+            # Next probe: SAME step signature, a dispatch DID land between (so F2
+            # cannot hold). The resolution signal must reset step_count to 1.
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 1, (
+        f"a needs-input resolution between two same-step probes must RESET "
+        f"step_repeat_count to 1 (the resolution is a legitimately-resolved "
+        f"blocker, not oscillation), got {r2!r}"
+    )
+
+
+def test_symptom3_resolution_reset_is_one_shot():
+    """WU-4: the resolution reset fires ONCE across the resolution — the signal is
+    cleared after it is honored. A SUBSEQUENT same-step probe with a fresh
+    dispatch (consume rises) and NO new resolution signal must INCREMENT (the
+    reset does not latch and permanently suppress the tripwire).
+
+    RED: an impl that left the signal asserted would reset on every subsequent
+    probe, re-introducing the d8 HEAD-advance immunity for the resolved step.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # Resolution meta-cycle: consume + signal.
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.record_resolution_signal(
+                {"feature_id": _STATE_A["feature_id"],
+                 "current_step": _STATE_A["current_step"]}
+            )
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # A FURTHER dispatch on the SAME step with NO new resolution signal → the
+        # reset must NOT fire again (one-shot); step_count climbs.
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r3 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r2["step_repeat_count"] == 1, (
+        f"resolution reset fires once → 1, got {r2!r}"
+    )
+    assert r3["step_repeat_count"] == 2, (
+        f"the reset is ONE-SHOT — a subsequent same-step dispatch with no fresh "
+        f"resolution signal must INCREMENT (1 → 2), not stay reset, got {r3!r}"
+    )
+
+
+def test_resolution_signal_no_repeat_count_reset_head_aware():
+    """WU-4 / Open Question 2 confirmation: the resolution reset is
+    step_repeat_count-ONLY. The HEAD-aware dispatch-tuple repeat_count already
+    resets on its own when a resolution commits (HEAD advances), so no separate
+    repeat_count reset is added — and a resolution that does NOT advance HEAD must
+    leave repeat_count to its normal HEAD/debounce logic (the resolution signal
+    must NOT touch repeat_count).
+
+    This pins that record_resolution_signal + the reset branch leave repeat_count
+    governed solely by its existing (head-aware + F1-debounce) path.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()  # non-git → current_head is None==None
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # Resolution meta-cycle: consume + signal. HEAD does NOT advance (non-git
+        # repo → head None both probes), so repeat_count is NOT reset by HEAD; the
+        # consume rose so the F1 debounce does NOT hold → repeat_count increments.
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.record_resolution_signal(
+                {"feature_id": _STATE_A["feature_id"],
+                 "current_step": _STATE_A["current_step"]}
+            )
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    # step_count reset by the resolution branch...
+    assert r2["step_repeat_count"] == 1, (
+        f"resolution reset applies to step_repeat_count, got {r2!r}"
+    )
+    # ...but repeat_count is untouched by the resolution signal: a real dispatch
+    # landed (consume rose) with the same tuple + same (None) head → it increments
+    # per its existing F1 logic. The resolution signal must NOT spuriously reset it.
+    assert r2["repeat_count"] == 2, (
+        f"the resolution signal must NOT reset the HEAD-aware repeat_count — with a "
+        f"dispatch landed (consume rose), same tuple, same head, it follows its "
+        f"existing increment path (1 → 2), got {r2!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_record_resolution_signal_persists_step_key",
+     test_record_resolution_signal_persists_step_key),
+    ("test_record_resolution_signal_marker_gated",
+     test_record_resolution_signal_marker_gated),
+    ("test_symptom3_resolution_reset", test_symptom3_resolution_reset),
+    ("test_symptom3_resolution_reset_is_one_shot",
+     test_symptom3_resolution_reset_is_one_shot),
+    ("test_resolution_signal_no_repeat_count_reset_head_aware",
+     test_resolution_signal_no_repeat_count_reset_head_aware),
+]
+
+
+# ---------------------------------------------------------------------------
 # lazy-batch-unified-driver-parity-and-accounting Phase 2 (item 3) — WU-3.
 # ---------------------------------------------------------------------------
 #

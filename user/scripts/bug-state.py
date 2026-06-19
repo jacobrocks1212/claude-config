@@ -4188,6 +4188,25 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--record-resolution-signal", action="store_true",
+        help=(
+            "loop-detected-false-positives (coupled-pair mirror of lazy-state.py): "
+            "persist the one-shot resolution-aware reset signal on the run marker "
+            "(last_resolution_step_key=[bug_id, current_step]) so the NEXT same-step "
+            "probe RESETS step_repeat_count to 1 — a needs-input RESOLUTION is itself "
+            "a dispatch (consumes a nonce), defeating the F2 debounce. Requires "
+            "--bug-id and --current-step. Marker-gated. Prints marker JSON and exits."
+        ),
+    )
+    parser.add_argument(
+        "--current-step", default=None,
+        help=(
+            "Step name for --record-resolution-signal (the step the needs-input "
+            "resolution was applied at; bind to the resolved bug's probe "
+            "current_step VERBATIM)."
+        ),
+    )
+    parser.add_argument(
         "--nonce", default=None,
         help="Dispatch nonce (hex) for --cycle-begin.",
     )
@@ -4309,6 +4328,19 @@ def main() -> int:
     # ENTRY of both handlers via the dedicated marker-mutation guard (keys on the
     # POSITIVE LAZY_ORCHESTRATOR signal). The orchestrator exports
     # LAZY_ORCHESTRATOR=1 (Phase 1), so its bracket is unaffected.
+    if args.record_resolution_signal:
+        # loop-detected-false-positives-from-probe-and-reboot-churn (symptom 3,
+        # coupled-pair mirror of lazy-state.py): persist the one-shot resolution
+        # signal keyed on the bug's step signature so the next same-step probe
+        # resets step_repeat_count. Marker-gated inside the helper.
+        if not args.bug_id or not args.current_step:
+            _die("--record-resolution-signal requires --bug-id and --current-step")
+        marker = lazy_core.record_resolution_signal(
+            {"feature_id": args.bug_id, "current_step": args.current_step}
+        )
+        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        return 0
+
     if args.cycle_begin:
         lazy_core.refuse_cycle_marker_mutation_if_subagent("--cycle-begin")
         if not args.bug_id or not args.nonce:

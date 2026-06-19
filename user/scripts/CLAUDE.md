@@ -263,6 +263,37 @@ Shared `lazy_core`, so `bug-state.py` inherits the helper too.
 > still no-ops). Since Phase 1 moved the forward COUNT off this oracle entirely, the clamp is
 > defense-in-depth for any remaining watermark consumer.
 
+## `step_repeat_count` reset paths: the resolution-aware reset (loop-detected-false-positives-from-probe-and-reboot-churn)
+
+`update_repeat_counts`'s HEAD-blind `step_repeat_count` (the Phase-10 oscillation counter, keyed
+on `(feature_id, current_step)`) resets to 1 on exactly **three** "genuine forward progress" paths
+— never a HEAD/commit reset (that immunity is the d8 commit-masked-oscillation design constraint):
+
+1. **Step-signature change** — `(feature_id, current_step)` differs from the prior probe.
+2. **Ordered-advance exemption** — step signature unchanged but `sub_skill_args` advanced (a
+   multi-part `/execute-plan` marching plan parts while staying on `Step 7a: execute plan`).
+3. **Resolution-aware reset** (symptom 3) — the prior cycle was a needs-input RESOLUTION at this
+   exact step signature. A resolution meta-cycle is itself an Agent dispatch (it consumes a nonce),
+   which DEFEATS the F2 double-probe debounce's "no dispatch between the probes" precondition — so
+   without this branch the counter would survive a *legitimately-resolved* blocker and false-trip
+   LOOP-DETECTED. The discriminator is a **persisted, deterministic** marker field
+   `last_resolution_step_key = [feature_id, current_step]` (⚖ D7: a recorded signal, NOT racy
+   probe-time inference), written by `lazy_core.record_resolution_signal(state)` at the
+   apply-resolution dispatch bracket and read-and-cleared by `lazy_core._consume_resolution_signal`
+   inside `update_repeat_counts`. **ONE-SHOT** (consumed-and-cleared → fires once across the
+   resolution, never latches), **repo-scoped** (a foreign-repo marker never matches, like the F2
+   oracle), **marker-gated + legacy-tolerant** (a missing/legacy/foreign signal → no reset), and
+   **`peek`-safe** (peek does a read-only check, never mutating the marker). It is
+   `step_repeat_count`-ONLY: the HEAD-aware `repeat_count` already resets on its own when a
+   resolution commits, and a non-committing resolution is correctly governed by its existing
+   F1/HEAD logic — NO `repeat_count` reset was added (Open Question 2 resolved).
+
+**Signal-production wiring:** the orchestrator-only CLI action `--record-resolution-signal
+--feature-id <id> --current-step <step>` on `lazy-state.py` (mirrored as `--bug-id` on
+`bug-state.py`) calls `record_resolution_signal`. `/lazy-batch` and `/lazy-bug-batch` Step 1g
+(apply-resolution bracket) invoke it after the resolution subagent neutralizes the sentinel — a
+COUPLED-PAIR lockstep edit (audited by `lazy_parity_audit.py`, NOT a divergence).
+
 ## Verification-only canonical marker (harness-hardening-retro-fixes Phase 2)
 
 `remaining_unchecked_are_verification_only(phases_text)` decides whether the only remaining

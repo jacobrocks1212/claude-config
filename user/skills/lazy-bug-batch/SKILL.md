@@ -712,6 +712,15 @@ python3 ~/.claude/scripts/bug-state.py \
 
 Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`.
 
+**Resolution-aware reset signal (loop-detected-false-positives — symptom 3, coupled-pair mirror of `/lazy-batch`).** A needs-input RESOLUTION is itself an Agent dispatch, so it consumes a registry nonce — defeating the F2 double-probe debounce and letting the HEAD-blind `step_repeat_count` survive a *legitimately-resolved* blocker toward LOOP-DETECTED. After the apply-resolution subagent returns (sentinel neutralized), record the one-shot reset signal so the resolved bug's NEXT same-step probe resets its step counter to 1:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py --record-resolution-signal \
+  --bug-id "{bug_id}" --current-step "{probe.current_step}" --repo-root "{cwd}"
+```
+
+Bind `--current-step` to the resolved bug's probe `current_step` VERBATIM. The signal is persisted on the run marker (`last_resolution_step_key`), repo-scoped, and ONE-SHOT — `update_repeat_counts` consumes-and-clears it on the next matching probe, so it never re-introduces HEAD-advance immunity for the resolved step (the d8 commit-masked oscillation case has NO signal and still trips). Marker-gated: a no-op when no run marker is live. Meta-cycle mechanic (no chat narration). **This mirrors `/lazy-batch` exactly — it is NOT a divergence (the only intended divergences are tabulated in the "Differences from /lazy-batch" block); diff the sibling after editing either.**
+
 See `~/.claude/skills/_components/decision-resume.md`
 
 **Park mode — processing `parked[]` output (`--park` only):** When `park_mode == true` and the

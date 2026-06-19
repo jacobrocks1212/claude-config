@@ -871,6 +871,15 @@ python3 ~/.claude/scripts/lazy-state.py \
 
 Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys for `--emit-dispatch apply-resolution` are: `item_name`, `spec_path`, `sentinel_path`, `resolution_summary`, `resolution_kind`, `chosen_path`, `item_id`, `cwd`.
 
+**Resolution-aware reset signal (loop-detected-false-positives — symptom 3).** A needs-input RESOLUTION is itself an Agent dispatch, so it consumes a registry nonce — which defeats the F2 double-probe debounce's "no dispatch landed between the two probes" precondition. Without a discriminator the HEAD-blind `step_repeat_count` survives a *legitimately-resolved* blocker and keeps marching toward LOOP-DETECTED. After the apply-resolution subagent returns (sentinel neutralized), record the one-shot reset signal so the resolved feature's NEXT same-step probe resets its step counter to 1:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --record-resolution-signal \
+  --feature-id "{feature_id}" --current-step "{probe.current_step}" --repo-root "{cwd}"
+```
+
+Bind `--current-step` to the resolved feature's probe `current_step` VERBATIM. The signal is persisted on the run marker (`last_resolution_step_key`), repo-scoped, and ONE-SHOT — `update_repeat_counts` consumes-and-clears it on the next matching probe, so it never re-introduces HEAD-advance immunity for the resolved step (the d8 commit-masked oscillation case has NO signal and still trips). Marker-gated: a no-op when no run marker is live. This is a meta-cycle mechanic (no chat narration).
+
 `~/.claude/skills/_components/decision-resume.md`
 
 **Park mode — processing `parked[]` output (Phase 4, `--park` only):** When `park_mode == true` and the probe returns a non-empty `parked[]` array, the orchestrator skips the `AskUserQuestion` resolution flow for each item in that array and instead parks it: for each newly-parked `feature_name`, increment `parked_count` and fire `PushNotification({ message: "parked {feature_name} — {parked_count} decision(s) parked so far this run" })` (per the §1c.6 park policy). Continue the queue walk without halting. The batched flush of all parked decisions occurs later via the WU-4 flush protocol (see §1g-flush below).
