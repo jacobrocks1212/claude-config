@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: noncanonical-blocker-filename-invisible-to-state-machine
-status: In-progress
+status: Complete
 created: 2026-06-19
 complexity: complex
 phases: [1, 2, 3, 4, 5]
@@ -77,23 +77,23 @@ The full set named in `user/scripts/CLAUDE.md` (Concurrency-plane gate) — `laz
 
 ## Batch 4 — Phase 4 (write-time hook) + Phase 5 (re-baseline + doc)
 
-- [ ] **WU-4.1** — Add `user/hooks/block-noncanonical-blocker-write.sh`, following the existing `block-*.sh` PreToolUse hook conventions in `user/hooks/` (read tool input from stdin, emit the deny convention the sibling hooks use). Match against the resolved write-target BASENAME: blocker-shaped (`BLOCKED*` + `.md`, case-insensitive), NOT exactly `BLOCKED.md`, and NOT containing `_RESOLVED_` → DENY with a message telling the agent to write canonical `BLOCKED.md` instead. Fail-OPEN on any parse/match error (never block legitimate writes).
+- [x] **WU-4.1** — Add `user/hooks/block-noncanonical-blocker-write.sh`, following the existing `block-*.sh` PreToolUse hook conventions in `user/hooks/` (read tool input from stdin, emit the deny convention the sibling hooks use). Match against the resolved write-target BASENAME: blocker-shaped (`BLOCKED*` + `.md`, case-insensitive), NOT exactly `BLOCKED.md`, and NOT containing `_RESOLVED_` → DENY with a message telling the agent to write canonical `BLOCKED.md` instead. Fail-OPEN on any parse/match error (never block legitimate writes).
   - **Files:** `user/hooks/block-noncanonical-blocker-write.sh` (net-new).
   - **Reuse directive:** copy the stdin-parse + deny-emit shape from an existing `block-*.sh` hook (e.g. `block-work-repo-git-writes.sh`); only the match predicate is new.
 
-- [ ] **WU-4.2** — Register the hook in `user/settings.json` under PreToolUse for `Write` (and `Edit` if the sibling block-* hooks register both), matching the existing registration shape. Add a one-row entry to the repo-root `CLAUDE.md` Hooks table documenting it.
+- [x] **WU-4.2** — Register the hook in `user/settings.json` under PreToolUse for `Write` (and `Edit` if the sibling block-* hooks register both), matching the existing registration shape. Add a one-row entry to the repo-root `CLAUDE.md` Hooks table documenting it.
   - **Files:** `user/settings.json`, `CLAUDE.md` (repo root).
 
-- [ ] **WU-4.3** — Smoke-test the hook from the shell with stdin fixtures: write to `…/BLOCKED_2026-06-09-foo.md` → deny; write to `…/BLOCKED.md` → allow; write to `…/notes.md` → allow; write to `…/BLOCKED_RESOLVED_2026-06-09.md` → allow. (Mirror any existing block-* hook test style; if none is automated, run the four stdin fixtures manually and record the outcomes.)
+- [x] **WU-4.3** — Smoke-test the hook from the shell with stdin fixtures: write to `…/BLOCKED_2026-06-09-foo.md` → deny; write to `…/BLOCKED.md` → allow; write to `…/notes.md` → allow; write to `…/BLOCKED_RESOLVED_2026-06-09.md` → allow. (Mirror any existing block-* hook test style; if none is automated, run the four stdin fixtures manually and record the outcomes.)
   - **Files:** test fixture / manual shell run.
 
-- [ ] **WU-5.1** — Regenerate BOTH byte-pinned baselines through `_normalize_smoke_output` (NEVER by hand — use the procedure `test_lazy_core.py` documents): pipe live `python lazy-state.py --test` → `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, and live `python bug-state.py --test` → `user/scripts/tests/baselines/bug-state-test-baseline.txt`. Confirm `git diff` on each baseline shows ONLY the new fixtures' rows.
+- [x] **WU-5.1** — Regenerate BOTH byte-pinned baselines through `_normalize_smoke_output` (NEVER by hand — use the procedure `test_lazy_core.py` documents): pipe live `python lazy-state.py --test` → `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, and live `python bug-state.py --test` → `user/scripts/tests/baselines/bug-state-test-baseline.txt`. Confirm `git diff` on each baseline shows ONLY the new fixtures' rows.
   - **Files:** `user/scripts/tests/baselines/lazy-state-test-baseline.txt`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`.
 
-- [ ] **WU-5.2** — Confirm the full gate green: `python user/scripts/test_lazy_core.py`, `python user/scripts/lazy-state.py --test`, `python user/scripts/bug-state.py --test`, `python user/scripts/lazy_coord.py --test` (the shared `lazy_core` import surface changed — run the full set per `user/scripts/CLAUDE.md`).
+- [x] **WU-5.2** — Confirm the full gate green: `python user/scripts/test_lazy_core.py`, `python user/scripts/lazy-state.py --test`, `python user/scripts/bug-state.py --test`, `python user/scripts/lazy_coord.py --test` (the shared `lazy_core` import surface changed — run the full set per `user/scripts/CLAUDE.md`).
   - **Verify:** all four exit 0.
 
-- [ ] **WU-5.3** — Add a note to `user/skills/_components/sentinel-frontmatter.md` documenting the read-time stray-blocker detector and the `BLOCKED_RESOLVED_` exclusion, so the canonical-name contract prose points at the mechanical backstop now enforcing it. Then run `python ~/.claude/scripts/lint-skills.py` to confirm no broken injections (the component is injected into skills).
+- [x] **WU-5.3** — Add a note to `user/skills/_components/sentinel-frontmatter.md` documenting the read-time stray-blocker detector and the `BLOCKED_RESOLVED_` exclusion, so the canonical-name contract prose points at the mechanical backstop now enforcing it. Then run `python ~/.claude/scripts/lint-skills.py` to confirm no broken injections (the component is injected into skills).
   - **Files:** `user/skills/_components/sentinel-frontmatter.md`.
 
 ---

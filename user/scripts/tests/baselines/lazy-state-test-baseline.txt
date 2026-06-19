@@ -15,6 +15,9 @@
 }
   [fresh-queue] cloud=False skip_nr=False real_device=True: Step 4: no SPEC, no research
   [blocker] cloud=False skip_nr=False real_device=True: Step 3: blocked
+  [misnamed-blocker-stray] cloud=False skip_nr=False real_device=True: Step 3: mis-named blocker
+  [misnamed-blocker-resolved-only] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [misnamed-blocker-canonical-precedence] cloud=False skip_nr=False real_device=True: Step 3: blocked
   [mid-implementation] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [cloud-saturated] cloud=True skip_nr=False real_device=True: Step 4: no SPEC, no research
   [cloud-workstation-only-remainder] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test

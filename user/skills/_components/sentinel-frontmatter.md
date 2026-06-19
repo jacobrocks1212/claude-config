@@ -38,6 +38,12 @@ Optional:
 
 The markdown body that follows MUST keep the existing `## Details` / `## What was tried` / `## Recovery Suggestion` sections so a human reading the file directly still sees the full context. Frontmatter values may duplicate the body content; that's fine — frontmatter is the parser's source of truth, body is the human's.
 
+> **The blocker filename MUST be exactly `BLOCKED.md` — now mechanically enforced (read-time + write-time).** The state machines (`lazy-state.py` / `bug-state.py`) key their Step-3 halt detection on the literal filename `BLOCKED.md`. A blocker written under any other name — `BLOCKED_2026-06-09-foo.md`, a lowercase `blocked.md`, etc. — is **invisible** to that check, so the pipeline re-routes straight back into the same wall (infinite-loop risk). Two backstops now guard the contract:
+> - **Read-time detector** — `lazy_core.detect_noncanonical_blocker(spec_dir)` scans the item directory for a blocker-shaped stray (basename matching `BLOCKED*` + `.md` case-insensitively, NOT exactly `BLOCKED.md`, and NOT containing the literal `_RESOLVED_`) and, when found with no canonical `BLOCKED.md` present, halts on the distinct terminal `blocked-misnamed` (`current_step: "Step 3: mis-named blocker"`) instructing the human to rename it to `BLOCKED.md` or neutralize it. Wired into BOTH pipelines' Step 3 (after the canonical check) and their `--park-blocked` park loops.
+> - **Write-time hook** — the `block-noncanonical-blocker-write.sh` PreToolUse(Write/Edit) hook denies the write before the stray ever lands, naming canonical `BLOCKED.md` in its deny message.
+>
+> The **`_RESOLVED_` exclusion** is deliberate: blocked-resolution neutralizes a sentinel by **renaming** it to `BLOCKED_RESOLVED_<date>.md` (`--neutralize-sentinel`, see the lifecycle table below). Both the detector and the hook exclude any name containing the literal substring `_RESOLVED_` so a neutralized blocker is never re-flagged as a stray — the exact same idempotency convention `neutralize_sentinel` itself uses.
+
 #### `DEFERRED_NON_CLOUD.md` — `kind: deferred-non-cloud`
 
 Required:

@@ -180,6 +180,7 @@ Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/
 | `block-work-repo-git-writes.sh` | PreToolUse (Bash) | Blocks destructive git in work repos |
 | `pr-review-cache-guard.sh` | PreToolUse (Bash) | PR review caching guard |
 | `lazy-cycle-containment.sh` | PreToolUse (Bash, Agent, Skill) | While the lazy cycle-subagent marker is present (scoped to the current repo), denies in-flight the routing/lifecycle/recursive-dispatch/2nd-feature-commit ops a runaway needs (fail-OPEN); also denies a subagent invoking any `/lazy*` skill via the Skill tool (defense-in-depth, agent_id-targeted, arming-free) |
+| `block-noncanonical-blocker-write.sh` | PreToolUse (Write, Edit) | Denies writing a mis-named blocker sentinel — a target basename matching `BLOCKED*` + `.md` (case-insensitive) that is NOT exactly `BLOCKED.md` and does NOT contain `_RESOLVED_`. Such a stray is invisible to the `lazy-state.py`/`bug-state.py` Step-3 check and silently loops the pipeline. The deny message names canonical `BLOCKED.md`. Fail-OPEN. Write-time complement to the read-time `lazy_core.detect_noncanonical_blocker` backstop |
 | `fix-line-endings.ps1` | PostToolUse (Edit/Write) | Normalizes line endings |
 | `run-eslint.ps1` | PostToolUse (Edit/Write) | Auto-lints Cognito Forms TS/Vue |
 

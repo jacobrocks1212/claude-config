@@ -1,5 +1,8 @@
   PASS [fresh-open-bug] cloud=False real_device=True: Step 4: investigate bug
   PASS [blocked] cloud=False real_device=True: Step 3: blocked
+  PASS [misnamed-blocker-stray] cloud=False real_device=True: Step 3: mis-named blocker
+  PASS [misnamed-blocker-resolved-only] cloud=False real_device=True: Step 4: investigate bug
+  PASS [misnamed-blocker-canonical-precedence] cloud=False real_device=True: Step 3: blocked
   PASS [mid-fix] cloud=False real_device=True: Step 7a: execute plan
   PASS [phases-complete-no-retro] cloud=False real_device=True: Step 9: run MCP tests
   PASS [phases-complete-no-mcp-surface] cloud=False real_device=True: Step 9: structural MCP-skip (no app surface)

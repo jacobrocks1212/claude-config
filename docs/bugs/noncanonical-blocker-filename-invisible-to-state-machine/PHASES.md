@@ -130,11 +130,18 @@ All load-bearing assumptions for this plan are **code-provable** (verified inlin
 **Scope:** (D7 completeness layer — see the Completeness note above.) Add a PreToolUse(Write/Edit) hook that DENIES a write whose target filename is blocker-shaped but non-canonical (matches `BLOCKED*.md` case-insensitively, is not exactly `BLOCKED.md`, and does not contain `_RESOLVED_`), instructing the agent to use the canonical `BLOCKED.md` name. This prevents the stray from ever reaching disk, complementing the read-time detector (which is the load-bearing backstop). Hook is fail-OPEN: any parse/match error allows the write (never blocks legitimate work).
 
 **Deliverables:**
-- [ ] New hook script `user/hooks/block-noncanonical-blocker-write.sh` (follow the existing PreToolUse hook conventions in `user/hooks/` — read tool input from stdin, emit the deny JSON/exit convention the other `block-*.sh` hooks use; match against the resolved target path's BASENAME).
-- [ ] Match rule identical in spirit to the Phase-1 helper: basename matches `BLOCKED*` + `.md` (case-insensitive), is NOT exactly `BLOCKED.md`, and does NOT contain `_RESOLVED_`. On match → DENY with a message telling the agent to write `BLOCKED.md` (canonical) instead. Fail-OPEN on any error.
-- [ ] Register the hook in `user/settings.json` under the PreToolUse hooks for `Write` (and `Edit` if the existing block-* hooks register both), matching the existing registration shape.
-- [ ] Update `claude-config/CLAUDE.md`'s Hooks table with a one-row entry for the new hook (the table documents every hook).
-- [ ] Tests: a hook smoke check — feed the hook a synthetic tool-input for a write to `docs/.../BLOCKED_2026-06-09-foo.md` → hook denies; a write to `docs/.../BLOCKED.md` → hook allows; a write to an unrelated `notes.md` → allows; a write to `BLOCKED_RESOLVED_2026-06-09.md` → allows. (Mirror the test style used for sibling `block-*.sh` hooks; if those have no automated test, document a manual stdin-fixture check in the plan and run it.)
+- [x] New hook script `user/hooks/block-noncanonical-blocker-write.sh` (follow the existing PreToolUse hook conventions in `user/hooks/` — read tool input from stdin, emit the deny JSON/exit convention the other `block-*.sh` hooks use; match against the resolved target path's BASENAME).
+- [x] Match rule identical in spirit to the Phase-1 helper: basename matches `BLOCKED*` + `.md` (case-insensitive), is NOT exactly `BLOCKED.md`, and does NOT contain `_RESOLVED_`. On match → DENY with a message telling the agent to write `BLOCKED.md` (canonical) instead. Fail-OPEN on any error.
+- [x] Register the hook in `user/settings.json` under the PreToolUse hooks for `Write` (and `Edit` if the existing block-* hooks register both), matching the existing registration shape.
+- [x] Update `claude-config/CLAUDE.md`'s Hooks table with a one-row entry for the new hook (the table documents every hook).
+- [x] Tests: a hook smoke check — feed the hook a synthetic tool-input for a write to `docs/.../BLOCKED_2026-06-09-foo.md` → hook denies; a write to `docs/.../BLOCKED.md` → hook allows; a write to an unrelated `notes.md` → allows; a write to `BLOCKED_RESOLVED_2026-06-09.md` → allows. (Mirror the test style used for sibling `block-*.sh` hooks; if those have no automated test, document a manual stdin-fixture check in the plan and run it.)
+
+#### Implementation Notes (Phase 4 — In-progress)
+
+- Added `user/hooks/block-noncanonical-blocker-write.sh` following the modern PreToolUse convention (inline Python `-c` body reading the PreToolUse JSON from stdin; deny via `hookSpecificOutput.permissionDecision: "deny"`; exit 0; fail-OPEN on any error — modeled on `lazy-cycle-containment.sh`, the only sibling that reads structured stdin; the older `block-work-repo-git-writes.sh` uses the legacy `$TOOL_INPUT_*` + `exit 2` shape which does not expose `file_path`). Matches the Write/Edit target's `file_path` BASENAME with the same predicate as the Phase-1 helper.
+- Registered under a `"matcher": "Write|Edit"` PreToolUse entry in `user/settings.json` (validated as parseable JSON). Added a Hooks-table row to repo-root `CLAUDE.md`.
+- Smoke-tested from the shell (6 stdin fixtures): stray `BLOCKED_2026-06-09-foo.md` → DENY; canonical `BLOCKED.md` → ALLOW; `notes.md` → ALLOW; `BLOCKED_RESOLVED_2026-06-09.md` → ALLOW; lowercase `blocked.md` via Edit → DENY; malformed JSON → ALLOW (fail-open). All as expected.
+- **Review verdict:** PASS (inline review — net-new hook + registration + doc; deny/allow behavior confirmed against all fixtures including fail-open).
 
 **Minimum Verifiable Behavior:** running the hook script with a stdin fixture targeting `BLOCKED_<date>-foo.md` emits a deny; targeting canonical `BLOCKED.md` emits an allow (exit 0 / no deny). Demonstrated from the shell.
 
@@ -159,11 +166,18 @@ All load-bearing assumptions for this plan are **code-provable** (verified inlin
 **Scope:** Regenerate both byte-pinned `--test` baselines through `_normalize_smoke_output` (NEVER by hand) so they absorb the new fixtures from Phases 2–3, confirm both suites + `test_lazy_core.py` green, and add the schema-doc note.
 
 **Deliverables:**
-- [ ] Regenerate `user/scripts/tests/baselines/lazy-state-test-baseline.txt` by piping live `python lazy-state.py --test` output through `_normalize_smoke_output` (use the same procedure `test_lazy_core.py` documents — never hand-edit).
-- [ ] Regenerate `user/scripts/tests/baselines/bug-state-test-baseline.txt` the same way.
-- [ ] Confirm green: `python lazy-state.py --test`, `python bug-state.py --test`, `python test_lazy_core.py`, and (if it covers this) `python lazy_coord.py --test` — the full set named in `user/scripts/CLAUDE.md` → Concurrency plane gate, since the shared `lazy_core` import surface changed.
-- [ ] Add a note to `user/skills/_components/sentinel-frontmatter.md` documenting the read-time stray-blocker detector and the `BLOCKED_RESOLVED_` exclusion (so the canonical-name contract prose points at the mechanical backstop that now enforces it).
-- [ ] Run `python ~/.claude/scripts/lint-skills.py` if the component edit could affect projection (the component is injected into skills); confirm no broken injections.
+- [x] Regenerate `user/scripts/tests/baselines/lazy-state-test-baseline.txt` by piping live `python lazy-state.py --test` output through `_normalize_smoke_output` (use the same procedure `test_lazy_core.py` documents — never hand-edit).
+- [x] Regenerate `user/scripts/tests/baselines/bug-state-test-baseline.txt` the same way.
+- [x] Confirm green: `python lazy-state.py --test`, `python bug-state.py --test`, `python test_lazy_core.py`, and (if it covers this) `python lazy_coord.py --test` — the full set named in `user/scripts/CLAUDE.md` → Concurrency plane gate, since the shared `lazy_core` import surface changed.
+- [x] Add a note to `user/skills/_components/sentinel-frontmatter.md` documenting the read-time stray-blocker detector and the `BLOCKED_RESOLVED_` exclusion (so the canonical-name contract prose points at the mechanical backstop that now enforces it).
+- [x] Run `python ~/.claude/scripts/lint-skills.py` if the component edit could affect projection (the component is injected into skills); confirm no broken injections.
+
+#### Implementation Notes (Phase 5 — In-progress)
+
+- Regenerated BOTH byte-pinned baselines through `_normalize_smoke_output` (via the exact subprocess+normalize procedure `test_lazy_core.py`'s baseline tests use, with a hermetic `LAZY_STATE_DIR`). `git diff` confirms the drift is EXACTLY the 3 new fixture rows in each file (6 insertions, 0 deletions) — no other output moved.
+- Full four-suite gate green: `test_lazy_core.py` 574/574; `lazy-state.py --test` all smoke tests passed; `bug-state.py --test` all smoke tests passed; `lazy_coord.py --test` all smoke tests passed.
+- Added the canonical-name-contract note to `user/skills/_components/sentinel-frontmatter.md` (right after the `BLOCKED.md` section) documenting both backstops (read-time detector + write-time hook) and the `_RESOLVED_` exclusion rationale. `lint-skills.py` → OK, no broken injections.
+- **Review verdict:** PASS (inline review — baselines + doc note + full gate; baseline drift verified to be only the new rows).
 
 **Minimum Verifiable Behavior:** `python lazy-state.py --test`, `python bug-state.py --test`, and `python test_lazy_core.py` all exit 0 with the regenerated baselines committed; `git diff` shows the baseline drift is exactly the new fixtures' rows.
 
