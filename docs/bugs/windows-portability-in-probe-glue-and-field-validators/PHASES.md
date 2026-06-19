@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress — all three phases implemented 2026-06-19 (validation pending; the `__mark_fixed__` gate owns the flip to Fixed).
+
 **MCP runtime:** not-required — docs/harness-prose + hook-config bug. No app-reachable surface: the fix loci are `/lazy-batch` probe-glue prose, the coupled `/lazy-batch-cloud` prose, and a PostToolUse hook-registration decision in `user/settings.json`. None of these is observable through the AlgoBooth MCP server (no store, audio, UI, or IPC surface). Validation is by `lint-skills.py` / `project-skills.py` + grep assertions over the edited prose, not `/mcp-test`.
 
 ## Validated Assumptions
@@ -88,9 +90,9 @@ The executor implements the **reconcile** path: make `user/settings.json` and th
 The executor implements disposition (b): a clearly-scoped, copy-pasteable follow-up record in this bug's documentation naming the exact AlgoBooth file, the exact fix (`.trim()` each frontmatter value before validation, mirroring claude-config's CRLF-safe `splitlines()`), and the evidence (the three field-validator error formats from the SPEC). If a reachable AlgoBooth bug queue exists at execution time, the executor MAY instead enqueue an `--enqueue-adhoc --type bug` item into the AlgoBooth `docs/bugs/queue.json` and cross-reference it — but the doc-only follow-up is the baseline that always lands.
 
 **Deliverables:**
-- [ ] Author the out-of-repo follow-up record (in this bug's PHASES Implementation Notes, or a sibling `FOLLOWUP.md` under the bug dir) naming: target file `scripts/check-docs-consistency.ts` (AlgoBooth repo root), the fix (strip/`.trim()` trailing `\r` from each frontmatter value before date/enum/integer validation), and the convergence target (claude-config's `lazy_core.py::parse_sentinel` `splitlines()` CRLF-safe behavior).
-- [ ] Add a REVERSE-REFERENCE in this bug's PHASES Implementation Notes naming the out-of-repo follow-up (both-directions cross-reference contract).
-- [ ] Tests: grep this bug's docs to confirm the AlgoBooth follow-up record + reverse-reference are present.
+- [x] Author the out-of-repo follow-up record (in this bug's PHASES Implementation Notes, or a sibling `FOLLOWUP.md` under the bug dir) naming: target file `scripts/check-docs-consistency.ts` (AlgoBooth repo root), the fix (strip/`.trim()` trailing `\r` from each frontmatter value before date/enum/integer validation), and the convergence target (claude-config's `lazy_core.py::parse_sentinel` `splitlines()` CRLF-safe behavior).
+- [x] Add a REVERSE-REFERENCE in this bug's PHASES Implementation Notes naming the out-of-repo follow-up (both-directions cross-reference contract).
+- [x] Tests: grep this bug's docs to confirm the AlgoBooth follow-up record + reverse-reference are present.
 
 **Minimum Verifiable Behavior:** A grep over this bug directory finds the AlgoBooth-side follow-up record (file path + fix description) AND the reverse-reference, satisfying the spin-off both-directions cross-reference contract. (No code is changed in this phase — it is a bookkeeping deliverable; the only verifiable artifact is the on-disk follow-up record.)
 
@@ -122,6 +124,12 @@ The executor implements disposition (b): a clearly-scoped, copy-pasteable follow
 - Files modified: `CLAUDE.md` (project root, Scripts + Hooks tables). `user/settings.json` left unchanged (the reconcile is doc-to-reality, NOT registering a counterproductive hook). `user/CLAUDE.md` does not document these hooks, so no edit there.
 - Gates green: `python3 -c "import json; json.load(open('user/settings.json'))"` exit 0; grep cross-check confirms the hook table and settings agree (both reflect unwired, rationale recorded).
 
-- **Out-of-repo follow-up (Symptom B primary):** the AlgoBooth `scripts/check-docs-consistency.ts` `.trim()`/`\r`-strip fix is authored as a follow-up record in Phase 3 — it CANNOT land in claude-config. This is the reverse-reference leg of the spin-off contract; the Phase-3 deliverable names this bug as its origin.
+### Phase 3 — AlgoBooth follow-up cross-reference — DONE 2026-06-19
+
+- ⚖ policy: spin-off vs doc-only for AlgoBooth fix → documented the out-of-repo follow-up here (no AlgoBooth `docs/bugs/queue.json` reachable from this repo's bug pipeline — checked 2026-06-19, absent → doc-only disposition (b) is the baseline that lands).
+- Authored **[`FOLLOWUP.md`](./FOLLOWUP.md)** in this bug dir: names target file `scripts/check-docs-consistency.ts` (AlgoBooth repo root), the fix (`.trim()` / strip trailing `\r` from each frontmatter value BEFORE date/enum/integer field-type validation), the three evidence error formats (`"2026-05-18\r"` date, `"lazy\r"` enum, `"11\r"`/`"13\r"` integer), and the convergence target (claude-config's CRLF-safe `lazy_core.py::parse_sentinel` `splitlines()` behavior).
+- **REVERSE-REFERENCE (spin-off both-directions contract):** [`FOLLOWUP.md`](./FOLLOWUP.md) names THIS bug as its origin; this Implementation Notes block names FOLLOWUP.md as the spun-off record. Both directions present.
+
+- **Out-of-repo follow-up (Symptom B primary):** the AlgoBooth `scripts/check-docs-consistency.ts` `.trim()`/`\r`-strip fix is authored as the doc-only follow-up record **[`FOLLOWUP.md`](./FOLLOWUP.md)** (Phase 3) — it CANNOT land in claude-config. This is the reverse-reference leg of the spin-off contract; `FOLLOWUP.md` names this bug as its origin.
 - **Coupled-pair lockstep (Phase 1):** `user/skills/lazy-batch/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` must be edited together and diffed afterward (CLAUDE.md → "Coupled Skill Pairs").
 - **D7 scope-class resolutions (no NEEDS_INPUT written):** Phase 2 (reconcile-vs-blind-wire) and Phase 3 (spin-off-vs-doc-only) are scope-class decisions — the options do not diverge in user-visible product behavior — resolved in-plan with `⚖ policy:` lines above, per the completeness-first standing policy.
