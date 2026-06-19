@@ -1388,6 +1388,24 @@ def compute_state(
                 "Re-enters when resolved."
             )
             continue
+        # Park-mode (mis-named blocker): parity with the canonical BLOCKED park
+        # branch above for a non-canonical stray (noncanonical-blocker-filename-
+        # invisible-to-state-machine). When --park-blocked is active, canonical
+        # BLOCKED.md is ABSENT, and the shared detector finds a stray, park it the
+        # same way (it re-enters once renamed/neutralized). Keeps --park-blocked
+        # semantics aligned with the canonical blocker. (The helper itself returns
+        # None when canonical is present, so the `.exists()` guard is belt-and-
+        # suspenders parity with the branch above.)
+        if park_blocked and not (spec_path / "BLOCKED.md").exists():
+            _stray = lazy_core.detect_noncanonical_blocker(spec_path)
+            if _stray is not None:
+                _PARKED.append(lazy_core.build_parked_entry(feature_id, _stray))
+                _diag(
+                    f"parked: {name} — feature-local mis-named blocker "
+                    f"'{_stray.name}'; skipped (park mode). Re-enters when "
+                    "renamed to BLOCKED.md or neutralized."
+                )
+                continue
         # Park-mode: if --park-needs-input is active and this feature has an
         # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
         # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
@@ -1527,6 +1545,29 @@ def compute_state(
         if escalated:
             state["validation_escalation"] = True
         return state
+
+    # Step 3 (cont.): mis-named blocker (noncanonical-blocker-filename-invisible-
+    # to-state-machine). A blocker written under a non-canonical name — e.g.
+    # BLOCKED_2026-06-09-foo.md or a lowercase blocked.md — is invisible to the
+    # literal BLOCKED.md check above, so the state machine would re-route the item
+    # straight back into the same wall (infinite-loop risk). Detect the stray via
+    # the shared single-writer helper (which returns None when canonical BLOCKED.md
+    # is present, so this only fires when canonical is ABSENT — the check above
+    # already returned in that case) and halt on a DISTINCT terminal so the human
+    # renames it to BLOCKED.md (or neutralizes it). Inline literals mirror the
+    # canonical-BLOCKED block's style above.
+    stray_blocked = lazy_core.detect_noncanonical_blocker(spec_path)
+    if stray_blocked is not None:
+        return _state(
+            **common,
+            current_step="Step 3: mis-named blocker",
+            terminal_reason="blocked-misnamed",
+            notify_message=(
+                f"MIS-NAMED BLOCKER: {feature_name} — found '{stray_blocked.name}', "
+                "which the state machine cannot see (only the canonical 'BLOCKED.md' "
+                "halts the pipeline). Rename it to 'BLOCKED.md' or neutralize it."
+            ),
+        )
 
     # NEEDS_INPUT.md (batch-mode halt)
     needs_input_file = spec_path / "NEEDS_INPUT.md"
@@ -3781,6 +3822,57 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         # Do NOT pre-write STALE_UPSTREAM.md — the auto-wiring at probe start must create it.
 
+    elif name == "misnamed-blocker-stray":
+        # noncanonical-blocker-filename-invisible-to-state-machine: a blocker
+        # written under a NON-canonical name (no canonical BLOCKED.md). Step 3
+        # must surface the distinct `blocked-misnamed` terminal naming the stray
+        # rather than routing past it (loop risk).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-mbs", "name": "Feature MBS", "spec_dir": "feat-mbs", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        mbs = features / "feat-mbs"
+        mbs.mkdir()
+        (mbs / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (mbs / "BLOCKED_2026-06-09-foo.md").write_text(
+            "blocker written under a mis-spelled name\n"
+        )
+    elif name == "misnamed-blocker-resolved-only":
+        # A neutralized blocker (BLOCKED_RESOLVED_<date>.md) is excluded by the
+        # detector — it must NOT halt; the item routes normally (here: a Draft
+        # SPEC with no research → Step 5 research prompt).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-mbr", "name": "Feature MBR", "spec_dir": "feat-mbr", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        mbr = features / "feat-mbr"
+        mbr.mkdir()
+        (mbr / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (mbr / "BLOCKED_RESOLVED_2026-06-09.md").write_text("# Resolved blocker\n")
+    elif name == "misnamed-blocker-canonical-precedence":
+        # Canonical BLOCKED.md AND a stray both present → the canonical `blocked`
+        # terminal must win (no `blocked-misnamed`). Proves the detector defers to
+        # canonical and the Step-3 wiring order is correct.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-mbc", "name": "Feature MBC", "spec_dir": "feat-mbc", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        mbc = features / "feat-mbc"
+        mbc.mkdir()
+        (mbc / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            mbc / "BLOCKED.md", "blocked",
+            feature_id="feat-mbc", phase="Implementation",
+            blocked_at="2026-06-09T12:00:00Z", retry_count=0,
+        )
+        (mbc / "BLOCKED_2026-06-09-foo.md").write_text("a co-present stray\n")
+
     else:
         raise ValueError(f"unknown fixture: {name}")
 
@@ -3796,6 +3888,27 @@ def run_smoke_tests() -> int:
             # (fixture_name, cloud, skip_needs_research, expectations dict)
             ("fresh-queue", False, False, {"terminal_reason": "needs-spec-input"}),
             ("blocker", False, False, {"terminal_reason": "blocked", "feature_id": "feat-b"}),
+            # noncanonical-blocker-filename-invisible-to-state-machine: a stray
+            # blocker (non-canonical name, no canonical BLOCKED.md) → distinct
+            # `blocked-misnamed` terminal (loop-risk fix).
+            ("misnamed-blocker-stray", False, False, {
+                "terminal_reason": "blocked-misnamed",
+                "feature_id": "feat-mbs",
+                "current_step": "Step 3: mis-named blocker",
+            }),
+            # A neutralized blocker (BLOCKED_RESOLVED_<date>.md) is excluded →
+            # does NOT halt; Draft SPEC + no research routes to Step 5.
+            ("misnamed-blocker-resolved-only", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-mbr",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # Canonical BLOCKED.md + a stray both present → canonical `blocked`
+            # precedence (no `blocked-misnamed`).
+            ("misnamed-blocker-canonical-precedence", False, False, {
+                "terminal_reason": "blocked",
+                "feature_id": "feat-mbc",
+            }),
             ("mid-implementation", False, False, {"sub_skill": "execute-plan", "feature_id": "feat-c"}),
             ("cloud-saturated", True, False, {"feature_id": "feat-e"}),   # advances past saturated feat-d
             # Step 7 cloud bypass: all plans Complete + PHASES.md has
