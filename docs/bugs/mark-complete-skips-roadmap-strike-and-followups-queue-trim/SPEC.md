@@ -2,7 +2,7 @@
 
 > When a feature completes, the `__mark_complete__` pseudo-action did not strike through the corresponding ROADMAP row (the operator hand-edited ROADMAP 5× in one run) and its automatic queue-trim silently missed ids ending in `-followups` because it matched on directory basename rather than the resolved spec_dir / full queue id. **Root cause confirmed — and the fix is ALREADY ON DISK** (commit `1b81210`, `unified-pipeline-orchestrator` Phase 5 WU-3), with dedicated regression tests passing.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
 **Placement:** docs/bugs/mark-complete-skips-roadmap-strike-and-followups-queue-trim

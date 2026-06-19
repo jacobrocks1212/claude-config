@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 <!-- No production code change is warranted — the fix shipped in commit 1b81210 (unified-pipeline-orchestrator Phase 5 WU-3) with passing regression tests. This is a confirmed-duplicate / already-fixed item: the single phase below is a no-op VERIFICATION phase that records the existing tests as the certifying evidence and routes to archive. The flip to Fixed + the FIXED.md receipt are owned EXCLUSIVELY by the orchestrator's __mark_fixed__ validation-tail gate — never set here. When the verification phase lands, the top-level Status moves to In-progress (implementation/verification done, validation pending). -->
 
 
