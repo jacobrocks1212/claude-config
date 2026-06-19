@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all three phases implemented 2026-06-19 (validation pending; the `__mark_fixed__` gate owns the flip to Fixed).
+**Status:** Fixed
 
 **MCP runtime:** not-required — docs/harness-prose + hook-config bug. No app-reachable surface: the fix loci are `/lazy-batch` probe-glue prose, the coupled `/lazy-batch-cloud` prose, and a PostToolUse hook-registration decision in `user/settings.json`. None of these is observable through the AlgoBooth MCP server (no store, audio, UI, or IPC surface). Validation is by `lint-skills.py` / `project-skills.py` + grep assertions over the edited prose, not `/mcp-test`.
 

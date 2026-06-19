@@ -2,7 +2,7 @@
 
 > During `/lazy-batch` runs on AlgoBooth (Windows), the orchestrator's improvised probe glue writes `lazy-state.py` output to a POSIX `/tmp/` path and then reads it back with Windows-native Python, which has no `/tmp`, so the read crashes with `FileNotFoundError` and a redundant re-probe is forced. Separately, sentinel/plan files carrying a trailing carriage return (`\r`) fail AlgoBooth's `check-docs-consistency.ts` field validators on values that are otherwise legitimately correct, triggering mid-run normalization detours. Both are Windows-portability defects observed across multiple real runs; their fix loci differ (Symptom A → claude-config probe-glue prose; Symptom B → AlgoBooth-side validator).
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
 **Placement:** docs/bugs/windows-portability-in-probe-glue-and-field-validators
