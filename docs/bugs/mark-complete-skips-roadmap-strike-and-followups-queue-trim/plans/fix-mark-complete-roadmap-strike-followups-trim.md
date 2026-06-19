@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: mark-complete-skips-roadmap-strike-and-followups-queue-trim
-status: Ready
+status: Complete
 created: 2026-06-19
 complexity: trivial
 phases: [1]
@@ -62,7 +62,7 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — Re-certify the WU-3 fix & regression coverage (no source change) (Phase 1)
+- [x] WU-1 — Re-certify the WU-3 fix & regression coverage (no source change) (Phase 1)
 
 ## Execution Schedule
 
@@ -83,9 +83,9 @@ Single work unit.
 #### WU-1 — Re-certify the WU-3 fix & regression coverage (no source change)
 
 - **Scope:**
-  - [ ] Confirm the WU-3 fix is present in `user/scripts/lazy_core.py`: `apply_pseudo __mark_complete__` calls `_strike_roadmap_row` (returns `roadmap_struck`) and trims the queue via `_resolve_under_repo` / `_entry_matches` (returns `queue_trimmed`). Source inspection only — no edit.
-  - [ ] Run `python user/scripts/test_lazy_core.py`; confirm green including the three cited regression tests.
-  - [ ] Record the result (pass count + the three named tests) in PHASES.md Phase-1 Implementation Notes as confirm-and-archive evidence.
+  - [x] Confirm the WU-3 fix is present in `user/scripts/lazy_core.py`: `apply_pseudo __mark_complete__` calls `_strike_roadmap_row` (returns `roadmap_struck`) and trims the queue via `_resolve_under_repo` / `_entry_matches` (returns `queue_trimmed`). Source inspection only — no edit.
+  - [x] Run `python user/scripts/test_lazy_core.py`; confirm green including the three cited regression tests.
+  - [x] Record the result (pass count + the three named tests) in PHASES.md Phase-1 Implementation Notes as confirm-and-archive evidence.
 - **TDD:** no (no source change — the regression tests already exist and ARE the deliverable; this WU re-runs them as the certifying gate).
 - **Files to create/modify:**
   - None (source). Tracking only: `PHASES.md` (Implementation Notes + checkbox/status), optionally `SPEC.md` (status reconciliation — never `Fixed`/`Won't-fix`).

@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Open
+**Status:** In-progress
 <!-- No production code change is warranted — the fix shipped in commit 1b81210 (unified-pipeline-orchestrator Phase 5 WU-3) with passing regression tests. This is a confirmed-duplicate / already-fixed item: the single phase below is a no-op VERIFICATION phase that records the existing tests as the certifying evidence and routes to archive. The flip to Fixed + the FIXED.md receipt are owned EXCLUSIVELY by the orchestrator's __mark_fixed__ validation-tail gate — never set here. When the verification phase lands, the top-level Status moves to In-progress (implementation/verification done, validation pending). -->
 
 
@@ -26,12 +26,21 @@ Because the fix is present, correct, and covered by dedicated passing regression
 **Scope:** Confirm the WU-3 fix is on disk and its dedicated regression tests are green, recording that run as the certifying evidence for a confirm-and-archive close. **No production source edit** — this phase exists solely to ground the already-fixed conclusion in a fresh, reproducible test run so the validation tail (`/mcp-test` → coverage audit → `__mark_fixed__`) has real evidence to gate on.
 
 **Deliverables:**
-- [ ] Confirm the WU-3 fix is present in `user/scripts/lazy_core.py`: `apply_pseudo __mark_complete__` calls `_strike_roadmap_row` (returns `roadmap_struck`) and trims the queue via `_resolve_under_repo` / `_entry_matches` (returns `queue_trimmed`). (Source inspection — no edit.)
-- [ ] Run `python user/scripts/test_lazy_core.py`; confirm green, including the three cited regression tests:
+- [x] Confirm the WU-3 fix is present in `user/scripts/lazy_core.py`: `apply_pseudo __mark_complete__` calls `_strike_roadmap_row` (returns `roadmap_struck`) and trims the queue via `_resolve_under_repo` / `_entry_matches` (returns `queue_trimmed`). (Source inspection — no edit.)
+- [x] Run `python user/scripts/test_lazy_core.py`; confirm green, including the three cited regression tests:
   - `test_apply_pseudo_mark_complete_trims_by_resolved_spec_dir_followups` — the exact `-followups` path-form-`spec_dir` miss class; asserts `queue_trimmed is True` (the legacy basename-only match would have missed it).
   - `test_apply_pseudo_mark_complete_strikes_roadmap_row` — asserts `roadmap_struck is True`.
   - `test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike` — no ROADMAP.md → `roadmap_struck False`, completion still succeeds.
-- [ ] Record the test result (count + the three named tests passing) in this phase's Implementation Notes as the confirm-and-archive evidence.
+- [x] Record the test result (count + the three named tests passing) in this phase's Implementation Notes as the confirm-and-archive evidence.
+
+**Implementation Notes (confirm-and-archive evidence — 2026-06-19):**
+- **No source change.** Verification-only re-certification of the already-shipped fix (`1b81210`, unified-pipeline-orchestrator Phase 5 WU-3).
+- **Fix confirmed present in `user/scripts/lazy_core.py`:** `_resolve_under_repo` (L2274), `_strike_roadmap_row` (L2299); inside `apply_pseudo __mark_complete__` the resolved-`spec_dir` queue-trim sets `queue_trimmed` (L3201–3242, via `_resolve_under_repo`/`_entry_matches`) and the ROADMAP strike sets `roadmap_struck` (L3265–3294, via `_strike_roadmap_row`). Source inspection only — no edit.
+- **Test result:** `python user/scripts/test_lazy_core.py` → exit 0, **583/583 passed, 0 failed**. The three cited regression tests all PASS:
+  - `test_apply_pseudo_mark_complete_strikes_roadmap_row` (test_lazy_core.py:18348)
+  - `test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike` (:18385)
+  - `test_apply_pseudo_mark_complete_trims_by_resolved_spec_dir_followups` (:18427)
+- **Disposition:** confirmed-duplicate / already-fixed. Verification done, validation pending → top-level Status flipped to In-progress; routes to `/mcp-test` (structural MCP-skip, `MCP runtime: not-required`) → coverage audit → orchestrator `__mark_fixed__` gate (owns the `Fixed` flip + FIXED.md receipt).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` exits 0 with all tests passing, including the three named `apply_pseudo __mark_complete__` regression tests — re-certifying that the ROADMAP strike and resolved-`spec_dir` queue-trim (incl. the `-followups` class) work.
 
