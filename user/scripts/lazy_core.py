@@ -3305,6 +3305,67 @@ def apply_pseudo(
 
 
 # ---------------------------------------------------------------------------
+# detect_noncanonical_blocker — read-time stray-blocker detector
+#   (noncanonical-blocker-filename-invisible-to-state-machine). Single writer of
+#   the detection logic; lazy-state.py / bug-state.py Step 3 only CALL it.
+# ---------------------------------------------------------------------------
+
+def detect_noncanonical_blocker(spec_dir: Path) -> Path | None:
+    """Return the first blocker-shaped *stray* file in ``spec_dir``, or None.
+
+    A *stray* is a mis-named blocker sentinel that the literal ``BLOCKED.md``
+    Step-3 check is blind to — e.g. ``BLOCKED_2026-06-09-foo.md`` or a
+    lowercase ``blocked.md``. Such a file silently loops the pipeline (the
+    state machine re-routes straight back into the same wall). This detector
+    surfaces it so the caller can emit a distinct ``blocked-misnamed`` terminal.
+
+    A directory entry's basename ``name`` is a stray iff ALL hold:
+      * ``name.upper().startswith("BLOCKED")`` — blocker-shaped (case-insensitive).
+      * ``name.lower().endswith(".md")``       — markdown sentinel.
+      * ``name != "BLOCKED.md"``                — NOT the exact canonical name
+        (canonical is owned by the caller's literal check; precise, case-sensitive).
+      * ``"_RESOLVED_" not in name``            — NOT an already-neutralized
+        blocker. Reuses ``neutralize_sentinel``'s literal ``_RESOLVED_`` guard
+        so a renamed ``BLOCKED_RESOLVED_<date>.md`` never re-halts.
+
+    Entries are scanned in ``sorted(spec_dir.iterdir())`` order so the "first
+    offending path" is deterministic across platforms — the byte-pinned
+    ``--test`` baselines depend on it.
+
+    Robustness: returns None (never raises) when ``spec_dir`` does not exist or
+    holds no stray.
+    """
+    if not spec_dir.exists():
+        return None
+    try:
+        entries = sorted(spec_dir.iterdir())
+    except OSError:
+        return None
+    # Canonical precedence (belt-and-suspenders): when the EXACT canonical
+    # BLOCKED.md is present, the caller's literal Step-3 check owns the halt —
+    # never surface a stray alongside it (would double-emit / shadow the
+    # canonical `blocked` terminal). The state machines also wire this detector
+    # AFTER their canonical check, so this is a second line of defense.
+    # The check is case-SENSITIVE against the listed basenames (NOT
+    # ``(spec_dir / "BLOCKED.md").exists()``, which is case-insensitive on
+    # Windows/macOS and would wrongly treat a lowercase ``blocked.md`` stray as
+    # the canonical file).
+    names = [e.name for e in entries]
+    if "BLOCKED.md" in names:
+        return None
+    for entry in entries:
+        name = entry.name
+        if (
+            name.upper().startswith("BLOCKED")
+            and name.lower().endswith(".md")
+            and name != "BLOCKED.md"
+            and "_RESOLVED_" not in name
+        ):
+            return entry
+    return None
+
+
+# ---------------------------------------------------------------------------
 # neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
 #   *_RESOLVED_<date> form (collision-safe, git-mv-aware).
 # ---------------------------------------------------------------------------

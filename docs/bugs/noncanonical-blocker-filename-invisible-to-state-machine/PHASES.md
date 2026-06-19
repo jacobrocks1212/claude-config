@@ -29,11 +29,18 @@ All load-bearing assumptions for this plan are **code-provable** (verified inlin
 **Scope:** Add a single-writer read-time detector to the shared layer so both state machines inherit it from one place. The helper scans an item directory for a blocker-shaped stray — a filename matching `BLOCKED*` with a `.md` extension (case-insensitive) that is NEITHER the canonical `BLOCKED.md` NOR an already-neutralized `*_RESOLVED_*.md`. Returns the first offending `Path`, or `None`.
 
 **Deliverables:**
-- [ ] `detect_noncanonical_blocker(spec_dir: Path) -> Optional[Path]` in `user/scripts/lazy_core.py`, placed near `neutralize_sentinel` (the other sentinel-name helper).
-- [ ] Match rule: case-insensitive `name.upper().startswith("BLOCKED")` AND `name.lower().endswith(".md")`; EXCLUDE the canonical `BLOCKED.md` (exact, case-sensitive — canonical is precise) and EXCLUDE any name containing the literal substring `_RESOLVED_` (reuse the `neutralize_sentinel` convention so a neutralized `BLOCKED_RESOLVED_<date>.md` never re-halts).
-- [ ] Deterministic ordering: iterate `sorted(spec_dir.iterdir())` so the "first offending path" is stable across platforms (the byte-pinned baselines depend on determinism).
-- [ ] Returns `None` when `spec_dir` does not exist or contains no stray (never raises on a missing dir).
-- [ ] Tests: `test_lazy_core.py` unit cases — (a) a stray `BLOCKED_2026-06-09-foo.md` alone → returns that path; (b) `BLOCKED_RESOLVED_2026-06-09.md` alone → returns `None` (excluded); (c) canonical `BLOCKED.md` alone → returns `None` (canonical is not a stray); (d) both canonical + stray present → returns `None` (canonical present means the canonical Step-3 check owns it — see Phase 2 precedence); (e) `blocked.md` lowercase variant → returns that path (case-insensitive match); (f) empty/missing dir → `None`.
+- [x] `detect_noncanonical_blocker(spec_dir: Path) -> Optional[Path]` in `user/scripts/lazy_core.py`, placed near `neutralize_sentinel` (the other sentinel-name helper).
+- [x] Match rule: case-insensitive `name.upper().startswith("BLOCKED")` AND `name.lower().endswith(".md")`; EXCLUDE the canonical `BLOCKED.md` (exact, case-sensitive — canonical is precise) and EXCLUDE any name containing the literal substring `_RESOLVED_` (reuse the `neutralize_sentinel` convention so a neutralized `BLOCKED_RESOLVED_<date>.md` never re-halts).
+- [x] Deterministic ordering: iterate `sorted(spec_dir.iterdir())` so the "first offending path" is stable across platforms (the byte-pinned baselines depend on determinism).
+- [x] Returns `None` when `spec_dir` does not exist or contains no stray (never raises on a missing dir).
+- [x] Tests: `test_lazy_core.py` unit cases — (a) a stray `BLOCKED_2026-06-09-foo.md` alone → returns that path; (b) `BLOCKED_RESOLVED_2026-06-09.md` alone → returns `None` (excluded); (c) canonical `BLOCKED.md` alone → returns `None` (canonical is not a stray); (d) both canonical + stray present → returns `None` (canonical present means the canonical Step-3 check owns it — see Phase 2 precedence); (e) `blocked.md` lowercase variant → returns that path (case-insensitive match); (f) empty/missing dir → `None`.
+
+#### Implementation Notes (Phase 1 — In-progress)
+
+- Added `detect_noncanonical_blocker(spec_dir: Path) -> Path | None` to `lazy_core.py` (immediately before `neutralize_sentinel`). Uses `Path | None` to match the local annotation convention (`neutralize_sentinel(path, date: str | None)`), not `Optional[Path]` — equivalent under `from __future__ import annotations`.
+- **Canonical precedence is case-SENSITIVE.** Implemented via `"BLOCKED.md" in [e.name for e in entries]` over the sorted dir listing, NOT `(spec_dir / "BLOCKED.md").exists()`. On Windows/macOS `.exists()` is case-INSENSITIVE, so a lowercase `blocked.md` stray would have falsely matched the canonical guard and returned `None` (test (e) caught this — RED→GREEN). The listing-membership check is genuinely case-sensitive on every platform.
+- 6 unit tests added to `test_lazy_core.py` (`test_detect_noncanonical_blocker_*`), registered in `_TESTS`. Gate `python test_lazy_core.py` → 574/574 pass.
+- **Review verdict:** PASS (inline review — single helper + tests, ≤2 files; test (d)/(e) precedence corrections applied during the cycle).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` (or the targeted `TestDetectNoncanonicalBlocker` class) runs and the new unit cases pass — the helper returns the offending path for a stray and `None` for canonical / resolved / empty inputs.
 

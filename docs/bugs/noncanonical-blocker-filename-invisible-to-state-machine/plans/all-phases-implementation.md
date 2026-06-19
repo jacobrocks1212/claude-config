@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: noncanonical-blocker-filename-invisible-to-state-machine
-status: Ready
+status: In-progress
 created: 2026-06-19
 complexity: complex
 phases: [1, 2, 3, 4, 5]
@@ -27,13 +27,13 @@ The full set named in `user/scripts/CLAUDE.md` (Concurrency-plane gate) — `laz
 
 ## Batch 1 — Phase 1: Shared detector helper (`lazy_core.py`)
 
-- [ ] **WU-1.1** — Add `detect_noncanonical_blocker(spec_dir: Path) -> Optional[Path]` to `user/scripts/lazy_core.py`, placed near `neutralize_sentinel` (~line 3308, the other sentinel-name helper).
+- [x] **WU-1.1** — Add `detect_noncanonical_blocker(spec_dir: Path) -> Optional[Path]` to `user/scripts/lazy_core.py`, placed near `neutralize_sentinel` (~line 3308, the other sentinel-name helper).
   - **Match rule:** for each entry in `sorted(spec_dir.iterdir())` (deterministic ordering — the byte-pinned baselines depend on it), a stray is a file whose basename `name` satisfies ALL of: `name.upper().startswith("BLOCKED")`, `name.lower().endswith(".md")`, `name != "BLOCKED.md"` (exact canonical exclusion), and `"_RESOLVED_" not in name` (reuse the `neutralize_sentinel` line-3357 convention so a neutralized `BLOCKED_RESOLVED_<date>.md` never re-halts). Return the FIRST matching `Path`.
   - **Robustness:** return `None` when `spec_dir` does not exist or has no stray; never raise on a missing dir (guard with `if not spec_dir.exists(): return None` and/or a `try/except OSError`).
   - **Files:** `user/scripts/lazy_core.py` (add the function only; do not touch `neutralize_sentinel`).
   - **Reuse directive:** mirror `neutralize_sentinel`'s `_RESOLVED_` literal-substring guard for the exclusion — do NOT invent a new convention.
 
-- [ ] **WU-1.2** — Unit-test the helper in `user/scripts/test_lazy_core.py` (new test class, e.g. `TestDetectNoncanonicalBlocker`), one temp-dir case each:
+- [x] **WU-1.2** — Unit-test the helper in `user/scripts/test_lazy_core.py` (new test class, e.g. `TestDetectNoncanonicalBlocker`), one temp-dir case each:
   - (a) stray `BLOCKED_2026-06-09-foo.md` alone → returns that path.
   - (b) `BLOCKED_RESOLVED_2026-06-09.md` alone → `None` (excluded).
   - (c) canonical `BLOCKED.md` alone → `None`.

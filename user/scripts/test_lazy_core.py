@@ -14336,6 +14336,85 @@ def test_hardening_cli_emit_and_register():
 
 
 # ---------------------------------------------------------------------------
+# Tests: detect_noncanonical_blocker — read-time stray-blocker detector
+#   (noncanonical-blocker-filename-invisible-to-state-machine, Phase 1)
+# ---------------------------------------------------------------------------
+
+def test_detect_noncanonical_blocker_stray_alone():
+    """A stray BLOCKED_<date>-foo.md alone → returns that path."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        stray = d / "BLOCKED_2026-06-09-foo.md"
+        stray.write_text("stray blocker\n", encoding="utf-8")
+        result = lazy_core.detect_noncanonical_blocker(d)
+    assert result is not None, "expected the stray path, got None"
+    assert result.name == "BLOCKED_2026-06-09-foo.md", (
+        f"expected the stray basename, got {result.name!r}"
+    )
+
+
+def test_detect_noncanonical_blocker_resolved_excluded():
+    """A neutralized BLOCKED_RESOLVED_<date>.md alone → None (excluded)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "BLOCKED_RESOLVED_2026-06-09.md").write_text("resolved\n", encoding="utf-8")
+        result = lazy_core.detect_noncanonical_blocker(d)
+    assert result is None, f"expected None (resolved excluded), got {result!r}"
+
+
+def test_detect_noncanonical_blocker_canonical_alone():
+    """Canonical BLOCKED.md alone → None (canonical is not a stray)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "BLOCKED.md").write_text("canonical\n", encoding="utf-8")
+        result = lazy_core.detect_noncanonical_blocker(d)
+    assert result is None, f"expected None (canonical not a stray), got {result!r}"
+
+
+def test_detect_noncanonical_blocker_canonical_plus_stray():
+    """Both canonical + stray present → None (canonical Step-3 check owns it)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "BLOCKED.md").write_text("canonical\n", encoding="utf-8")
+        (d / "BLOCKED_2026-06-09-foo.md").write_text("stray\n", encoding="utf-8")
+        result = lazy_core.detect_noncanonical_blocker(d)
+    assert result is None, (
+        f"expected None (canonical precedence), got {result!r}"
+    )
+
+
+def test_detect_noncanonical_blocker_lowercase_variant():
+    """Lowercase blocked.md → returns that path (case-insensitive match)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "blocked.md").write_text("lowercase stray\n", encoding="utf-8")
+        result = lazy_core.detect_noncanonical_blocker(d)
+    assert result is not None, "expected the lowercase stray path, got None"
+    assert result.name == "blocked.md", f"expected 'blocked.md', got {result.name!r}"
+
+
+def test_detect_noncanonical_blocker_empty_and_missing_dir():
+    """Empty dir AND a non-existent dir → None each (never raises)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        # (1) empty dir
+        assert lazy_core.detect_noncanonical_blocker(d) is None, (
+            "expected None for an empty dir"
+        )
+        # (2) non-existent dir
+        missing = d / "does-not-exist"
+        assert lazy_core.detect_noncanonical_blocker(missing) is None, (
+            "expected None for a missing dir (must not raise)"
+        )
+
+
+# ---------------------------------------------------------------------------
 # End of Phase 4 test definitions
 # ---------------------------------------------------------------------------
 
@@ -16405,6 +16484,19 @@ _TESTS = _TESTS + [
      test_governing_files_touched_intersects_commit),
     ("test_lazy_batch_skill_carries_reload_discipline_prose",
      test_lazy_batch_skill_carries_reload_discipline_prose),
+    # detect_noncanonical_blocker (Phase 1)
+    ("test_detect_noncanonical_blocker_stray_alone",
+     test_detect_noncanonical_blocker_stray_alone),
+    ("test_detect_noncanonical_blocker_resolved_excluded",
+     test_detect_noncanonical_blocker_resolved_excluded),
+    ("test_detect_noncanonical_blocker_canonical_alone",
+     test_detect_noncanonical_blocker_canonical_alone),
+    ("test_detect_noncanonical_blocker_canonical_plus_stray",
+     test_detect_noncanonical_blocker_canonical_plus_stray),
+    ("test_detect_noncanonical_blocker_lowercase_variant",
+     test_detect_noncanonical_blocker_lowercase_variant),
+    ("test_detect_noncanonical_blocker_empty_and_missing_dir",
+     test_detect_noncanonical_blocker_empty_and_missing_dir),
 ]
 
 
