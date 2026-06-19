@@ -9296,11 +9296,18 @@ def test_guard_deny_writes_ledger_entry():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "guard-state"
         state_dir.mkdir()
+        # stale-marker-arms-validate-deny-on-unrelated-dispatches D2 (2026-06-19):
+        # the GENERIC default-deny ledger append now requires a BOUND marker (a
+        # pre-bind/unbound deny is no-debt by design — WU-3). Bind the marker to
+        # an owner session and dispatch AS the owner so this stays a genuine
+        # validate-deny that DOES accrue debt (the test's original intent).
+        owner_session = "11111111-2222-3333-4444-555555555555"
         _set_state_dir(state_dir)
         try:
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r",
                 max_cycles=5, now=__import__("time").time(),
+                session_id=owner_session,
             )
         finally:
             _clear_state_dir()
@@ -9308,6 +9315,7 @@ def test_guard_deny_writes_ledger_entry():
         env["LAZY_STATE_DIR"] = str(state_dir)
         hook_input = json.dumps({
             "tool_use_id": "tu-deny",
+            "session_id": owner_session,
             "tool_input": {"prompt": "HAND-COMPOSED unregistered dispatch"},
         })
         result = subprocess.run(
@@ -11522,17 +11530,22 @@ def test_f1b_in_body_edit_still_denies():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
+        # D2 (stale-marker-arms-validate-deny-on-unrelated-dispatches, 2026-06-19):
+        # the GENERIC default-deny is no-debt under an UNBOUND marker (WU-3). This
+        # in-body-edit deny lands on that generic path, so bind the marker + pass
+        # the owner session to keep it a genuine validate-deny that DOES ledger.
+        _f1b_owner = "11111111-2222-3333-4444-555555555555"
         _set_state_dir(state_dir)
         try:
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r",
-                max_cycles=5, now=_time.time(),
+                max_cycles=5, now=_time.time(), session_id=_f1b_owner,
             )
             base = "Run the next cycle step exactly as specified now."
             lazy_core.register_emission(base, cls="cycle", item_id="feat-x")
 
             edited = base.replace("exactly", "approximately")
-            out = lazy_guard.guard(_f1_hook_input(edited, "tu-edit"))
+            out = lazy_guard.guard(_f1_hook_input(edited, "tu-edit", session_id=_f1b_owner))
             assert out is not None
             payload = json.loads(out)
             assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
@@ -11570,18 +11583,24 @@ def test_f1b_hardening_class_suffix_never_auto_readmits():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
+        # D2 (stale-marker-arms-validate-deny-on-unrelated-dispatches, 2026-06-19):
+        # the dispatched suffix changes the hash, so this is a GENERIC no-route
+        # default-deny (NOT the hardening-cap branch) — no-debt under an UNBOUND
+        # marker (WU-3). Bind the marker + pass the owner session so the deny still
+        # ledgers, preserving this test's assertion that a ledger event is written.
+        _f1b_owner = "11111111-2222-3333-4444-555555555555"
         _set_state_dir(state_dir)
         try:
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r",
-                max_cycles=5, now=_time.time(),
+                max_cycles=5, now=_time.time(), session_id=_f1b_owner,
             )
             base = "You are the harden-harness subagent. Analyze and fix the gap."
             entry = lazy_core.register_emission(base, cls="hardening")
             nonce = entry["nonce"]
 
             dispatched = base + "\n\nORCHESTRATOR NOTE: also bump the version."
-            out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-hard-suffix"))
+            out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-hard-suffix", session_id=_f1b_owner))
             assert out is not None
             payload = json.loads(out)
             assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (

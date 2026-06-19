@@ -208,6 +208,17 @@ in another repo (it also kills stale-marker contagion across repos).
     repo-root mangles the repo key into a different keyed subdir → spurious fast-path allow).
     NOTE: for a BOUND marker this is defense-in-depth (the guard self-allows a non-owner before
     the registry read); the residual same-repo deny surface is the UNBOUND pre-bind window (D2).
+  - **Pre-bind no-debt deny (`stale-marker-arms-validate-deny-on-unrelated-dispatches` D2, 2026-06-19).**
+    While a marker is live but UNBOUND (`session_id: None` — bind-pending, no orchestrator ALLOW yet),
+    the D1 gate cannot owner-scope (staleness path B needs BOTH the caller and marker non-None), so the
+    guard runs and an unrelated same-repo dispatch is denied. `lazy_guard.py::_deny_default(marker, …)`
+    routes that GENERIC default-deny through `_deny_no_ledger` (verdict preserved, ledger append
+    suppressed → `pending_hardening()` does not rise) ONLY while the marker is unbound; a deny under a
+    BOUND marker still `_deny_and_ledger`s (a genuine validate-deny accrues debt as before). Scope: the
+    three generic `_default_deny_reason()` sites only — the depth-1 hardening cap and the bare-`@@lazy-ref`
+    unresolved deny keep their ledger semantics. Fail-OPEN: any error reading `marker.get("session_id")`
+    falls back to `_deny_and_ledger` (debt-preserving). This is why pre-D2 deny tests that used an unbound
+    marker had to be re-pinned to a BOUND marker to keep asserting debt accrual.
 
 ## Cycle-counter advance: two orthogonal triggers (lazy-batch-unified-driver-parity-and-accounting Phase 1)
 

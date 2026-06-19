@@ -514,6 +514,51 @@ def _deny_and_ledger(
     return _deny_json(reason)
 
 
+def _deny_default(
+    marker: dict,
+    reason: str,
+    *,
+    tool_use_id: str,
+    sha: str,
+    prompt: str,
+) -> str:
+    """Route a GENERIC default-deny by the marker's bind state
+    (stale-marker-arms-validate-deny-on-unrelated-dispatches D2 / WU-3).
+
+    When the live run *marker* is still UNBOUND (``session_id is None``,
+    bind-pending — no orchestrator ALLOW has stamped it yet), the gate's Phase-1
+    owner-scoping cannot fire (staleness path B requires BOTH the caller and the
+    marker to carry a non-None session_id), so the guard runs for an unrelated
+    same-repo dispatch and would deny it.  In that narrow pre-bind window the
+    deny carries NO hardening debt: route through ``_deny_no_ledger`` so the
+    deny VERDICT is preserved (a deny is a deny — the bash wrapper is
+    unaffected) but NO ``lazy-deny-ledger.jsonl`` row is appended and
+    ``pending_hardening()`` does not rise.
+
+    A deny under a BOUND marker (the owning session dispatching an
+    unregistered/mangled prompt — a genuine validate-deny / harness gap) still
+    ``_deny_and_ledger``s and accrues debt EXACTLY as before.
+
+    Scope: callers route ONLY the generic ``_default_deny_reason()`` sites here.
+    The depth-1 hardening-cap deny and the bare-``@@lazy-ref`` unresolved deny
+    keep their existing ``_deny_and_ledger`` semantics (the cap is sacred; an
+    unresolved ref reaching the guard IS a gap to route).
+
+    FAIL-OPEN: any error reading ``marker.get("session_id")`` falls back to
+    ``_deny_and_ledger`` — debt-preserving is the safe default (never silently
+    drop a genuine validate-deny).
+    """
+    try:
+        is_unbound = marker.get("session_id") is None
+    except Exception:  # noqa: BLE001
+        is_unbound = False  # fail-open to the debt-preserving path
+    if is_unbound:
+        return _deny_no_ledger(reason)
+    return _deny_and_ledger(
+        reason, tool_use_id=tool_use_id, sha=sha, prompt=prompt,
+    )
+
+
 def guard(stdin_text: str) -> str | None:
     """Core guard logic.  Returns a JSON string to print, or None to print nothing.
 
@@ -722,8 +767,9 @@ def guard(stdin_text: str) -> str | None:
                 )
 
             # Default deny for consumed-by-other (non-hardening).
-            return _deny_and_ledger(
-                _default_deny_reason(),
+            # D2: under an UNBOUND marker this is a pre-bind no-debt deny.
+            return _deny_default(
+                marker, _default_deny_reason(),
                 tool_use_id=tool_use_id, sha=sha, prompt=prompt,
             )
 
@@ -742,8 +788,9 @@ def guard(stdin_text: str) -> str | None:
                 )
 
             # Non-hardening stale/expired entry → standard corrective deny.
-            return _deny_and_ledger(
-                _default_deny_reason(),
+            # D2: under an UNBOUND marker this is a pre-bind no-debt deny.
+            return _deny_default(
+                marker, _default_deny_reason(),
                 tool_use_id=tool_use_id, sha=sha, prompt=prompt,
             )
 
@@ -777,8 +824,11 @@ def guard(stdin_text: str) -> str | None:
 
     # Standard deny with corrective recipe (genuine no-route / harness gap —
     # debt is preserved so the hardening stage drains it).
-    return _deny_and_ledger(
-        _default_deny_reason(),
+    # D2: under an UNBOUND (pre-bind) marker this is a no-debt deny — Phase 1's
+    # gate owner-scoping cannot fire while the marker is unbound, so an unrelated
+    # same-repo dispatch lands here; suppress the ledger append (verdict kept).
+    return _deny_default(
+        marker, _default_deny_reason(),
         tool_use_id=tool_use_id, sha=sha, prompt=prompt,
     )
 

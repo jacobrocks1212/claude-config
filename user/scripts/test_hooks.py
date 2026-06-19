@@ -1996,10 +1996,18 @@ def test_guard_bash_deny_writes_deny_ledger():
         env = _base_env(state_dir)
 
         # Marked run, but the prompt is NEVER registered → the guard must deny.
-        _write_marker_in_dir(state_dir)
+        # stale-marker-arms-validate-deny-on-unrelated-dispatches D2 (2026-06-19):
+        # the ledger append for a GENERIC default-deny now requires a BOUND
+        # marker (an UNBOUND/pre-bind deny is no-debt by design — WU-3). Bind the
+        # marker to an owner session and dispatch AS the owner so this remains a
+        # genuine validate-deny that DOES accrue debt (the test's original intent).
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
 
         the_prompt = "HAND-COMPOSED unregistered dispatch through bash guard."
-        stdin_text = _e1_preToolUse_json(the_prompt, tool_use_id="toolu_deny7")
+        stdin_text = _e1_preToolUse_json(
+            the_prompt, tool_use_id="toolu_deny7", session_id=owner_session
+        )
         result = _run_bash(_GUARD_SH, stdin_text, env)
 
         assert result.returncode == 0, (
@@ -4172,6 +4180,213 @@ def test_guard_bash_owner_session_gate_still_denies_and_ledgers():
         assert entry["acked"] is False, entry
 
 
+# ---------------------------------------------------------------------------
+# stale-marker-arms-validate-deny-on-unrelated-dispatches Phase 2 (D2) —
+# pre-bind no-debt deny: when the live marker is UNBOUND (session_id: None),
+# the gate cannot owner-scope (Phase 1's path B needs BOTH non-None), so the
+# guard still runs and an unregistered prompt is denied.  That pre-bind deny
+# must carry NO hardening debt (route through _deny_no_ledger).  A deny under a
+# BOUND marker (a genuine validate-deny) still ledgers and accrues debt.
+# ---------------------------------------------------------------------------
+
+def test_guard_unbound_marker_deny_writes_no_ledger_no_debt():
+    """D2 WU-3 lock: with an UNBOUND marker (session_id: None) and an
+    unregistered prompt, the guard returns deny JSON but appends NO
+    lazy-deny-ledger.jsonl row and pending_hardening() stays 0.
+
+    Pre-WU-3 this FAILS: the generic default-deny under an unbound marker
+    _deny_and_ledger's (writes a row, pending_hardening()==1).  After WU-3 the
+    unbound-marker default-deny routes through _deny_no_ledger (no row, no debt).
+    """
+    _guard()
+    assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # UNBOUND marker (bind-pending — session_id deliberately None).
+        _write_marker_in_dir(state_dir, session_id=None)
+
+        unregistered = "Unregistered dispatch under an UNBOUND (pre-bind) marker."
+        stdin_text = _e1_preToolUse_json(
+            unregistered, tool_use_id="toolu_unbound", session_id=str(uuid.uuid4())
+        )
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"guard must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", "guard must STILL produce deny JSON (verdict preserved)"
+        payload = json.loads(output)
+        decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+        assert decision == "deny", (
+            f"an unbound-marker unregistered dispatch is still DENIED (only the "
+            f"ledger append is suppressed); got {decision!r}"
+        )
+
+        # The no-debt lock: NO ledger row, pending_hardening() == 0.
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        rows = []
+        if ledger_path.exists():
+            rows = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                    if ln.strip()]
+        assert rows == [], (
+            f"a PRE-BIND (unbound-marker) deny must write NO ledger row "
+            f"(no hardening debt); got {len(rows)} row(s): {rows!r}"
+        )
+
+        _set_state_dir(state_dir)
+        try:
+            debt = lazy_core.pending_hardening()
+        finally:
+            _clear_state_dir()
+        assert debt == 0, (
+            f"pending_hardening() must stay 0 for a pre-bind unbound-marker deny; "
+            f"got {debt}"
+        )
+
+
+def test_guard_bound_marker_deny_still_ledgers_and_accrues_debt():
+    """D2 WU-3 contrast lock: with a BOUND marker (owner session) and an
+    unregistered prompt dispatched BY THE OWNER, the guard denies AND ledgers —
+    pending_hardening() rises to 1.  This is a genuine validate-deny / harness
+    gap and MUST still accrue debt (the no-debt routing is scoped to the unbound
+    window ONLY; it must not erode the genuine debt path).
+    """
+    _guard()
+    assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        unregistered = "Unregistered dispatch under a BOUND marker (owner session)."
+        stdin_text = _e1_preToolUse_json(
+            unregistered, tool_use_id="toolu_bounddeny", session_id=owner_session
+        )
+        result = _run_guard_py(stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"guard must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", "guard must produce deny JSON"
+        payload = json.loads(output)
+        decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+        assert decision == "deny", f"bound-marker unregistered dispatch must deny; got {decision!r}"
+
+        # The debt-preservation lock: exactly one ledger row, pending_hardening()==1.
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger_path.exists(), (
+            "a BOUND-marker validate-deny MUST create lazy-deny-ledger.jsonl"
+        )
+        rows = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                if ln.strip()]
+        assert len(rows) == 1, f"expected exactly one bound-marker ledger row; got {len(rows)}"
+        entry = json.loads(rows[0])
+        assert entry["tool_use_id"] == "toolu_bounddeny", entry
+        assert entry["acked"] is False, entry
+
+        _set_state_dir(state_dir)
+        try:
+            debt = lazy_core.pending_hardening()
+        finally:
+            _clear_state_dir()
+        assert debt == 1, (
+            f"pending_hardening() must be 1 for a genuine bound-marker validate-deny; "
+            f"got {debt}"
+        )
+
+
+def test_guard_unbound_marker_hardening_cap_still_ledgers():
+    """D2 WU-3 scope guard: the no-debt routing applies ONLY to the GENERIC
+    default-deny.  A depth-1 hardening-cap deny under an UNBOUND marker MUST keep
+    its existing ledger semantics (the depth-1 cap is a sacred invariant and is
+    NOT broadened into no-debt).
+
+    Setup: register a hardening-class entry, consume it as consumer A (allow),
+    then re-dispatch the same (now-consumed) hardening entry as consumer B under
+    the UNBOUND marker — this hits the hardening-cap deny path, which must still
+    _deny_and_ledger.
+    """
+    _guard()
+    assert _GUARD_PY.exists(), f"lazy_guard.py missing: {_GUARD_PY}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # Unbound marker (session_id None) — the no-debt window for the GENERIC
+        # path, but NOT for the hardening cap.
+        _write_marker_in_dir(state_dir, session_id=None)
+
+        hardening_prompt = "You are the harden-harness subagent. Diagnose and fix."
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.register_emission(hardening_prompt, cls="hardening", item_id=None)
+        finally:
+            _clear_state_dir()
+
+        # Consumer A consumes (allow). On allow the marker binds to A's session —
+        # so to keep the SECOND call on the unbound-marker path for the GENERIC
+        # branch we would need it unbound; but the hardening-cap branch fires
+        # regardless of bind state. To exercise the cap under an unbound marker we
+        # must prevent the bind: dispatch A with NO session_id (None), so
+        # _bind_marker_on_allow is a silent no-op (it skips when session is None).
+        stdin_a = _e1_preToolUse_json(hardening_prompt, tool_use_id="toolu_hc_a")
+        # _e1 default-generates a session_id; override to empty so the marker stays
+        # unbound after the allow.
+        payload_a = json.loads(stdin_a)
+        payload_a["session_id"] = None
+        r_a = _run_guard_py(json.dumps(payload_a), env)
+        pa = json.loads(r_a.stdout.strip())
+        assert pa["hookSpecificOutput"]["permissionDecision"] == "allow", (
+            "first hardening dispatch must allow"
+        )
+
+        # Confirm the marker is STILL unbound (the allow did not bind it).
+        _set_state_dir(state_dir)
+        try:
+            m = lazy_core.read_run_marker()
+        finally:
+            _clear_state_dir()
+        assert m is not None and m.get("session_id") is None, (
+            "marker must remain unbound for this scope test"
+        )
+
+        # Consumer B re-dispatches the consumed hardening entry → depth-1 cap deny.
+        stdin_b = _e1_preToolUse_json(hardening_prompt, tool_use_id="toolu_hc_b")
+        payload_b = json.loads(stdin_b)
+        payload_b["session_id"] = None
+        r_b = _run_guard_py(json.dumps(payload_b), env)
+        pb = json.loads(r_b.stdout.strip())
+        hso = pb["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "deny", "hardening cap must deny consumer B"
+        assert "halt" in hso.get("permissionDecisionReason", ""), (
+            "the deny must be the hardening-cap reason, not the generic default deny"
+        )
+
+        # The hardening-cap deny MUST still ledger (NOT routed to no-debt).
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        rows = []
+        if ledger_path.exists():
+            rows = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                    if ln.strip()]
+        assert len(rows) == 1, (
+            f"the hardening-cap deny under an unbound marker MUST still write a "
+            f"ledger row (depth-1 cap is NOT broadened into no-debt); "
+            f"got {len(rows)} row(s)"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -4324,6 +4539,15 @@ _TESTS = [
      test_guard_bash_non_owner_session_gate_does_not_invoke_guard),
     ("test_guard_bash_owner_session_gate_still_denies_and_ledgers",
      test_guard_bash_owner_session_gate_still_denies_and_ledgers),
+    # stale-marker-arms-validate-deny-on-unrelated-dispatches Phase 2 (D2) —
+    # pre-bind no-debt deny: unbound marker → no ledger/no debt; bound marker →
+    # still ledgers + accrues debt; hardening cap stays ledgered (scope guard).
+    ("test_guard_unbound_marker_deny_writes_no_ledger_no_debt",
+     test_guard_unbound_marker_deny_writes_no_ledger_no_debt),
+    ("test_guard_bound_marker_deny_still_ledgers_and_accrues_debt",
+     test_guard_bound_marker_deny_still_ledgers_and_accrues_debt),
+    ("test_guard_unbound_marker_hardening_cap_still_ledgers",
+     test_guard_unbound_marker_hardening_cap_still_ledgers),
 ]
 
 
