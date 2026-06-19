@@ -66,8 +66,8 @@ The reset is scoped to the resolution event SPECIFICALLY — it adds NO head/com
 **Minimum Verifiable Behavior:** A fixture reproducing symptom 3 — two probes with the SAME step signature, a DISPATCH (consume-count rises) landing between them via a resolution meta-cycle that sets the persisted signal — asserts `step_repeat_count` RESETS to 1 (pre-fix it increments). Run `python3 user/scripts/test_lazy_core.py`; the new symptom-3 fixture passes. This drives the real `update_repeat_counts` path end-to-end (signal field → reset branch).
 
 **Runtime Verification** *(checked by the in-file smoke harnesses):*
-- [ ] `python3 user/scripts/lazy-state.py --test` green (regenerate the byte-pinned baseline `tests/baselines/lazy-state-test-baseline.txt` ONLY via the `_normalize_smoke_output` helper if the marker-field addition legitimately changes output; the no-marker path must stay byte-identical). <!-- verification-only -->
-- [ ] `python3 user/scripts/bug-state.py --test` green (bug pipeline inherits the shared `lazy_core` change; baseline regenerated only if legitimately changed, via the helper). <!-- verification-only -->
+- [x] `python3 user/scripts/lazy-state.py --test` green (regenerate the byte-pinned baseline `tests/baselines/lazy-state-test-baseline.txt` ONLY via the `_normalize_smoke_output` helper if the marker-field addition legitimately changes output; the no-marker path must stay byte-identical). <!-- verification-only -->
+- [x] `python3 user/scripts/bug-state.py --test` green (bug pipeline inherits the shared `lazy_core` change; baseline regenerated only if legitimately changed, via the helper). <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: the symptom-2/4 HOLD fixtures must be green first, so Phase 2 can prove it preserves them.
