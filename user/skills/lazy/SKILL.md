@@ -101,6 +101,8 @@ the env var is the host's standing declaration, and `/mcp-test` observes the liv
 backend via `get_audio_mode` (`mode: cpal` & not `forced` → real device) when it
 runs. See `DEFERRED_REQUIRES_DEVICE.md` in the sentinel schema.
 
+**Completeness — parse and act on the FULL probe JSON, never a field-extracted subset.** Read the complete JSON object output by the script. Never pipe it through a field-extractor (jq-style / `python3 -c "...print(d['terminal_reason'])"`) to route on a hand-chosen subset of keys — any signal outside that subset (`diagnostics`, `git_guards`, `self_edit_mode`, `route_overridden_by`, `cycle_prompt_refused`, `governing_files_touched`, `device_deferred_features`, `notify_message`, etc.) becomes invisible to the routing decision and can cause a silent mis-route. See `~/.claude/skills/_components/lazy-dispatch-template.md` § "Full-probe-JSON read before routing" for the canonical statement.
+
 Parse the JSON. You now have:
 - `feature_id`, `feature_name`, `spec_path` — current feature context (null if no current feature)
 - `current_step` — human-readable description of where we are in the state machine

@@ -481,6 +481,8 @@ emitted text (appending notes, "cleaning up", re-typing) is the failure class; t
 dispatch-bound probe's `cycle_header` field VERBATIM — a probe-shaped heading with no same-turn
 probe behind it is graded as a probe-cadence violation.
 
+**Completeness — route from the FULL probe JSON, never a field-extracted subset (mirrored from `/lazy-batch` Step 1d).** The atomicity rule governs WHERE the prompt came from; the freshness rule governs WHEN; this rule governs HOW COMPLETELY the probe output is consumed. A routing/dispatch decision MUST be made against the **complete** probe JSON — never pipe it through a field-extractor (jq-style / `python3 -c "...print(d['terminal_reason'])"`) and route on that subset. Any signal outside the extracted subset is then invisible: `diagnostics`, `git_guards`, `self_edit_mode`, `governing_files_touched`, `route_overridden_by`, `cycle_prompt_refused`, `device_deferred_features`, `repeat_count`, etc. The `pending_hardening` section above (which already bans field-extractor piping for the bug pipeline) is a point-harden for ONE key — this rule is the general contract covering all keys. See `~/.claude/skills/_components/lazy-dispatch-template.md` § "Full-probe-JSON read before routing" for the canonical statement.
+
 **Bug wording, the work branch, and the premature-status guard are now SCRIPT-BOUND via the
 sectioned template's tokens** (`{item_label}`/`{pipeline_phrase}`/`{receipt_name}` = FIXED.md /
 `{mark_pseudo}` = __mark_fixed__ / `{forbidden_status}` = "Fixed or Won't-fix" / `{work_branch}`,

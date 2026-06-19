@@ -48,15 +48,15 @@
 The mirrored clause is identical in substance to Phase 1's canonical wording; each file states it where its dispatch/atomicity protocol is described. Update each coupled file's State Machine Summary / "Differences from" block only if the change alters orchestration shape (it does not — it tightens an existing rule, so no divergence-table edit is expected; confirm during the diff-the-twin check).
 
 **Deliverables:**
-- [ ] Full-read clause added to the atomicity rule region of all six SKILL.md files above.
-- [ ] Coupled-pair parity confirmed: after editing each member of a pair, diff its twin and confirm the clause text matches (per the `CLAUDE.md` coupling rule). Run `python user/scripts/lazy_parity_audit.py` if it covers these files.
-- [ ] Tests: `lint-skills.py` + `project-skills.py` pass after all six edits; per-repo projections regenerate cleanly.
+- [x] Full-read clause added to the atomicity rule region of all six SKILL.md files above.
+- [x] Coupled-pair parity confirmed: after editing each member of a pair, diff its twin and confirm the clause text matches (per the `CLAUDE.md` coupling rule). Run `python user/scripts/lazy_parity_audit.py` if it covers these files.
+- [x] Tests: `lint-skills.py` + `project-skills.py` pass after all six edits; per-repo projections regenerate cleanly.
 
 **Minimum Verifiable Behavior:** A grep for the clause's key phrase (e.g. "full probe JSON" / "never route from a field-extracted subset") returns a hit in all six SKILL.md files; `lint-skills.py --check-projected --check-capabilities` exits 0.
 
 **Runtime Verification** *(checked by lint + projection, not a live runtime):*
-- [ ] `python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities` exits 0 after all edits.
-- [ ] `python ~/.claude/scripts/project-skills.py` regenerates `_default/` + all per-repo projections without error.
+- [x] `python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities` exits 0 after all edits.
+- [x] `python ~/.claude/scripts/project-skills.py` regenerates `_default/` + all per-repo projections without error.
 
 **Prerequisites:**
 - Phase 1: the canonical clause wording exists in the shared component so Phase 2 mirrors consistent text.
@@ -95,3 +95,26 @@ The mirrored clause is identical in substance to Phase 1's canonical wording; ea
 **Files modified:**
 - `user/skills/_components/lazy-dispatch-template.md` — added `## Full-probe-JSON read before routing` subsection (canonical full-read clause)
 **Review verdict:** PASS — clause states the required contract correctly, includes at-risk key enumeration, cites precedent, and is additive to existing rules.
+
+#### Implementation Notes (Phase 2)
+**Completed:** 2026-06-19
+**Work completed:**
+- Full-read clause mirrored into all six `/lazy*` wrapper SKILL.md files at the probe-read / dispatch-protocol region. Batch wrappers (`lazy-batch`, `lazy-batch-cloud`, `lazy-bug-batch`) received a new **Completeness** paragraph immediately after the freshness rule, citing the atomicity-vs-freshness-vs-completeness trichotomy. Single-item wrappers (`lazy`, `lazy-cloud`, `lazy-bug`) received the clause immediately before "Parse the JSON. You now have:" at the probe-read section.
+- Coupled-pair parity confirmed by grep: `lazy-batch` ↔ `lazy-batch-cloud` ↔ `lazy-bug-batch` all contain identical substance; `lazy` ↔ `lazy-cloud` ↔ `lazy-bug` all contain identical substance. No divergence-table edits needed (the clause uniformly tightens an existing rule).
+- `lint-skills.py --check-projected --check-capabilities` exits 0; `project-skills.py` regenerated 80 skills / 91 components / 0 errors.
+- Grep for "FULL probe JSON" / "field-extracted subset" returns a hit in all six SKILL.md files.
+**Integration notes:**
+- The mechanical guard (hook / `--emit-prompt` detection of field-extraction) remains OUT OF SCOPE per SPEC Open Question — deferred as a candidate follow-up `--enqueue-adhoc` item.
+- CLAUDE.md component inventory has no change needed — the component's new section is self-documenting; the inventory list doesn't describe component clause details.
+**Pitfalls & guidance:**
+- The batch wrappers already had a full-probe-JSON ban in the `pending_hardening` section (for ONE key); the new clause is explicitly the GENERAL contract covering all keys, and the text calls this out to avoid confusion.
+**Files modified:**
+- `user/skills/lazy-batch/SKILL.md` — completeness clause after freshness rule (~line 593)
+- `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — completeness clause after freshness sentence
+- `user/skills/lazy-bug-batch/SKILL.md` — completeness clause after probe-presence guard paragraph
+- `user/skills/lazy/SKILL.md` — completeness clause before "Parse the JSON. You now have:"
+- `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` — completeness clause before "Parse the JSON. You now have the same fields:"
+- `user/skills/lazy-bug/SKILL.md` — completeness clause before "Parse the JSON. You now have:"
+**Review verdict:** PASS — all six wrappers have the clause in substance identical to the canonical statement; coupled-pair parity confirmed; lint and projection pass.
+
+**Status:** In-progress (implementation complete; MCP validation pending via `__mark_fixed__` gate)

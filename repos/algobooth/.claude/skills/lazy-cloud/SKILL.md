@@ -109,6 +109,8 @@ python3 ~/.claude/scripts/lazy-state.py --cloud
 
 Capture stdout (a single JSON object). If the script exits non-zero, surface the error and STOP — do not try to parse malformed state.
 
+**Completeness — parse and act on the FULL probe JSON, never a field-extracted subset (mirrored from `/lazy`).** Read the complete JSON object output by the script. Never pipe it through a field-extractor (jq-style / `python3 -c "...print(d['terminal_reason'])"`) to route on a hand-chosen subset of keys — any signal outside that subset (`diagnostics`, `git_guards`, `self_edit_mode`, `route_overridden_by`, `cycle_prompt_refused`, `governing_files_touched`, `device_deferred_features`, `notify_message`, etc.) becomes invisible to the routing decision and can cause a silent mis-route. See `~/.claude/skills/_components/lazy-dispatch-template.md` § "Full-probe-JSON read before routing" for the canonical statement.
+
 Parse the JSON. You now have the same fields as plain `/lazy`:
 - `feature_id`, `feature_name`, `spec_path`
 - `current_step`, `sub_skill`, `sub_skill_args`
