@@ -2,7 +2,7 @@
 
 > Make the three completion-time gates agree on ONE verification carve-out rule, so a feature whose `/mcp-test` evidence is already on disk is not refused at the finish line over un-ticked verification checkboxes — eliminating the recurring coherence-recovery meta-cycle.
 
-**Status:** Draft (baseline — pre-research)
+**Status:** Draft (baseline locked — research pending)
 **Priority:** P1
 **Last updated:** 2026-06-19
 **Tier:** 1
@@ -11,8 +11,6 @@
 **Depends on:**
 
 - harness-hardening-retro-fixes — composes — extends the canonical `<!-- verification-only -->` marker + `remaining_unchecked_are_verification_only` detector (introduced there for the MID-feature gate) to the COMPLETION-time coherence gate it deliberately left untouched.
-
-<!-- TODO: confirm kind for harness-hardening-retro-fixes — composes (build-atop), arguably hard (depends on the marker contract's concrete shape) -->
 
 ---
 
@@ -102,4 +100,4 @@ The change unifies all three gates on ONE evidence-gated rule, removes the coher
 
 To be populated in Phase 3 after the Gemini deep-research pass. Upstream reality-check sources read during Phase 1: `harness-hardening-retro-fixes/PHASES.md` Phase 2 (verification-only marker contract), `lazy_core.py` (`_phase_completion_plan`, `verify_ledger`, `remaining_unchecked_are_verification_only`), `user/scripts/CLAUDE.md` (verification-only canonical marker section).
 
-> **Baseline draft — reconciliation direction LOCKED (2026-06-19).** Open Questions 1-2 (the product/ownership decisions surfaced via NEEDS_INPUT.md) are resolved: Direction A with evidence-gated auto-ticking. Open Questions 3-5 remain research-answerable (authoritative-evidence edge cases, downstream-checker confirmation, lint-vs-gate framing) and are NOT yet locked — do not bake the final gate-code edge handling here until research closes them.
+> **Baseline LOCKED (2026-06-19) — stub-shaping pass complete.** This SPEC is no longer a stub: the gating product/ownership decisions (Open Questions 1-2, surfaced via NEEDS_INPUT.md and operator-resolved — see `NEEDS_INPUT_RESOLVED_2026-06-19.md`) are baked into Technical Design (LOCKED): Direction A, evidence-gated, with auto-ticking of certified verification rows. All `lazy_core.py` code references in Current Behavior / Technical Design were code-grounded and verified at the cited locations on 2026-06-19 (`_phase_completion_plan` @ 1777/1838, `remaining_unchecked_are_verification_only` @ 1372, `verify_ledger` @ 1970, `__mark_complete__` call site @ 3050). Open Questions 3-5 remain research-answerable (authoritative-evidence edge cases, downstream-checker confirmation, lint-vs-gate framing) and are harvested into RESEARCH_PROMPT.md by Phase 2 — do not bake the final gate-code edge handling here until research closes them.

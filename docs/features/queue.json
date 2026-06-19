@@ -5,8 +5,7 @@
       "id": "completion-coherence-gate-reconciliation",
       "name": "Completion / Coherence Gate Reconciliation",
       "spec_dir": "completion-coherence-gate-reconciliation",
-      "tier": 1,
-      "stub": true
+      "tier": 1
     },
     {
       "id": "feature-budget-guard-and-skip-ahead",
