@@ -61,26 +61,69 @@ esac
 GUARD_PY="$SCRIPT_DIR/../scripts/lazy_guard.py"
 STATE_PY="$SCRIPT_DIR/../scripts/lazy-state.py"
 
-# Extract the tool-call's cwd from the payload (the repo whose marker we must
-# consult). Builtin-only JSON parse is fragile, so use python on the captured
-# payload. On ANY failure CWD stays empty → the marker query is skipped → we
-# fall through to the full guard (fail-OPEN: never skip enforcement on a parse
-# error).
-CWD="$(printf '%s' "$PAYLOAD" | "$PYTHON" -c \
+# Extract the tool-call's cwd AND the caller's session_id from the payload in a
+# SINGLE python invocation (the cwd is the repo whose marker we consult; the
+# session_id owner-scopes the marker-presence gate — stale-marker-arms-validate-
+# deny-on-unrelated-dispatches D1). Builtin-only JSON parse is fragile, so use
+# python on the captured payload. The parse prints two newline-separated lines
+# (cwd, then session_id); the builtin `read` (NO coreutils binary — `sed`/`head`
+# are not guaranteed on PATH in a non-login git-bash, same hazard as `dirname`
+# noted above) splits them. On ANY failure both stay empty → the marker query
+# degrades (CWD empty → skipped → fall through to the guard; SID empty → the
+# gate is queried WITHOUT --session-id, i.e. today's session-blind behavior) —
+# fail-OPEN: a parse miss never silently disables enforcement.
+PARSED="$(printf '%s' "$PAYLOAD" | "$PYTHON" -c \
   'import sys,json
 try:
-    print((json.load(sys.stdin) or {}).get("cwd","") or "")
+    d = json.load(sys.stdin) or {}
+    print(d.get("cwd","") or "")
+    print(d.get("session_id","") or "")
 except Exception:
     pass' 2>/dev/null)"
+# Builtin-only split of the two-line PARSED block into CWD (line 1) and SID
+# (line 2). `read -r` consumes the first line; the remainder (the session_id,
+# possibly empty) is assigned to SID via a parameter expansion that strips the
+# leading "<cwd>\n" prefix.
+IFS= read -r CWD <<EOF
+$PARSED
+EOF
+SID="${PARSED#*$'\n'}"
+# If PARSED had no newline (parse failure / single line), the expansion above
+# leaves SID == PARSED == CWD; normalize that to empty so we never pass the cwd
+# as a session id.
+[ "$SID" = "$PARSED" ] && SID=""
+# Strip any trailing newline(s) from SID (the python print adds one).
+SID="${SID%$'\n'}"
+# CRLF hardening (Windows git-bash): the python text-mode stdout that produced
+# $PARSED can carry a trailing carriage return on each line, which `read -r` /
+# the parameter expansions preserve. A stray \r on the repo-root mangles the
+# repo key (a DIFFERENT keyed subdir → marker "absent" → spurious fast-path
+# allow) and on the session-id breaks the owner match. Strip ALL carriage
+# returns from both before they reach the gate query (builtin // expansion —
+# no coreutils binary).
+CWD="${CWD//$'\r'/}"
+SID="${SID//$'\r'/}"
 
 # Marker-presence gate: only consult it when we have BOTH a cwd and the state
 # script. lazy-state.py --marker-present exits 1 (absent — different repo / no
-# run) → fast-path allow; exits 0 (present for this repo) → run the full guard.
+# run / a marker bound to a DIFFERENT session when --session-id is supplied) →
+# fast-path allow; exits 0 (present for this repo+session) → run the full guard.
 # Any other condition (script missing, crash, non-0/1 exit) → fall through to
 # the guard (fail-OPEN).
+#
+# D1: pass --session-id "$SID" ONLY when non-empty, so the gate treats the
+# marker as present for its bound OWNER session only — a non-owner same-repo
+# dispatch fast-path-allows at the gate (the gate read then AGREES with the
+# guard's own session-aware read_run_marker). An empty SID omits the flag and
+# degrades to the session-blind gate (fail-OPEN).
 if [ -n "$CWD" ] && [ -f "$STATE_PY" ]; then
-  LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$PYTHON" "$STATE_PY" \
-    --marker-present --repo-root "$CWD" >/dev/null 2>&1
+  if [ -n "$SID" ]; then
+    LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$PYTHON" "$STATE_PY" \
+      --marker-present --repo-root "$CWD" --session-id "$SID" >/dev/null 2>&1
+  else
+    LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$PYTHON" "$STATE_PY" \
+      --marker-present --repo-root "$CWD" >/dev/null 2>&1
+  fi
   MARKER_RC=$?
   if [ "$MARKER_RC" -eq 1 ]; then
     # No live marker for this repo → nothing to guard → fast-path allow.

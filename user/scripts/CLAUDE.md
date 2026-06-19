@@ -195,6 +195,19 @@ in another repo (it also kills stale-marker contagion across repos).
   *different* repo resolves to a different subdir → absent → the hook is a no-op. Fail-OPEN: a
   query error falls back to current behavior. The `pipeline_visualizer` likewise binds the
   visualized repo before reading the marker so it shows that repo's live run.
+  - **Owner-scoping (`stale-marker-arms-validate-deny-on-unrelated-dispatches` D1, 2026-06-19).**
+    `lazy-dispatch-guard.sh` now ALSO extracts the hook-input `session_id` and passes
+    `--session-id "$SID"` ALONGSIDE `--repo-root` (never in place of it — repo keying preserved)
+    when non-empty. The gate then resolves PRESENT only for the marker's BOUND owning session
+    (`read_run_marker` staleness path B): a same-repo NON-owner dispatch sees exit 1 → fast-path
+    allow, so the gate read AGREES with the guard's own session-aware read (which already
+    self-allowed a non-owner). Fail-OPEN: an empty/failed `session_id` parse omits the flag and
+    degrades to the session-blind gate. The parse splits the two-line python output with bash
+    builtins (`read` / `${//}`), NOT `sed`/`head` (coreutils-on-PATH hazard), and strips trailing
+    `\r` from BOTH `cwd` and `session_id` (Windows git-bash text-mode stdout — a stray `\r` on the
+    repo-root mangles the repo key into a different keyed subdir → spurious fast-path allow).
+    NOTE: for a BOUND marker this is defense-in-depth (the guard self-allows a non-owner before
+    the registry read); the residual same-repo deny surface is the UNBOUND pre-bind window (D2).
 
 ## Cycle-counter advance: two orthogonal triggers (lazy-batch-unified-driver-parity-and-accounting Phase 1)
 

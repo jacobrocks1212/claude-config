@@ -3967,6 +3967,211 @@ def test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects():
         )
 
 
+# ---------------------------------------------------------------------------
+# stale-marker-arms-validate-deny-on-unrelated-dispatches Phase 1 (D1) —
+# over-fire regression: the dispatch-guard GATE must be session-scoped, so a
+# same-repo NON-OWNING-session dispatch fast-path-allows at the gate (never
+# reaching the guard, never accruing hardening debt), while the OWNING session's
+# dispatch still runs the guard exactly as the pre-fix baseline.
+# ---------------------------------------------------------------------------
+
+def test_marker_present_non_owner_session_reports_absent():
+    """D1 gate contract (the load-bearing WU-1 assertion): with a marker BOUND to
+    session_A, `lazy-state.py --marker-present --repo-root <repo> --session-id B`
+    must report ABSENT (exit 1) for a NON-owner session B, while reporting PRESENT
+    (exit 0) for the OWNER session_A.
+
+    This is the exact gate the hook consults.  Pre-WU-1 the hook passed NO
+    --session-id, so the gate was session-blind (exit 0 for every session — the
+    over-fire root cause).  This unit pins that the handler honors the owner
+    scoping; the end-to-end hook fixtures below pin that the HOOK now passes it.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        owner_session = str(uuid.uuid4())
+        non_owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+        env = _base_env(state_dir)
+        repo_root = str(state_dir / "fixture-repo")
+        state_py = str(_SCRIPTS_DIR / "lazy-state.py")
+
+        def _present(session_id: str) -> int:
+            return subprocess.run(
+                [sys.executable, state_py, "--marker-present",
+                 "--repo-root", repo_root, "--session-id", session_id],
+                env=env, capture_output=True, text=True,
+            ).returncode
+
+        assert _present(owner_session) == 0, (
+            "the OWNER session must see the marker as PRESENT (exit 0)"
+        )
+        assert _present(non_owner_session) == 1, (
+            "a NON-owner session must see the marker as ABSENT (exit 1) — "
+            "owning-session scoping at the gate"
+        )
+
+
+def test_guard_hook_wires_session_id_into_marker_present():
+    """D1 WU-1 source lock: lazy-dispatch-guard.sh must extract the hook-input
+    session_id and pass it as `--session-id "$SID"` into its
+    `--marker-present --repo-root` gate query (only when non-empty — fail-OPEN).
+
+    This is the falsifiable WU-1 contract.  For a BOUND marker the guard's own
+    session-aware read already self-allows a non-owner, so there is no
+    deny/ledger observable that distinguishes the session-blind gate from the
+    scoped gate end-to-end — the gate scoping is a defense-in-depth + "two reads
+    must AGREE" (D1) change whose seam is the hook wiring itself.  This test pins
+    that wiring so a future edit cannot silently revert to the session-blind gate.
+    """
+    text = _GUARD_SH.read_text(encoding="utf-8")
+    # The session_id must be extracted from the payload.
+    assert "session_id" in text, (
+        "lazy-dispatch-guard.sh must extract session_id from the hook payload"
+    )
+    # The gate query must carry --session-id alongside the existing --repo-root.
+    assert "--session-id" in text, (
+        "lazy-dispatch-guard.sh must pass --session-id into the "
+        "--marker-present gate query (D1 owner-scoping)"
+    )
+    # The existing per-repo keying must be preserved (passed ALONGSIDE, never
+    # replaced) — the SPEC's explicit non-regression for multi-repo keying.
+    assert "--repo-root" in text, (
+        "lazy-dispatch-guard.sh must STILL pass --repo-root (per-repo keying "
+        "preserved — --session-id is added alongside, not in place of it)"
+    )
+
+
+def test_guard_bash_non_owner_session_gate_does_not_invoke_guard():
+    """D1 over-fire lock (end-to-end): with a marker BOUND to session_A AND a
+    deliberately CORRUPT prompt registry, a same-repo unregistered dispatch
+    carrying a DIFFERENT session_B must, through the REAL bash
+    lazy-dispatch-guard.sh hook:
+      - exit 0,
+      - produce EMPTY stdout (gate fast-path-allow), AND
+      - leave NO hook-error.json breadcrumb (the guard NEVER RAN — a corrupt
+        registry would force the guard to write the breadcrumb if it had been
+        invoked).
+
+    The breadcrumb absence is the falsifiable discriminator: pre-WU-1 the
+    session-blind gate runs the guard for the non-owner, the guard hits the
+    corrupt registry and writes hook-error.json (fail-open) → this FAILS.
+    After WU-1 (the hook passes --session-id "$SID") the gate reports absent for
+    session_B → fast-path allow → the guard is never invoked → no breadcrumb.
+
+    (For a BOUND marker the guard's own session-aware read would self-allow the
+    non-owner anyway; this fixture proves the GATE scoped it — the guard process
+    is never even reached — which is the D1 "two reads must AGREE" invariant and
+    the only place the unbound-marker pre-bind window (Phase 2) is left as the
+    sole residual same-repo deny surface.)
+    """
+    _guard()
+    assert _GUARD_SH.exists(), f"lazy-dispatch-guard.sh missing: {_GUARD_SH}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        # Marker BOUND to the OWNER session_A.
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        # Corrupt the registry so that IF the guard runs it MUST write a
+        # hook-error.json breadcrumb (the proven fail-open side effect).
+        (state_dir / "lazy-prompt-registry.json").write_bytes(
+            b"\xff\xfe CORRUPT \x00 NOT JSON"
+        )
+
+        # A DIFFERENT (non-owner) session fires an unregistered dispatch.
+        non_owner_session = str(uuid.uuid4())
+        assert non_owner_session != owner_session
+        unregistered = "Hand-composed unrelated spec dispatch from a NON-owner session."
+        stdin_text = _e1_preToolUse_json(
+            unregistered, tool_use_id="toolu_nonowner", session_id=non_owner_session
+        )
+        result = _run_bash(_GUARD_SH, stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"non-owner gate fast-path must exit 0; "
+            f"got {result.returncode}; stderr: {result.stderr!r}"
+        )
+        assert result.stdout.strip() == "", (
+            f"non-owner dispatch must fast-path-allow at the GATE (empty stdout — "
+            f"the guard never ran); got: {result.stdout!r}"
+        )
+
+        # The over-fire regression lock: the guard was NEVER invoked, so the
+        # corrupt registry produced NO breadcrumb (and NO ledger row).
+        breadcrumb = state_dir / "hook-error.json"
+        assert not breadcrumb.exists(), (
+            "the GATE must fast-path-allow a non-owner BEFORE invoking the guard "
+            "— a hook-error.json breadcrumb proves the guard ran against the "
+            "corrupt registry, i.e. the gate over-fired (session-blind)"
+        )
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        rows = []
+        if ledger_path.exists():
+            rows = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                    if ln.strip()]
+        assert rows == [], (
+            f"a non-owning-session dispatch must NOT accrue hardening debt "
+            f"(no lazy-deny-ledger.jsonl row); got {len(rows)} row(s): {rows!r}"
+        )
+
+
+def test_guard_bash_owner_session_gate_still_denies_and_ledgers():
+    """D1 baseline-preservation contrast: with the SAME marker bound to
+    session_A, an unregistered-prompt dispatch carrying session_A (the OWNER)
+    must, through the REAL bash hook, still reach the guard and DENY + ledger
+    exactly as the pre-fix baseline.  This pins that WU-1 scoped the gate to the
+    owner WITHOUT disabling enforcement for the owning run.
+    """
+    _guard()
+    assert _GUARD_SH.exists(), f"lazy-dispatch-guard.sh missing: {_GUARD_SH}"
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir, session_id=owner_session)
+
+        unregistered = "Hand-composed unregistered dispatch from the OWNING session."
+        stdin_text = _e1_preToolUse_json(
+            unregistered, tool_use_id="toolu_owner", session_id=owner_session
+        )
+        result = _run_bash(_GUARD_SH, stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"owner gate must exit 0 (deny is in JSON); stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", (
+            "owner-session unregistered dispatch must reach the guard and emit "
+            "deny JSON; got empty stdout (gate must NOT fast-path-allow the owner)"
+        )
+        payload = json.loads(output)
+        decision = payload.get("hookSpecificOutput", {}).get("permissionDecision")
+        assert decision == "deny", (
+            f"owner-session unregistered dispatch must be denied; got {decision!r}"
+        )
+
+        # The owner's deny DOES accrue debt (baseline behavior preserved).
+        ledger_path = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger_path.exists(), (
+            "the owner deny path must create lazy-deny-ledger.jsonl"
+        )
+        rows = [ln for ln in ledger_path.read_text(encoding="utf-8").splitlines()
+                if ln.strip()]
+        assert len(rows) == 1, f"expected exactly one owner ledger row; got {len(rows)}"
+        entry = json.loads(rows[0])
+        assert entry["tool_use_id"] == "toolu_owner", entry
+        assert entry["acked"] is False, entry
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -4107,6 +4312,18 @@ _TESTS = [
      test_guard_two_repo_isolation_crossrepo_noop_samerepo_enforces),
     ("test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects",
      test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects),
+    # stale-marker-arms-validate-deny-on-unrelated-dispatches Phase 1 (D1) —
+    # over-fire regression: session-scoped gate (handler honors owner scoping;
+    # the hook now passes --session-id so a non-owner fast-path-allows at the
+    # gate WITHOUT invoking the guard; owner still denies + ledgers).
+    ("test_marker_present_non_owner_session_reports_absent",
+     test_marker_present_non_owner_session_reports_absent),
+    ("test_guard_hook_wires_session_id_into_marker_present",
+     test_guard_hook_wires_session_id_into_marker_present),
+    ("test_guard_bash_non_owner_session_gate_does_not_invoke_guard",
+     test_guard_bash_non_owner_session_gate_does_not_invoke_guard),
+    ("test_guard_bash_owner_session_gate_still_denies_and_ledgers",
+     test_guard_bash_owner_session_gate_still_denies_and_ledgers),
 ]
 
 

@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: stale-marker-arms-validate-deny-on-unrelated-dispatches
-status: Ready
+status: In-progress
 created: 2026-06-19
 complexity: complex
 phases: [1, 2]
@@ -93,8 +93,8 @@ No contradictions found; no design forks. All `[VERIFY:]` anchors below were gre
 
 ## Work Units
 
-- [ ] WU-1 — Session-scope the dispatch-guard gate (pass `--session-id` from the hook)
-- [ ] WU-2 — Over-fire regression fixtures (owner runs guard; non-owner fast-path-allows, no ledger)
+- [x] WU-1 — Session-scope the dispatch-guard gate (pass `--session-id` from the hook)
+- [x] WU-2 — Over-fire regression fixtures (owner runs guard; non-owner fast-path-allows, no ledger)
 - [ ] WU-3 — No-debt deny for the unbound-marker pre-bind window (`_deny_no_ledger` branch)
 - [ ] WU-4 — No-debt vs debt contrast fixtures (unbound→no debt; bound→debt)
 
