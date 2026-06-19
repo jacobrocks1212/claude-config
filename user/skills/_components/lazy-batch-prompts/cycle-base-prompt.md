@@ -52,14 +52,17 @@
      R10 work-branch-only commits ............... section: hard-contract (item 2)
      R11 after-the-skill commit policy .......... section: hard-contract (item 3)
      R12 report contract (no sha) ............... section: hard-contract (item 4)
-     R13 turn-end contract ...................... section: turn-end
+     R13 turn-end contract (EXECUTED verify gate) section: turn-end
      R14 mcp-test rules ......................... sections: skill-mcp-test-common + variant sections
      R15 loop block (separate file) ............. loop-block.md (appended by emitter)
      R16 cloud deltas ........................... section: cloud-override (+ commit-push folded into hard-contract item 3 / turn-end via modes)
      R17 terminal stop (C4) ..................... section: terminal-stop
 
-     The ONE sanctioned restatement is the pre-return checklist in `turn-end`
-     (a checklist may re-walk rules; prose may not).
+     The ONE sanctioned restatement is the turn-end pre-return checklist, which
+     is now the contract of an EXECUTED `--verify-ledger` terminal gate (item 3
+     in `turn-end`) — its `ok:true` verdict certifies the four conditions rather
+     than the subagent self-walking them as advisory prose. (A checklist may
+     re-walk rules; prose may not.)
 
      ── PROVENANCE ─────────────────────────────────────────────────────────
      Workstation deltas come from this file's prior monolithic form; cloud
@@ -398,9 +401,28 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      `<gate> && git add -A && git commit -m "..." && git push` — so even an
      interrupted turn leaves committed, pushed state. This is the final action of
      each /execute-plan batch and of plan-part completion.
-  3. Pre-return checklist, in order, EVERY cycle: (a) no background job of yours
-     still running; (b) `git status --short` is EMPTY; (c) the branch is pushed;
-     (d) the result sentinel or plan/PHASES flip your skill owes is ON DISK.
+  3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
+     real command, not a mental checklist. In order:
+     (i) FINALIZE all reconciliation writes FIRST: tick the landed WU/PHASES
+         checkboxes (`- [ ]` → `- [x]`), flip the plan-part frontmatter `status:`,
+         and write the owed result sentinel — so no post-gate write can strand.
+     (ii) Then run the deterministic ledger verifier as a SEPARATE final step
+         (NOT appended to the R5 chain above — a non-zero verify exit must not
+         abort the commit). Select the script by pipeline (the bug pipeline uses
+         `bug-state.py`; the feature pipeline uses `lazy-state.py`):
+           `python3 ~/.claude/scripts/<lazy-state.py|bug-state.py> --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]`
+         `--plan <plan_file>` is OPTIONAL — include it ONLY on plan-scoped
+         (execute-plan) cycles so the verifier reads `deliverables_done` from the
+         plan-part WU boxes.
+     (iii) If the result's `ok` is false, RECONCILE the named failing check
+         in-turn — commit + push residue, tick the boxes, flip the plan status —
+         and RE-RUN the verifier until `ok` is true. Only an `ok:true` terminal
+         verdict authorizes return; a return without it is a resultless return.
+     The `ok:true` verdict is what CERTIFIES the four turn-end conditions —
+     (a) no background job of yours still running; (b) `git status --short` EMPTY;
+     (c) the branch is pushed; (d) the result sentinel or plan/PHASES flip your
+     skill owes is ON DISK — so the checklist is this EXECUTED gate's contract,
+     not separate advisory prose to self-walk.
   A return that fails any of these is a resultless return — a contract violation,
   not an acceptable partial.
 
@@ -416,8 +438,29 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      `<gate> && git add -A && git commit -m "..." && git push` — so even an
      interrupted turn leaves committed, pushed state. This is the final action of
      each /execute-plan batch and of plan-part completion.
-  3. Pre-return checklist, in order, EVERY cycle: (a) no background job of yours
-     still running; (b) `git status --short` is EMPTY; (c) the branch is pushed;
-     (d) the result sentinel or plan/PHASES flip your skill owes is ON DISK.
+  3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
+     real command, not a mental checklist. In order:
+     (i) FINALIZE all reconciliation writes FIRST: tick the landed WU/PHASES
+         checkboxes (`- [ ]` → `- [x]`), flip the plan-part frontmatter `status:`,
+         and write the owed result sentinel — committing AND pushing each (an
+         unpushed commit is lost on container reclaim) — so no post-gate write
+         can strand.
+     (ii) Then run the deterministic ledger verifier as a SEPARATE final step
+         (NOT appended to the R5 commit+push chain above — a non-zero verify exit
+         must not abort the commit). Select the script by pipeline (the bug
+         pipeline uses `bug-state.py`; the feature pipeline uses `lazy-state.py`):
+           `python3 ~/.claude/scripts/<lazy-state.py|bug-state.py> --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]`
+         `--plan <plan_file>` is OPTIONAL — include it ONLY on plan-scoped
+         (execute-plan) cycles so the verifier reads `deliverables_done` from the
+         plan-part WU boxes.
+     (iii) If the result's `ok` is false, RECONCILE the named failing check
+         in-turn — commit + push residue, tick the boxes, flip the plan status —
+         and RE-RUN the verifier until `ok` is true. Only an `ok:true` terminal
+         verdict authorizes return; a return without it is a resultless return.
+     The `ok:true` verdict is what CERTIFIES the four turn-end conditions —
+     (a) no background job of yours still running; (b) `git status --short` EMPTY;
+     (c) the branch is pushed; (d) the result sentinel or plan/PHASES flip your
+     skill owes is ON DISK — so the checklist is this EXECUTED gate's contract,
+     not separate advisory prose to self-walk.
   A return that fails any of these is a resultless return — a contract violation,
   not an acceptable partial.

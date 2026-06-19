@@ -89,7 +89,7 @@ compaction, re-read this plan file first, then load components for your current 
 
 ## Work Units
 
-- [ ] WU-1 — Convert both `turn-end` sections to an executed terminal `--verify-ledger` gate (+ reconcile RULE INVENTORY)
+- [x] WU-1 — Convert both `turn-end` sections to an executed terminal `--verify-ledger` gate (+ reconcile RULE INVENTORY)
 
 ## Phase: cycle-subagent-leaves-work-uncommitted-or-unticked P1 — In-turn terminal `--verify-ledger` gate
 
@@ -100,10 +100,10 @@ compaction, re-read this plan file first, then load components for your current 
 ### WU-1 — Convert both `turn-end` sections to an executed terminal `--verify-ledger` gate
 
 **Scope (PHASES.md deliverables covered):**
-- [ ] `modes=workstation` `turn-end` section: pre-return checklist (item 3) converted to a mandatory executed `--verify-ledger` terminal gate with finalize-before-verify ordering and a verify→reconcile→re-verify→return loop.
-- [ ] `modes=cloud` `turn-end` section: same conversion mirrored, preserving the existing cloud divergences (push-each-flip durability; `&& git push` in the R5 chain).
-- [ ] Both sections name the verifier as a pipeline-correct command (`bug-state.py` for the bug pipeline, `lazy-state.py` for the feature pipeline — use the section's existing pipeline-selection convention, do NOT hardcode one); `--plan <plan_file>` documented as optional (plan-scoped/execute-plan cycles only).
-- [ ] RULE INVENTORY header reconciled: R13 description + the "ONE sanctioned restatement is the pre-return checklist in `turn-end`" note (line ~61) updated to reflect the checklist is now an EXECUTED gate, not advisory prose.
+- [x] `modes=workstation` `turn-end` section: pre-return checklist (item 3) converted to a mandatory executed `--verify-ledger` terminal gate with finalize-before-verify ordering and a verify→reconcile→re-verify→return loop.
+- [x] `modes=cloud` `turn-end` section: same conversion mirrored, preserving the existing cloud divergences (push-each-flip durability; `&& git push` in the R5 chain).
+- [x] Both sections name the verifier as a pipeline-correct command (`bug-state.py` for the bug pipeline, `lazy-state.py` for the feature pipeline — use the section's existing pipeline-selection convention, do NOT hardcode one); `--plan <plan_file>` documented as optional (plan-scoped/execute-plan cycles only).
+- [x] RULE INVENTORY header reconciled: R13 description + the "ONE sanctioned restatement is the pre-return checklist in `turn-end`" note (line ~61) updated to reflect the checklist is now an EXECUTED gate, not advisory prose.
 
 **TDD:** no — this is harness contract/prose, not code with unit-testable behavior. Verification is the projection + lint gates (Step B.4) and a structural grep, not a test file.
 
