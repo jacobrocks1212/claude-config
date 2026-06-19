@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 4414f1b
 **Placement:** docs/bugs/stale-marker-arms-validate-deny-on-unrelated-dispatches
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/CLAUDE.md` "Per-repo keyed state dir"; `user/hooks/lazy-dispatch-guard.sh`; `user/scripts/lazy_guard.py`; `user/scripts/lazy_core.py` (`read_run_marker` / `append_deny_ledger_entry` / `pending_hardening`); `docs/features/multi-repo-concurrent-runs/` (per-repo marker keying, COMPLETE 2026-06-16 — fixed cross-REPO leakage; this is the residual SAME-repo / cross-session / stale class)
