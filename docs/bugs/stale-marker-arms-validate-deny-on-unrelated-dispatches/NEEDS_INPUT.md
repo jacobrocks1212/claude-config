@@ -155,3 +155,22 @@ partially mitigated, and a marker-ownership redesign deserves its own scoped inv
 + deterministic fixture rather than riding a different-direction fix. If the operator
 prefers a single complete pass, choose B and the plan will phase the ownership change
 behind the over-fire fix.
+
+## Resolution
+
+*Recorded on 2026-06-19 18:40:00 UTC.*
+
+### 1. Discriminator mechanism for pipeline-vs-unrelated dispatches
+
+**Choice:** A. Owning-session scoping at the gate
+**Notes:** Pass `--session-id` from `lazy-dispatch-guard.sh` into `--marker-present`; treat the marker as present ONLY when the caller's session is the marker's bound owner (re-enable staleness-path-B at the gate). Preserve sacred invariants: fail-OPEN, never destroy the owning run's marker from a non-owner read, never weaken the depth-1 hardening cap.
+
+### 2. Disposition of an unrelated (non-pipeline) deny
+
+**Choice:** A. Allow-through (gate scoped out)
+**Notes:** Under D1=A, a non-owning-session dispatch never reaches deny logic (gate fast-path allows it). For the narrow unbound-marker pre-bind window, pair with a `_deny_no_ledger`-style no-debt deny path so even a pre-bind deny carries no hardening debt.
+
+### 3. Under-fire single-slot ownership fix — in-scope or split to follow-up
+
+**Choice:** A. Split the under-fire to a dedicated follow-up bug
+**Notes:** Scope THIS bug to the over-fire only (decisions 1-2). Spin off a separate `docs/bugs/` item for the single-slot marker-ownership race, cross-referenced in both directions (origin names the spin-off in PHASES.md Implementation Notes; spin-off names this origin). The spin-off gets its own scoped investigation + deterministic fixture.
