@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: byref-dispatch-undercounts-forward-cycles
-status: Ready
+status: In-progress
 created: 2026-06-19
 phases: [2, 3]
 complexity: complex
