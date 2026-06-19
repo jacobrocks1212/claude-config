@@ -2,9 +2,11 @@
 
 > In a real `/lazy-batch` run, a cycle-subagent wrote its blocker file under a descriptive, date-suffixed name instead of the canonical `BLOCKED.md`. Because `lazy-state.py` keys halt detection on the exact filename `BLOCKED.md`, the halt was invisible and the state machine re-routed straight back to the same wall — an infinite-loop trigger that was only caught by chance.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 36d7e80
 **Placement:** docs/bugs/noncanonical-blocker-filename-invisible-to-state-machine
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/lazy-state.py` Step 3 (halt detection keys on literal `BLOCKED.md`, line 1504-1529); `user/scripts/bug-state.py` Step 3 (mirror, line 835-859); `user/scripts/lazy_core.py` (shared sentinel readers — natural home for the detector); `user/skills/_components/sentinel-frontmatter.md` (canonical-name contract, prose-only); `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` Hard contract #1 (prose canonical-name instruction, line 323/350).
