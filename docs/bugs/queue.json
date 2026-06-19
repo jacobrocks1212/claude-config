@@ -48,6 +48,12 @@
       "name": "No first-class queue-reorder command (forces BLOCKED.md workaround)",
       "spec_dir": "no-sanctioned-queue-reorder-command",
       "severity": "P2"
+    },
+    {
+      "id": "single-slot-marker-ownership-race-disarms-owning-run",
+      "name": "Single-slot marker ownership race silently disarms owning run's guard (under-fire)",
+      "spec_dir": "single-slot-marker-ownership-race-disarms-owning-run",
+      "severity": "P2"
     }
   ]
 }
