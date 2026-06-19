@@ -7566,12 +7566,20 @@ def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
     no MCP API driven by the model, no assertions model-judged). repeat_count 1
     and None both → 'haiku'. Regression for docs/bugs/mcp-test-haiku-tier-unwired
     (the 'haiku happy path' was description-only prose, wired into zero paths).
+
+    Reshaped for docs/bugs/mcp-test-legacy-md-routes-to-haiku: under option-(b)
+    conservative escalation a bare empty spec_dir (no scenarios) now correctly
+    routes to sonnet (no ready YAML). To keep asserting the genuine haiku happy
+    path, the fixture seeds a READY converted-YAML scenario under
+    mcp-tests/corpus/live/, so 'all candidates are ready YAML' → haiku holds.
     """
     _guard()
     repo = Path("/nonexistent/repo")
     with tempfile.TemporaryDirectory() as td:
         spec_dir = Path(td) / "spec"
-        spec_dir.mkdir()
+        live = spec_dir / "mcp-tests" / "corpus" / "live"
+        live.mkdir(parents=True)
+        (live / "scenario-x.yaml").write_text("name: scenario-x\n", encoding="utf-8")
         for rc in (1, None):
             state = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
             r = lazy_core.emit_cycle_prompt(
@@ -7580,6 +7588,55 @@ def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
             )
             assert r is not None and r.get("ok") is True, f"rc={rc}: {r}"
             assert r["model"] == "haiku", f"rc={rc}: mcp-test expected haiku, got {r['model']!r}"
+
+
+def test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet():
+    """An mcp-test cycle whose ONLY scenario is an unconverted legacy `.md`
+    (no converted corpus/live/*.yaml counterpart) escalates to sonnet at emit
+    time — so the .md→v1-YAML conversion lands on a capable tier instead of the
+    haiku that BLOCKs. Regression for docs/bugs/mcp-test-legacy-md-routes-to-haiku.
+    This MUST fail against the pre-fix hardcoded-haiku emit.
+    """
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        legacy = spec_dir / "mcp-tests"
+        legacy.mkdir(parents=True)
+        # Legacy .md with NO sibling .yaml and NO corpus/live converted YAML.
+        (legacy / "scenario-x.md").write_text("# legacy scenario\n", encoding="utf-8")
+        state = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+        )
+        assert r is not None and r.get("ok") is True, f"{r}"
+        assert r["model"] == "sonnet", (
+            f"legacy-.md mcp-test expected sonnet, got {r['model']!r}"
+        )
+
+
+def test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku():
+    """An mcp-test cycle whose candidate scenarios are ALL ready converted YAML
+    (corpus/live/*.yaml present) stays on the haiku happy path. The explicit
+    happy-path sibling of the legacy-.md escalation fixture above
+    (docs/bugs/mcp-test-legacy-md-routes-to-haiku)."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        live = spec_dir / "mcp-tests" / "corpus" / "live"
+        live.mkdir(parents=True)
+        (live / "scenario-x.yaml").write_text("name: scenario-x\n", encoding="utf-8")
+        state = _emit_state(sub_skill="/mcp-test", spec_path=str(spec_dir))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=1, template_dir=_REAL_TEMPLATE_DIR,
+        )
+        assert r is not None and r.get("ok") is True, f"{r}"
+        assert r["model"] == "haiku", (
+            f"ready-YAML mcp-test expected haiku, got {r['model']!r}"
+        )
 
 
 def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
@@ -14375,6 +14432,9 @@ _TESTS = [
     # mcp-test-haiku-tier-unwired — per-sub_skill base model tier
     ("test_emit_cycle_prompt_mcp_test_cycle_model_haiku", test_emit_cycle_prompt_mcp_test_cycle_model_haiku),
     ("test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet", test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet),
+    # mcp-test-legacy-md-routes-to-haiku — tier-routed cycle-model emit (option b)
+    ("test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet", test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet),
+    ("test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku", test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku),
     # Phase 9 (lazy-validation-readiness) — per-part complexity model tiering
     ("test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet", test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet),
     ("test_emit_cycle_prompt_complex_part_cycle_model_opus", test_emit_cycle_prompt_complex_part_cycle_model_opus),

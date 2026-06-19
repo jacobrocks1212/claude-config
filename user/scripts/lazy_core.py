@@ -4572,6 +4572,65 @@ def _read_mcp_runtime_decision(spec_path: str | None) -> tuple[str, str | None]:
     return ("runtime-up", None)
 
 
+def _mcp_test_cycle_model(spec_path: str | None) -> str:
+    """Return the dispatch model (``"haiku"`` | ``"sonnet"``) for an mcp-test
+    cycle, derived from the item's candidate scenarios via the script-derived
+    tier signal (``surface_resolver.route_mcp_test_tier``).
+
+    OPTION-(b) conservative escalation (docs/bugs/mcp-test-legacy-md-routes-to-haiku
+    PHASES.md decision): enumerate the candidate scenarios under the resolved
+    spec/bug dir — legacy ``mcp-tests/*.md`` + converted ``corpus/live/*.yaml``
+    (recursively, so the canonical ``mcp-tests/corpus/live/`` nesting is covered)
+    — and return ``"haiku"`` ONLY when at least one candidate resolves AND every
+    candidate resolves to ``"haiku"`` via the tier router (ready converted YAML).
+    Otherwise return ``"sonnet"``.
+
+    Fail-safe: zero resolvable candidates, or any enumeration/resolution error,
+    → ``"sonnet"`` (matches ``route_mcp_test_tier``'s own "unknown → Sonnet"
+    bias). NEVER a silent haiku fallback — that is the exact defect this fixes.
+    """
+    # Lazy in-function import: surface_resolver is a sibling module in
+    # user/scripts/. Import here (not at module top) to avoid any import-time
+    # coupling/cycle and to keep the helper a no-op cost on non-mcp-test cycles.
+    try:
+        try:
+            from surface_resolver import route_mcp_test_tier
+        except ImportError:
+            _here = Path(__file__).parent
+            if str(_here) not in sys.path:
+                sys.path.insert(0, str(_here))
+            from surface_resolver import route_mcp_test_tier
+
+        if not spec_path:
+            return "sonnet"  # no item dir to resolve scenarios from.
+        item_dir = Path(spec_path)
+        if not item_dir.is_dir():
+            return "sonnet"
+
+        # Candidate scenarios: legacy .md + converted .yaml under mcp-tests/
+        # (recursive — covers both a flat mcp-tests/*.md and the canonical
+        # mcp-tests/corpus/live/*.yaml nesting).
+        mcp_root = item_dir / "mcp-tests"
+        candidates: list[Path] = []
+        if mcp_root.is_dir():
+            candidates.extend(sorted(mcp_root.rglob("*.md")))
+            candidates.extend(sorted(mcp_root.rglob("*.yaml")))
+            candidates.extend(sorted(mcp_root.rglob("*.yml")))
+
+        if not candidates:
+            return "sonnet"  # no scenario resolves → conservative escalation.
+
+        # haiku only when EVERY candidate is a ready converted YAML (the router
+        # returns "haiku"); a single legacy-.md (or any sonnet verdict) escalates.
+        for scenario in candidates:
+            if route_mcp_test_tier(scenario) != "haiku":
+                return "sonnet"
+        return "haiku"
+    except Exception:
+        # Any unexpected failure fails safe toward the capable tier.
+        return "sonnet"
+
+
 def emit_cycle_prompt(
     repo_root: Path,
     state: dict,
@@ -4746,19 +4805,34 @@ def emit_cycle_prompt(
     # sonnet (sonnet ∧ sonnet = sonnet), and a `mechanical`/sonnet part stays
     # sonnet — the two never conflict because both only ever DOWNGRADE to sonnet.
     norm_sub_skill = norm_skill  # already leading-"/"-stripped above
-    # Per-sub_skill base model tier. mcp-test is the Informed Dispatcher happy
-    # path (resolve scenario → run the deterministic engine → read the small
-    # verdict → forward the engine-written sentinel → reconcile PHASES); the
-    # model drives no MCP API and judges no assertion, so haiku suffices. Every
-    # other sub_skill keeps the conservative opus base. The loop-block downgrade
-    # below sets model = "sonnet" UNCONDITIONALLY — from this haiku base that is
-    # the correct ESCALATION (a stuck mechanical cycle earns a stronger model);
-    # from the opus base it is the existing cost-saving downgrade. The single
-    # "sonnet" literal is right for both bases, so no tier-max arithmetic is
-    # needed. Opus-on-failure for mcp-test is handled separately by the
+    # Per-sub_skill base model tier.
+    #
+    # mcp-test is TIER-ROUTED at emit time via surface_resolver.route_mcp_test_tier
+    # (docs/bugs/mcp-test-legacy-md-routes-to-haiku). The dispatch model is bound
+    # by the orchestrator BEFORE the cycle subagent resolves which scenario it
+    # runs, so a literal haiku here lands an UNCONVERTED legacy `.md` scenario on
+    # haiku — which cannot author the `.md`→v1-YAML conversion and writes
+    # BLOCKED.md. The fix consults the same script-derived tier signal the
+    # interactive mcp-test SKILL.md uses (harness-hardening-retro-fixes Phase 4),
+    # using OPTION-(b) CONSERVATIVE ESCALATION (per the bug's PHASES.md decision):
+    # enumerate the item's candidate scenarios under the resolved spec/bug dir
+    # (legacy `mcp-tests/*.md` + converted `corpus/live/*.yaml`); stay haiku ONLY
+    # when at least one candidate resolves AND EVERY candidate is a ready
+    # converted YAML (route_mcp_test_tier → "haiku"); otherwise escalate to
+    # sonnet. Fail-safe: zero resolvable candidates OR an enumeration error →
+    # sonnet (matches the router's own "unknown → Sonnet" bias) — NEVER a silent
+    # haiku fallback. Every other sub_skill keeps the conservative opus base.
+    #
+    # The loop-block downgrade below sets model = "sonnet" UNCONDITIONALLY — from
+    # a haiku/opus base that is the correct ESCALATION/downgrade toward sonnet; it
+    # composes with this tier routing (both only ever move toward sonnet, never
+    # away). Opus-on-failure for mcp-test is handled separately by the
     # needs-runtime-redispatch recovery path (dispatch_model "opus", tagged
     # "(opus, recovery)"), not here.
-    model = "haiku" if norm_sub_skill == "mcp-test" else "opus"
+    if norm_sub_skill == "mcp-test":
+        model = _mcp_test_cycle_model(state.get("spec_path"))
+    else:
+        model = "opus"
     if norm_sub_skill in ("execute-plan", "execute_plan"):
         plan_arg = state.get("sub_skill_args")
         if plan_arg:

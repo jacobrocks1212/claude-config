@@ -265,8 +265,23 @@ default — not by a per-run orchestrator override**. Sonnet-forcing conditions 
 outside the `_DEFINITIVE_MCP_VERDICTS` allow-list — an unknown label fails safe toward Sonnet);
 (3) no scenario at all. `repos/algobooth/.claude/skills/mcp-test/SKILL.md`'s Model-tier section
 consults this helper (repo-scoped prose — not a coupled pair, but picked up by `project-skills.py`
-per-repo projection; re-run it after editing). Tests:
-`test_surface_resolver.py::TestRouteMcpTestTier`.
+per-repo projection; re-run it after editing).
+
+`emit_cycle_prompt` ALSO consults `route_mcp_test_tier` on the AUTONOMOUS cycle-model path
+(docs/bugs/mcp-test-legacy-md-routes-to-haiku) — closing the SPEC's "wired into zero autonomous
+paths" gap. The dispatch model is bound by the orchestrator BEFORE the cycle subagent resolves its
+scenario, so a literal haiku here lands an unconverted legacy `.md` scenario on haiku, which BLOCKs
+(can't author the `.md`→YAML conversion). The `_mcp_test_cycle_model(spec_path)` helper applies
+**option-(b) conservative escalation**: it enumerates the item's candidate scenarios under the
+resolved spec/bug dir (`mcp-tests/*.md` legacy + `corpus/live/*.yaml` converted, recursively) and
+stays haiku ONLY when at least one candidate resolves AND every candidate is a ready converted YAML;
+otherwise — including zero resolvable candidates or any enumeration error — it escalates to sonnet
+(matching the router's own "unknown → Sonnet" bias, never a silent haiku fallback). This realizes
+the Phase-4 intent (tier routing "by default — not by a per-run orchestrator override") on the batch
+path; `bug-state.py` inherits it via the shared `lazy_core`. Tests:
+`test_surface_resolver.py::TestRouteMcpTestTier`;
+`test_lazy_core.py::test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet` +
+`..._ready_yaml_stays_haiku` + `..._cycle_model_haiku` (reshaped to a ready-YAML happy path).
 
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
 

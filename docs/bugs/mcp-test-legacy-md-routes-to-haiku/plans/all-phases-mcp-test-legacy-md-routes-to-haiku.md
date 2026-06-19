@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: mcp-test-legacy-md-routes-to-haiku
-status: Ready
+status: Complete
 created: 2026-06-19
 complexity: complex
 phases: [1]
@@ -82,9 +82,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Test-first: legacy-`.md`→sonnet + ready-YAML→haiku emit fixtures
-- [ ] WU-2 — Wire `route_mcp_test_tier` into `emit_cycle_prompt` (conservative escalation)
-- [ ] WU-3 — Doc: update `user/scripts/CLAUDE.md` mcp-test model-tier routing section
+- [x] WU-1 — Test-first: legacy-`.md`→sonnet + ready-YAML→haiku emit fixtures
+- [x] WU-2 — Wire `route_mcp_test_tier` into `emit_cycle_prompt` (conservative escalation)
+- [x] WU-3 — Doc: update `user/scripts/CLAUDE.md` mcp-test model-tier routing section
 
 ---
 
