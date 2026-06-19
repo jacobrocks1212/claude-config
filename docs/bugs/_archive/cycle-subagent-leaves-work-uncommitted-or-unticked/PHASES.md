@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress <!-- implementation complete (P1 landed); validation tail (projection + lint) pending — do NOT flip to Fixed here, orchestrator's __mark_fixed__ gate owns that -->
+**Status:** Fixed
 
 
 

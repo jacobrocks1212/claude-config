@@ -2,9 +2,11 @@
 
 > Across multiple `/lazy-batch` runs, cycle subagents do the real work but fail to finish the turn cleanly: deliverables are left uncommitted (HEAD unchanged), PHASES.md/plan-file checkboxes are left unticked, and SPEC/plan frontmatter is flipped to Complete without the body ledger being reconciled. The `verify-ledger` step catches these every time, but each catch forces an extra recovery-cycle dispatch — pure meta overhead. This was the most consistent cross-session friction pattern in the audit.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 0d28bd3
 **Placement:** docs/bugs/cycle-subagent-leaves-work-uncommitted-or-unticked
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (`turn-end` section — the contract); `user/skills/lazy-batch/SKILL.md` Step 1e.4a (post-cycle ledger guard + recovery dispatch); `user/scripts/lazy_core.py` `verify_ledger` + `detect_cycle_bracket_friction`; `user/skills/_components/lazy-batch-prompts/dispatch-recovery.md`. Sibling friction items: `docs/bugs/cycle-subagent-leaves-work-uncommitted-or-unticked`'s peers under `docs/bugs/` (cycle-subagent-* family).
