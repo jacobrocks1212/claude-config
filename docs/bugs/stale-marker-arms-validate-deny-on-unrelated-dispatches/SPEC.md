@@ -2,7 +2,7 @@
 
 > A run marker that is still live for THIS repo arms the validate-deny guard against every Agent dispatch in the session — including ordinary, unrelated design/spec dispatches. Those denials accrue as hardening debt that gates `--run-end`; the inverse (a foreign session's marker) silently disarms a live run's guard. Per-repo keying closed the cross-repo leak but left the same-repo / cross-session / stale dimension open because the guard gate is **session-blind** and the deny-ledger has **no pipeline-vs-unrelated discriminator**.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
 **Placement:** docs/bugs/stale-marker-arms-validate-deny-on-unrelated-dispatches

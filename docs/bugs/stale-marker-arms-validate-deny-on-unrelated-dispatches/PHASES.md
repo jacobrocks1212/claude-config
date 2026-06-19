@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — both phases (D1 + D2) implemented and all hermetic gates green (2026-06-19); validation tail (`/mcp-test` → coverage audit) pending. The SPEC `**Status:**` flip to `Fixed` and the `FIXED.md` receipt are gate-owned by `__mark_fixed__` (NOT authored here).
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a harness defect fix in `user/hooks/` + `user/scripts/` (bash hook + Python state-machine / guard). There is NO app surface, store, audio path, or UI state to drive through the live Tauri + MCP runtime. Validation is fully covered by the hermetic in-file `--test` smoke harnesses (`test_hooks.py` end-to-end bash-hook fixtures, `test_lazy_core.py`, `lazy-state.py --test`) per the mcp-testing SPEC's "structurally outside MCP reach (build/dev tooling, no app integration)" class.
 
