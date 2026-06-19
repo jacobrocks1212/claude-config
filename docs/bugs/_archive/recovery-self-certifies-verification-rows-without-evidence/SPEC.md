@@ -2,9 +2,11 @@
 
 > When a `/lazy-batch` run enters a ledger-recovery or LOOP-DETECTED path, the recovery subagent could tick runtime-verification checkboxes and author validation/skip receipts (VALIDATED.md, SKIP_MCP_TEST.md) without on-disk evidence. **Investigation finding: both side-doors were already closed by two prior fixes (commits `dfbcfa0`, `3f6253f`); the observed incidents predate the landed guards.** Residual scope is a regression test that pins both guards on disk so they can't silently regress.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 8727905
 **Placement:** docs/bugs/recovery-self-certifies-verification-rows-without-evidence
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/skills/_components/lazy-batch-prompts/dispatch-recovery.md` (recovery dispatch); `user/skills/_components/lazy-batch-prompts/loop-block.md` (LOOP-DETECTED block); `user/skills/lazy-batch/SKILL.md` Step 1c.5 verify-ledger recovery; `user/skills/_components/completion-integrity-gate.md`; feature `docs/features/lazy-cycle-containment/` §C5 (the sanctioned fix for the recovery over-tick).
