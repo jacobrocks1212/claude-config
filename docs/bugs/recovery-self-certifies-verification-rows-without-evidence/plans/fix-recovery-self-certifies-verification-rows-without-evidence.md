@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: recovery-self-certifies-verification-rows-without-evidence
-status: Ready
+status: In-progress
 created: 2026-06-19
 complexity: simple
 phases: [1]
