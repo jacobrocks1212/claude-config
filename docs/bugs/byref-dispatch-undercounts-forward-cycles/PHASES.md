@@ -50,8 +50,8 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both pass, including a new/updated fixture where a real-skill `--repeat-count` probe with a changed state tuple and a FROZEN `consumed_emission_count()` still advances `forward_cycles` by exactly 1.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` exits 0 and matches `tests/baselines/lazy-state-test-baseline.txt` (regenerate the baseline only via the `_normalize_smoke_output` helper if the fixture set legitimately changed).
-- [ ] <!-- verification-only --> `python3 user/scripts/bug-state.py --test` exits 0 and matches `tests/baselines/bug-state-test-baseline.txt`.
+- [x] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` exits 0 and matches `tests/baselines/lazy-state-test-baseline.txt` (regenerate the baseline only via the `_normalize_smoke_output` helper if the fixture set legitimately changed). **LIVE 2026-06-19: exit 0, "All smoke tests passed.", baseline unmodified (git diff clean).**
+- [x] <!-- verification-only --> `python3 user/scripts/bug-state.py --test` exits 0 and matches `tests/baselines/bug-state-test-baseline.txt`. **LIVE 2026-06-19: exit 0, "All smoke tests passed.", baseline unmodified (git diff clean).**
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior in this phase (pure Python state-machine wiring; verified by hermetic `--test` fixtures, not MCP).
 
@@ -101,7 +101,7 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Minimum Verifiable Behavior:** A `test_lazy_core.py` fixture drives `consumed_emission_count()` below a previously-persisted `last_advance_consume_count` (by evicting consumed entries past the ring cap) and asserts the watermark/gate no longer strands — `--test` passes for both state machines.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both exit 0 with the hardening fixture green.
+- [x] <!-- verification-only --> `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both exit 0 with the hardening fixture green. **LIVE 2026-06-19: both exit 0, "All smoke tests passed."**
 
 **MCP Integration Test Assertions:** N/A — pure Python census/watermark arithmetic; no app surface.
 
@@ -150,9 +150,9 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Minimum Verifiable Behavior:** The new long-run fixture FAILS against pre-Phase-1 code (forward freezes at a plateau once past the ring cap) and PASSES after Phases 1–2 (forward advances per real cycle across ≥65 emissions). `lazy-state.py --test`, `bug-state.py --test`, and `test_lazy_core.py` all exit 0.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> Full smoke set green: `python3 user/scripts/lazy-state.py --test`, `python3 user/scripts/bug-state.py --test`, `python3 -m pytest user/scripts/test_lazy_core.py`, `python3 user/scripts/lazy_coord.py --test` — all exit 0.
-- [ ] <!-- verification-only --> Both byte-pinned baselines match (or were regenerated only via `_normalize_smoke_output`).
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py` passes (advance-wiring parity between `lazy-state.py` and `bug-state.py`).
+- [x] <!-- verification-only --> Full smoke set green: `python3 user/scripts/lazy-state.py --test`, `python3 user/scripts/bug-state.py --test`, `python3 -m pytest user/scripts/test_lazy_core.py`, `python3 user/scripts/lazy_coord.py --test` — all exit 0. **LIVE 2026-06-19: lazy-state exit 0 "All smoke tests passed."; bug-state exit 0 "All smoke tests passed."; pytest 573 passed in 72.25s; lazy_coord exit 0 "All smoke tests passed."**
+- [x] <!-- verification-only --> Both byte-pinned baselines match (or were regenerated only via `_normalize_smoke_output`). **LIVE 2026-06-19: `git diff user/scripts/tests/baselines/` clean — baselines byte-identical, not touched.**
+- [x] <!-- verification-only --> `python3 user/scripts/lazy_parity_audit.py` passes (advance-wiring parity between `lazy-state.py` and `bug-state.py`). **LIVE 2026-06-19: exit 0 (no output = clean).**
 
 **MCP Integration Test Assertions:** N/A — the entire deliverable is a hermetic test fixture + baseline regeneration; no app surface.
 
