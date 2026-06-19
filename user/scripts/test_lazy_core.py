@@ -12531,6 +12531,134 @@ def test_advance_run_counters_census_regression_does_not_strand():
             _clear_state_dir()
 
 
+def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
+    """Phase 3 (byref-dispatch-undercounts-forward-cycles) — the LONG-RUN regression
+    net the hermetic single-advance fixtures missed.
+
+    Simulates a long /lazy-batch run that CROSSES the 64-entry ring cap (≥65
+    emissions) with interleaved meta dispatches, asserting `forward_cycles` keeps
+    advancing once per REAL-skill state change — reproducing and defeating the SPEC's
+    "stuck at 16 / frozen at 50" signature (the forward counter freezing at a plateau
+    once cumulative emissions outrun the ring cap and the consume census stops rising).
+
+    Dual property asserted:
+      (1) FORWARD CORRECT (Phase 1): N distinct real-skill state-change cycles, driven
+          through the consume-INDEPENDENT `advance_forward_cycle` (the Phase-1 wired
+          path), yield `forward_cycles == N` — NOT frozen at a plateau. This is RED
+          against pre-Part-1 code (where the real-skill path advanced only via the
+          consume-gated `advance_run_counters`, which freezes once the ring-capped
+          census plateaus/drops past entry 64).
+      (2) WATERMARK NOT STRANDED (Phase 2): the consume-gated `advance_run_counters`
+          gate, exercised across the same ring-cap crossing, never permanently strands
+          (the re-arm-on-drop clamp).
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=200, now=now,
+            )
+
+            n_real_cycles = 40          # 80 cumulative emissions — well past the 64 cap
+            steps = ["spec", "phases", "plan", "execute-plan", "mcp-test"]
+            t = 0  # monotone emission clock offset
+
+            for i in range(n_real_cycles):
+                # --- meta dispatch interleaved before each real cycle ---
+                # (recovery / hardening etc. go through advance_meta_cycle; each also
+                #  registers + consumes a registry entry — driving the ring cap.)
+                meta_entry = lazy_core.register_emission(
+                    f"meta dispatch {i}", "recovery", now=now + t
+                )
+                lazy_core.consume_nonce(meta_entry["nonce"])
+                t += 1
+                lazy_core.advance_meta_cycle()
+
+                # --- a real-skill dispatch consume (drives the registry past the cap) ---
+                real_entry = lazy_core.register_emission(
+                    f"real dispatch {i}", "cycle", now=now + t
+                )
+                lazy_core.consume_nonce(real_entry["nonce"])
+                t += 1
+
+                # --- the Phase-1 forward authority: advance on a DISTINCT state tuple ---
+                # Each real cycle carries a distinct [feature_id, current_step, sub_skill]
+                # so advance_forward_cycle advances exactly once per real cycle,
+                # INDEPENDENT of the (now plateaued/dropping) consume census.
+                state = {
+                    "feature_id": f"feat-{i}",
+                    "current_step": steps[i % len(steps)],
+                    "sub_skill": "/execute-plan",
+                }
+                # Production wiring (Part 1): the real-skill probe path advances
+                # forward via advance_forward_cycle ALONE — advance_run_counters was
+                # REPLACED, not run alongside, so there is no double-count.
+                lazy_core.advance_forward_cycle(state)
+
+            marker = lazy_core.read_run_marker()
+
+            # Sanity: the registry actually crossed the ring cap (≥65 cumulative
+            # emissions; the live registry is capped at 64).
+            registry = lazy_core._load_registry()
+            assert len(registry.get("entries", [])) == lazy_core._REGISTRY_RING_CAP, (
+                f"the run must have crossed the ring cap — registry should hold exactly "
+                f"{lazy_core._REGISTRY_RING_CAP} entries, got "
+                f"{len(registry.get('entries', []))}"
+            )
+            assert 2 * n_real_cycles > lazy_core._REGISTRY_RING_CAP, (
+                "test design: cumulative emissions must exceed the ring cap"
+            )
+
+            # (1) FORWARD CORRECT — once per real-skill state change, NOT frozen.
+            assert marker["forward_cycles"] == n_real_cycles, (
+                f"forward_cycles must advance once per real-skill state change across "
+                f"the ring-cap crossing (expected {n_real_cycles}); got "
+                f"{marker['forward_cycles']!r}. A value frozen below {n_real_cycles} is "
+                f"the SPEC's 'stuck at 16 / frozen at 50' signature — the bug."
+            )
+
+            # (2a) Every interleaved meta dispatch advanced meta_cycles (advance_meta_cycle
+            #      is not consume-gated, so it always advances).
+            assert marker["meta_cycles"] == n_real_cycles, (
+                f"each interleaved meta dispatch must advance meta_cycles (expected "
+                f"{n_real_cycles}), got {marker['meta_cycles']!r}"
+            )
+
+            # (2b) WATERMARK NOT STRANDED (Phase 2) — across the crossing, the meta +1
+            #      over-absorb ratcheted last_advance_consume_count, and ring-cap eviction
+            #      dropped the live census below it (Contributor A + B together). Pre-clamp
+            #      the consume-gated advance_run_counters would now be PERMANENTLY wedged.
+            #      Prove it re-arms: a fresh legitimate consume + an advance_run_counters
+            #      call (a still-extant watermark consumer) must advance forward_cycles.
+            fc_before = marker["forward_cycles"]
+            live_census = lazy_core.consumed_emission_count()
+            persisted_watermark = int(marker.get("last_advance_consume_count", 0))
+            assert live_census < persisted_watermark, (
+                f"test design: after the meta +1 ratchet + ring-cap eviction the live "
+                f"census ({live_census}) must sit BELOW the persisted watermark "
+                f"({persisted_watermark}) — the exact strand condition this asserts no "
+                f"longer freezes"
+            )
+            post_entry = lazy_core.register_emission("post-crossing dispatch", "cycle")
+            lazy_core.consume_nonce(post_entry["nonce"])
+            m_post = lazy_core.advance_run_counters(
+                {"feature_id": "feat-post", "current_step": "execute-plan",
+                 "sub_skill": "/execute-plan"}
+            )
+            assert m_post["forward_cycles"] == fc_before + 1, (
+                f"the consume-gated watermark gate must NOT be permanently stranded by "
+                f"the meta +1 ratchet + ring-cap eviction — a fresh consume after the "
+                f"crossing must still advance (expected {fc_before + 1}), got "
+                f"{m_post['forward_cycles']!r}. Pre-Phase-2 this wedged forever."
+            )
+        finally:
+            _clear_state_dir()
+
+
 # ---------------------------------------------------------------------------
 # Test 11: subprocess MVB — lazy-state.py --repeat-count --probe --emit-prompt
 #          with marker present writes a registry entry with matching sha256
@@ -18470,6 +18598,8 @@ _TESTS = _TESTS + [
      test_advance_run_counters_consume_gated),
     ("test_advance_run_counters_census_regression_does_not_strand",
      test_advance_run_counters_census_regression_does_not_strand),
+    ("test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave",
+     test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave),
     ("test_append_friction_ledger_entry_round_trips",
      test_append_friction_ledger_entry_round_trips),
     ("test_append_friction_ledger_entry_shares_ledger_with_denies",

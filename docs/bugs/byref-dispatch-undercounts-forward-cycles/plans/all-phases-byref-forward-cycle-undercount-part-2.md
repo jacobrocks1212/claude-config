@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: byref-dispatch-undercounts-forward-cycles
-status: In-progress
+status: Complete
 created: 2026-06-19
 phases: [2, 3]
 complexity: complex
@@ -92,10 +92,10 @@ Before executing each step, `Read` the component files listed for that step from
 
 ## Work Units
 
-- [ ] WU-1 — Clamp `last_advance_consume_count` so a dropped census / meta `+1` can't permanently strand the gate (`lazy_core.py`)
-- [ ] WU-2 — Tests: census forced below the persisted watermark does not strand any consumer; ISSUE-5 inflation stays green
-- [ ] WU-3 — Long-run ring-cap-crossing regression fixture (≥65 emissions + interleaved meta; `forward_cycles` keeps advancing)
-- [ ] WU-4 — Docs parity: update `user/scripts/CLAUDE.md` "two orthogonal triggers" to note `advance_forward_cycle` is now wired into the `--repeat-count` real-skill path
+- [x] WU-1 — Clamp `last_advance_consume_count` so a dropped census / meta `+1` can't permanently strand the gate (`lazy_core.py`)
+- [x] WU-2 — Tests: census forced below the persisted watermark does not strand any consumer; ISSUE-5 inflation stays green
+- [x] WU-3 — Long-run ring-cap-crossing regression fixture (≥65 emissions + interleaved meta; `forward_cycles` keeps advancing)
+- [x] WU-4 — Docs parity: update `user/scripts/CLAUDE.md` "two orthogonal triggers" to note `advance_forward_cycle` is now wired into the `--repeat-count` real-skill path
 
 ---
 

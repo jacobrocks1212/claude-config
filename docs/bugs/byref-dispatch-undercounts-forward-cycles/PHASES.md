@@ -142,10 +142,10 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Scope:** Add the regression net the current hermetic single-advance fixtures miss: a fixture simulating a long `/lazy-batch` run that CROSSES the 64-entry ring cap (≥65 emissions) with interleaved meta dispatches, asserting `forward_cycles` keeps advancing for each real-skill state change. This is SPEC Fix Scope item 3 — the fixture that would have caught this bug originally. Keep BOTH `lazy-state.py --test` and `bug-state.py --test` green (shared `lazy_core`).
 
 **Deliverables:**
-- [ ] Add a `test_lazy_core.py` fixture (`test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave` or similar) that: writes a run marker; drives ≥65 emissions through `register_emission` + `consume_nonce` (crossing `_REGISTRY_RING_CAP`); interleaves meta dispatches (`advance_meta_cycle` calls) between real-skill cycles; advances real cycles via the Phase-1 probe path; and asserts `forward_cycles` advanced once per real-skill state change (NOT frozen at a plateau) — reproducing the SPEC's "stuck at 16 / frozen at 50" signature and proving it no longer occurs.
-- [ ] Assert the dual property: forward count is correct (Phase 1) AND the consume watermark did not strand (Phase 2).
-- [ ] Run the full smoke set and regenerate the byte-pinned baselines ONLY via the `_normalize_smoke_output` helper if (and only if) the `--test` fixture set legitimately changed: `tests/baselines/lazy-state-test-baseline.txt`, `tests/baselines/bug-state-test-baseline.txt`.
-- [ ] Confirm `python3 user/scripts/lazy_parity_audit.py` (if it asserts advance-wiring parity) passes for the mirrored `bug-state.py` change from Phase 1.
+- [x] Add a `test_lazy_core.py` fixture (`test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave` or similar) that: writes a run marker; drives ≥65 emissions through `register_emission` + `consume_nonce` (crossing `_REGISTRY_RING_CAP`); interleaves meta dispatches (`advance_meta_cycle` calls) between real-skill cycles; advances real cycles via the Phase-1 probe path; and asserts `forward_cycles` advanced once per real-skill state change (NOT frozen at a plateau) — reproducing the SPEC's "stuck at 16 / frozen at 50" signature and proving it no longer occurs. **DONE — 40 real cycles × (1 meta + 1 real emission) = 80 cumulative emissions, crossing the 64 cap; `forward_cycles == 40` asserted.**
+- [x] Assert the dual property: forward count is correct (Phase 1) AND the consume watermark did not strand (Phase 2). **DONE — (2b) reproduces the exact strand condition (`live_census < persisted_watermark` design-check) then proves `advance_run_counters` re-arms.**
+- [x] Run the full smoke set and regenerate the byte-pinned baselines ONLY via the `_normalize_smoke_output` helper if (and only if) the `--test` fixture set legitimately changed: `tests/baselines/lazy-state-test-baseline.txt`, `tests/baselines/bug-state-test-baseline.txt`. **DONE — baselines NOT touched (new fixtures are pytest fixtures, not in-file `--test` fixtures; both `--test` suites stayed byte-identical).**
+- [x] Confirm `python3 user/scripts/lazy_parity_audit.py` (if it asserts advance-wiring parity) passes for the mirrored `bug-state.py` change from Phase 1. **DONE — `lazy_parity_audit.py --repo-root .` exit 0.**
 
 **Minimum Verifiable Behavior:** The new long-run fixture FAILS against pre-Phase-1 code (forward freezes at a plateau once past the ring cap) and PASSES after Phases 1–2 (forward advances per real cycle across ≥65 emissions). `lazy-state.py --test`, `bug-state.py --test`, and `test_lazy_core.py` all exit 0.
 
@@ -169,6 +169,24 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Testing Strategy:** The fixture is the deliverable. It must be RED against current code (proving it catches the bug) and GREEN after the fix. Cross-check that the ISSUE-5 inflation test and the existing `advance_forward_cycle` tests stay green — this fixture adds coverage, it does not replace them.
 
 **Integration Notes for Next Phase:** None — terminal phase. After this phase lands, `bug-state.py` routes to `/mcp-test`; the validation tail / `__mark_fixed__` gate (orchestrator-owned) handles the terminal flip. Do NOT flip SPEC/PHASES top-level `**Status:**` to Fixed here.
+
+#### Implementation Notes (Part 2 / Phase 3 — 2026-06-19)
+
+**Status:** Implementation complete (validation tail pending — SPEC stays `Concluded` for the orchestrator's `__mark_fixed__`).
+
+**WU-3 — long-run ring-cap-crossing fixture** (`test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave`, `test_lazy_core.py`): writes a run marker; runs 40 real cycles, each interleaving one meta dispatch (`register_emission` + `consume_nonce` + `advance_meta_cycle`) and one real-skill dispatch (`register_emission` + `consume_nonce`), then advancing the real cycle via the Phase-1 authority `advance_forward_cycle` on a DISTINCT `[feature_id, current_step, sub_skill]` tuple. 80 cumulative emissions cross the 64-entry ring cap (sanity-asserted: live registry == 64). Asserts (1) `forward_cycles == 40` — once per real-skill state change, NOT frozen at a plateau (the "stuck at 16 / frozen at 50" signature); (2a) `meta_cycles == 40`; (2b) the residual consume-gated watermark gate re-arms — a `live_census < persisted_watermark` design-check confirms the exact strand condition is reproduced (the meta `+1` ratchet + ring-cap eviction together), then a fresh consume + `advance_run_counters` still advances (pre-Phase-2 this wedged forever). Production wiring note baked into the fixture: the real-skill path calls `advance_forward_cycle` ALONE (Part-1 form-1 replacement) — no double-count.
+
+**WU-4 — docs parity** (`user/scripts/CLAUDE.md`): updated the "Cycle-counter advance: two orthogonal triggers" section — trigger 2 (`advance_forward_cycle`) is now wired into BOTH `--apply-pseudo` AND the `--repeat-count` real-skill probe path (where it REPLACED `advance_run_counters`, form-1); added the reconciliation note (real-skill forward count no longer depends on `consumed_emission_count()`; do not re-introduce the dependence) and a Phase-2 watermark-hardening callout (re-arm-on-drop clamp, defense-in-depth).
+
+**Files modified:**
+- `user/scripts/test_lazy_core.py` — `test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave` fixture + `_TESTS` registration (WU-3).
+- `user/scripts/CLAUDE.md` — "two orthogonal triggers" section update (WU-4).
+
+**Gate results (all green):** `lazy-state.py --test` (exit 0), `bug-state.py --test` (exit 0), `lazy_coord.py --test` (exit 0), `lazy_parity_audit.py --repo-root .` (exit 0), `pytest test_lazy_core.py` (573 passed). Byte-pinned `--test` baselines untouched.
+
+**Review verdict:** PASS — inline (one fixture + one docs section; the fixture's forward assertion pins Phase 1, the (2b) re-arm assertion pins Phase 2, the design-check guarantees the strand condition was actually reproduced).
+
+**Inline-execution confirmation:** all WUs executed INLINE (zero `Agent()` calls); the test fixtures (WU-2/3) were written and confirmed RED before the corresponding implementation landed (test-first).
 
 ---
 

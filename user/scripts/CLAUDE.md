@@ -213,13 +213,31 @@ independent triggers**, both marker-gated:
    / `__grant_skip_no_mcp_surface__` / `__flip_plan_complete_cloud_saturated__`) dispatch no Agent
    and consume nothing, and a verbatim real-skill dispatch can miss its guard ALLOW (Theory-1b).
    A re-fire with the SAME tuple is a no-op (idempotent, same as trigger 1's consume gate).
+   As of `byref-dispatch-undercounts-forward-cycles` Phase 1 this trigger is ALSO the authoritative
+   forward-advance on the `--repeat-count` **real-skill probe path** — where it REPLACED the
+   consume-gated `advance_run_counters` (form-1 reconciliation; `advance_run_counters` no longer
+   runs there). That moves the real-skill forward COUNT off the non-monotonic `consumed_emission_count()`
+   oracle entirely, so a by-ref dispatch whose consume the ring-capped census no longer reflects (the
+   "stuck at 16 / frozen at 50" freeze) still advances. Do NOT re-introduce a forward-advance
+   dependence on the consume oracle on this path.
 
 **Classifier** (`_FORWARD_ADVANCING_PSEUDO_SKILLS`, the SSOT frozenset): a real (non-`__`)
 sub_skill OR a `__`-prefixed pseudo-skill IN that set → `forward_cycles`; any other `__`-prefixed
 or falsy sub_skill → `meta_cycles`. **Marker fields:** `last_advance_consume_count` (trigger 1
 watermark) and `last_advance_state_key` (trigger 2 tuple, a JSON list; legacy markers lack it →
-defaults to None → first state change always advances). The state-change advance is wired into the
-`lazy-state.py --apply-pseudo` handler (fail-open). Shared `lazy_core`, so `bug-state.py` inherits it.
+defaults to None → first state change always advances). The state-change advance is wired into BOTH
+the `lazy-state.py --apply-pseudo` handler AND the `--repeat-count` real-skill probe path (both
+fail-open); `bug-state.py` mirrors the `--repeat-count` site (audited by `lazy_parity_audit.py`).
+Shared `lazy_core`, so `bug-state.py` inherits the helper too.
+
+> **Watermark hardening (`byref-dispatch-undercounts-forward-cycles` Phase 2).** The residual
+> consume-watermark consumers (`advance_run_counters`'s `last_advance_consume_count` gate,
+> `advance_meta_cycle`'s `+1` over-absorb) are now CLAMPED against the non-monotonic oracle: when
+> the live census steps DOWN below the persisted watermark (ring-cap eviction of consumed entries),
+> the gate re-arms (advances once) instead of no-oping forever, so eviction can no longer permanently
+> strand it. The clamp preserves the ISSUE-5 inflation no-op (a bare re-probe with no census change
+> still no-ops). Since Phase 1 moved the forward COUNT off this oracle entirely, the clamp is
+> defense-in-depth for any remaining watermark consumer.
 
 ## Verification-only canonical marker (harness-hardening-retro-fixes Phase 2)
 
