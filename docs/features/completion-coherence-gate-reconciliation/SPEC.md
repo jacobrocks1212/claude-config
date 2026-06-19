@@ -67,14 +67,19 @@ The decisive line is `lazy_core.py:3041` / `:1839`: `_phase_completion_plan` ref
 
 The completion-time gate stops refusing fully-validated features over un-ticked verification rows. The recurring coherence-recovery meta-cycle is eliminated. Crucially, this is NOT a blanket relaxation: a feature is only let through when its `/mcp-test` evidence is genuinely on disk and passing — the gate's job (refusing features with real unfinished implementation work) is preserved; only the redundant re-demand for already-certified verification rows is removed.
 
-## Technical Design (TBD — pending research)
+## Technical Design (LOCKED — operator-resolved 2026-06-19)
 
-The shape of the reconciliation is the central open question (see Open Questions). Two candidate directions, both code-grounded:
+Direction A is chosen, with on-disk evidence auto-ticking the certified verification rows (Decisions 1 and 2 below, resolved via NEEDS_INPUT.md). The reconciliation is a single-repo, evidence-gated change to `_phase_completion_plan` in `lazy_core.py` plus smoke tests; no sibling-repo (`check-docs-consistency.ts`) edit is needed because the rows end up ticked.
 
-- **Direction A — extend the carve-out to completion time (recommended-leaning).** Make `_phase_completion_plan` apply the same `remaining_unchecked_are_verification_only` exemption the mid-feature gate uses, BUT gated on on-disk passing evidence: when `VALIDATED.md` / `MCP_TEST_RESULTS.md` certify passing AND the only unchecked rows are verification-marked, auto-tick those rows (so post-flip `check-docs-consistency.ts` is satisfied too) and proceed. This unifies all three gates on one rule and removes the recovery cycle. Single-repo change (`lazy_core.py` + tests); the AlgoBooth checker needs no edit because the rows end up ticked.
-- **Direction B — keep the gate strict; make `/mcp-test` tick the rows.** Leave `_phase_completion_plan` counting all rows, but make the `/mcp-test` step (which writes the evidence) ALSO tick the verification checkboxes it certifies, so the gate never sees an unchecked verification row at completion. Pushes the fix upstream into the producer; risk is the producer/marker drift the upstream feature was fighting.
+**Direction A (chosen) — extend the carve-out to completion time, gated on on-disk evidence.** Make `_phase_completion_plan` apply the same `remaining_unchecked_are_verification_only` exemption the mid-feature gate (`lazy_core.py:1372`) and `verify_ledger.deliverables_done` already use, BUT gated on on-disk passing evidence:
 
-**TBD (pending input):** which direction (A vs B), and whether on-disk evidence should auto-tick rows or only suppress the refusal without writing. These are scope/ownership decisions surfaced via NEEDS_INPUT.md (see below).
+- The completion gate consults `/mcp-test` evidence (`VALIDATED.md` / `MCP_TEST_RESULTS.md`). The exemption fires ONLY when that evidence certifies passing AND every remaining unchecked row is verification-marked (`<!-- verification-only -->`).
+- When both conditions hold, the gate AUTO-TICKS the matching `- [ ]` verification rows to `- [x]` in PHASES.md (the same byte-stable, in-place rewrite the existing phase-Status auto-flip at `lazy_core.py:3061` already performs), then mints the receipt. PHASES.md ends fully coherent, so the downstream `check-docs-consistency.ts` (which counts every checkbox with no carve-out) is satisfied with NO sibling-repo edit.
+- Evidence — not the checkbox — is the source of truth. A feature with a genuine unchecked *implementation* row (non-verification) still refuses, naming the offending phase. The gate's job is preserved; only the redundant re-demand for already-certified verification rows is removed.
+
+The change unifies all three gates on ONE evidence-gated rule, removes the coherence-recovery meta-cycle, and is reversible (a guarded exemption, easy to tighten).
+
+**Direction B (rejected) — keep the gate strict; make `/mcp-test` tick the rows.** Considered and rejected: it re-introduces the producer/marker-drift class `harness-hardening-retro-fixes` was fighting (a producer ticking the wrong rows, or missing rows authored by `/blocked-resolution`) and spreads the contract across more files than Direction A.
 
 ## Validation Criteria
 
@@ -87,8 +92,8 @@ The shape of the reconciliation is the central open question (see Open Questions
 
 ## Open Questions (for `/spec` research + NEEDS_INPUT to resolve)
 
-1. **Reconciliation direction (A vs B above)** — extend the carve-out to completion time (single-repo, evidence-gated) vs push the tick upstream into `/mcp-test`. *Product/ownership decision → NEEDS_INPUT.*
-2. **On-disk evidence as override vs satisfier** — should `VALIDATED.md`/`MCP_TEST_RESULTS.md` auto-TICK the verification rows (leaving PHASES.md coherent for `check-docs-consistency.ts`), or only SUPPRESS the refusal without writing (leaving the rows unchecked but the receipt minted)? The first keeps the sibling-repo checker happy; the second is a smaller change but leaves a post-flip coherence gap. *Product decision → NEEDS_INPUT.*
+1. **Reconciliation direction (A vs B above)** — ✅ RESOLVED (operator, 2026-06-19): **A — extend the carve-out to completion time, gated on on-disk evidence.** `_phase_completion_plan` applies the verification-only exemption only when `/mcp-test` evidence certifies passing AND all remaining unchecked rows are verification-marked. Single-repo, reversible change in `lazy_core.py` + smoke tests. See Technical Design (LOCKED).
+2. **On-disk evidence as override vs satisfier** — ✅ RESOLVED (completeness-policy D7, 2026-06-19): **A — auto-tick the certified verification rows.** When evidence certifies passing, the gate rewrites the matching `- [ ]` verification rows to `- [x]` (same byte-stable in-place rewrite as the phase-Status auto-flip), leaving PHASES.md coherent for the downstream `check-docs-consistency.ts` with no sibling-repo edit. Conditional on Decision 1 = A (chosen). See Technical Design (LOCKED).
 3. **Which evidence is authoritative** — `VALIDATED.md` alone, or also `MCP_TEST_RESULTS.md` (result: all-passing, pass==total, validated_commit==HEAD)? `SKIP_MCP_TEST.md` / `DEFERRED_*` cases? *Research-answerable + edge-case mapping.*
 4. **check-docs-consistency.ts reconciliation** — it lives in a repo a harness agent cannot edit. If Direction A auto-ticks the rows, the checker needs no change. Confirm that's the full story, or whether the carve-out must also be mirrored into that script (operator-applied). *Research-answerable.*
 5. **Lint enforcement vs gate relaxation** — is the recurring cycle better fixed by stronger up-front lint (force authors to mark rows correctly) or by the gate honoring evidence? (The upstream marker work already addressed the mid-feature lint side.) *Research-answerable.*
@@ -97,4 +102,4 @@ The shape of the reconciliation is the central open question (see Open Questions
 
 To be populated in Phase 3 after the Gemini deep-research pass. Upstream reality-check sources read during Phase 1: `harness-hardening-retro-fixes/PHASES.md` Phase 2 (verification-only marker contract), `lazy_core.py` (`_phase_completion_plan`, `verify_ledger`, `remaining_unchecked_are_verification_only`), `user/scripts/CLAUDE.md` (verification-only canonical marker section).
 
-> **Baseline draft — design NOT yet locked.** Pre-research. The reconciliation direction (Open Questions 1-2) is a product/ownership decision surfaced via NEEDS_INPUT.md this cycle. Do not bake the implementation, phases, or final gate code here.
+> **Baseline draft — reconciliation direction LOCKED (2026-06-19).** Open Questions 1-2 (the product/ownership decisions surfaced via NEEDS_INPUT.md) are resolved: Direction A with evidence-gated auto-ticking. Open Questions 3-5 remain research-answerable (authoritative-evidence edge cases, downstream-checker confirmation, lint-vs-gate framing) and are NOT yet locked — do not bake the final gate-code edge handling here until research closes them.
