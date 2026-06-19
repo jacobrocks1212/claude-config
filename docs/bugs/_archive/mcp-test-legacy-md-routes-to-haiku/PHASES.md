@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — this is a pure state-script / cycle-model-emit fix in `user/scripts/`; the harness repo has no Tauri/MCP runtime and the change is covered entirely by the in-file `--test` smoke harness + `pytest` (mcp-testing SPEC class: tooling/infra outside MCP reach).
 
-**Status:** In-progress
+**Status:** Fixed
 
 ## Summary
 

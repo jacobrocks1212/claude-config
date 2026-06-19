@@ -6,7 +6,7 @@
 **Severity:** P2
 **Discovered:** 2026-06-19
 **Placement:** docs/bugs/probe-full-read-before-dispatch
-**Related:** `user/skills/lazy-batch/SKILL.md:591` (atomicity rule) + `:593` (freshness rule); coupled twins `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` and `user/skills/lazy-bug-batch/SKILL.md`; single-item `lazy`/`lazy-cloud`/`lazy-bug`; `user/scripts/lazy-state.py:6654-6664` (existing field-extraction hazard comment for `cycle_model`); sibling bug `docs/bugs/mcp-test-legacy-md-routes-to-haiku/`.
+**Related:** `user/skills/lazy-batch/SKILL.md:591` (atomicity rule) + `:593` (freshness rule); coupled twins `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` and `user/skills/lazy-bug-batch/SKILL.md`; single-item `lazy`/`lazy-cloud`/`lazy-bug`; `user/scripts/lazy-state.py:6654-6664` (existing field-extraction hazard comment for `cycle_model`); sibling bug `docs/bugs/_archive/mcp-test-legacy-md-routes-to-haiku/`.
 
 ---
 

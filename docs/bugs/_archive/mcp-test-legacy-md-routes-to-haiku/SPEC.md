@@ -2,9 +2,11 @@
 
 > The autonomous `/lazy-batch` (and `-cloud` / `-bug-batch`) orchestrator fixes the mcp-test cycle model to **haiku** at dispatch time — before the subagent resolves which scenario it will run — so a scenario that exists only as a legacy `.md` (no converted `corpus/live/*.yaml` counterpart) lands on haiku, which cannot author the `.md`→v1-YAML conversion and writes `BLOCKED.md`. The `route_mcp_test_tier()` signal that *would* escalate such a scenario to Sonnet exists but is consulted only by the interactive `mcp-test` skill prose, never by the state script's cycle-model emit.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 411a49e
 **Placement:** docs/bugs/mcp-test-legacy-md-routes-to-haiku
 **Related:** `user/scripts/CLAUDE.md` → "mcp-test model-tier routing (harness-hardening-retro-fixes Phase 4)"; `repos/algobooth/.claude/skills/mcp-test/SKILL.md` (Model-tier section, lines 32–55); `user/scripts/surface_resolver.py::route_mcp_test_tier`; sibling bug `docs/bugs/probe-full-read-before-dispatch/`. Complementary AlgoBooth-side content fix (bulk-migrate legacy `.md`→YAML) is OUT OF SCOPE here — it lives in the AlgoBooth repo.
 
