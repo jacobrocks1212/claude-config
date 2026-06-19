@@ -679,6 +679,50 @@ def test_recovery_emit_carries_grep_and_cite_gate_every_variant():
 
 
 # ---------------------------------------------------------------------------
+# Loop-block receipt-authoring ban (dfbcfa0)
+# ---------------------------------------------------------------------------
+#
+# Symmetric pin for the SECOND evidence side-door (SPEC
+# recovery-self-certifies-verification-rows-without-evidence ## Proven Findings
+# 3): the LOOP DETECTED block (loop-block.md, appended verbatim to the cycle
+# prompt by emit_cycle_prompt) bans a loop-breaker from authoring completion /
+# validation receipts. The only sentinels it may write are NEEDS_INPUT.md and
+# BLOCKED.md; VALIDATED.md / SKIP_MCP_TEST.md / COMPLETED.md / FIXED.md are
+# named-and-banned. The recovery grep-and-cite gate already has two pinning
+# tests above; this on-disk assertion closes the residual asymmetric-coverage
+# gap so a future edit cannot silently drop the ban. Mirrors
+# test_dispatch_recovery_component_carries_grep_and_cite_gate. The block is
+# appended verbatim (no per-variant transform), so an on-disk assertion fully
+# covers the seam — no assembled-emit variant test is warranted.
+
+# The component file under test.
+_LOOP_BLOCK_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "skills" / "_components" / "lazy-batch-prompts" / "loop-block.md"
+)
+
+# Stable substrings that prove the receipt-authoring ban is on disk: the four
+# named-and-banned receipts AND the two permitted-only sentinels.
+_LOOP_BLOCK_RECEIPT_BAN_MARKERS = (
+    "VALIDATED.md",
+    "SKIP_MCP_TEST.md",
+    "COMPLETED.md",
+    "FIXED.md",
+    "NEEDS_INPUT.md",
+    "BLOCKED.md",
+)
+
+
+def test_loop_block_component_carries_receipt_authoring_ban():
+    """loop-block.md must carry the receipt-authoring ban on disk (dfbcfa0)."""
+    text = _LOOP_BLOCK_PATH.read_text(encoding="utf-8")
+    for marker in _LOOP_BLOCK_RECEIPT_BAN_MARKERS:
+        assert marker in text, (
+            f"loop-block.md missing receipt-authoring ban marker {marker!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # R-V-1 reinforcement + plan-feature ledger (lazy-cycle-containment Phase 9, C7)
 # ---------------------------------------------------------------------------
 #

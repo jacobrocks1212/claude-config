@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: recovery-self-certifies-verification-rows-without-evidence
-status: In-progress
+status: Complete
 created: 2026-06-19
 complexity: simple
 phases: [1]
@@ -81,7 +81,7 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Pin the loop-block receipt-authoring ban with a static regression test (Phase 1)
+- [x] WU-1 — Pin the loop-block receipt-authoring ban with a static regression test (Phase 1)
 
 ## Execution Schedule
 
@@ -130,7 +130,7 @@ Single phase, single WU.
 
 ## Definition of Done
 
-- [ ] WU-1 complete: `test_loop_block_component_carries_receipt_authoring_ban` added to `user/scripts/test_project_skills.py`, co-located with the recovery-gate tests.
-- [ ] `python -m pytest user/scripts/test_project_skills.py` passes (new test + all existing tests green).
-- [ ] PHASES.md Phase 1 deliverables ticked; top-level PHASES `**Status:**` → `In-progress` (validation pending; the `__mark_fixed__` flip is the orchestrator's, never set here).
-- [ ] No change to `loop-block.md` or any other production / prose file (test-only fix).
+- [x] WU-1 complete: `test_loop_block_component_carries_receipt_authoring_ban` added to `user/scripts/test_project_skills.py`, co-located with the recovery-gate tests.
+- [x] `python -m pytest user/scripts/test_project_skills.py` passes (new test + all existing tests green).
+- [x] PHASES.md Phase 1 deliverables ticked; top-level PHASES `**Status:**` → `In-progress` (validation pending; the `__mark_fixed__` flip is the orchestrator's, never set here).
+- [x] No change to `loop-block.md` or any other production / prose file (test-only fix).

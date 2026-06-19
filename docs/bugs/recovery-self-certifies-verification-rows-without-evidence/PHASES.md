@@ -2,8 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Open
-<!-- Implementation not yet started. When the (single) phase's work lands, this moves to In-progress (implementation done, validation pending). The flip to Fixed + the FIXED.md receipt are owned EXCLUSIVELY by the orchestrator's __mark_fixed__ validation-tail gate — never set here. -->
+**Status:** In-progress
+<!-- Single-phase implementation landed (test added, green). Validation pending. The flip to Fixed + the FIXED.md receipt are owned EXCLUSIVELY by the orchestrator's __mark_fixed__ validation-tail gate — never set here. -->
 
 
 **MCP runtime:** not-required — harness docs-consistency defect; the fix is a single static `pytest` assertion over the on-disk text of a `_components/` markdown file. Verified entirely by `python -m pytest user/scripts/test_project_skills.py`. No AlgoBooth app surface, no Tauri/MCP-reachable behavior (per docs/features/mcp-testing/SPEC.md: pure script/test tooling is outside MCP reach).
@@ -29,11 +29,11 @@ This bug's investigation **concluded that both evidence side-doors are already c
 **Scope:** Add a single static (`pytest`) docs-consistency test asserting `loop-block.md` carries the receipt-authoring ban on disk — symmetric with the existing recovery-gate pinning test. Co-locate it with the recovery-gate tests in `user/scripts/test_project_skills.py`. No production source / prose changes — the contract under test already exists on disk (`dfbcfa0`); this phase only prevents it from silently regressing.
 
 **Deliverables:**
-- [ ] `user/scripts/test_project_skills.py`: add a module-level path constant `_LOOP_BLOCK_PATH` resolving to `user/skills/_components/lazy-batch-prompts/loop-block.md` (mirroring `_DISPATCH_RECOVERY_PATH`'s `Path(__file__).resolve().parents[1] / "skills" / "_components" / "lazy-batch-prompts" / "loop-block.md"` form).
-- [ ] `user/scripts/test_project_skills.py`: add a module-level marker tuple `_LOOP_BLOCK_RECEIPT_BAN_MARKERS` enumerating the stable substrings that prove the receipt ban is on disk: the four named-and-banned receipts (`VALIDATED.md`, `SKIP_MCP_TEST.md`, `COMPLETED.md`, `FIXED.md`) AND the two permitted-only sentinels (`NEEDS_INPUT.md`, `BLOCKED.md`). (Mirror `_RECOVERY_GATE_MARKERS`.)
-- [ ] `user/scripts/test_project_skills.py`: add `test_loop_block_component_carries_receipt_authoring_ban()` — read `_LOOP_BLOCK_PATH` text and assert every marker in `_LOOP_BLOCK_RECEIPT_BAN_MARKERS` is present, with a descriptive failure message naming the missing marker (mirror `test_dispatch_recovery_component_carries_grep_and_cite_gate`).
-- [ ] Confirm the new test is **test-first RED-then-GREEN against the contract**: it must FAIL if the ban text is removed from `loop-block.md` (demonstrate by transiently checking the assertion logic; do NOT commit a broken `loop-block.md`) and PASS against the current on-disk `loop-block.md`.
-- [ ] Run `python -m pytest user/scripts/test_project_skills.py` (or `python user/scripts/test_project_skills.py` if run directly) — the full file passes, including the new test.
+- [x] `user/scripts/test_project_skills.py`: add a module-level path constant `_LOOP_BLOCK_PATH` resolving to `user/skills/_components/lazy-batch-prompts/loop-block.md` (mirroring `_DISPATCH_RECOVERY_PATH`'s `Path(__file__).resolve().parents[1] / "skills" / "_components" / "lazy-batch-prompts" / "loop-block.md"` form).
+- [x] `user/scripts/test_project_skills.py`: add a module-level marker tuple `_LOOP_BLOCK_RECEIPT_BAN_MARKERS` enumerating the stable substrings that prove the receipt ban is on disk: the four named-and-banned receipts (`VALIDATED.md`, `SKIP_MCP_TEST.md`, `COMPLETED.md`, `FIXED.md`) AND the two permitted-only sentinels (`NEEDS_INPUT.md`, `BLOCKED.md`). (Mirror `_RECOVERY_GATE_MARKERS`.)
+- [x] `user/scripts/test_project_skills.py`: add `test_loop_block_component_carries_receipt_authoring_ban()` — read `_LOOP_BLOCK_PATH` text and assert every marker in `_LOOP_BLOCK_RECEIPT_BAN_MARKERS` is present, with a descriptive failure message naming the missing marker (mirror `test_dispatch_recovery_component_carries_grep_and_cite_gate`).
+- [x] Confirm the new test is **test-first RED-then-GREEN against the contract**: it must FAIL if the ban text is removed from `loop-block.md` (demonstrate by transiently checking the assertion logic; do NOT commit a broken `loop-block.md`) and PASS against the current on-disk `loop-block.md`.
+- [x] Run `python -m pytest user/scripts/test_project_skills.py` (or `python user/scripts/test_project_skills.py` if run directly) — the full file passes, including the new test.
 
 **Minimum Verifiable Behavior:** `python -m pytest user/scripts/test_project_skills.py::test_loop_block_component_carries_receipt_authoring_ban` passes against the current tree, and would fail if any of the four banned-receipt names or the loop-breaker's permitted-only sentinel names were dropped from `loop-block.md`.
 
@@ -45,3 +45,9 @@ This bug's investigation **concluded that both evidence side-doors are already c
 **Testing Strategy:** Pure static on-disk assertion — read the component file, assert the stable ban substrings are present. No subprocess, no fixture, no marker-machine interaction. The RED proof is structural (the assertion fails when a marker is absent), mirroring the existing recovery-gate test's contract. This is the same test mechanism the SPEC `## Open Questions` settled on.
 
 **Integration Notes for Next Phase:** Terminal phase. When this work lands, the top-level PHASES `**Status:**` moves to `In-progress` (implementation done, validation pending) — the `__mark_fixed__` flip to `Fixed` is owned exclusively by the orchestrator's validation-tail gate, never set here. With this test in place, both evidence side-doors (recovery grep-and-cite + loop-block receipt ban) are regression-pinned symmetrically, closing the SPEC's residual gap.
+
+#### Implementation Notes (2026-06-19)
+
+Single WU landed inline (cycle subagent has no `Agent` tool — dispatch-limit override per plan §36). Test-first: added `_LOOP_BLOCK_PATH` + `_LOOP_BLOCK_RECEIPT_BAN_MARKERS` (6 markers) + `test_loop_block_component_carries_receipt_authoring_ban` to `user/scripts/test_project_skills.py`, co-located right after the recovery-gate tests (mirrors `test_dispatch_recovery_component_carries_grep_and_cite_gate`). RED proof: transiently dropped `FIXED.md` from the on-disk text in-memory and confirmed the marker check flags exactly `['FIXED.md']` — assertion is load-bearing; **no modification to `loop-block.md` was committed**. GREEN: all 6 markers present on disk; new test passes; full file `python -m pytest user/scripts/test_project_skills.py` green. No production / prose change (test-only fix; the ban already landed via `dfbcfa0`).
+
+**Review verdict:** PASS — inline review (1 file, test-only addition); test asserts all 6 stable ban substrings, would fail if any banned-receipt or permitted-sentinel name were dropped from `loop-block.md` (not tautological — verified via the transient RED proof). Spec-aligned with `## Proven Findings` 3 / `## Fix Scope` (static on-disk mirror).
