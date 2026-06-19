@@ -1,0 +1,55 @@
+# Implementation Phases — Cycle subagents violate the turn-end contract (uncommitted / unticked)
+
+> Phases for [`SPEC.md`](./SPEC.md)
+
+**MCP runtime:** not-required — this is a harness prose/contract change to a cycle-prompt component (`cycle-base-prompt.md`) and validation is a projection + grep / regression-suite check, not an app-surface MCP assertion. Per `docs/features/mcp-testing/SPEC.md` this is squarely in the "no MCP-reachable app surface" class (skill/component documentation, not Tauri/audio/UI behavior). The reused verifier `lazy_core.verify_ledger` already carries its own regression coverage (`test_lazy_core.py` `test_verify_ledger_*`) and is NOT changed here.
+
+## Cross-feature Integration Notes
+
+No hard deps on Complete upstreams. This bug consumes the EXISTING `lazy_core.verify_ledger` / `--verify-ledger` surface (exposed identically by both `lazy-state.py` and `bug-state.py`) unchanged — it is reused in-turn, not modified. The cloud cycle prompt is emitted from the SAME `cycle-base-prompt.md` component (its `modes=cloud` sections); the coupled `lazy-batch-cloud/SKILL.md` no longer carries an inline turn-end copy (folded into the component, per that SKILL's lines ~433-438), so the coupling mirror IS the edit to the component's cloud `turn-end` section — there is no separate inline cloud edit.
+
+## Validated Assumptions
+
+All load-bearing assumptions here are **code-provable** (read directly from the in-scope files during the Touchpoint Audit), so the runtime-assumption gate is skipped with the reason recorded below:
+
+- **`--verify-ledger` is exposed by BOTH state scripts and is subagent-callable.** Confirmed: `lazy-state.py` line ~5867 / ~6717 and `bug-state.py` line ~4059 / ~4637 both register `--verify-ledger <spec_path> [--plan <plan_file>]` → `lazy_core.verify_ledger`. `user/scripts/CLAUDE.md` confirms `--verify-ledger` stays callable by a dispatched subagent (cycle-containment fail-OPEN read surface). Evidence: grep of `user/scripts/`.
+- **The cloud turn-end prompt is emitted from `cycle-base-prompt.md`, not inlined in the cloud SKILL.** Confirmed: `lazy-batch-cloud/SKILL.md` lines ~433-438 explicitly state the cloud cycle base prompt is no longer inlined and lives in the component's `modes=cloud` sections. So mirroring the workstation change into the component's cloud `turn-end` section IS the coupling mirror.
+- **The orchestrator already runs `--verify-ledger` post-cycle as the backstop.** Confirmed: `lazy-batch/SKILL.md` Step 1e.4a lines ~768-803 (`--verify-ledger` → on fail, `--emit-dispatch recovery`); `lazy-batch-cloud/SKILL.md` lines ~567-594 (cloud equivalent, fetch-then-verify). This phase does NOT change that logic — it stays as the exception-path backstop.
+
+### Phase 1: In-turn terminal `--verify-ledger` gate in both `turn-end` sections
+
+**Scope:** Convert the cycle subagent's pre-return checklist from self-walked advisory prose into a **mandatory executed terminal gate**. Edit BOTH `@section turn-end` blocks in `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (the `modes=workstation` block at lines ~388-405 and the `modes=cloud` block at lines ~407-423) so that the subagent's FINAL action is to (a) finalize all reconciliation writes (tick the landed WU/PHASES boxes, flip plan-part `status:`, write the owed result sentinel) BEFORE the terminal verify, (b) run `python3 ~/.claude/scripts/{lazy-state.py|bug-state.py} --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]` as a separate final step (NOT appended to the R5 atomic gate+commit chain), and (c) if `ok` is false, reconcile the named failing check in-turn (commit/push residue, tick boxes, flip status) and RE-RUN until `ok` — only then return. The pre-return checklist (item 3) is reworded from "mentally verify" to "the terminal verify command's `ok:true` is the proof of (b)/(c)/(d)". This is a single coherent prose change applied identically (modulo the existing token/mode differences — `lazy-state.py` vs `bug-state.py` is selected by the same `{pipeline_phrase}`/pipeline machinery the section already carries) to both sections.
+
+**Deliverables:**
+- [ ] `modes=workstation` `turn-end` section: pre-return checklist (item 3) converted to a mandatory executed `--verify-ledger` terminal gate with finalize-before-verify ordering and a verify→reconcile→re-verify→return loop. The four checklist sub-points (a) no background job, (b) clean tree, (c) pushed, (d) sentinel/flip on disk are reframed as "what the terminal `ok:true` verdict certifies", not separate self-walked checks.
+- [ ] `modes=cloud` `turn-end` section: same conversion mirrored, preserving the existing cloud divergences already in that block (push-each-flip durability; `&& git push` in the R5 chain). The cloud terminal verify uses the same separate-final-step ordering.
+- [ ] Both sections name the verifier as a pipeline-correct command: the prose must make clear `bug-state.py` is the script for the bug pipeline and `lazy-state.py` for the feature pipeline (use the section's existing pipeline-selection convention, do NOT hardcode one). The `--plan <plan_file>` argument is included only when the cycle is plan-scoped (execute-plan); document it as optional.
+- [ ] RULE INVENTORY header (lines ~42-62) reconciled: R13 (turn-end contract) description and the "ONE sanctioned restatement is the pre-return checklist in `turn-end`" note (line ~61) updated to reflect that the checklist is now an EXECUTED gate, not advisory prose — so the rule-inventory invariant (each rule survives exactly once) stays accurate. The R5 reference from `skill-execute-plan` (line ~47, "atomic gate+commit ... referenced by skill-execute-plan") is unchanged — the terminal verify is a SEPARATE step after the R5 chain, not a modification to R5.
+- [ ] Tests: projection + emit verification — `python ~/.claude/scripts/project-skills.py` resolves with no broken injection / residue-token error, and `python ~/.claude/scripts/lint-skills.py` passes. Manually confirm `emit_cycle_prompt` still parses both `turn-end` sections (no `@section` marker grammar break) by grepping the edited file for exactly two `@section turn-end` markers and confirming no stray unbound `{…}` token outside the 14-token list was introduced.
+
+**Minimum Verifiable Behavior:** `git grep -n 'verify-ledger' user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` returns at least one hit inside EACH of the two `turn-end` sections (workstation + cloud), AND `python ~/.claude/scripts/lint-skills.py` exits 0 against the edited component. (The behavior — "the emitted cycle prompt now instructs the subagent to run the verifier as its terminal action" — is observable directly in the component text and via a clean projection; there is no app runtime to drive.)
+
+**Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
+- [ ] <!-- verification-only --> Projection round-trips: `python ~/.claude/scripts/project-skills.py` emits the resolved cycle-base-prompt with both `turn-end` variants carrying the executed `--verify-ledger` terminal step, no circular-include or residue-token error.
+- [ ] <!-- verification-only --> Lint clean: `python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities` reports no new broken-injection / embedded-pattern findings against the edited component.
+
+**MCP Integration Test Assertions:** N/A — no runtime-observable app behavior in this phase (harness prose/contract change to a cycle-prompt component; the only observables are the projected component text and the lint/projection scripts' exit status, covered by Runtime Verification above).
+
+**Prerequisites:** None (single phase).
+
+**Files likely modified:**
+- `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` — both `@section turn-end` blocks (workstation ~388-405, cloud ~407-423) become an executed terminal `--verify-ledger` gate with finalize-before-verify ordering; RULE INVENTORY header (~42-62) reconciled for R13 + the "ONE sanctioned restatement" note. PRIMARY and (given the cloud fold) ONLY edited file.
+
+**Files explicitly NOT modified (verified out-of-scope):**
+- `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — no inline turn-end copy exists (folded into the component); the coupling mirror is the component's cloud `turn-end` edit above. Only re-read to confirm the "Differences from /lazy-batch" block needs no new row (it does not — the in-turn gate is shared, emitted from the one component).
+- `user/skills/lazy-batch/SKILL.md` Step 1e.4a (~768-803) — backstop stays UNCHANGED in logic; it is merely demoted from the routine path to the exception path by the new in-turn gate. No edit required.
+- `user/scripts/lazy_core.py` `verify_ledger` / `--verify-ledger` in both state scripts — REUSED in-turn, no code change.
+- `user/skills/_components/lazy-batch-prompts/dispatch-recovery.md` — recovery template stays as the exception-path repair.
+
+**Testing Strategy:**
+This phase is verified by (1) the projection pipeline (`project-skills.py`) resolving the edited component cleanly — proving the `@section` grammar and 14-token contract are intact; (2) `lint-skills.py` passing; (3) a structural grep confirming both `turn-end` sections now contain the executed `--verify-ledger` terminal step. No app runtime is involved. The reused `verify_ledger` logic already has dedicated regression coverage in `user/scripts/test_lazy_core.py` (`test_verify_ledger_*`) and is not touched, so no new unit tests are needed for the verifier itself.
+
+**Integration Notes for Next Phase:**
+- Single-phase fix — no next phase. When the work lands, set the top-level PHASES `**Status:**` to `In-progress` (implementation done, validation pending) and let the state machine route to the validation tail. Do NOT flip to `Fixed` / write `FIXED.md` — that is the orchestrator's `__mark_fixed__` gate.
+- Design choices settled at planning time (both scope-class, disclosed via ⚖ in the plan-bug return): the verify command is **inline command prose** in the `turn-end` section (already DRY — one emitted component feeds both workstation + cloud), NOT a new shared helper; and the terminal verify is a **separate final step AFTER** the R5 chained commit, NOT appended to the chain (so a non-zero verify exit cannot abort the commit, and the subagent reconciles + re-verifies instead).
+- The post-cycle orchestrator guard (Step 1e.4a) intentionally stays as the defense-in-depth backstop for the truncation case the in-turn gate can't reach — do not remove it in any follow-up.
