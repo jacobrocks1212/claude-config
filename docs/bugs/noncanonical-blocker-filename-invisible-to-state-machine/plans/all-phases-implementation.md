@@ -62,13 +62,13 @@ The full set named in `user/scripts/CLAUDE.md` (Concurrency-plane gate) — `laz
 
 ## Batch 3 — Phase 3: Mirror into `bug-state.py` Step 3 (bug pipeline)
 
-- [ ] **WU-3.1** — Mirror WU-2.1 in `user/scripts/bug-state.py` AFTER the canonical Step-3 BLOCKED return (~line 859): `stray = lazy_core.detect_noncanonical_blocker(spec_dir)`; when non-None, `return _bug_state(**common, current_step="Step 3: mis-named blocker", terminal_reason="blocked-misnamed", notify_message=...)`. The `terminal_reason` VALUE must be the SAME literal `"blocked-misnamed"` the feature pipeline emits (parity is the whole point). If `bug-state.py` uses `STEP_BLOCKED`/`TR_BLOCKED` constants, define `STEP_BLOCKED_MISNAMED`/`TR_BLOCKED_MISNAMED` (value == `"blocked-misnamed"`) alongside.
+- [x] **WU-3.1** — Mirror WU-2.1 in `user/scripts/bug-state.py` AFTER the canonical Step-3 BLOCKED return (~line 859): `stray = lazy_core.detect_noncanonical_blocker(spec_dir)`; when non-None, `return _bug_state(**common, current_step="Step 3: mis-named blocker", terminal_reason="blocked-misnamed", notify_message=...)`. The `terminal_reason` VALUE must be the SAME literal `"blocked-misnamed"` the feature pipeline emits (parity is the whole point). If `bug-state.py` uses `STEP_BLOCKED`/`TR_BLOCKED` constants, define `STEP_BLOCKED_MISNAMED`/`TR_BLOCKED_MISNAMED` (value == `"blocked-misnamed"`) alongside.
   - **Files:** `user/scripts/bug-state.py` (~after line 859).
 
-- [ ] **WU-3.2** — Mirror WU-2.2's park-mode parity branch in `bug-state.py`'s park loop, using `spec_dir` and the bug pipeline's `build_parked_entry` call.
+- [x] **WU-3.2** — Mirror WU-2.2's park-mode parity branch in `bug-state.py`'s park loop, using `spec_dir` and the bug pipeline's `build_parked_entry` call.
   - **Files:** `user/scripts/bug-state.py`.
 
-- [ ] **WU-3.3** — Mirror WU-2.3's three fixtures in `bug-state.py`'s in-file `--test` harness (stray-only → `blocked-misnamed`; `BLOCKED_RESOLVED_*` only → no halt; canonical + stray → canonical precedence).
+- [x] **WU-3.3** — Mirror WU-2.3's three fixtures in `bug-state.py`'s in-file `--test` harness (stray-only → `blocked-misnamed`; `BLOCKED_RESOLVED_*` only → no halt; canonical + stray → canonical precedence).
   - **Files:** `user/scripts/bug-state.py` (in-file `--test` harness).
   - **Verify:** `python user/scripts/bug-state.py --test` runs the new fixtures (baseline drift expected — Batch 4 re-baselines).
   - **Parity check:** after WU-3.1/3.3, run `python user/scripts/lazy_parity_audit.py` (if it covers Step-3 terminals) to confirm the two pipelines stayed in lockstep.

@@ -108,6 +108,11 @@ from lazy_core import (
 # terminal_reason tokens
 TR_ALL_BUGS_FIXED = "all-bugs-fixed"
 TR_BLOCKED = "blocked"
+# noncanonical-blocker-filename-invisible-to-state-machine: a blocker written
+# under a non-canonical name (invisible to the literal BLOCKED.md check) halts
+# on this DISTINCT terminal. The VALUE is identical to the feature pipeline's
+# lazy-state.py "blocked-misnamed" literal (parity is the whole point).
+TR_BLOCKED_MISNAMED = "blocked-misnamed"
 TR_NEEDS_INPUT = "needs-input"
 TR_COMPLETION_UNVERIFIED = "completion-unverified"
 TR_DEVICE_QUEUE_EXHAUSTED = "device-queue-exhausted"
@@ -130,6 +135,7 @@ SKILL_MARK_FIXED = "__mark_fixed__"        # archive-on-fix pseudo-skill
 
 # current_step strings (used both in the implementation and the test assertions)
 STEP_BLOCKED = "Step 3: blocked"
+STEP_BLOCKED_MISNAMED = "Step 3: mis-named blocker"
 STEP_NEEDS_INPUT = "Step 3.5: needs-input"
 STEP_INVESTIGATE = "Step 4: investigate bug"
 STEP_PHASES = "Step 6: spec phases"
@@ -698,6 +704,23 @@ def compute_state(
             )
             continue
 
+        # Park-mode (mis-named blocker): parity with the canonical BLOCKED park
+        # branch above for a non-canonical stray (noncanonical-blocker-filename-
+        # invisible-to-state-machine). Mirror of lazy-state.py's feature-pipeline
+        # park parity. When --park-blocked is active, canonical BLOCKED.md is
+        # ABSENT, and the shared detector finds a stray, park it the same way (it
+        # re-enters once renamed/neutralized).
+        if park_blocked and not (spec_dir / "BLOCKED.md").exists():
+            _stray = lazy_core.detect_noncanonical_blocker(spec_dir)
+            if _stray is not None:
+                _PARKED.append(lazy_core.build_parked_entry(bug_id, _stray))
+                _diag(
+                    f"parked: {bug_name} — bug-local mis-named blocker "
+                    f"'{_stray.name}'; skipped (park mode). Re-enters when "
+                    "renamed to BLOCKED.md or neutralized."
+                )
+                continue
+
         # Park-mode: if --park-needs-input is active and this bug has an
         # unresolved NEEDS_INPUT.md, skip (park) it instead of halting the queue.
         # The item re-enters automatically once NEEDS_INPUT.md is resolved/renamed.
@@ -857,6 +880,27 @@ def compute_state(
         if escalated:
             state["validation_escalation"] = True
         return state
+
+    # Step 3 (cont.): mis-named blocker (noncanonical-blocker-filename-invisible-
+    # to-state-machine). EXACT mirror of lazy-state.py's feature-pipeline wiring.
+    # A blocker under a non-canonical name (e.g. BLOCKED_2026-06-09-foo.md or a
+    # lowercase blocked.md) is invisible to the literal BLOCKED.md check above, so
+    # the state machine would loop the item back into the same wall. The shared
+    # detector returns None when canonical BLOCKED.md is present (the check above
+    # already returned in that case), so this fires only when canonical is ABSENT.
+    # The terminal_reason VALUE is identical to the feature pipeline's.
+    stray_blocked = lazy_core.detect_noncanonical_blocker(spec_dir)
+    if stray_blocked is not None:
+        return _bug_state(
+            **common,
+            current_step=STEP_BLOCKED_MISNAMED,
+            terminal_reason=TR_BLOCKED_MISNAMED,
+            notify_message=(
+                f"MIS-NAMED BLOCKER: {bug_name} — found '{stray_blocked.name}', "
+                "which the state machine cannot see (only the canonical 'BLOCKED.md' "
+                "halts the pipeline). Rename it to 'BLOCKED.md' or neutralize it."
+            ),
+        )
 
     # Step 3.5: NEEDS_INPUT.md
     needs_input_file = spec_dir / "NEEDS_INPUT.md"
@@ -2507,6 +2551,76 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             encoding="utf-8",
         )
 
+    elif name == "misnamed-blocker-stray":
+        # noncanonical-blocker-filename-invisible-to-state-machine (bug mirror):
+        # a blocker under a NON-canonical name, no canonical BLOCKED.md → distinct
+        # `blocked-misnamed` terminal.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-mbs", "name": "Misnamed Blocker Bug", "spec_dir": "bug-mbs"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-mbs"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Misnamed Blocker Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-09\n",
+            encoding="utf-8",
+        )
+        (bdir / "BLOCKED_2026-06-09-foo.md").write_text(
+            "blocker written under a mis-spelled name\n", encoding="utf-8"
+        )
+
+    elif name == "misnamed-blocker-resolved-only":
+        # A neutralized blocker (BLOCKED_RESOLVED_<date>.md) is excluded by the
+        # detector → does NOT halt; an Investigating SPEC with no PHASES routes
+        # to spec-bug (investigate) as normal.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-mbr", "name": "Resolved Blocker Bug", "spec_dir": "bug-mbr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-mbr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Resolved Blocker Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-09\n",
+            encoding="utf-8",
+        )
+        (bdir / "BLOCKED_RESOLVED_2026-06-09.md").write_text(
+            "# Resolved blocker\n", encoding="utf-8"
+        )
+
+    elif name == "misnamed-blocker-canonical-precedence":
+        # Canonical BLOCKED.md AND a stray both present → canonical `blocked`
+        # terminal precedence (no `blocked-misnamed`).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-mbc", "name": "Canonical Precedence Bug", "spec_dir": "bug-mbc"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-mbc"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Canonical Precedence Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-09\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "BLOCKED.md", "blocked",
+            bug_id="bug-mbc", phase="Investigation",
+            blocked_at="2026-06-09T09:00:00Z", retry_count=0,
+        )
+        (bdir / "BLOCKED_2026-06-09-foo.md").write_text(
+            "a co-present stray\n", encoding="utf-8"
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -2568,6 +2682,36 @@ def run_smoke_tests() -> int:
                 "feature_id": "bug-blocked",
                 "terminal_reason": TR_BLOCKED,
                 "current_step": STEP_BLOCKED,
+            },
+        ),
+        # 2a. Mis-named blocker (stray, no canonical) → blocked-misnamed terminal
+        # (noncanonical-blocker-filename-invisible-to-state-machine, bug mirror).
+        # terminal_reason value is IDENTICAL to the feature pipeline's.
+        (
+            "misnamed-blocker-stray", False, True,
+            {
+                "feature_id": "bug-mbs",
+                "terminal_reason": TR_BLOCKED_MISNAMED,
+                "current_step": STEP_BLOCKED_MISNAMED,
+            },
+        ),
+        # 2b. Neutralized blocker (BLOCKED_RESOLVED_<date>.md) excluded → does NOT
+        # halt; Investigating SPEC + no PHASES → spec-bug (investigate).
+        (
+            "misnamed-blocker-resolved-only", False, True,
+            {
+                "feature_id": "bug-mbr",
+                "sub_skill": SKILL_INVESTIGATE,
+                "current_step": STEP_INVESTIGATE,
+            },
+        ),
+        # 2c. Canonical BLOCKED.md + stray both present → canonical `blocked`
+        # precedence (no `blocked-misnamed`).
+        (
+            "misnamed-blocker-canonical-precedence", False, True,
+            {
+                "feature_id": "bug-mbc",
+                "terminal_reason": TR_BLOCKED,
             },
         ),
         # 3. Mid-fix — In-progress + PHASES + Ready plan → execute-plan

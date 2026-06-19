@@ -96,10 +96,17 @@ All load-bearing assumptions for this plan are **code-provable** (verified inlin
 **Scope:** Exact mirror of Phase 2 in `bug-state.py` Step 3 (after the canonical `BLOCKED.md` return block ending ~line 859), using the bug pipeline's `STEP_*`/`TR_*` constant style. Add the same park-mode parity branch. The `blocked-misnamed` terminal-reason string MUST be identical to the feature pipeline's.
 
 **Deliverables:**
-- [ ] After `bug-state.py`'s canonical Step-3 BLOCKED return (~line 859), call `lazy_core.detect_noncanonical_blocker(spec_dir)` and, when non-None, return a `_bug_state(..., current_step="Step 3: mis-named blocker", terminal_reason="blocked-misnamed", notify_message=...)` naming the offending file — using the same string the feature pipeline emits.
-- [ ] Park-mode parity branch mirroring Phase 2's, using `spec_dir` and the bug pipeline's park loop / `build_parked_entry` call.
-- [ ] If `bug-state.py` defines `STEP_BLOCKED`/`TR_BLOCKED` constants, define `STEP_BLOCKED_MISNAMED`/`TR_BLOCKED_MISNAMED` (or equivalent) alongside them; the `TR_*` VALUE must equal the feature pipeline's `blocked-misnamed` literal.
-- [ ] Tests: mirror the three Phase-2 fixtures in `bug-state.py`'s in-file `--test` harness — stray-only → `blocked-misnamed`; `BLOCKED_RESOLVED_*` only → no halt; canonical + stray → canonical precedence.
+- [x] After `bug-state.py`'s canonical Step-3 BLOCKED return (~line 859), call `lazy_core.detect_noncanonical_blocker(spec_dir)` and, when non-None, return a `_bug_state(..., current_step="Step 3: mis-named blocker", terminal_reason="blocked-misnamed", notify_message=...)` naming the offending file — using the same string the feature pipeline emits.
+- [x] Park-mode parity branch mirroring Phase 2's, using `spec_dir` and the bug pipeline's park loop / `build_parked_entry` call.
+- [x] If `bug-state.py` defines `STEP_BLOCKED`/`TR_BLOCKED` constants, define `STEP_BLOCKED_MISNAMED`/`TR_BLOCKED_MISNAMED` (or equivalent) alongside them; the `TR_*` VALUE must equal the feature pipeline's `blocked-misnamed` literal.
+- [x] Tests: mirror the three Phase-2 fixtures in `bug-state.py`'s in-file `--test` harness — stray-only → `blocked-misnamed`; `BLOCKED_RESOLVED_*` only → no halt; canonical + stray → canonical precedence.
+
+#### Implementation Notes (Phase 3 — In-progress)
+
+- Mirrored the wiring in `bug-state.py`. Unlike the feature pipeline (inline literals), the bug pipeline uses `STEP_*`/`TR_*` module constants, so I added `TR_BLOCKED_MISNAMED = "blocked-misnamed"` (value IDENTICAL to the feature pipeline's literal — parity is the point) and `STEP_BLOCKED_MISNAMED = "Step 3: mis-named blocker"` alongside `TR_BLOCKED`/`STEP_BLOCKED`. The Step-3 block calls `detect_noncanonical_blocker(spec_dir)` after the canonical return and returns `_bug_state(..., terminal_reason=TR_BLOCKED_MISNAMED, ...)`.
+- Park-mode parity branch added after the canonical `park_blocked` BLOCKED branch (uses `bug_id`, `bug_name`, `spec_dir`).
+- 3 `--test` fixtures mirrored (`misnamed-blocker-stray` → `blocked-misnamed`; `misnamed-blocker-resolved-only` → spec-bug/investigate; `misnamed-blocker-canonical-precedence` → `blocked`). `python bug-state.py --test` → all smoke tests passed. `lazy_parity_audit.py --repo-root .` exits 0 (no wrapper drift).
+- **Review verdict:** PASS (inline review — constants + Step-3 + park branch + fixtures; `blocked-misnamed` literal confirmed identical across both pipelines).
 
 **Minimum Verifiable Behavior:** `python user/scripts/bug-state.py --test` passes including the three mirrored fixtures; a temp bug dir with only a stray blocker yields `terminal_reason: "blocked-misnamed"`.
 
