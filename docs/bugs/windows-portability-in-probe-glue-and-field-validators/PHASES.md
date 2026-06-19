@@ -26,10 +26,10 @@ No hard deps on Complete upstreams (this is a harness bug, not a feature with a 
 This is a **coupled-pair edit** (`user/skills/lazy-batch/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`): per the claude-config CLAUDE.md coupling rule, both files MUST be edited in lockstep and diffed against each other immediately afterward. The cloud variant keeps its "doubly important under cloud" framing; only the temp-capture instruction changes.
 
 **Deliverables:**
-- [ ] Edit `user/skills/lazy-batch/SKILL.md` (~line 400): replace the `Never redirect probe or diagnostic output into the repo tree — write to the OS temp dir (`$TMPDIR` / `%TEMP%`) if you must capture it.` sentence with guidance that (a) forbids redirecting probe/diagnostic output into the repo tree (unchanged intent), (b) mandates in-band stdout capture as the default (no temp file), and (c) if a temp file is unavoidable, forbids `/tmp/...` and requires an interpreter-consistent portable path.
-- [ ] Edit `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (line 323): mirror the same Symptom-A fix, preserving the cloud-specific "doubly important under cloud, where stray repo files get committed + pushed" framing.
-- [ ] Diff the two edited sentences against each other and confirm the only divergence is the cloud framing (coupled-pair lockstep check, per CLAUDE.md).
-- [ ] Tests: grep assertions — `redirect probe or diagnostic output into the repo tree` still present in both files; the new in-band / no-`/tmp` guidance present in both; the old bare `OS temp dir (`$TMPDIR` / `%TEMP%`) if you must capture it` permissive phrasing no longer the operative instruction.
+- [x] Edit `user/skills/lazy-batch/SKILL.md` (~line 400): replace the `Never redirect probe or diagnostic output into the repo tree — write to the OS temp dir (`$TMPDIR` / `%TEMP%`) if you must capture it.` sentence with guidance that (a) forbids redirecting probe/diagnostic output into the repo tree (unchanged intent), (b) mandates in-band stdout capture as the default (no temp file), and (c) if a temp file is unavoidable, forbids `/tmp/...` and requires an interpreter-consistent portable path.
+- [x] Edit `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (line 323): mirror the same Symptom-A fix, preserving the cloud-specific "doubly important under cloud, where stray repo files get committed + pushed" framing.
+- [x] Diff the two edited sentences against each other and confirm the only divergence is the cloud framing (coupled-pair lockstep check, per CLAUDE.md).
+- [x] Tests: grep assertions — `redirect probe or diagnostic output into the repo tree` still present in both files; the new in-band / no-`/tmp` guidance present in both; the old bare `OS temp dir (`$TMPDIR` / `%TEMP%`) if you must capture it` permissive phrasing no longer the operative instruction.
 
 **Minimum Verifiable Behavior:** `python3 ~/.claude/scripts/lint-skills.py` exits 0 over both edited skills (no broken injections / embedded-pattern regressions), AND a grep confirms the new guidance text is present in both files and the old permissive phrasing is gone. (This is a prose change in LLM-improvised glue — there is no runnable probe path to assert; the deterministic check is the lint + grep over the edited text.)
 
@@ -106,6 +106,13 @@ The executor implements disposition (b): a clearly-scoped, copy-pasteable follow
 ---
 
 ## Implementation Notes
+
+### Phase 1 — Harden probe-glue prose (coupled pair) — DONE 2026-06-19
+
+- Replaced the permissive temp-capture sentence in BOTH coupled files with guidance that (a) keeps "never redirect probe/diagnostic output into the repo tree", (b) mandates IN-BAND stdout capture as the default (`result=$(python3 user/scripts/lazy-state.py … )` / pipe to consumer; no temp file), and (c) if a temp file is genuinely unavoidable, FORBIDS a bare POSIX `/tmp/...` path and requires a path produced AND read by the SAME interpreter (`mktemp`/same-shell or `%TEMP%`/same-Windows-Python).
+- Files modified: `user/skills/lazy-batch/SKILL.md` (~L400), `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (L323).
+- Coupled-pair lockstep verified: the two edited sentences diff identically except for the cloud-only `(doubly important under cloud, where stray repo files get committed + pushed)` framing — the single intended divergence (CLAUDE.md → "Coupled Skill Pairs").
+- Gates green: `lint-skills.py` exit 0, `project-skills.py` re-projected cleanly, grep assertions confirm intent preserved + new guidance present + old permissive phrasing gone in both files.
 
 - **Out-of-repo follow-up (Symptom B primary):** the AlgoBooth `scripts/check-docs-consistency.ts` `.trim()`/`\r`-strip fix is authored as a follow-up record in Phase 3 — it CANNOT land in claude-config. This is the reverse-reference leg of the spin-off contract; the Phase-3 deliverable names this bug as its origin.
 - **Coupled-pair lockstep (Phase 1):** `user/skills/lazy-batch/SKILL.md` ↔ `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` must be edited together and diffed afterward (CLAUDE.md → "Coupled Skill Pairs").
