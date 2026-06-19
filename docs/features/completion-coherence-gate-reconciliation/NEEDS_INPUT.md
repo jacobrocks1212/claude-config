@@ -33,3 +33,17 @@ class: product
 - **B. Suppress the refusal only; leave the rows unchecked** — The gate stops refusing and mints the receipt, but does not modify PHASES.md. Smaller, lower-risk change inside `lazy_core.py`. Cost: the downstream `check-docs-consistency.ts` (uneditable from the harness) will flag the Complete feature's un-ticked verification boxes — so the friction reappears in the sibling repo unless that script is ALSO changed (operator-applied, out of this feature's reach). Leaves a permanent coherence gap between "evidence says done" and "PHASES.md says unchecked".
 
 **Recommendation:** A — auto-ticking makes the certified rows match their on-disk evidence and leaves PHASES.md coherent for the uneditable downstream checker, fully closing the friction within the single repo this feature can change; B only half-fixes the problem and pushes a required edit into a repo the harness cannot touch.
+
+## Resolution
+
+*Recorded on 2026-06-19 18:52:00 UTC.*
+
+### 1. Reconciliation direction — extend the carve-out to completion time vs push the tick into /mcp-test
+
+**Choice:** A. Extend the carve-out to completion time, gated on on-disk evidence
+**Notes:** `_phase_completion_plan` applies the verification-only exemption ONLY when `/mcp-test` evidence (`VALIDATED.md` / `MCP_TEST_RESULTS.md`) certifies passing AND all remaining unchecked rows are verification-marked. Evidence (not the checkbox) is the source of truth; a feature with genuine unchecked implementation work still refuses. Single-repo, reversible change in `lazy_core.py` + smoke tests. Operator-answered.
+
+### 2. On-disk evidence — auto-tick the verification rows vs only suppress the refusal
+
+**Choice:** A. Auto-tick the certified verification rows
+**Notes:** resolved_by: completeness-policy. Scope-class under the scope test (full-fix vs partial-fix; the end-state differs only because B leaves a gap in the uneditable sibling-repo `check-docs-consistency.ts`). Per D7 the most-complete option is taken without asking: when evidence certifies passing, the completion gate rewrites the matching `- [ ]` verification rows to `- [x]` (the same byte-stable in-place rewrite as the existing phase-Status auto-flip), leaving PHASES.md fully coherent for the downstream checker with no sibling-repo edit. Conditional on Decision 1 = A (chosen).
