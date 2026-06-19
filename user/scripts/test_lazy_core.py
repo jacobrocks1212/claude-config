@@ -6875,6 +6875,96 @@ def test_f1_repeat_count_debounce_legacy_file_without_consume_key():
 
 
 # ---------------------------------------------------------------------------
+# Tests: loop-detected-false-positives-from-probe-and-reboot-churn
+#   Phase 1 — regression-pin that symptoms 2 & 4 are ALREADY closed by the
+#   landed F1/F2 consume-debounce. These characterize existing CORRECT behavior
+#   (green on first run, NO production code) so Phase 2's resolution-reset can be
+#   proven NOT to regress the no-dispatch-between-probes HOLD.
+# ---------------------------------------------------------------------------
+
+
+def test_symptom2_reboot_reprobe_no_inflation():
+    """SYMPTOM 2 (reboot re-probe, no dispatch) — the F2 debounce HOLDS step_count.
+
+    Models the reboot/restart class: the orchestrator probes the SAME
+    (feature_id, current_step) twice with a run marker present and NO registry
+    consume (no dispatch / no guard ALLOW) between the two probes — the second
+    probe is a pure RE-READ after a reboot, not a re-attempt. step_repeat_count
+    must be HELD at 1, never inflated toward the LOOP-DETECTED tripwire.
+
+    This is a CHARACTERIZATION fixture (Proven Finding 1 — symptom 2 already
+    closed): it is GREEN against HEAD as-is. It pins the HOLD so the Phase-2
+    resolution-reset branch cannot silently re-open the false positive.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # Two identical advancing probes for the SAME step signature, NO consume
+        # (no dispatch) between them — the reboot re-probe.
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 1, (
+        f"reboot re-probe with the SAME step signature and NO dispatch between "
+        f"the probes → step_repeat_count HELD at 1 (F2 re-read debounce), not "
+        f"inflated, got {r2!r}"
+    )
+
+
+def test_symptom4_double_probe_hygiene_no_inflation():
+    """SYMPTOM 4 (double-probe hygiene) — neither counter inflates on a re-read.
+
+    Models the probe-hygiene double-read class: one cycle reads the state twice
+    (e.g. an inspection probe then a dispatch probe for the SAME cycle) with a
+    run marker present and NO registry consume between the two reads. BOTH the
+    dispatch-tuple repeat_count (F1) and the step-level step_repeat_count (F2)
+    must be HELD — a single cycle's hygiene double-read must never read as two
+    repeats and trip a false LOOP DETECTED.
+
+    CHARACTERIZATION fixture (Proven Finding 1 — symptom 4 already closed):
+    GREEN against HEAD. Pins that the Phase-2 reset preserves the F1+F2 HOLD.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # Two identical probes for ONE cycle (same dispatch tuple AND same step
+        # signature), NO consume between them — the hygiene double-read.
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1 and r1["step_repeat_count"] == 1, (
+        f"first probe → both counts 1, got {r1!r}"
+    )
+    assert r2["repeat_count"] == 1, (
+        f"double-probe hygiene re-read → repeat_count HELD at 1 (F1 debounce), "
+        f"got {r2!r}"
+    )
+    assert r2["step_repeat_count"] == 1, (
+        f"double-probe hygiene re-read → step_repeat_count HELD at 1 (F2 "
+        f"debounce), got {r2!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: git_guard_status — WU-5 single-probe payload (git guards)
 # ---------------------------------------------------------------------------
 
@@ -14720,6 +14810,9 @@ _TESTS = [
     ("test_update_repeat_counts_debounce_inert_for_foreign_repo_marker", test_update_repeat_counts_debounce_inert_for_foreign_repo_marker),
     ("test_update_repeat_counts_debounce_legacy_file_without_consume_key", test_update_repeat_counts_debounce_legacy_file_without_consume_key),
     ("test_update_repeat_counts_debounce_inert_without_marker", test_update_repeat_counts_debounce_inert_without_marker),
+    # loop-detected-false-positives Phase 1 — symptom 2 & 4 regression pins
+    ("test_symptom2_reboot_reprobe_no_inflation", test_symptom2_reboot_reprobe_no_inflation),
+    ("test_symptom4_double_probe_hygiene_no_inflation", test_symptom4_double_probe_hygiene_no_inflation),
     # git_guard_status — WU-5 single-probe payload (git guards)
     ("test_git_guard_status_clean_and_pushed", test_git_guard_status_clean_and_pushed),
     ("test_git_guard_status_dirty_tree", test_git_guard_status_dirty_tree),

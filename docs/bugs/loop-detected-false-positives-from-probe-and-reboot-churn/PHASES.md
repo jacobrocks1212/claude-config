@@ -27,9 +27,9 @@ The fix injects a **resolution-aware reset signal** that the counter honors — 
 **Scope:** Symptoms 2 & 4 are PROVEN already-fixed (Proven Finding 1). This phase produces the *regression-test deliverable* that locks that in — fresh fixtures that drive the exact double-probe / no-dispatch-between-probes scenarios (reboot re-probe, two `--repeat-count` probes for one cycle) through `update_repeat_counts` and assert the counters DO NOT inflate under the current debounce. No production code changes. Done first because it is independent, characterizes the current correct behavior before Phase 2 touches the function, and would catch any Phase-2 regression of the already-closed classes.
 
 **Deliverables:**
-- [ ] Fixture: two MARKED probes with the SAME step signature `(feature_id, current_step)` and UNCHANGED registry consume-count between them → assert `step_repeat_count` is HELD (symptom 2 — reboot re-probe with no dispatch).
-- [ ] Fixture: two MARKED probes for one cycle with no consume between (probe-hygiene double-read) → assert neither `repeat_count` nor `step_repeat_count` inflates (symptom 4).
-- [ ] Tests: both fixtures land in `user/scripts/test_lazy_core.py` alongside the existing `test_update_repeat_counts_debounce_*` characterizations, named to reference the symptom they pin (e.g. `test_symptom2_reboot_reprobe_no_inflation`, `test_symptom4_double_probe_hygiene_no_inflation`).
+- [x] Fixture: two MARKED probes with the SAME step signature `(feature_id, current_step)` and UNCHANGED registry consume-count between them → assert `step_repeat_count` is HELD (symptom 2 — reboot re-probe with no dispatch).
+- [x] Fixture: two MARKED probes for one cycle with no consume between (probe-hygiene double-read) → assert neither `repeat_count` nor `step_repeat_count` inflates (symptom 4).
+- [x] Tests: both fixtures land in `user/scripts/test_lazy_core.py` alongside the existing `test_update_repeat_counts_debounce_*` characterizations, named to reference the symptom they pin (e.g. `test_symptom2_reboot_reprobe_no_inflation`, `test_symptom4_double_probe_hygiene_no_inflation`).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` passes with the two new fixtures present and green (run the command; the new test names appear in the run and pass). These exercise the real `update_repeat_counts` code path — no mock of the function under test.
 
@@ -113,3 +113,9 @@ The reset is scoped to the resolution event SPECIFICALLY — it adds NO head/com
 - **Open Question 1 (discriminator locus)** — resolved in-cycle per D7 toward a **persisted marker-field signal** (see ⚖ policy at top). The resolution meta-cycle records the signal; `update_repeat_counts` consumes it. `/write-plan` may name the exact field; the shape is locked.
 - **Open Question 2 (`repeat_count` exposure)** — deferred to Phase 2 confirmation. SPEC's stated likelihood is `step_repeat_count`-only (a resolution that commits advances HEAD → the HEAD-aware `repeat_count` already resets). Phase 2 confirms with a fixture before adding any `repeat_count` reset; finding recorded here.
 - **Coupling:** `lazy_core.py` is shared by `lazy-state.py` + `bug-state.py` — both `--test` suites are the regression net (Coupling Rule, `user/scripts/CLAUDE.md`). `lazy-batch` ↔ `lazy-bug-batch` are a coupled pair for the Step 1g signal-production edit — mirror both.
+
+### Phase 1 — landed 2026-06-19
+
+- Added two characterization fixtures to `user/scripts/test_lazy_core.py` (green on first run, NO production code): `test_symptom2_reboot_reprobe_no_inflation` (reboot re-probe, same step sig, no consume → `step_repeat_count` HELD at 1) and `test_symptom4_double_probe_hygiene_no_inflation` (hygiene double-read, no consume → BOTH `repeat_count` and `step_repeat_count` HELD at 1). Both reuse the existing `_write_marker_in` / `_set_state_dir` debounce scaffolding and drive the real `update_repeat_counts` (no mock).
+- Registered both in `_TESTS`. Gates green: `test_lazy_core.py` 576/576; `lazy-state.py --test` + `bug-state.py --test` all-pass (baselines untouched — no marked-path output changed).
+- **Review verdict:** PASS (inline — 1 file, ≤150 lines; characterization fixtures verified green against HEAD, assertions match symptom names).
