@@ -19561,6 +19561,123 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# Tests: loop-detected-false-positives-from-probe-and-reboot-churn
+#   Phase 3 — NEGATIVE fixtures. Prove the Phase-2 resolution reset did NOT
+#   re-introduce HEAD-advance immunity for the general oscillation case, and that
+#   the reset is strictly SIGNAL-GATED (never fires on a missing/legacy signal).
+# ---------------------------------------------------------------------------
+
+
+def test_symptom5_d8_commit_masked_loop_still_trips():
+    """SYMPTOM 5 / d8 design constraint (Proven Finding 3): a genuine
+    commit-masked oscillation loop — SAME (feature_id, current_step), HEAD
+    ADVANCING each iteration (each spurious cycle commits a file → the
+    dispatch-tuple repeat_count resets every iteration and never catches the
+    loop), with NO resolution signal present — must STILL inflate
+    step_repeat_count and reach the >=3 tripwire.
+
+    This is the inverse of the Phase-2 positive fixture: it asserts the
+    resolution-reset branch is NOT taken when there is no signal, so the
+    HEAD-blind masking detection the step counter exists for is preserved.
+
+    RED for the Phase-2 fix done wrong: if the reset fired without a signal (or
+    keyed on HEAD/commits), this would stay flat at 1 and the loop would go
+    undetected.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        # A real git repo so HEAD advances on each commit; a run marker present
+        # (so the reset branch's machinery is fully active) but NO resolution
+        # signal is ever recorded — the discriminator must keep the loop tripping.
+        repo_root, _origin = _make_git_repo_with_origin(str(td_path))
+        _write_marker_in(state_dir, repo_root)
+        state = {
+            "feature_id": "d8-stuck",
+            "sub_skill": "/write-plan",
+            "sub_skill_args": "plan.md",          # UNCHANGED across all repeats
+            "current_step": "Step 7a: execute plan",
+        }
+        step_counts = []
+        for i in range(4):
+            _set_state_dir(state_dir)
+            try:
+                r = lazy_core.update_repeat_counts(repo_root, state, signature_path=sig_path)
+            finally:
+                _clear_state_dir()
+            step_counts.append(r["step_repeat_count"])
+            # Each oscillation cycle COMMITS (HEAD advances) AND a dispatch lands
+            # (a real consume) — exactly the d8 masking signature, but with NO
+            # resolution signal: the reset must NOT fire.
+            _commit_dummy(repo_root, f"osc-{i}.txt")
+            _record_consume(state_dir)
+    assert step_counts == [1, 2, 3, 4], (
+        f"a commit-masked oscillation loop with NO resolution signal must keep "
+        f"climbing step_repeat_count (the reset branch is NOT taken — HEAD-advance "
+        f"immunity is preserved), got {step_counts!r}"
+    )
+    assert max(step_counts) >= 3, (
+        f"the >=3 oscillation tripwire MUST still fire for the d8 commit-masked "
+        f"loop after the Phase-2 resolution reset, got {step_counts!r}"
+    )
+
+
+def test_resolution_reset_inert_without_signal():
+    """The resolution reset is SIGNAL-GATED — a marked probe with the resolution
+    signal ABSENT (a normal/legacy marker that never recorded
+    last_resolution_step_key) and an unchanged step signature must follow the
+    NORMAL path (here: a dispatch landed between the probes → increment), NOT the
+    reset path. Mirrors the ordered-advance "known prior" guard discipline: the
+    reset never fires on a missing signal.
+
+    RED: an impl that reset whenever the marker was merely present (not gated on
+    the recorded signal) would hold/reset here.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        # Marker present, but NO record_resolution_signal call — the signal is
+        # absent (the normal-cycle case).
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # A real dispatch lands between the two same-step probes (consume rises),
+        # so the F2 debounce can NOT hold — and with NO resolution signal, the
+        # reset must NOT fire either → the counter increments normally.
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"with the resolution signal ABSENT and a dispatch landed between the two "
+        f"same-step probes, the reset must NOT fire (signal-gated) → step_count "
+        f"increments normally (1 → 2), got {r2!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_symptom5_d8_commit_masked_loop_still_trips",
+     test_symptom5_d8_commit_masked_loop_still_trips),
+    ("test_resolution_reset_inert_without_signal",
+     test_resolution_reset_inert_without_signal),
+]
+
+
+# ---------------------------------------------------------------------------
 # lazy-batch-unified-driver-parity-and-accounting Phase 2 (item 3) — WU-3.
 # ---------------------------------------------------------------------------
 #

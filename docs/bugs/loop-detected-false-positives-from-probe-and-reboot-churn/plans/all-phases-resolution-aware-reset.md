@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: loop-detected-false-positives-from-probe-and-reboot-churn
-status: In-progress
+status: Complete
 created: 2026-06-19
 complexity: complex
 phases: [1, 2, 3]
@@ -104,8 +104,8 @@ No `**Depends on:**` block on the SPEC — this is a standalone harness fix buil
 - [x] WU-3 — Phase 2: persist the resolution signal (run-marker field at the Step-1g resolution bracket)
 - [x] WU-4 — Phase 2: symptom-3 reset branch in `update_repeat_counts` (test-first) + docstring + CLAUDE.md
 - [x] WU-5 — Phase 2: lazy-batch + lazy-bug-batch Step-1g signal-production edit (coupled pair) + confirm Open Question 2
-- [ ] WU-6 — Phase 3: negative fixture — d8 commit-masked loop STILL trips (no reset taken)
-- [ ] WU-7 — Phase 3: negative fixture — reset inert without the resolution signal (signal-gated)
+- [x] WU-6 — Phase 3: negative fixture — d8 commit-masked loop STILL trips (no reset taken)
+- [x] WU-7 — Phase 3: negative fixture — reset inert without the resolution signal (signal-gated)
 
 ---
 

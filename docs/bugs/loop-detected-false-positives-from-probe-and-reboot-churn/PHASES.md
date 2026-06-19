@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress — all three phases implemented (2026-06-19); validation tail pending. The `__mark_fixed__` gate owns the terminal `Fixed` flip + FIXED.md receipt after validation.
+
 **MCP runtime:** not-required — this is a pure harness state-machine fix in `user/scripts/lazy_core.py` and `user/skills/lazy-batch/SKILL.md`. There is no app surface, no Tauri/MCP-reachable behavior; validation is the in-file `--test` smoke harnesses (`lazy-state.py --test`, `bug-state.py --test`) plus `test_lazy_core.py`. Per `docs/features/mcp-testing/SPEC.md` this is the structurally-outside-MCP-reach class (harness tooling / no app integration).
 
 ## Scope summary
@@ -89,9 +91,9 @@ The reset is scoped to the resolution event SPECIFICALLY — it adds NO head/com
 **Scope:** Lock in the design constraint (Proven Finding 3 / symptom 5). Add the negative fixture that proves the resolution-reset added in Phase 2 did NOT re-introduce HEAD-advance immunity for the general oscillation case: a genuine commit-masked loop (each spurious cycle commits a file → HEAD advances → the dispatch-tuple `repeat_count` resets every iteration) with NO resolution signal set must STILL inflate `step_repeat_count` and trip the tripwire. Also pins that an ordinary (non-resolution) cycle with the signal ABSENT does not spuriously reset.
 
 **Deliverables:**
-- [ ] Fixture: repeated probes with the SAME step signature, HEAD advancing each iteration (commits landing), NO resolution signal present → assert `step_repeat_count` KEEPS INCREMENTING (d8 commit-masked loop still trips — the reset branch is NOT taken).
-- [ ] Fixture: a marked probe with the resolution signal ABSENT and unchanged step signature → assert the reset branch is not taken (signal-gated, never fires on a missing/legacy signal — mirrors the ordered-advance "known prior" guard discipline).
-- [ ] Tests: both negative fixtures in `test_lazy_core.py`, named to the constraint they protect (e.g. `test_symptom5_d8_commit_masked_loop_still_trips`, `test_resolution_reset_inert_without_signal`).
+- [x] Fixture: repeated probes with the SAME step signature, HEAD advancing each iteration (commits landing), NO resolution signal present → assert `step_repeat_count` KEEPS INCREMENTING (d8 commit-masked loop still trips — the reset branch is NOT taken).
+- [x] Fixture: a marked probe with the resolution signal ABSENT and unchanged step signature → assert the reset branch is not taken (signal-gated, never fires on a missing/legacy signal — mirrors the ordered-advance "known prior" guard discipline).
+- [x] Tests: both negative fixtures in `test_lazy_core.py`, named to the constraint they protect (e.g. `test_symptom5_d8_commit_masked_loop_still_trips`, `test_resolution_reset_inert_without_signal`).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` passes with the two negative fixtures green — `step_repeat_count` still climbs in the commit-masked case. Run the command; the negative test names appear and pass.
 
@@ -130,3 +132,10 @@ The reset is scoped to the resolution event SPECIFICALLY — it adds NO head/com
 - **Gates:** `test_lazy_core.py` 581/581; `lazy-state.py --test` + `bug-state.py --test` + `lazy_coord.py --test` all-pass (no-marker path byte-identical → baselines untouched); `lint-skills.py` clean; `lazy_parity_audit.py` exit 0. CLI verified end-to-end on both pipelines (signal persisted; no-marker → `null` no-op).
 - **`user/scripts/CLAUDE.md` updated:** the "Cycle-counter advance" / `update_repeat_counts` contract now documents the third reset path + `last_resolution_step_key`.
 - **Review verdict:** PASS-WITH-FIXES (inline self-review; test-first proven RED→GREEN for symptom-3; branch ordering ordered-advance → resolution-reset → F2 debounce → increment confirmed; one-shot + signal-gating + repo-scoping verified by dedicated fixtures).
+
+### Phase 3 — landed 2026-06-19 (terminal)
+
+- Added two NEGATIVE fixtures to `user/scripts/test_lazy_core.py` (assertion-only, no production code — they exercise the Phase-2 code): `test_symptom5_d8_commit_masked_loop_still_trips` (real git repo, HEAD advancing + consume landing each iteration, NO resolution signal → `step_repeat_count` climbs 1→2→3→4 and trips the >=3 tripwire — HEAD-advance immunity preserved, symptom-5 constraint held) and `test_resolution_reset_inert_without_signal` (marker present but signal absent, dispatch between same-step probes → increments 1→2, reset NOT taken — signal-gated).
+- Registered both in `_TESTS`. FULL shared-import gate set green: `lazy_coord.py --test`, `lazy-state.py --test`, `bug-state.py --test`, `test_lazy_core.py` (583/583) — all pass.
+- Set PHASES.md top-level `**Status:**` → `In-progress` (implementation done across all 3 phases; validation tail pending). Did NOT write FIXED.md or flip SPEC to Fixed — the `__mark_fixed__` gate owns the terminal flip after the validation tail.
+- **Review verdict:** PASS (inline — negative fixtures, assertions match the constraints they protect; the d8-still-trips + signal-gated pair together cover the interaction surface with the Phase-2 reset).
