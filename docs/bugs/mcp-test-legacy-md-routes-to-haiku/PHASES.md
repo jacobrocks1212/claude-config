@@ -46,7 +46,7 @@ Both options produce the **same end-state product behavior** — an unconverted-
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both green (bug pipeline inherits the fix via shared `lazy_core`), and `pytest user/scripts/test_lazy_core.py` green — with the new legacy-`.md`→sonnet fixture passing and the reshaped happy-path→haiku fixture passing. The new fixture demonstrably failed before the `lazy_core.py` edit.
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] An mcp-test cycle emitted for an item whose only scenario is an unconverted legacy `.md` reports `model: sonnet` in the `emit_cycle_prompt`/`--emit-prompt` JSON. <!-- verification-only -->
+- [x] An mcp-test cycle emitted for an item whose only scenario is an unconverted legacy `.md` reports `model: sonnet` in the `emit_cycle_prompt`/`--emit-prompt` JSON. <!-- verification-only --> <!-- verified by test_lazy_core.py::test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet (564/564 green); Implementation Notes: RED→GREEN confirmed -->
 
 **Prerequisites:** None.
 
