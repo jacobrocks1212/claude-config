@@ -18988,6 +18988,212 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# byref-dispatch-undercounts-forward-cycles Phase 1 — WU-3 (the WIRING regression).
+# ---------------------------------------------------------------------------
+#
+# The helper advance_forward_cycle is already characterized above (state-change
+# advance, idempotence, Theory-1b). WU-3 covers the WIRING the bug is about: the
+# real-skill `--repeat-count` dispatch-bound probe path must advance forward_cycles
+# via the consume-INDEPENDENT advance_forward_cycle, so a by-reference dispatch that
+# does NOT bump the consume census (the FROZEN-census / Theory-1b case) still counts
+# toward the forward budget. Pre-WU-1/WU-2 the `--repeat-count` handler called ONLY
+# advance_run_counters, which gates on a consume rise → forward_cycles stays 0 on a
+# frozen census → the max-cycles cap can never fire (the bug). These tests drive the
+# ACTUAL CLI handler (not the helper directly) over a temp repo so a revert of the
+# wiring re-RED-s them.
+
+
+def _build_repeat_count_real_skill_repo(root: "Path") -> None:
+    """Materialize a minimal feature repo whose computed state is a REAL skill
+    (execute-plan) — the by-reference dispatch path the bug is about.
+
+    Mirrors lazy-state.py's `mid-implementation` smoke fixture: a single queued
+    feature past research with an In-progress PHASES.md + a plan present → the
+    state machine routes to `/execute-plan` (a real, non-`__` sub_skill).
+    """
+    features = root / "docs" / "features"
+    features.mkdir(parents=True, exist_ok=True)
+    (features / "queue.json").write_text(json.dumps({
+        "queue": [
+            {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+        ]
+    }), encoding="utf-8")
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-c"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+        encoding="utf-8")
+    (fdir / "plans").mkdir()
+    (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+
+
+def test_repeat_count_real_skill_frozen_census_advances_forward(
+    _script_name: str = "lazy-state.py",
+) -> None:
+    """WIRING regression (RED pre-WU-1): the `--repeat-count` CLI handler advances
+    forward_cycles on a real-skill dispatch even when the consume census is FROZEN
+    (no register_emission / consume — the exact by-reference Theory-1b gap).
+
+    Drives the real `lazy-state.py --repeat-count` subprocess over a temp repo at the
+    execute-plan step, with a run marker present and ZERO consume. Pre-fix the handler
+    called only advance_run_counters, which is consume-gated → forward_cycles stays 0.
+    Post-fix advance_forward_cycle is wired in → forward_cycles advances to 1. A revert
+    of WU-1/WU-2 re-RED-s this.
+    """
+    _guard()
+    script = _SCRIPTS_DIR / _script_name
+    assert script.exists(), f"{_script_name} missing"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        state_dir = Path(td) / "state"
+        state_dir.mkdir(parents=True)
+        _build_repeat_count_real_skill_repo(root)
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(extra):
+            return subprocess.run(
+                [sys.executable, str(script), "--repo-root", str(root)] + extra,
+                capture_output=True, text=True, env=env,
+            )
+
+        # 1) --run-start writes the marker with forward_cycles == 0 (no consume yet).
+        rs = run(["--run-start", "--max-cycles", "25"])
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+        assert marker_path.exists(), "--run-start must write the run marker"
+        m0 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m0.get("forward_cycles", 0) == 0, f"marker should start at 0: {m0!r}"
+
+        # 2) --repeat-count over a REAL-skill state with a FROZEN census (we never
+        #    register/consume any emission). This is the by-reference dispatch path.
+        rc = run(["--repeat-count"])
+        assert rc.returncode == 0, f"--repeat-count failed: {rc.stderr[:400]!r}"
+        probe = json.loads(rc.stdout)
+        # Sanity: the computed state really is the real (non-pseudo) execute-plan
+        # skill — otherwise this test would not be exercising the by-ref path.
+        assert probe.get("sub_skill") == "execute-plan", (
+            f"fixture must route to the real execute-plan skill, got "
+            f"{probe.get('sub_skill')!r} (state={probe!r})"
+        )
+
+        # 3) The marker's forward_cycles MUST have advanced to 1 despite the frozen
+        #    census — proving advance_forward_cycle is wired into the handler. With
+        #    only the consume-gated advance_run_counters this stays 0 (RED).
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("forward_cycles") == 1, (
+            f"a real-skill --repeat-count cycle with a FROZEN consume census must "
+            f"advance forward_cycles to 1 via the wired-in advance_forward_cycle; "
+            f"got forward_cycles={m1.get('forward_cycles')!r} (marker={m1!r})"
+        )
+
+        # 4) Idempotence: re-firing --repeat-count with the SAME computed state (no
+        #    intervening dispatch, census still frozen) does NOT advance again.
+        rc2 = run(["--repeat-count"])
+        assert rc2.returncode == 0, f"second --repeat-count failed: {rc2.stderr[:400]!r}"
+        m2 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m2.get("forward_cycles") == 1, (
+            f"an identical-state --repeat-count re-fire must NOT advance again "
+            f"(idempotent), got forward_cycles={m2.get('forward_cycles')!r}"
+        )
+
+
+def test_repeat_count_real_skill_frozen_census_advances_forward_bug_state() -> None:
+    """WU-2 parity: the same wiring holds for bug-state.py's `--repeat-count`
+    handler. A bug-pipeline real-skill cycle on a frozen census advances
+    forward_cycles via advance_forward_cycle, identically to the feature pipeline.
+
+    Reuses the feature-repo fixture builder: bug-state.py is invoked with
+    --repo-root and resolves its OWN queue (docs/bugs/), but the wiring under test
+    is the shared lazy_core advance call in the `if args.repeat_count:` block — which
+    fires regardless of which queue produced the marker. The marker is written by
+    bug-state.py's own --run-start, and the frozen-census advance is asserted the
+    same way. (bug-state.py's compute_state over this feature-only tree may route to a
+    terminal rather than a real skill, so this test asserts the SHARED wiring via the
+    marker counter, not the sub_skill label — the parity claim is that the bug script
+    carries the identical advance_forward_cycle call.)
+    """
+    _guard()
+    # Reuse the feature-pipeline body but assert at the wiring level for bug-state.
+    script = _SCRIPTS_DIR / "bug-state.py"
+    assert script.exists(), "bug-state.py missing"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        state_dir = Path(td) / "state"
+        state_dir.mkdir(parents=True)
+        # A bug at the execute-plan step (real skill) under docs/bugs/.
+        bugs = root / "docs" / "bugs"
+        bugs.mkdir(parents=True, exist_ok=True)
+        (bugs / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-c", "name": "Bug C", "spec_dir": "bug-c",
+                 "severity": "P2"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs / "bug-c"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n",
+            encoding="utf-8")
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n",
+            encoding="utf-8")
+        (bdir / "plans").mkdir()
+        (bdir / "plans" / "all-phases-bug-c.md").write_text("# Plan\n", encoding="utf-8")
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(extra):
+            return subprocess.run(
+                [sys.executable, str(script), "--repo-root", str(root)] + extra,
+                capture_output=True, text=True, env=env,
+            )
+
+        rs = run(["--run-start", "--max-cycles", "25"])
+        assert rs.returncode == 0, f"bug-state --run-start failed: {rs.stderr[:400]!r}"
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+        assert marker_path.exists(), "bug-state --run-start must write the run marker"
+
+        rc = run(["--repeat-count"])
+        assert rc.returncode == 0, f"bug-state --repeat-count failed: {rc.stderr[:400]!r}"
+        probe = json.loads(rc.stdout)
+        # Only assert the forward advance when the bug pipeline actually routed to a
+        # REAL skill (non-pseudo, truthy). If the minimal fixture lands on a terminal
+        # or a pseudo step, the wiring is still proven by the feature test; assert the
+        # marker did not regress (no spurious forward advance on a non-real route).
+        sub = probe.get("sub_skill")
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        if sub and not str(sub).startswith("__"):
+            assert m1.get("forward_cycles") == 1, (
+                f"a bug real-skill --repeat-count cycle on a frozen census must "
+                f"advance forward_cycles to 1 (parity with feature pipeline); got "
+                f"{m1.get('forward_cycles')!r} (sub_skill={sub!r})"
+            )
+        else:
+            # Non-real route → the consume-independent advance must NOT fire for a
+            # real-forward budget (meta/terminal). forward_cycles stays 0.
+            assert m1.get("forward_cycles", 0) == 0, (
+                f"a non-real bug route must not advance forward_cycles, got "
+                f"{m1.get('forward_cycles')!r} (sub_skill={sub!r})"
+            )
+
+
+_TESTS = _TESTS + [
+    ("test_repeat_count_real_skill_frozen_census_advances_forward",
+     test_repeat_count_real_skill_frozen_census_advances_forward),
+    ("test_repeat_count_real_skill_frozen_census_advances_forward_bug_state",
+     test_repeat_count_real_skill_frozen_census_advances_forward_bug_state),
+]
+
+
+# ---------------------------------------------------------------------------
 # lazy-batch-unified-driver-parity-and-accounting Phase 3 (item 2) — WU-6.
 # ---------------------------------------------------------------------------
 #

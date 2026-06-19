@@ -6639,13 +6639,25 @@ def main() -> int:
         )
         state["repeat_count"] = _counts["repeat_count"]
         state["step_repeat_count"] = _counts["step_repeat_count"]
-    # Counter advance (Phase 1): at dispatch-bound probe time (--repeat-count,
-    # NOT --repeat-count-peek) advance the marker-persisted forward/meta counters.
+    # Counter advance: at dispatch-bound probe time (--repeat-count, NOT
+    # --repeat-count-peek) advance the marker-persisted forward/meta counters.
     # Mirror of the peek discipline for update_repeat_counts: only the one
     # dispatch-bound probe per cycle advances any persisted state.
-    # No marker present → no-op (advance_run_counters returns None).
+    #
+    # FORWARD-CYCLE AUTHORITY (byref-dispatch-undercounts-forward-cycles, Phase 1,
+    # WU-1 — form 1 reconciliation): advance_forward_cycle is the AUTHORITATIVE
+    # forward-advance trigger on this real-skill (by-reference) probe path. It keys
+    # on the consume-INDEPENDENT [feature_id, current_step, sub_skill] state change,
+    # so a by-ref dispatch that does NOT bump the consume census (the frozen-census
+    # / Theory-1b case) still advances forward_cycles — defeating BOTH the
+    # advance_meta_cycle +1 over-absorb and the ring-cap census regression at once.
+    # advance_run_counters (the consume-gated oracle) is NO LONGER the forward
+    # authority on this path — it was non-monotonic here and silently undercounted,
+    # letting the max-cycles cap never fire. Meta accounting via --emit-dispatch /
+    # advance_meta_cycle is untouched, so nothing on this path double-counts.
+    # No marker present → no-op (advance_forward_cycle returns None).
     if args.repeat_count:
-        lazy_core.advance_run_counters(state)
+        lazy_core.advance_forward_cycle(state)
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or

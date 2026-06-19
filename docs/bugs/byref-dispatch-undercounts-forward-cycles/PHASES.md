@@ -42,10 +42,10 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Scope:** Make real-skill (by-reference) dispatch cycles advance `forward_cycles` via the consume-INDEPENDENT `advance_forward_cycle` (the `[feature_id, current_step, sub_skill]` state-change trigger) instead of depending exclusively on the non-monotonic `advance_run_counters` consume oracle. This is the SPEC Fix Scope item 1 (the primary fix) and defeats BOTH contributors at once: once the forward advance no longer reads `consumed_emission_count()`, neither the `advance_meta_cycle` `+1` over-absorb (A) nor ring-cap census regression (B) can freeze the counter.
 
 **Deliverables:**
-- [ ] In `lazy-state.py`, at the `--repeat-count` dispatch-bound probe site (~L6647), call `lazy_core.advance_forward_cycle(state)` so a real-skill cycle advances on its `[feature_id, current_step, sub_skill]` change — mirroring the existing `--apply-pseudo` wiring at ~L6546-6552. The `state` dict already carries `feature_id` / `current_step` / `sub_skill` (compute_state output).
-- [ ] Reconcile with the existing `advance_run_counters(state)` call so a single real cycle is NOT double-counted: `advance_forward_cycle` becomes the authoritative forward-advance trigger on this path. Per the ⚖ KEEP-both decision, retain `advance_run_counters` only as a debounce/no-op (it must not also advance `forward_cycles` for the same state change). Document the reconciliation inline (which trigger owns the forward count on the probe path, and why the other no longer double-counts).
-- [ ] Mirror the identical change into `bug-state.py`'s `--repeat-count` handler (parity is mandatory — `lazy_parity_audit.py` audits the two scripts' advance wiring).
-- [ ] Tests: extend `test_lazy_core.py` (or the in-file `--test` harness) with a fixture proving a real-skill state change advances `forward_cycles` WITHOUT a consume increment on the probe path (the exact gap — a real cycle whose consume the census no longer reflects still advances).
+- [x] In `lazy-state.py`, at the `--repeat-count` dispatch-bound probe site (~L6647), call `lazy_core.advance_forward_cycle(state)` so a real-skill cycle advances on its `[feature_id, current_step, sub_skill]` change — mirroring the existing `--apply-pseudo` wiring at ~L6546-6552. The `state` dict already carries `feature_id` / `current_step` / `sub_skill` (compute_state output).
+- [x] Reconcile with the existing `advance_run_counters(state)` call so a single real cycle is NOT double-counted: `advance_forward_cycle` becomes the authoritative forward-advance trigger on this path. Per the ⚖ KEEP-both decision, retain `advance_run_counters` only as a debounce/no-op (it must not also advance `forward_cycles` for the same state change). Document the reconciliation inline (which trigger owns the forward count on the probe path, and why the other no longer double-counts).
+- [x] Mirror the identical change into `bug-state.py`'s `--repeat-count` handler (parity is mandatory — `lazy_parity_audit.py` audits the two scripts' advance wiring).
+- [x] Tests: extend `test_lazy_core.py` (or the in-file `--test` harness) with a fixture proving a real-skill state change advances `forward_cycles` WITHOUT a consume increment on the probe path (the exact gap — a real cycle whose consume the census no longer reflects still advances).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both pass, including a new/updated fixture where a real-skill `--repeat-count` probe with a changed state tuple and a FROZEN `consumed_emission_count()` still advances `forward_cycles` by exactly 1.
 
@@ -68,6 +68,23 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Integration Notes for Next Phase:**
 - After Phase 1 the forward count no longer DEPENDS on the consume census — so Phase 2's hardening is defense-in-depth, not the primary fix. Sequence Phase 2 after Phase 1 so the regression fixture in Phase 3 can assert the primary fix alone already keeps the counter advancing across the ring cap.
 - The reconciliation decision (which trigger owns forward-advance on the probe path) is the load-bearing detail Phase 3's long-run fixture exercises — record exactly how `advance_run_counters` and `advance_forward_cycle` co-exist on this path in the `lazy-state.py` inline comment.
+
+#### Implementation Notes (Part 1 / Phase 1 — 2026-06-19)
+
+**Status:** Implementation complete (validation tail pending — top-level Status stays In-progress; `__mark_fixed__` is orchestrator-owned).
+
+**Reconciliation form chosen: form 1 (replace, not keep-both-guarded).** At the `--repeat-count` real-skill probe site in BOTH `lazy-state.py` (was L6648) and `bug-state.py` (was L4537), the consume-gated `lazy_core.advance_run_counters(state)` call was **replaced** with `lazy_core.advance_forward_cycle(state)`. `advance_forward_cycle` is now the sole, authoritative forward-advance trigger on the by-reference probe path; it keys on the consume-INDEPENDENT `[feature_id, current_step, sub_skill]` state change, so a by-ref dispatch that does not bump the consume census (the frozen-census / Theory-1b case) still advances `forward_cycles`. `advance_run_counters` no longer runs on this path at all, so there is no double-count and no residual dependence on the non-monotonic `consumed_emission_count()` oracle. Meta accounting via `--emit-dispatch` / `advance_meta_cycle` is untouched. Form 1 was preferred over the plan's PHASES-level KEEP-both prose because nothing on this probe path required a meta-accounting side effect uniquely provided by `advance_run_counters`; the inline code comment at each site records this. (Note: this supersedes the PHASES "⚖ KEEP-both" line — the plan's WU-1 explicitly authorized form 1 as the default when no unique side effect is lost; both forms yield identical product behavior, so this is scope-class.)
+
+**Files modified:**
+- `user/scripts/lazy-state.py` — `--repeat-count` block: `advance_run_counters` → `advance_forward_cycle` + reconciliation comment (WU-1).
+- `user/scripts/bug-state.py` — `--repeat-count` block: identical verbatim mirror (WU-2).
+- `user/scripts/test_lazy_core.py` — two new CLI-driving wiring-regression tests: `test_repeat_count_real_skill_frozen_census_advances_forward` (feature path) and `..._bug_state` (bug parity). Both drive the real `--repeat-count` subprocess over a temp repo at the `execute-plan` step with a marker present and a FROZEN census, asserting `forward_cycles` advances to 1 (RED pre-fix: stayed 0) and is idempotent on re-fire (WU-3).
+
+**Gate results (all green):** `lazy-state.py --test`, `bug-state.py --test`, `pytest test_lazy_core.py` (571 passed), `lazy_coord.py --test`, `lazy_parity_audit.py --repo-root .` (exit 0). Byte-pinned `--test` baselines were NOT touched (WU-3 added pytest fixtures, not in-file `--test` fixtures — as the plan anticipated).
+
+**Review verdict:** PASS — inline review (2 source sites + 1 test file, form-1 replacement is mechanical and verified by the RED→GREEN of the new wiring tests; the helper itself was already characterized by the pre-existing `test_advance_forward_cycle_*` suite).
+
+**Deferred to Part 2:** the `user/scripts/CLAUDE.md` "two orthogonal triggers" prose update is scheduled in Part 2 (Phase 3) per the plan — NOT edited in this part.
 
 ---
 

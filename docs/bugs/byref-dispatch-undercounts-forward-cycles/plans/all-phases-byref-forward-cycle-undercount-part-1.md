@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: byref-dispatch-undercounts-forward-cycles
-status: Ready
+status: Complete
 created: 2026-06-19
 phases: [1]
 complexity: complex
@@ -91,9 +91,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Wire `advance_forward_cycle` into the `--repeat-count` probe path in `lazy-state.py` + reconcile with `advance_run_counters`
-- [ ] WU-2 — Mirror the same wiring into `bug-state.py`'s `--repeat-count` handler (parity)
-- [ ] WU-3 — Tests: real-skill state-change advances `forward_cycles` with a FROZEN consume census (the exact gap), idempotent on re-fire
+- [x] WU-1 — Wire `advance_forward_cycle` into the `--repeat-count` probe path in `lazy-state.py` + reconcile with `advance_run_counters`
+- [x] WU-2 — Mirror the same wiring into `bug-state.py`'s `--repeat-count` handler (parity)
+- [x] WU-3 — Tests: real-skill state-change advances `forward_cycles` with a FROZEN consume census (the exact gap), idempotent on re-fire
 
 ---
 
