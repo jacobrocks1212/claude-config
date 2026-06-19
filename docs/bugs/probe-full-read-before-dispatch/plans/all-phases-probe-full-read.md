@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: probe-full-read-before-dispatch
-status: Ready
+status: In-progress
 created: 2026-06-19
 complexity: mechanical
 phases: [1, 2]
@@ -82,7 +82,7 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Author canonical full-read clause in `lazy-dispatch-template.md` (Phase 1)
+- [x] WU-1 — Author canonical full-read clause in `lazy-dispatch-template.md` (Phase 1)
 - [ ] WU-2 — Mirror full-read clause into the atomicity rule of all six `/lazy*` wrappers (Phase 2)
 
 ---

@@ -17,8 +17,8 @@
 **Scope:** Add a single canonical "full-probe-JSON read" clause to the shared dispatch component (`user/skills/_components/lazy-dispatch-template.md`) so the contract is stated once in the place all `/lazy*` wrappers already re-read. The clause: a routing/dispatch decision MUST be made against the COMPLETE current probe JSON; never field-extract a subset of keys (no jq-style cherry-pick) and route on it, because any signal outside the extracted subset (`diagnostics`, `git_guards`, `self_edit_mode`, `route_overridden_by`, `cycle_prompt_refused`, `device_deferred_features`, `terminal_reason`, …) is then invisible to the decision. Reference the prior `cycle_model` point-fix (`lazy-state.py:6654-6664`) as the precedent this generalizes.
 
 **Deliverables:**
-- [ ] New subsection in `user/skills/_components/lazy-dispatch-template.md` stating the full-read-before-route clause (read the COMPLETE probe JSON; never route from a field-extracted subset), with the enumerated at-risk keys and the `lazy-state.py` precedent reference.
-- [ ] Tests: `python ~/.claude/scripts/lint-skills.py` passes (no broken injections / embedded patterns introduced); `python ~/.claude/scripts/project-skills.py` re-projects cleanly with the new clause expanded into every consuming wrapper.
+- [x] New subsection in `user/skills/_components/lazy-dispatch-template.md` stating the full-read-before-route clause (read the COMPLETE probe JSON; never route from a field-extracted subset), with the enumerated at-risk keys and the `lazy-state.py` precedent reference.
+- [x] Tests: `python ~/.claude/scripts/lint-skills.py` passes (no broken injections / embedded patterns introduced); `python ~/.claude/scripts/project-skills.py` re-projects cleanly with the new clause expanded into every consuming wrapper.
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/project-skills.py` regenerates `~/.claude/skills-projected/` with the new clause text present in each projected `/lazy*` SKILL.md that injects this component; `lint-skills.py` exits 0.
 
@@ -82,3 +82,16 @@ The mirrored clause is identical in substance to Phase 1's canonical wording; ea
 
   ⚖ policy: prose-only vs mechanical guard → prose clause across all wrappers; guard deferred as follow-up
   ⚖ policy: state-once vs hand-mirror → both — canonical in shared component + mirrored into per-file atomicity prose
+
+#### Implementation Notes (Phase 1)
+**Completed:** 2026-06-19
+**Work completed:**
+- New subsection `## Full-probe-JSON read before routing (completeness, not just freshness)` added to `user/skills/_components/lazy-dispatch-template.md`. Clause states: routing decisions MUST be made against the COMPLETE probe JSON; never field-extract a subset and route on it. Enumerates at-risk keys. Cites `lazy-state.py:6654–6664` as the precedent this generalizes. Clarifies this is additive to the atomicity (provenance) and freshness (same-turn) rules.
+**Integration notes:**
+- `lazy-dispatch-template.md` is NOT `!cat`-injected into the per-file atomicity/freshness prose in SKILL.md — those passages are hand-written. Phase 2 must mirror the clause directly into each of the six wrapper SKILLs. The shared component serves as the canonical statement that orchestrators re-read at compaction boundaries and before dispatches.
+- Projection confirmed: `project-skills.py` regenerated 80 skills, 91 components, 0 errors.
+**Pitfalls & guidance:**
+- The component is referenced by name (not `!cat`-injected) in `lazy-batch`, `lazy-bug-batch`, `lazy-batch-cloud`, and `orchestrator-voice.md` for re-read discipline — the projection tool doesn't expand these name-only references as injections.
+**Files modified:**
+- `user/skills/_components/lazy-dispatch-template.md` — added `## Full-probe-JSON read before routing` subsection (canonical full-read clause)
+**Review verdict:** PASS — clause states the required contract correctly, includes at-risk key enumeration, cites precedent, and is additive to existing rules.

@@ -64,3 +64,28 @@ the protected surface is: (a) the dispatch ENVELOPE (`description` / `subagent_t
 re-run the probe WITH `--emit-prompt` and copy the fresh `cycle_prompt` / `cycle_model` verbatim. A
 prompt rebuilt from a pre-compaction memory is exactly the stale-mental-model failure this file exists to
 prevent.
+
+## Full-probe-JSON read before routing (completeness, not just freshness)
+
+**A routing/dispatch decision MUST be made against the COMPLETE current probe JSON. Never field-extract a
+subset of keys (no jq-style / pipe cherry-pick of e.g. `pending_hardening`, `terminal_reason`) and route
+on that subset** — any signal OUTSIDE the extracted subset is then invisible to the decision.
+
+At-risk keys that a partial read can silently drop: `terminal_reason`, `notify_message`, `diagnostics`,
+`device_deferred_features`, `git_guards`, `self_edit_mode`, `governing_files_touched`,
+`route_overridden_by`, `cycle_prompt_refused`, `repeat_count`, `hardening_emit_command`, `cycle_header`,
+`cycle_prompt`, `cycle_model`. If any of these carry a live signal and the orchestrator routed on a
+hand-picked subset that omitted the key, the signal is silently dropped and the route can be wrong.
+
+**This clause is ADDITIVE to the existing atomicity (provenance) and freshness (same-turn) rules:**
+- Atomicity (`lazy-batch/SKILL.md:591`) governs WHERE the prompt came from — only `cycle_prompt` from an
+  `--emit-prompt` probe in the SAME turn.
+- Freshness (`lazy-batch/SKILL.md:593`) governs WHEN — never dispatch an emission from an earlier turn.
+- This clause governs HOW COMPLETELY the probe output is consumed — the whole JSON, not a subset.
+
+**Precedent:** `user/scripts/lazy-state.py:6654–6664` records that a prior live mis-route arose when
+an orchestrator field-extracted `cycle_model` over live hardening debt (session e076ed30). The script
+now withholds `cycle_prompt`/`cycle_model` on pending hardening debt so "the extractor fails loudly on
+the missing key." That is a point-harden for ONE key. This clause is the **general contract** that
+prevents the same failure class for every other key — the prose contract the point-fix assumed but
+never stated.
