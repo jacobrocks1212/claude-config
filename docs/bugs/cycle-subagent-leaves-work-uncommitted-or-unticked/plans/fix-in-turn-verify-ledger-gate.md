@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-subagent-leaves-work-uncommitted-or-unticked
-status: In-progress
+status: Complete
 created: 2026-06-19
 complexity: complex
 phases: [1]
