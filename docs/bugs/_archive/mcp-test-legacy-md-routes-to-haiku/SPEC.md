@@ -8,7 +8,7 @@
 **Fixed:** 2026-06-19
 **Fix commit:** 411a49e
 **Placement:** docs/bugs/mcp-test-legacy-md-routes-to-haiku
-**Related:** `user/scripts/CLAUDE.md` → "mcp-test model-tier routing (harness-hardening-retro-fixes Phase 4)"; `repos/algobooth/.claude/skills/mcp-test/SKILL.md` (Model-tier section, lines 32–55); `user/scripts/surface_resolver.py::route_mcp_test_tier`; sibling bug `docs/bugs/probe-full-read-before-dispatch/`. Complementary AlgoBooth-side content fix (bulk-migrate legacy `.md`→YAML) is OUT OF SCOPE here — it lives in the AlgoBooth repo.
+**Related:** `user/scripts/CLAUDE.md` → "mcp-test model-tier routing (harness-hardening-retro-fixes Phase 4)"; `repos/algobooth/.claude/skills/mcp-test/SKILL.md` (Model-tier section, lines 32–55); `user/scripts/surface_resolver.py::route_mcp_test_tier`; sibling bug `docs/bugs/_archive/probe-full-read-before-dispatch/`. Complementary AlgoBooth-side content fix (bulk-migrate legacy `.md`→YAML) is OUT OF SCOPE here — it lives in the AlgoBooth repo.
 
 ---
 

@@ -117,4 +117,4 @@ The mirrored clause is identical in substance to Phase 1's canonical wording; ea
 - `user/skills/lazy-bug/SKILL.md` — completeness clause before "Parse the JSON. You now have:"
 **Review verdict:** PASS — all six wrappers have the clause in substance identical to the canonical statement; coupled-pair parity confirmed; lint and projection pass.
 
-**Status:** In-progress (implementation complete; MCP validation pending via `__mark_fixed__` gate)
+**Status:** Fixed

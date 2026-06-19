@@ -2,9 +2,11 @@
 
 > The orchestrators' `probe→emit→dispatch atomicity` rule mandates a *fresh* re-probe before every dispatch but never says to consume the **whole** probe JSON. An orchestrator can field-extract a subset of keys (e.g. `pending_hardening`, `terminal_reason`) and route on that, risking a missed routing signal — `diagnostics`, `git_guards`, `self_edit_mode`, `route_overridden_by`, `cycle_prompt_refused`, `device_deferred_features`, etc. Observed as a self-corrected near-miss in a live AlgoBooth run.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 2b593e7
 **Placement:** docs/bugs/probe-full-read-before-dispatch
 **Related:** `user/skills/lazy-batch/SKILL.md:591` (atomicity rule) + `:593` (freshness rule); coupled twins `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` and `user/skills/lazy-bug-batch/SKILL.md`; single-item `lazy`/`lazy-cloud`/`lazy-bug`; `user/scripts/lazy-state.py:6654-6664` (existing field-extraction hazard comment for `cycle_model`); sibling bug `docs/bugs/_archive/mcp-test-legacy-md-routes-to-haiku/`.
 

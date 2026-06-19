@@ -66,4 +66,4 @@ Test-first: write the failing sonnet-escalation fixture, confirm it fails agains
 
 ## Cross-feature Integration Notes
 
-No hard deps on Complete upstreams. Related prior art (cross-linked in the SPEC `**Related:**`): `harness-hardening-retro-fixes Phase 4` (introduced `route_mcp_test_tier`), sibling bug `docs/bugs/probe-full-read-before-dispatch/`. The complementary AlgoBooth-side content remedy (bulk-migrate legacy `.md`→YAML) is explicitly OUT OF SCOPE here — it lives in the AlgoBooth repo.
+No hard deps on Complete upstreams. Related prior art (cross-linked in the SPEC `**Related:**`): `harness-hardening-retro-fixes Phase 4` (introduced `route_mcp_test_tier`), sibling bug `docs/bugs/_archive/probe-full-read-before-dispatch/`. The complementary AlgoBooth-side content remedy (bulk-migrate legacy `.md`→YAML) is explicitly OUT OF SCOPE here — it lives in the AlgoBooth repo.
