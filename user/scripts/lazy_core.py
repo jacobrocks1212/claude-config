@@ -7225,6 +7225,19 @@ def consumed_emission_count() -> int:
     concern (it would only *lower* the count, never spuriously raise it, so it
     can at worst fail-open into an increment — never a spurious hold).
 
+    NON-MONOTONIC CAVEAT (Phase 2, byref-dispatch-undercounts-forward-cycles): this
+    census is a LIVE count over the ring-capped registry, so once cumulative
+    emissions cross ``_REGISTRY_RING_CAP`` (64) the oldest CONSUMED entries are
+    evicted and this count steps DOWN.  The run-lifetime ``last_advance_consume_count``
+    watermark in ``advance_run_counters`` (NOT the F2 double-probe debounce above —
+    that compares only adjacent probes) is now CLAMPED against this one-time downward
+    step: a watermark stranded above the live census re-arms (advances once) instead
+    of no-oping forever, so ring-cap eviction can no longer permanently strand the
+    forward/meta gate.  The forward-cycle COUNT itself no longer depends on this
+    oracle at all (Phase 1 routed it through the consume-independent
+    ``advance_forward_cycle`` state-change trigger); this caveat governs only the
+    residual watermark consumers.
+
     Returns:
         The count of entries whose ``consumed`` flag is truthy (0 when empty).
     """
@@ -7714,14 +7727,29 @@ def advance_run_counters(state: dict) -> dict | None:
 
     # Consume-oracle gate: only advance when a real dispatch landed since the last
     # advance. consumed_emission_count() is monotone-within-a-run (one consume per
-    # guard ALLOW). A legacy marker without the watermark key uses -1 so the first
-    # dispatch of the run always advances.
+    # guard ALLOW) UNTIL the ring cap evicts consumed entries, at which point the
+    # LIVE census steps DOWN (non-monotonic oracle — Contributor B). A legacy marker
+    # without the watermark key uses 0 so the first dispatch of the run always
+    # advances.
     current_consume = consumed_emission_count()
     prior_consume = marker.get("last_advance_consume_count", 0)
     try:
         prior_consume = int(prior_consume)
     except (TypeError, ValueError):
         prior_consume = 0
+    # CLAMP (Phase 2 — byref-dispatch-undercounts-forward-cycles): a non-monotonic
+    # oracle can leave prior_consume STRANDED above the live census after ring-cap
+    # eviction (or after advance_meta_cycle's +1 over-absorb), permanently freezing
+    # the gate (current_consume <= prior_consume forever, even as real dispatches
+    # land). When the census has dropped strictly BELOW the persisted watermark, the
+    # watermark is stale — re-arm by clamping it down to the live census so this
+    # observation (a genuine consume that crossed the eviction boundary) re-advances
+    # exactly once, then the gate resumes normal strict-greater comparison. This does
+    # NOT re-introduce the ISSUE-5 inflation: a bare re-probe with NO census change
+    # leaves current_consume == prior_consume → still a no-op (the equality branch
+    # below). Only a census that moved (rose, or dropped from eviction) can advance.
+    if current_consume < prior_consume:
+        prior_consume = current_consume - 1
     if current_consume <= prior_consume:
         # No dispatch consumed since the last advance — this is a bare probe/inject
         # firing (or a re-read). Do NOT advance, do NOT write. Idempotent across
@@ -7759,6 +7787,16 @@ def advance_meta_cycle() -> dict | None:
     cycle. (If the meta dispatch is ultimately refused/never consumed, the worst
     case is one delayed forward advance — far cheaper than the inflation bug.)
     Marker-gated: no-op (returns None) when no marker is active.
+
+    Phase 2 hardening (byref-dispatch-undercounts-forward-cycles, Contributor A):
+    the ``+1`` is intentionally retained — it is load-bearing for the
+    no-double-count invariant (``test_advance_meta_cycle_increments_meta`` pins it).
+    Its only PERMANENT-strand risk was when meta dispatches outpaced forward
+    consumes AND a later ring-cap eviction dropped the live census below this
+    inflated watermark. That tail is now subsumed by ``advance_run_counters``'s
+    census-drop CLAMP (a watermark stranded above the live census re-arms on the
+    next census step), so the ``+1`` can no longer freeze the gate permanently — at
+    most it delays a single forward advance by one cycle, as documented above.
 
     Returns:
         The updated marker dict; None when no marker.

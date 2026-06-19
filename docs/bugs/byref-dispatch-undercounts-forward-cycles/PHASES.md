@@ -93,10 +93,10 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 **Scope:** Even though Phase 1 removes the consume census from forward-advance duty, the watermark machinery (`advance_meta_cycle`'s `+1`, `advance_run_counters`'s `last_advance_consume_count` gate) still reads a non-monotonic oracle and could strand other consumers. Make the watermark robust so a one-time downward step (ring-cap eviction) or the meta `+1` over-absorb can never PERMANENTLY strand the gate. This is SPEC Fix Scope item 2.
 
 **Deliverables:**
-- [ ] In `lazy_core.py`, clamp `last_advance_consume_count` so it never exceeds the live `consumed_emission_count()` it was last observed against — i.e. when `advance_run_counters` (or `advance_meta_cycle`) writes the watermark, store `min(intended_watermark, current_live_census)` OR, equivalently, make the gate compare defensively so a census that has dropped below the persisted watermark re-arms rather than strands. Pick the clamp form that keeps the ISSUE-5 inflation fix intact (the gate must still no-op a bare re-probe). Document the chosen invariant in the function docstring.
-- [ ] Re-evaluate `advance_meta_cycle`'s unconditional `+1` (L7771): keep the absorb of the meta dispatch's own forthcoming consume, but ensure it cannot ratchet the watermark permanently past the live count when meta dispatches outpace forward consumes (Contributor A). The clamp above should subsume this; if not, bound the `+1` to the live census.
-- [ ] Update the `consumed_emission_count` docstring (L7210) — its current note reasons only about the F2 double-probe debounce, NOT the run-lifetime `last_advance_consume_count` watermark. Add the caveat that a one-time downward census step is now clamped, so the watermark cannot strand.
-- [ ] Tests: a fixture where the census is forced DOWN below the persisted watermark (simulating ring-cap eviction of consumed entries) and asserts the watermark does not permanently strand any consumer that still reads it.
+- [x] In `lazy_core.py`, clamp `last_advance_consume_count` so it never exceeds the live `consumed_emission_count()` it was last observed against — i.e. when `advance_run_counters` (or `advance_meta_cycle`) writes the watermark, store `min(intended_watermark, current_live_census)` OR, equivalently, make the gate compare defensively so a census that has dropped below the persisted watermark re-arms rather than strands. Pick the clamp form that keeps the ISSUE-5 inflation fix intact (the gate must still no-op a bare re-probe). Document the chosen invariant in the function docstring. **DONE — re-arm-on-drop clamp (see Implementation Notes for the chosen form).**
+- [x] Re-evaluate `advance_meta_cycle`'s unconditional `+1` (L7771): keep the absorb of the meta dispatch's own forthcoming consume, but ensure it cannot ratchet the watermark permanently past the live count when meta dispatches outpace forward consumes (Contributor A). The clamp above should subsume this; if not, bound the `+1` to the live census. **DONE — `+1` retained (load-bearing for no-double-count); the census-drop clamp subsumes its permanent-strand tail; docstring updated.**
+- [x] Update the `consumed_emission_count` docstring (L7210) — its current note reasons only about the F2 double-probe debounce, NOT the run-lifetime `last_advance_consume_count` watermark. Add the caveat that a one-time downward census step is now clamped, so the watermark cannot strand. **DONE.**
+- [x] Tests: a fixture where the census is forced DOWN below the persisted watermark (simulating ring-cap eviction of consumed entries) and asserts the watermark does not permanently strand any consumer that still reads it. **DONE — `test_advance_run_counters_census_regression_does_not_strand` (RED pre-clamp, GREEN post; ISSUE-5 inflation invariant re-asserted in the same fixture).**
 
 **Minimum Verifiable Behavior:** A `test_lazy_core.py` fixture drives `consumed_emission_count()` below a previously-persisted `last_advance_consume_count` (by evicting consumed entries past the ring cap) and asserts the watermark/gate no longer strands — `--test` passes for both state machines.
 
@@ -116,6 +116,24 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 
 **Integration Notes for Next Phase:**
 - Phase 3's long-run fixture combines BOTH contributors (ring-cap crossing + interleaved meta). Phase 2's clamp is the safety net it asserts as secondary; the primary assertion (forward keeps advancing) is satisfied by Phase 1 alone. Author the Phase 3 fixture to assert BOTH: forward advances (Phase 1) AND the watermark never strands (Phase 2).
+
+#### Implementation Notes (Part 2 / Phase 2 — 2026-06-19)
+
+**Status:** Implementation complete (validation tail pending — top-level Status stays In-progress).
+
+**Clamp form chosen: re-arm-on-drop (defensive gate), NOT min()-on-write.** In `advance_run_counters` (`lazy_core.py`), BEFORE the existing `current_consume <= prior_consume` no-op gate, a new guard fires: when `current_consume < prior_consume` (the live census has stepped strictly BELOW the persisted watermark — ring-cap eviction of consumed entries, Contributor B), the persisted watermark is stale, so `prior_consume` is clamped to `current_consume - 1`. That makes the very observation that crossed the eviction boundary re-advance EXACTLY ONCE (`current_consume > prior_consume` now holds), after which the gate resumes its normal strict-greater comparison. The re-arm-on-drop form was chosen over rewriting every watermark write to `min(intended, live_census)` because it is the minimal, single-site change and it provably preserves the ISSUE-5 inflation no-op: a bare re-probe with NO census change leaves `current_consume == prior_consume` (the equality branch, untouched) → no advance. Only a census that actually MOVED (rose normally, or dropped from eviction) can advance.
+
+**`advance_meta_cycle` `+1`:** retained verbatim (load-bearing for the no-double-count invariant that `test_advance_meta_cycle_increments_meta` pins). Its only permanent-strand tail — meta dispatches outpacing forward consumes, then a later eviction dropping the census below the inflated watermark — is now subsumed by the `advance_run_counters` census-drop clamp. Docstring updated to record this.
+
+**`consumed_emission_count` docstring:** extended with the NON-MONOTONIC CAVEAT — the live census steps down on ring-cap eviction, the run-lifetime watermark is now clamped against that one-time downward step, and the forward COUNT no longer depends on this oracle at all (Phase 1 routed it through `advance_forward_cycle`).
+
+**Files modified:**
+- `user/scripts/lazy_core.py` — `advance_run_counters` re-arm-on-drop clamp + comment (WU-1); `advance_meta_cycle` docstring note (WU-1); `consumed_emission_count` docstring caveat (WU-1).
+- `user/scripts/test_lazy_core.py` — `test_advance_run_counters_census_regression_does_not_strand` fixture + `_TESTS` registration (WU-2).
+
+**Gate results (all green):** `lazy-state.py --test` (exit 0), `bug-state.py --test` (exit 0), `lazy_coord.py --test` (exit 0), `lazy_parity_audit.py --repo-root .` (exit 0), `pytest test_lazy_core.py` (572 passed). Byte-pinned `--test` baselines NOT touched (WU-2 added a pytest fixture, not an in-file `--test` fixture).
+
+**Review verdict:** PASS — inline review (single-site clamp + one fixture; the RED→GREEN of the new test pins the strand-fix, the in-fixture inflation re-assertion + the unchanged `test_advance_run_counters_consume_gated` pin that the clamp did not regress ISSUE-5).
 
 ---
 

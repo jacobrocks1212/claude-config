@@ -12436,6 +12436,101 @@ def test_advance_meta_cycle_increments_meta():
             _clear_state_dir()
 
 
+def test_advance_run_counters_census_regression_does_not_strand():
+    """Phase 2 (byref-dispatch-undercounts-forward-cycles): a ONE-TIME downward
+    census step (ring-cap eviction of consumed entries) must NOT permanently
+    strand advance_run_counters' watermark gate.
+
+    Mechanism of the strand (Contributor B): consumed_emission_count() is a LIVE
+    census over the ring-capped registry. When cumulative emissions cross
+    _REGISTRY_RING_CAP (64), the oldest CONSUMED entries are evicted, so the live
+    consumed-count DROPS below a previously-persisted last_advance_consume_count.
+    Pre-clamp, the gate (current_consume <= prior_consume → no-op) then no-ops
+    FOREVER for any future consume rise that does not first climb back PAST the
+    now-too-high watermark — a permanent freeze.
+
+    Post-clamp: a census that has dropped BELOW the persisted watermark re-arms
+    (the stale watermark is treated as invalid), so a subsequent legitimate
+    consume rise still advances. The ISSUE-5 bare-re-probe no-op (no consume
+    between two probes ⇒ no advance) must stay intact.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            now = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=100, now=now,
+            )
+            state = {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
+
+            # Drive the registry well past the ring cap with CONSUMED entries so the
+            # live census plateaus at the cap and then any further consumed-entry
+            # eviction drops it. After 80 consumed registrations the registry holds
+            # 64 entries, all consumed → census == 64 (the plateau).
+            for i in range(80):
+                entry = lazy_core.register_emission(
+                    f"dispatch prompt {i}", "cycle", now=now + i
+                )
+                lazy_core.consume_nonce(entry["nonce"])
+            census_plateau = lazy_core.consumed_emission_count()
+            assert census_plateau == lazy_core._REGISTRY_RING_CAP, (
+                f"after 80 consumed registrations the census plateaus at the ring "
+                f"cap ({lazy_core._REGISTRY_RING_CAP}), got {census_plateau!r}"
+            )
+
+            # Advance once — this persists last_advance_consume_count == 64.
+            m1 = lazy_core.advance_run_counters(state)
+            assert m1 is not None and m1["forward_cycles"] == 1, (
+                f"first advance over the plateau must set forward_cycles=1, got {m1!r}"
+            )
+            assert m1["last_advance_consume_count"] == census_plateau, (
+                f"watermark must persist at the plateau census, got "
+                f"{m1.get('last_advance_consume_count')!r}"
+            )
+
+            # Now force the census DOWN below the persisted watermark by evicting
+            # consumed entries: register UNCONSUMED entries past the cap so the
+            # oldest (consumed) entries are evicted, dropping the consumed-count.
+            for i in range(40):
+                lazy_core.register_emission(
+                    f"unconsumed filler {i}", "cycle", now=now + 1000 + i
+                )
+            census_dropped = lazy_core.consumed_emission_count()
+            assert census_dropped < m1["last_advance_consume_count"], (
+                f"eviction of consumed entries must drop the census BELOW the "
+                f"persisted watermark ({m1['last_advance_consume_count']}), got "
+                f"{census_dropped!r}"
+            )
+
+            # THE STRAND TEST: a fresh legitimate dispatch consume happens. Pre-clamp
+            # this consume (which only nudges the census up by ~1, still far below the
+            # stranded watermark of 64) would NOT advance — a permanent freeze.
+            # Post-clamp the watermark re-arms on the census drop, so this advances.
+            entry = lazy_core.register_emission("post-eviction dispatch", "cycle")
+            lazy_core.consume_nonce(entry["nonce"])
+            m2 = lazy_core.advance_run_counters(state)
+            assert m2["forward_cycles"] == 2, (
+                f"a census drop below the watermark must NOT permanently strand the "
+                f"gate — a subsequent legitimate consume must still advance "
+                f"forward_cycles (expected 2), got {m2['forward_cycles']!r}. "
+                f"This is the permanent-strand bug the Phase-2 clamp fixes."
+            )
+
+            # ISSUE-5 inflation invariant intact: a bare re-probe with NO new consume
+            # between two probes must NOT advance.
+            for _ in range(3):
+                mN = lazy_core.advance_run_counters(state)
+                assert mN["forward_cycles"] == 2, (
+                    f"bare re-probe with no new consume must NOT advance (ISSUE-5 "
+                    f"inflation invariant), got {mN['forward_cycles']!r}"
+                )
+        finally:
+            _clear_state_dir()
+
+
 # ---------------------------------------------------------------------------
 # Test 11: subprocess MVB — lazy-state.py --repeat-count --probe --emit-prompt
 #          with marker present writes a registry entry with matching sha256
@@ -18373,6 +18468,8 @@ _TESTS = _TESTS + [
      test_advance_meta_cycle_increments_meta),
     ("test_advance_run_counters_consume_gated",
      test_advance_run_counters_consume_gated),
+    ("test_advance_run_counters_census_regression_does_not_strand",
+     test_advance_run_counters_census_regression_does_not_strand),
     ("test_append_friction_ledger_entry_round_trips",
      test_append_friction_ledger_entry_round_trips),
     ("test_append_friction_ledger_entry_shares_ledger_with_denies",
