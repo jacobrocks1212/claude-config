@@ -2,7 +2,7 @@
 
 > In real `/lazy-batch` runs, the `step_repeat_count` / HEAD-aware loop tripwire fired on benign churn — repeated probes for the same cycle, runtime reboot turns with no commits, and needs-input resolutions that don't reset the streak. Two of the three classes are already closed by the F1/F2 double-probe debounce (landed AFTER these observations); the residual gap is the intervening-resolution class, which the debounce structurally cannot catch.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
 **Placement:** docs/bugs/loop-detected-false-positives-from-probe-and-reboot-churn

@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all three phases implemented (2026-06-19); validation tail pending. The `__mark_fixed__` gate owns the terminal `Fixed` flip + FIXED.md receipt after validation.
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a pure harness state-machine fix in `user/scripts/lazy_core.py` and `user/skills/lazy-batch/SKILL.md`. There is no app surface, no Tauri/MCP-reachable behavior; validation is the in-file `--test` smoke harnesses (`lazy-state.py --test`, `bug-state.py --test`) plus `test_lazy_core.py`. Per `docs/features/mcp-testing/SPEC.md` this is the structurally-outside-MCP-reach class (harness tooling / no app integration).
 
