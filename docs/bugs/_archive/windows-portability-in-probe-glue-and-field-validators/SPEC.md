@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** d20154e
 **Placement:** docs/bugs/windows-portability-in-probe-glue-and-field-validators
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/skills/lazy-batch/SKILL.md` probe glue (line ~400); AlgoBooth `scripts/check-docs-consistency.ts` / `qg:docs-consistency`; `user/scripts/fix-line-endings.ps1`; `user/scripts/lazy_core.py::parse_sentinel`; `user/skills/_components/lazy-preflight.md`; `repos/algobooth/.claude/skill-config/docs-consistency-rules-pending.md`

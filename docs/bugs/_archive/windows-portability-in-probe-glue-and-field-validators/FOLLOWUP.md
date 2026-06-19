@@ -1,6 +1,6 @@
 # Out-of-repo follow-up — AlgoBooth `check-docs-consistency.ts` CRLF tolerance (Symptom B primary)
 
-> **Origin:** this bug — `docs/bugs/windows-portability-in-probe-glue-and-field-validators/`
+> **Origin:** this bug — `docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/`
 > (SPEC.md Symptom B; PHASES.md Phase 3). The fix below CANNOT land in claude-config —
 > it lives in the **AlgoBooth** repo. This record is the doc-only disposition (b) of the
 > Phase-3 spin-off contract; the reverse-reference back to this record lives in this bug's

@@ -99,7 +99,7 @@ The executor implements disposition (b): a clearly-scoped, copy-pasteable follow
 **Prerequisites:** None (independent; documents work that cannot land here).
 
 **Files likely modified:**
-- `docs/bugs/windows-portability-in-probe-glue-and-field-validators/PHASES.md` — Implementation Notes (the follow-up record + reverse-reference), or a sibling `FOLLOWUP.md` under the same bug dir.
+- `docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/PHASES.md` — Implementation Notes (the follow-up record + reverse-reference), or a sibling `FOLLOWUP.md` under the same bug dir.
 
 **Testing Strategy:** Grep the bug directory for the AlgoBooth file name and the fix description. Confirm the reverse-reference names the spun-off/documented follow-up.
 
