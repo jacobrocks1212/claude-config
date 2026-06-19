@@ -71,7 +71,7 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 
 #### Implementation Notes (Part 1 / Phase 1 — 2026-06-19)
 
-**Status:** Implementation complete (validation tail pending — top-level Status stays In-progress; `__mark_fixed__` is orchestrator-owned).
+**Status:** Fixed
 
 **Reconciliation form chosen: form 1 (replace, not keep-both-guarded).** At the `--repeat-count` real-skill probe site in BOTH `lazy-state.py` (was L6648) and `bug-state.py` (was L4537), the consume-gated `lazy_core.advance_run_counters(state)` call was **replaced** with `lazy_core.advance_forward_cycle(state)`. `advance_forward_cycle` is now the sole, authoritative forward-advance trigger on the by-reference probe path; it keys on the consume-INDEPENDENT `[feature_id, current_step, sub_skill]` state change, so a by-ref dispatch that does not bump the consume census (the frozen-census / Theory-1b case) still advances `forward_cycles`. `advance_run_counters` no longer runs on this path at all, so there is no double-count and no residual dependence on the non-monotonic `consumed_emission_count()` oracle. Meta accounting via `--emit-dispatch` / `advance_meta_cycle` is untouched. Form 1 was preferred over the plan's PHASES-level KEEP-both prose because nothing on this probe path required a meta-accounting side effect uniquely provided by `advance_run_counters`; the inline code comment at each site records this. (Note: this supersedes the PHASES "⚖ KEEP-both" line — the plan's WU-1 explicitly authorized form 1 as the default when no unique side effect is lost; both forms yield identical product behavior, so this is scope-class.)
 
@@ -119,7 +119,7 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 
 #### Implementation Notes (Part 2 / Phase 2 — 2026-06-19)
 
-**Status:** Implementation complete (validation tail pending — top-level Status stays In-progress).
+**Status:** Complete
 
 **Clamp form chosen: re-arm-on-drop (defensive gate), NOT min()-on-write.** In `advance_run_counters` (`lazy_core.py`), BEFORE the existing `current_consume <= prior_consume` no-op gate, a new guard fires: when `current_consume < prior_consume` (the live census has stepped strictly BELOW the persisted watermark — ring-cap eviction of consumed entries, Contributor B), the persisted watermark is stale, so `prior_consume` is clamped to `current_consume - 1`. That makes the very observation that crossed the eviction boundary re-advance EXACTLY ONCE (`current_consume > prior_consume` now holds), after which the gate resumes its normal strict-greater comparison. The re-arm-on-drop form was chosen over rewriting every watermark write to `min(intended, live_census)` because it is the minimal, single-site change and it provably preserves the ISSUE-5 inflation no-op: a bare re-probe with NO census change leaves `current_consume == prior_consume` (the equality branch, untouched) → no advance. Only a census that actually MOVED (rose normally, or dropped from eviction) can advance.
 
@@ -172,7 +172,7 @@ The SPEC's Open Question — RETIRE `advance_run_counters` from forward-advance 
 
 #### Implementation Notes (Part 2 / Phase 3 — 2026-06-19)
 
-**Status:** Implementation complete (validation tail pending — SPEC stays `Concluded` for the orchestrator's `__mark_fixed__`).
+**Status:** Complete
 
 **WU-3 — long-run ring-cap-crossing fixture** (`test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave`, `test_lazy_core.py`): writes a run marker; runs 40 real cycles, each interleaving one meta dispatch (`register_emission` + `consume_nonce` + `advance_meta_cycle`) and one real-skill dispatch (`register_emission` + `consume_nonce`), then advancing the real cycle via the Phase-1 authority `advance_forward_cycle` on a DISTINCT `[feature_id, current_step, sub_skill]` tuple. 80 cumulative emissions cross the 64-entry ring cap (sanity-asserted: live registry == 64). Asserts (1) `forward_cycles == 40` — once per real-skill state change, NOT frozen at a plateau (the "stuck at 16 / frozen at 50" signature); (2a) `meta_cycles == 40`; (2b) the residual consume-gated watermark gate re-arms — a `live_census < persisted_watermark` design-check confirms the exact strand condition is reproduced (the meta `+1` ratchet + ring-cap eviction together), then a fresh consume + `advance_run_counters` still advances (pre-Phase-2 this wedged forever). Production wiring note baked into the fixture: the real-skill path calls `advance_forward_cycle` ALONE (Part-1 form-1 replacement) — no double-count.
 

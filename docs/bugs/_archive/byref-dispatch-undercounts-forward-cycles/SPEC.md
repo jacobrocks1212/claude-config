@@ -2,9 +2,11 @@
 
 > In real `/lazy-batch` runs, the only forward-advance trigger that fires for real-skill (by-reference) dispatch cycles — `advance_run_counters` — reads a NON-MONOTONIC dispatch oracle (`consumed_emission_count()`). Two mechanisms (the `advance_meta_cycle` watermark `+1`-absorb, and ring-cap eviction of consumed registry entries) freeze or regress that oracle below the persisted watermark, so `forward_cycles` stalls while real cycles keep running and the deterministic max-cycles cap never fires.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 674e0df
 **Placement:** docs/bugs/byref-dispatch-undercounts-forward-cycles
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/lazy_core.py` (`advance_run_counters` ~L7664, `advance_meta_cycle` ~L7746, `advance_forward_cycle` ~L7793, `consumed_emission_count` ~L7210, `_REGISTRY_RING_CAP=64` ~L5209, ring-cap eviction ~L7309); `user/scripts/lazy-state.py` (`--repeat-count` probe advance site ~L6647, `--apply-pseudo` state-change advance site ~L6546, `--emit-dispatch` meta advance site ~L6485); `user/skills/lazy-batch/SKILL.md` HARD CONSTRAINT 8 (~L87-89) + Step 1c cap (~L441) + Step 1d F2a by-reference dispatch (~L643); `user/scripts/CLAUDE.md` "Cycle-counter advance: two orthogonal triggers". Prior fixes that motivated the current (buggy) shape: ISSUE-5 forward-inflation fix (consume-gating, 2026-06-14) and Fix-A state-change advance (`lazy-batch-unified-driver-parity-and-accounting` Phase 1, 2026-06-17).
