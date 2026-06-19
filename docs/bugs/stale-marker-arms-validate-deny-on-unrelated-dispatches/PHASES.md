@@ -58,8 +58,8 @@ No upstream `**Depends on:**` block (harness-internal bug, not a queue feature).
 **Minimum Verifiable Behavior:** Run `python user/scripts/test_hooks.py` — the new over-fire fixtures pass: with a marker bound to `session_A`, an unregistered-prompt dispatch carrying `session_B` exits 0 with NO output (gate fast-path allow) and writes NO `lazy-deny-ledger.jsonl` entry; the same dispatch carrying `session_A` produces the deny JSON (guard ran) exactly as the pre-fix baseline.
 
 **Runtime Verification** *(checked by the hermetic test harness — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python user/scripts/test_hooks.py` passes, including the new owning-vs-non-owning gate fixtures (non-owner: no deny, no ledger row; owner: guard runs identically to baseline).
-- [ ] <!-- verification-only --> `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` stay green (the `--marker-present` handler is unchanged; confirm no regression in the byte-pinned baselines).
+- [x] <!-- verification-only --> `python user/scripts/test_hooks.py` passes, including the new owning-vs-non-owning gate fixtures (non-owner: no deny, no ledger row; owner: guard runs identically to baseline).
+- [x] <!-- verification-only --> `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` stay green (the `--marker-present` handler is unchanged; confirm no regression in the byte-pinned baselines).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior in this phase (harness hook + state-script wiring; validated via the hermetic bash-hook + `--test` harnesses, not MCP).
 
@@ -100,9 +100,9 @@ Hermetic end-to-end through the REAL bash hook with a temp `LAZY_STATE_DIR`. Bin
 **Minimum Verifiable Behavior:** Run `python user/scripts/test_hooks.py` — with an UNBOUND marker (`session_id: None`) and an unregistered prompt, the guard returns deny JSON but `lazy-deny-ledger.jsonl` gains NO row and `lazy_core.pending_hardening()` stays 0; with a BOUND marker (owner session) and the same unregistered prompt, the deny DOES append a ledger row and `pending_hardening()` becomes 1.
 
 **Runtime Verification** *(checked by the hermetic test harness — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python user/scripts/test_hooks.py` passes, including the unbound-marker no-debt deny fixture and the bound-marker debt-accrual contrast fixture.
-- [ ] <!-- verification-only --> `python user/scripts/test_lazy_core.py` stays green (no regression in `append_deny_ledger_entry` / `pending_hardening` / path-B characterization).
-- [ ] <!-- verification-only --> `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` stay green (shared `lazy_core` unaffected behaviorally).
+- [x] <!-- verification-only --> `python user/scripts/test_hooks.py` passes, including the unbound-marker no-debt deny fixture and the bound-marker debt-accrual contrast fixture.
+- [x] <!-- verification-only --> `python user/scripts/test_lazy_core.py` stays green (no regression in `append_deny_ledger_entry` / `pending_hardening` / path-B characterization).
+- [x] <!-- verification-only --> `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` stay green (shared `lazy_core` unaffected behaviorally).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior (guard deny-ledger semantics; validated via the hermetic harnesses, not MCP).
 
