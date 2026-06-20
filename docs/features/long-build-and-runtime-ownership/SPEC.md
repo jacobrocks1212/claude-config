@@ -22,84 +22,114 @@ A long-running build (`tauri build`) or the dev/MCP runtime (`tauri dev` + the M
 
 The harness already has the *two halves* of the answer in partial form: the long-build half is a **prose rule** (`repos/algobooth/.claude/skill-config/long-build-ownership.md` — "orchestrator owns long builds, run them `run_in_background` from the main session, never from inside a cycle subagent"), and the runtime half is a **deterministic subcommand** (`lazy-state.py --ensure-runtime` → `lazy_core.ensure_runtime`, the probe → stale-check → `dev:restart` bg → curl-until-200 → assert-MCP-tool dance collapsed into one call). The friction is that (a) the prose rule is **advisory** — a subagent can and does violate it, with no enforcement; (b) `--ensure-runtime`'s background process is **only survival-correct when invoked from the orchestrator session** — invoked from inside a subagent's subprocess it is reaped exactly like any other; and (c) there is **no harness-tracked liveness/recovery primitive** that lets the orchestrator stop hand-rolling poll loops and lets `/mcp-test` cheaply assert "the runtime I need is up, current, and mine."
 
-This feature mechanizes process ownership so a build/runtime started during a feature cycle is provably owned by a session that outlives the cycle subagent's turn — turning the advisory prose rule into an enforced, deterministic harness primitive, covering both the long-build path and the persistent-runtime path, and giving the orchestrator a single liveness/recovery call instead of hand-rolled loops.
+This feature mechanizes process ownership so a build/runtime started during a feature cycle is provably owned by a session that outlives the cycle subagent's turn. Deep research (`RESEARCH.md`, 2026-06-20) locked the mechanism: a **controller-spawned detached process tracked by a verifiable on-disk sentinel** — a JSON sidecar fingerprinting the process's temporal identity `(pid, kernel start_time, controller_session_id)` so ownership is *verifiable*, not merely "something answers `/health`." A single unified cross-platform spawn primitive (Windows Job-Object breakaway / POSIX `systemd-run --user`) serves both shapes, bifurcated into two supervisory API contracts (persistent service vs. transient build). The advisory prose rule becomes an enforced `PreToolUse` ownership-boundary guard, and the hand-rolled poll loops collapse into one deterministic liveness/recovery state machine.
 
 ## User Experience
 
-The "user" of this harness-internals feature is the orchestrator (and, by extension, Jacob reading a `/lazy-batch` run's behavior). There is no end-user-facing AlgoBooth product surface. The observable behaviors:
+The "user" of this harness-internals feature is the orchestrator (and, by extension, Jacob reading a `/lazy-batch` run's behavior). There is **no end-user-facing AlgoBooth product surface** — every decision below is a harness-internal mechanism choice. The observable behaviors:
 
-- **A cycle subagent never owns a turn-crossing process.** When a cycle needs a long build or the dev/MCP runtime, the *orchestrator* owns the process (started in the main session), and the subagent interacts with it through a harness-tracked handle — never by backgrounding it inside its own turn. An attempt by a subagent to background a turn-crossing build/runtime is prevented or redirected, not silently reaped.
-- **`/mcp-test` cheaply asserts a live, current, owned runtime.** The mcp-test cycle calls one primitive that returns a structured verdict (`ready | booted | stale-rebuilt`, `mcp_tools_present`, `health_code`) and never meets a reaped runtime. If the runtime cannot be brought up MCP-ready, the orchestrator surfaces a `BLOCKED.md` (`blocker_kind: mcp-runtime-unready`) rather than dispatching a subagent against a dead runtime.
+- **A cycle subagent never owns a turn-crossing process.** When a cycle needs a long build or the dev/MCP runtime, the *orchestrator* owns the process (started detached in the main session), and the subagent interacts with it through a harness-tracked handle — never by backgrounding it inside its own turn. An attempt by a subagent to background a turn-crossing build/runtime is prevented or redirected (the `PreToolUse` guard, fail-open `exit 2`), not silently reaped.
+- **`/mcp-test` cheaply asserts a live, current, owned runtime.** The mcp-test cycle calls one primitive returning a structured verdict (`{state, ownership_verified, health_code, mcp_tools_present, terminal_blocker}`) and never meets a reaped runtime. If the runtime cannot be brought up MCP-ready, the orchestrator surfaces a `BLOCKED.md` (`blocker_kind: mcp-runtime-unready`) rather than dispatching a subagent against a dead runtime.
 - **The orchestrator stops hand-rolling poll loops.** The rebuild → health-poll → inspect-telemetry shape is a single deterministic subcommand the orchestrator calls; it does not hand-compose the loop per cycle.
-- **A torn-mid-build cycle does not orphan production edits.** When a cycle is torn down while a build it depends on is in flight, the harness either prevents the build from being subagent-owned in the first place (so it survives), or detects the orphan and recovers/surfaces it (no silent uncommitted production delta). The exact recovery contract is an Open Question for research.
+- **A torn-mid-build cycle does not orphan production edits.** A `PreToolUse` guard prevents the build from being subagent-owned in the first place (so it survives), and Atomic Artifact Promotion plus a `--cycle-begin` git-consistency check guarantee no silent uncommitted production delta if the controller itself is torn mid-build.
 
 ## Technical Design
 
-> This is the baseline design surface. The load-bearing *mechanism* choices below are flagged as Open Questions — they are research-answerable (industry conventions for daemonizing/supervising build processes across ephemeral-agent boundaries, prior art in CI/agent harnesses) and are deliberately NOT pre-baked here; Phase 2 harvests them into the Gemini research prompt.
+> The load-bearing mechanism choices below were Open Questions in the baseline draft and are now **research-locked** (`RESEARCH.md` → "Actionable Mapping"). They are recorded in `## Locked Decisions` and integrated here. `/spec-phases` finalizes phase ordering.
 
 ### Current state (what exists today)
 
 - **Long-build prose rule** — `repos/algobooth/.claude/skill-config/long-build-ownership.md`: orchestrator owns long builds, runs them `Bash run_in_background: true` from the main session, `cargo check --release` before a packaged `tauri build`. Advisory; no enforcement.
 - **`--ensure-runtime` subcommand** — `lazy_core.ensure_runtime(repo_root, *, config, probe, restart, stale_check)` (`user/scripts/lazy_core.py` ~L6166), surfaced as `lazy-state.py --ensure-runtime`. Probe `/health` → `stale_check` (native source newer than boot stamp) → `restart()` (background `dev:restart`, bounded curl-until-200) → assert MCP tool present. Returns `{status, mcp_tools_present, health_code}`. AlgoBooth specifics parameterized in `_ENSURE_RUNTIME_DEFAULT_CONFIG`; injectable callables keep `--test` hermetic. Called from `/lazy-batch` Step 1d.0 (orchestrator session).
-- **Cycle-subagent containment** — `lazy-cycle-containment.sh` + `lazy-state.py --cycle-begin/--cycle-end` already deny a subagent a defined set of orchestrator-only ops (recursive dispatch, `dev:kill`/`dev:restart`, etc.). This is the existing enforcement seam the long-build/runtime ownership rule can extend.
+- **Cycle-subagent containment** — `lazy-cycle-containment.sh` + `lazy-state.py --cycle-begin/--cycle-end` already deny a subagent a defined set of orchestrator-only ops (recursive dispatch, `dev:kill`/`dev:restart`, etc.). This is the existing enforcement seam the long-build/runtime ownership rule extends.
 
-### Proposed surface (baseline — mechanism TBD pending research)
+### Locked mechanism (post-research)
 
-1. **Ownership boundary made enforceable, not advisory.** The "orchestrator owns turn-crossing processes" rule becomes a deterministic, enforced contract rather than prose a subagent may ignore. The existing `lazy-cycle-containment` deny-set already blocks `dev:kill`/`dev:restart` from a subagent; the long-build path (`tauri build` / `cargo build --release` backgrounded from inside a subagent) is the gap to close the same way. *(Mechanism — extend the containment hook deny-set vs. a new ownership primitive — is an Open Question.)*
+**M1 — Ownership = controller-spawned detached process + verifiable on-disk sentinel.**
+The orchestrator spawns the child detached from its (and any subagent's) process tree, then writes a JSON sidecar `.runtime.lock.json` at the project root fingerprinting the process's temporal identity. Required fields:
 
-2. **Runtime ownership survives the subagent boundary by construction.** `--ensure-runtime` already produces an orchestrator-owned background process *when called from the orchestrator session*. The defect (session `18e1d3d7`) is when its survival guarantee is silently lost because it was invoked from inside a subagent's subprocess. The baseline requires that the ownership level be explicit and verifiable — the caller/owner of the runtime process is recorded (a harness-tracked handle/sentinel) so a later cycle can assert "this runtime is owned by the live orchestrator session," not merely "something answers `/health`." *(Mechanism — orchestrator-process ownership + a tracked handle, a detached/daemonized supervisor, or an OS-service-level runtime — is the central Open Question.)*
+| Field | Type | Description |
+|-------|------|-------------|
+| `controller_session_id` | string (UUID) | Generated at the start of the orchestration bracket; proves current-orchestrator ownership. |
+| `pid` | int | OS-assigned PID of the spawned child. |
+| `start_time` | float | Kernel-reported absolute process start time (Unix epoch sec); defeats PID reuse. |
+| `port` | int | TCP port the runtime claims (3333 for the MCP server). |
+| `artifact_hash` | string | Commit hash / source mtime at boot, for staleness checks. |
 
-3. **A single liveness/recovery primitive replaces hand-rolled loops.** The rebuild → health-poll → inspect-telemetry shape becomes one deterministic call (an extension of `--ensure-runtime` or a sibling subcommand) that the orchestrator invokes instead of hand-composing the until-loop. It returns a structured verdict and, on un-recoverable failure, the `mcp-runtime-unready` blocker signal. Shared impl in `lazy_core` (repo-agnostic, parameterized config), hermetic under `--test` via injected callables — same shape as the existing `ensure_runtime`.
+Ownership is **verifiable**: compare the kernel-reported `start_time` against the sentinel (a reused PID held by a foreign process diverges) and `controller_session_id` against the live session (a previous crashed controller's runtime fails this). This replaces "200 on `/health` ⇒ ours," which the baseline's `health_code: 0` / zombie-port modes proved unsafe. `start_time` is extracted stdlib-only via `ctypes` → `kernel32.GetProcessTimes` (Windows) and `/proc/[pid]/stat` field 22 → epoch via `SC_CLK_TCK` (POSIX/WSL). Optionally hardened with advisory file locks (`msvcrt.locking` / `fcntl.flock`).
 
-4. **Torn-build orphan handling.** When a cycle is torn down mid-build, the harness must guarantee no silent uncommitted production delta. The baseline asserts the *outcome* (no orphaned production edits); the *contract* (prevent-by-ownership so the build survives the tear, vs. detect-and-recover the orphan after the tear, vs. both) is an Open Question for research, informed by the existing `--cycle-end` process-friction detector (`detect_cycle_bracket_friction` / `unexpected-commits` / `cycle-bracket-break`) which already records torn-bracket friction to the deny-ledger.
+**M2 — One cross-platform spawn primitive (stdlib-only).** A single `spawn_detached(...)` wrapper in `lazy_core`:
+- **Windows:** `subprocess.Popen(creationflags = DETACHED_PROCESS(0x8) | CREATE_NEW_PROCESS_GROUP(0x200) | CREATE_BREAKAWAY_FROM_JOB(0x01000000))`, wrapped `try/except OSError` to fall back to `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` when a parent Job Object forbids breakaway (`ERROR_ACCESS_DENIED`). Job Objects with `KILL_ON_JOB_CLOSE` are the reaping mechanism being escaped.
+- **POSIX/WSL:** `start_new_session=True`, wrapped in `systemd-run --user --scope --quiet --same-dir` on WSL to bypass `instanceIdleTimeout`/`vmIdleTimeout` (the WSL utility VM suspends ~15s after the last interactive terminal exits). Fallback: `setsid` + a `nohup sleep infinity` keep-alive when systemd is unavailable. `PR_SET_PDEATHSIG` is NOT used (it would kill the child with the parent — the opposite of the requirement).
 
-5. **Unified vs. separate ownership for builds and the runtime.** A long packaged build and the persistent dev/MCP runtime are both turn-crossing processes, but they differ (a build terminates and produces an artifact; the runtime is long-lived and health-polled). Whether one ownership mechanism covers both or they are owned separately is an Open Question — the baseline keeps the *contract* (both survive the boundary) uniform while leaving the *mechanism* open.
+**M3 — Two supervisory API contracts over the one spawn primitive.** Mirrors CI prior art (terminating builds vs. long-lived services):
+1. **Persistent Service contract** (the dev/MCP runtime) — sentinel + active `/health` polling + the full READY/STALE/DEAD state machine; deliberately leaves the process detached and behind for re-attach in subsequent cycles. This is the reworked `--ensure-runtime`.
+2. **Transient Build contract** (`tauri build` / `cargo build --release`) — synchronous wait-and-promote; spawned detached only to survive subagent reaping, but the orchestrator explicitly awaits the build's conclusion (gathering stdout for telemetry), then applies Atomic Artifact Promotion. Does NOT abandon the process for a future cycle.
 
-### Determinism / harness principles (non-negotiable, not open)
+**M4 — Single liveness/recovery state machine (replaces hand-rolled loops).** `--ensure-runtime` is reworked (extended in place — NOT replaced) into an idempotent gatekeeper returning the verdict `{state, ownership_verified, health_code, mcp_tools_present, terminal_blocker}` with `state ∈ {READY, STALE, HIJACKED, DEAD, BLOCKED}`. Phases: **Identity** (parse sentinel, query kernel start_time for the recorded PID — divergent start_time ⇒ HIJACKED, missing PID ⇒ DEAD) → **Staleness** (injected `stale_check(artifact_hash)`) → **Health** (injected `probe()` → `/health`; refused despite live PID ⇒ DEAD). Recovery contract:
+- **STALE / DEAD** → auto-recover: `restart()` in a bounded exponential-backoff loop **capped at 5 attempts**; on success rewrite `.runtime.lock.json`, return READY.
+- **HIJACKED** → strict fail-safe: **never `SIGKILL` a process not verifiably owned** (security/stability risk). Surface a `terminal_blocker` → BLOCKED.
+- **BLOCKED** → halt the orchestration loop, surface the blocker (`BLOCKED.md` `blocker_kind: mcp-runtime-unready`), no retries.
 
-- Ownership/liveness state is **script-owned and read from on-disk signals** (a handle/sentinel + the existing run marker), never LLM-inferred — consistent with the harness's deterministic-state-script-owns-state principle.
-- Any new subcommand lives in `lazy_core` (shared, repo-agnostic) with AlgoBooth specifics in a parameterized config dict, and is hermetic under `--test` via injected `probe`/`restart`/`stale_check`-style callables — mirroring `ensure_runtime`.
-- Enforcement is **fail-OPEN** where it gates a subagent op (consistent with the existing `lazy-cycle-containment` hooks), and the existing `--cycle-begin/--cycle-end` bracket + deny-ledger is the friction-recording seam, not a new parallel mechanism.
+Shared impl in `lazy_core` (repo-agnostic, parameterized config), hermetic under `--test` via injected `probe`/`restart`/`stale_check` callables — same shape as today's `ensure_runtime`.
+
+**M5 — Torn-build orphan handling = hybrid Prevent-and-Detect.**
+- **Prevent (request-time guard):** a `PreToolUse` hook parses the tokenized Bash command; if it matches an exact long-build signature (`^tauri build`, `^cargo build --release`, `^npm run build`) it **fail-open blocks (`exit 2`)**, bubbling a specific signature that signals the orchestrator to take over the spawn — so the build runs under controller supervision and survives a subagent tear by construction. The matcher is scoped to exact long-build binary invocations to keep the false-positive rate low (never redirects `ls`/`cat`). This is the long-build analog of the existing `lazy-cycle-containment` deny-set.
+- **Detect-and-recover (torn-bracket safety):** **Atomic Artifact Promotion** — build into a staging dir (`target/release_staging`), `os.replace()` the artifact into `target/release` only on `exit(0)` (atomic NTFS `MoveFileEx` / POSIX `rename`), so a mid-flight tear never corrupts the production artifact. Composed with a `--cycle-begin` git-consistency check: a pre-boot `.git/index.lock` (creation time older than orchestrator boot) ⇒ a previous op was torn ⇒ remove the lock and `git clean` the staging dir, neutralizing the uncommitted delta before the next cycle. Integrates with the existing `--cycle-end` friction detector (`detect_cycle_bracket_friction` / `unexpected-commits` / `cycle-bracket-break`).
+
+### Determinism / harness principles (non-negotiable)
+
+- Ownership/liveness state is **script-owned and read from on-disk signals** (`.runtime.lock.json` + the existing run marker), never LLM-inferred.
+- Every new subcommand lives in `lazy_core` (shared, repo-agnostic) with AlgoBooth specifics in a parameterized config dict, hermetic under `--test` via injected `probe`/`restart`/`stale_check`/`spawn`-style callables — mirroring `ensure_runtime`.
+- Enforcement is **fail-OPEN** where it gates a subagent op (consistent with `lazy-cycle-containment`); the existing `--cycle-begin/--cycle-end` bracket + deny-ledger is the friction-recording seam, not a new parallel mechanism.
 
 ## Implementation Phases
 
-*(Indicative phasing — finalized by `/spec-phases` after research locks the ownership mechanism.)*
+*(Indicative phasing — finalized by `/spec-phases`. The research lock removes the prior "mechanism TBD" gating.)*
 
-- **Phase 1 — Enforce the long-build ownership boundary.** Close the gap the prose rule leaves: a subagent backgrounding a turn-crossing build is prevented/redirected (extend the `lazy-cycle-containment` deny-set or equivalent). Tests in the containment harness.
-- **Phase 2 — Explicit, verifiable runtime ownership.** Record the runtime's owner (handle/sentinel keyed to the live orchestrator session); make `--ensure-runtime` (or a sibling) assert owned-by-live-orchestrator, not merely health=200. Hermetic `lazy_core` tests.
-- **Phase 3 — Single liveness/recovery primitive.** Collapse the hand-rolled rebuild→poll→inspect loop into one deterministic subcommand; wire `/lazy-batch` Step 1d.0 (and the cloud/no-cloud variants per their coupling rules) to call it.
-- **Phase 4 — Torn-build orphan handling.** Per the research-locked contract (prevent vs. detect-and-recover), guarantee no silent uncommitted production delta on a mid-build tear; integrate with the existing `--cycle-end` friction detector.
+- **Phase 1 — Cross-platform detached-spawn primitive + verifiable sentinel.** `spawn_detached(...)` (M2) and the `.runtime.lock.json` read/write + kernel-start-time extraction (M1) in `lazy_core`, hermetic `--test` coverage for both OS branches via injected callables and the breakaway-denied fallback path.
+- **Phase 2 — Rework `--ensure-runtime` into the liveness/recovery state machine.** Extend (not replace) `ensure_runtime` to assert verifiable ownership and return the M4 verdict, with the bounded-retry recovery contract and HIJACKED/BLOCKED fail-safe. Persistent Service contract (M3.1).
+- **Phase 3 — Enforce the long-build ownership boundary.** The `PreToolUse` guard (M5 Prevent) that fail-open-blocks subagent-owned long builds and signals the orchestrator to take over; Transient Build contract (M3.2) wait-and-promote. Tests in the containment/guard harness.
+- **Phase 4 — Torn-build atomic-promotion + `--cycle-begin` git-consistency recovery.** Atomic Artifact Promotion staging→`os.replace` (M5 Detect) and the pre-boot `.git/index.lock` / `git clean` reconciliation, integrated with the `--cycle-end` friction detector.
+- **Phase 5 — Wire the orchestrator.** Replace the hand-rolled `/lazy-batch` Step 1d.0 poll loop with the single liveness primitive call; mirror into the `/lazy-batch-cloud` and `/lazy`/`/lazy-cloud` coupled variants per their coupling rules.
 
 ## Validation Criteria
 
 | Behavior | Trigger | Expected Evidence | Where to Check |
 |----------|---------|-------------------|----------------|
-| Subagent cannot own a turn-crossing build | Cycle subagent backgrounds `tauri build` / `cargo build --release` | Op is denied/redirected; no reaped-mid-build orphan | `lazy-cycle-containment` test fixtures; deny-ledger |
-| Runtime survives the subagent boundary | Boot runtime in one cycle, run `/mcp-test` in a later cycle | `/mcp-test` finds a live, current runtime (`status ∈ ready\|stale-rebuilt`, `mcp_tools_present: true`) | `lazy-state.py --ensure-runtime` JSON; live mcp-test cycle |
-| Ownership is verifiable, not just health=200 | Query runtime ownership when booted from orchestrator vs. (simulated) subagent subprocess | Verdict distinguishes orchestrator-owned (survives) from subagent-owned (does not) | `lazy_core` hermetic `--test` |
+| Subagent cannot own a turn-crossing build | Cycle subagent backgrounds `tauri build` / `cargo build --release` | `PreToolUse` guard `exit 2`; op redirected to orchestrator; no reaped-mid-build orphan | guard test fixtures; deny-ledger |
+| Detached spawn survives the subagent boundary on both OSes | Spawn via `spawn_detached` under simulated Job-Object / WSL-idle reaping | Child survives parent-tree teardown; breakaway-denied path falls back cleanly | `lazy_core` hermetic `--test` (Windows + POSIX branches) |
+| Ownership is verifiable, not just health=200 | Query runtime ownership: orchestrator-spawned vs. (simulated) PID-reused / foreign-port-holder | Verdict `ownership_verified: true` only when `start_time` + `controller_session_id` match; HIJACKED on divergence | `lazy_core` hermetic `--test` |
+| Runtime survives + is current across cycles | Boot runtime one cycle, run `/mcp-test` a later cycle | Verdict `state ∈ READY\|STALE→READY`, `mcp_tools_present: true`, `ownership_verified: true` | `lazy-state.py --ensure-runtime` JSON; live mcp-test cycle |
+| Recovery is bounded, never infinite | Force STALE/DEAD repeatedly | `restart()` retried ≤5 with backoff, then BLOCKED — no unbounded loop | `lazy_core` hermetic `--test` |
+| Hijacked port surfaces a blocker, never SIGKILL | Foreign process holds port 3333; recorded PID dead | `state: HIJACKED` → `terminal_blocker` set → `BLOCKED.md`; no kill of the foreign PID | `lazy_core` `--test`; BLOCKED.md sentinel |
 | Orchestrator stops hand-rolling poll loops | mcp-test cycle in `/lazy-batch` | One subcommand call returns the structured verdict; no hand-composed until-loop in the cycle prompt | `/lazy-batch` Step 1d.0 prose; cycle transcript |
-| Un-recoverable runtime surfaces a blocker | `--ensure-runtime` cannot reach MCP-ready | `BLOCKED.md` (`blocker_kind: mcp-runtime-unready`) written; no subagent dispatched against a dead runtime | `lazy-state.py` probe; BLOCKED.md sentinel |
-| No orphaned production edits on a mid-build tear | Cycle torn down while its build is in flight | No silent uncommitted production delta; friction recorded or build survived | `git status`; `--cycle-end` process-friction ledger entry |
+| No orphaned/corrupt artifact on a mid-build tear | Tear the controller while its build is in flight | Production artifact never half-written (staging + `os.replace`); pre-boot `.git/index.lock` reconciled at `--cycle-begin`; friction recorded | `git status`; `--cycle-end` friction ledger; staging dir state |
+
+## Locked Decisions
+
+> Resolved by `RESEARCH.md` (2026-06-20). All six baseline Open Questions are research-resolved with single strongly-recommended answers; none is a product-behavior fork (harness-internals feature, no AlgoBooth end-user surface). The MCP-coverage audit reads this section.
+
+1. **LD1 — Ownership mechanism:** controller-spawned **detached process + verifiable on-disk JSON sentinel** (`.runtime.lock.json`), extending `--ensure-runtime` + the cycle-marker machinery. (Not an OS service; not a custom daemon.) [baseline Q1]
+2. **LD2 — `--ensure-runtime` disposition:** **reworked/extended in place**, retained as the enforcement seam — NOT replaced by a distinct primitive. [baseline Q2]
+3. **LD3 — Liveness verdict + recovery contract:** verdict `{state, ownership_verified, health_code, mcp_tools_present, terminal_blocker}`, `state ∈ {READY, STALE, HIJACKED, DEAD, BLOCKED}`; STALE/DEAD auto-recover with bounded backoff **≤5 attempts**, HIJACKED/BLOCKED surface a blocker and halt (never SIGKILL an unowned process). [baseline Q3]
+4. **LD4 — Torn-build contract:** **hybrid Prevent-and-Detect** — `PreToolUse` fail-open guard (prevent) + Atomic Artifact Promotion (`staging` dir + `os.replace` on `exit(0)`) and `--cycle-begin` `.git/index.lock` / `git clean` reconciliation (detect-and-recover). [baseline Q4]
+5. **LD5 — One mechanism or two:** **one** cross-platform `spawn_detached` OS primitive, **two** supervisory API contracts in `lazy_core` (Persistent Service vs. Transient Build). [baseline Q5]
+6. **LD6 — Cross-platform supervision (stdlib-only):** Windows `creationflags` breakaway with `OSError` fallback; POSIX/WSL `systemd-run --user --scope` with `setsid` + keep-alive fallback. Temporal-identity extraction via `kernel32.GetProcessTimes` (Windows) and `/proc/[pid]/stat` (POSIX/WSL). [baseline Q6]
 
 ## Open Questions
 
-> These are **research-answerable** design forks (prior art / industry conventions / technical tradeoffs), deferred to the Gemini research prompt (Phase 2) — NOT product-behavior decisions for the operator. They do not gate a baseline draft.
-
-1. **Ownership mechanism (central fork).** What level owns a turn-crossing process so it provably outlives a subagent turn — (a) the orchestrator process + a harness-tracked handle/sentinel (extends what exists today), (b) a detached/daemonized supervisor process the orchestrator spawns and tracks, or (c) an OS-service-level runtime? Tradeoffs: complexity, cross-platform behavior (Windows Developer Mode is on; the harness runs on Windows + WSL), recoverability, and how cleanly each integrates with the existing `--ensure-runtime` + cycle-marker machinery.
-2. **`--ensure-runtime` rework vs. replace.** Should `--ensure-runtime` be reworked to record/assert explicit ownership, or replaced by a distinct ownership primitive with `--ensure-runtime` retained as a thin liveness probe?
-3. **Liveness/recovery without hand-rolled loops.** What is the right structured-verdict + recovery contract for the single liveness primitive (beyond today's `{status, mcp_tools_present, health_code}`), and what does "recover" mean for a stale/dead runtime vs. a blocked one?
-4. **Torn-build orphan contract.** Prevent-by-ownership (the build survives the tear), detect-and-recover (the orphan is detected post-tear and reconciled/surfaced), or both? What does the existing `--cycle-end` friction detector already give us toward this, and what is the minimal addition?
-5. **One mechanism or two.** Does a single ownership mechanism cover both long builds (terminating, artifact-producing) and the persistent dev/MCP runtime (long-lived, health-polled), or are they owned separately? Prior art in CI / ephemeral-agent harnesses for supervising both shapes.
-6. **Cross-platform process supervision.** Industry-standard patterns for owning a long-lived child process that must survive an ephemeral controller's lifecycle on Windows (job objects / detached processes) and POSIX (process groups / setsid / nohup / a supervisor like a tmux/systemd-user equivalent), and which is cleanest for a stdlib-only Python harness.
+None remaining at spec time — all six baseline Open Questions were research-answerable and are now locked in `## Locked Decisions`. Implementation-detail forks (e.g. exact backoff base/cap timing, the precise long-build signature regex set, whether to add advisory file locks in v1) are mechanical and resolved during `/spec-phases` / implementation, not product-behavior decisions.
 
 ## Research References
 
-Pending — Phase 2 generates `RESEARCH_PROMPT.md` from the Open Questions above; Phase 3 integrates `RESEARCH.md` and finalizes the ownership mechanism.
+- `RESEARCH.md` (2026-06-20, Gemini deep research) — "Owning a Long-Lived Child Process Across an Ephemeral Agent-Turn Boundary." Key sections: Cross-Platform Spawn Recipes (LD6), Verifiable-Ownership Record (LD1), Liveness/Recovery Primitive (LD3), Torn-Build Orphan Handling (LD4), One Mechanism or Two (LD5), Actionable Mapping (answers to all eight prompt questions).
+- `RESEARCH_SUMMARY.md` — distilled findings, adoptions, pitfalls, and the baseline-question resolution table.
 
 Grounding context already in-repo:
 
-- `repos/algobooth/.claude/skill-config/long-build-ownership.md` — the existing advisory long-build prose rule.
-- `user/scripts/lazy_core.py` (`ensure_runtime`, `_ENSURE_RUNTIME_DEFAULT_CONFIG`, ~L6166) — the existing runtime-ensure subcommand impl.
-- `user/skills/lazy-batch/SKILL.md` Step 1d.0 — where `--ensure-runtime` is called from the orchestrator session.
-- `user/scripts/CLAUDE.md` — `--cycle-begin/--cycle-end` bracket + `detect_cycle_bracket_friction` (torn-bracket / unexpected-commits friction recording).
+- `repos/algobooth/.claude/skill-config/long-build-ownership.md` — the existing advisory long-build prose rule (becomes the M5 enforced guard).
+- `user/scripts/lazy_core.py` (`ensure_runtime`, `_ENSURE_RUNTIME_DEFAULT_CONFIG`, ~L6166) — the existing runtime-ensure subcommand impl (reworked per LD2/M4).
+- `user/skills/lazy-batch/SKILL.md` Step 1d.0 — where `--ensure-runtime` is called from the orchestrator session (rewired in Phase 5).
+- `user/scripts/CLAUDE.md` — `--cycle-begin/--cycle-end` bracket + `detect_cycle_bracket_friction` (torn-bracket / unexpected-commits friction recording; the M5 detect seam).
 - Session-log evidence: `8ae22371` (runtime dies at turn boundary), `18e1d3d7` (`--ensure-runtime` reaped in subagent subprocess; `health_code: 0` tell), `5c33b6ba` (orphaned `tauri build` + hand-rolled poll loops).
