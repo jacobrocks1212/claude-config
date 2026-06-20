@@ -30,6 +30,12 @@
       "name": "Single-slot marker ownership race silently disarms owning run's guard (under-fire)",
       "spec_dir": "single-slot-marker-ownership-race-disarms-owning-run",
       "severity": "P2"
+    },
+    {
+      "id": "stub-spec-route-loops-until-queue-stub-cleared",
+      "name": "Stub-spec route loops at Step 4.5 until queue.json stub flag is cleared (/spec Phase-1 batch contract never clears it)",
+      "spec_dir": "stub-spec-route-loops-until-queue-stub-cleared",
+      "severity": "P2"
     }
   ]
 }
