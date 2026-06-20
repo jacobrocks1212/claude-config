@@ -6,7 +6,7 @@
       "name": "Feature Budget Guard + Skip-Ahead",
       "spec_dir": "feature-budget-guard-and-skip-ahead",
       "tier": 1,
-      "stub": true
+      "stub": false
     },
     {
       "id": "long-build-and-runtime-ownership",
