@@ -18252,23 +18252,28 @@ def test_ensure_runtime_m4_ready_when_owned_current_healthy():
 
 
 def test_ensure_runtime_m4_stale_when_owned_but_stale():
-    """Owned + stale_check True + healthy → state STALE (recovery is WU-2; WU-1
-    only classifies). ownership_verified stays True."""
+    """Owned + stale_check True routes into the STALE recovery branch (restart is
+    invoked, distinguishing it from a no-recovery READY). A healthy re-probe then
+    resolves it to READY. (WU-2 asserts the bound/backoff/lock-rewrite specifics.)"""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         lock = _owned_lock(start_time=222.0)
+        calls = {"restart": 0}
 
         result = lazy_core.ensure_runtime(
             Path(td),
             config=_M4_CONFIG,
             probe=lambda: (200, {"tools": ["render_chart"]}),
-            restart=lambda: True,  # not asserted in WU-1
-            stale_check=lambda: True,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: True,  # STALE → recovery
             read_lock=lambda: lock,
             live_session_id=_SESSION,
             kernel_start_time_fn=lambda pid, **kw: 222.0,
+            sleep=lambda s: None,
         )
-        assert result["state"] == "STALE", result
+        # STALE routed through recovery (restart fired) — NOT a bare READY.
+        assert calls["restart"] >= 1, "STALE must route into the recovery branch"
+        assert result["state"] == "READY", result
         assert result["ownership_verified"] is True, result
 
 
@@ -18298,45 +18303,55 @@ def test_ensure_runtime_m4_hijacked_when_unowned_but_health_answers():
         assert result["ownership_verified"] is False, result
 
 
-def test_ensure_runtime_m4_dead_when_pid_missing():
-    """Recorded PID is gone (kernel_start_time → None) → state DEAD (missing PID),
-    regardless of probe — the owned process is not alive."""
+def test_ensure_runtime_m4_dead_when_pid_missing_routes_to_recovery():
+    """Recorded PID is gone (kernel_start_time → None) → classified DEAD (missing
+    PID), so it enters the recovery branch (restart fired — NOT a HIJACKED no-kill
+    halt). With recovery never restoring health it exhausts to BLOCKED with
+    ownership_verified False (the Identity decision: DEAD, not HIJACKED)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         lock = _owned_lock(start_time=444.0)
+        calls = {"restart": 0}
 
         result = lazy_core.ensure_runtime(
             Path(td),
             config=_M4_CONFIG,
-            probe=lambda: (0, None),  # nothing answering
-            restart=lambda: True,
+            probe=lambda: (0, None),  # nothing answering, never recovers
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
             stale_check=lambda: False,
             read_lock=lambda: lock,
             live_session_id=_SESSION,
-            kernel_start_time_fn=lambda pid, **kw: None,  # PID dead
+            kernel_start_time_fn=lambda pid, **kw: None,  # PID dead → DEAD
+            sleep=lambda s: None,
         )
-        assert result["state"] == "DEAD", result
+        # DEAD routed into recovery (a HIJACKED would NEVER restart).
+        assert calls["restart"] >= 1, "DEAD (missing PID) must enter recovery"
+        assert result["state"] == "BLOCKED", result
         assert result["ownership_verified"] is False, result
 
 
-def test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused():
-    """Owned + live PID but /health refused (probe non-200) → state DEAD (the
-    owned process is up but the runtime endpoint is not serving)."""
+def test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused_routes_to_recovery():
+    """Owned + live PID but /health refused → classified DEAD (endpoint not
+    serving), enters recovery. ownership_verified stays True (the failure is
+    health, not identity); exhausted recovery → BLOCKED."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         lock = _owned_lock(start_time=555.0)
+        calls = {"restart": 0}
 
         result = lazy_core.ensure_runtime(
             Path(td),
             config=_M4_CONFIG,
-            probe=lambda: (0, None),  # /health refused
-            restart=lambda: True,
+            probe=lambda: (0, None),  # /health refused, never recovers
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
             stale_check=lambda: False,
             read_lock=lambda: lock,
             live_session_id=_SESSION,
             kernel_start_time_fn=lambda pid, **kw: 555.0,  # owned + alive
+            sleep=lambda s: None,
         )
-        assert result["state"] == "DEAD", result
+        assert calls["restart"] >= 1, "DEAD (health refused) must enter recovery"
+        assert result["state"] == "BLOCKED", result
         # ownership was verifiable; the failure is health, not identity.
         assert result["ownership_verified"] is True, result
 
@@ -18360,21 +18375,26 @@ def test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked():
         assert result["ownership_verified"] is False, result
 
 
-def test_ensure_runtime_m4_no_lock_plus_down_is_dead():
-    """No lock + nothing answering → DEAD (nothing to verify, nothing serving)."""
+def test_ensure_runtime_m4_no_lock_plus_down_routes_to_recovery():
+    """No lock + nothing answering → classified DEAD (nothing to verify, nothing
+    serving), enters recovery (restart fired — NOT a HIJACKED halt). Exhausted →
+    BLOCKED, ownership_verified False."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0}
         result = lazy_core.ensure_runtime(
             Path(td),
             config=_M4_CONFIG,
             probe=lambda: (0, None),
-            restart=lambda: True,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
             stale_check=lambda: False,
             read_lock=lambda: None,
             live_session_id=_SESSION,
             kernel_start_time_fn=lambda pid, **kw: None,
+            sleep=lambda s: None,
         )
-        assert result["state"] == "DEAD", result
+        assert calls["restart"] >= 1, "no-lock + down must enter recovery (DEAD)"
+        assert result["state"] == "BLOCKED", result
         assert result["ownership_verified"] is False, result
 
 
@@ -18397,6 +18417,183 @@ def test_ensure_runtime_m4_legacy_callers_get_superset_dict():
         assert "mcp_tools_present" in result, result
         assert result["health_code"] == 200, result
         assert result["state"] in {"READY", "STALE", "HIJACKED", "DEAD", "BLOCKED"}, result
+
+
+# ---------------------------------------------------------------------------
+# long-build-and-runtime-ownership Phase 2 — WU-2: bounded recovery (≤5 backoff)
+# + HIJACKED / BLOCKED fail-safe. Every external interaction (probe/restart/
+# stale_check/kernel_start_time/sleep/write_lock/recover_identity) is injected,
+# so the ≤5-attempt bound, the backoff schedule, and the never-SIGKILL invariant
+# are asserted WITHOUT a real runtime, network, clock, or process kill.
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_runtime_m4_stale_recovers_to_ready():
+    """STALE (owned + stale) → restart() once → re-probe 200 → lock rewritten →
+    state READY. restart called exactly once; write_lock invoked on recovery."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=222.0)
+        calls = {"restart": 0, "write_lock": 0, "sleep": []}
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        def write_lock(**kw):
+            calls["write_lock"] += 1
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=restart,
+            stale_check=lambda: True,  # STALE
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 222.0,
+            sleep=lambda s: calls["sleep"].append(s),
+            write_lock=write_lock,
+            recover_identity=lambda: {"pid": 5000, "start_time": 222.0},
+        )
+        assert result["state"] == "READY", result
+        assert calls["restart"] == 1, calls
+        assert calls["write_lock"] == 1, "lock must be rewritten on recovery"
+        assert result["ownership_verified"] is True, result
+
+
+def test_ensure_runtime_m4_dead_recovers_within_five():
+    """DEAD (owned PID alive but /health refused) recovers: probe stays down for
+    the first 2 restarts then answers 200 on the 3rd → state READY, restart ≤5."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=555.0)
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            # Initial probe + one re-probe per restart. Answer 200 only after the
+            # 3rd restart (probe call index 4 = initial(1) + 3 re-probes).
+            calls["probe"] += 1
+            return (200, {"tools": ["render_chart"]}) if calls["restart"] >= 3 else (0, None)
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=probe,
+            restart=restart,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 555.0,
+            sleep=lambda s: None,
+            write_lock=lambda **kw: None,
+            recover_identity=lambda: {"pid": 5001, "start_time": 555.0},
+        )
+        assert result["state"] == "READY", result
+        assert calls["restart"] == 3, calls
+        assert calls["restart"] <= 5, "recovery must be bounded at 5 attempts"
+
+
+def test_ensure_runtime_m4_dead_exhausts_to_blocked():
+    """DEAD where restart never restores health → restart invoked EXACTLY 5 times
+    (bounded), exponential backoff applied via the injected sleep (no real
+    sleeps), then state BLOCKED + terminal_blocker set."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=666.0)
+        calls = {"restart": 0, "sleep": []}
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (0, None),  # never recovers
+            restart=restart,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 666.0,
+            sleep=lambda s: calls["sleep"].append(s),
+            write_lock=lambda **kw: (_ for _ in ()).throw(
+                AssertionError("lock must NOT be rewritten on a failed recovery")
+            ),
+            recover_identity=lambda: {"pid": 5002, "start_time": 666.0},
+        )
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 5, f"recovery must cap at 5: {calls}"
+        assert result["terminal_blocker"], "BLOCKED must carry a terminal_blocker"
+        # Exponential backoff: each delay strictly larger than the previous, and
+        # at least one sleep occurred between retries (no busy loop).
+        assert len(calls["sleep"]) >= 4, calls
+        assert calls["sleep"] == sorted(calls["sleep"]), (
+            f"backoff must be non-decreasing (exponential): {calls['sleep']}"
+        )
+        assert calls["sleep"][-1] > calls["sleep"][0], (
+            f"backoff must grow: {calls['sleep']}"
+        )
+
+
+def test_ensure_runtime_m4_hijacked_sets_blocker_never_restarts_never_kills():
+    """HIJACKED (foreign port-holder: recorded PID dead but /health answers, OR a
+    live divergent owner) → terminal_blocker set, and restart()/kill() are NEVER
+    invoked (the never-SIGKILL-an-unowned-process safety invariant, LD3)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Foreign owner: divergent live start_time (999 != recorded 333) while
+        # /health answers — a live foreign port-holder.
+        lock = _owned_lock(start_time=333.0)
+        calls = {"restart": 0, "kill": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 999.0,  # foreign, divergent
+            sleep=lambda s: None,
+            write_lock=lambda **kw: None,
+            kill=lambda pid: calls.__setitem__("kill", calls["kill"] + 1),
+        )
+        assert result["state"] == "HIJACKED", result
+        assert result["terminal_blocker"], "HIJACKED must carry a terminal_blocker"
+        assert calls["restart"] == 0, "HIJACKED must NEVER restart"
+        assert calls["kill"] == 0, "HIJACKED must NEVER kill the foreign process"
+
+
+def test_ensure_runtime_m4_ready_does_no_recovery():
+    """A clean READY (owned + current + healthy) performs NO restart and NO sleep
+    — the bounded-recovery loop is reachable only from STALE/DEAD."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0, "sleep": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: calls.__setitem__("sleep", calls["sleep"] + 1),
+            write_lock=lambda **kw: None,
+        )
+        assert result["state"] == "READY", result
+        assert calls["restart"] == 0, result
+        assert calls["sleep"] == 0, result
+        assert result["terminal_blocker"] is None, result
 
 
 # ---- WU-2: gate_coverage (symlink-resolving) ----
@@ -18702,16 +18899,27 @@ _TESTS = _TESTS + [
      test_ensure_runtime_m4_stale_when_owned_but_stale),
     ("test_ensure_runtime_m4_hijacked_when_unowned_but_health_answers",
      test_ensure_runtime_m4_hijacked_when_unowned_but_health_answers),
-    ("test_ensure_runtime_m4_dead_when_pid_missing",
-     test_ensure_runtime_m4_dead_when_pid_missing),
-    ("test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused",
-     test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused),
+    ("test_ensure_runtime_m4_dead_when_pid_missing_routes_to_recovery",
+     test_ensure_runtime_m4_dead_when_pid_missing_routes_to_recovery),
+    ("test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused_routes_to_recovery",
+     test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused_routes_to_recovery),
     ("test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked",
      test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked),
-    ("test_ensure_runtime_m4_no_lock_plus_down_is_dead",
-     test_ensure_runtime_m4_no_lock_plus_down_is_dead),
+    ("test_ensure_runtime_m4_no_lock_plus_down_routes_to_recovery",
+     test_ensure_runtime_m4_no_lock_plus_down_routes_to_recovery),
     ("test_ensure_runtime_m4_legacy_callers_get_superset_dict",
      test_ensure_runtime_m4_legacy_callers_get_superset_dict),
+    # long-build-and-runtime-ownership Phase 2 / WU-2: bounded recovery + fail-safe.
+    ("test_ensure_runtime_m4_stale_recovers_to_ready",
+     test_ensure_runtime_m4_stale_recovers_to_ready),
+    ("test_ensure_runtime_m4_dead_recovers_within_five",
+     test_ensure_runtime_m4_dead_recovers_within_five),
+    ("test_ensure_runtime_m4_dead_exhausts_to_blocked",
+     test_ensure_runtime_m4_dead_exhausts_to_blocked),
+    ("test_ensure_runtime_m4_hijacked_sets_blocker_never_restarts_never_kills",
+     test_ensure_runtime_m4_hijacked_sets_blocker_never_restarts_never_kills),
+    ("test_ensure_runtime_m4_ready_does_no_recovery",
+     test_ensure_runtime_m4_ready_does_no_recovery),
     ("test_gate_coverage_symbol_present", test_gate_coverage_symbol_present),
     ("test_gate_coverage_covered_and_uncovered_verdict",
      test_gate_coverage_covered_and_uncovered_verdict),

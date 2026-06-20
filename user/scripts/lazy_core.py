@@ -6187,6 +6187,16 @@ _LEGACY_STATUS_TO_STATE = {
 }
 
 
+# long-build-and-runtime-ownership Phase 2 (LD3) — the bounded-recovery cap. A
+# STALE/DEAD runtime auto-recovers via restart() in an exponential-backoff loop
+# capped at this many attempts; on exhaustion the verdict is BLOCKED. The cap is
+# the loop-prevention guarantee that replaces the hand-rolled poll loops.
+_RUNTIME_RECOVERY_MAX_ATTEMPTS = 5
+# Exponential-backoff base seconds (1, 2, 4, 8, 16 …) — multiplied by the
+# injected/real sleep so --test asserts the schedule without real sleeps.
+_RUNTIME_RECOVERY_BACKOFF_BASE = 1.0
+
+
 def ensure_runtime(
     repo_root: Path,
     *,
@@ -6197,6 +6207,10 @@ def ensure_runtime(
     read_lock=None,
     live_session_id=None,
     kernel_start_time_fn=None,
+    sleep=None,
+    write_lock=None,
+    recover_identity=None,
+    kill=None,
 ) -> dict:
     """Ensure the dev runtime + MCP server are up, CURRENT, **and verifiably
     owned**; return the M4 liveness/recovery verdict.
@@ -6305,6 +6319,15 @@ def ensure_runtime(
             read_lock = lambda: read_runtime_lock(repo_root, config=cfg)
         if kernel_start_time_fn is None:
             kernel_start_time_fn = kernel_start_time
+        if sleep is None:
+            sleep = time.sleep
+        if write_lock is None:
+            def write_lock(**kw):
+                write_runtime_lock(repo_root, config=cfg, **kw)
+        # recover_identity / kill default to None — recovery rewrites the lock
+        # only when an identity discovery callable is supplied, and the HIJACKED
+        # fail-safe NEVER kills (kill is wired only so a test can assert it is
+        # not called; production passes None and no kill path exists).
         return _ensure_runtime_m4(
             cfg,
             probe=probe,
@@ -6313,6 +6336,9 @@ def ensure_runtime(
             read_lock=read_lock,
             live_session_id=live_session_id,
             kernel_start_time_fn=kernel_start_time_fn,
+            sleep=sleep,
+            write_lock=write_lock,
+            recover_identity=recover_identity,
             tool_name=tool_name,
         )
 
@@ -6366,6 +6392,31 @@ def _runtime_verdict(state, *, ownership_verified, health_code, payload,
     }
 
 
+def _hijacked_blocker(lock):
+    """The HIJACKED terminal_blocker message (LD3). Names the foreign port-holder
+    and the never-SIGKILL safety rule so Phase 5 can surface it verbatim into a
+    BLOCKED.md ``blocker_kind: mcp-runtime-unready``."""
+    port = lock.get("port") if isinstance(lock, dict) else None
+    where = f"port {port}" if port else "the runtime port"
+    return (
+        f"Runtime ownership could not be verified — a foreign process is holding "
+        f"{where} (recorded PID/start_time/session diverges from the live kernel). "
+        f"Refusing to SIGKILL an unowned process (LD3 safety/stability rule); "
+        f"surface as BLOCKED (blocker_kind: mcp-runtime-unready) for operator "
+        f"intervention."
+    )
+
+
+def _blocked_blocker(attempts):
+    """The recovery-exhausted BLOCKED terminal_blocker message (LD3)."""
+    return (
+        f"Runtime recovery exhausted — restart() retried {attempts} times "
+        f"(bounded cap {_RUNTIME_RECOVERY_MAX_ATTEMPTS}) with exponential backoff "
+        f"without restoring a healthy, owned runtime. Halting with no further "
+        f"retries (blocker_kind: mcp-runtime-unready)."
+    )
+
+
 def _ensure_runtime_m4(
     cfg,
     *,
@@ -6375,13 +6426,17 @@ def _ensure_runtime_m4(
     read_lock,
     live_session_id,
     kernel_start_time_fn,
+    sleep,
+    write_lock,
+    recover_identity,
     tool_name,
 ):
-    """The M4 Identity → Staleness → Health classifier (LD3).
+    """The M4 Identity → Staleness → Health classifier + bounded recovery (LD3).
 
-    WU-1: pure classification into READY/STALE/HIJACKED/DEAD. WU-2 wraps the
-    STALE/DEAD verdicts in the bounded-recovery loop and adds the BLOCKED /
-    HIJACKED never-SIGKILL terminal_blocker.
+    Identity classifies the runtime; HIJACKED is a strict fail-safe (terminal
+    blocker, NEVER restart/kill); STALE/DEAD enter the bounded exponential-backoff
+    recovery loop (≤ ``_RUNTIME_RECOVERY_MAX_ATTEMPTS`` restarts) → READY on a
+    re-probe success (lock rewritten) or BLOCKED on exhaustion.
     """
     code, payload = probe()
     lock = read_lock()
@@ -6389,16 +6444,18 @@ def _ensure_runtime_m4(
     # ---- Phase 1: Identity ---------------------------------------------------
     if not isinstance(lock, dict):
         # No recorded ownership. A /health that answers is an unverified foreign
-        # port-holder (health=200 is NOT proof of ownership — LD1) ⇒ HIJACKED;
-        # nothing answering ⇒ DEAD.
+        # port-holder (health=200 is NOT proof of ownership — LD1) ⇒ HIJACKED
+        # (strict fail-safe: never kill it); nothing answering ⇒ DEAD (recover).
         if code == 200:
             return _runtime_verdict(
                 "HIJACKED", ownership_verified=False, health_code=code,
                 payload=payload, tool_name=tool_name,
+                terminal_blocker=_hijacked_blocker(lock),
             )
-        return _runtime_verdict(
-            "DEAD", ownership_verified=False, health_code=code,
-            payload=payload, tool_name=tool_name,
+        return _recover_runtime(
+            cfg, "DEAD", ownership_verified=False, probe=probe, restart=restart,
+            sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
+            tool_name=tool_name, initial_code=code, initial_payload=payload,
         )
 
     owned = verify_runtime_ownership(
@@ -6407,9 +6464,9 @@ def _ensure_runtime_m4(
         kernel_start_time_fn=kernel_start_time_fn,
     )
     if not owned:
-        # The recorded PID is either dead (kernel start_time None ⇒ DEAD) or held
-        # by a foreign process whose start_time/session diverges. A divergent but
-        # LIVE owner answering /health is a hijack; a dead PID is DEAD.
+        # The recorded PID is either dead (kernel start_time None ⇒ DEAD, a
+        # recovery candidate) or held by a foreign process whose start_time/
+        # session diverges (a LIVE foreign owner ⇒ HIJACKED, NEVER killed).
         live_start = None
         try:
             live_start = kernel_start_time_fn(lock.get("pid"))
@@ -6418,24 +6475,26 @@ def _ensure_runtime_m4(
         except Exception:  # noqa: BLE001 — best-effort
             live_start = None
         if live_start is None:
-            return _runtime_verdict(
-                "DEAD", ownership_verified=False, health_code=code,
-                payload=payload, tool_name=tool_name,
+            return _recover_runtime(
+                cfg, "DEAD", ownership_verified=False, probe=probe, restart=restart,
+                sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
+                tool_name=tool_name, initial_code=code, initial_payload=payload,
             )
-        # Live foreign PID — HIJACKED regardless of whether /health answers (a
-        # foreign port-holder we must NEVER SIGKILL; the WU-2 fail-safe sets the
-        # terminal_blocker).
+        # Live foreign PID — HIJACKED strict fail-safe: set the terminal_blocker
+        # and return WITHOUT restart() or any kill of the foreign process (LD3).
         return _runtime_verdict(
             "HIJACKED", ownership_verified=False, health_code=code,
             payload=payload, tool_name=tool_name,
+            terminal_blocker=_hijacked_blocker(lock),
         )
 
     # Ownership verified (the recorded PID is ours, alive, current session).
     # ---- Phase 2: Staleness --------------------------------------------------
     if stale_check():
-        return _runtime_verdict(
-            "STALE", ownership_verified=True, health_code=code,
-            payload=payload, tool_name=tool_name,
+        return _recover_runtime(
+            cfg, "STALE", ownership_verified=True, probe=probe, restart=restart,
+            sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
+            tool_name=tool_name, initial_code=code, initial_payload=payload,
         )
 
     # ---- Phase 3: Health -----------------------------------------------------
@@ -6445,10 +6504,83 @@ def _ensure_runtime_m4(
             payload=payload, tool_name=tool_name,
         )
     # Owned, alive, current — but /health refused ⇒ the runtime endpoint is not
-    # serving ⇒ DEAD (a restart/recovery candidate in WU-2).
+    # serving ⇒ DEAD → recover.
+    return _recover_runtime(
+        cfg, "DEAD", ownership_verified=True, probe=probe, restart=restart,
+        sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
+        tool_name=tool_name, initial_code=code, initial_payload=payload,
+    )
+
+
+def _recover_runtime(
+    cfg,
+    from_state,
+    *,
+    ownership_verified,
+    probe,
+    restart,
+    sleep,
+    write_lock,
+    recover_identity,
+    tool_name,
+    initial_code,
+    initial_payload,
+):
+    """Bounded exponential-backoff recovery for a STALE/DEAD runtime (LD3).
+
+    Up to ``_RUNTIME_RECOVERY_MAX_ATTEMPTS`` iterations of:
+    ``sleep(backoff)`` → ``restart()`` → re-``probe()``. On a 200 re-probe the
+    runtime is back: rewrite ``.runtime.lock.json`` with the recovered identity
+    (when ``recover_identity`` supplies one) and return READY. On exhaustion
+    (no healthy re-probe within the cap) return BLOCKED with a terminal_blocker —
+    the loop-prevention guarantee that replaces the hand-rolled poll loops.
+    """
+    code, payload = initial_code, initial_payload
+    attempts = 0
+    for attempt in range(_RUNTIME_RECOVERY_MAX_ATTEMPTS):
+        # Exponential backoff BEFORE each restart (1, 2, 4, 8, 16 …s). Injected
+        # sleep makes --test assert the schedule with no real wait.
+        try:
+            sleep(_RUNTIME_RECOVERY_BACKOFF_BASE * (2 ** attempt))
+        except Exception:  # noqa: BLE001 — a sleep error never aborts recovery
+            pass
+        attempts += 1
+        try:
+            restart()
+        except Exception:  # noqa: BLE001 — a restart raising is a failed attempt
+            continue
+        code, payload = probe()
+        if code == 200:
+            # Recovered. Rewrite the ownership lock with the new identity so the
+            # NEXT cycle verifies against the restarted process (Persistent
+            # Service re-attach contract). Best-effort: a missing identity or a
+            # write error never downgrades a healthy runtime.
+            if recover_identity is not None:
+                try:
+                    ident = recover_identity()
+                except Exception:  # noqa: BLE001
+                    ident = None
+                if isinstance(ident, dict):
+                    try:
+                        write_lock(
+                            pid=ident.get("pid"),
+                            start_time=ident.get("start_time"),
+                            port=cfg.get("port"),
+                            artifact_hash=ident.get("artifact_hash"),
+                            controller_session_id=ident.get("controller_session_id"),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+            return _runtime_verdict(
+                "READY", ownership_verified=True, health_code=code,
+                payload=payload, tool_name=tool_name,
+            )
+
+    # Exhausted the bounded cap without restoring health → BLOCKED, no retries.
     return _runtime_verdict(
-        "DEAD", ownership_verified=True, health_code=code,
+        "BLOCKED", ownership_verified=ownership_verified, health_code=code,
         payload=payload, tool_name=tool_name,
+        terminal_blocker=_blocked_blocker(attempts),
     )
 
 
