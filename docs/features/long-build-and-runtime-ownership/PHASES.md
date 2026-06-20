@@ -8,6 +8,8 @@
 
 ## Cross-feature Integration Notes
 
+> **Spun-off bug (2026-06-20):** this feature's needs-research resume surfaced that claude-config has no `docs/gemini-sprint/` staging structure, forcing a direct-`RESEARCH.md`-drop fallback. Filed as `docs/bugs/no-gemini-sprint-staging-in-claude-config/` (Concluded: capability gap, not a defect — both `/lazy*` Step 0.5 and `/ingest-research` already degrade gracefully; fix is documentation-only — bless the direct-drop path for self-edit repos).
+
 The SPEC's only `**Depends on:**` entry is `unified-pipeline-orchestrator` with `kind=composes` (NOT `hard`) — so per the Depends-on resolution protocol no mandatory upstream PHASES.md reality-check is required. It is nonetheless Complete with a PHASES.md, and this feature builds directly atop two of its Phase-5 deliverables, so the load-bearing integration points are recorded here:
 
 - **unified-pipeline-orchestrator (kind=composes, Complete):** This feature EXTENDS that feature's `lazy-state.py --ensure-runtime` subcommand (`lazy_core.ensure_runtime`, `lazy_core.py` ~L6166) and the orchestrator-loop / cycle-subagent bracket model (`--cycle-begin`/`--cycle-end`, `detect_cycle_bracket_friction`, `cycle_end_friction_check`) it owns. The integration contracts locked by the upstream and consumed below:
