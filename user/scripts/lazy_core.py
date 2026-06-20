@@ -17,6 +17,7 @@ Public API (stable for Phase 2 reuse):
     _die(msg, path)
     _diag(msg)
     clear_diagnostics()
+    reorder_queue(queue_path, item_id, *, to, queue_label)  # operator queue mutation
 
   Sentinel / plan parsing:
     parse_sentinel(path)
@@ -124,6 +125,143 @@ def _die(msg: str, path: Path | None = None) -> None:
     }
     sys.stdout.write(json.dumps(out, indent=2) + "\n")
     sys.exit(2)
+
+
+def reorder_queue(
+    queue_path: "Path",
+    item_id: str,
+    *,
+    to: "str | int",
+    queue_label: str = "queue",
+) -> dict:
+    """Move (or remove) an existing queue entry — the operator-facing reorder primitive.
+
+    Shared by lazy-state.py (``docs/features/queue.json``) and bug-state.py
+    (``docs/bugs/queue.json``); each caller passes its OWN ``queue_path`` so the
+    helper stays domain-agnostic. Mirrors ``enqueue_adhoc``'s load → validate-list
+    → mutate → ``_atomic_write`` shape, reusing ``_die``/``_atomic_write``/``_diag``.
+
+    ``to`` accepts:
+      * ``"tail"``   — move the entry to the END of the queue.
+      * ``"head"``   — move the entry to the FRONT of the queue.
+      * ``"remove"`` — delete the entry from the queue.
+      * an integer index (or its string form, e.g. ``"1"``) — move the entry to
+        that index. Clamped to ``[0, len-1]``.
+
+    A missing ``item_id`` or malformed queue JSON calls ``_die`` (exit 2, zero
+    mutation) — never a silent no-op. Moving an entry already at the requested
+    position rewrites NOTHING (byte-stable) and returns ``noop: True``.
+
+    ``queue_label`` parameterizes the diagnostic/``_die`` message text
+    ("queue.json" vs "bugs/queue.json") so both callers get correct diagnostics
+    from the shared helper.
+
+    Returns a JSON-serializable dict:
+      ``{"reordered": bool, "noop": bool, "item_id": str, "operation": str,
+         "new_position": int | None, "queue_length": int}``
+    """
+    # Parse the `to` argument into a canonical operation up front so a bad value
+    # dies BEFORE we touch the file (zero side effects on a malformed request).
+    target_index: "int | None" = None
+    if isinstance(to, int):
+        operation = f"index:{to}"
+        target_index = to
+    else:
+        to_str = str(to).strip().lower()
+        if to_str in ("tail", "head", "remove"):
+            operation = to_str
+        else:
+            try:
+                target_index = int(to_str)
+            except (TypeError, ValueError):
+                _die(
+                    f"invalid --to for {queue_label}: {to!r} "
+                    f"(expected tail|head|remove|<int index>)",
+                    queue_path,
+                )
+                return {}  # pragma: no cover
+            operation = f"index:{target_index}"
+
+    # Load → validate the `queue` array is a list (same guard as enqueue_adhoc).
+    if not queue_path.exists():
+        _die(f"{queue_label} not found", queue_path)
+        return {}  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid {queue_label}: {exc}", queue_path)
+        return {}  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die(f"{queue_label} 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+
+    # Find the entry to move/remove.
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+
+    original_len = len(items)
+
+    if operation == "remove":
+        items.pop(idx)
+        data["queue"] = items
+        _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+        _diag(f"reorder_queue: removed {item_id} from {queue_label}")
+        return {
+            "reordered": True,
+            "noop": False,
+            "item_id": item_id,
+            "operation": "remove",
+            "new_position": None,
+            "queue_length": len(items),
+        }
+
+    # Resolve the destination index for a move.
+    if operation == "tail":
+        dest = original_len - 1
+    elif operation == "head":
+        dest = 0
+    else:  # index:N
+        dest = target_index if target_index is not None else idx
+        # Clamp into range so an out-of-bounds index is a deterministic no-error.
+        dest = max(0, min(dest, original_len - 1))
+
+    if dest == idx:
+        # Already at the requested position — byte-stable no-op (no rewrite).
+        _diag(
+            f"reorder_queue: {item_id} already at position {dest} in "
+            f"{queue_label} (no-op)"
+        )
+        return {
+            "reordered": True,
+            "noop": True,
+            "item_id": item_id,
+            "operation": operation,
+            "new_position": dest,
+            "queue_length": original_len,
+        }
+
+    entry = items.pop(idx)
+    items.insert(dest, entry)
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"reorder_queue: moved {item_id} to position {dest} in {queue_label}"
+    )
+    return {
+        "reordered": True,
+        "noop": False,
+        "item_id": item_id,
+        "operation": operation,
+        "new_position": dest,
+        "queue_length": len(items),
+    }
 
 
 # ---------------------------------------------------------------------------

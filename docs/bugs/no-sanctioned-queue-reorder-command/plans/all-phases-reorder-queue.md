@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: no-sanctioned-queue-reorder-command
-status: Ready
+status: In-progress
 created: 2026-06-20
 complexity: complex
 phases: [1, 2, 3, 4, 5]
@@ -80,7 +80,7 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — `lazy_core.reorder_queue` helper + direct unit tests (Phase 1)
+- [x] WU-1 — `lazy_core.reorder_queue` helper + direct unit tests (Phase 1)
 - [ ] WU-2 — `--reorder-queue` subcommand on `lazy-state.py` + `--test` fixtures (Phase 2)
 - [ ] WU-3 — `--reorder-queue` subcommand on `bug-state.py` + `--test` fixtures (Phase 3)
 - [ ] WU-4 — `--reorder-queue` parity assertion in `lazy_parity_audit.py` (Phase 4)

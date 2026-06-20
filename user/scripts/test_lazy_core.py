@@ -23022,6 +23022,128 @@ def test_marker_work_branch_cli_bug_state_parity():
     _run_marker_work_branch_cli("bug-state.py")
 
 
+# ---------------------------------------------------------------------------
+# reorder_queue helper (no-sanctioned-queue-reorder-command — Phase 1)
+# ---------------------------------------------------------------------------
+
+def _write_temp_queue(td: "Path", ids: "list[str]") -> "Path":
+    """Write a docs/features/queue.json-shaped file with the given ids in order."""
+    qp = Path(td) / "queue.json"
+    qp.write_text(
+        json.dumps({"queue": [{"id": i, "name": i} for i in ids]}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return qp
+
+
+def _queue_ids(qp: "Path") -> "list[str]":
+    data = json.loads(qp.read_text(encoding="utf-8"))
+    return [e["id"] for e in data["queue"]]
+
+
+def test_reorder_queue_to_tail_moves_entry_last():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_queue(td, ["a", "b", "c"])
+        result = lazy_core.reorder_queue(qp, "a", to="tail")
+        assert _queue_ids(qp) == ["b", "c", "a"], _queue_ids(qp)
+        # file remains valid JSON (re-read above proves it)
+        assert result["reordered"] is True
+        assert result["item_id"] == "a"
+        assert result["operation"] == "tail"
+        assert result["new_position"] == 2
+        assert result["queue_length"] == 3
+        # JSON-serializable
+        json.dumps(result)
+
+
+def test_reorder_queue_to_head_moves_entry_first():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_queue(td, ["a", "b", "c"])
+        result = lazy_core.reorder_queue(qp, "c", to="head")
+        assert _queue_ids(qp) == ["c", "a", "b"], _queue_ids(qp)
+        assert result["new_position"] == 0
+        assert result["operation"] == "head"
+
+
+def test_reorder_queue_to_int_index_moves_entry_to_index():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_queue(td, ["a", "b", "c"])
+        result = lazy_core.reorder_queue(qp, "a", to=1)
+        assert _queue_ids(qp) == ["b", "a", "c"], _queue_ids(qp)
+        assert result["new_position"] == 1
+        assert result["operation"] == "index:1"
+
+
+def test_reorder_queue_remove_deletes_entry():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_queue(td, ["a", "b", "c"])
+        result = lazy_core.reorder_queue(qp, "b", to="remove")
+        assert _queue_ids(qp) == ["a", "c"], _queue_ids(qp)
+        assert "b" not in _queue_ids(qp)
+        assert result["operation"] == "remove"
+        assert result["new_position"] is None
+        assert result["queue_length"] == 2
+
+
+def test_reorder_queue_missing_entry_dies():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_queue(td, ["a", "b", "c"])
+        raised = False
+        try:
+            lazy_core.reorder_queue(qp, "zzz", to="tail")
+        except SystemExit:
+            raised = True
+        assert raised, "missing item_id must raise SystemExit via _die"
+        # queue untouched
+        assert _queue_ids(qp) == ["a", "b", "c"], _queue_ids(qp)
+
+
+def test_reorder_queue_idempotent_noop_byte_stable():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_queue(td, ["a", "b", "c"])
+        before = qp.read_bytes()
+        result = lazy_core.reorder_queue(qp, "a", to="head")  # already at head
+        assert result["reordered"] is True
+        assert result["noop"] is True
+        assert qp.read_bytes() == before, "no-op must leave the file byte-stable"
+        assert _queue_ids(qp) == ["a", "b", "c"]
+        # tail no-op
+        before2 = qp.read_bytes()
+        result2 = lazy_core.reorder_queue(qp, "c", to="tail")  # already at tail
+        assert result2["noop"] is True
+        assert qp.read_bytes() == before2
+
+
+def test_reorder_queue_malformed_json_dies():
+    with tempfile.TemporaryDirectory() as td:
+        qp = Path(td) / "queue.json"
+        qp.write_text("{ not valid json", encoding="utf-8")
+        raised = False
+        try:
+            lazy_core.reorder_queue(qp, "a", to="tail")
+        except SystemExit:
+            raised = True
+        assert raised, "malformed queue JSON must raise SystemExit via _die"
+
+
+_TESTS = _TESTS + [
+    ("test_reorder_queue_to_tail_moves_entry_last",
+     test_reorder_queue_to_tail_moves_entry_last),
+    ("test_reorder_queue_to_head_moves_entry_first",
+     test_reorder_queue_to_head_moves_entry_first),
+    ("test_reorder_queue_to_int_index_moves_entry_to_index",
+     test_reorder_queue_to_int_index_moves_entry_to_index),
+    ("test_reorder_queue_remove_deletes_entry",
+     test_reorder_queue_remove_deletes_entry),
+    ("test_reorder_queue_missing_entry_dies",
+     test_reorder_queue_missing_entry_dies),
+    ("test_reorder_queue_idempotent_noop_byte_stable",
+     test_reorder_queue_idempotent_noop_byte_stable),
+    ("test_reorder_queue_malformed_json_dies",
+     test_reorder_queue_malformed_json_dies),
+]
+
+
 _TESTS = _TESTS + [
     ("test_marker_work_branch_field_written",
      test_marker_work_branch_field_written),
