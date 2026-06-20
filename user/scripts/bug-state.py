@@ -3965,6 +3965,104 @@ def run_smoke_tests() -> int:
                 pass
         print(f"  {'PASS' if cmg_ok else 'FAIL'} [{fix_cmg}] subagent cycle-end/begin refused, orchestrator allowed")
 
+        # -------------------------------------------------------------------
+        # Fixture: --reorder-queue (no-sanctioned-queue-reorder-command P3).
+        # Coupled-pair mirror of lazy-state.py --reorder-queue, on
+        # docs/bugs/queue.json. Operator-only / out-of-cycle, gated by
+        # refuse_if_cycle_active. Driven via subprocess so the real CLI handler
+        # (gate → parse → reorder_queue) runs.
+        # -------------------------------------------------------------------
+        fix_ro = "reorder-queue"
+        ro_ok = True
+        _ro_script = str(Path(__file__).resolve())
+
+        def _ro_repo(ids: list) -> "Path":
+            import uuid as _uuid
+            root = td_path / f"ro-{_uuid.uuid4().hex[:8]}"
+            qdir = root / "docs" / "bugs"
+            qdir.mkdir(parents=True, exist_ok=True)
+            (qdir / "queue.json").write_text(
+                json.dumps({"queue": [{"id": i, "name": i} for i in ids]},
+                           indent=2) + "\n",
+                encoding="utf-8",
+            )
+            return root
+
+        def _ro_ids(root: "Path") -> list:
+            data = json.loads(
+                (root / "docs" / "bugs" / "queue.json").read_text(encoding="utf-8"))
+            return [e["id"] for e in data["queue"]]
+
+        def _ro_env(state_dir: "Path", *, cycle_marker: bool) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(state_dir)
+            if cycle_marker:
+                state_dir.mkdir(parents=True, exist_ok=True)
+                (state_dir / "lazy-cycle-active.json").write_text(
+                    json.dumps({"feature_id": "bug-ro", "nonce": "n",
+                                "kind": "real", "commit_tally": 0,
+                                "started_at": "2026-06-20T00:00:00Z",
+                                "session_id": None}, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            return e
+
+        def _ro_run(root: "Path", to: str, *, item="a", cycle_marker=False):
+            st = root / "ro-state"
+            return subprocess.run(
+                [sys.executable, _ro_script, "--repo-root", str(root),
+                 "--reorder-queue", "--id", item, "--to", to],
+                capture_output=True, text=True,
+                env=_ro_env(st, cycle_marker=cycle_marker),
+            )
+
+        # (1) defer-to-tail
+        r_root = _ro_repo(["a", "b", "c"])
+        r = _ro_run(r_root, "tail")
+        if r.returncode != 0 or _ro_ids(r_root) != ["b", "c", "a"]:
+            failures.append(f"[{fix_ro}] --to tail wrong: exit={r.returncode} order={_ro_ids(r_root)}: {r.stderr}")
+            ro_ok = False
+        # (2) move-to-head
+        r_root = _ro_repo(["a", "b", "c"])
+        r = _ro_run(r_root, "head", item="c")
+        if r.returncode != 0 or _ro_ids(r_root) != ["c", "a", "b"]:
+            failures.append(f"[{fix_ro}] --to head wrong: exit={r.returncode} order={_ro_ids(r_root)}")
+            ro_ok = False
+        # (3) move-to-index
+        r_root = _ro_repo(["a", "b", "c"])
+        r = _ro_run(r_root, "1")
+        if r.returncode != 0 or _ro_ids(r_root) != ["b", "a", "c"]:
+            failures.append(f"[{fix_ro}] --to 1 wrong: exit={r.returncode} order={_ro_ids(r_root)}")
+            ro_ok = False
+        # (4) remove
+        r_root = _ro_repo(["a", "b", "c"])
+        r = _ro_run(r_root, "remove", item="b")
+        if r.returncode != 0 or _ro_ids(r_root) != ["a", "c"]:
+            failures.append(f"[{fix_ro}] --to remove wrong: exit={r.returncode} order={_ro_ids(r_root)}")
+            ro_ok = False
+        # (5) missing-entry → _die (exit 2), queue unchanged
+        r_root = _ro_repo(["a", "b", "c"])
+        r = _ro_run(r_root, "tail", item="zzz")
+        if r.returncode != 2 or _ro_ids(r_root) != ["a", "b", "c"]:
+            failures.append(f"[{fix_ro}] missing-entry must exit 2 + not mutate; got {r.returncode}")
+            ro_ok = False
+        # (6) cycle-active refusal → exit 3, queue unchanged
+        r_root = _ro_repo(["a", "b", "c"])
+        r = _ro_run(r_root, "tail", cycle_marker=True)
+        if r.returncode != 3 or _ro_ids(r_root) != ["a", "b", "c"]:
+            failures.append(f"[{fix_ro}] cycle-active must refuse exit 3 + leave queue unchanged; got {r.returncode}")
+            ro_ok = False
+        # (7) idempotent no-op (already at head) → exit 0, byte-stable
+        r_root = _ro_repo(["a", "b", "c"])
+        _ro_qp = r_root / "docs" / "bugs" / "queue.json"
+        _ro_before = _ro_qp.read_bytes()
+        r = _ro_run(r_root, "head")
+        if r.returncode != 0 or _ro_qp.read_bytes() != _ro_before:
+            failures.append(f"[{fix_ro}] idempotent no-op must exit 0 + byte-stable; got {r.returncode}")
+            ro_ok = False
+        print(f"  {'PASS' if ro_ok else 'FAIL'} [{fix_ro}] reorder tail/head/index/remove/missing/cycle-active/no-op")
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -4046,6 +4144,18 @@ def main() -> int:
               "bug state script); present so the unified-pipeline-orchestrator "
               "'bug-state.py --enqueue-adhoc --type bug' form parses cleanly. "
               "No behavior change — bug-state always enqueues a bug."),
+    )
+    parser.add_argument(
+        "--reorder-queue", dest="reorder_queue", action="store_true",
+        help=("Operator-only / out-of-cycle: move (or remove) an existing "
+              "docs/bugs/queue.json entry. Requires --id and --to. Gated by "
+              "refuse_if_cycle_active like --enqueue-adhoc (exit 3 for a cycle "
+              "subagent). Coupled-pair mirror of lazy-state.py --reorder-queue."),
+    )
+    parser.add_argument(
+        "--to", dest="reorder_to", default=None,
+        help=("Reorder destination for --reorder-queue: "
+              "tail | head | remove | <integer index>."),
     )
     parser.add_argument(
         "--bug-id", default=None,
@@ -4760,6 +4870,27 @@ def main() -> int:
             _die("--enqueue-adhoc requires --name")
         result = enqueue_adhoc(
             Path(args.repo_root), args.id, args.name, args.spec_dir, args.severity
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.reorder_queue:
+        # Operator-only / out-of-cycle queue mutation (coupled-pair mirror of
+        # lazy-state.py --reorder-queue). Refuse FIRST so a cycle subagent gets
+        # exit 3 with zero side effects.
+        lazy_core.refuse_if_cycle_active("--reorder-queue")
+        if not args.id or not args.reorder_to:
+            _die("--reorder-queue requires --id and --to")
+        to_arg: "str | int"
+        try:
+            to_arg = int(args.reorder_to)
+        except (TypeError, ValueError):
+            to_arg = args.reorder_to
+        result = lazy_core.reorder_queue(
+            Path(args.repo_root) / "docs" / "bugs" / "queue.json",
+            args.id,
+            to=to_arg,
+            queue_label="bugs/queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0

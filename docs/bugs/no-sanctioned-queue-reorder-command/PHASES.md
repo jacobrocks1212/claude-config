@@ -115,10 +115,15 @@ No `**Depends on:**` block in the SPEC (bug investigation spec). No hard upstrea
 **Scope:** Mirror Phase 2's subcommand on `bug-state.py`, operating on `docs/bugs/queue.json`, calling the SAME `lazy_core.reorder_queue` helper with `queue_label="bugs/queue.json"`. Same gating, same `--test` fixture set adapted to bug fixtures. This satisfies the coupled-pair parity requirement (the feature + bug state scripts must carry the same operator-facing surface).
 
 **Deliverables:**
-- [ ] argparse: `--reorder-queue` + `--to` on `bug-state.py` (beside its `--enqueue-adhoc` block, ~line 4033), reusing the EXISTING `--id` flag.
-- [ ] dispatch branch beside the `--enqueue-adhoc` branch (~line 4753): `lazy_core.refuse_if_cycle_active("--reorder-queue")` FIRST, missing-arg `_die`, then `lazy_core.reorder_queue(Path(args.repo_root) / "docs" / "bugs" / "queue.json", args.id, to=<parsed --to>, queue_label="bugs/queue.json")`, `json.dumps`, return 0.
-- [ ] `--test` fixtures mirroring Phase 2: defer-to-tail, move-to-head/index, remove, missing-entry `_die`, cycle-active refusal, idempotent no-op — adapted to `docs/bugs/queue.json` (model on the existing `enqueue-adhoc-writes-entry` / `enqueue-adhoc-idempotent` bug fixtures, bug-state.py:1679/1695).
-- [ ] Regenerate the byte-pinned baseline (`tests/baselines/bug-state-test-baseline.txt`) via `_normalize_smoke_output` — never by hand.
+- [x] argparse: `--reorder-queue` + `--to` on `bug-state.py` (beside its `--enqueue-adhoc` block, ~line 4033), reusing the EXISTING `--id` flag.
+- [x] dispatch branch beside the `--enqueue-adhoc` branch (~line 4753): `lazy_core.refuse_if_cycle_active("--reorder-queue")` FIRST, missing-arg `_die`, then `lazy_core.reorder_queue(Path(args.repo_root) / "docs" / "bugs" / "queue.json", args.id, to=<parsed --to>, queue_label="bugs/queue.json")`, `json.dumps`, return 0.
+- [x] `--test` fixtures mirroring Phase 2: defer-to-tail, move-to-head/index, remove, missing-entry `_die`, cycle-active refusal, idempotent no-op — adapted to `docs/bugs/queue.json` (model on the existing `enqueue-adhoc-writes-entry` / `enqueue-adhoc-idempotent` bug fixtures, bug-state.py:1679/1695).
+- [x] Regenerate the byte-pinned baseline (`tests/baselines/bug-state-test-baseline.txt`) via `_normalize_smoke_output` — never by hand.
+
+**Implementation Notes (P3 — 2026-06-20):**
+- Mirrored P2 byte-for-byte on `bug-state.py`: `--reorder-queue` + `--to` argparse after its `--type` block (reusing `--id`); dispatch after the `enqueue_adhoc` branch with the SAME shape — `refuse_if_cycle_active("--reorder-queue")` FIRST, missing-arg `_die`, `int()`-or-string `--to` parse, `lazy_core.reorder_queue(... docs/bugs/queue.json ..., queue_label="bugs/queue.json")`. Same shared helper (no divergent reimplementation).
+- Seven subprocess-driven `--test` fixtures adapted to `docs/bugs/queue.json`. Bug baseline regenerated via `_normalize_smoke_output` (one-line diff). Ran the full shared-helper discipline set: `lazy-state.py --test`, `bug-state.py --test`, `test_lazy_core.py` (700/700), plus `test_lazy_parity.py` + `lazy_parity_audit.py` (exit 0) — all green.
+- Review verdict: PASS. Both scripts now carry an identical `--reorder-queue` surface (P4 will guard it).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/bug-state.py --repo-root <tmp> --reorder-queue --id <head-id> --to tail` against a temp repo with a 3-entry `docs/bugs/queue.json` prints `{"reordered": true, …}` and the on-disk bug queue lists `<head-id>` last.
 

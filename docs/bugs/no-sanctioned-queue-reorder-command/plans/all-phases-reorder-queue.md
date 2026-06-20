@@ -82,7 +82,7 @@ This plan references reusable component files by path instead of inlining their 
 
 - [x] WU-1 — `lazy_core.reorder_queue` helper + direct unit tests (Phase 1)
 - [x] WU-2 — `--reorder-queue` subcommand on `lazy-state.py` + `--test` fixtures (Phase 2)
-- [ ] WU-3 — `--reorder-queue` subcommand on `bug-state.py` + `--test` fixtures (Phase 3)
+- [x] WU-3 — `--reorder-queue` subcommand on `bug-state.py` + `--test` fixtures (Phase 3)
 - [ ] WU-4 — `--reorder-queue` parity assertion in `lazy_parity_audit.py` (Phase 4)
 - [ ] WU-5 — consumer-contract rewire (`blocked-resolution.md` + both SKILL.md HARD CONSTRAINT 1) (Phase 5)
 - [ ] WU-6 — CLI docs in `user/scripts/CLAUDE.md` + skill projection/lint re-run (Phase 5)
