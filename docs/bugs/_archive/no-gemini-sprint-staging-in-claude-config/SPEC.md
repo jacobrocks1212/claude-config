@@ -2,9 +2,11 @@
 
 > When claude-config is itself the pipeline-driven repo, a needs-research halt cannot use the staged-`.txt` ingest path because the repo has no `docs/gemini-sprint/` staging structure — so research must be dropped directly as `RESEARCH.md`.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-06-20
+**Fixed:** 2026-06-20
+**Fix commit:** 48819e0
 **Placement:** docs/bugs/no-gemini-sprint-staging-in-claude-config
 **Related:** `docs/features/long-build-and-runtime-ownership/` (origin — its needs-research resume surfaced this), `user/skills/ingest-research/SKILL.md`, `user/skills/lazy-batch/SKILL.md` (Step 0.5)
 

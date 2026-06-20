@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — documentation-only fix; the bug is a docs/convention gap (the runtime already degrades gracefully per the SPEC's Proven Findings), and claude-config has no app surface, no MCP-reachable behavior. No code/skill/script/hook change.
 
-**Status:** In-progress (implementation complete, validation pending)
+**Status:** Fixed
 
 ## Summary
 
