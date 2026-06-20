@@ -514,6 +514,7 @@ def compute_state(
     scope_bug_id: str | None = None,
     park_needs_input: bool = False,
     park_blocked: bool = False,
+    per_feature_cycle_cap: int | None = None,
 ) -> dict[str, Any]:
     """Walk the bug lifecycle and return the next action as a JSON-serializable dict.
 
@@ -541,7 +542,16 @@ def compute_state(
       'queue-exhausted-all-parked' terminal fires instead of 'all-bugs-fixed'.
       Without this flag, BLOCKED still halts (byte-identical). Mirrors lazy-state.py
       (SPEC park-mode-halts-on-blocked, Phase 2 / Open-Q1 bug parity).
+    per_feature_cycle_cap: PARITY-ONLY param (feature-budget-guard-and-skip-ahead
+      Phase 2). The per-feature budget guard is a FEATURE-pipeline mechanic; the bug
+      pipeline does NOT trip in v1. This param exists ONLY so the bug-state argparse
+      mirrors lazy-state's `--per-feature-cycle-cap` parse surface (audited by
+      lazy_parity_audit.py) — matching the `--type bug` benign-parse precedent. It
+      is accepted and ignored here (no behavior change; output byte-identical).
     """
+    # per_feature_cycle_cap is accepted for argparse parity only; the bug pipeline
+    # has no budget-guard trip in v1. Referenced here to silence unused-arg lints.
+    _ = per_feature_cycle_cap
     # Cloud has no audio device — force no-device like lazy-state.py does.
     if cloud:
         real_device = False
@@ -4056,6 +4066,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--per-feature-cycle-cap", type=int, default=None, metavar="N",
+        help=(
+            "PARITY-ONLY (feature-budget-guard-and-skip-ahead Phase 2): mirrors "
+            "lazy-state.py's --per-feature-cycle-cap so the documented unified flag "
+            "surface parses on both scripts (audited by lazy_parity_audit.py). The "
+            "per-feature budget guard is a FEATURE-pipeline mechanic and the bug "
+            "pipeline does not trip in v1, so this flag is accepted and ignored here "
+            "(benign no-op; output byte-identical). Matches the --type bug precedent."
+        ),
+    )
+    parser.add_argument(
         "--verify-ledger", default=None, metavar="SPEC_PATH",
         help=(
             "Scripted completion-ledger guard (replaces the prose guard blocks "
@@ -4687,6 +4708,7 @@ def main() -> int:
         scope_bug_id=args.bug_id,
         park_needs_input=args.park_needs_input,
         park_blocked=args.park_blocked,
+        per_feature_cycle_cap=args.per_feature_cycle_cap,
     )
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.

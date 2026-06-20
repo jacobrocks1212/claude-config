@@ -1193,6 +1193,7 @@ def compute_state(
     scope_feature_id: str | None = None,
     park_needs_input: bool = False,
     park_blocked: bool = False,
+    per_feature_cycle_cap: int | None = None,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -6086,6 +6087,19 @@ def main() -> int:
                             "fires instead of 'all-features-complete'. Without this flag, output is "
                             "byte-identical to the default behavior (BLOCKED still halts)."
                         ))
+    parser.add_argument("--per-feature-cycle-cap", type=int, default=None,
+                        metavar="N",
+                        help=(
+                            "feature-budget-guard-and-skip-ahead Phase 2: override the DYNAMIC "
+                            "per-feature forward-cycle ceiling with a FIXED integer N. Absent "
+                            "(default None) → the ceiling is computed per Locked Decision 4 as "
+                            "max(6, min(C*4//10, (C//Q)*2)) from the run's max_cycles (C) and the "
+                            "ready-queue depth (Q). The per-feature budget guard trips when a "
+                            "feature's per_feature_forward_cycles count crosses this ceiling, "
+                            "deferring it to the live-queue tail (run-scoped reorder; second trip "
+                            "→ terminal eviction). Marker-gated: a no-op when no run marker is "
+                            "present (output byte-identical to the pre-feature baseline)."
+                        ))
     parser.add_argument("--verify-ledger", default=None, metavar="SPEC_PATH",
                         help=(
                             "Scripted completion-ledger guard (replaces the prose guard blocks "
@@ -6991,6 +7005,7 @@ def main() -> int:
         scope_feature_id=args.feature_id,
         park_needs_input=args.park_needs_input,
         park_blocked=args.park_blocked,
+        per_feature_cycle_cap=args.per_feature_cycle_cap,
     )
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.

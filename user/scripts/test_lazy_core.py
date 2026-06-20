@@ -19522,6 +19522,79 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# Tests: feature-budget-guard-and-skip-ahead Phase 2 — compute_per_feature_ceiling
+#   Dynamic fair-share ceiling (Locked Decision 4):
+#     L_task = max(6, min(C*4//10, (C//Q)*2))  (integer floor division)
+#   override (the --per-feature-cycle-cap path) short-circuits to the override.
+#   Q<=0 → returns the 6 floor (no div-by-zero). Pure + side-effect-free.
+# ---------------------------------------------------------------------------
+
+
+def test_compute_per_feature_ceiling_override_short_circuits():
+    """P2 RED: an explicit override returns verbatim, ignoring the formula."""
+    _guard()
+    assert lazy_core.compute_per_feature_ceiling(20, 5, override=3) == 3
+    assert lazy_core.compute_per_feature_ceiling(20, 5, override=99) == 99
+    # override=0 is a deliberate cap of 0 (falsy but not None) — honored verbatim.
+    assert lazy_core.compute_per_feature_ceiling(20, 5, override=0) == 0
+
+
+def test_compute_per_feature_ceiling_six_floor_small_run():
+    """P2 RED: small run / shallow queue → the max(6, …) floor wins.
+    C=12, Q=2: min(12*4//10=4, (12//2)*2=12)=4; max(6,4)=6."""
+    _guard()
+    assert lazy_core.compute_per_feature_ceiling(12, 2) == 6
+
+
+def test_compute_per_feature_ceiling_deep_queue_six():
+    """P2 RED: the RESEARCH_SUMMARY deep-queue example C=32, Q=10 → 6.
+    min(32*4//10=12, (32//10)*2=6)=6; max(6,6)=6."""
+    _guard()
+    assert lazy_core.compute_per_feature_ceiling(32, 10) == 6
+
+
+def test_compute_per_feature_ceiling_forty_percent_cap_arm():
+    """P2 RED: large C, shallow Q → the 40% cap arm wins.
+    C=50, Q=2: min(50*4//10=20, (50//2)*2=50)=20; max(6,20)=20."""
+    _guard()
+    assert lazy_core.compute_per_feature_ceiling(50, 2) == 20
+
+
+def test_compute_per_feature_ceiling_zero_queue_no_div_by_zero():
+    """P2 RED: Q_depth==0 returns the 6 floor (no ZeroDivisionError)."""
+    _guard()
+    assert lazy_core.compute_per_feature_ceiling(20, 0) == 6
+    # Negative is also guarded (defensive) → 6 floor.
+    assert lazy_core.compute_per_feature_ceiling(20, -1) == 6
+
+
+def test_compute_per_feature_ceiling_pure_no_side_effects():
+    """P2 RED: identical inputs → identical outputs, repeatable (pure fn)."""
+    _guard()
+    a = lazy_core.compute_per_feature_ceiling(25, 4)
+    b = lazy_core.compute_per_feature_ceiling(25, 4)
+    assert a == b
+    # C=25, Q=4: min(25*4//10=10, (25//4)*2=12)=10; max(6,10)=10.
+    assert a == 10
+
+
+_TESTS = _TESTS + [
+    ("test_compute_per_feature_ceiling_override_short_circuits",
+     test_compute_per_feature_ceiling_override_short_circuits),
+    ("test_compute_per_feature_ceiling_six_floor_small_run",
+     test_compute_per_feature_ceiling_six_floor_small_run),
+    ("test_compute_per_feature_ceiling_deep_queue_six",
+     test_compute_per_feature_ceiling_deep_queue_six),
+    ("test_compute_per_feature_ceiling_forty_percent_cap_arm",
+     test_compute_per_feature_ceiling_forty_percent_cap_arm),
+    ("test_compute_per_feature_ceiling_zero_queue_no_div_by_zero",
+     test_compute_per_feature_ceiling_zero_queue_no_div_by_zero),
+    ("test_compute_per_feature_ceiling_pure_no_side_effects",
+     test_compute_per_feature_ceiling_pure_no_side_effects),
+]
+
+
+# ---------------------------------------------------------------------------
 # Tests: loop-detected-false-positives-from-probe-and-reboot-churn
 #   Phase 2 — resolution-aware step_count reset (symptom 3).
 #

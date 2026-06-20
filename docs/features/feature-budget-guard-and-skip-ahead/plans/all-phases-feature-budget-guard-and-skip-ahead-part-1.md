@@ -96,7 +96,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 - [x] WU-1 — Per-feature counter: marker init + advance increment
 - [x] WU-2 — Per-feature counter: read helper + smoke fixture
-- [ ] WU-3 — Dynamic ceiling fn + `--per-feature-cycle-cap` flag
+- [x] WU-3 — Dynamic ceiling fn + `--per-feature-cycle-cap` flag
 - [ ] WU-4 — Trip-eval skip branch + defer-to-tail + bounded re-trip/eviction + probe field + exhaustion terminal
 
 ---

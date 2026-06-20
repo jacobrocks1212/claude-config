@@ -8331,6 +8331,59 @@ def _bump_per_feature_forward(marker: dict, feature_id) -> None:
     marker["per_feature_forward_cycles"] = per_feature
 
 
+def compute_per_feature_ceiling(
+    max_cycles: int,
+    ready_queue_depth: int,
+    override: int | None = None,
+) -> int:
+    """Dynamic per-feature forward-cycle ceiling L_task (feature-budget-guard-and-
+    skip-ahead Phase 2, Locked Decision 4).
+
+    When ``override`` is supplied (the ``--per-feature-cycle-cap <N>`` path) it is
+    returned VERBATIM — including a deliberate 0 (a falsy-but-not-None cap). Only
+    ``None`` falls through to the formula.
+
+    Otherwise:
+
+        L_task = max(6, min(C * 4 // 10, (C // Q) * 2))
+
+    with C = ``max_cycles``, Q = ``ready_queue_depth``, and INTEGER floor division
+    (``⌊⌋``) throughout. The ``max(6, …)`` floor guarantees a feature can always
+    run ≥6 cycles before tripping (small runs / shallow queues still let a feature
+    finish); the ``C * 4 // 10`` arm caps any single feature at ≤40% of the run
+    budget. ``Q_depth <= 0`` short-circuits to the 6 floor (no div-by-zero — a
+    deep queue is what shrinks the per-feature share, so an empty/zero queue can
+    only mean the floor applies).
+
+    Pure + side-effect-free for direct characterization in ``test_lazy_core.py``.
+
+    Args:
+        max_cycles: the run's whole-run budget (``C_global`` / marker ``max_cycles``).
+        ready_queue_depth: count of ready (non-gated, non-parked) queue features.
+        override: a fixed ceiling that bypasses the formula (``None`` ⇒ compute).
+
+    Returns:
+        The per-feature ceiling (int).
+    """
+    if override is not None:
+        return int(override)
+    try:
+        c = int(max_cycles)
+    except (TypeError, ValueError):
+        c = 0
+    try:
+        q = int(ready_queue_depth)
+    except (TypeError, ValueError):
+        q = 0
+    if q <= 0:
+        # No (or zero) ready queue depth → only the floor can apply (the fair-share
+        # arm needs a positive divisor). Guards ZeroDivisionError deterministically.
+        return 6
+    forty_percent_arm = c * 4 // 10
+    fair_share_arm = (c // q) * 2
+    return max(6, min(forty_percent_arm, fair_share_arm))
+
+
 def read_per_feature_forward_cycles(marker: dict | None) -> dict:
     """Read helper exposing the ``per_feature_forward_cycles`` map from a marker
     (feature-budget-guard-and-skip-ahead Phase 1).
