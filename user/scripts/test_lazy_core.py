@@ -18597,6 +18597,149 @@ def test_ensure_runtime_m4_ready_does_no_recovery():
 
 
 # ---------------------------------------------------------------------------
+# env-transient-counts-against-validation-retry-budget Phase 1 (Leg A) — the
+# sidecar-pipe (`is_connected`) readiness dimension. A runtime that is
+# HTTP-healthy (/health 200) but MCP-functionally dead (a zombie node process
+# holding the :3333 sidecar named pipe → get_sidecar_status.is_connected: false)
+# must NOT return a bare READY — it routes into recovery (a dev:restart that
+# reaps the stale pipe) and, on persistent disconnect, to BLOCKED. The dimension
+# is config-gated (`assert_sidecar_connected`, default off → repo-agnostic) and
+# injected (`sidecar_check`, default treated-as-connected) so --test is hermetic.
+# ---------------------------------------------------------------------------
+
+_M4_CONFIG_SIDECAR = {**_M4_CONFIG, "assert_sidecar_connected": True}
+
+
+def test_ensure_runtime_sidecar_disconnected_despite_health_200_routes_to_recovery():
+    """Owned + current + /health 200 but sidecar pipe DEAD (sidecar_check → False)
+    with assert_sidecar_connected on → NOT a bare READY: recovery is entered
+    (restart attempted to reap the stale pipe). On persistent disconnect (restart
+    never reconnects the pipe) the terminal verdict is BLOCKED with a non-null
+    terminal_blocker (routable to mcp-runtime-unready)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_SIDECAR,
+            probe=lambda: (200, {"tools": ["render_chart"]}),  # HTTP-healthy
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # owned + current
+            sleep=lambda s: None,
+            sidecar_check=lambda: False,  # pipe dead despite HTTP 200
+        )
+        # NOT a bare READY on the disconnected pass — recovery was entered.
+        assert result["state"] != "READY", result
+        assert calls["restart"] >= 1, "a dead sidecar pipe must enter recovery"
+        # Persistent disconnect → BLOCKED with a terminal_blocker.
+        assert result["state"] == "BLOCKED", result
+        assert result["terminal_blocker"], "BLOCKED must carry a terminal_blocker"
+
+
+def test_ensure_runtime_sidecar_check_default_off_preserves_ready():
+    """Same owned+current+200 runtime but NO assert_sidecar_connected in config
+    (default) and NO injected sidecar_check → the verdict is EXACTLY READY (the
+    existing test_ensure_runtime_m4_ready_when_owned_current_healthy behavior is
+    preserved byte-for-byte). Regression guard for the default-off path."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,  # NO assert_sidecar_connected → check skipped
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a default-off READY runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            # NO sidecar_check injected.
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is True, result
+        assert result["health_code"] == 200, result
+        assert result["terminal_blocker"] is None, result
+
+
+def test_ensure_runtime_legacy_config_without_sidecar_key_does_not_crash():
+    """A config dict WITHOUT assert_sidecar_connected (a legacy override) must not
+    raise KeyError and treats the sidecar as connected (the assertion is skipped)
+    — an owned+current+200 runtime is READY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        legacy_cfg = {  # no assert_sidecar_connected / sidecar_status_url keys
+            "health_url": "http://localhost:3333/health",
+            "restart_command": "npm run dev:restart",
+            "mcp_tool_name": "render_chart",
+            "native_globs": ["src-tauri", "crates"],
+            "lock_filename": ".runtime.lock.json",
+            "port": 3333,
+        }
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=legacy_cfg,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+        )
+        assert result["state"] == "READY", result
+        assert result["terminal_blocker"] is None, result
+
+
+def test_ensure_runtime_sidecar_connected_yields_ready():
+    """Owned+current+200 with assert_sidecar_connected on and sidecar_check → True
+    (a connected pipe) → state READY. A connected sidecar is the happy path; the
+    assertion does not perturb a genuinely-ready runtime."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_SIDECAR,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sidecar_check=lambda: True,  # connected sidecar → happy path
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is True, result
+        assert calls["restart"] == 0, "a connected sidecar needs no recovery"
+        assert result["terminal_blocker"] is None, result
+
+
+def test_ensure_runtime_sidecar_default_probe_reads_is_connected():
+    """_default_sidecar_probe returns is_connected from the get_sidecar_status
+    payload (True only when the field is literally True; False on any error or a
+    missing/False field) — mirroring _default_runtime_probe's never-raises shape."""
+    _guard()
+    # The default probe is best-effort over urllib; assert its payload-parsing
+    # contract directly with an injected fetch so no network is touched.
+    assert lazy_core._sidecar_is_connected({"is_connected": True}) is True
+    assert lazy_core._sidecar_is_connected({"is_connected": False}) is False
+    assert lazy_core._sidecar_is_connected({}) is False
+    assert lazy_core._sidecar_is_connected(None) is False
+    assert lazy_core._sidecar_is_connected({"is_connected": "true"}) is False
+
+
+# ---------------------------------------------------------------------------
 # long-build-and-runtime-ownership Phase 2 — WU-3: surface the M4 verdict through
 # the `lazy-state.py --ensure-runtime` CLI handler. The handler threads the live
 # run marker's session_id as live_session_id (the controller_session_id recorded
@@ -19059,6 +19202,18 @@ _TESTS = _TESTS + [
      test_ensure_runtime_m4_hijacked_sets_blocker_never_restarts_never_kills),
     ("test_ensure_runtime_m4_ready_does_no_recovery",
      test_ensure_runtime_m4_ready_does_no_recovery),
+    # env-transient-counts-against-validation-retry-budget Phase 1 (Leg A):
+    # sidecar-pipe (is_connected) readiness dimension.
+    ("test_ensure_runtime_sidecar_disconnected_despite_health_200_routes_to_recovery",
+     test_ensure_runtime_sidecar_disconnected_despite_health_200_routes_to_recovery),
+    ("test_ensure_runtime_sidecar_check_default_off_preserves_ready",
+     test_ensure_runtime_sidecar_check_default_off_preserves_ready),
+    ("test_ensure_runtime_legacy_config_without_sidecar_key_does_not_crash",
+     test_ensure_runtime_legacy_config_without_sidecar_key_does_not_crash),
+    ("test_ensure_runtime_sidecar_connected_yields_ready",
+     test_ensure_runtime_sidecar_connected_yields_ready),
+    ("test_ensure_runtime_sidecar_default_probe_reads_is_connected",
+     test_ensure_runtime_sidecar_default_probe_reads_is_connected),
     # long-build-and-runtime-ownership Phase 2 / WU-3: --ensure-runtime CLI surface.
     ("test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states",
      test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states),

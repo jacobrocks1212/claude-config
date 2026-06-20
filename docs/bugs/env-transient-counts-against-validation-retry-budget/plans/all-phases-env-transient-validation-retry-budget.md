@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: env-transient-counts-against-validation-retry-budget
-status: Ready
+status: In-progress
 created: 2026-06-20
 complexity: complex
 phases: [1, 2]
@@ -91,8 +91,8 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Phase 1: sidecar-pipe readiness dimension in `lazy_core.ensure_runtime` (impl)
-- [ ] WU-2 — Phase 1: hermetic `test_lazy_core.py` sidecar-readiness fixtures (tests)
+- [x] WU-1 — Phase 1: sidecar-pipe readiness dimension in `lazy_core.ensure_runtime` (impl)
+- [x] WU-2 — Phase 1: hermetic `test_lazy_core.py` sidecar-readiness fixtures (tests)
 - [ ] WU-3 — Phase 2: runtime-up cycle runtime-readiness terminal in `cycle-base-prompt.md`
 - [ ] WU-4 — Phase 2: mirror the distinction into `mcp-test/SKILL.md` + `lazy-batch/SKILL.md` + reproject
 

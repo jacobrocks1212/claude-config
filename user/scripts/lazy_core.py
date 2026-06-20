@@ -6125,7 +6125,58 @@ _ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
     # function repo-agnostic (same discipline as the keys above).
     "lock_filename": ".runtime.lock.json",
     "port": 3333,
+    # Sidecar-pipe (is_connected) readiness dimension
+    # (env-transient-counts-against-validation-retry-budget Phase 1, Leg A).
+    # A runtime can be HTTP-healthy (/health 200) while the MCP sidecar named
+    # pipe is dead (a zombie node process holding it after a dev:restart). The
+    # HTTP-only gate then dispatches an mcp-test cycle against an
+    # MCP-functionally-dead runtime, and the env transient gets mislabeled
+    # `mcp-validation`. When `assert_sidecar_connected` is truthy, the M4 Health
+    # phase additionally asserts `get_sidecar_status.is_connected: true` and
+    # routes a pipe-dead-but-HTTP-200 runtime through recovery → BLOCKED
+    # (mcp-runtime-unready, escalation-immune) instead of a bare READY.
+    # Default OFF → repo-agnostic (non-AlgoBooth repos are unaffected); AlgoBooth
+    # opts in via its config override.
+    "assert_sidecar_connected": False,
+    "sidecar_status_url": "http://localhost:3333/tools/get_sidecar_status",
 }
+
+
+def _sidecar_is_connected(payload: dict | None) -> bool:
+    """True iff the get_sidecar_status payload reports ``is_connected: true``.
+
+    Strict: only a literal boolean ``True`` counts as connected — a missing
+    field, a non-dict payload, or a truthy-but-non-bool value (e.g. the string
+    ``"true"``) is treated as NOT connected (fail-safe toward recovery). Pure
+    payload-parsing helper, never raises.
+    """
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("is_connected") is True
+
+
+def _default_sidecar_probe(sidecar_status_url: str) -> bool:
+    """Real get_sidecar_status probe (stdlib urllib) → ``is_connected`` bool.
+
+    Mirrors ``_default_runtime_probe``: best-effort + never raises (any error →
+    False so the caller treats the sidecar as disconnected and enters recovery).
+    Only invoked when ``ensure_runtime`` is called WITHOUT an injected
+    ``sidecar_check`` AND the config asserts the sidecar (production); tests
+    always inject a ``sidecar_check``.
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        with urllib.request.urlopen(sidecar_status_url, timeout=5) as resp:  # noqa: S310
+            body = resp.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            payload = None
+        return _sidecar_is_connected(payload)
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
 
 
 def _default_runtime_probe(health_url: str):
@@ -6217,6 +6268,7 @@ def ensure_runtime(
     write_lock=None,
     recover_identity=None,
     kill=None,
+    sidecar_check=None,
 ) -> dict:
     """Ensure the dev runtime + MCP server are up, CURRENT, **and verifiably
     owned**; return the M4 liveness/recovery verdict.
@@ -6311,6 +6363,21 @@ def ensure_runtime(
         # stale_binary.py). The orchestrator binds a real stale_check when it
         # knows the boot stamp.
         stale_check = lambda: False
+    if sidecar_check is None:
+        # Sidecar-pipe readiness (Leg A,
+        # env-transient-counts-against-validation-retry-budget). When the config
+        # asserts the sidecar, bind the real get_sidecar_status probe; otherwise
+        # the assertion is skipped (the sidecar is treated as connected — the
+        # default-off, repo-agnostic path). A legacy config dict without the key
+        # is tolerated via .get(), so an un-migrated override never raises.
+        if cfg.get("assert_sidecar_connected"):
+            _sidecar_url = cfg.get(
+                "sidecar_status_url",
+                _ENSURE_RUNTIME_DEFAULT_CONFIG["sidecar_status_url"],
+            )
+            sidecar_check = lambda: _default_sidecar_probe(_sidecar_url)
+        else:
+            sidecar_check = lambda: True
 
     # ---- M4 mode: Identity engaged (LD3) -------------------------------------
     # Identity is "engaged" iff the caller threads a controller session id OR an
@@ -6346,6 +6413,7 @@ def ensure_runtime(
             write_lock=write_lock,
             recover_identity=recover_identity,
             tool_name=tool_name,
+            sidecar_check=sidecar_check,
         )
 
     # ---- Legacy mode: pre-M4 boot/stale/ready flow ---------------------------
@@ -6436,6 +6504,7 @@ def _ensure_runtime_m4(
     write_lock,
     recover_identity,
     tool_name,
+    sidecar_check=None,
 ):
     """The M4 Identity → Staleness → Health classifier + bounded recovery (LD3).
 
@@ -6501,10 +6570,26 @@ def _ensure_runtime_m4(
             cfg, "STALE", ownership_verified=True, probe=probe, restart=restart,
             sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
             tool_name=tool_name, initial_code=code, initial_payload=payload,
+            sidecar_check=sidecar_check,
         )
 
     # ---- Phase 3: Health -----------------------------------------------------
     if code == 200:
+        # HTTP-healthy. But a runtime can be /health-200 while the MCP sidecar
+        # named pipe is dead (a zombie node process holding it after a
+        # dev:restart — env-transient-counts-against-validation-retry-budget,
+        # Leg A). When the config asserts the sidecar, a disconnected pipe is NOT
+        # READY: route into recovery (a dev:restart that reaps the stale pipe).
+        # Default-off (sidecar_check None or lambda: True) preserves the bare
+        # READY byte-for-byte. The recovery re-probe re-asserts the pipe, so a
+        # restart that fixes HTTP but not the pipe ends BLOCKED, never READY.
+        if sidecar_check is not None and not sidecar_check():
+            return _recover_runtime(
+                cfg, "DEAD", ownership_verified=True, probe=probe, restart=restart,
+                sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
+                tool_name=tool_name, initial_code=code, initial_payload=payload,
+                sidecar_check=sidecar_check,
+            )
         return _runtime_verdict(
             "READY", ownership_verified=True, health_code=code,
             payload=payload, tool_name=tool_name,
@@ -6515,6 +6600,7 @@ def _ensure_runtime_m4(
         cfg, "DEAD", ownership_verified=True, probe=probe, restart=restart,
         sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
         tool_name=tool_name, initial_code=code, initial_payload=payload,
+        sidecar_check=sidecar_check,
     )
 
 
@@ -6531,6 +6617,7 @@ def _recover_runtime(
     tool_name,
     initial_code,
     initial_payload,
+    sidecar_check=None,
 ):
     """Bounded exponential-backoff recovery for a STALE/DEAD runtime (LD3).
 
@@ -6540,6 +6627,14 @@ def _recover_runtime(
     (when ``recover_identity`` supplies one) and return READY. On exhaustion
     (no healthy re-probe within the cap) return BLOCKED with a terminal_blocker —
     the loop-prevention guarantee that replaces the hand-rolled poll loops.
+
+    ``sidecar_check`` (env-transient-counts-against-validation-retry-budget,
+    Leg A): when supplied (the config asserts the sidecar), a healthy HTTP
+    re-probe is NOT sufficient — the recovered runtime must ALSO reconnect the
+    sidecar pipe. A restart that restores /health 200 but leaves the pipe dead
+    (the zombie persists) does NOT count as recovered: the loop continues and,
+    on exhaustion, the verdict is BLOCKED — never a READY against a pipe-dead
+    runtime. ``None`` (legacy / default-off) preserves the HTTP-only contract.
     """
     code, payload = initial_code, initial_payload
     attempts = 0
@@ -6557,6 +6652,12 @@ def _recover_runtime(
             continue
         code, payload = probe()
         if code == 200:
+            # HTTP is back — but if the config asserts the sidecar, the pipe must
+            # ALSO be reconnected for this to count as recovered. A restart that
+            # fixes /health but not the zombie-held pipe keeps retrying (and
+            # ultimately BLOCKs) rather than declaring a pipe-dead runtime READY.
+            if sidecar_check is not None and not sidecar_check():
+                continue
             # Recovered. Rewrite the ownership lock with the new identity so the
             # NEXT cycle verifies against the restarted process (Persistent
             # Service re-attach contract). Best-effort: a missing identity or a
