@@ -355,11 +355,20 @@ Hard contract (sentinel + git hygiene + report):
      is {receipt_name}. NEEDS_INPUT_FOLLOWUP_<N>.md is orchestrator-only — cycle
      subagents never write it.
   2. WORK-BRANCH-ONLY COMMITS — Work branch: {work_branch}. Every commit/push
-     goes to {work_branch} only; never create a branch, never --force. If `git
-     rev-parse --abbrev-ref HEAD` is not {work_branch}, STOP and report.
-  3. AFTER THE SKILL RETURNS — if .claude/skill-config/commit-policy.md exists,
-     follow it; else commit per the standard pattern and push to {work_branch}.
-     Skip only if the skill produced no file changes.
+     goes to {work_branch} only; never create a branch, never --force. NEVER run
+     `git checkout -b`, `git switch -c`, or `git branch <new>` mid-cycle — creating
+     a branch strands every sentinel you write where the state scripts cannot see
+     it. If `git rev-parse --abbrev-ref HEAD` is not {work_branch}, STOP and report.
+     RE-ASSERT this immediately BEFORE every commit/push, not only at cycle entry:
+     re-run `git rev-parse --abbrev-ref HEAD` and confirm it equals {work_branch}
+     before each `git commit`/`git push`; if it drifted, STOP and report.
+  3. AFTER THE SKILL RETURNS — the commit policy is whatever is ON DISK at
+     .claude/skill-config/commit-policy.md. `Read` that file and observe its
+     contents before asserting ANY rule from it; NEVER assert its contents from
+     memory, and an ABSENT file is NOT a policy. Absent the file, the standing
+     default is: commit + push per the standard pattern to {work_branch}. NEVER
+     skip a required commit on the basis of an unread or absent policy. Skip
+     committing ONLY if the skill produced no file changes.
   4. REPORT — one paragraph (≤8 lines): state advanced, files modified, whether
      work is committed+pushed (or "no commit"), any `⚖ policy:` lines, any issues.
      NO commit sha. On any cycle that COULD write NEEDS_INPUT.md (/spec,
@@ -382,14 +391,24 @@ Hard contract (sentinel + git hygiene + cloud push + report):
      pipeline's completion receipt is {receipt_name}. NEEDS_INPUT_FOLLOWUP_<N>.md
      is orchestrator-only — cycle subagents never write it.
   2. WORK-BRANCH-ONLY COMMITS — Work branch: {work_branch}. Every commit and push
-     goes to {work_branch} ONLY; never create a branch, never --force. If `git
-     rev-parse --abbrev-ref HEAD` is not {work_branch}, STOP and report.
+     goes to {work_branch} ONLY; never create a branch, never --force. NEVER run
+     `git checkout -b`, `git switch -c`, or `git branch <new>` mid-cycle — creating
+     a branch strands every sentinel you write where the state scripts cannot see
+     it. If `git rev-parse --abbrev-ref HEAD` is not {work_branch}, STOP and report.
+     RE-ASSERT this immediately BEFORE every commit/push, not only at cycle entry:
+     re-run `git rev-parse --abbrev-ref HEAD` and confirm it equals {work_branch}
+     before each `git commit`/`git push`; if it drifted, STOP and report.
   3. COMMIT + PUSH EACH BATCH (cloud durability) — the container is reclaimed on
      inactivity and any UNPUSHED commit is permanently lost, so after EACH batch /
      work-unit commit IMMEDIATELY `git push origin {work_branch}` (retry a NETWORK
      error up to 4× with 2s/4s/8s/16s backoff); never defer pushing to cycle end.
-     If .claude/skill-config/commit-policy.md exists, follow it for the final
-     commit; never force-push (a non-fast-forward rejection → STOP and report).
+     The commit policy is whatever is ON DISK at
+     .claude/skill-config/commit-policy.md: `Read` that file and observe its
+     contents before asserting ANY rule from it; NEVER assert its contents from
+     memory, and an ABSENT file is NOT a policy. Absent the file, the standing
+     default is commit + push to {work_branch}; NEVER skip a required commit on the
+     basis of an unread or absent policy. Never force-push (a non-fast-forward
+     rejection → STOP and report).
   4. REPORT — one paragraph (≤8 lines): state advanced, files modified, whether
      work is committed+pushed (or "no commit"), any `⚖ policy:` lines, and any
      issues. NO commit sha. On any cycle that COULD write NEEDS_INPUT.md (/spec,

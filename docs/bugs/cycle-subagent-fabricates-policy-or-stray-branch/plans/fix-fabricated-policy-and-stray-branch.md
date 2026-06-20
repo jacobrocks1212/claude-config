@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: cycle-subagent-fabricates-policy-or-stray-branch
-status: Ready
+status: In-progress
 created: 2026-06-20
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -83,7 +83,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — P1: prose hardening of cycle-base-prompt.md hard-contract items 2 & 3 (both variants)
+- [x] WU-1 — P1: prose hardening of cycle-base-prompt.md hard-contract items 2 & 3 (both variants)
 - [ ] WU-2 — P2 (TDD): marker `work_branch` field + `lazy_core` read helper, with tests
 - [ ] WU-3 — P2 (TDD): `--marker-work-branch` CLI query in lazy-state.py + bug-state.py, with tests
 - [ ] WU-4 — P3 (TDD): `block-sentinel-write-on-stray-branch.sh` hook, with hook tests

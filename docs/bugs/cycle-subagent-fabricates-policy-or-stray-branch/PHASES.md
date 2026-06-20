@@ -24,12 +24,17 @@ The SPEC carries no runtime code examples consuming app/engine API surfaces — 
 **Scope:** Close the two prose seams in the `hard-contract` section of `cycle-base-prompt.md`, in BOTH the `modes=workstation` and `modes=cloud` variants, kept in lockstep. This is the primary control for symptom 1 (fabricated commit policy) and a reinforcing control for symptom 2 (stray branch). Pure section-template prose; no `{token}` added (residue-safe).
 
 **Deliverables:**
-- [ ] Item 3 (workstation ~360–362 + cloud ~388–392): add a **read-before-cite obligation** — the subagent MUST `Read` `.claude/skill-config/commit-policy.md` and observe it on disk before asserting ANY rule from it; never assert its contents from memory; an ABSENT file is NOT a policy.
-- [ ] Item 3 (both variants): state the **positive standing default explicitly** — absent the file, the standing rule is commit + push; never skip a required commit on the basis of an unread or absent policy.
-- [ ] Item 2 (workstation ~357–359 + cloud ~384–386): add a **pre-commit branch re-assertion** — re-confirm `git rev-parse --abbrev-ref HEAD == {work_branch}` immediately BEFORE every commit/push, not only at cycle entry.
-- [ ] Item 2 (both variants): **forbid branch creation by name** — explicitly ban `git checkout -b`, `git switch -c`, and `git branch <new>` mid-cycle.
-- [ ] Both `hard-contract` variants edited in lockstep (workstation + cloud carry the identical two changes; only surrounding cloud-push prose differs).
-- [ ] Re-run `python ~/.claude/scripts/project-skills.py` and confirm the section still assembles + residue-checks clean (no unbound `{token}`) for every `(pipeline, mode)` selection.
+- [x] Item 3 (workstation ~360–362 + cloud ~388–392): add a **read-before-cite obligation** — the subagent MUST `Read` `.claude/skill-config/commit-policy.md` and observe it on disk before asserting ANY rule from it; never assert its contents from memory; an ABSENT file is NOT a policy.
+- [x] Item 3 (both variants): state the **positive standing default explicitly** — absent the file, the standing rule is commit + push; never skip a required commit on the basis of an unread or absent policy.
+- [x] Item 2 (workstation ~357–359 + cloud ~384–386): add a **pre-commit branch re-assertion** — re-confirm `git rev-parse --abbrev-ref HEAD == {work_branch}` immediately BEFORE every commit/push, not only at cycle entry.
+- [x] Item 2 (both variants): **forbid branch creation by name** — explicitly ban `git checkout -b`, `git switch -c`, and `git branch <new>` mid-cycle.
+- [x] Both `hard-contract` variants edited in lockstep (workstation + cloud carry the identical two changes; only surrounding cloud-push prose differs).
+- [x] Re-run `python ~/.claude/scripts/project-skills.py` and confirm the section still assembles + residue-checks clean (no unbound `{token}`) for every `(pipeline, mode)` selection.
+
+**Implementation Notes (2026-06-20, P1 / WU-1):**
+- Edited both `hard-contract` `@section` blocks of `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` in lockstep. Item 2 (both variants) now adds an explicit ban on `git checkout -b` / `git switch -c` / `git branch <new>` plus a pre-commit HEAD==`{work_branch}` re-assertion before every commit/push. Item 3 (workstation) and item 3's commit-policy clause (cloud — folded into the COMMIT+PUSH EACH BATCH item) now require `Read`-ing `.claude/skill-config/commit-policy.md` and observing it on disk before citing it, declare an absent file is not a policy, and state the positive default (commit+push; never skip on an unread/absent policy).
+- Reused only the existing `{work_branch}` token; no new `{token}` introduced (residue-safe per MANDATORY RULE #13).
+- Verified: `lazy-state.py --test` (emit_cycle_prompt smoke — all `(pipeline,mode,sub_skill)` selections assembled, no residue refusal) and `project-skills.py` both exit 0.
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/project-skills.py` exits 0 and the projected `cycle-base-prompt.md` (and any skill that injects it) shows the new item-2/item-3 prose with `{work_branch}` resolved and zero residual `{token}` markers; `python ~/.claude/scripts/lazy-state.py --test` (emit_cycle_prompt smoke harness) still assembles every selection without a residue refusal.
 
