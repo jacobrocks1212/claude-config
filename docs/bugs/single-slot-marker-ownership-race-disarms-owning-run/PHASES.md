@@ -70,7 +70,7 @@ All load-bearing assumptions for this fix are **code-provable** (read directly f
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` runs green with the new fixtures, AND a manual hermetic check: with `_set_state_dir` pointed at a temp dir, simulate `--run-start` by `write_run_marker(pipeline="feature", cloud=False, repo_root="/r", session_id="OWNER")`, then `bind_marker_session("FOREIGN")` returns `False` and the on-disk marker's `session_id` is still `"OWNER"`, and `read_run_marker(session_id="OWNER")` returns the marker (the owner is NOT disarmed). This is runnable today against the helpers — no app runtime needed.
 
 **Runtime Verification** *(checked by the hermetic `--test` harness — no app runtime):*
-- [ ] A run-start-bound marker survives a wrong-session `bind_marker_session` and the owner still reads its own marker. <!-- verification-only -->
+- [x] A run-start-bound marker survives a wrong-session `bind_marker_session` and the owner still reads its own marker. <!-- verification-only -->
 
 **Prerequisites:** None (first phase).
 
@@ -113,8 +113,8 @@ All load-bearing assumptions for this fix are **code-provable** (read directly f
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` runs green with the detect/re-arm fixtures, AND a manual hermetic check: with a temp state dir, `write_run_marker(session_id="FOREIGN", …)` then `marker_owner_status("OWNER")` returns `"foreign-stamped"` (NOT `"absent"` — the owner can SEE the wrong stamp), and `reassert_marker_owner("OWNER")` returns True with the on-disk `session_id` now `"OWNER"` and the marker file still present. Runnable today against the helpers.
 
 **Runtime Verification** *(checked by the hermetic `--test` harness — no app runtime):*
-- [ ] `marker_owner_status` distinguishes `foreign-stamped` from `absent` on a live wrong-stamped marker (non-destructive). <!-- verification-only -->
-- [ ] `--reassert-owner` re-claims a foreign-stamped slot for the orchestrator and is refused (exit 3) for a cycle subagent. <!-- verification-only -->
+- [x] `marker_owner_status` distinguishes `foreign-stamped` from `absent` on a live wrong-stamped marker (non-destructive). <!-- verification-only -->
+- [x] `--reassert-owner` re-claims a foreign-stamped slot for the orchestrator and is refused (exit 3) for a cycle subagent. <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: the `--run-start` owner bind establishes the owner-on-record invariant `marker_owner_status` compares against, and closes the normal-path window so Phase 2 is a pure backstop (legacy + future-non-allow-bind paths) rather than the primary fix.
