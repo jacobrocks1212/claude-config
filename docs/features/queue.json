@@ -6,7 +6,7 @@
       "name": "Long-Build + Runtime Ownership",
       "spec_dir": "long-build-and-runtime-ownership",
       "tier": 1,
-      "stub": true
+      "stub": false
     },
     {
       "id": "host-capability-declaration-for-gated-features",
