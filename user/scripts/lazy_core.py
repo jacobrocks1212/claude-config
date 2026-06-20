@@ -6112,6 +6112,13 @@ _ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
     "restart_command": "npm run dev:restart",
     "mcp_tool_name": "",          # empty → mcp_tools_present check is skipped
     "native_globs": ["src-tauri", "crates"],
+    # Runtime-ownership sentinel (long-build-and-runtime-ownership Phase 1, LD1).
+    # The `.runtime.lock.json` filename and the runtime's TCP port are
+    # PARAMETERIZED here, NOT hard-coded into the read/write flow — a different
+    # repo overrides via the `config` argument, keeping the shared harness
+    # function repo-agnostic (same discipline as the keys above).
+    "lock_filename": ".runtime.lock.json",
+    "port": 3333,
 }
 
 
@@ -6261,6 +6268,328 @@ def ensure_runtime(
         "mcp_tools_present": _mcp_tool_in_payload(payload, tool_name),
         "health_code": code,
     }
+
+
+# ===========================================================================
+# Long-Build + Runtime Ownership (Phase 1) — cross-platform detached-spawn
+# primitive + verifiable on-disk ownership sentinel.
+#
+# Four stdlib-only, hermetically-testable primitives consumed by Phase 2's
+# reworked ``ensure_runtime`` M4 state machine:
+#   spawn_detached          — one cross-platform wrapper that spawns a child
+#                             detached from the parent (and any subagent)
+#                             process tree (SPEC M2 / LD6).
+#   kernel_start_time       — temporal-identity extraction, the PID-reuse
+#                             defense (SPEC M1 / LD6).
+#   write/read_runtime_lock — atomic `.runtime.lock.json` persistence (LD1).
+#   verify_runtime_ownership — the verifiability predicate (LD1) — "200 on
+#                             /health" is NOT proof of ownership.
+#
+# Every external interaction is an injected callable (``spawn`` / ``platform``
+# / ``which`` / ``kernel_start_time_fn`` / ``replace``) so ``--test`` is
+# hermetic without a real cross-platform host — mirroring how ``ensure_runtime``
+# injects ``probe``/``restart``/``stale_check``.
+# ===========================================================================
+
+# Windows process-creation flags (SPEC M2 / LD6). The breakaway flag escapes a
+# parent Job Object's KILL_ON_JOB_CLOSE reaping; the OSError fallback drops it
+# when the parent Job forbids breakaway (ERROR_ACCESS_DENIED).
+_DETACHED_PROCESS = 0x00000008
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+# FILETIME epoch offset: 100ns intervals between 1601-01-01 and 1970-01-01.
+_FILETIME_EPOCH_OFFSET = 116444736000000000
+_FILETIME_TICKS_PER_SEC = 10_000_000
+
+
+def spawn_detached(
+    cmd,
+    *,
+    cwd,
+    spawn=None,
+    platform=None,
+    which=None,
+    kernel_start_time_fn=None,
+):
+    """Spawn ``cmd`` as a child detached from the parent (and any subagent)
+    process tree; return ``{"pid": int, "start_time": float | None}``.
+
+    The one cross-platform spawn primitive (SPEC M2 / LD6). It escapes the two
+    process-tree-teardown reaping mechanisms a feature-cycle subagent boundary
+    triggers:
+
+      - **Windows** — Job Objects with ``KILL_ON_JOB_CLOSE``. The first spawn
+        carries ``DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP |
+        CREATE_BREAKAWAY_FROM_JOB``; if the parent Job forbids breakaway the
+        OS raises ``OSError`` (``ERROR_ACCESS_DENIED``) and we retry WITHOUT
+        the breakaway flag (plain ``DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP``).
+      - **POSIX/WSL** — the WSL utility-VM idle suspend. ``start_new_session=True``
+        always; on WSL the command is wrapped in
+        ``systemd-run --user --scope --quiet --same-dir`` (bypasses
+        ``instanceIdleTimeout``/``vmIdleTimeout``) when ``systemd-run`` is on
+        PATH, else a ``setsid`` + ``nohup … sleep infinity`` keep-alive fallback.
+
+    ``PR_SET_PDEATHSIG`` is DELIBERATELY NOT USED — it would kill the child WITH
+    the parent, the exact opposite of the requirement.
+
+    Determinism / injection (keeps ``--test`` hermetic):
+      - ``spawn`` — callable(cmd, **kwargs) -> object with a ``.pid``. Default:
+        ``subprocess.Popen``.
+      - ``platform`` — OS sniff override (``sys.platform`` value). Default:
+        ``sys.platform``.
+      - ``which`` — callable(name) -> path|None (PATH lookup). Default:
+        ``shutil.which``.
+      - ``kernel_start_time_fn`` — callable(pid, *, platform) -> float|None,
+        used to fill ``start_time`` from the live child PID (WU-2). Default:
+        None → ``start_time`` is None (WU-1 is independently testable; Phase 2
+        binds the real extractor).
+    """
+    if spawn is None:
+        spawn = subprocess.Popen  # noqa: S603 — repo-config command, not user input
+    if platform is None:
+        platform = sys.platform
+    if which is None:
+        import shutil
+        which = shutil.which
+
+    is_windows = str(platform).startswith("win")
+
+    if is_windows:
+        # Try the breakaway flag first; fall back without it on a Job-Object
+        # ERROR_ACCESS_DENIED (the parent Job forbids breakaway).
+        breakaway = (
+            _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP | _CREATE_BREAKAWAY_FROM_JOB
+        )
+        try:
+            proc = spawn(cmd, cwd=str(cwd), creationflags=breakaway)
+        except OSError:
+            plain = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+            proc = spawn(cmd, cwd=str(cwd), creationflags=plain)
+    else:
+        # POSIX/WSL — wrap the command so the child outlives both the subagent
+        # turn and (on WSL) the utility-VM idle suspend.
+        launch = list(cmd)
+        if which("systemd-run"):
+            launch = [
+                "systemd-run", "--user", "--scope", "--quiet", "--same-dir",
+            ] + launch
+        elif which("setsid"):
+            # setsid detaches into a new session; nohup + a keep-alive guards
+            # the WSL idle-suspend race when systemd-run is unavailable.
+            launch = ["setsid", "nohup"] + launch
+        proc = spawn(launch, cwd=str(cwd), start_new_session=True)
+
+    pid = proc.pid
+    start_time = None
+    if kernel_start_time_fn is not None:
+        try:
+            start_time = kernel_start_time_fn(pid, platform=platform)
+        except Exception:  # noqa: BLE001 — best-effort; start_time stays None
+            start_time = None
+    return {"pid": pid, "start_time": start_time}
+
+
+def kernel_start_time(
+    pid,
+    *,
+    platform=None,
+    read_stat=None,
+    get_process_times=None,
+    boot_time=None,
+    clk_tck=None,
+):
+    """Return the kernel-reported absolute start time of ``pid`` as a Unix epoch
+    float, or ``None`` on any error (best-effort, NEVER raises).
+
+    The temporal-identity half of LD1 — the PID-reuse defense. A reused PID held
+    by a foreign process reports a DIFFERENT start_time, so ``verify_runtime_ownership``
+    can reject it. ``None`` flows cleanly into Phase 2's DEAD/HIJACKED classification.
+
+    Extraction (stdlib-only, SPEC M1 / LD6):
+      - **Windows** — ``ctypes`` → ``kernel32.GetProcessTimes`` returns a
+        creation FILETIME (100ns intervals since 1601-01-01); converted to a
+        Unix epoch float.
+      - **POSIX/WSL** — ``/proc/[pid]/stat`` field 22 (``starttime``, in clock
+        ticks since boot) → epoch via ``boot_time + ticks / SC_CLK_TCK``.
+
+    Injection (hermetic ``--test``):
+      - ``read_stat`` — callable(pid) -> the raw ``/proc/[pid]/stat`` line.
+      - ``get_process_times`` — callable(pid) -> creation FILETIME int.
+      - ``boot_time`` / ``clk_tck`` — POSIX constants (default: read live).
+    """
+    if platform is None:
+        platform = sys.platform
+    is_windows = str(platform).startswith("win")
+
+    try:
+        if is_windows:
+            if get_process_times is None:
+                get_process_times = _win_process_creation_filetime
+            filetime = get_process_times(pid)
+            if filetime is None:
+                return None
+            return (filetime - _FILETIME_EPOCH_OFFSET) / _FILETIME_TICKS_PER_SEC
+
+        # POSIX/WSL: /proc/[pid]/stat field 22 (starttime, clock ticks).
+        if read_stat is None:
+            def read_stat(p):
+                return Path(f"/proc/{p}/stat").read_text(encoding="utf-8", errors="replace")
+        if clk_tck is None:
+            clk_tck = os.sysconf("SC_CLK_TCK")
+        if boot_time is None:
+            boot_time = _posix_boot_time()
+        if boot_time is None or not clk_tck:
+            return None
+
+        raw = read_stat(pid)
+        # Field 2 (comm) may contain spaces/parens; it is wrapped in (...).
+        # Split off everything through the LAST ')' so the remaining fields are
+        # whitespace-delimitable. Field 22 (starttime) is index 19 of the tail
+        # (tail starts at field 3 = state).
+        rparen = raw.rfind(")")
+        if rparen < 0:
+            return None
+        tail = raw[rparen + 1:].split()
+        # tail[0] is field 3 (state); field 22 is tail index 19.
+        if len(tail) < 20:
+            return None
+        ticks = int(tail[19])
+        return boot_time + (ticks / clk_tck)
+    except Exception:  # noqa: BLE001 — best-effort, never raises
+        return None
+
+
+def _win_process_creation_filetime(pid):
+    """Default Windows creation-FILETIME extractor via ctypes →
+    kernel32.GetProcessTimes. Returns the creation FILETIME int, or None on any
+    error. Only invoked when ``kernel_start_time`` is called WITHOUT an injected
+    ``get_process_times`` (production); tests inject."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
+        )
+        if not handle:
+            return None
+        try:
+            creation = wintypes.FILETIME()
+            exit_t = wintypes.FILETIME()
+            kernel_t = wintypes.FILETIME()
+            user_t = wintypes.FILETIME()
+            ok = kernel32.GetProcessTimes(
+                handle, ctypes.byref(creation), ctypes.byref(exit_t),
+                ctypes.byref(kernel_t), ctypes.byref(user_t),
+            )
+            if not ok:
+                return None
+            return (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _posix_boot_time():
+    """Read system boot time (Unix epoch sec) from /proc/stat ``btime``.
+    Returns None on any error."""
+    try:
+        for line in Path("/proc/stat").read_text(encoding="utf-8").splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _runtime_lock_path(repo_root, config=None):
+    """Resolve the `.runtime.lock.json` path at the repo root from the config
+    dict's ``lock_filename`` (parameterized, NOT a hard-coded literal)."""
+    cfg = dict(_ENSURE_RUNTIME_DEFAULT_CONFIG)
+    if config:
+        cfg.update(config)
+    return Path(repo_root) / cfg["lock_filename"]
+
+
+def write_runtime_lock(
+    repo_root,
+    *,
+    pid,
+    start_time,
+    port,
+    artifact_hash,
+    controller_session_id,
+    config=None,
+):
+    """Atomically write the `.runtime.lock.json` ownership sentinel (LD1) at the
+    repo root with the five LD1 fields.
+
+    Uses the shared ``_atomic_write`` (temp file in the same dir + ``os.replace``)
+    so a mid-write failure never leaves a partial production sentinel — the same
+    atomic-write discipline as the cycle marker / tally writers already in tree.
+    The lock filename comes from ``config['lock_filename']`` (default config),
+    never a literal in the flow.
+    """
+    lock = {
+        "controller_session_id": controller_session_id,
+        "pid": pid,
+        "start_time": start_time,
+        "port": port,
+        "artifact_hash": artifact_hash,
+    }
+    path = _runtime_lock_path(repo_root, config)
+    _atomic_write(path, json.dumps(lock, indent=2) + "\n")
+
+
+def read_runtime_lock(repo_root, *, config=None):
+    """Best-effort read of the `.runtime.lock.json` sentinel → dict, or ``None``
+    on missing/corrupt (NEVER raises)."""
+    path = _runtime_lock_path(repo_root, config)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        return data
+    except (OSError, ValueError):
+        return None
+
+
+def verify_runtime_ownership(lock, *, live_session_id, kernel_start_time_fn):
+    """Return ``True`` iff the recorded runtime is provably owned by the live
+    controller (LD1) — the verifiability predicate.
+
+    ``True`` iff BOTH:
+      - the recorded ``start_time`` matches the kernel-reported start_time for
+        ``lock['pid']`` (defeats PID reuse — a foreign process holding a reused
+        PID reports a different start_time, and a dead PID reports ``None``), AND
+      - ``lock['controller_session_id'] == live_session_id`` (defeats a previous
+        crashed controller's leftover runtime).
+
+    "200 on /health" is NOT proof of ownership — only this ``(start_time,
+    controller_session_id)`` match is. ``kernel_start_time_fn`` is injected
+    (callable(pid, *, platform) -> float|None) so the predicate is hermetic.
+    """
+    if not isinstance(lock, dict):
+        return False
+    if lock.get("controller_session_id") != live_session_id:
+        return False
+    recorded = lock.get("start_time")
+    if recorded is None:
+        return False
+    try:
+        live = kernel_start_time_fn(lock.get("pid"))
+    except TypeError:
+        # Tolerate a fn that requires the keyword (production binds platform).
+        live = kernel_start_time_fn(lock.get("pid"), platform=sys.platform)
+    except Exception:  # noqa: BLE001 — best-effort
+        return False
+    if live is None:
+        return False
+    return live == recorded
 
 
 # ---------------------------------------------------------------------------

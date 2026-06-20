@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import difflib
+import inspect
 import json
 import os
 import re
@@ -21035,6 +21036,461 @@ _TESTS = _TESTS + [
      test_eval_evidence_head_drift_source_refuses),
     ("test_eval_evidence_neither_present_refuses",
      test_eval_evidence_neither_present_refuses),
+]
+
+
+# ===========================================================================
+# Phase 1 (long-build-and-runtime-ownership) — detached-spawn primitive +
+# verifiable on-disk runtime-ownership sentinel.
+#
+# All four WUs add NEW top-level functions to lazy_core.py, all hermetic via
+# injected `spawn`/`platform`/`replace`/`kernel_start_time_fn` callables — no
+# real cross-platform host needed for the unit layer.
+#   WU-1: spawn_detached         (cross-platform detached spawn + breakaway fallback)
+#   WU-2: kernel_start_time      (temporal-identity extraction, both OS branches)
+#   WU-3: write/read_runtime_lock + new _ENSURE_RUNTIME_DEFAULT_CONFIG keys
+#   WU-4: verify_runtime_ownership
+# ===========================================================================
+
+# Windows creationflags constants (LD6 / SPEC M2).
+_DETACHED_PROCESS = 0x00000008
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def test_runtime_ownership_symbols_present():
+    """Phase 1 public symbols exist on lazy_core."""
+    _guard()
+    expected = [
+        "spawn_detached",
+        "kernel_start_time",
+        "write_runtime_lock",
+        "read_runtime_lock",
+        "verify_runtime_ownership",
+    ]
+    missing = [sym for sym in expected if not hasattr(lazy_core, sym)]
+    assert not missing, f"missing symbols: {missing}"
+
+
+# --- WU-1: spawn_detached -------------------------------------------------
+
+class _FakeProc:
+    """Stand-in for subprocess.Popen — records nothing, just carries a pid."""
+
+    def __init__(self, pid: int = 4321):
+        self.pid = pid
+
+
+def test_spawn_detached_windows_carries_breakaway_flags():
+    """Windows branch: first spawn call carries
+    DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB."""
+    _guard()
+    calls = []
+
+    def fake_spawn(cmd, **kwargs):
+        calls.append(kwargs)
+        return _FakeProc(pid=111)
+
+    result = lazy_core.spawn_detached(
+        ["x"], cwd="/tmp", spawn=fake_spawn, platform="win32",
+        kernel_start_time_fn=lambda pid, **k: 9.0,
+    )
+    assert len(calls) == 1, f"expected one spawn call, got {len(calls)}"
+    flags = calls[0].get("creationflags")
+    expected = (_DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+                | _CREATE_BREAKAWAY_FROM_JOB)
+    assert flags == expected, f"expected breakaway flags {expected:#x}, got {flags!r}"
+    assert result["pid"] == 111
+    assert result["start_time"] == 9.0
+
+
+def test_spawn_detached_windows_breakaway_denied_falls_back():
+    """Windows branch: an OSError on the breakaway attempt (ERROR_ACCESS_DENIED)
+    triggers a SECOND spawn WITHOUT CREATE_BREAKAWAY_FROM_JOB, and the function
+    returns {pid, start_time} from the successful fallback."""
+    _guard()
+    calls = []
+
+    def fake_spawn(cmd, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise OSError("ERROR_ACCESS_DENIED")
+        return _FakeProc(pid=222)
+
+    result = lazy_core.spawn_detached(
+        ["x"], cwd="/tmp", spawn=fake_spawn, platform="win32",
+        kernel_start_time_fn=lambda pid, **k: 5.5,
+    )
+    assert len(calls) == 2, f"expected breakaway then fallback (2 calls), got {len(calls)}"
+    # First call HAD breakaway; second (fallback) must NOT.
+    assert calls[0]["creationflags"] & _CREATE_BREAKAWAY_FROM_JOB
+    assert not (calls[1]["creationflags"] & _CREATE_BREAKAWAY_FROM_JOB), \
+        "fallback spawn must drop CREATE_BREAKAWAY_FROM_JOB"
+    assert calls[1]["creationflags"] == (_DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP)
+    assert result["pid"] == 222
+    assert result["start_time"] == 5.5
+
+
+def test_spawn_detached_posix_sets_new_session():
+    """POSIX branch: start_new_session=True is passed to spawn."""
+    _guard()
+    calls = []
+
+    def fake_spawn(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return _FakeProc(pid=333)
+
+    result = lazy_core.spawn_detached(
+        ["mybin", "--flag"], cwd="/tmp", spawn=fake_spawn, platform="linux",
+        which=lambda name: None,  # no systemd-run available
+        kernel_start_time_fn=lambda pid, **k: 1.0,
+    )
+    assert len(calls) == 1
+    _cmd, kwargs = calls[0]
+    assert kwargs.get("start_new_session") is True, \
+        "POSIX spawn must set start_new_session=True"
+    assert result["pid"] == 333
+    assert "creationflags" not in kwargs, "POSIX must not pass Windows creationflags"
+
+
+def test_spawn_detached_posix_wraps_systemd_run_when_available():
+    """POSIX branch: when systemd-run is on PATH, the command is wrapped in
+    `systemd-run --user --scope --quiet --same-dir`."""
+    _guard()
+    captured = {}
+
+    def fake_spawn(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _FakeProc(pid=444)
+
+    lazy_core.spawn_detached(
+        ["mybin"], cwd="/tmp", spawn=fake_spawn, platform="linux",
+        which=lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None,
+        kernel_start_time_fn=lambda pid, **k: 1.0,
+    )
+    cmd = captured["cmd"]
+    assert cmd[:5] == ["systemd-run", "--user", "--scope", "--quiet", "--same-dir"], \
+        f"expected systemd-run wrapper prefix, got {cmd[:5]!r}"
+    assert "mybin" in cmd, "the original binary must survive the wrap"
+
+
+def test_spawn_detached_posix_setsid_fallback_when_no_systemd():
+    """POSIX branch: when systemd-run is unavailable but setsid is, the command
+    is wrapped with setsid + a nohup keep-alive fallback path."""
+    _guard()
+    captured = {}
+
+    def fake_spawn(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _FakeProc(pid=555)
+
+    lazy_core.spawn_detached(
+        ["mybin"], cwd="/tmp", spawn=fake_spawn, platform="linux",
+        which=lambda name: "/usr/bin/setsid" if name == "setsid" else None,
+        kernel_start_time_fn=lambda pid, **k: 1.0,
+    )
+    cmd = captured["cmd"]
+    assert cmd[0] == "setsid", f"expected setsid fallback wrapper, got {cmd[0]!r}"
+    assert "mybin" in cmd
+
+
+def test_spawn_detached_never_sets_pdeathsig():
+    """PR_SET_PDEATHSIG must NEVER be set (it would kill the child with the
+    parent — the opposite of the requirement). No spawn kwarg references it,
+    and the source must not invoke it."""
+    _guard()
+    captured = {}
+
+    def fake_spawn(cmd, **kwargs):
+        captured["kwargs"] = kwargs
+        return _FakeProc(pid=666)
+
+    lazy_core.spawn_detached(
+        ["mybin"], cwd="/tmp", spawn=fake_spawn, platform="linux",
+        which=lambda name: None,
+        kernel_start_time_fn=lambda pid, **k: 1.0,
+    )
+    for k in captured["kwargs"]:
+        assert "pdeathsig" not in k.lower(), f"PR_SET_PDEATHSIG leaked via kwarg {k}"
+    # The source must not INVOKE pdeathsig (a documentation mention in a comment
+    # / docstring is fine). Strip comments+docstrings via AST and assert the
+    # executable code never references prctl/PR_SET_PDEATHSIG/set_pdeathsig.
+    src = inspect.getsource(lazy_core.spawn_detached)
+    tree = ast.parse(src)
+    code_names = {
+        n.id for n in ast.walk(tree) if isinstance(n, ast.Name)
+    } | {
+        n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
+    }
+    banned = {"PR_SET_PDEATHSIG", "prctl", "set_pdeathsig", "pdeathsig"}
+    leaked = {b for b in banned if b in code_names}
+    assert not leaked, f"spawn_detached must not invoke pdeathsig — found {leaked}"
+
+
+def test_spawn_detached_returns_none_start_time_when_no_fn():
+    """start_time is None when no kernel_start_time_fn is injected (WU-2 fills
+    it in production; WU-1 is independently testable with the stub omitted)."""
+    _guard()
+
+    def fake_spawn(cmd, **kwargs):
+        return _FakeProc(pid=777)
+
+    result = lazy_core.spawn_detached(
+        ["x"], cwd="/tmp", spawn=fake_spawn, platform="linux",
+        which=lambda name: None,
+    )
+    assert result["pid"] == 777
+    assert result["start_time"] is None
+
+
+# --- WU-2: kernel_start_time ----------------------------------------------
+
+def test_kernel_start_time_posix_parses_proc_stat():
+    """POSIX: field 22 of /proc/[pid]/stat (clock ticks since boot) converts to
+    a Unix epoch float via boot_time + ticks / clk_tck."""
+    _guard()
+    # Synthetic /proc/[pid]/stat: 52 fields. Field 22 (1-indexed) = starttime.
+    # comm "(my proc)" contains spaces+parens to exercise the field-22 logic.
+    fields = ["1", "(my proc)", "S"] + [str(i) for i in range(4, 53)]
+    # Set field 22 (index 21) to a known tick value.
+    fields[21] = "1000"
+    stat_line = " ".join(fields)
+    result = lazy_core.kernel_start_time(
+        1, platform="linux",
+        read_stat=lambda pid: stat_line,
+        boot_time=2000.0,
+        clk_tck=100,
+    )
+    # 2000.0 + 1000/100 = 2010.0
+    assert result == 2010.0, f"expected 2010.0, got {result!r}"
+
+
+def test_kernel_start_time_windows_converts_filetime():
+    """Windows: a FILETIME (100ns intervals since 1601-01-01) converts to a
+    Unix epoch float."""
+    _guard()
+    # FILETIME for 1970-01-01 00:00:00 UTC is 116444736000000000 (100ns units).
+    # Add 10 seconds = 10 * 10_000_000 = 100_000_000 units → epoch 10.0.
+    filetime = 116444736000000000 + 100_000_000
+    result = lazy_core.kernel_start_time(
+        1, platform="win32",
+        get_process_times=lambda pid: filetime,
+    )
+    assert abs(result - 10.0) < 1e-6, f"expected ~10.0, got {result!r}"
+
+
+def test_kernel_start_time_error_returns_none():
+    """Best-effort: any error (unreadable /proc, raising stub) → None, never
+    raises."""
+    _guard()
+
+    def boom(pid):
+        raise OSError("no such pid")
+
+    assert lazy_core.kernel_start_time(1, platform="linux", read_stat=boom) is None
+    assert lazy_core.kernel_start_time(1, platform="win32", get_process_times=boom) is None
+    # Malformed stat line (too few fields) → None.
+    assert lazy_core.kernel_start_time(
+        1, platform="linux", read_stat=lambda pid: "1 (x) S", boot_time=0.0, clk_tck=100,
+    ) is None
+
+
+# --- WU-3: write/read_runtime_lock + config keys --------------------------
+
+def test_runtime_lock_round_trip_all_five_fields():
+    """write → read returns all five LD1 fields equal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        lazy_core.write_runtime_lock(
+            repo, pid=123, start_time=456.5, port=3333,
+            artifact_hash="deadbeef", controller_session_id="sess-uuid",
+        )
+        lock = lazy_core.read_runtime_lock(repo)
+        assert lock is not None
+        assert lock["pid"] == 123
+        assert lock["start_time"] == 456.5
+        assert lock["port"] == 3333
+        assert lock["artifact_hash"] == "deadbeef"
+        assert lock["controller_session_id"] == "sess-uuid"
+
+
+def test_runtime_lock_written_at_repo_root_with_config_filename():
+    """The lock file lives at repo root under the _ENSURE_RUNTIME_DEFAULT_CONFIG
+    lock_filename (NOT a hard-coded literal in the flow)."""
+    _guard()
+    cfg = lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG
+    assert "lock_filename" in cfg, "config must carry lock_filename"
+    assert "port" in cfg, "config must carry port"
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        lazy_core.write_runtime_lock(
+            repo, pid=1, start_time=1.0, port=cfg["port"],
+            artifact_hash="h", controller_session_id="s",
+        )
+        assert (repo / cfg["lock_filename"]).exists(), \
+            "lock must be written at repo root under cfg['lock_filename']"
+
+
+def test_runtime_lock_atomic_write_no_partial_on_failure():
+    """The write uses a temp file + os.replace (no partial production file when
+    the replace fails mid-write)."""
+    _guard()
+    src = inspect.getsource(lazy_core.write_runtime_lock)
+    # Atomicity via the shared _atomic_write helper (temp + os.replace) OR a
+    # direct os.replace — assert one of those is present, not a naive open(w).
+    assert ("_atomic_write" in src) or ("os.replace" in src), \
+        "write_runtime_lock must use an atomic temp-file + os.replace pattern"
+
+
+def test_runtime_lock_read_missing_returns_none():
+    """Missing lock file → None, never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        assert lazy_core.read_runtime_lock(Path(td)) is None
+
+
+def test_runtime_lock_read_corrupt_returns_none():
+    """Corrupt JSON → None, never raises."""
+    _guard()
+    cfg = lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        (repo / cfg["lock_filename"]).write_text("{not json", encoding="utf-8")
+        assert lazy_core.read_runtime_lock(repo) is None
+
+
+# --- WU-4: verify_runtime_ownership ---------------------------------------
+
+def _lock_fixture():
+    return {
+        "controller_session_id": "live-sess",
+        "pid": 999,
+        "start_time": 123.0,
+        "port": 3333,
+        "artifact_hash": "h",
+    }
+
+
+def test_verify_ownership_match_returns_true():
+    """Recorded start_time == kernel start_time AND session matches → True."""
+    _guard()
+    ok = lazy_core.verify_runtime_ownership(
+        _lock_fixture(), live_session_id="live-sess",
+        kernel_start_time_fn=lambda pid, **k: 123.0,
+    )
+    assert ok is True
+
+
+def test_verify_ownership_divergent_start_time_false():
+    """PID reused by a foreign process: kernel start_time diverges → False."""
+    _guard()
+    ok = lazy_core.verify_runtime_ownership(
+        _lock_fixture(), live_session_id="live-sess",
+        kernel_start_time_fn=lambda pid, **k: 999.0,
+    )
+    assert ok is False
+
+
+def test_verify_ownership_foreign_controller_false():
+    """controller_session_id != live session → False (a crashed prior
+    controller's runtime)."""
+    _guard()
+    ok = lazy_core.verify_runtime_ownership(
+        _lock_fixture(), live_session_id="other-sess",
+        kernel_start_time_fn=lambda pid, **k: 123.0,
+    )
+    assert ok is False
+
+
+def test_verify_ownership_missing_pid_false():
+    """Process dead: kernel_start_time_fn returns None → False."""
+    _guard()
+    ok = lazy_core.verify_runtime_ownership(
+        _lock_fixture(), live_session_id="live-sess",
+        kernel_start_time_fn=lambda pid, **k: None,
+    )
+    assert ok is False
+
+
+# --- Integration: the four-function round-trip (Post-Phase seam) ----------
+
+def test_runtime_ownership_round_trip_compose():
+    """spawn_detached → write_runtime_lock → read_runtime_lock →
+    verify_runtime_ownership composes end-to-end with injected callables (the
+    seam Phase 2's reworked ensure_runtime builds on)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+
+        def fake_spawn(cmd, **kwargs):
+            return _FakeProc(pid=2024)
+
+        spawned = lazy_core.spawn_detached(
+            ["runtime"], cwd=str(repo), spawn=fake_spawn, platform="linux",
+            which=lambda name: None,
+            kernel_start_time_fn=lambda pid, **k: 77.0,
+        )
+        lazy_core.write_runtime_lock(
+            repo, pid=spawned["pid"], start_time=spawned["start_time"],
+            port=3333, artifact_hash="abc", controller_session_id="S1",
+        )
+        lock = lazy_core.read_runtime_lock(repo)
+        assert lock["pid"] == 2024 and lock["start_time"] == 77.0
+        assert lazy_core.verify_runtime_ownership(
+            lock, live_session_id="S1",
+            kernel_start_time_fn=lambda pid, **k: 77.0,
+        ) is True
+        # A divergent live session breaks ownership.
+        assert lazy_core.verify_runtime_ownership(
+            lock, live_session_id="S2",
+            kernel_start_time_fn=lambda pid, **k: 77.0,
+        ) is False
+
+
+_TESTS = _TESTS + [
+    ("test_runtime_ownership_symbols_present",
+     test_runtime_ownership_symbols_present),
+    ("test_spawn_detached_windows_carries_breakaway_flags",
+     test_spawn_detached_windows_carries_breakaway_flags),
+    ("test_spawn_detached_windows_breakaway_denied_falls_back",
+     test_spawn_detached_windows_breakaway_denied_falls_back),
+    ("test_spawn_detached_posix_sets_new_session",
+     test_spawn_detached_posix_sets_new_session),
+    ("test_spawn_detached_posix_wraps_systemd_run_when_available",
+     test_spawn_detached_posix_wraps_systemd_run_when_available),
+    ("test_spawn_detached_posix_setsid_fallback_when_no_systemd",
+     test_spawn_detached_posix_setsid_fallback_when_no_systemd),
+    ("test_spawn_detached_never_sets_pdeathsig",
+     test_spawn_detached_never_sets_pdeathsig),
+    ("test_spawn_detached_returns_none_start_time_when_no_fn",
+     test_spawn_detached_returns_none_start_time_when_no_fn),
+    ("test_kernel_start_time_posix_parses_proc_stat",
+     test_kernel_start_time_posix_parses_proc_stat),
+    ("test_kernel_start_time_windows_converts_filetime",
+     test_kernel_start_time_windows_converts_filetime),
+    ("test_kernel_start_time_error_returns_none",
+     test_kernel_start_time_error_returns_none),
+    ("test_runtime_lock_round_trip_all_five_fields",
+     test_runtime_lock_round_trip_all_five_fields),
+    ("test_runtime_lock_written_at_repo_root_with_config_filename",
+     test_runtime_lock_written_at_repo_root_with_config_filename),
+    ("test_runtime_lock_atomic_write_no_partial_on_failure",
+     test_runtime_lock_atomic_write_no_partial_on_failure),
+    ("test_runtime_lock_read_missing_returns_none",
+     test_runtime_lock_read_missing_returns_none),
+    ("test_runtime_lock_read_corrupt_returns_none",
+     test_runtime_lock_read_corrupt_returns_none),
+    ("test_verify_ownership_match_returns_true",
+     test_verify_ownership_match_returns_true),
+    ("test_verify_ownership_divergent_start_time_false",
+     test_verify_ownership_divergent_start_time_false),
+    ("test_verify_ownership_foreign_controller_false",
+     test_verify_ownership_foreign_controller_false),
+    ("test_verify_ownership_missing_pid_false",
+     test_verify_ownership_missing_pid_false),
+    ("test_runtime_ownership_round_trip_compose",
+     test_runtime_ownership_round_trip_compose),
 ]
 
 

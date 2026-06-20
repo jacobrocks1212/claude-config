@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: long-build-and-runtime-ownership
-status: In-progress
+status: Complete
 created: 2026-06-20
 complexity: complex
 phases: [1]
@@ -96,10 +96,10 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — `spawn_detached` cross-platform wrapper + breakaway-denied fallback
-- [ ] WU-2 — `kernel_start_time(pid)` temporal-identity extraction (both OS branches)
-- [ ] WU-3 — `.runtime.lock.json` read/write + new `_ENSURE_RUNTIME_DEFAULT_CONFIG` keys
-- [ ] WU-4 — `verify_runtime_ownership` predicate
+- [x] WU-1 — `spawn_detached` cross-platform wrapper + breakaway-denied fallback
+- [x] WU-2 — `kernel_start_time(pid)` temporal-identity extraction (both OS branches)
+- [x] WU-3 — `.runtime.lock.json` read/write + new `_ENSURE_RUNTIME_DEFAULT_CONFIG` keys
+- [x] WU-4 — `verify_runtime_ownership` predicate
 
 ## Phase: long-build-and-runtime-ownership P1 — Cross-platform detached-spawn primitive + verifiable on-disk sentinel
 
