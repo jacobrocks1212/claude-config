@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: feature-budget-guard-and-skip-ahead
-status: Ready
+status: In-progress
 complexity: mechanical
 phases: [4]
 ---
