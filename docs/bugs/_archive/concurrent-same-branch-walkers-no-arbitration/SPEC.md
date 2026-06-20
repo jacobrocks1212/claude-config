@@ -2,9 +2,11 @@
 
 > When two autonomous `/lazy-batch` queue-walkers run against the same repo/branch (same git account), the second walker's `--run-start` silently overwrites the first's live run marker instead of being refused — because `refuse_run_start_clobber` allows ALL same-pipeline overwrites (it cannot distinguish a sanctioned checkpoint-resume from a genuinely-concurrent second walker). With no deterministic arbitration, collisions on feature selection and push ordering surface mid-run and escalate to the operator, and overlapping edits fall to manual multi-commit merges.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-20
+**Fix commit:** e552e3e
 **Placement:** docs/bugs/concurrent-same-branch-walkers-no-arbitration
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/CLAUDE.md`; `docs/features/multi-repo-concurrent-runs/` (solved the cross-repo case via per-repo keyed state dirs + `refuse_run_start_clobber`; explicitly left the **same-repo / same-branch / same-pipeline** case as "refused by construction" — but that refusal has a gap, see Proven Findings)

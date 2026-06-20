@@ -47,7 +47,7 @@ sees the other's state.
 - **Same-repo second run:** if the operator starts a second run in a repo that already has a
   live run, `--run-start` refuses with a clear message naming the in-flight run
   (`started_at`, `forward_cycles`) and instructs how to clear it if it is stale.
-  > **Residual gap (closed by `docs/bugs/concurrent-same-branch-walkers-no-arbitration/`).** As
+  > **Residual gap (closed by `docs/bugs/_archive/concurrent-same-branch-walkers-no-arbitration/`).** As
   > shipped, the same-repo refusal (`refuse_run_start_clobber`) only covers a DIFFERENT-pipeline
   > clobber; a same-repo, SAME-pipeline second `/lazy-batch` walker slipped through the
   > checkpoint-resume allow branch and silently clobbered the live marker. That bug extends the
