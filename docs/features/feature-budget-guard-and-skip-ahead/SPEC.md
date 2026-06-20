@@ -79,12 +79,7 @@ Per the harness's "state script is the source of truth" principle, both mechanis
 
 ## Implementation Phases
 
-(Indicative — finalized by `/spec-phases` after research.)
-
-1. **Per-feature counter** — add `per_feature_forward_cycles` to the run marker; wire it into the existing forward-advance triggers keyed on `feature_id`; smoke fixtures.
-2. **Guard trip + defer-to-tail** — dynamic ceiling computation (`L_task` fair-share formula reusing `max_cycles` + ready-queue depth, `--per-feature-cycle-cap` override); trip evaluation in `compute_state()`; run-scoped reorder skip-branch; bounded re-trip; new probe field + orchestrator notification glue (reports computed ceiling).
-3. **Skip-ahead readiness predicate** — two-key "ready" predicate over the dep block AND the `independent: true` marker; generalize `--allow-research-skip` into the dependency-aware skip; halt/surface terminal when all remaining are gated/downstream/unmarked. (A separate Phase-N can backfill the `independent: true` marker across existing queue items to widen skip-ahead reach.)
-4. **Wrapper lockstep + parity** — mirror into `/lazy-cloud`, `/lazy-batch`, `/lazy-batch-cloud`; `lazy_parity_audit.py` green; baselines regenerated.
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown.
 
 ## Validation Criteria
 
