@@ -74,7 +74,7 @@ Before each step, `Read` the listed component files from disk. After compaction,
 
 ## Work Units
 
-- [ ] WU-1 — Rewire `/lazy-batch` Step 1d.0 to consume the M4 verdict + guard-takeover wiring
+- [x] WU-1 — Rewire `/lazy-batch` Step 1d.0 to consume the M4 verdict + guard-takeover wiring
 - [ ] WU-2 — Coupled-pair mirror: `/lazy` ↔ `/lazy-cloud`, `/lazy-batch` ↔ `/lazy-batch-cloud`
 - [ ] WU-3 — `user/scripts/CLAUDE.md` note + `lazy_parity_audit.py` clean + `project-skills.py` re-projection
 
