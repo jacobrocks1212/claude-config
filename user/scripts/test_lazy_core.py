@@ -22380,5 +22380,198 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# Phase 4 (long-build-and-runtime-ownership) WU-2 — reconcile_cycle_begin_git_
+# consistency: the --cycle-begin git-consistency reconciliation (SPEC M5 Detect).
+#
+# A pre-boot `.git/index.lock` (creation/mtime OLDER than the orchestrator /
+# run-marker boot stamp) ⇒ a previous op was torn ⇒ remove the stale lock and
+# `git clean -fdx` the staging dir, neutralizing the uncommitted delta before the
+# next cycle. Best-effort + fail-open: a fresh/own lock is PRESERVED (never
+# clobber a live git op); no lock / non-git tree → no-op, never raises.
+#
+# It COMPOSES with — does NOT duplicate — the existing --cycle-end friction
+# detector: a torn-build delta neutralized here must not subsequently false-trip
+# detect_cycle_bracket_friction's unexpected-commits / cycle-bracket-break.
+# ===========================================================================
+
+
+def test_reconcile_cycle_begin_symbol_present():
+    """reconcile_cycle_begin_git_consistency is a public symbol on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "reconcile_cycle_begin_git_consistency"), (
+        "lazy_core.reconcile_cycle_begin_git_consistency missing — "
+        "Phase 4 WU-2 not implemented"
+    )
+
+
+def _make_git_tree(root: Path) -> Path:
+    """Create a minimal real git tree under root; return the repo path."""
+    repo = root / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    (repo / "seed.txt").write_text("seed", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "seed"], check=True)
+    return repo
+
+
+def test_reconcile_stale_lock_removed_and_staging_cleaned():
+    """Stale pre-boot index.lock (mtime < boot stamp) → removed + staging dir
+    git-cleaned; reconciliation recorded."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = _make_git_tree(Path(td))
+        lock = repo / ".git" / "index.lock"
+        lock.write_text("", encoding="utf-8")
+        # Make the lock OLD relative to a boot stamp far in the future.
+        old = 1_000.0
+        os.utime(lock, (old, old))
+        boot_stamp = 2_000_000_000.0  # well after the lock mtime
+
+        # An uncommitted staging delta that the git clean should remove.
+        staging = repo / "target" / "release_staging"
+        staging.mkdir(parents=True)
+        (staging / "torn.bin").write_text("partial", encoding="utf-8")
+
+        result = lazy_core.reconcile_cycle_begin_git_consistency(
+            repo, boot_stamp=boot_stamp, staging_dir=str(staging),
+        )
+        assert result["reconciled"] is True, f"expected reconciliation; got {result!r}"
+        assert result["removed_lock"] is True, f"stale lock must be removed; got {result!r}"
+        assert not lock.exists(), "the stale index.lock must be gone on disk"
+        assert result.get("staging_cleaned") is True, (
+            f"staging dir must be git-cleaned; got {result!r}"
+        )
+        assert not (staging / "torn.bin").exists(), (
+            "git clean -fdx must remove the uncommitted staging partial"
+        )
+
+
+def test_reconcile_fresh_lock_preserved():
+    """Fresh/own lock (mtime >= boot stamp) → PRESERVED (never clobber a live
+    git op). MUST fail if the reconciliation removed a live lock."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = _make_git_tree(Path(td))
+        lock = repo / ".git" / "index.lock"
+        lock.write_text("", encoding="utf-8")
+        # Lock newer than the boot stamp → a live in-flight git op.
+        fresh = 2_000_000_500.0
+        os.utime(lock, (fresh, fresh))
+        boot_stamp = 2_000_000_000.0  # before the lock mtime
+
+        result = lazy_core.reconcile_cycle_begin_git_consistency(
+            repo, boot_stamp=boot_stamp,
+        )
+        assert result["removed_lock"] is False, (
+            f"a fresh/own lock must NOT be removed; got {result!r}"
+        )
+        assert lock.exists(), "the fresh index.lock must survive (live git op)"
+
+
+def test_reconcile_no_lock_is_noop():
+    """No index.lock present → no-op, never raises, reconciled False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = _make_git_tree(Path(td))
+        result = lazy_core.reconcile_cycle_begin_git_consistency(
+            repo, boot_stamp=2_000_000_000.0,
+        )
+        assert result["reconciled"] is False, f"no lock → no-op; got {result!r}"
+        assert result["removed_lock"] is False
+
+
+def test_reconcile_non_git_tree_is_noop_fail_open():
+    """Non-git tree → no-op, never raises (fail-open; the --cycle-begin write
+    must always proceed)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        plain = Path(td) / "not-a-repo"
+        plain.mkdir()
+        # Must not raise.
+        result = lazy_core.reconcile_cycle_begin_git_consistency(
+            plain, boot_stamp=2_000_000_000.0,
+        )
+        assert isinstance(result, dict), f"must return a dict; got {result!r}"
+        assert result["reconciled"] is False, f"non-git → no-op; got {result!r}"
+
+
+def test_reconcile_does_not_false_trip_cycle_end_friction():
+    """Composition: a torn-build delta neutralized at --cycle-begin does NOT
+    subsequently cause detect_cycle_bracket_friction to report unexpected-commits
+    or cycle-bracket-break at --cycle-end. Asserted against the REAL detector.
+
+    The reconciliation removes a stale lock + git-cleans an UNCOMMITTED staging
+    delta — it makes NO commits and does NOT touch the run marker — so HEAD is
+    unchanged and the run identity is intact. The detector therefore sees zero
+    advanced commits and an unchanged run identity → no friction."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = _make_git_tree(Path(td))
+        lock = repo / ".git" / "index.lock"
+        lock.write_text("", encoding="utf-8")
+        os.utime(lock, (1_000.0, 1_000.0))
+        staging = repo / "target" / "release_staging"
+        staging.mkdir(parents=True)
+        (staging / "torn.bin").write_text("partial", encoding="utf-8")
+
+        head_before = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+
+        lazy_core.reconcile_cycle_begin_git_consistency(
+            repo, boot_stamp=2_000_000_000.0, staging_dir=str(staging),
+        )
+
+        head_after = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        assert head_before == head_after, (
+            "the reconciliation must NOT advance HEAD (it cleans uncommitted "
+            "delta only) — otherwise it would false-trip unexpected-commits"
+        )
+
+        # Build a cycle marker as --cycle-begin would have snapshotted it: the
+        # run identity present, begin_head_sha == HEAD. commits_since == 0.
+        marker = {
+            "kind": "real",
+            "run_started_at": "2026-06-20T00:00:00Z",
+            "begin_head_sha": head_after,
+            "sub_skill": "execute-plan",
+        }
+        descriptor = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-20T00:00:00Z",  # unchanged run identity
+            current_head_sha=head_after,
+            sub_skill="execute-plan",
+            commits_since=0,  # reconciliation committed nothing
+        )
+        assert descriptor is None, (
+            "a reconciled torn-build delta must NOT false-trip the --cycle-end "
+            f"friction detector; got {descriptor!r}"
+        )
+
+
+_TESTS = _TESTS + [
+    ("test_reconcile_cycle_begin_symbol_present",
+     test_reconcile_cycle_begin_symbol_present),
+    ("test_reconcile_stale_lock_removed_and_staging_cleaned",
+     test_reconcile_stale_lock_removed_and_staging_cleaned),
+    ("test_reconcile_fresh_lock_preserved",
+     test_reconcile_fresh_lock_preserved),
+    ("test_reconcile_no_lock_is_noop",
+     test_reconcile_no_lock_is_noop),
+    ("test_reconcile_non_git_tree_is_noop_fail_open",
+     test_reconcile_non_git_tree_is_noop_fail_open),
+    ("test_reconcile_does_not_false_trip_cycle_end_friction",
+     test_reconcile_does_not_false_trip_cycle_end_friction),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

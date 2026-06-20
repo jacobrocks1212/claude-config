@@ -6861,6 +6861,139 @@ def promote_artifact_atomically(
     return {"promoted": True}
 
 
+def reconcile_cycle_begin_git_consistency(
+    repo_root,
+    *,
+    boot_stamp,
+    staging_dir=None,
+    lock_mtime=None,
+    remove=None,
+    git_clean=None,
+):
+    """At --cycle-begin, neutralize a torn-build uncommitted delta left by a
+    PREVIOUS torn cycle: a pre-boot ``.git/index.lock`` ⇒ remove it and
+    ``git clean -fdx`` the staging dir. Returns a reconciliation record.
+
+    The git-consistency detect-half of LD4 (SPEC M5 Detect). The discriminator
+    is the lock's modification time vs ``boot_stamp`` (the orchestrator/run-marker
+    boot epoch): a lock OLDER than the boot stamp was left by a torn op that ran
+    BEFORE this run booted, so it is safe to clear; a lock NEWER than the boot
+    stamp is a LIVE in-flight git op of the current run and is PRESERVED (never
+    clobber a live lock).
+
+    Best-effort + FAIL-OPEN (consistent with lazy-cycle-containment): a non-git
+    tree, no lock, an unreadable mtime, or a git/remove error all degrade to a
+    no-op and NEVER raise — the --cycle-begin marker write must always proceed.
+
+    Crucially this COMPOSES with the --cycle-end friction detector rather than
+    duplicating it: it makes NO commits and never touches the run marker, so HEAD
+    and the run identity are unchanged. detect_cycle_bracket_friction therefore
+    sees zero advanced commits and an intact run identity — a reconciled delta
+    cannot false-trip ``unexpected-commits`` / ``cycle-bracket-break``.
+
+    Args:
+        repo_root: the repo whose ``.git/index.lock`` is examined.
+        boot_stamp: the orchestrator/run boot epoch float (e.g. the run marker's
+            ``started_at`` parsed to epoch). A lock with mtime < this is stale.
+            None disables the staleness comparison → no removal (fail-safe: a
+            missing boot stamp must not clobber any lock).
+        staging_dir: the build staging dir to ``git clean -fdx`` when a stale lock
+            is reconciled. None → skip the clean (lock removal still happens).
+        lock_mtime: injectable lock mtime epoch float (hermetic tests / overriding
+            the on-disk stat). None → stat the lock file.
+        remove: injectable ``callable(path)`` removing the lock (default os.remove).
+        git_clean: injectable ``callable(repo_root, staging_dir) -> bool`` running
+            the staging clean (default: a real ``git clean -fdx <staging>``).
+
+    Returns:
+        ``{"reconciled": bool, "removed_lock": bool, "staging_cleaned": bool,
+        "reason": str}``. ``reconciled`` is True iff a stale lock was removed.
+    """
+    result = {
+        "reconciled": False,
+        "removed_lock": False,
+        "staging_cleaned": False,
+        "reason": "",
+    }
+    try:
+        root = Path(repo_root)
+        git_dir = root / ".git"
+        # Non-git tree (no .git dir/file) → fail-open no-op.
+        if not git_dir.exists():
+            result["reason"] = "not a git tree — no-op"
+            return result
+
+        lock_path = git_dir / "index.lock"
+        if not lock_path.exists():
+            result["reason"] = "no index.lock — no-op"
+            return result
+
+        # Resolve the lock's mtime (injectable for hermetic tests).
+        if lock_mtime is None:
+            try:
+                lock_mtime = lock_path.stat().st_mtime
+            except OSError as exc:
+                result["reason"] = f"could not stat index.lock: {exc!r} — no-op"
+                return result
+
+        # A missing boot stamp must NOT clobber a lock (fail-safe).
+        if boot_stamp is None:
+            result["reason"] = "no boot stamp — lock preserved"
+            return result
+
+        # Fresh/own lock (mtime >= boot stamp) → a live git op; PRESERVE it.
+        if lock_mtime >= boot_stamp:
+            result["reason"] = (
+                f"fresh lock (mtime={lock_mtime} >= boot_stamp={boot_stamp}) — "
+                "live git op, preserved"
+            )
+            return result
+
+        # Stale pre-boot lock → remove it.
+        if remove is None:
+            remove = os.remove
+        try:
+            remove(str(lock_path))
+            result["removed_lock"] = True
+            result["reconciled"] = True
+        except OSError as exc:
+            result["reason"] = f"stale lock removal failed: {exc!r} — no-op"
+            return result
+
+        # git clean -fdx the staging dir (best-effort).
+        if staging_dir is not None:
+            if git_clean is None:
+                git_clean = _default_git_clean_staging
+            try:
+                cleaned = git_clean(root, staging_dir)
+                result["staging_cleaned"] = bool(cleaned)
+            except Exception as exc:  # noqa: BLE001
+                # Lock removal already succeeded; a clean failure is non-fatal.
+                result["reason"] = (
+                    f"stale lock removed; staging clean failed: {exc!r}"
+                )
+                return result
+
+        result["reason"] = "stale pre-boot index.lock reconciled"
+        return result
+    except Exception as exc:  # noqa: BLE001
+        # FAIL-OPEN: any unexpected error degrades to a no-op record.
+        result["reason"] = f"reconciliation error (fail-open): {exc!r}"
+        return result
+
+
+def _default_git_clean_staging(repo_root: Path, staging_dir: str) -> bool:
+    """Default production staging cleaner: ``git clean -fdx <staging_dir>``.
+
+    Best-effort — returns True on a clean exit, False otherwise; never raises
+    (the caller wraps it, but keep this defensive too)."""
+    try:
+        proc = _git(repo_root, "clean", "-fdx", str(staging_dir))
+        return proc.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def kernel_start_time(
     pid,
     *,

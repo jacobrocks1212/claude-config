@@ -6675,6 +6675,76 @@ def run_smoke_tests() -> int:
                 pass
         print(f"  {'PASS' if cmg_ok else 'FAIL'} [{fix_cmg}] subagent cycle-end/begin refused, orchestrator allowed")
 
+        # -------------------------------------------------------------------
+        # Fixture: --cycle-begin git-consistency reconciliation (long-build-and-
+        # runtime-ownership Phase 4 / M5 Detect). An orchestrator --cycle-begin
+        # in a real git tree carrying a STALE pre-boot .git/index.lock (mtime far
+        # in the past) + an uncommitted staging delta REMOVES the lock and
+        # git-cleans the staging dir, surfacing git_consistency_reconciliation in
+        # the JSON. The boot stamp comes from a live run marker's started_at; the
+        # stale lock predates it. Driven via subprocess so the real handler runs.
+        # -------------------------------------------------------------------
+        fix_recon = "cycle-begin-git-consistency-reconciliation"
+        recon_ok = True
+        try:
+            recon_state = td_path / "recon-state"
+            recon_state.mkdir(parents=True, exist_ok=True)
+            recon_repo = td_path / "recon-repo"
+            recon_repo.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "-C", str(recon_repo), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(recon_repo), "config", "user.email", "t@t"], check=True)
+            subprocess.run(["git", "-C", str(recon_repo), "config", "user.name", "t"], check=True)
+            (recon_repo / "seed.txt").write_text("seed", encoding="utf-8")
+            subprocess.run(["git", "-C", str(recon_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(recon_repo), "commit", "-q", "-m", "seed"], check=True)
+            # A live run marker whose started_at is AFTER the stale lock mtime.
+            run_marker_path = recon_state / "lazy-run-marker.json"
+            run_marker_path.write_text(
+                json.dumps({"pipeline": "feature", "repo_root": str(recon_repo),
+                            "session_id": None,
+                            "started_at": "2099-01-01T00:00:00Z"}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            recon_lock = recon_repo / ".git" / "index.lock"
+            recon_lock.write_text("", encoding="utf-8")
+            os.utime(recon_lock, (1_000.0, 1_000.0))  # stale (predates boot)
+            recon_staging = recon_repo / "target" / "release_staging"
+            recon_staging.mkdir(parents=True, exist_ok=True)
+            (recon_staging / "torn.bin").write_text("partial", encoding="utf-8")
+
+            recon_env = {k: v for k, v in os.environ.items()
+                         if k not in ("LAZY_CYCLE_SUBAGENT",)}
+            recon_env["LAZY_STATE_DIR"] = str(recon_state)
+            recon_env["LAZY_ORCHESTRATOR"] = "1"
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-begin",
+                 "--feature-id", "feat-recon", "--nonce", "abad1dea",
+                 "--repo-root", str(recon_repo)],
+                capture_output=True, text=True, env=recon_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_recon}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
+                recon_ok = False
+            if recon_lock.exists():
+                failures.append(f"[{fix_recon}] stale pre-boot index.lock must be removed")
+                recon_ok = False
+            if (recon_staging / "torn.bin").exists():
+                failures.append(f"[{fix_recon}] staging partial must be git-cleaned")
+                recon_ok = False
+            try:
+                out_json = json.loads(r.stdout)
+                rec = out_json.get("git_consistency_reconciliation")
+                if not (isinstance(rec, dict) and rec.get("removed_lock") is True):
+                    failures.append(f"[{fix_recon}] JSON must surface git_consistency_reconciliation.removed_lock")
+                    recon_ok = False
+            except (json.JSONDecodeError, TypeError):
+                failures.append(f"[{fix_recon}] --cycle-begin stdout must be JSON; got {r.stdout!r}")
+                recon_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_recon}] unexpected error: {exc!r}")
+            recon_ok = False
+        print(f"  {'PASS' if recon_ok else 'FAIL'} [{fix_recon}] stale pre-boot index.lock reconciled at --cycle-begin")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -7243,12 +7313,44 @@ def main() -> int:
         run_marker = lazy_core.read_run_marker()
         run_started_at = (run_marker or {}).get("started_at")
         begin_head_sha = lazy_core.head_sha_snapshot(Path(args.repo_root))
+        # long-build-and-runtime-ownership Phase 4 (M5 Detect / LD4): BEFORE the
+        # cycle marker write, reconcile a torn-build git-consistency delta left by
+        # a PREVIOUS torn cycle — a pre-boot `.git/index.lock` (mtime older than
+        # this run's boot stamp) ⇒ remove it and `git clean -fdx` the staging dir.
+        # The boot stamp is the run marker's started_at parsed to epoch (None when
+        # no run marker is live → the helper fail-safe-preserves any lock). This
+        # COMPOSES with the --cycle-end friction detector: it makes no commits and
+        # never touches the run marker, so a reconciled delta cannot false-trip
+        # unexpected-commits / cycle-bracket-break. Best-effort + FAIL-OPEN — any
+        # error degrades to a no-op so the marker write always proceeds.
+        boot_stamp = None
+        if run_started_at:
+            try:
+                _boot_dt = datetime.strptime(
+                    run_started_at, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                boot_stamp = (
+                    _boot_dt - datetime(1970, 1, 1)
+                ).total_seconds()
+            except (ValueError, TypeError):
+                boot_stamp = None
+        reconciliation = None
+        try:
+            staging_dir = str(Path(args.repo_root) / "target" / "release_staging")
+            reconciliation = lazy_core.reconcile_cycle_begin_git_consistency(
+                Path(args.repo_root), boot_stamp=boot_stamp, staging_dir=staging_dir,
+            )
+        except Exception:  # noqa: BLE001  (defense-in-depth; helper is fail-open)
+            reconciliation = None
         marker = lazy_core.write_cycle_marker(
             feature_id=args.feature_id, nonce=args.nonce, kind=args.kind,
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
             sub_skill=args.sub_skill, sub_skill_args=args.sub_skill_args,
         )
-        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        out: dict = dict(marker)
+        if reconciliation is not None and reconciliation.get("reconciled"):
+            out["git_consistency_reconciliation"] = reconciliation
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
     if args.cycle_end:

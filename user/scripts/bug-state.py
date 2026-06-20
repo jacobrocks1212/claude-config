@@ -4394,12 +4394,40 @@ def main() -> int:
         run_marker = lazy_core.read_run_marker()
         run_started_at = (run_marker or {}).get("started_at")
         begin_head_sha = lazy_core.head_sha_snapshot(Path(args.repo_root))
+        # long-build-and-runtime-ownership Phase 4 (M5 Detect / LD4) — coupled-pair
+        # mirror of lazy-state.py: BEFORE the cycle marker write, reconcile a
+        # torn-build git-consistency delta (pre-boot .git/index.lock older than the
+        # run boot stamp ⇒ remove + git clean the staging dir). Composes with the
+        # --cycle-end friction detector (no commits, no run-marker touch). Best-
+        # effort + FAIL-OPEN so the marker write always proceeds.
+        boot_stamp = None
+        if run_started_at:
+            try:
+                _boot_dt = datetime.strptime(
+                    run_started_at, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                boot_stamp = (
+                    _boot_dt - datetime(1970, 1, 1)
+                ).total_seconds()
+            except (ValueError, TypeError):
+                boot_stamp = None
+        reconciliation = None
+        try:
+            staging_dir = str(Path(args.repo_root) / "target" / "release_staging")
+            reconciliation = lazy_core.reconcile_cycle_begin_git_consistency(
+                Path(args.repo_root), boot_stamp=boot_stamp, staging_dir=staging_dir,
+            )
+        except Exception:  # noqa: BLE001  (defense-in-depth; helper is fail-open)
+            reconciliation = None
         marker = lazy_core.write_cycle_marker(
             feature_id=args.bug_id, nonce=args.nonce, kind=args.kind,
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
             sub_skill=args.sub_skill, sub_skill_args=args.sub_skill_args,
         )
-        sys.stdout.write(json.dumps(marker, indent=2) + "\n")
+        out: dict = dict(marker)
+        if reconciliation is not None and reconciliation.get("reconciled"):
+            out["git_consistency_reconciliation"] = reconciliation
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
     if args.cycle_end:

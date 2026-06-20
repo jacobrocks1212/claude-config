@@ -104,5 +104,6 @@
   PASS [park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
   PASS [park-blocked-and-needs-input-single-park] dispatched='workable-feat', blocked-feat park count=1
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
+  PASS [cycle-begin-git-consistency-reconciliation] stale pre-boot index.lock reconciled at --cycle-begin
 
 All smoke tests passed.
