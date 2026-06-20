@@ -2,9 +2,11 @@
 
 > When the operator directs a queue reorder (e.g., move features to the tail), there is no sanctioned queue-reorder command in `lazy-state.py` / `bug-state.py`, and HARD CONSTRAINT 1 bars the orchestrator from editing `queue.json` directly. So the orchestrator turns a simple deterministic state mutation into a sentinel write (BLOCKED.md) plus a fully dispatched apply-resolution subagent — a whole meta-cycle to accomplish a reorder. This is a standing capability gap between HARD CONSTRAINT 1 and the absent reorder primitive.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-20
+**Fix commit:** feab67c
 **Placement:** docs/bugs/no-sanctioned-queue-reorder-command
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/scripts/lazy-state.py` (`--enqueue-adhoc` exists; no reorder / defer-to-tail / remove primitive); `user/scripts/bug-state.py` (same gap, shares `lazy_core`); `user/skills/lazy-batch/SKILL.md` HARD CONSTRAINT 1 + Step 1h blocked-resolution; `user/scripts/lazy_parity_audit.py` (coupled-pair parity guard)
