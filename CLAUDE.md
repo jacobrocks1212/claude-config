@@ -169,6 +169,10 @@ python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities  
 python ~/.claude/scripts/project-skills.py                        # Expand all skills → projected/
 ```
 
+### Research resume in claude-config
+
+claude-config has no `docs/gemini-sprint/` staging by design (negligible research volume). Research resume in this repo is a **direct `RESEARCH.md` drop** into the canonical feature or bug dir (`docs/features/<slug>/RESEARCH.md` or `docs/bugs/<slug>/RESEARCH.md`), picked up by `lazy-state.py` Step 5 → `/spec` Phase 3 naturally. For future high-research-volume cases, see `user/skills/ingest-research/SKILL.md` line ~65 — parameterize the staging path via `.claude/skill-config/gemini-sprint.md`.
+
 ## Hooks
 
 Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/hooks/`.

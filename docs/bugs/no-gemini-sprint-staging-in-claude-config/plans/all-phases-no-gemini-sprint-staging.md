@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: no-gemini-sprint-staging-in-claude-config
-status: Ready
+status: Complete
 created: 2026-06-20
 complexity: mechanical
 phases: [1]
@@ -77,8 +77,8 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Add blessed direct-RESEARCH.md-drop note to docs/bugs/CLAUDE.md
-- [ ] WU-2 — Add research-resume convention note to repo-root CLAUDE.md
+- [x] WU-1 — Add blessed direct-RESEARCH.md-drop note to docs/bugs/CLAUDE.md
+- [x] WU-2 — Add research-resume convention note to repo-root CLAUDE.md
 
 ## Execution Schedule
 
