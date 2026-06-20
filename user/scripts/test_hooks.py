@@ -4420,6 +4420,208 @@ def _run_longbuild_guard(
     return _run_bash(_LONGBUILD_GUARD_SH, stdin_text, _base_env(state_dir))
 
 
+# ---------------------------------------------------------------------------
+# cycle-subagent-fabricates-policy-or-stray-branch — Phase 3
+#   block-sentinel-write-on-stray-branch.sh (WU-4) + settings registration (WU-5)
+#
+# The hook denies a pipeline-sentinel Write/Edit while HEAD != the run marker's
+# work_branch; fail-OPEN on every error path; the deny names the work branch.
+# ---------------------------------------------------------------------------
+
+_STRAYBRANCH_HOOK_SH = _HOOKS_DIR / "block-sentinel-write-on-stray-branch.sh"
+
+
+def _git(args, cwd):
+    return subprocess.run(
+        ["git"] + args, cwd=str(cwd),
+        capture_output=True, text=True,
+    )
+
+
+def _init_repo_on_branch(parent: Path, branch: str) -> Path:
+    """Create a temp git repo with one commit, checked out on *branch*."""
+    repo = parent / "repo"
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", "t@t.t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    _git(["config", "commit.gpgsign", "false"], repo)
+    (repo / "f.txt").write_text("x\n", encoding="utf-8")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "init"], repo)
+    # Rename the initial branch to a known base, then optionally branch off.
+    _git(["branch", "-M", "main"], repo)
+    if branch != "main":
+        _git(["checkout", "-q", "-b", branch], repo)
+    return repo
+
+
+def _write_marker_with_branch(state_dir: Path, repo_root: str, work_branch: str) -> None:
+    """Write a run marker into *state_dir* then force its work_branch on disk."""
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_run_marker(
+            pipeline="feature", cloud=False, repo_root=repo_root,
+            max_cycles=10, now=time.time(),
+        )
+    finally:
+        _clear_state_dir()
+    marker_path = state_dir / "lazy-run-marker.json"
+    data = json.loads(marker_path.read_text(encoding="utf-8"))
+    data["work_branch"] = work_branch
+    marker_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _straybranch_payload(file_path: str, cwd: str, tool: str = "Write") -> str:
+    """PreToolUse JSON for a Write/Edit targeting file_path, fired from cwd."""
+    sid = str(uuid.uuid4())
+    return json.dumps({
+        "session_id": sid,
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool,
+        "tool_input": {"file_path": file_path},
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    })
+
+
+def test_straybranch_hook_file_exists():
+    """The net-new hook must exist on disk (WU-4)."""
+    assert _STRAYBRANCH_HOOK_SH.exists(), (
+        f"block-sentinel-write-on-stray-branch.sh missing — Phase 3 WU-4 not "
+        f"implemented: {_STRAYBRANCH_HOOK_SH}"
+    )
+
+
+def test_straybranch_denies_sentinel_on_stray_branch():
+    """Sentinel write + live marker(work_branch=main) + HEAD=audit/foo → deny,
+    reason names the work branch 'main' + a corrective switch-back."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "audit/foo")
+        _write_marker_with_branch(state_dir, str(repo), "main")
+        payload = _straybranch_payload(str(repo / "NEEDS_INPUT.md"), str(repo))
+        result = _run_bash(_STRAYBRANCH_HOOK_SH, payload, _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"hook must exit 0 (deny is JSON); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) == "deny", (
+            f"a sentinel write on a stray branch must deny; stdout={result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert "main" in reason, f"deny reason must name the work branch; got {reason!r}"
+        assert "audit/foo" in reason, f"deny reason should name the stray branch; got {reason!r}"
+
+
+def test_straybranch_allows_sentinel_on_work_branch():
+    """Sentinel write while HEAD == work_branch (main) → allow (emit nothing)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "main")
+        _write_marker_with_branch(state_dir, str(repo), "main")
+        payload = _straybranch_payload(str(repo / "FIXED.md"), str(repo))
+        result = _run_bash(_STRAYBRANCH_HOOK_SH, payload, _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"a sentinel write ON the work branch must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_straybranch_fail_open_no_marker():
+    """No marker (exit-1 --marker-work-branch) → allow even on a stray branch
+    (fail-OPEN: no known work branch to enforce against)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()  # exists but empty → no marker
+        repo = _init_repo_on_branch(td, "audit/foo")
+        payload = _straybranch_payload(str(repo / "BLOCKED.md"), str(repo))
+        result = _run_bash(_STRAYBRANCH_HOOK_SH, payload, _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"no marker must fail-OPEN (allow); stdout={result.stdout!r}"
+        )
+
+
+def test_straybranch_allows_non_sentinel_target():
+    """A non-sentinel target (SPEC.md / foo.py) on a stray branch → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "audit/foo")
+        _write_marker_with_branch(state_dir, str(repo), "main")
+        for target in ("SPEC.md", "foo.py"):
+            payload = _straybranch_payload(str(repo / target), str(repo))
+            result = _run_bash(_STRAYBRANCH_HOOK_SH, payload, _base_env(state_dir))
+            assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+            assert _containment_decision(result) != "deny", (
+                f"non-sentinel target {target!r} must allow; stdout={result.stdout!r}"
+            )
+
+
+def test_straybranch_fail_open_malformed_json():
+    """Malformed payload → fail-OPEN allow (exit 0, no deny)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(
+            _STRAYBRANCH_HOOK_SH, "{ not valid json", _base_env(state_dir)
+        )
+        assert result.returncode == 0, (
+            f"malformed payload must fail-open (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"malformed payload must NOT deny (fail-open); stdout={result.stdout!r}"
+        )
+
+
+def test_straybranch_non_write_tool_allows():
+    """A non-Write/Edit tool (Bash) targeting a sentinel name → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "audit/foo")
+        _write_marker_with_branch(state_dir, str(repo), "main")
+        payload = json.loads(_straybranch_payload(str(repo / "FIXED.md"), str(repo)))
+        payload["tool_name"] = "Bash"
+        payload["tool_input"] = {"command": "echo FIXED.md"}
+        result = _run_bash(_STRAYBRANCH_HOOK_SH, json.dumps(payload), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"non-Write/Edit tool must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_straybranch_registered_in_settings():
+    """Mount-site verification (WU-5): the hook must be REGISTERED as a command in
+    user/settings.json's PreToolUse `matcher: Write|Edit` array — a hook on disk
+    but unregistered is dead code."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    we_blocks = [b for b in pretooluse if b.get("matcher") == "Write|Edit"]
+    assert we_blocks, "no PreToolUse matcher:Write|Edit block found in settings.json"
+    commands = [
+        h.get("command", "")
+        for block in we_blocks
+        for h in block.get("hooks", [])
+    ]
+    assert any("block-sentinel-write-on-stray-branch.sh" in c for c in commands), (
+        f"block-sentinel-write-on-stray-branch.sh not registered in the "
+        f"PreToolUse matcher:Write|Edit array; registered commands: {commands!r}"
+    )
+
+
 def test_longbuild_guard_file_exists():
     """The net-new guard hook must exist on disk (WU-1)."""
     assert _LONGBUILD_GUARD_SH.exists(), (
@@ -4757,6 +4959,25 @@ _TESTS = [
      test_longbuild_guard_non_bash_tool_allows),
     ("test_longbuild_guard_registered_in_settings",
      test_longbuild_guard_registered_in_settings),
+    # cycle-subagent-fabricates-policy-or-stray-branch Phase 3 (WU-4 + WU-5) —
+    # block-sentinel-write-on-stray-branch.sh: deny a sentinel write on a stray
+    # branch (deny names the work branch); allow on the work branch / no marker /
+    # non-sentinel / non-Write tool / malformed payload (fail-OPEN); registered.
+    ("test_straybranch_hook_file_exists", test_straybranch_hook_file_exists),
+    ("test_straybranch_denies_sentinel_on_stray_branch",
+     test_straybranch_denies_sentinel_on_stray_branch),
+    ("test_straybranch_allows_sentinel_on_work_branch",
+     test_straybranch_allows_sentinel_on_work_branch),
+    ("test_straybranch_fail_open_no_marker",
+     test_straybranch_fail_open_no_marker),
+    ("test_straybranch_allows_non_sentinel_target",
+     test_straybranch_allows_non_sentinel_target),
+    ("test_straybranch_fail_open_malformed_json",
+     test_straybranch_fail_open_malformed_json),
+    ("test_straybranch_non_write_tool_allows",
+     test_straybranch_non_write_tool_allows),
+    ("test_straybranch_registered_in_settings",
+     test_straybranch_registered_in_settings),
 ]
 
 

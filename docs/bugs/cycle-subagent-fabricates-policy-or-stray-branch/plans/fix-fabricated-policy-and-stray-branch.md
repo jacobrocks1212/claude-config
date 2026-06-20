@@ -86,8 +86,8 @@ Upstream plans and PHASES.md files this plan was authored against.
 - [x] WU-1 — P1: prose hardening of cycle-base-prompt.md hard-contract items 2 & 3 (both variants)
 - [x] WU-2 — P2 (TDD): marker `work_branch` field + `lazy_core` read helper, with tests
 - [x] WU-3 — P2 (TDD): `--marker-work-branch` CLI query in lazy-state.py + bug-state.py, with tests
-- [ ] WU-4 — P3 (TDD): `block-sentinel-write-on-stray-branch.sh` hook, with hook tests
-- [ ] WU-5 — P3: register the new hook in user/settings.json `Write|Edit` PreToolUse block
+- [x] WU-4 — P3 (TDD): `block-sentinel-write-on-stray-branch.sh` hook, with hook tests
+- [x] WU-5 — P3: register the new hook in user/settings.json `Write|Edit` PreToolUse block
 - [ ] WU-6 — P4: docs (CLAUDE.md hook row + user/scripts/CLAUDE.md marker note) + final projection/test verification
 
 ## Execution Schedule

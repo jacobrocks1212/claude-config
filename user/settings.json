@@ -107,6 +107,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/block-noncanonical-blocker-write.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/block-sentinel-write-on-stray-branch.sh",
+            "timeout": 5
           }
         ]
       }
