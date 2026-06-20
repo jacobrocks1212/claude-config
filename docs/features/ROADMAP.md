@@ -18,7 +18,7 @@ the historical / manually-authored spec archive (not under pipeline management).
 > Pre-Gemini stubs from the `/lazy-batch` session-log audit (AlgoBooth, 19 sessions over the last 2 weeks). Each carries the `> Draft (pre-Gemini)` trailer + `"stub": true`, so the pipeline routes it to `/spec` (Step 4.5) to shape the baseline interactively. Solutions are deliberately NOT baked.
 
 ~~- Completion / Coherence Gate Reconciliation (`completion-coherence-gate-reconciliation`) — three completion gates (`apply_pseudo`, `check-docs-consistency.ts`, `lazy_core`) disagree on the MCP-verification carve-out, so fully-validated features get refused at the finish line and nearly every completion needs an extra coherence-recovery meta-cycle. Operator-flagged; highest-frequency friction in the corpus.~~  ✅ COMPLETE
-- Feature Budget Guard + Skip-Ahead (`feature-budget-guard-and-skip-ahead`) — one stubborn feature can consume an entire batch budget, and a blocked/research-gated head item strands the whole independent queue behind it.
+~~- Feature Budget Guard + Skip-Ahead (`feature-budget-guard-and-skip-ahead`) — one stubborn feature can consume an entire batch budget, and a blocked/research-gated head item strands the whole independent queue behind it.~~  ✅ COMPLETE
 - Long-Build + Runtime Ownership (`long-build-and-runtime-ownership`) — long builds and the dev/MCP runtime die at the subagent turn boundary, forcing hand-rolled rebuild→health-poll loops and orphaned cycles.
 
 ## Tier 2 — proposed (session-audit stubs 2026-06-19)
