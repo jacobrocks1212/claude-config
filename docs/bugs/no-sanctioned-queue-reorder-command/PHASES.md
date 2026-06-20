@@ -75,15 +75,20 @@ No `**Depends on:**` block in the SPEC (bug investigation spec). No hard upstrea
 **Scope:** Wire the Phase 1 helper as an operator-only, out-of-cycle `--reorder-queue` subcommand on `lazy-state.py`, gated EXACTLY like `--enqueue-adhoc` (`refuse_if_cycle_active("--reorder-queue")` fires FIRST, before any mutation → exit 3 / zero side effects for a cycle subagent). Add `--test` smoke fixtures covering each operation, the cycle-active refusal, the idempotent no-op, and the missing-entry error.
 
 **Deliverables:**
-- [ ] argparse: `--reorder-queue` (`action="store_true"`) plus `--to` (string; accepts `tail`/`head`/`remove`/an integer index) added beside the existing `--enqueue-adhoc` block (~line 6788). Reuse the EXISTING `--id` argument (already defined for `--enqueue-adhoc`); do NOT add a second id flag.
-- [ ] dispatch branch beside the `--enqueue-adhoc` branch (~line 7774): `lazy_core.refuse_if_cycle_active("--reorder-queue")` FIRST, then `_die("--reorder-queue requires --id and --to")` if either is missing, then call `lazy_core.reorder_queue(Path(args.repo_root) / "docs" / "features" / "queue.json", args.id, to=<parsed --to>, queue_label="queue.json")`, `json.dumps` the result, return 0.
-- [ ] `--test` fixture: defer-to-tail — a 3-entry features queue, `--reorder-queue --id <head> --to tail`, assert the entry is now last.
-- [ ] `--test` fixture: move-to-head and move-to-index variants.
-- [ ] `--test` fixture: remove — `--to remove` drops the entry; assert queue length decremented and entry absent.
-- [ ] `--test` fixture: missing-entry → `_die` (SystemExit), mirroring the existing `enqueue_adhoc` duplicate-id refusal fixture (lazy-state.py:5560).
-- [ ] `--test` fixture: cycle-active refusal — with the cycle marker present and no `LAZY_ORCHESTRATOR` export, the dispatch refuses (exit 3, queue.json UNCHANGED). Model on the existing `refuse_if_cycle_active` coverage.
-- [ ] `--test` fixture: idempotent no-op — reorder an entry already at the target position; assert exit 0 and the file unchanged.
-- [ ] Regenerate the byte-pinned baseline (`tests/baselines/lazy-state-test-baseline.txt`) via the `_normalize_smoke_output` helper — never by hand — since `--test` output changed.
+- [x] argparse: `--reorder-queue` (`action="store_true"`) plus `--to` (string; accepts `tail`/`head`/`remove`/an integer index) added beside the existing `--enqueue-adhoc` block (~line 6788). Reuse the EXISTING `--id` argument (already defined for `--enqueue-adhoc`); do NOT add a second id flag.
+- [x] dispatch branch beside the `--enqueue-adhoc` branch (~line 7774): `lazy_core.refuse_if_cycle_active("--reorder-queue")` FIRST, then `_die("--reorder-queue requires --id and --to")` if either is missing, then call `lazy_core.reorder_queue(Path(args.repo_root) / "docs" / "features" / "queue.json", args.id, to=<parsed --to>, queue_label="queue.json")`, `json.dumps` the result, return 0.
+- [x] `--test` fixture: defer-to-tail — a 3-entry features queue, `--reorder-queue --id <head> --to tail`, assert the entry is now last.
+- [x] `--test` fixture: move-to-head and move-to-index variants.
+- [x] `--test` fixture: remove — `--to remove` drops the entry; assert queue length decremented and entry absent.
+- [x] `--test` fixture: missing-entry → `_die` (SystemExit), mirroring the existing `enqueue_adhoc` duplicate-id refusal fixture (lazy-state.py:5560).
+- [x] `--test` fixture: cycle-active refusal — with the cycle marker present and no `LAZY_ORCHESTRATOR` export, the dispatch refuses (exit 3, queue.json UNCHANGED). Model on the existing `refuse_if_cycle_active` coverage.
+- [x] `--test` fixture: idempotent no-op — reorder an entry already at the target position; assert exit 0 and the file unchanged.
+- [x] Regenerate the byte-pinned baseline (`tests/baselines/lazy-state-test-baseline.txt`) via the `_normalize_smoke_output` helper — never by hand — since `--test` output changed.
+
+**Implementation Notes (P2 — 2026-06-20):**
+- Added `--reorder-queue` (`store_true`) + `--to` argparse beside `--enqueue-adhoc`'s `--type` block; reused the existing `--id` flag. Dispatch branch added right after the `enqueue_adhoc` branch: `refuse_if_cycle_active("--reorder-queue")` FIRST, then missing-arg `_die`, then `int(args.to)` parse (falls back to string for tail/head/remove), then `lazy_core.reorder_queue(... docs/features/queue.json ..., queue_label="queue.json")`, `json.dumps`, return 0.
+- All seven `--test` fixtures are subprocess-driven (real CLI handler path): tail/head/index/remove/missing-`_die`(exit 2)/cycle-active-refusal(exit 3, queue unchanged)/idempotent-no-op(byte-stable). Single deterministic PASS line — baseline regenerated via `_normalize_smoke_output` (one-line diff). Full `test_lazy_core.py` 700/700; `lazy-state.py --test` + `bug-state.py --test` green.
+- Review verdict: PASS.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --repo-root <tmp> --reorder-queue --id <head-id> --to tail` against a temp repo with a 3-entry `docs/features/queue.json` prints `{"reordered": true, …}` and the on-disk queue now lists `<head-id>` last. (Runnable command; the subcommand exists after this phase.)
 

@@ -105,5 +105,6 @@
   PASS [park-blocked-and-needs-input-single-park] dispatched='workable-feat', blocked-feat park count=1
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
   PASS [cycle-begin-git-consistency-reconciliation] stale pre-boot index.lock reconciled at --cycle-begin
+  PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
 
 All smoke tests passed.
