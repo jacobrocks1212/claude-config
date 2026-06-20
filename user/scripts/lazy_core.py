@@ -6661,6 +6661,13 @@ def write_run_marker(
         "nonce_seed": nonce_seed,
         "forward_cycles": 0,
         "meta_cycles": 0,
+        # feature-budget-guard-and-skip-ahead Phase 1: per-feature forward-cycle
+        # consumption, keyed on feature_id. Advanced as a SIBLING write inside the
+        # SAME marker mutation that advances the run-level forward_cycles (both
+        # forward-advance triggers carry it), gated by the EXACT same forward-vs-
+        # meta classifier. The Phase-2 trip eval reads this map vs the computed
+        # ceiling. Legacy markers lacking the key default to {} on read/advance.
+        "per_feature_forward_cycles": {},
         # ISSUE 5 (d8-effect-chains live run, 2026-06-14): the consume-count
         # watermark at which a cycle counter was last advanced. A counter advances
         # only when the registry consume-count exceeds this (one consume per real
@@ -8302,6 +8309,43 @@ def fold_run_counters(
     return (forward, meta)
 
 
+def _bump_per_feature_forward(marker: dict, feature_id) -> None:
+    """Increment ``marker["per_feature_forward_cycles"][feature_id]`` by 1, in
+    place, as a SIBLING write inside whichever forward-advance mutation is already
+    underway (feature-budget-guard-and-skip-ahead Phase 1).
+
+    Called ONLY from the forward branch of ``advance_run_counters`` /
+    ``advance_forward_cycle`` — so the per-feature increment rides the EXACT same
+    forward-vs-meta gate as the run-level ``forward_cycles`` (no second oracle;
+    meta-only advances never reach here). Legacy-tolerant: a marker lacking the key
+    (a run resumed from a pre-feature marker) defaults to ``{}`` and never
+    KeyErrors. A falsy/None ``feature_id`` is a no-op (no spurious key).
+    """
+    if not feature_id:
+        return
+    per_feature = marker.get("per_feature_forward_cycles")
+    if not isinstance(per_feature, dict):
+        per_feature = {}
+    key = str(feature_id)
+    per_feature[key] = int(per_feature.get(key, 0)) + 1
+    marker["per_feature_forward_cycles"] = per_feature
+
+
+def read_per_feature_forward_cycles(marker: dict | None) -> dict:
+    """Read helper exposing the ``per_feature_forward_cycles`` map from a marker
+    (feature-budget-guard-and-skip-ahead Phase 1).
+
+    Returns the map (a ``{feature_id: int}`` dict) or ``{}`` when the marker is
+    None or lacks the key (legacy tolerance). The Phase-2 trip evaluation and the
+    probe path read the per-feature counts through here so the ``{}``-default lives
+    in exactly one place.
+    """
+    if not isinstance(marker, dict):
+        return {}
+    value = marker.get("per_feature_forward_cycles")
+    return value if isinstance(value, dict) else {}
+
+
 def advance_run_counters(state: dict) -> dict | None:
     """Advance the persisted forward_cycles or meta_cycles counter in the marker —
     ONLY when an actual dispatch (registry consume) has landed since the last
@@ -8388,6 +8432,11 @@ def advance_run_counters(state: dict) -> dict | None:
     # Real sub_skill: truthy and does not start with "__"
     if sub_skill and not str(sub_skill).startswith("__"):
         marker["forward_cycles"] = marker.get("forward_cycles", 0) + 1
+        # feature-budget-guard-and-skip-ahead Phase 1: sibling per-feature
+        # increment inside the SAME marker mutation, gated by the SAME forward
+        # classification (a real non-`__` skill here). Reuses the existing advance
+        # gate — no second oracle. Legacy-tolerant (defaults to {}).
+        _bump_per_feature_forward(marker, state.get("feature_id"))
     else:
         # Pseudo or absent sub_skill → meta cycle
         marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
@@ -8517,6 +8566,11 @@ def advance_forward_cycle(state: dict) -> dict | None:
     is_forward_pseudo = sub_skill in _FORWARD_ADVANCING_PSEUDO_SKILLS
     if is_real or is_forward_pseudo:
         marker["forward_cycles"] = marker.get("forward_cycles", 0) + 1
+        # feature-budget-guard-and-skip-ahead Phase 1: sibling per-feature
+        # increment, gated by the SAME forward classification used above (the
+        # state-change trigger). Keeps "what counts as a forward cycle" defined in
+        # exactly one place; no second oracle. Legacy-tolerant (defaults to {}).
+        _bump_per_feature_forward(marker, state.get("feature_id"))
     else:
         marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
 

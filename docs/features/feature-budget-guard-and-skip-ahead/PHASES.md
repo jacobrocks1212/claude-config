@@ -16,16 +16,16 @@ Phase-level dependencies on completed upstream features. The SPEC's `**Depends o
 **Scope:** Add a `per_feature_forward_cycles: {feature_id: int}` map to the run marker and advance it on the same two forward-advance triggers that already drive the run-level `forward_cycles`, keyed on the current `feature_id`. This is the data-collection slice — it observes and records per-feature cycle consumption but takes NO guard action yet (the trip lands in Phase 2). It crosses the existing counter-advance seam (`lazy_core.advance_run_counters` consume-oracle + `lazy_core.advance_forward_cycle` state-change) so the per-feature increment rides the exact triggers that move the run-level counter — no new oracle.
 
 **Deliverables:**
-- [ ] `lazy_core` run-marker writer (`write_run_marker` / the marker dict built in `--run-start`, ~`lazy_core.py:6660`) initializes `per_feature_forward_cycles: {}` alongside `forward_cycles: 0` / `meta_cycles: 0`. Legacy markers lacking the key default to `{}` on read (mirror the `last_advance_state_key` legacy-tolerance pattern).
-- [ ] In BOTH forward-advance triggers — `advance_run_counters(state)` (consume-oracle, `lazy_core.py` ~line 7860) and `advance_forward_cycle(state)` (state-change, the `byref-dispatch-undercounts-forward-cycles` Phase-1 real-skill path) — when the advance fires AND the advancing `sub_skill` is a real (non-`__`) skill OR a member of `_FORWARD_ADVANCING_PSEUDO_SKILLS`, also increment `per_feature_forward_cycles[state["feature_id"]]` by 1. Reuse the EXACT same gate that advances the run-level counter (no second oracle); per-feature increment is a sibling write inside the same marker mutation, NOT a new advance path.
-- [ ] Marker read helper exposes `per_feature_forward_cycles` so the probe/`compute_state` path can read it (defaults `{}` when absent).
-- [ ] Tests: `lazy-state.py --test` fixture asserting that after ≥2 forward cycles on one fixture feature, the marker's `per_feature_forward_cycles[<id>]` equals the run-level advance count for that feature; a meta-only cycle does NOT increment it; a second feature gets its own independent key.
+- [x] `lazy_core` run-marker writer (`write_run_marker` / the marker dict built in `--run-start`, ~`lazy_core.py:6660`) initializes `per_feature_forward_cycles: {}` alongside `forward_cycles: 0` / `meta_cycles: 0`. Legacy markers lacking the key default to `{}` on read (mirror the `last_advance_state_key` legacy-tolerance pattern).
+- [x] In BOTH forward-advance triggers — `advance_run_counters(state)` (consume-oracle, `lazy_core.py` ~line 7860) and `advance_forward_cycle(state)` (state-change, the `byref-dispatch-undercounts-forward-cycles` Phase-1 real-skill path) — when the advance fires AND the advancing `sub_skill` is a real (non-`__`) skill OR a member of `_FORWARD_ADVANCING_PSEUDO_SKILLS`, also increment `per_feature_forward_cycles[state["feature_id"]]` by 1. Reuse the EXACT same gate that advances the run-level counter (no second oracle); per-feature increment is a sibling write inside the same marker mutation, NOT a new advance path.
+- [x] Marker read helper exposes `per_feature_forward_cycles` so the probe/`compute_state` path can read it (defaults `{}` when absent).
+- [x] Tests: `lazy-state.py --test` fixture asserting that after ≥2 forward cycles on one fixture feature, the marker's `per_feature_forward_cycles[<id>]` equals the run-level advance count for that feature; a meta-only cycle does NOT increment it; a second feature gets its own independent key.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` passes a new fixture asserting `per_feature_forward_cycles[<feature_id>]` increments per forward cycle (and not on meta cycles), with the run marker round-tripped through `claude_state_dir()`.
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] `lazy-state.py --test` shows the per-feature-counter fixture PASS <!-- verification-only -->
-- [ ] `bug-state.py --test` stays green (shared `lazy_core` advance helpers unbroken) <!-- verification-only -->
+- [x] `lazy-state.py --test` shows the per-feature-counter fixture PASS <!-- verification-only -->
+- [x] `bug-state.py --test` stays green (shared `lazy_core` advance helpers unbroken) <!-- verification-only -->
 
 **Prerequisites:** None (first phase).
 
@@ -41,6 +41,14 @@ Hermetic `--test` fixture only — no runtime. Drive a fixture feature through �
 - The marker map keyed by `feature_id` is the SINGLE input Phase 2's trip evaluation reads — Phase 2 adds NO new counter, only a comparison against the computed ceiling.
 - Keep the per-feature increment gated by the SAME `_FORWARD_ADVANCING_PSEUDO_SKILLS` classifier the run-level counter uses, so "what counts as a forward cycle" stays defined in exactly one place.
 - Legacy-marker tolerance (`{}` default) is load-bearing: a run resumed from a pre-feature marker must not KeyError.
+
+**Implementation Notes (2026-06-19, Phase 1 landed — INLINE execution under /lazy-batch, no Agent calls):**
+- **Work done:** Added `"per_feature_forward_cycles": {}` to the `write_run_marker` marker dict (`lazy_core.py` ~6662, beside `forward_cycles`/`meta_cycles`). Added a shared `_bump_per_feature_forward(marker, feature_id)` helper (just above `advance_run_counters`) that does the sibling increment in place, and a `read_per_feature_forward_cycles(marker)` read helper (the `{}`-default lives in exactly one place). Wired `_bump_per_feature_forward` into the FORWARD branch of BOTH `advance_run_counters` (consume-oracle) and `advance_forward_cycle` (state-change), gated by the EXACT same forward classification already present in each (no new oracle). Meta branches never call it.
+- **Files modified:** `user/scripts/lazy_core.py` (marker init + 2 helpers + 2 forward-branch call sites), `user/scripts/lazy-state.py` (`--test` per-feature-counter functional block, LAZY_STATE_DIR-pinned marker round-trip), `user/scripts/test_lazy_core.py` (6 characterization tests, RED-first), `user/scripts/tests/baselines/lazy-state-test-baseline.txt` (regenerated via `_normalize_smoke_output` for the one new print line — bug-state baseline unchanged).
+- **TDD:** wrote the 6 `test_lazy_core.py` tests FIRST — confirmed 6 FAIL RED (`KeyError`/`got None`), then implemented → 609/609 GREEN.
+- **Integration verified:** the `lazy-state.py --test` functional block exercises BOTH triggers end-to-end (real-skill consume-oracle advance + forward-pseudo state-change advance on the same feature), asserts the per-feature count equals the run-level forward count, meta-exempt, second-feature-independent, and round-trips through `claude_state_dir()` via the read helper — this is the P1→P2 hand-off input proven live.
+- **Pitfall:** the consume-oracle test must register+consume a nonce (`register_emission` then `consume_nonce(entry["nonce"])`) so `advance_run_counters` passes its consume gate; a bare advance no-ops.
+- **`bug-state.py` unaffected:** the increment lives in shared `lazy_core` forward branches; `bug-state.py --test` stays green and its baseline did not drift (no `feature_id` map surfaces in bug output).
 
 ---
 

@@ -19317,6 +19317,211 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# Tests: feature-budget-guard-and-skip-ahead Phase 1 — per-feature forward-cycle
+#   counter (per_feature_forward_cycles: {feature_id: int} run-marker map).
+#
+# The per-feature increment is a SIBLING write inside the SAME marker mutation
+# that advances the run-level forward_cycles, gated by the EXACT same
+# forward-vs-meta classifier (a real non-`__` skill OR a member of
+# _FORWARD_ADVANCING_PSEUDO_SKILLS). It rides BOTH forward-advance triggers
+# (advance_run_counters consume-oracle + advance_forward_cycle state-change) and
+# is keyed on state["feature_id"]. Meta-only advances must NOT increment it.
+# A legacy marker lacking the key defaults to {} on read (no KeyError).
+# ---------------------------------------------------------------------------
+
+
+def test_write_run_marker_initializes_per_feature_map():
+    """P1 RED: write_run_marker seeds per_feature_forward_cycles: {} alongside
+    forward_cycles: 0 / meta_cycles: 0."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            m = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            assert m.get("per_feature_forward_cycles") == {}, (
+                f"write_run_marker must seed an empty per_feature_forward_cycles "
+                f"map, got {m.get('per_feature_forward_cycles')!r}"
+            )
+            # Round-trips through the read path too.
+            on_disk = lazy_core.read_run_marker(now=_time.time())
+            assert on_disk.get("per_feature_forward_cycles") == {}, on_disk
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_forward_cycle_increments_per_feature():
+    """P1 RED: advance_forward_cycle increments per_feature_forward_cycles[id] by
+    1 on a forward-advancing state change, keyed on state['feature_id'], in the
+    SAME marker mutation as forward_cycles."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            # Cycle 1 — real skill on feat-A.
+            m = lazy_core.advance_forward_cycle({
+                "sub_skill": "/execute-plan", "feature_id": "feat-A",
+                "current_step": "execute-plan",
+            })
+            assert m["forward_cycles"] == 1, m
+            assert m["per_feature_forward_cycles"].get("feat-A") == 1, (
+                f"per_feature_forward_cycles[feat-A] must be 1 after one forward "
+                f"cycle, got {m['per_feature_forward_cycles']!r}"
+            )
+            # Cycle 2 — forward-advancing pseudo-skill on the SAME feature.
+            m = lazy_core.advance_forward_cycle({
+                "sub_skill": "__mark_complete__", "feature_id": "feat-A",
+                "current_step": "mark-complete",
+            })
+            assert m["forward_cycles"] == 2, m
+            assert m["per_feature_forward_cycles"].get("feat-A") == 2, (
+                f"per-feature count must equal the run-level forward count for the "
+                f"feature, got {m['per_feature_forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_forward_cycle_meta_does_not_increment_per_feature():
+    """P1 RED: a meta-only advance (non-forward __-prefixed cleanup) advances
+    meta_cycles but does NOT touch per_feature_forward_cycles."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            m = lazy_core.advance_forward_cycle({
+                "sub_skill": "__neutralize_sentinel__", "feature_id": "feat-A",
+                "current_step": "cleanup",
+            })
+            assert m["meta_cycles"] == 1, m
+            assert m["per_feature_forward_cycles"].get("feat-A", 0) == 0, (
+                f"a meta-only advance must NOT increment the per-feature counter, "
+                f"got {m['per_feature_forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_per_feature_counter_independent_keys():
+    """P1 RED: a second feature gets its own independent per-feature key."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            lazy_core.advance_forward_cycle({
+                "sub_skill": "/execute-plan", "feature_id": "feat-A",
+                "current_step": "execute-plan",
+            })
+            lazy_core.advance_forward_cycle({
+                "sub_skill": "/spec", "feature_id": "feat-A",
+                "current_step": "spec",
+            })
+            m = lazy_core.advance_forward_cycle({
+                "sub_skill": "/execute-plan", "feature_id": "feat-B",
+                "current_step": "execute-plan",
+            })
+            assert m["per_feature_forward_cycles"].get("feat-A") == 2, m
+            assert m["per_feature_forward_cycles"].get("feat-B") == 1, (
+                f"a second feature must accrue its own independent count, got "
+                f"{m['per_feature_forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_advance_run_counters_increments_per_feature():
+    """P1 RED: the consume-oracle trigger (advance_run_counters) ALSO increments
+    the per-feature counter on a forward dispatch (both triggers carry it)."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            # Register one consumed dispatch so the consume oracle advances.
+            _entry = lazy_core.register_emission("pf", "cycle")
+            lazy_core.consume_nonce(_entry["nonce"])
+            m = lazy_core.advance_run_counters({
+                "sub_skill": "/execute-plan", "feature_id": "feat-C",
+                "current_step": "execute-plan",
+            })
+            assert m["forward_cycles"] == 1, m
+            assert m["per_feature_forward_cycles"].get("feat-C") == 1, (
+                f"advance_run_counters must also carry the per-feature increment, "
+                f"got {m['per_feature_forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_per_feature_counter_legacy_marker_tolerance():
+    """P1 RED: a legacy marker lacking per_feature_forward_cycles defaults to {}
+    on the advance path — never KeyErrors, and starts the map from the advance."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            # Simulate a legacy marker: strip the new key.
+            marker_path = Path(td) / lazy_core._MARKER_FILENAME
+            m = json.loads(marker_path.read_text(encoding="utf-8"))
+            m.pop("per_feature_forward_cycles", None)
+            marker_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+            updated = lazy_core.advance_forward_cycle({
+                "sub_skill": "/execute-plan", "feature_id": "feat-L",
+                "current_step": "execute-plan",
+            })
+            assert updated["per_feature_forward_cycles"].get("feat-L") == 1, (
+                f"a legacy marker (no per_feature_forward_cycles) must default to "
+                f"{{}} and start the count, got "
+                f"{updated.get('per_feature_forward_cycles')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    ("test_write_run_marker_initializes_per_feature_map",
+     test_write_run_marker_initializes_per_feature_map),
+    ("test_advance_forward_cycle_increments_per_feature",
+     test_advance_forward_cycle_increments_per_feature),
+    ("test_advance_forward_cycle_meta_does_not_increment_per_feature",
+     test_advance_forward_cycle_meta_does_not_increment_per_feature),
+    ("test_per_feature_counter_independent_keys",
+     test_per_feature_counter_independent_keys),
+    ("test_advance_run_counters_increments_per_feature",
+     test_advance_run_counters_increments_per_feature),
+    ("test_per_feature_counter_legacy_marker_tolerance",
+     test_per_feature_counter_legacy_marker_tolerance),
+]
+
+
+# ---------------------------------------------------------------------------
 # Tests: loop-detected-false-positives-from-probe-and-reboot-churn
 #   Phase 2 — resolution-aware step_count reset (symptom 3).
 #

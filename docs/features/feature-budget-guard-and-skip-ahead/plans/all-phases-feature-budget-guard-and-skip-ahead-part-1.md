@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: feature-budget-guard-and-skip-ahead
-status: Ready
+status: In-progress
 complexity: complex
 phases: [1, 2]
 ---
@@ -94,8 +94,8 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — Per-feature counter: marker init + advance increment
-- [ ] WU-2 — Per-feature counter: read helper + smoke fixture
+- [x] WU-1 — Per-feature counter: marker init + advance increment
+- [x] WU-2 — Per-feature counter: read helper + smoke fixture
 - [ ] WU-3 — Dynamic ceiling fn + `--per-feature-cycle-cap` flag
 - [ ] WU-4 — Trip-eval skip branch + defer-to-tail + bounded re-trip/eviction + probe field + exhaustion terminal
 

@@ -4771,6 +4771,86 @@ def run_smoke_tests() -> int:
         print(f"  {'PASS' if (rhf_fresh is True and rhf_stale is False) else 'FAIL'} "
               f"[{fix_name_rhf}] hashless upstream skipped; real drift still stale")
 
+        # Functional check (feature-budget-guard-and-skip-ahead Phase 1):
+        # the per-feature forward-cycle counter rides BOTH forward-advance
+        # triggers and is keyed on feature_id. Round-trip the run marker through
+        # claude_state_dir() by pinning LAZY_STATE_DIR at an isolated temp dir.
+        # Drive one fixture feature through ≥2 forward-advancing cycles (a
+        # real-skill dispatch via advance_run_counters + a forward-advancing
+        # pseudo-skill apply via advance_forward_cycle), assert the per-feature
+        # count equals the run-level forward count for that feature, a meta-only
+        # cycle does NOT increment it, and a second feature gets its own key.
+        pf_state_dir = td_path / "per-feature-counter-state"
+        pf_state_dir.mkdir(parents=True, exist_ok=True)
+        _pf_prev_env = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(pf_state_dir)
+        try:
+            import time as _pf_time
+            mk = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(td_path),
+                max_cycles=20, now=_pf_time.time(),
+            )
+            if mk.get("per_feature_forward_cycles") != {}:
+                failures.append(
+                    "[per-feature-counter] write_run_marker did not seed "
+                    f"per_feature_forward_cycles: {{}} (got "
+                    f"{mk.get('per_feature_forward_cycles')!r})"
+                )
+            # Cycle 1 — real skill on feat-pf via the consume-oracle trigger.
+            _e = lazy_core.register_emission("pf", "cycle")
+            lazy_core.consume_nonce(_e["nonce"])
+            m1 = lazy_core.advance_run_counters({
+                "sub_skill": "execute-plan", "feature_id": "feat-pf",
+                "current_step": "Step 7a: execute plan",
+            })
+            # Cycle 2 — forward-advancing pseudo-skill on the SAME feature via the
+            # state-change trigger (no consume).
+            m2 = lazy_core.advance_forward_cycle({
+                "sub_skill": "__mark_complete__", "feature_id": "feat-pf",
+                "current_step": "Step 10: mark complete",
+            })
+            # Meta-only cycle on the SAME feature — must NOT increment.
+            m3 = lazy_core.advance_forward_cycle({
+                "sub_skill": "__neutralize_sentinel__", "feature_id": "feat-pf",
+                "current_step": "cleanup",
+            })
+            # A second feature gets its own independent key.
+            m4 = lazy_core.advance_forward_cycle({
+                "sub_skill": "execute-plan", "feature_id": "feat-pf2",
+                "current_step": "Step 7a: execute plan",
+            })
+            pf_map = m4.get("per_feature_forward_cycles", {})
+            if pf_map.get("feat-pf") != 2:
+                failures.append(
+                    "[per-feature-counter] per_feature_forward_cycles[feat-pf] "
+                    f"expected 2 (the run-level forward count), got "
+                    f"{pf_map.get('feat-pf')!r}"
+                )
+            if m4.get("forward_cycles") != 3:
+                failures.append(
+                    "[per-feature-counter] run-level forward_cycles expected 3 "
+                    f"(2 feat-pf + 1 feat-pf2), got {m4.get('forward_cycles')!r}"
+                )
+            if pf_map.get("feat-pf2") != 1:
+                failures.append(
+                    "[per-feature-counter] a second feature must accrue its own "
+                    f"independent count of 1, got {pf_map.get('feat-pf2')!r}"
+                )
+            # Round-trip via the read path + read helper.
+            on_disk = lazy_core.read_run_marker(now=_pf_time.time())
+            if lazy_core.read_per_feature_forward_cycles(on_disk).get("feat-pf") != 2:
+                failures.append(
+                    "[per-feature-counter] read_per_feature_forward_cycles did not "
+                    "round-trip the marker map through claude_state_dir()"
+                )
+            print("  [per-feature-counter] per_feature_forward_cycles rides both "
+                  "advance triggers, meta-exempt, per-feature keyed: ok")
+        finally:
+            if _pf_prev_env is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _pf_prev_env
+
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
         enq_features = td_path / "enqueue-test" / "docs" / "features"
