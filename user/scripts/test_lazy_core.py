@@ -20379,6 +20379,243 @@ def test_autotick_idempotent_rerun_no_double_comment():
         ) == 2, "duplicate audit comment appeared"
 
 
+# ===========================================================================
+# completion-coherence-gate-reconciliation — Phase 3
+#   Wire evidence verdict + auto-tick into _phase_completion_plan /
+#   __mark_complete__ / __mark_fixed__, with COMPLETED.md auto_ticked_rows and
+#   the LAZY_STRICT_EVIDENCE_GATE kill-switch.
+# ===========================================================================
+
+def _cc_write_retro_done(spec_dir: Path) -> None:
+    """Write a RETRO_DONE.md with NO phase_count field → retro_staleness None
+    (grandfathered), matching the existing mark_complete fixtures.
+    """
+    (spec_dir / "RETRO_DONE.md").write_text(
+        "---\nkind: retro-done\nfeature_id: test-feature\ndate: 2026-06-19\n---\n",
+        encoding="utf-8",
+    )
+
+
+def _cc_build_validated_feature(repo_root: Path, *, phases_body: str) -> Path:
+    """Build a feature dir with VALIDATED.md + passing MCP_TEST_RESULTS.md +
+    RETRO_DONE.md + SPEC.md(In-progress) + the given PHASES.md body, all
+    committed so validated_commit == HEAD. Returns spec_dir.
+    """
+    spec_dir = repo_root / "docs" / "features" / "cc-e2e"
+    spec_dir.mkdir(parents=True)
+    _cc_write_validated(spec_dir)
+    _write_spec_md(spec_dir, status="In-progress")
+    _cc_write_retro_done(spec_dir)
+    (spec_dir / "PHASES.md").write_text(phases_body, encoding="utf-8")
+    _write_mcp_test_results(spec_dir, ["s1", "s2"])
+    head = _cc_seed_and_commit(repo_root)
+    _write_mcp_test_results(spec_dir, ["s1", "s2"], validated_commit=head)
+    return spec_dir
+
+
+# A PHASES.md whose ONLY unchecked rows are verification-marked.
+_CC_E2E_PHASES_VERIF_ONLY = (
+    "# Phases\n\n"
+    "### Phase 1: Impl\n\n"
+    "**Status:** Complete\n\n"
+    "- [x] implementation done\n\n"
+    "**Runtime Verification**\n\n"
+    "- [ ] pytest green <!-- verification-only -->\n"
+    "- [ ] parity clean <!-- verification-only -->\n"
+)
+
+# A PHASES.md with a GENUINE unchecked implementation row (no marker).
+_CC_E2E_PHASES_REAL_OPEN = (
+    "# Phases\n\n"
+    "### Phase 1: Impl\n\n"
+    "**Status:** In-progress\n\n"
+    "- [x] partly done\n"
+    "- [ ] real unfinished implementation work\n"
+)
+
+
+def test_mark_complete_validated_verif_only_ticks_and_mints():
+    """Validated feature, only verification rows unchecked → __mark_complete__
+    mints COMPLETED.md, ticks the rows, records auto_ticked_rows in the receipt
+    AND the JSON result, NO refusal, ok True.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _cc_build_validated_feature(
+            repo_root, phases_body=_CC_E2E_PHASES_VERIF_ONLY
+        )
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="cc-e2e", date="2026-06-19",
+        )
+        assert result["ok"] is True, result
+        assert result["refused"] is None, result
+        assert result["auto_ticked_rows"] == 2, result
+        completed = spec_dir / "COMPLETED.md"
+        assert completed.exists(), "COMPLETED.md not minted"
+        parsed = lazy_core.parse_sentinel(completed)
+        assert parsed.get("auto_ticked_rows") == 2, parsed
+        phases_text = (spec_dir / "PHASES.md").read_text(encoding="utf-8")
+        assert "- [x] pytest green" in phases_text, phases_text
+        assert "- [x] parity clean" in phases_text, phases_text
+        assert "auto-ticked: validated_commit=" in phases_text, phases_text
+
+
+def test_mark_complete_real_unchecked_row_refuses_zero_writes():
+    """A real (non-verification) unchecked implementation row → refuse naming the
+    phase, PHASES.md byte-unchanged, no COMPLETED.md.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _cc_build_validated_feature(
+            repo_root, phases_body=_CC_E2E_PHASES_REAL_OPEN
+        )
+        before = (spec_dir / "PHASES.md").read_text(encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="cc-e2e", date="2026-06-19",
+        )
+        assert result["ok"] is False, result
+        assert result["refused"], result
+        assert "Phase 1" in result["refused"], result
+        assert not (spec_dir / "COMPLETED.md").exists(), "receipt minted on refusal"
+        assert (spec_dir / "PHASES.md").read_text(encoding="utf-8") == before, (
+            "PHASES.md mutated on a refusal"
+        )
+
+
+def test_mark_complete_kill_switch_legacy_refusal_zero_mutation():
+    """LAZY_STRICT_EVIDENCE_GATE set → legacy strict path: verification rows are
+    INCLUDED in refusals, the auto-tick is skipped, PHASES.md byte-unchanged.
+    """
+    _guard()
+    import os as _os
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _cc_build_validated_feature(
+            repo_root, phases_body=_CC_E2E_PHASES_VERIF_ONLY
+        )
+        before = (spec_dir / "PHASES.md").read_text(encoding="utf-8")
+        prev = _os.environ.get("LAZY_STRICT_EVIDENCE_GATE")
+        _os.environ["LAZY_STRICT_EVIDENCE_GATE"] = "1"
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="cc-e2e", date="2026-06-19",
+            )
+        finally:
+            if prev is None:
+                _os.environ.pop("LAZY_STRICT_EVIDENCE_GATE", None)
+            else:
+                _os.environ["LAZY_STRICT_EVIDENCE_GATE"] = prev
+        assert result["ok"] is False, result
+        assert result["refused"], result
+        assert (spec_dir / "PHASES.md").read_text(encoding="utf-8") == before, (
+            "kill-switch path mutated PHASES.md"
+        )
+        assert not (spec_dir / "COMPLETED.md").exists(), result
+
+
+def test_verify_ledger_and_completion_agree_on_verif_only():
+    """verify_ledger.deliverables_done (which exempts verification rows) and the
+    completion gate AGREE on a verification-only feature: verify_ledger passes
+    deliverables_done, and __mark_complete__ does NOT refuse.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _cc_build_validated_feature(
+            repo_root, phases_body=_CC_E2E_PHASES_VERIF_ONLY
+        )
+        # verify_ledger over the whole feature (no --plan): deliverables_done
+        # exempts the verification-only remainder → True. (spec_path is the
+        # feature DIR, not SPEC.md — verify_ledger reads <dir>/PHASES.md.)
+        ledger = lazy_core.verify_ledger(repo_root, spec_dir, None)
+        assert ledger["checks"]["deliverables_done"] is True, ledger
+        # Completion gate agrees: no refusal.
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="cc-e2e", date="2026-06-19",
+        )
+        assert result["ok"] is True, result
+
+
+def test_mark_complete_zero_test_evidence_refuses():
+    """Passing-literal results but pass==total==0 (zero-test) → refuse, no tick."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "cc-zero"
+        spec_dir.mkdir(parents=True)
+        _cc_write_validated(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        _cc_write_retro_done(spec_dir)
+        (spec_dir / "PHASES.md").write_text(
+            _CC_E2E_PHASES_VERIF_ONLY, encoding="utf-8"
+        )
+        _write_mcp_test_results(spec_dir, [], pass_count=0, total_count=0)
+        head = _cc_seed_and_commit(repo_root)
+        _write_mcp_test_results(
+            spec_dir, [], pass_count=0, total_count=0, validated_commit=head
+        )
+        before = (spec_dir / "PHASES.md").read_text(encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="cc-zero", date="2026-06-19",
+        )
+        assert result["ok"] is False, result
+        assert (spec_dir / "PHASES.md").read_text(encoding="utf-8") == before, result
+        assert not (spec_dir / "COMPLETED.md").exists(), result
+
+
+def test_mark_fixed_validated_verif_only_ticks_and_mints():
+    """Mirror the __mark_complete__ auto-tick path for the bug pipeline's
+    __mark_fixed__: FIXED.md minted, rows ticked, auto_ticked_rows recorded.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "bugs" / "cc-bug"
+        spec_dir.mkdir(parents=True)
+        _cc_write_validated(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        _cc_write_retro_done(spec_dir)
+        (spec_dir / "PHASES.md").write_text(
+            _CC_E2E_PHASES_VERIF_ONLY, encoding="utf-8"
+        )
+        _write_mcp_test_results(spec_dir, ["s1", "s2"])
+        head = _cc_seed_and_commit(repo_root)
+        _write_mcp_test_results(spec_dir, ["s1", "s2"], validated_commit=head)
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_fixed__", spec_dir,
+            feature_id="cc-bug", date="2026-06-19",
+        )
+        assert result["ok"] is True, result
+        assert result["auto_ticked_rows"] == 2, result
+        fixed = spec_dir / "FIXED.md"
+        assert fixed.exists(), "FIXED.md not minted"
+        parsed = lazy_core.parse_sentinel(fixed)
+        assert parsed.get("auto_ticked_rows") == 2, parsed
+
+
+_TESTS = _TESTS + [
+    ("test_mark_complete_validated_verif_only_ticks_and_mints",
+     test_mark_complete_validated_verif_only_ticks_and_mints),
+    ("test_mark_complete_real_unchecked_row_refuses_zero_writes",
+     test_mark_complete_real_unchecked_row_refuses_zero_writes),
+    ("test_mark_complete_kill_switch_legacy_refusal_zero_mutation",
+     test_mark_complete_kill_switch_legacy_refusal_zero_mutation),
+    ("test_verify_ledger_and_completion_agree_on_verif_only",
+     test_verify_ledger_and_completion_agree_on_verif_only),
+    ("test_mark_complete_zero_test_evidence_refuses",
+     test_mark_complete_zero_test_evidence_refuses),
+    ("test_mark_fixed_validated_verif_only_ticks_and_mints",
+     test_mark_fixed_validated_verif_only_ticks_and_mints),
+]
+
+
 _TESTS = _TESTS + [
     ("test_autotick_happy_path_ticks_only_marker_rows",
      test_autotick_happy_path_ticks_only_marker_rows),

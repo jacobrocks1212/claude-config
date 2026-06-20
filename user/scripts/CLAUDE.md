@@ -326,6 +326,49 @@ never-before-seen verification header no longer gaps the gate.
   form cleanly, fall back to a canonical subsection-header form and re-sync the constant + both
   producers (documented in the constant's docstring).
 
+### Evidence-gated completion exemption + auto-tick (completion-coherence-gate-reconciliation)
+
+The MID-feature gate (`remaining_unchecked_are_verification_only`) exempts verification rows so
+`/lazy` falls through to `/mcp-test`. The COMPLETION-time gate (`_phase_completion_plan` inside
+`__mark_complete__` / `__mark_fixed__`) historically did NOT — it counted verification rows as
+blocking refusals, so a fully-validated feature was refused at the finish line over un-ticked
+verification checkboxes, forcing a redundant coherence-recovery meta-cycle. This feature reconciled
+the two by treating on-disk `/mcp-test` evidence as authoritative for ticking the rows it certifies.
+
+- **`evaluate_completion_evidence(feature_dir, repo_root) -> {verdict, reason, pass_count,
+  validated_commit}`** — pure, side-effect-free read of the on-disk receipts implementing the SPEC's
+  authoritative-evidence decision table. `verdict ∈ {exempt-and-tick, warn-exempt, refuse}` (a LOCKED
+  contract). Requires the UNION of `VALIDATED.md` (`kind: validated`) AND `MCP_TEST_RESULTS.md`
+  (`result: all-passing`, `pass==total`, `pass>0`); `validated_commit == HEAD` exact. Forged
+  attestation (VALIDATED.md without passing results), missing VSA (results without VALIDATED.md),
+  `SKIP_MCP_TEST.md` / `DEFERRED_*` (fail-closed, no override path this cycle), zero-test
+  (`pass==total==0`), and source/script HEAD-drift (`validated_commit != HEAD` with any non-`*.md`
+  delta — TOCTOU) all **refuse**. Docs-only (`*.md`) HEAD-drift → **warn-exempt**.
+- **`autotick_verification_rows(phases_path, validated_commit, pass_count) -> {ticked_count, ok,
+  reason}`** — atomic (`_atomic_write`), line-anchored + code-fence-safe (`_UNCHECKED_ROW_RE` +
+  `_VERIFICATION_ONLY_MARKER`, row- or header-scope), audited (each row gets a byte-stable
+  `<!-- auto-ticked: validated_commit=<sha> -->` comment via `_AUTOTICK_COMMENT_PREFIX`), Superseded-
+  aware, idempotent (a row already carrying the audit comment is skipped). **Cardinality lock**:
+  `ticked_count > pass_count` ABORTS writing nothing (`ok: False`) — the over-tick guard then surfaces
+  as a coherence refusal at the live gate.
+- **Wiring (load-bearing ORDER — tick → re-check → receipt):** the `__mark_complete__` /
+  `__mark_fixed__` handler consults `evaluate_completion_evidence` BEFORE the coherence gate; on an
+  authorizing verdict it runs `autotick_verification_rows` FIRST, then re-parses PHASES.md, so the
+  residual-incoherence check sees ZERO unchecked verification rows. A genuine unchecked
+  *implementation* row (no marker) is NOT auto-ticked, so the gate still refuses naming its phase —
+  evidence, not the checkbox, is the source of truth. The auto-ticked count is recorded as
+  `auto_ticked_rows` in the `COMPLETED.md` / `FIXED.md` receipt AND surfaced in the `--apply-pseudo`
+  JSON result alongside `flipped_phases`.
+- **Kill-switch (`_evidence_gate_killed`):** when `LAZY_STRICT_EVIDENCE_GATE` OR
+  `LAZY_DISABLE_AUTOTICK` is set to a truthy value (an explicitly-falsy `""`/`0`/`false`/`no`/`off`
+  does NOT arm it), the auto-tick is skipped entirely and the coherence gate falls back to the legacy
+  strict path (verification rows INCLUDED in refusals, zero PHASES.md mutation) — frictionless
+  rollback without a code revert.
+- **No sibling-repo edit:** the exhaustive auto-tick normalization leaves PHASES.md fully coherent
+  (every box `- [x]` or under a Superseded phase), so AlgoBooth's `check-docs-consistency.ts` (which
+  counts every checkbox with no carve-out, post-flip under a Complete SPEC) is satisfied with no
+  edit — it evaluates physical `- [x]` state, not semantic intent.
+
 ## mcp-test model-tier routing (harness-hardening-retro-fixes Phase 4)
 
 `surface_resolver.py` owns the **script-derived mcp-test model-tier signal** via

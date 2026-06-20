@@ -532,6 +532,7 @@ def write_completed_receipt(
     validated_via: str | None = None,
     mcp_pass_count: int | None = None,
     mcp_total_count: int | None = None,
+    auto_ticked_rows: int | None = None,
     body_note: str = "",
 ) -> None:
     """Write a completion receipt (kind: completed by default) per sentinel-frontmatter.md.
@@ -563,6 +564,13 @@ def write_completed_receipt(
     if mcp_pass_count is not None and mcp_total_count is not None:
         lines.append(f"mcp_pass_count: {mcp_pass_count}")
         lines.append(f"mcp_total_count: {mcp_total_count}")
+    # auto_ticked_rows: how many unchecked verification rows the evidence-gated
+    # completion gate auto-ticked this completion (completion-coherence-gate-
+    # reconciliation Phase 3). Omitted when None (legacy / --backfill callers);
+    # 0 is recorded explicitly so an auditor can tell "gate ran, ticked nothing"
+    # from "gate did not run".
+    if auto_ticked_rows is not None:
+        lines.append(f"auto_ticked_rows: {auto_ticked_rows}")
     lines.append("---")
     lines.append("")
     lines.append("# Completion Receipt")
@@ -1941,6 +1949,30 @@ _FAIL_CLOSED_EVIDENCE_SENTINELS = (
     "DEFERRED_NON_CLOUD.md",
     "DEFERRED_REQUIRES_DEVICE.md",
 )
+
+# Kill-switch env vars (completion-coherence-gate-reconciliation Phase 3 /
+# research §8 reversibility hardening). When EITHER is set to a truthy value,
+# the evidence-gated auto-tick relaxation is disabled: the completion gate falls
+# back to the legacy strict path (verification rows INCLUDED in refusals) and
+# the PHASES.md auto-tick rewrite is skipped entirely — frictionless rollback
+# without a code revert.
+_EVIDENCE_GATE_KILL_SWITCHES = ("LAZY_STRICT_EVIDENCE_GATE", "LAZY_DISABLE_AUTOTICK")
+_FALSY_ENV_VALUES = frozenset({"", "0", "false", "no", "off"})
+
+
+def _evidence_gate_killed() -> bool:
+    """True iff a kill-switch env var is set to a truthy value.
+
+    Read once per completion call. A var set to an explicitly-falsy value
+    (``""`` / ``0`` / ``false`` / ``no`` / ``off``, case-insensitive) does NOT
+    arm the switch, so an inherited empty export cannot accidentally disable the
+    feature.
+    """
+    for var in _EVIDENCE_GATE_KILL_SWITCHES:
+        val = os.environ.get(var)
+        if val is not None and val.strip().lower() not in _FALSY_ENV_VALUES:
+            return True
+    return False
 
 
 def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
@@ -3458,6 +3490,44 @@ def apply_pseudo(
                 "completion"
             )
 
+        # --- Evidence-gated auto-tick of certified verification rows ---
+        # (completion-coherence-gate-reconciliation Phase 3). BEFORE the
+        # coherence gate's residual-incoherence check, consult the on-disk
+        # /mcp-test evidence (evaluate_completion_evidence). When that verdict
+        # AUTHORIZES (exempt-and-tick / warn-exempt) and the kill-switch is OFF,
+        # rewrite the remaining unchecked verification-marked rows to ``- [x]``
+        # (autotick_verification_rows) FIRST, so the coherence re-check below
+        # then sees ZERO unchecked verification rows and proceeds. A genuine
+        # unchecked *implementation* row (no marker) is NOT touched by the
+        # rewrite, so the coherence gate still refuses naming its phase — evidence,
+        # not the checkbox, is the source of truth.
+        #
+        # Order (load-bearing): tick → re-check → write receipt. The receipt's
+        # ``auto_ticked_rows`` records how many rows the gate mutated.
+        #
+        # Kill-switch (LAZY_STRICT_EVIDENCE_GATE / LAZY_DISABLE_AUTOTICK): when
+        # truthy, the auto-tick is skipped entirely → the coherence gate falls
+        # back to the legacy strict path (verification rows INCLUDED in
+        # refusals), restoring byte-identical pre-feature behavior with no code
+        # revert.
+        auto_ticked_rows = 0
+        strict_gate = _evidence_gate_killed()
+        phases_md_path = spec_path / "PHASES.md"
+        if phases_md_path.exists() and not strict_gate:
+            verdict = evaluate_completion_evidence(spec_path, repo_root)
+            if verdict["verdict"] in ("exempt-and-tick", "warn-exempt"):
+                tick_res = autotick_verification_rows(
+                    phases_md_path,
+                    verdict.get("validated_commit"),
+                    verdict.get("pass_count") or 0,
+                )
+                # A cardinality-lock abort (ok: False) leaves the file
+                # byte-unchanged; the coherence gate below then refuses on the
+                # still-unchecked rows (the over-tick guard surfaces at the live
+                # gate, exactly as the Phase-1/2 contract requires).
+                if tick_res.get("ok"):
+                    auto_ticked_rows = tick_res.get("ticked_count", 0)
+
         # --- Completion-coherence gate (Phase 9 WU-1) ---
         # Before minting the receipt and flipping the top-level Status, make
         # PHASES.md coherent the way AlgoBooth's check-docs-consistency.ts
@@ -3466,12 +3536,13 @@ def apply_pseudo(
         # Complete (deterministic, mirrors the checker's all-checked-but-not-
         # complete rule) and (b) REFUSE with ZERO writes when any phase would
         # remain incoherent after that flip (unchecked boxes incl. verification
-        # rows, or a present non-Complete/non-Superseded status with no flip
-        # signal). When PHASES.md is absent the gate is a no-op (preserves the
-        # pre-Phase-9 behavior). ``flipped_phases`` records the headings flipped.
+        # rows NOT auto-ticked above, or a present non-Complete/non-Superseded
+        # status with no flip signal). When PHASES.md is absent the gate is a
+        # no-op (preserves the pre-Phase-9 behavior). ``flipped_phases`` records
+        # the headings flipped.
         flipped_phases: list[str] = []
-        phases_md_path = spec_path / "PHASES.md"
         if phases_md_path.exists():
+            # Re-read: the auto-tick above may have rewritten the file.
             phases_text = phases_md_path.read_text(encoding="utf-8")
             parsed_phases = parse_phases(phases_text)
             to_flip, refusals = _phase_completion_plan(parsed_phases)
@@ -3560,6 +3631,7 @@ def apply_pseudo(
             validated_via=validated_via,
             mcp_pass_count=mcp_pass_count,
             mcp_total_count=mcp_total_count,
+            auto_ticked_rows=auto_ticked_rows,
             body_note=body_note,
         )
         wrote = [receipt_filename]
@@ -3711,6 +3783,12 @@ def apply_pseudo(
         # Empty list when nothing needed flipping; documented in the docstring.
         result = _ok(wrote, deleted)
         result["flipped_phases"] = flipped_phases
+        # auto_ticked_rows: count of verification rows the evidence-gated gate
+        # auto-ticked this call (completion-coherence-gate-reconciliation Phase
+        # 3). 0 when the kill-switch is set, the verdict did not authorize, or
+        # there were no unchecked verification rows. Orchestrator-visible,
+        # matching the flipped_phases surfacing pattern.
+        result["auto_ticked_rows"] = auto_ticked_rows
         # WU: feature-queue trim — True iff a queue.json entry was removed this
         # call (always False for the bug/fixed path, whose trim lives in
         # archive_fixed). Callers may JSON-dump unconditionally.

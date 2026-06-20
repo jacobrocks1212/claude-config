@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: completion-coherence-gate-reconciliation
-status: In-progress
+status: Complete
 created: 2026-06-19
 complexity: complex
 phases: [1, 2, 3]
@@ -90,7 +90,7 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 
 - [x] WU-1 — Evidence reader + authoritative-evidence decision table (Phase 1)
 - [x] WU-2 — Atomic, line-anchored, audited auto-tick rewrite (Phase 2)
-- [ ] WU-3 — Wire evidence-gated exemption into `_phase_completion_plan` / `__mark_complete__` + kill-switch (Phase 3)
+- [x] WU-3 — Wire evidence-gated exemption into `_phase_completion_plan` / `__mark_complete__` + kill-switch (Phase 3)
 
 ---
 
