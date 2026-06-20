@@ -6170,6 +6170,23 @@ def _mcp_tool_in_payload(payload: dict | None, tool_name: str) -> bool:
     return False
 
 
+# long-build-and-runtime-ownership Phase 2 (LD3) — the M4 liveness/recovery
+# verdict state enum. A `.runtime.lock.json`-owned runtime evaluates through
+# Identity → Staleness → Health into exactly one of these (BLOCKED is the
+# recovery-exhausted terminal added in WU-2).
+_RUNTIME_STATES = ("READY", "STALE", "HIJACKED", "DEAD", "BLOCKED")
+
+# Legacy `status` ↔ M4 `state` mapping (LD2 — the verdict is a SUPERSET of the
+# old {status,...} dict so part-5 migration is incremental). The pre-M4 flow
+# only ever yielded a *good* runtime (booted/ready/stale-rebuilt all end at
+# health=200), so each maps to a non-terminal verdict state.
+_LEGACY_STATUS_TO_STATE = {
+    "ready": "READY",
+    "booted": "READY",
+    "stale-rebuilt": "STALE",
+}
+
+
 def ensure_runtime(
     repo_root: Path,
     *,
@@ -6177,43 +6194,70 @@ def ensure_runtime(
     probe=None,
     restart=None,
     stale_check=None,
+    read_lock=None,
+    live_session_id=None,
+    kernel_start_time_fn=None,
 ) -> dict:
-    """Ensure the dev runtime + MCP server are up AND current; return a
-    structured status.
+    """Ensure the dev runtime + MCP server are up, CURRENT, **and verifiably
+    owned**; return the M4 liveness/recovery verdict.
 
-    Collapses the Step-1d.0 runtime-ensure dance (probe /health → staleness
-    check → dev:restart bg → curl-until-200 → assert MCP tool present) into one
-    deterministic call. The three runtime states map to a ``status``:
+    long-build-and-runtime-ownership Phase 2 (LD2/LD3) reworks this IN PLACE
+    into the idempotent M4 gatekeeper. The verdict is a **superset** of the
+    legacy ``{status, mcp_tools_present, health_code}`` shape::
 
-      - ``"booted"``        — runtime was DOWN (probe non-200) → restarted →
-                              re-probed.
-      - ``"ready"``         — runtime was UP and CURRENT (not stale) → no
-                              restart.
-      - ``"stale-rebuilt"`` — runtime was UP but the native binary was STALE
-                              (a newer native-source commit exists) → restarted.
-
-    The return shape::
-
-        {"status": "ready"|"booted"|"stale-rebuilt",
+        {"state": "READY"|"STALE"|"HIJACKED"|"DEAD"|"BLOCKED",
+         "ownership_verified": bool,
+         "health_code": int,
          "mcp_tools_present": bool,
-         "health_code": int}
+         "terminal_blocker": str | None,
+         "status": "ready"|"booted"|"stale-rebuilt"}   # legacy, retained
 
-    Determinism / injection (the parameter that makes ``--test`` hermetic):
-      - ``probe``       — callable() -> (http_code:int, payload:dict|None).
-                          Default: real urllib probe of ``config["health_url"]``.
-      - ``restart``     — callable() -> bool (truthy on success). Default: runs
-                          ``config["restart_command"]`` then curls /health until
-                          200 (bounded). Tests inject a no-network stub.
-      - ``stale_check`` — callable() -> bool (True == stale binary). Default:
-                          ``stale_binary.native_source_newer_than`` over
-                          ``config["native_globs"]`` vs the runtime boot stamp
-                          (the orchestrator that knows the boot stamp passes a
-                          bound stale_check; absent one, defaults to NOT stale).
+    Two call modes (backward-compatible):
 
-    AlgoBooth specifics (port, restart command, globs, the asserted MCP tool)
-    are read from ``config`` (default ``_ENSURE_RUNTIME_DEFAULT_CONFIG``) — they
-    are NOT hard-coded into the control flow, keeping this shared-harness
-    function repo-agnostic.
+      - **M4 mode** (Identity engaged) — the caller injects a `live_session_id`
+        (and/or `read_lock` / `kernel_start_time_fn`). ``ensure_runtime`` runs
+        the three-phase evaluation:
+
+          1. **Identity** — ``read_lock()`` parses ``.runtime.lock.json``;
+             ``verify_runtime_ownership`` compares the recorded
+             ``(start_time, controller_session_id)`` against the live kernel /
+             session. A live PID whose ownership does NOT verify (divergent
+             start_time / foreign session) while ``/health`` answers is a foreign
+             port-holder ⇒ ``HIJACKED``. A missing/dead PID (kernel start_time
+             ``None``) ⇒ ``DEAD``. No lock + ``/health`` answering ⇒ ``HIJACKED``
+             (health=200 is NOT proof of ownership — LD1); no lock + nothing
+             answering ⇒ ``DEAD``.
+          2. **Staleness** — for an owned runtime, injected
+             ``stale_check(artifact_hash)`` True ⇒ ``STALE``.
+          3. **Health** — for an owned, current runtime, ``probe()`` 200 ⇒
+             ``READY``; a refused ``/health`` despite a live owned PID ⇒
+             ``DEAD``.
+
+        (WU-1 CLASSIFIES; the bounded-recovery / BLOCKED / never-SIGKILL
+        fail-safe land in WU-2 — STALE/DEAD here do NOT yet auto-recover.)
+
+      - **Legacy mode** (no Identity callables) — the pre-M4 boot/stale/ready
+        flow runs unchanged (DOWN→restart→booted; UP+stale→restart→stale-rebuilt;
+        UP+current→ready). The returned dict is upgraded to the verdict superset
+        (``state`` derived via ``_LEGACY_STATUS_TO_STATE``, ``ownership_verified:
+        False``, ``terminal_blocker: None``) so a caller never sees a missing key.
+
+    Determinism / injection (the parameters that make ``--test`` hermetic):
+      - ``probe``               — callable() -> (http_code:int, payload:dict|None).
+      - ``restart``             — callable() -> bool (truthy on success).
+      - ``stale_check``         — callable() -> bool (True == stale binary).
+      - ``read_lock``           — callable() -> lock dict | None (default: a
+                                  best-effort ``read_runtime_lock`` over the
+                                  config's ``lock_filename``).
+      - ``live_session_id``     — the controller session id threaded into
+                                  ``verify_runtime_ownership`` (None ⇒ legacy mode).
+      - ``kernel_start_time_fn``— callable(pid, *, platform) -> float|None
+                                  (default: the real ``kernel_start_time``).
+
+    AlgoBooth specifics (port, restart command, globs, the asserted MCP tool,
+    the lock filename) are read from ``config`` (default
+    ``_ENSURE_RUNTIME_DEFAULT_CONFIG``) — NOT hard-coded into the control flow,
+    keeping this shared-harness function repo-agnostic.
     """
     cfg = dict(_ENSURE_RUNTIME_DEFAULT_CONFIG)
     if config:
@@ -6248,6 +6292,31 @@ def ensure_runtime(
         # knows the boot stamp.
         stale_check = lambda: False
 
+    # ---- M4 mode: Identity engaged (LD3) -------------------------------------
+    # Identity is "engaged" iff the caller threads a controller session id OR an
+    # explicit lock/kernel reader — i.e. it wants verifiable-ownership routing.
+    identity_engaged = (
+        live_session_id is not None
+        or read_lock is not None
+        or kernel_start_time_fn is not None
+    )
+    if identity_engaged:
+        if read_lock is None:
+            read_lock = lambda: read_runtime_lock(repo_root, config=cfg)
+        if kernel_start_time_fn is None:
+            kernel_start_time_fn = kernel_start_time
+        return _ensure_runtime_m4(
+            cfg,
+            probe=probe,
+            restart=restart,
+            stale_check=stale_check,
+            read_lock=read_lock,
+            live_session_id=live_session_id,
+            kernel_start_time_fn=kernel_start_time_fn,
+            tool_name=tool_name,
+        )
+
+    # ---- Legacy mode: pre-M4 boot/stale/ready flow ---------------------------
     code, payload = probe()
     if code != 200:
         # Runtime DOWN → boot it.
@@ -6265,9 +6334,122 @@ def ensure_runtime(
 
     return {
         "status": status,
+        "state": _LEGACY_STATUS_TO_STATE.get(status, "READY"),
+        "ownership_verified": False,
         "mcp_tools_present": _mcp_tool_in_payload(payload, tool_name),
         "health_code": code,
+        "terminal_blocker": None,
     }
+
+
+def _runtime_verdict(state, *, ownership_verified, health_code, payload,
+                     tool_name, terminal_blocker=None, status=None):
+    """Build the M4 verdict dict (the superset shape).
+
+    ``status`` (the legacy field) is derived from ``state`` when not supplied so
+    every caller — old or new — sees both keys. ``READY``→``ready``,
+    ``STALE``→``stale-rebuilt``, ``HIJACKED``/``DEAD``/``BLOCKED``→``booted``
+    (the legacy flow never modelled a failed runtime; the legacy field is purely
+    for the un-migrated part-5 reader and is superseded by ``state``)."""
+    if status is None:
+        status = {
+            "READY": "ready",
+            "STALE": "stale-rebuilt",
+        }.get(state, "booted")
+    return {
+        "status": status,
+        "state": state,
+        "ownership_verified": bool(ownership_verified),
+        "mcp_tools_present": _mcp_tool_in_payload(payload, tool_name),
+        "health_code": int(health_code or 0),
+        "terminal_blocker": terminal_blocker,
+    }
+
+
+def _ensure_runtime_m4(
+    cfg,
+    *,
+    probe,
+    restart,
+    stale_check,
+    read_lock,
+    live_session_id,
+    kernel_start_time_fn,
+    tool_name,
+):
+    """The M4 Identity → Staleness → Health classifier (LD3).
+
+    WU-1: pure classification into READY/STALE/HIJACKED/DEAD. WU-2 wraps the
+    STALE/DEAD verdicts in the bounded-recovery loop and adds the BLOCKED /
+    HIJACKED never-SIGKILL terminal_blocker.
+    """
+    code, payload = probe()
+    lock = read_lock()
+
+    # ---- Phase 1: Identity ---------------------------------------------------
+    if not isinstance(lock, dict):
+        # No recorded ownership. A /health that answers is an unverified foreign
+        # port-holder (health=200 is NOT proof of ownership — LD1) ⇒ HIJACKED;
+        # nothing answering ⇒ DEAD.
+        if code == 200:
+            return _runtime_verdict(
+                "HIJACKED", ownership_verified=False, health_code=code,
+                payload=payload, tool_name=tool_name,
+            )
+        return _runtime_verdict(
+            "DEAD", ownership_verified=False, health_code=code,
+            payload=payload, tool_name=tool_name,
+        )
+
+    owned = verify_runtime_ownership(
+        lock,
+        live_session_id=live_session_id,
+        kernel_start_time_fn=kernel_start_time_fn,
+    )
+    if not owned:
+        # The recorded PID is either dead (kernel start_time None ⇒ DEAD) or held
+        # by a foreign process whose start_time/session diverges. A divergent but
+        # LIVE owner answering /health is a hijack; a dead PID is DEAD.
+        live_start = None
+        try:
+            live_start = kernel_start_time_fn(lock.get("pid"))
+        except TypeError:
+            live_start = kernel_start_time_fn(lock.get("pid"), platform=sys.platform)
+        except Exception:  # noqa: BLE001 — best-effort
+            live_start = None
+        if live_start is None:
+            return _runtime_verdict(
+                "DEAD", ownership_verified=False, health_code=code,
+                payload=payload, tool_name=tool_name,
+            )
+        # Live foreign PID — HIJACKED regardless of whether /health answers (a
+        # foreign port-holder we must NEVER SIGKILL; the WU-2 fail-safe sets the
+        # terminal_blocker).
+        return _runtime_verdict(
+            "HIJACKED", ownership_verified=False, health_code=code,
+            payload=payload, tool_name=tool_name,
+        )
+
+    # Ownership verified (the recorded PID is ours, alive, current session).
+    # ---- Phase 2: Staleness --------------------------------------------------
+    if stale_check():
+        return _runtime_verdict(
+            "STALE", ownership_verified=True, health_code=code,
+            payload=payload, tool_name=tool_name,
+        )
+
+    # ---- Phase 3: Health -----------------------------------------------------
+    if code == 200:
+        return _runtime_verdict(
+            "READY", ownership_verified=True, health_code=code,
+            payload=payload, tool_name=tool_name,
+        )
+    # Owned, alive, current — but /health refused ⇒ the runtime endpoint is not
+    # serving ⇒ DEAD (a restart/recovery candidate in WU-2).
+    return _runtime_verdict(
+        "DEAD", ownership_verified=True, health_code=code,
+        payload=payload, tool_name=tool_name,
+    )
 
 
 # ===========================================================================

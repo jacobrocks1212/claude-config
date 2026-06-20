@@ -18189,6 +18189,216 @@ def test_ensure_runtime_mcp_tool_absent_sets_false():
         )
 
 
+# ---------------------------------------------------------------------------
+# long-build-and-runtime-ownership Phase 2 — ensure_runtime reworked into the
+# M4 liveness/recovery verdict (Identity → Staleness → Health). All external
+# interactions remain injected callables (hermetic, no real network/process).
+#
+# WU-1 (this block): the three-phase verdict superset — state classification
+#   {READY, STALE, HIJACKED, DEAD} + the retained {health_code, mcp_tools_present}.
+#   (BLOCKED + bounded recovery land in WU-2.)
+# ---------------------------------------------------------------------------
+
+_M4_CONFIG = {
+    "health_url": "http://localhost:3333/health",
+    "restart_command": "npm run dev:restart",
+    "mcp_tool_name": "render_chart",
+    "native_globs": ["src-tauri", "crates"],
+    "lock_filename": ".runtime.lock.json",
+    "port": 3333,
+}
+
+_SESSION = "session-abc"
+
+
+def _owned_lock(start_time=111.0, pid=4321):
+    """A `.runtime.lock.json` dict owned by _SESSION at the recorded start_time."""
+    return {
+        "controller_session_id": _SESSION,
+        "pid": pid,
+        "start_time": start_time,
+        "port": 3333,
+        "artifact_hash": "deadbeef",
+    }
+
+
+def test_ensure_runtime_m4_ready_when_owned_current_healthy():
+    """Owned (verify→True via matching kernel start_time + session) + not stale +
+    probe 200 → state READY, ownership_verified True, health_code 200; the verdict
+    is a SUPERSET of the legacy dict (health_code + mcp_tools_present retained)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a READY runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # matches recorded
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is True, result
+        assert result["health_code"] == 200, result
+        assert result["mcp_tools_present"] is True, result
+        assert result["terminal_blocker"] is None, result
+        # Backward-compat: legacy fields retained (Phase-5 incremental migration).
+        assert "health_code" in result and "mcp_tools_present" in result, result
+
+
+def test_ensure_runtime_m4_stale_when_owned_but_stale():
+    """Owned + stale_check True + healthy → state STALE (recovery is WU-2; WU-1
+    only classifies). ownership_verified stays True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=222.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True,  # not asserted in WU-1
+            stale_check=lambda: True,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 222.0,
+        )
+        assert result["state"] == "STALE", result
+        assert result["ownership_verified"] is True, result
+
+
+def test_ensure_runtime_m4_hijacked_when_unowned_but_health_answers():
+    """Lock present but verify→False (divergent kernel start_time → a foreign
+    port-holder) while /health answers 200 → state HIJACKED, ownership_verified
+    False. No restart in WU-1's classification."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=333.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a HIJACKED runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            # Divergent start_time → verify_runtime_ownership returns False, but
+            # the PID is live (start_time is not None) and /health answers.
+            kernel_start_time_fn=lambda pid, **kw: 999.0,
+        )
+        assert result["state"] == "HIJACKED", result
+        assert result["ownership_verified"] is False, result
+
+
+def test_ensure_runtime_m4_dead_when_pid_missing():
+    """Recorded PID is gone (kernel_start_time → None) → state DEAD (missing PID),
+    regardless of probe — the owned process is not alive."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=444.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (0, None),  # nothing answering
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: None,  # PID dead
+        )
+        assert result["state"] == "DEAD", result
+        assert result["ownership_verified"] is False, result
+
+
+def test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused():
+    """Owned + live PID but /health refused (probe non-200) → state DEAD (the
+    owned process is up but the runtime endpoint is not serving)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=555.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (0, None),  # /health refused
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 555.0,  # owned + alive
+        )
+        assert result["state"] == "DEAD", result
+        # ownership was verifiable; the failure is health, not identity.
+        assert result["ownership_verified"] is True, result
+
+
+def test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked():
+    """No `.runtime.lock.json` recorded but /health answers 200 → an unverified
+    foreign port-holder → HIJACKED (health=200 is NOT proof of ownership, LD1)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: None,  # no recorded ownership
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 1.0,
+        )
+        assert result["state"] == "HIJACKED", result
+        assert result["ownership_verified"] is False, result
+
+
+def test_ensure_runtime_m4_no_lock_plus_down_is_dead():
+    """No lock + nothing answering → DEAD (nothing to verify, nothing serving)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (0, None),
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: None,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: None,
+        )
+        assert result["state"] == "DEAD", result
+        assert result["ownership_verified"] is False, result
+
+
+def test_ensure_runtime_m4_legacy_callers_get_superset_dict():
+    """A legacy caller passing ONLY probe/restart/stale_check (no Identity
+    callables) still gets a verdict dict carrying health_code + mcp_tools_present
+    (the part-5 migration is incremental — the superset never drops old fields)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True,
+            stale_check=lambda: False,
+        )
+        # No lock on disk + no injected read_lock → no recorded ownership; a 200
+        # with no proof of ownership is HIJACKED, but the legacy fields resolve.
+        assert "health_code" in result, result
+        assert "mcp_tools_present" in result, result
+        assert result["health_code"] == 200, result
+        assert result["state"] in {"READY", "STALE", "HIJACKED", "DEAD", "BLOCKED"}, result
+
+
 # ---- WU-2: gate_coverage (symlink-resolving) ----
 
 def _write_spec_with_locked_decisions(spec_dir: Path, decisions: list[tuple[str, str]]):
@@ -18485,6 +18695,23 @@ _TESTS = _TESTS + [
      test_ensure_runtime_up_but_stale_returns_stale_rebuilt),
     ("test_ensure_runtime_mcp_tool_absent_sets_false",
      test_ensure_runtime_mcp_tool_absent_sets_false),
+    # long-build-and-runtime-ownership Phase 2 / WU-1: M4 verdict classification.
+    ("test_ensure_runtime_m4_ready_when_owned_current_healthy",
+     test_ensure_runtime_m4_ready_when_owned_current_healthy),
+    ("test_ensure_runtime_m4_stale_when_owned_but_stale",
+     test_ensure_runtime_m4_stale_when_owned_but_stale),
+    ("test_ensure_runtime_m4_hijacked_when_unowned_but_health_answers",
+     test_ensure_runtime_m4_hijacked_when_unowned_but_health_answers),
+    ("test_ensure_runtime_m4_dead_when_pid_missing",
+     test_ensure_runtime_m4_dead_when_pid_missing),
+    ("test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused",
+     test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused),
+    ("test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked",
+     test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked),
+    ("test_ensure_runtime_m4_no_lock_plus_down_is_dead",
+     test_ensure_runtime_m4_no_lock_plus_down_is_dead),
+    ("test_ensure_runtime_m4_legacy_callers_get_superset_dict",
+     test_ensure_runtime_m4_legacy_callers_get_superset_dict),
     ("test_gate_coverage_symbol_present", test_gate_coverage_symbol_present),
     ("test_gate_coverage_covered_and_uncovered_verdict",
      test_gate_coverage_covered_and_uncovered_verdict),

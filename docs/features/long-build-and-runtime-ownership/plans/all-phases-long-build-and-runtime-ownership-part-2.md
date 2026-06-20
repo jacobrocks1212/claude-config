@@ -85,7 +85,7 @@ Before each step, `Read` the component files listed for that step from disk — 
 
 ## Work Units
 
-- [ ] WU-1 — Rework `ensure_runtime` into the M4 verdict (Identity → Staleness → Health)
+- [x] WU-1 — Rework `ensure_runtime` into the M4 verdict (Identity → Staleness → Health)
 - [ ] WU-2 — Bounded recovery (≤5 backoff) + HIJACKED/BLOCKED fail-safe
 - [ ] WU-3 — Surface the verdict through `--ensure-runtime` + update `user/scripts/CLAUDE.md`
 
