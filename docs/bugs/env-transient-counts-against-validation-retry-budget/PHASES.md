@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — this fix lives entirely in the claude-config harness (`lazy_core.py` Python + a prompt component + SKILL/doc prose). claude-config has **no MCP-reachable app surface** (it is the harness itself, not an app); the fix is validated by the hermetic injected-probe smoke harnesses (`lazy_core` characterization tests + `lazy-state.py --test` / `bug-state.py --test`), which ARE the runtime-equivalent verification surface. This is the structural "no app integration / tooling" untestable class per `docs/features/mcp-testing/SPEC.md`, not an audio claim.
 
-**Status:** In-progress
+**Status:** Complete
 
 ## Validated Assumptions
 
@@ -67,10 +67,10 @@ All load-bearing assumptions for this fix are **code-provable** from the harness
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` (or the pytest selection for the new fixtures) passes a new test asserting that an owned+current+`health==200` runtime with an injected `sidecar_check` returning False routes through `_recover_runtime` (restart attempted) rather than returning a bare `READY` — and that with `assert_sidecar_connected` defaulted off (no injected `sidecar_check`), the verdict is byte-identical to the current READY path (regression guard).
 
 **Runtime Verification** *(checked by the hermetic smoke harness — NOT by the implementation step):*
-- [ ] <!-- verification-only --> Sidecar-disconnected-despite-200 fixture: `ensure_runtime(..., probe=200, sidecar_check=lambda: False, ...)` for an owned+current runtime yields `state != "READY"` on the first pass and enters recovery; on persistent disconnect the terminal verdict is `BLOCKED` with a non-null `terminal_blocker` (routable to `mcp-runtime-unready`).
-- [ ] <!-- verification-only --> Default-skip regression fixture: `assert_sidecar_connected` falsy (default) ⇒ no sidecar assertion ⇒ the owned+current+200 verdict is exactly `READY` (existing `test_ensure_runtime_m4_ready_when_owned_current_healthy` behavior preserved).
-- [ ] <!-- verification-only --> Repo-agnostic default fixture: a config WITHOUT `assert_sidecar_connected` (legacy config dict) does not crash and treats the sidecar as connected (skipped).
-- [ ] <!-- verification-only --> `lazy-state.py --test` AND `bug-state.py --test` byte-pinned baselines stay green (the sidecar dimension is gated off in those fixtures → no baseline drift).
+- [x] <!-- verification-only --> Sidecar-disconnected-despite-200 fixture: `ensure_runtime(..., probe=200, sidecar_check=lambda: False, ...)` for an owned+current runtime yields `state != "READY"` on the first pass and enters recovery; on persistent disconnect the terminal verdict is `BLOCKED` with a non-null `terminal_blocker` (routable to `mcp-runtime-unready`).
+- [x] <!-- verification-only --> Default-skip regression fixture: `assert_sidecar_connected` falsy (default) ⇒ no sidecar assertion ⇒ the owned+current+200 verdict is exactly `READY` (existing `test_ensure_runtime_m4_ready_when_owned_current_healthy` behavior preserved).
+- [x] <!-- verification-only --> Repo-agnostic default fixture: a config WITHOUT `assert_sidecar_connected` (legacy config dict) does not crash and treats the sidecar as connected (skipped).
+- [x] <!-- verification-only --> `lazy-state.py --test` AND `bug-state.py --test` byte-pinned baselines stay green (the sidecar dimension is gated off in those fixtures → no baseline drift).
 
 **MCP Integration Test Assertions:**
 N/A — no MCP-reachable runtime surface in claude-config (the harness repo). The hermetic injected-probe fixtures above ARE the runtime-equivalent verification for this repo, per the `**MCP runtime:** not-required` header.
@@ -113,8 +113,8 @@ Hermetic — all probes/restart/sidecar callables injected (no real runtime, net
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/lint-skills.py` (and `--check-projected`) passes with no broken-injection / embedded-pattern errors after the edits, and the projected `cycle-base-prompt` runtime-up section contains the new `NEEDS_RUNTIME`-for-pipe-dead terminal (grep-verifiable in `skills-projected/`).
 
 **Runtime Verification** *(checked by lint + projection inspection — NOT by the implementation step):*
-- [ ] <!-- verification-only --> `lint-skills.py --check-projected --check-capabilities` is clean after the component + SKILL edits (no broken `!cat` injection, no embedded-pattern regression).
-- [ ] <!-- verification-only --> The projected `cycle-base-prompt` runtime-up variant (in both `skills-projected/_default/` and `skills-projected/algobooth/`) contains the sidecar-dead → `NEEDS_RUNTIME` terminal, and the `no-runtime` variant's existing `NEEDS_RUNTIME` escape is unchanged (no accidental cross-variant edit).
+- [x] <!-- verification-only --> `lint-skills.py --check-projected --check-capabilities` is clean after the component + SKILL edits (no broken `!cat` injection, no embedded-pattern regression).
+- [x] <!-- verification-only --> The projected `cycle-base-prompt` runtime-up variant (in both `skills-projected/_default/` and `skills-projected/algobooth/`) contains the sidecar-dead → `NEEDS_RUNTIME` terminal, and the `no-runtime` variant's existing `NEEDS_RUNTIME` escape is unchanged (no accidental cross-variant edit). NOTE: the `mcp-test-runtime` sections are `@section` grammar (runtime-parsed, NOT `!cat`), so they do NOT appear in skills-projected output — verified by `test_emit_cycle_prompt_*` suite (683/683 green) + source `cycle-base-prompt.md` lines 278-288 containing the terminal directly.
 
 **MCP Integration Test Assertions:**
 N/A — prompt/doc edits in the harness repo; verified by `lint-skills.py` + projection inspection, not a live MCP runtime (per the `**MCP runtime:** not-required` header).
