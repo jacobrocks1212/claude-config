@@ -35,14 +35,14 @@ The "user" here is the operator running `/lazy-batch <N>` (attended) or a schedu
   - The feature is **deferred to the back of the live queue** (a run-scoped reorder; its on-disk progress — SPEC/PHASES/plans/partial commits — is untouched and resumes when re-reached).
   - The orchestrator emits a PushNotification: `feature-budget-guard tripped — <feature-id> deferred to queue tail after <N> cycles; advancing to <next-id>`.
   - The deferral is recorded so the same feature cannot trip-and-defer in an infinite loop within one run (once deferred, it re-enters at most once at the tail; a second trip on the same feature in the same run escalates — see Open Questions).
-- The ceiling is configurable per run via a flag (default applies when omitted). `TBD (pending input)` — see Open Questions / NEEDS_INPUT for the trip-signal and on-trip-action product decisions.
+- The ceiling is configurable per run via a flag (default applies when omitted). **Trip signal (locked): forward-cycles consumed (single signal)** — the guard trips when a feature's per-feature forward-cycle count crosses the ceiling. **On-trip action (locked): defer to back of queue** (run-scoped reorder) with bounded re-trip escalation. See Locked Decisions.
 
 ### Skip-ahead past a gated head
 
 - When the queue head returns `needs-research` (or is `BLOCKED`), instead of halting the whole run, the orchestrator advances to the **next ready item** — defined as a queue item whose `**Depends on:**` block has no `hard` dependency on the gated head (or on any other currently-gated item).
 - Items genuinely downstream of the gated head are NOT skipped onto — they remain correctly blocked behind it, preserving the ordered-queue dependency safety the current strict default protects.
 - The gated head is surfaced (notification + end-of-run flush) so the operator still sees it needs research/unblocking; skip-ahead defers it, it does not silently drop it.
-- Whether skip-ahead is default-on or stays opt-in (generalizing `--allow-research-skip`) is `TBD (pending input)` — see Open Questions / NEEDS_INPUT.
+- **Skip-ahead default (locked): default-on** — dependency-aware skip-ahead is the new default run behavior when the head is gated. A `--strict-research-halt` opt-out flag preserves the legacy halt-on-first-gated-head behavior for operators who want it. See Locked Decisions.
 
 ## Technical Design
 
@@ -55,13 +55,14 @@ Per the harness's "state script is the source of truth" principle, both mechanis
 - **Counter:** extend the run marker (already keyed per repo via `claude_state_dir()`) with a `per_feature_forward_cycles: {feature_id: int}` map, advanced by the same forward-advance triggers that drive `forward_cycles` (the consume-oracle advance + the state-change advance), but keyed on the current `feature_id`. Reuses the existing advance plumbing; no new oracle.
 - **Trip evaluation:** in `compute_state()` queue selection, before dispatching the current item's next sub-skill, compare its per-feature count against the ceiling. On trip, emit a new probe field / terminal-action that the orchestrator translates into a run-scoped queue reorder + notification.
 - **Reorder mechanism:** run-scoped only (does NOT persist to `queue.json` — preserves the on-disk queue for the next run). Implemented as a live skip-list in `compute_state()` analogous to the existing `--park-*` skip branches, plus a marker field recording the deferral so re-trip is bounded.
-- **Trip signal** (cycles vs. MCP-validation-blocks vs. corrective-phase-count vs. composite) and **on-trip action** (defer-to-tail vs. force-stop vs. escalate-to-`/investigate` vs. AskUserQuestion) are product-behavior decisions deferred to NEEDS_INPUT.
+- **Trip signal (locked): forward-cycles consumed (single signal)** — trip when `per_feature_forward_cycles[<feature_id>]` crosses the ceiling. Single deterministic signal, reuses the existing forward-advance counter directly with zero new oracle, and is the most legible signal in the run log. A composite signal (cycles + validation-blocks + corrective-phase-count) may be layered on later if a single signal proves insufficient.
+- **On-trip action (locked): defer to back of queue (run-scoped reorder)** with bounded re-trip escalation — the tripped feature moves to the live-queue tail (on-disk progress untouched) and the run advances to the next ready item; a second trip on the same feature in the same run escalates. Keeps the run autonomous (no interactive halt); composes with the `--park-*` skip-list pattern.
 
 ### Skip-ahead past a gated head
 
 - **Readiness predicate:** reuse the existing `**Depends on:**` dep-block parser. A queue item is "skip-ahead-ready" iff none of its `hard` deps resolve to a currently-gated item (research-pending or BLOCKED). `soft`/`composes` deps do not block skip-ahead (they need the upstream to *exist*, not be Complete — and a gated-but-specced upstream exists).
 - **Generalizes `--allow-research-skip`:** the current flag is all-or-nothing (skip ALL research-pending, halt only when the whole queue is research-pending). The new behavior is dependency-aware: skip the gated head, advance onto independent ready items, but still halt (or surface) when every remaining item is gated or downstream of a gated item.
-- **Default vs. opt-in** is a product-behavior decision deferred to NEEDS_INPUT.
+- **Default vs. opt-in (locked): default-on** — dependency-aware skip-ahead is the new default when the head is gated. The `hard`-dep readiness predicate is the safety rail that makes default-on safe (unlike the legacy all-or-nothing `--allow-research-skip`, which is opt-in *because* it is unsafe on an ordered queue). A `--strict-research-halt` opt-out flag preserves the legacy halt-on-first-gated-head behavior.
 
 ### Reused infrastructure (no new code where it exists)
 
@@ -72,7 +73,7 @@ Per the harness's "state script is the source of truth" principle, both mechanis
 | Loop / oscillation signal | `step_repeat_count` (already emitted; the guard is the *automatic action* the warning lacked) |
 | Dependency readiness | `**Depends on:**` block parser + `merged_priority` ordering |
 | Live queue skip/defer | the `--park-needs-input` / `--park-blocked` skip-list pattern in `compute_state()` |
-| Research-gate terminal | `queue-blocked-on-research` / `--skip-needs-research` |
+| Research-gate terminal | `queue-blocked-on-research` / `--skip-needs-research`; new `--strict-research-halt` opt-out restores legacy halt-on-first-gated-head |
 
 ## Implementation Phases
 
@@ -95,13 +96,18 @@ Per the harness's "state script is the source of truth" principle, both mechanis
 | All-gated terminal | Every remaining item gated or downstream of a gated item | clean terminal (`queue-blocked-on-research` / equivalent), not a false completion | `lazy-state.py --test` fixture |
 | Parity preserved | full `--test` suites + parity audit | `lazy-state.py --test`, `bug-state.py --test`, `lazy_parity_audit.py` all green; baselines match | smoke/baseline run |
 
+## Locked Decisions
+
+Resolved by operator via `/lazy-batch` Step 1g `AskUserQuestion` on 2026-06-19 (all three matched the SPEC recommendations):
+
+1. **Per-feature budget trip signal → forward-cycles consumed (single signal).** The guard trips when one feature's per-feature forward-cycle count crosses the ceiling. Deterministic, reuses existing counter plumbing with zero new oracle, most legible in the run log. A composite signal may be layered on later if a single signal proves insufficient.
+2. **On-trip action → defer to back of queue (run-scoped reorder)** with bounded re-trip escalation. The tripped feature moves to the live-queue tail with on-disk progress untouched; the run advances to the next ready item; a second trip on the same feature in the same run escalates. Keeps the run autonomous; composes with the `--park-*` skip-list pattern.
+3. **Skip-ahead default → default-on (dependency-aware skip-ahead is the new default)**, with a `--strict-research-halt` opt-out flag preserving the legacy halt-on-first-gated-head behavior. The `hard`-dep readiness predicate is the safety rail that makes default-on safe.
+
 ## Open Questions
 
 These are deferred per phase context:
 
-- **(NEEDS_INPUT, product) Per-feature budget trip signal** — cycles consumed vs. MCP-validation-block count vs. corrective-phase count vs. a composite. Changes when/why the guard fires (operator-visible run behavior).
-- **(NEEDS_INPUT, product) On-trip action** — defer-to-back-of-queue vs. force-stop vs. escalate-to-`/investigate` vs. AskUserQuestion. Changes what the operator sees happen to a stubborn feature.
-- **(NEEDS_INPUT, product) Skip-ahead default vs. opt-in** — make dependency-aware skip-ahead the default when the head is research-gated, or keep it opt-in (generalizing `--allow-research-skip`). Changes the run's default behavior on a gated queue.
 - **(deferred to Phase 2 research) "Independent/ready" determination** — confirm the `**Depends on:**` `hard`-dep predicate is sufficient, or whether explicit no-RESEARCH-needed metadata is also needed. (Research-answerable: how do similar autonomous pipelines determine cross-item readiness.)
 - **(Phase 2 follow-up) Re-trip escalation shape** — what a second per-feature trip in the same run does (force-stop, BLOCKED, AskUserQuestion). Resolved alongside the on-trip-action decision.
 - **(Phase 2 follow-up) Default per-feature ceiling value** — once the trip signal is chosen, what the default ceiling is and the flag name to override it.

@@ -49,3 +49,13 @@ The baseline SPEC.md for Feature Budget Guard + Skip-Ahead is drafted. The mecha
 - **Opt-in (keep it a flag, generalizing `--allow-research-skip`)** — strict halt-on-first-gated-head stays the default; the dependency-aware skip is enabled via a flag. Most conservative — preserves today's default behavior exactly; the operator explicitly opts into skip-ahead when they've judged it safe. Cons: the stranding friction (the motivating incident) persists by default; the operator has to remember the flag to get the benefit.
 
 **Recommendation:** Default-on — the dependency-aware `hard`-dep predicate is precisely the safety rail that the current opt-in-only `--allow-research-skip` lacks, so default-on is safe in a way the legacy flag never was, and it directly resolves the motivating stranding incident without requiring the operator to remember a flag. A `--strict-research-halt` opt-out can preserve the legacy behavior for operators who want it. (This is the one decision most likely to warrant operator override, since it changes the default run behavior on every gated queue — hence surfacing it rather than auto-accepting.)
+
+## Resolution
+
+Resolved by operator via `/lazy-batch` Step 1g `AskUserQuestion` on 2026-06-19.
+
+1. **Per-feature budget trip signal** → **Forward-cycles consumed (single signal)**. Trip when one feature's per-feature forward-cycle count crosses a ceiling; deterministic, reuses existing counter plumbing, most legible in the run log. Composite may be layered on later if a single signal proves insufficient.
+2. **On-trip action** → **Defer to back of queue (run-scoped reorder)** with bounded re-trip escalation. The tripped feature moves to the live-queue tail with on-disk progress untouched; the run advances to the next ready item; a second trip on the same feature in the same run escalates. Keeps the run autonomous; composes with the `--park-*` skip-list pattern.
+3. **Skip-ahead default** → **Default-on (dependency-aware skip-ahead is the new default)**, with a `--strict-research-halt` opt-out flag preserving the legacy halt-on-first-gated-head behavior. The `hard`-dep readiness predicate is the safety rail that makes default-on safe.
+
+All three operator choices matched the SPEC recommendations. Propagate each into SPEC.md as a Locked Decision (move the corresponding `## Open Questions` entries into the locked baseline), then neutralize this sentinel.
