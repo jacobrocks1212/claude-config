@@ -228,6 +228,15 @@ Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
     MCP_TEST_RESULTS.md (partial or production-edited) /
     DEFERRED_REQUIRES_DEVICE.md (per Step 4.5) / SKIP_MCP_TEST.md (per the
     mcp-testing SPEC) / BLOCKED.md naming a CONCRETE blocker.
+  - VALIDATION-BLOCKED IS FOR CODE/ENGINE FAILURES ONLY: a `BLOCKED.md` with
+    `blocker_kind: mcp-validation` certifies that the CODE under test failed (the
+    engine ran and assertions did not pass). A RUNTIME-READINESS condition — the
+    sidecar pipe is dead despite `/health == 200` (`get_sidecar_status` →
+    `is_connected: false`), a self-inflicted env transient — is EXPLICITLY
+    EXCLUDED: it routes to the runtime-readiness terminal (NEEDS_RUNTIME in the
+    runtime-up variant; `blocker_kind: mcp-runtime-unready`, escalation-immune,
+    when the orchestrator gate catches it upstream), so the env transient is
+    NEVER charged to the validation-retry/escalation budget.
   - SKIP PROVENANCE: any SKIP_MCP_TEST.md MUST carry `granted_by: mcp-test` AND
     `spec_class: <the untestable class you verified against
     docs/features/mcp-testing/SPEC.md>`. The state scripts REFUSE a pipeline skip
@@ -266,6 +275,21 @@ fast in-turn verification against the live server, not a boot wait. Re-resolve
 any session-log dir from the live server (GET /tools/get_session_meta →
 log_dir); NEVER reuse a cached `logs/session-*` path (HARD REQUIREMENT,
 docs/development/CLAUDE.md).
+  - SIDECAR-PIPE READINESS (runtime-readiness terminal — NOT a validation
+    failure): the dev HTTP server boots INDEPENDENTLY of the MCP sidecar named
+    pipe, so `/health == 200` does NOT prove the sidecar is connected. A zombie
+    node process left holding the `:3333` pipe after a `dev:restart` leaves the
+    runtime HTTP-healthy but MCP-functionally DEAD — a self-inflicted ENVIRONMENT
+    transient, NOT a code failure. BEFORE running the engine, probe
+    `GET http://localhost:3333/tools/get_sidecar_status`. If it reports
+    `is_connected: false`, do NOT run the engine and do NOT write an
+    `mcp-validation` `BLOCKED.md` (that would charge an env transient to the
+    feature's validation-retry/escalation budget). Instead return the single line
+    NEEDS_RUNTIME as your ENTIRE report — the orchestrator re-boots the runtime
+    cleanly (reaping the zombie) in its own session and re-dispatches you against
+    a live, sidecar-connected server. (Same escape as the `no-runtime` variant's
+    DISAGREE path — the env transient routes to runtime-readiness, never to
+    `mcp-validation`.)
 
 <!-- @section mcp-test-runtime pipelines=feature,bug modes=workstation skills=mcp-test variant=no-runtime -->
 RUNTIME NOT PRE-BOOTED (plan asserts structural MCP-untestability): this item's

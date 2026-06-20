@@ -160,7 +160,16 @@ own long-lived session and BLOCKS on `health == 200` BEFORE dispatching this cyc
   a subagent that backgrounded the build and ended its turn produced a resultless, sentinel-less
   return (a contract violation). The orchestrator's session persists; the subagent's does not.
 - If the runtime appears dead mid-cycle, do NOT try to boot it yourself — surface `NEEDS_RUNTIME`
-  in your return one-liner so the orchestrator re-boots.
+  in your return one-liner so the orchestrator re-boots. **"Appears dead" includes the
+  HTTP-healthy-but-pipe-dead case:** the dev HTTP server boots independently of the MCP sidecar
+  named pipe, so `health == 200` does NOT prove the sidecar is connected. A zombie node process
+  holding the `:3333` pipe after a `dev:restart` leaves the runtime HTTP-healthy but
+  MCP-functionally dead — a self-inflicted ENV transient, NOT a code failure. Probe
+  `GET http://localhost:3333/tools/get_sidecar_status` (the `is_connected: true` discriminator
+  used by the standalone path below); if `is_connected: false`, surface `NEEDS_RUNTIME` — do NOT
+  run the engine and do NOT write an `mcp-validation` `BLOCKED.md` (that would charge the env
+  transient to the feature's validation-retry budget). The orchestrator re-boots cleanly, reaping
+  the zombie, and re-dispatches.
 
 ### Standalone (a human ran `/mcp-test` directly) — boot it here
 
