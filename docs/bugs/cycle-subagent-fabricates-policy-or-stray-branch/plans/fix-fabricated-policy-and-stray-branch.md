@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: cycle-subagent-fabricates-policy-or-stray-branch
-status: In-progress
+status: Complete
 created: 2026-06-20
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -88,7 +88,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 - [x] WU-3 — P2 (TDD): `--marker-work-branch` CLI query in lazy-state.py + bug-state.py, with tests
 - [x] WU-4 — P3 (TDD): `block-sentinel-write-on-stray-branch.sh` hook, with hook tests
 - [x] WU-5 — P3: register the new hook in user/settings.json `Write|Edit` PreToolUse block
-- [ ] WU-6 — P4: docs (CLAUDE.md hook row + user/scripts/CLAUDE.md marker note) + final projection/test verification
+- [x] WU-6 — P4: docs (CLAUDE.md hook row + user/scripts/CLAUDE.md marker note) + final projection/test verification
 
 ## Execution Schedule
 

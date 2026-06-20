@@ -230,6 +230,17 @@ in another repo (it also kills stale-marker contagion across repos).
     unresolved deny keep their ledger semantics. Fail-OPEN: any error reading `marker.get("session_id")`
     falls back to `_deny_and_ledger` (debt-preserving). This is why pre-D2 deny tests that used an unbound
     marker had to be re-pinned to a BOUND marker to keep asserting debt accrual.
+  - **Marker `work_branch` + `--marker-work-branch` query (`cycle-subagent-fabricates-policy-or-stray-branch`,
+    2026-06-20).** `write_run_marker` now stamps a `work_branch` field (resolved via the existing
+    `_emit_work_branch(repo_root)` at run-start; a non-git root yields its fallback string, never raises).
+    Legacy markers lacking the field read as `None` via the single read helper `lazy_core.marker_work_branch()`
+    (back-compat, same pattern as `attended` / `per_feature_forward_cycles`). A new read-only CLI query
+    `lazy-state.py --marker-work-branch --repo-root <cwd>` (mirrored on `bug-state.py` for parity — the marker
+    is shared) prints the stored branch + exit 0 when a live marker carries one, exit 1 otherwise (absent /
+    stale / legacy-no-branch); read-only, never creates the state dir. Consumed by the write-time hook
+    `block-sentinel-write-on-stray-branch.sh`, which denies a pipeline-sentinel Write while HEAD != the
+    marker's `work_branch` (fail-OPEN on exit 1 — no known branch to enforce against). Branch identity is
+    owned in this ONE helper; bash never re-derives it (same contract as `--marker-present` owning presence).
 
 ## Cycle-counter advance: two orthogonal triggers (lazy-batch-unified-driver-parity-and-accounting Phase 1)
 

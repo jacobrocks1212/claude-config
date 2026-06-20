@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress — all 4 phases implemented (2026-06-20); validation pending (the `__mark_fixed__` gate owns the terminal flip + `FIXED.md` after the validation tail).
+
 **MCP runtime:** not-required — pure harness change (prompt-template prose, a bash PreToolUse hook, Python state-script marker field + CLI query, settings/doc wiring). No AlgoBooth app surface, store, audio path, or UI state is touched; verification is via `project-skills.py` residue-check + `lazy_core`/hook pytest, not the Tauri+MCP dev runtime.
 
 ## Validated Assumptions
@@ -131,10 +133,14 @@ The repo's existing `test_hooks.py` harness pipes synthetic PreToolUse JSON thro
 **Scope:** Keep the harness's authoritative surfaces in sync with the new hook and marker field, and re-verify the end-to-end projection after all prose/script edits. Docs-only + verification; no new behavior.
 
 **Deliverables:**
-- [ ] Add a `block-sentinel-write-on-stray-branch.sh` row to the `CLAUDE.md` Hooks table (sibling of the `block-noncanonical-blocker-write.sh` row at line ~187): PreToolUse(Write,Edit); denies a pipeline-sentinel Write while HEAD != the run marker's `work_branch`; fail-OPEN; deny names the work branch; write-time complement to the prose ban.
-- [ ] Note the new marker `work_branch` field + `--marker-work-branch` query in `user/scripts/CLAUDE.md` (alongside the `--marker-present` "Hooks gate via" note), so the marker schema doc stays authoritative.
-- [ ] Final `python ~/.claude/scripts/project-skills.py` run — confirm the fully-resolved `cycle-base-prompt.md` projection (both `_default/` and any per-repo projection) reflects the Phase-1 prose with zero residue.
-- [ ] Confirm the full hook + state-script test suites pass (`test_hooks.py`, `test_lazy_core.py`).
+- [x] Add a `block-sentinel-write-on-stray-branch.sh` row to the `CLAUDE.md` Hooks table (sibling of the `block-noncanonical-blocker-write.sh` row at line ~187): PreToolUse(Write,Edit); denies a pipeline-sentinel Write while HEAD != the run marker's `work_branch`; fail-OPEN; deny names the work branch; write-time complement to the prose ban.
+- [x] Note the new marker `work_branch` field + `--marker-work-branch` query in `user/scripts/CLAUDE.md` (alongside the `--marker-present` "Hooks gate via" note), so the marker schema doc stays authoritative.
+- [x] Final `python ~/.claude/scripts/project-skills.py` run — confirm the fully-resolved `cycle-base-prompt.md` projection (both `_default/` and any per-repo projection) reflects the Phase-1 prose with zero residue.
+- [x] Confirm the full hook + state-script test suites pass (`test_hooks.py`, `test_lazy_core.py`).
+
+**Implementation Notes (2026-06-20, P4 / WU-6):**
+- Added the `block-sentinel-write-on-stray-branch.sh` row to the `CLAUDE.md` Hooks table (sibling of `block-noncanonical-blocker-write.sh`) and a marker `work_branch` + `--marker-work-branch` sub-bullet to `user/scripts/CLAUDE.md` under the "Hooks gate via `--marker-present`" passage — both authoritative surfaces now describe the shipped hook + marker field.
+- Final gate suite: `project-skills.py` exit 0 (residue-clean, hardened P1 prose present); `lint-skills.py --check-projected --check-capabilities` clean; `test_lazy_core.py` 693/693; `test_hooks.py` 93/93; `user/settings.json` valid JSON. Implementation complete across all 4 phases — top-level PHASES `**Status:**` set to In-progress (validation pending; `__mark_fixed__` owns the terminal flip + `FIXED.md`).
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/project-skills.py` exits 0 with the hardened prose in the projected output; `python user/scripts/test_hooks.py` and `python user/scripts/test_lazy_core.py` both report all-pass; `CLAUDE.md` Hooks table contains the new row.
 
