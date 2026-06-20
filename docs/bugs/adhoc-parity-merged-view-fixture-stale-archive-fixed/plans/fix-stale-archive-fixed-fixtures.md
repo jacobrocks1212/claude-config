@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: adhoc-parity-merged-view-fixture-stale-archive-fixed
-status: Ready
+status: Complete
 created: 2026-06-19
 complexity: mechanical
 phases: [1]
@@ -24,7 +24,7 @@ phases: [1]
 
 ## Work Units
 
-- [ ] WU-1 — Add `--archive-fixed` clause to all 4 stale workstation merged-view fixtures
+- [x] WU-1 — Add `--archive-fixed` clause to all 4 stale workstation merged-view fixtures
 
 ## EXECUTION MODEL — READ THIS FIRST
 

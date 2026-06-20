@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+
 **MCP runtime:** not-required — pure-Python unit-test fixture text edit in `user/scripts/test_lazy_parity.py`; no app surface, no Tauri/MCP-reachable behavior (docs/features/mcp-testing/SPEC.md "untestable: build/test tooling" class). Verification is `pytest user/scripts/ -q`.
 
 ## Validated Assumptions
@@ -43,11 +45,11 @@ No hard deps on Complete upstreams (this is a self-contained test-fixture defect
 **Scope:** In `user/scripts/test_lazy_parity.py`, extend each WORKSTATION-side `full`/consistent hermetic fixture string in `TestMergedViewDispatchParity` so its merged-view dispatch prose names the `--archive-fixed` bug-archive follow-up — satisfying the 6th predicate (`--archive-fixed`) the `_MERGED_VIEW_PREDICATES` tuple now requires. The clause is added uniformly to all four workstation fixtures (the one failing test plus three latent ones). The deliberately-broken cloud-side fixtures are NOT touched.
 
 **Deliverables:**
-- [ ] `test_passes_when_both_drivers_consistent` (`:812-818`) `full` string: add an `--archive-fixed` bug-archive clause (e.g. "; a fixed bug chains the `--archive-fixed` archive + de-queue follow-up"). This is the test that FAILS today; after the edit `audit_merged_view_dispatch_parity(tmp_path) == []` holds (both drivers write this same `full` string).
-- [ ] `test_fires_when_no_regression_guard_absent` (`:784-789`) workstation `full` string: add the same `--archive-fixed` clause. (The cloud fixture at `:792-796` is left omitting single-type — that omission is the test's assertion.)
-- [ ] `test_fires_when_terminal_dispatch_inconsistent` (`:756-761`) workstation `full` string: add the same `--archive-fixed` clause. (The cloud fixture at `:764-768` is left dropping `__mark_fixed__` — load-bearing to the test.)
-- [ ] `test_fires_when_cloud_missing_merged_branch` (`:727-733`) workstation `skills` fixture string: add the same `--archive-fixed` clause (D7 completeness extension above). (The cloud fixture at `:735-737` `## Cloud driver` is left without any merged branch — load-bearing.)
-- [ ] Tests: the existing `TestMergedViewDispatchParity` suite is the test surface — no NEW test is authored. The edited fixtures ARE the test data; their assertions already encode the contract (consistent → `[]`; inconsistent-on-a-DIFFERENT-predicate → still fires). The fix is verified by the suite turning fully green (Minimum Verifiable Behavior below).
+- [x] `test_passes_when_both_drivers_consistent` (`:812-818`) `full` string: add an `--archive-fixed` bug-archive clause (e.g. "; a fixed bug chains the `--archive-fixed` archive + de-queue follow-up"). This is the test that FAILS today; after the edit `audit_merged_view_dispatch_parity(tmp_path) == []` holds (both drivers write this same `full` string).
+- [x] `test_fires_when_no_regression_guard_absent` (`:784-789`) workstation `full` string: add the same `--archive-fixed` clause. (The cloud fixture at `:792-796` is left omitting single-type — that omission is the test's assertion.)
+- [x] `test_fires_when_terminal_dispatch_inconsistent` (`:756-761`) workstation `full` string: add the same `--archive-fixed` clause. (The cloud fixture at `:764-768` is left dropping `__mark_fixed__` — load-bearing to the test.)
+- [x] `test_fires_when_cloud_missing_merged_branch` (`:727-733`) workstation `skills` fixture string: add the same `--archive-fixed` clause (D7 completeness extension above). (The cloud fixture at `:735-737` `## Cloud driver` is left without any merged branch — load-bearing.)
+- [x] Tests: the existing `TestMergedViewDispatchParity` suite is the test surface — no NEW test is authored. The edited fixtures ARE the test data; their assertions already encode the contract (consistent → `[]`; inconsistent-on-a-DIFFERENT-predicate → still fires). The fix is verified by the suite turning fully green (Minimum Verifiable Behavior below).
 
 **Minimum Verifiable Behavior:** `python -m pytest user/scripts/test_lazy_parity.py -q` reports `0 failed` (all `TestMergedViewDispatchParity` tests green, including `test_passes_when_both_drivers_consistent` which fails pre-fix), AND the targeted command from the SPEC's Reproduction Steps now passes: `python -m pytest user/scripts/test_lazy_parity.py -q -k "test_passes_when_both_drivers_consistent"` → `1 passed`. Full repo suite `python -m pytest user/scripts/ -q` is fully green (`0 failed`).
 
@@ -63,5 +65,32 @@ Pure-function audit over fixed fixture text — fully deterministic, no mocks, n
 - None — single-phase fix. Implementation done → top-level PHASES `**Status:**` flips to `In-progress` (validation pending); the state machine routes to the validation tail. The `__mark_fixed__` gate (orchestrator-owned) writes `FIXED.md` and flips SPEC/PHASES to `Fixed` after the tail — never hand-flipped here.
 
 **Completion (gate-owned):** the `__mark_fixed__` gate flips SPEC.md / PHASES.md top-level `**Status:**` to `Fixed` and writes `FIXED.md` once this fix's verification (full-suite green) is certified by the validation tail. Not authored as a checkbox row here.
+
+#### Implementation Notes
+
+**Date:** 2026-06-19
+**Executed inline** (dispatch override — no Agent tool in bug-pipeline cycle subagent).
+
+**RED → GREEN evidence:**
+- Pre-fix: `python -m pytest user/scripts/test_lazy_parity.py -q -k "test_passes_when_both_drivers_consistent"` → `1 failed` with `missing bug archive --archive-fixed chain (pattern '--archive-fixed')`.
+- Post-fix: `1 passed`.
+
+**Fixtures edited (all workstation/skills side only — cloud fixtures byte-unchanged):**
+1. `test_fires_when_cloud_missing_merged_branch` (`:727-733`) — appended `" A fixed bug chains the \`--archive-fixed\` archive + de-queue follow-up."` before the closing `\n`.
+2. `test_fires_when_terminal_dispatch_inconsistent` (`:756-761`) — same clause appended.
+3. `test_fires_when_no_regression_guard_absent` (`:784-789`) — same clause appended.
+4. `test_passes_when_both_drivers_consistent` (`:812-818`) — same clause appended (this was the failing test; clause written to BOTH `skills` and `cloud` fixtures since they are identical in this test).
+
+**Clause used (uniform across all 4):** ` A fixed bug chains the \`--archive-fixed\` archive + de-queue follow-up.`
+
+**Cloud fixtures unchanged:** L735-737 (`## Cloud driver`), L764-768 (drops `__mark_fixed__`), L792-796 (drops single-type) — all untouched; their deliberate omissions remain load-bearing.
+`_MERGED_VIEW_PREDICATES` and `audit_merged_view_dispatch_parity` in `lazy_parity_audit.py` — NOT touched.
+
+**Quality gates:**
+- `pytest user/scripts/test_lazy_parity.py -q -k test_passes_when_both_drivers_consistent` → `1 passed`
+- `pytest user/scripts/test_lazy_parity.py -q` → `29 passed`
+- `pytest user/scripts/ -q` → `883 passed, 0 failed`
+
+**Review verdict:** PASS — only 4 workstation fixture strings changed; cloud fixtures byte-unchanged; `_MERGED_VIEW_PREDICATES` untouched; all `*_fires_*` tests still fire on their own predicates.
 
 ---

@@ -728,7 +728,8 @@ class TestMergedViewDispatchParity:
             "## Unified driver — merged-view dispatch\n"
             "Probe `lazy-state.py --next-merged` for the head; dispatch feature → "
             "`lazy-state.py` + `__mark_complete__`, bug → `bug-state.py` + "
-            "`__mark_fixed__`. Single-type run is unchanged.\n",
+            "`__mark_fixed__`. Single-type run is unchanged. "
+            "A fixed bug chains the `--archive-fixed` archive + de-queue follow-up.\n",
             encoding="utf-8",
         )
         # Cloud driver is MISSING --next-merged → must be flagged.
@@ -757,7 +758,8 @@ class TestMergedViewDispatchParity:
             "## Unified driver — merged-view dispatch\n"
             "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
             "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`. "
-            "Single-type run is unchanged.\n"
+            "Single-type run is unchanged. "
+            "A fixed bug chains the `--archive-fixed` archive + de-queue follow-up.\n"
         )
         (skills / "SKILL.md").write_text(full, encoding="utf-8")
         # Cloud has --next-merged but NEVER names the bug terminal __mark_fixed__.
@@ -785,7 +787,8 @@ class TestMergedViewDispatchParity:
             "## Unified driver — merged-view dispatch\n"
             "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
             "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`. "
-            "Single-type run is unchanged.\n"
+            "Single-type run is unchanged. "
+            "A fixed bug chains the `--archive-fixed` archive + de-queue follow-up.\n"
         )
         (skills / "SKILL.md").write_text(full, encoding="utf-8")
         # Cloud omits the single-type guarantee phrase.
@@ -814,7 +817,8 @@ class TestMergedViewDispatchParity:
             "Probe `lazy-state.py --next-merged`; feature → `lazy-state.py` + "
             "`__mark_complete__`, bug → `bug-state.py` + `__mark_fixed__`. "
             "Single-type run is unchanged (byte-for-byte identical to the "
-            "per-type batch).\n"
+            "per-type batch). "
+            "A fixed bug chains the `--archive-fixed` archive + de-queue follow-up.\n"
         )
         (skills / "SKILL.md").write_text(full, encoding="utf-8")
         (cloud / "SKILL.md").write_text(full, encoding="utf-8")
