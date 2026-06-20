@@ -2,9 +2,9 @@
 
 > Stop one stubborn feature from monopolizing a batch budget, and skip ahead to independent ready queue work past a blocked or research-gated head item.
 
-**Status:** Draft
+**Status:** In-progress
 **Priority:** P1
-**Last updated:** 2026-06-19
+**Last updated:** 2026-06-20
 
 **Depends on:**
 

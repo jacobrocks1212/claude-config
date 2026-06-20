@@ -1,7 +1,7 @@
 ---
 name: lazy-bug-batch
 description: Autonomous orchestrator for the bug pipeline — mirrors /lazy-batch shape but operates on docs/bugs/ via bug-state.py. Loops on bug-state.py, spawns one Opus subagent per cycle, and drives /spec-bug → /spec-phases → /write-plan → /execute-plan → /mcp-test → __mark_fixed__. Terminal action is __mark_fixed__ (archive-on-fix): FIXED.md receipt gated by MCP-coverage audit + completion-integrity gate, then git mv to _archive/. (The /retro-feature step is unwired — 2026-06.) See ~/.claude/skills/lazy-batch/SKILL.md for the full algorithm; this skill documents only bug-pipeline differences.
-argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park]
+argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -116,7 +116,9 @@ algorithm. Bug-pipeline token substitutions:
 - Ambiguous max-cycles question: same shape, prefix `/lazy-bug-batch`.
 - `--allow-research-skip` is **NOT recognized** — refuse with: `/lazy-bug-batch: --allow-research-skip is not valid for the bug pipeline (no research steps). Usage: /lazy-bug-batch <N> [--adhoc "<task>"] [--park]`.
 - `--adhoc` and `--park` tokens are recognized with identical semantics to `/lazy-batch`.
-- Unknown-token error: `/lazy-bug-batch: unrecognized argument \`{token}\`. Usage: /lazy-bug-batch <N> [--adhoc "<task>"] [--park]`.
+- `--per-feature-cycle-cap <N>` (optional) → pass `--per-feature-cycle-cap <N>` to every `bug-state.py` probe in Step 1a. When the budget guard trips, the `budget_guard` probe field is non-null; read it for the §1c.6 budget-guard trip notification. NO divergence from `/lazy-batch` semantics — same flag, same probe field, same notification.
+- `--strict-research-halt` (optional) → pass `--strict-research-halt` to every `bug-state.py` probe in Step 1a. Restores legacy halt-on-first-gated-head; default-off (skip-ahead is default-on). The bug pipeline has no research steps but shares the same skip-ahead logic when a bug is BLOCKED and `independent: true` successors exist. NO divergence from `/lazy-batch` semantics.
+- Unknown-token error: `/lazy-bug-batch: unrecognized argument \`{token}\`. Usage: /lazy-bug-batch <N> [--adhoc "<task>"] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]`.
 
 **Standing-directive echo-back protocol:** same as `/lazy-batch` Step 0.
 
@@ -296,6 +298,7 @@ If `terminal_reason` is set:
 - **`stale_upstream`**: upstream item changed since materialize. See Step 1i.
 - **`all-bugs-fixed`**: Run `python3 ~/.claude/scripts/bug-state.py --run-end`, then PushNotification `"ALL BUGS FIXED — queue cleared after {forward_cycles} forward + {meta_cycles} meta /lazy-bug-batch cycle(s)."`, print final batch report, STOP.
 - **`queue-exhausted-all-parked`** (`--park` mode only): the queue advanced past every workable bug and every remaining bug is parked (blocked and/or needs-input). HONEST distinct terminal — NOT `all-bugs-fixed` (the queue is not cleared) and distinct from `all-remaining-deferred` (operator `DEFERRED.md` park). FIRST fire the Step 1g-flush (triggers (b)/(c)) so every parked item — needs-input AND blocked (`sentinel_kind`) — is surfaced and resolved at run-end; THEN run `python3 ~/.claude/scripts/bug-state.py --run-end`, PushNotification `"Queue exhausted — {parked_count} bug(s) parked (blocked/needs-input); surfaced at flush."`, print final batch report, STOP. Do NOT report success.
+- **`queue-exhausted-budget-deferred`**: budget guard: all remaining queue items are budget-deferred/evicted to the queue tail (no independent successor to skip-ahead to). Run `python3 ~/.claude/scripts/bug-state.py --run-end`, then PushNotification with `notify_message`, print final batch report, STOP. Not `all-bugs-fixed` — deferred bugs reappear at the queue tail with fresh cycle counts; re-run `/lazy-bug-batch` to continue.
 - **`all-remaining-deferred`**: every open bug has `DEFERRED.md` (a deliberate park). Run `--run-end`, then PushNotification with `notify_message`, print final batch report, STOP. (Not routed to Step 1i — re-include a bug by deleting its `DEFERRED.md`.)
 - **`queue-missing`**: `docs/bugs/queue.json` missing (the queue is optional; on-disk bugs are
   auto-discovered — informational). Run `--run-end`, then PushNotification with `notify_message`,
@@ -331,7 +334,7 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
 
 1. **park** — wording branches on the entry's `sentinel_kind` (per `/lazy-batch` §1c.6 item 1). For a **needs-input** park: message `"parked {bug_name} — {N} decision(s) parked so far this run"`, T5 chat line `⏸ parked {bug_name} — {N} decision(s) · notified ({parked_count} parked this run)`. For a **blocked** park (`sentinel_kind == "blocked"`, `decision_count == 0`): message `"parked {bug_name} — BLOCKED ({phase}); deferred to flush ({parked_count} parked this run)"`, T5 chat line `⏸ parked {bug_name} — BLOCKED ({phase}) · notified ({parked_count} parked this run)` (read `{phase}` from the parked entry / the `BLOCKED.md` frontmatter). Both branches share the SAME dedup set.
 2. **halt** — on every terminal/halt: `all-bugs-fixed`, `queue-exhausted-all-parked` (`--park`
-   mode — after the flush), `all-remaining-deferred`,
+   mode — after the flush), `queue-exhausted-budget-deferred` (budget-guard — all items deferred to queue tail), `all-remaining-deferred`,
    `queue-missing`, `BLOCKED` halt-for-manual, `NEEDS_INPUT` halt, `max-cycles`,
    `device-queue-exhausted`, script-error, and any future obstacle terminal.
 
@@ -347,6 +350,9 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
 
 3. **flush** — message: `"lazy-bug-batch flush — {N} parked decision(s) ready for your input"`.
 4. **run-end** — every run termination.
+5. **budget-guard trip** (both modes, when budget guard fires mid-cycle) — fired ONCE per bug that the budget guard defers/evicts (the `budget_guard` probe field is non-null in the cycle's probe output). The orchestrator reads the `budget_guard` field from the probe JSON and fires:
+   PushNotification({ message: "feature-budget-guard tripped — {budget_guard.feature_id} deferred to queue tail after {budget_guard.count_at_trip} cycles (computed ceiling {budget_guard.computed_ceiling}); advancing to {budget_guard.next_id}" })
+   NO divergence from `/lazy-batch` §1c.6 point 5 — same probe field, same notification template.
 
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
@@ -867,6 +873,16 @@ blocker resolutions, parked-flush backstop resolutions, Gate-1 coverage routings
 applications disclosed in cycle summaries. Required by `completeness-policy.md` Logging; graded
 by R-D7-2.)*
 
+*(Print the following table ONLY when at least one `gated_heads` entry was present in any probe's JSON output during this run. Omit entirely otherwise. NO divergence from `/lazy-batch` Step 2 — same table, same condition.)*
+
+```
+### Gated heads skipped (dependency-aware skip-ahead)
+
+| Bug | Reason gated | Skipped-to |
+|-----|-------------|------------|
+| {bug_name} ({bug_id}) | {BLOCKED / research-gated / other} | {next_bug_id or "terminal"} |
+```
+
 Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, digests, terminal reason, and Next-step lines carry all required content.
 
 STOP.
@@ -914,6 +930,7 @@ Step 1e item 2), and `audit  {N} product-behavior decision(s) surfaced → NEEDS
 - **When to use which.** Mixed feature+bug pass → `/lazy-batch` (probes the merged head, type-dispatches per cycle). Bug pipeline only → `/lazy-bug-batch`. See `user/skills/lazy-batch/SKILL.md` → State Machine Summary for the unified driver's full per-type dispatch.
 - **Ordering is script-owned** (`lazy_core.merged_priority` in the unified driver; this skill orders `docs/bugs/` by `bug-state.py`'s own severity+date rule). Neither skill re-implements ordering in prose.
 - **Coupled pair.** Changes to the unified driver's shared algorithm mirror here unless bug-pipeline-scoped (Differences table above).
+- **Budget guard + skip-ahead (feature-budget-guard-and-skip-ahead). NO divergence.** When `bug-state.py` is passed `--per-feature-cycle-cap <N>`, the budget guard caps each bug at N cycles; an over-budget bug is deferred to the queue tail (`action: defer|evict`, surfaced in the `budget_guard` probe field). When all remaining items are budget-deferred and no independent successor exists, the terminal is `queue-exhausted-budget-deferred` (see §1b above). The default-on dependency-aware skip-ahead: when the queue head is BLOCKED or research-gated (bug pipeline: no research, but BLOCKED applies), `bug-state.py` automatically advances to the next `independent: true`-marked queue item (if one exists) — the gated head appears in the `gated_heads` probe key. Pass `--strict-research-halt` to restore the legacy halt-on-first-gated-head behavior. `/lazy-bug-batch` (the standalone bug wrapper) does NOT pass these flags by default — they are threaded from the CLI arguments through every state probe. Environment-agnostic: same flag semantics on `bug-state.py` and `lazy-state.py`.
 
 ---
 

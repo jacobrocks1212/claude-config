@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: feature-budget-guard-and-skip-ahead
-status: In-progress
+status: Complete
 complexity: mechanical
 phases: [4]
 ---
@@ -87,8 +87,8 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — Batch-wrapper coupled-pair lockstep + parity manifest mechanic set
-- [ ] WU-2 — Single-step wrapper lockstep + `user/scripts/CLAUDE.md` docs + final full-gate run
+- [x] WU-1 — Batch-wrapper coupled-pair lockstep + parity manifest mechanic set
+- [x] WU-2 — Single-step wrapper lockstep + `user/scripts/CLAUDE.md` docs + final full-gate run
 
 ---
 

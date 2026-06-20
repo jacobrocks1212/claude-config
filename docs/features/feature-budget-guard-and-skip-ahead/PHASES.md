@@ -157,19 +157,19 @@ Hermetic `--test` fixtures building multi-feature queues with a gated head + dow
 **Scope:** Mirror the new flags, terminals, probe fields, and notification glue into the four thin wrappers in lockstep, register the new mechanic sets in the parity manifest, and confirm `lazy_parity_audit.py` is green and all baselines regenerated. This is the COUPLED-PAIR lockstep slice — no new state-machine logic, only the orchestrator-facing glue and the parity contract.
 
 **Deliverables:**
-- [ ] `/lazy-batch` (`user/skills/lazy-batch/SKILL.md`) — add the `--per-feature-cycle-cap` and `--strict-research-halt` flags to its flag/CLI surface; add the `budget_guard` trip → PushNotification glue (reporting the COMPUTED ceiling + next-id); add the skip-ahead default-on note + gated-head end-of-run flush; update the State Machine Summary / terminal table with the new budget-exhaustion + all-gated terminals.
-- [ ] `/lazy-batch-cloud` (`repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`) — mirror the above; update its "Differences from /lazy-batch" block ONLY where a genuine divergence exists (none expected — both pass the same flags; the budget guard + skip-ahead are environment-agnostic).
-- [ ] `/lazy` (`user/skills/lazy/SKILL.md`) ↔ `/lazy-cloud` (`repos/algobooth/.claude/skills/lazy-cloud/SKILL.md`) — mirror any wrapper prose that surfaces the new flags/terminals (single-step variants; they pass the flags through but do not loop). Diff one against the other immediately after editing per the Coupling Rule.
-- [ ] `lazy-parity-manifest.json` — register the new flags/CLI args as a mechanic set so `lazy_parity_audit.py` asserts both state scripts carry the `--per-feature-cycle-cap` and `--strict-research-halt` parse surface (and the mirrored param threading).
-- [ ] `user/CLAUDE.md` (`user/scripts/CLAUDE.md`) — document the new CLI flags in the CLI-surface block and the per-feature budget guard + skip-ahead behavior, matching the existing `--park-*` / `--skip-needs-research` doc style.
-- [ ] Tests: `lazy_parity_audit.py` green; `lazy-state.py --test`, `bug-state.py --test`, `lazy_coord.py --test` all green; `test_lazy_core.py` green; baselines match.
+- [x] `/lazy-batch` (`user/skills/lazy-batch/SKILL.md`) — add the `--per-feature-cycle-cap` and `--strict-research-halt` flags to its flag/CLI surface; add the `budget_guard` trip → PushNotification glue (reporting the COMPUTED ceiling + next-id); add the skip-ahead default-on note + gated-head end-of-run flush; update the State Machine Summary / terminal table with the new budget-exhaustion + all-gated terminals.
+- [x] `/lazy-batch-cloud` (`repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`) — mirror the above; update its "Differences from /lazy-batch" block ONLY where a genuine divergence exists (none expected — both pass the same flags; the budget guard + skip-ahead are environment-agnostic).
+- [x] `/lazy` (`user/skills/lazy/SKILL.md`) ↔ `/lazy-cloud` (`repos/algobooth/.claude/skills/lazy-cloud/SKILL.md`) — mirror any wrapper prose that surfaces the new flags/terminals (single-step variants; they pass the flags through but do not loop). Diff one against the other immediately after editing per the Coupling Rule.
+- [x] `lazy-parity-manifest.json` — register the new flags/CLI args as a mechanic set so `lazy_parity_audit.py` asserts both state scripts carry the `--per-feature-cycle-cap` and `--strict-research-halt` parse surface (and the mirrored param threading).
+- [x] `user/CLAUDE.md` (`user/scripts/CLAUDE.md`) — document the new CLI flags in the CLI-surface block and the per-feature budget guard + skip-ahead behavior, matching the existing `--park-*` / `--skip-needs-research` doc style.
+- [x] Tests: `lazy_parity_audit.py` green; `lazy-state.py --test`, `bug-state.py --test`, `lazy_coord.py --test` all green; `test_lazy_core.py` green; baselines match.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_parity_audit.py` exits 0 (both scripts carry the new mechanic set) AND `python3 user/scripts/lazy-state.py --test` + `python3 user/scripts/bug-state.py --test` both pass with baselines matching.
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] `lazy_parity_audit.py` green (new mechanic set asserted on both scripts) <!-- verification-only -->
-- [ ] `python3 user/scripts/project-skills.py` re-run; the four wrappers' projected output expands cleanly (no broken `!cat` injections, no divergence the audit flags) <!-- verification-only -->
-- [ ] `lint-skills.py --check-projected --check-capabilities` clean <!-- verification-only -->
+- [x] `lazy_parity_audit.py` green (new mechanic set asserted on both scripts) <!-- verification-only -->
+- [x] `python3 user/scripts/project-skills.py` re-run; the four wrappers' projected output expands cleanly (no broken `!cat` injections, no divergence the audit flags) <!-- verification-only -->
+- [x] `lint-skills.py --check-projected --check-capabilities` clean <!-- verification-only -->
 
 **Prerequisites:**
 - Phases 1–3: the state-machine flags, probe fields, and terminals the wrappers surface.
@@ -187,6 +187,13 @@ Run the FULL gate set per the Coupling Rule: `lazy-state.py --test`, `bug-state.
 **Integration Notes for Next Phase:**
 - This is the terminal phase. When the last deliverable lands, set the top-level PHASES `**Status:**` to `In-progress` (implementation done, validation pending) and let the state machine route to the Step-9 MCP gate, which is expected to grant a structural MCP-skip (no app surface). Do NOT flip to Complete — that is the `__mark_complete__` gate's job.
 - Phase-N follow-ups noted but OUT of v1 scope (record in Implementation Notes if hit): (a) composite trip signal (cycles + validation-blocks + corrective-phase-count); (b) `independent: true` marker backfill across the existing queue; (c) priority-inversion mitigation (recursively degrade priority of a deferred feature's downstream dependents); (d) file-touch-target validation / per-skip Git-branch isolation for skip-ahead hardening.
+
+**Implementation Notes (2026-06-20, Phase 4 landed — INLINE execution under /lazy-batch, no Agent calls; plan part-3):**
+- **WU-1 (`/lazy-batch` + `/lazy-batch-cloud` lockstep):** Added `--per-feature-cycle-cap <N>` and `--strict-research-halt` to argument-hint, flag docs, and unknown-token error in both files. Added `queue-exhausted-budget-deferred` to §1b terminal handling + §1c.6 halt list. Added §1c.6 point 5 budget-guard trip PushNotification (reads `budget_guard` probe field, fires per-trip). Added gated-heads flush table to Step 2 Final Batch Report. Added State Machine Summary budget-guard + skip-ahead note with NO-cloud-divergence annotation. Added "Budget guard" row to `lazy-batch-cloud`'s "Differences from /lazy-batch" table. Coupled-pair diff comments added at bottom of each file.
+- **WU-2 (`/lazy` + `/lazy-cloud` lockstep):** Added `queue-exhausted-budget-deferred` to Step 2b clean-stop terminals table. Added budget-guard + skip-ahead note to State Machine Summary in both files. No flag pass-through needed (single-step wrappers do not expose CLI flags to users; flags are batch-runner concerns).
+- **Parity manifest + lazy-bug-batch:** `lazy_parity_audit.py` initially returned C1/C3 failures on `lazy-bug-batch` (missing patterns and heading entry) and a C1 failure on `lazy-batch-cloud` (missing heading entry). Fixed by: (a) adding `per-feature-cycle-cap` and `strict-research-halt` patterns + `queue-exhausted-budget-deferred` terminal + §1c.6 point 5 + gated-heads table + State Machine note to `lazy-bug-batch/SKILL.md`; (b) registering `### Gated heads skipped` heading in the manifest for both the `lazy-bug-batch` and `lazy-batch-cloud` pairs.
+- **`user/scripts/CLAUDE.md` CLI surface:** added two new flag entries (`--per-feature-cycle-cap` and `--strict-research-halt`) with full behavior descriptions in the existing CLI-surface block.
+- **Gates (full suite, 2026-06-20):** `lazy-state.py --test` (all smoke tests passed), `bug-state.py --test` (all smoke tests passed), `test_lazy_core.py` (623/623 passed), `lazy_parity_audit.py --repo-root .` (exit 0, no failures), `project-skills.py` (80 skills, no errors), `lint-skills.py --check-projected --check-capabilities` (OK — no broken or embedded patterns, no capability pollution). All green.
 
 ## Completion (gate-owned)
 

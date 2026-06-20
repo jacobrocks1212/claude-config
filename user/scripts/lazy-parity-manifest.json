@@ -7,7 +7,9 @@
       {"id": "two-gate-terminal",      "assert": {"type": "regex_present", "pattern": "MCP-coverage audit.*completion-integrity"}},
       {"id": "output-contract-voice",  "assert": {"type": "regex_present", "pattern": "orchestrator-voice\\.md"}},
       {"id": "completeness-policy",    "assert": {"type": "regex_present", "pattern": "completeness-policy\\.md"}},
-      {"id": "stop-authorization-hc10","assert": {"type": "regex_present", "pattern": "operator-authorized"}}
+      {"id": "stop-authorization-hc10","assert": {"type": "regex_present", "pattern": "operator-authorized"}},
+      {"id": "per-feature-cycle-cap",  "assert": {"type": "regex_present", "pattern": "per-feature-cycle-cap"}},
+      {"id": "strict-research-halt",   "assert": {"type": "regex_present", "pattern": "strict-research-halt"}}
     ],
     "lazy": [
       {"id": "mark-terminal-two-gate", "assert": {"type": "regex_present", "pattern": "completion-integrity"}},
@@ -180,6 +182,11 @@
           "heading": "### Completeness-policy applications (D7)",
           "coverage": "restated",
           "evidence": "Completeness-policy applications"
+        },
+        {
+          "heading": "### Gated heads skipped (dependency-aware skip-ahead)",
+          "coverage": "restated",
+          "evidence": "Gated heads skipped"
         },
         {
           "heading": "## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)",
@@ -399,6 +406,11 @@
           "heading": "### Completeness-policy applications (D7)",
           "coverage": "restated",
           "evidence": "Completeness-policy applications"
+        },
+        {
+          "heading": "### Gated heads skipped (dependency-aware skip-ahead)",
+          "coverage": "restated",
+          "evidence": "Gated heads skipped"
         },
         {
           "heading": "## Step 3: Cycle Output Discipline (orchestrator-voice.md is the binding contract)",

@@ -136,6 +136,7 @@ PushNotify with `notify_message` and STOP, with cloud-specific after-bookends:
 | `all-features-complete` | Roadmap done |
 | `cloud-queue-exhausted` | Every remaining feature is cloud-saturated; workstation /lazy is needed to finalize |
 | `device-queue-exhausted` | A remaining feature carries `DEFERRED_REQUIRES_DEVICE.md` (real-device-only assertions) but no `DEFERRED_NON_CLOUD.md`. Cloud has no device either — surface it and tell the user a **real-device** /lazy host is needed to certify the deferred scenarios. (Rare in cloud: cloud-saturated features normally carry `DEFERRED_NON_CLOUD.md` and hit `cloud-queue-exhausted` first.) |
+| `queue-exhausted-budget-deferred` | Budget guard: all remaining queue items are budget-deferred/evicted to the queue tail (no independent successor to skip-ahead to). Not `all-features-complete` — the roadmap is not finished; features were over-budget. Re-run `/lazy-cloud` to continue; deferred features reappear at the queue tail with fresh cycle counts. NO cloud divergence — same behavior as `/lazy`. |
 | `queue-missing` | queue.json missing |
 
 For `cloud-queue-exhausted`, the status bookend's "Next `/lazy` (workstation) will:" line should explicitly say "Run MCP tests for each deferred feature, in queue order".
@@ -280,3 +281,5 @@ sub_skill = real skill?                                    → Skill({skill, arg
 ```
 
 This skill and the paired `/lazy` are coupled per CLAUDE.md — their only intended divergence is whether they pass `--cloud` to lazy-state.py. Any state-machine change goes into the script, not into prose duplicated between the two skills.
+
+**Budget guard + skip-ahead (feature-budget-guard-and-skip-ahead). NO cloud divergence.** When `lazy-state.py --cloud` is passed `--per-feature-cycle-cap <N>`, the budget guard caps each feature at N cycles; an over-budget feature is deferred to the queue tail (`action: defer|evict`, surfaced in the `budget_guard` probe field). When all remaining items are budget-deferred and no independent successor exists, the terminal is `queue-exhausted-budget-deferred` (see Step 2b above). The default-on dependency-aware skip-ahead: when the queue head is research-gated or BLOCKED, `lazy-state.py --cloud` automatically advances to the next `independent: true`-marked queue item (if one exists) — the gated head appears in the `gated_heads` probe key. Pass `--strict-research-halt` to restore the legacy halt-on-first-gated-head behavior. `/lazy-cloud` (the single-step wrapper) does NOT pass these flags by default — they are batch-runner flags threaded from `/lazy-batch-cloud` through every state probe. Environment-agnostic: same flag semantics on `lazy-state.py --cloud` and without `--cloud`.

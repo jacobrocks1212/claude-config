@@ -1,7 +1,7 @@
 ---
 name: lazy-batch
 description: Autonomous orchestrator for the AlgoBooth (or any queue.json-driven) feature pipeline. Loops on lazy-state.py, spawns one Opus subagent per cycle, and drives the full tail (/spec → /plan-feature → /execute-plan → /mcp-test → __mark_complete__). A halt for any reason other than max-cycles presents an AskUserQuestion resolution path and resumes — only max-cycles, all-features-complete, environment-exhaustion, and missing-queue remain clean stops. Terminal action is __mark_complete__, gated by the MCP-coverage audit + completion-integrity gate. (The /retro step is unwired — 2026-06.)
-argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park]
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -63,9 +63,13 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 - **`--park`** (optional flag) → sets `park_mode = true`. Default `false`. Enables "park-and-continue" mode. **This flag is opt-in and off by default. Without it, the orchestrator's behavior is byte-for-byte the existing one** — a `NEEDS_INPUT.md` halts the loop into the existing Step 1g resolution-and-wait. The `--park` flag may appear in any position relative to the cycle-count arg (e.g. `/lazy-batch --park 30` and `/lazy-batch 30 --park` are equivalent). The full park/flush/auto-accept semantics (what happens when park mode is active) are defined in Steps 1g, 1h, and 1i of this skill — this token purely enables the mode.
 
+- **`--per-feature-cycle-cap <N>`** (optional flag) → pass `--per-feature-cycle-cap <N>` to every `lazy-state.py` probe invocation in Step 1a, overriding the dynamically-computed per-feature ceiling `L_task` with a fixed integer `N`. Default (flag absent): `lazy-state.py` computes `L_task = max(6, min(⌊C_global × 0.4⌋, ⌊(C_global / Q_depth) × 2⌋))`. Use this flag when you want a deterministic per-feature cap regardless of run size or queue depth. The orchestrator itself does NOT compute the ceiling — that is `lazy-state.py`'s job; this flag merely threads the override in. When the budget guard trips, the `budget_guard` probe field surfaces the computed (or overridden) ceiling in the PushNotification (see §1c.6 budget-guard notification).
+
+- **`--strict-research-halt`** (optional flag) → pass `--strict-research-halt` to every `lazy-state.py` probe invocation in Step 1a, restoring the legacy halt-on-first-gated-head behavior (disabling the default-on dependency-aware skip-ahead). **Default (flag absent):** the new dependency-aware skip-ahead is ON — when the queue head is research-gated or BLOCKED, `lazy-state.py` automatically advances to the next independent, `independent: true`-marked queue item (if one exists) instead of halting immediately. Pass `--strict-research-halt` only when you want the pre-feature strict behavior (halt as soon as the queue head is gated, regardless of downstream items). The gated head is always surfaced (notification + end-of-run flush in the batch report) regardless of whether skip-ahead advanced past it.
+
 Unknown tokens are an error:
 
-> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park]`.
+> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]`.
 
 **Standing-directive echo-back protocol (Deliverable C):** mid-run operator messages that imply a change to the orchestrator's operating mode MUST be acknowledged with a single `AskUserQuestion` echo-back BEFORE the mode takes effect. A "standing directive" is any message that implies one of:
 
@@ -425,6 +429,7 @@ If `terminal_reason` is set:
 - **`stale_upstream`**: an upstream feature/work-item this feature was materialized from changed since materialize. See Step 1i (operator-directed halt-resolution): re-print the gap and `AskUserQuestion` the path (re-materialize/absorb → re-run materialize or `/realign-spec` / reject the change / defer & continue / halt). `lazy-state.py` emits this (Step 2.9); do NOT auto-resolve.
 - **`all-features-complete`**: a SINGLE-TYPE queue-exhausted terminal — the FEATURE side is done, but the unified driver must NOT stop the whole run if the BUG side still has actionable work. Apply the **option-(b) unified-driver fallthrough** (see the box below) FIRST: probe the OTHER type (`bug-state.py`); only if it too is exhausted do you stop. When BOTH types are exhausted: Run `--run-end`, then PushNotification `"ALL FEATURES COMPLETE — roadmap finished after {forward_cycles} forward + {meta_cycles} meta /lazy-batch cycle(s)."`, print final batch report, STOP.
 - **`queue-exhausted-all-parked`** (`--park` mode only): the queue advanced past every workable feature and every remaining feature is parked (blocked and/or needs-input). This is an HONEST distinct terminal — NOT `all-features-complete` (the roadmap is not finished). FIRST fire the Step 1g-flush (triggers (b)/(c)) so every parked item — needs-input AND blocked (`sentinel_kind`) — is surfaced and resolved at run-end; THEN run `python3 ~/.claude/scripts/lazy-state.py --run-end`, PushNotification `"Queue exhausted — {parked_count} feature(s) parked (blocked/needs-input); surfaced at flush."`, print final batch report, STOP. Do NOT report success.
+- **`queue-exhausted-budget-deferred`**: All remaining queue items were deferred/evicted to the queue tail by the budget guard (no independent successor exists to skip-ahead to). This is NOT `all-features-complete` — the roadmap is not finished; features were over-budget, not done. Fire the budget-guard trip PushNotification (§1c.6 point 5) for the triggering feature, then run `python3 ~/.claude/scripts/lazy-state.py --run-end`, then PushNotification `"lazy-batch halted — queue exhausted by budget guard; {N} feature(s) deferred to queue tail. Re-invoke /lazy-batch to continue."`, print final batch report, STOP. On the next `/lazy-batch` invocation the deferred features reappear at the queue tail with fresh cycle counts.
 - **`cloud-queue-exhausted`**: Unreachable for `/lazy-batch` (workstation variant); treat as `all-features-complete` defensively — run `python3 ~/.claude/scripts/lazy-state.py --run-end` first, then PushNotification, print final batch report, STOP.
 - **`all-bugs-fixed`**: the SINGLE-TYPE bug-side queue-exhausted terminal (reachable for the unified driver when the merged head is `type == bug`). Symmetric to `all-features-complete`: apply the **option-(b) unified-driver fallthrough** (box below) FIRST — probe the OTHER type (`lazy-state.py`); only when BOTH types are exhausted: Run `--run-end`, then PushNotification `"ALL BUGS FIXED — bug queue cleared after {forward_cycles} forward + {meta_cycles} meta /lazy-batch cycle(s)."`, print final batch report, STOP.
 - **`device-queue-exhausted`**: Reachable only on a **no-real-device** workstation (WSL2/CI, where the audio backend is the HeadlessPumpDriver). Every remaining feature carries `DEFERRED_REQUIRES_DEVICE.md` (real-device-only MCP assertions that cannot be certified here). Run `--run-end`, then PushNotification with `notify_message`, print final batch report, STOP. The honest resume is a real-device host: tell the user to set `ALGOBOOTH_REAL_AUDIO_DEVICE=1` (or run on native hardware) and re-run `/lazy-batch` — there the same features RE-OPEN (Step 9 dispatches `/mcp-test` scoped to the deferred scenario IDs as ordinary cycles) and complete. This is the device-axis mirror of `cloud-queue-exhausted`. Note: the **re-open dispatch itself needs no special handling** — on a real-device host the state script emits `sub_skill: mcp-test` for the deferred scenarios, which runs as a normal cycle.
@@ -455,7 +460,7 @@ Print final batch report, STOP. Do NOT try to renew the cap automatically — th
 The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
 
 1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) **Wording branches on the entry's `sentinel_kind`:** for a **needs-input** park, the message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`, and the T5 chat line is `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)`. For a **blocked** park (`sentinel_kind == "blocked"`, `decision_count == 0`), it reads as a parked BLOCK with the blocker's phase: message `"parked {feature_name} — BLOCKED ({phase}); deferred to flush ({parked_count} parked this run)"`, T5 chat line `⏸ parked {feature_name} — BLOCKED ({phase}) · notified ({parked_count} parked this run)` (read `{phase}` from the parked entry / the `BLOCKED.md` frontmatter). Both branches are governed by the SAME dedup set (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
-2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `queue-missing`, `all-features-complete`, `queue-exhausted-all-parked` (`--park` mode — after the flush), `max-cycles`, `device-queue-exhausted`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
+2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `queue-missing`, `all-features-complete`, `queue-exhausted-all-parked` (`--park` mode — after the flush), `queue-exhausted-budget-deferred` (budget-guard — all items deferred to queue tail), `max-cycles`, `device-queue-exhausted`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
 
    **`--run-end` is MANDATORY before EVERY terminal/halt PushNotification.** On every path listed above, call `python3 ~/.claude/scripts/lazy-state.py --run-end` BEFORE the PushNotification fires. `--run-end` deletes the run marker AND the prompt registry (all run-scoped enforcement state). A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades. The call is idempotent — if the marker is already absent (e.g. `--run-start` failed earlier), `--run-end` exits cleanly.
 
@@ -470,6 +475,13 @@ The orchestrator fires `PushNotification` at exactly four canonical event points
    **`--terminal-reason <reason>` (SHOULD — deprecated to omit).** When ending a run on a genuine terminal (not an operator-authorized checkpoint), pass `--run-end --reason terminal --terminal-reason <reason>` where `<reason>` is one of the sanctioned set: `all-features-complete`, `all-bugs-fixed`, `max-cycles`, `cloud-queue-exhausted`, `device-queue-exhausted`, `queue-missing`, `blocked-halt-for-manual`, `needs-research`, `queue-blocked-on-research`. The script validates `<reason>` against `lazy_core.SANCTIONED_STOP_TERMINAL` — an unsanctioned reason requires `--operator-authorized` or the call is refused (exit 1, marker kept). Omitting `--terminal-reason` is back-compat (the script infers `terminal` if `--reason` is absent) but is deprecated; include it for stop-authorization validation and retro auditability. (Phase 7 / lazy-validation-readiness.)
 3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-batch flush — {N} parked decision(s) ready for your input"`.
 4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
+5. **budget-guard trip** (both modes, when budget guard fires mid-cycle) — fired ONCE per feature that the budget guard defers/evicts (the `budget_guard` probe field is non-null in the cycle's probe output). The orchestrator reads the `budget_guard` field from the probe JSON and fires:
+
+   ```
+   PushNotification({ message: "feature-budget-guard tripped — {budget_guard.feature_id} deferred to queue tail after {budget_guard.count_at_trip} cycles (computed ceiling {budget_guard.computed_ceiling}); advancing to {budget_guard.next_id}" })
+   ```
+
+   This is distinct from a terminal notification — the run CONTINUES (the guard defers the over-budget feature and advances to the next independent item, if one exists). A trip notification fires in-cycle, not at halt. If the budget guard trips AND the resulting terminal is `queue-exhausted-budget-deferred` (all remaining items are budget-deferred with no independent successor), the trip notification fires first, then the halt notification fires (point 2 above).
 
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
@@ -1081,6 +1093,23 @@ When the loop exits (terminal state or max-cycles), print:
 
 *(One row per `⚖ policy:` application across the run — Step 1g scope resolutions, Step 1h sequencing-only blocker resolutions, parked-flush Step 2.4 backstop resolutions, Gate-1 coverage routings, and cycle-subagent in-cycle applications disclosed in their summaries. This table is the run-end audit trail required by `completeness-policy.md` Logging; an application with no row here is an R-D7-2 fail.)*
 
+*(Print the following block ONLY when the `gated_heads` probe key was non-empty at any point during the run — i.e., the dependency-aware skip-ahead advanced past one or more research-gated or BLOCKED queue heads. Omit entirely otherwise.)*
+
+```
+### Gated heads skipped (dependency-aware skip-ahead)
+
+The following queue items were gated (research-pending or BLOCKED) and bypassed by the skip-ahead
+when an independent successor was available. They remain in the queue at their original position
+and will be the head of the next `/lazy-batch` invocation (or can be addressed manually).
+
+| Feature | Reason gated | Skipped-to |
+|---------|--------------|------------|
+| {feature_name} ({feature_id}) | {needs-research | blocked} | {next_id advanced to} |
+| ... | ... | ... |
+```
+
+*(One row per unique feature_id that appeared in any `gated_heads` probe key during the run. The gated-head flush surfaces the skip-ahead chain for operator awareness — the features were NOT dropped or deferred; they remain the queue head. `--strict-research-halt` disables this behavior entirely (no skip-ahead, no flush needed).)*
+
 Framing prose around the final report is capped at **≤2 sentences total (T7 per orchestrator-voice.md)** — the cycle table, counters, parked/auto-accept/D7 digests, terminal reason, and Next-step lines carry all required content.
 
 STOP.
@@ -1397,4 +1426,14 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
        Mirrored across all three: bug orchestrator brackets with bug-state.py (--bug-id maps to the
        marker's feature_id); cloud passes --cloud to lazy-state.py. The bracket itself is NOT a
        cloud divergence (identical shape). -->
+<!-- feature-budget-guard-and-skip-ahead Phase 4 (2026-06-20) — coupled-pair mirror note:
+       - WU-1: argument-hint + flag-parsing block gained `--per-feature-cycle-cap <N>` and
+         `--strict-research-halt` entries (authored in lazy-batch; mirrored into lazy-batch-cloud).
+       - WU-1: §1c.6 PushNotification policy gained point 5 (budget-guard trip notification).
+       - WU-1: terminal table gained `queue-exhausted-budget-deferred`.
+       - WU-1: Step 2 Final Batch Report gained "Gated heads skipped" flush block.
+       NO cloud divergence for any of these — budget guard + skip-ahead are environment-agnostic
+       (lazy_core.py / lazy-state.py state machine logic; the wrappers pass the flags through
+       identically). See lazy-batch-cloud "Differences from /lazy-batch" — these items appear as
+       "NO divergence" rows. -->
 
