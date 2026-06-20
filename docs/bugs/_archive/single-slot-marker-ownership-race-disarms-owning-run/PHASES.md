@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — both phases implemented + gated (2026-06-20); validation/`__mark_fixed__` tail pending (SPEC.md status flip + `FIXED.md` are gate-owned, not flipped here).
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a pure harness-script (`lazy_core.py` / `lazy_guard.py` / state-machine) change with no AlgoBooth app surface; per docs/features/mcp-testing/SPEC.md it falls in the "build/tooling, no app integration" untestable class. Validation is the in-file `--test` smoke harness + `test_lazy_core.py` + `lazy_parity_audit.py`, not the Tauri/MCP runtime.
 

@@ -2,9 +2,11 @@
 
 > A run marker's owner is a SINGLE mutable `session_id` slot, stamped first-writer-wins by an allow-time bind. The slot is now well-protected against OVERWRITE (clobber-refused, idempotent re-bind), but it carries NO fencing token and the owning run has NO detect/re-arm path: if the slot is ever stamped with the WRONG session (a pre-allow bind race, or a non-orchestrator allow), the TRUE owner's own dispatches read "owned by someone else → `read_run_marker` returns None → fast-path ALLOW" — silently disarming the guard mid-run with no signal.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-20
+**Fix commit:** 64b20d6
 **Placement:** docs/bugs/single-slot-marker-ownership-race-disarms-owning-run
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks); SPLIT OUT from `stale-marker-arms-validate-deny-on-unrelated-dispatches` per its Resolved Decision D3=A (the over-fire and under-fire were scoped apart so each gets a dedicated investigation + deterministic fixture).
 **Origin (REVERSE-REFERENCE — D3=A spin-off):** `docs/bugs/_archive/stale-marker-arms-validate-deny-on-unrelated-dispatches/` — this bug is the SPLIT-OUT under-fire half. The origin's SPEC `## Resolved Decisions` D3 and its `PHASES.md` Cross-feature Integration Notes name this spin-off; this SPEC names that origin. The origin fixed the over-fire (D1 session-blind gate + D2 no pipeline discriminator); this bug owns the residual single-slot ownership race ONLY.

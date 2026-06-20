@@ -33,7 +33,7 @@ No upstream `**Depends on:**` block (harness-internal bug, not a queue feature).
 
 **SPLIT-OUT FOLLOW-UP (D3=A — under-fire ownership race):** the residual single-slot marker-ownership race (a marker overwrite / wrong-session bind makes the true owner read "owned by someone else → allow", silently disarming enforcement mid-run) is OUT OF SCOPE here and is spun off to a dedicated bug:
 
-- **Spin-off bug:** `docs/bugs/single-slot-marker-ownership-race-disarms-owning-run/`
+- **Spin-off bug:** `docs/bugs/_archive/single-slot-marker-ownership-race-disarms-owning-run/`
 - **Reverse-reference contract (both directions):** this PHASES.md (the origin) names the spin-off here; the spin-off's SPEC names this origin (`stale-marker-arms-validate-deny-on-unrelated-dispatches`) as its origin. The spin-off carries Theory 2, Proven Finding #2, the under-fire Reproduction Steps, and the marker-ownership-model Affected-Area row — all documented in THIS SPEC as the origin record but deferred from THIS PHASES.md.
 
 ---
