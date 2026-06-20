@@ -7168,12 +7168,32 @@ def main() -> int:
         sys.stdout.write(json.dumps(head) + "\n")
         return 0
 
-    # unified-pipeline-orchestrator Phase 5: --ensure-runtime — structured
-    # runtime status (the Step-1d.0 dance). Production uses the real urllib
-    # probe + dev:restart; the AlgoBooth specifics live in lazy_core's default
-    # config dict (repo-agnostic parameterization).
+    # unified-pipeline-orchestrator Phase 5 / long-build-and-runtime-ownership
+    # Phase 2 (LD2/LD3): --ensure-runtime — the M4 liveness/recovery verdict
+    # {state, ownership_verified, health_code, mcp_tools_present, terminal_blocker}
+    # (the Step-1d.0 dance). Production uses the real urllib probe + dev:restart;
+    # the AlgoBooth specifics live in lazy_core's default config dict (repo-agnostic
+    # parameterization).
+    #
+    # Identity is engaged by threading the LIVE run identity as live_session_id:
+    # the run marker's session_id is the controller_session_id recorded into
+    # `.runtime.lock.json` (Phase 1 Integration Note — the run marker is the stable
+    # run identity, NOT a second minted id). With a live marker the handler emits
+    # the verifiable-ownership verdict (READY/STALE/HIJACKED/DEAD/BLOCKED); with no
+    # marker (interactive, no run) live_session_id is None → ensure_runtime falls
+    # back to the legacy boot/ready flow (still a verdict superset). Best-effort:
+    # a marker-read error degrades to legacy mode, never blocks the subcommand.
     if args.ensure_runtime:
-        result = lazy_core.ensure_runtime(Path(args.repo_root))
+        live_session_id = None
+        try:
+            _marker = lazy_core.read_run_marker()
+            if isinstance(_marker, dict):
+                live_session_id = _marker.get("session_id")
+        except Exception:  # noqa: BLE001 — fail-open to legacy mode
+            live_session_id = None
+        result = lazy_core.ensure_runtime(
+            Path(args.repo_root), live_session_id=live_session_id
+        )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 

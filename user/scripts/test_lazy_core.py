@@ -18596,6 +18596,145 @@ def test_ensure_runtime_m4_ready_does_no_recovery():
         assert result["terminal_blocker"] is None, result
 
 
+# ---------------------------------------------------------------------------
+# long-build-and-runtime-ownership Phase 2 — WU-3: surface the M4 verdict through
+# the `lazy-state.py --ensure-runtime` CLI handler. The handler threads the live
+# run marker's session_id as live_session_id (the controller_session_id recorded
+# into `.runtime.lock.json`) so production emits the verifiable-ownership verdict.
+# ---------------------------------------------------------------------------
+
+_M4_KEYS = {"state", "ownership_verified", "health_code", "mcp_tools_present",
+            "terminal_blocker"}
+
+
+def _ensure_runtime_via_marker(repo_root, marker_session_id, **inject):
+    """Mirror the lazy-state.py --ensure-runtime handler wiring in-process:
+    derive live_session_id from a marker session_id, then call ensure_runtime.
+    (The handler itself is a thin marker-read + delegate; this asserts the same
+    contract hermetically without firing the real urllib probe / dev:restart.)"""
+    return lazy_core.ensure_runtime(
+        Path(repo_root), live_session_id=marker_session_id, **inject
+    )
+
+
+def test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states():
+    """The handler's marker-session→live_session_id→ensure_runtime wiring yields a
+    JSON-serializable verdict carrying ALL five M4 keys, and the `state` tracks the
+    injected scenario across READY/STALE/HIJACKED/DEAD/BLOCKED."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sid = "live-run-session"
+        # An owned lock whose controller_session_id IS the marker session id (the
+        # handler threads the marker session as live_session_id).
+        owned = {**_owned_lock(start_time=100.0), "controller_session_id": sid}
+
+        # READY: owned + current + healthy.
+        ready = _ensure_runtime_via_marker(
+            td, sid, config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True, stale_check=lambda: False,
+            read_lock=lambda: owned, kernel_start_time_fn=lambda p, **k: 100.0,
+            sleep=lambda s: None,
+        )
+        # HIJACKED: foreign session + live divergent owner answering health.
+        hijacked = _ensure_runtime_via_marker(
+            td, sid, config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True, stale_check=lambda: False,
+            read_lock=lambda: {**owned, "controller_session_id": "foreign"},
+            kernel_start_time_fn=lambda p, **k: 999.0, sleep=lambda s: None,
+        )
+        # BLOCKED: owned DEAD that never recovers.
+        blocked = _ensure_runtime_via_marker(
+            td, sid, config=_M4_CONFIG,
+            probe=lambda: (0, None),
+            restart=lambda: True, stale_check=lambda: False,
+            read_lock=lambda: owned, kernel_start_time_fn=lambda p, **k: 100.0,
+            sleep=lambda s: None,
+        )
+        for verdict in (ready, hijacked, blocked):
+            assert _M4_KEYS.issubset(verdict.keys()), verdict
+            # JSON-serializable (the handler json.dumps it).
+            json.dumps(verdict)
+        assert ready["state"] == "READY", ready
+        assert hijacked["state"] == "HIJACKED", hijacked
+        assert blocked["state"] == "BLOCKED", blocked
+
+
+def test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset():
+    """No live run marker → live_session_id None → ensure_runtime runs the legacy
+    boot/ready flow but STILL returns the verdict superset (state + the retained
+    legacy fields), so the CLI never emits a key-missing dict."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # live_session_id None + no Identity callables → legacy mode.
+        result = lazy_core.ensure_runtime(
+            Path(td), config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True, stale_check=lambda: False,
+        )
+        assert _M4_KEYS.issubset(result.keys()), result
+        assert result["state"] in lazy_core._RUNTIME_STATES, result
+        assert result["health_code"] == 200, result
+        assert "status" in result, "legacy status field must be retained"
+
+
+def test_ensure_runtime_cli_handler_emits_m4_json_subprocess():
+    """End-to-end: `lazy-state.py --ensure-runtime` prints valid JSON carrying the
+    M4 keys. Uses the HIJACKED scenario (a planted marker + a foreign-session lock
+    whose recorded PID is this live test process) so the handler returns IMMEDIATELY
+    — never entering the recovery loop (no real dev:restart, no 7.5-min health
+    poll) — while still exercising the real handler + marker-read + verdict print."""
+    _guard()
+    import datetime
+    with tempfile.TemporaryDirectory(prefix="ensure-rt-cli-") as state_dir, \
+            tempfile.TemporaryDirectory(prefix="ensure-rt-repo-") as repo_root:
+        sid = "cli-live-run"
+        # Plant a run marker (session_id = sid) in the pinned state dir. Use a
+        # current-ish ISO-8601 'Z' started_at so the 24h age-staleness path does
+        # not delete it before the handler reads it.
+        _started_at = (
+            datetime.datetime.now(datetime.timezone.utc)
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+        )
+        marker = {
+            "session_id": sid,
+            "started_at": _started_at,
+            "pipeline": "feature",
+            "repo_root": str(repo_root),
+        }
+        (Path(state_dir) / "lazy-run-marker.json").write_text(
+            json.dumps(marker), encoding="utf-8"
+        )
+        # Plant `.runtime.lock.json`: FOREIGN controller_session_id (≠ marker sid)
+        # + recorded PID = THIS live process (kernel_start_time resolves to a real
+        # float) + a recorded start_time that will NOT match it (1.0) → ownership
+        # fails on session AND start_time, live PID → HIJACKED (immediate return).
+        (Path(repo_root) / ".runtime.lock.json").write_text(
+            json.dumps({
+                "controller_session_id": "foreign-session",
+                "pid": os.getpid(),
+                "start_time": 1.0,
+                "port": 3333,
+                "artifact_hash": "x",
+            }),
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"),
+             "--ensure-runtime", "--repo-root", str(repo_root)],
+            capture_output=True, text=True,
+            env={**os.environ, "LAZY_STATE_DIR": state_dir},
+            timeout=60,
+        )
+        assert result.returncode == 0, (result.returncode, result.stderr)
+        payload = json.loads(result.stdout)
+        assert _M4_KEYS.issubset(payload.keys()), payload
+        assert payload["state"] == "HIJACKED", payload
+        assert payload["ownership_verified"] is False, payload
+        assert payload["terminal_blocker"], payload
+
+
 # ---- WU-2: gate_coverage (symlink-resolving) ----
 
 def _write_spec_with_locked_decisions(spec_dir: Path, decisions: list[tuple[str, str]]):
@@ -18920,6 +19059,13 @@ _TESTS = _TESTS + [
      test_ensure_runtime_m4_hijacked_sets_blocker_never_restarts_never_kills),
     ("test_ensure_runtime_m4_ready_does_no_recovery",
      test_ensure_runtime_m4_ready_does_no_recovery),
+    # long-build-and-runtime-ownership Phase 2 / WU-3: --ensure-runtime CLI surface.
+    ("test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states",
+     test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states),
+    ("test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset",
+     test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset),
+    ("test_ensure_runtime_cli_handler_emits_m4_json_subprocess",
+     test_ensure_runtime_cli_handler_emits_m4_json_subprocess),
     ("test_gate_coverage_symbol_present", test_gate_coverage_symbol_present),
     ("test_gate_coverage_covered_and_uncovered_verdict",
      test_gate_coverage_covered_and_uncovered_verdict),
