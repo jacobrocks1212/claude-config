@@ -2,7 +2,7 @@
 
 > Make the three completion-time gates agree on ONE verification carve-out rule, so a feature whose `/mcp-test` evidence is already on disk is not refused at the finish line over un-ticked verification checkboxes — eliminating the recurring coherence-recovery meta-cycle.
 
-**Status:** Draft (baseline locked — research pending)
+**Status:** Draft
 **Priority:** P1
 **Last updated:** 2026-06-19
 **Tier:** 1
@@ -79,6 +79,41 @@ The change unifies all three gates on ONE evidence-gated rule, removes the coher
 
 **Direction B (rejected) — keep the gate strict; make `/mcp-test` tick the rows.** Considered and rejected: it re-introduces the producer/marker-drift class `harness-hardening-retro-fixes` was fighting (a producer ticking the wrong rows, or missing rows authored by `/blocked-resolution`) and spreads the contract across more files than Direction A.
 
+### Research-derived implementation contract (Phase 3 — RESEARCH.md integrated)
+
+The Gemini deep-research pass (`RESEARCH.md`, summarized in `RESEARCH_SUMMARY.md`) **confirmed Direction A** and converted Open Questions 3–5 into the locked contract below. The research frame: the completion gate is an *artifact-normalization* step — it rewrites the human-readable plan to match verifiable on-disk evidence, shielding the naive downstream `check-docs-consistency.ts` (a Verification Summary Attestation / VSA model from SLSA / in-toto prior art). The exemption MUST be governed by the following evidence rules, NOT a blanket relaxation.
+
+**Authoritative-evidence decision table (resolves Open Question 3).** The gate evaluates the *union* of `VALIDATED.md` (attestation envelope) and `MCP_TEST_RESULTS.md` (raw execution provenance) — neither file in isolation is sufficient:
+
+| `VALIDATED.md` | `MCP_TEST_RESULTS.md` | `validated_commit` | Gate action | Rationale |
+|----------------|-----------------------|--------------------|-------------|-----------|
+| present (`kind: validated`) | present (`all-passing`, `pass==total`, `pass>0`) | `== HEAD` | **Exempt-and-tick** | VSA + provenance match, commit fresh |
+| present | missing / malformed | `== HEAD` | **Refuse** | forged-attestation risk (receipt without proof) |
+| missing | present | n/a | **Refuse** | policy/VSA layer never ran |
+| present | present | `!= HEAD` — source/script/config delta | **Refuse-and-revalidate** | TOCTOU: validated code is not the code being promoted |
+| present | present | `!= HEAD` — **docs-only** delta (`*.md`) | **Warn + exempt-and-tick** | only non-executable files changed; safe |
+| `SKIP_MCP_TEST.md` | missing | `== HEAD` | **Refuse** (do NOT tick) | skip ≡ absent evidence; fail-closed unless operator override |
+| `DEFERRED_*` | missing | `== HEAD` | **Refuse** (do NOT tick) | deliverables physically incomplete |
+| neither | neither | n/a | **Refuse** | no evidence of verification execution |
+
+Edge-rule details:
+- **`pass>0` is mandatory** — `pass==total==0` is a known CI false-positive anti-pattern (a suite that passes zero tests). Reject it.
+- **SKIP / DEFERRED fail closed** (resolves Open Question 3 skip/deferred sub-case) — the auto-tick exemption is refused for `SKIP_MCP_TEST.md` / `DEFERRED_*` unless an explicit operator-override marker is present. Because the downstream checker counts every box, the only sound paths are: run the test, or have the agent excise the deliverables from the plan.
+- **HEAD-drift carve-out** — when `validated_commit != HEAD`, inspect the git diff: docs-only (`*.md`) → warn-and-proceed; any source/script/config file → refuse-and-revalidate.
+
+**Auto-tick rewrite contract (resolves Open Question 4 + hardens Decision 2 = A).** When the table yields *exempt-and-tick*, the gate rewrites the matching verification rows and mints the receipt. The rewrite MUST be:
+- **Atomic** — write-to-temp-in-same-dir → `flush()` + `os.fsync()` → `os.replace()`; never `open('r+')` / naive truncating write (mirrors the existing phase-Status auto-flip's safety posture).
+- **Line-anchored + code-fence-safe** — match `^\s*-\s+\[\s+\]` with the `<!-- verification-only -->` marker required on the SAME line; skip lines inside ``` fences. NO global `.replace('- [ ]','- [x]')`.
+- **Auditable** — append a byte-stable `<!-- auto-ticked: validated_commit=<sha> -->` comment to each rewritten row, and record the count of auto-ticked rows in `COMPLETED.md`, so a later auditor distinguishes gate mutations from agent/human edits.
+- **Cardinality-locked (over-relaxation guard)** — assert `auto_tick_count <= pass_count` (from `MCP_TEST_RESULTS.md`); refuse if more rows are slated for ticking than tests passed (catches marker-drift hallucination / forged evidence).
+- **Superseded-aware** — prune (or otherwise satisfy) unchecked boxes under phases marked `Superseded` so the downstream checker does not flag them.
+
+**Downstream checker (resolves Open Question 4).** No `check-docs-consistency.ts` edit is needed: research's final verdict is that an exhaustive auto-tick normalization pass is fully sufficient for the naive count-everything checker, since it evaluates physical `- [x]` state, not semantic intent. This confirms the Decision 2 = A assumption.
+
+**Lint + gate, not lint-or-gate (resolves Open Question 5).** Both layers are required ("Swiss Cheese" defense). Evidence-gating alone is unsafe — a hallucinating agent could attach `<!-- verification-only -->` to a real implementation deliverable, and the gate would auto-tick unwritten code (the cardinality lock above is the gate-side mitigation). Authoring-time lint enforcing the marker only on test-shaped rows is the complementary layer; the MID-feature lint side is partly addressed upstream by `harness-hardening-retro-fixes`. **This feature owns the completion-gate evidence side.**
+
+**Kill-switch (research §8 — reversibility hardening).** Gate the entire relaxation behind an env flag (e.g. `LAZY_STRICT_EVIDENCE_GATE` / `LAZY_DISABLE_AUTOTICK`): when set, fall back to the legacy strict `_phase_completion_plan` and skip the mutation entirely — frictionless rollback without a code revert.
+
 ## Validation Criteria
 
 | Behavior | Trigger | Expected Evidence | Where to Check |
@@ -87,17 +122,33 @@ The change unifies all three gates on ONE evidence-gated rule, removes the coher
 | Feature with REAL unchecked implementation rows still refuses | `__mark_complete__` with a non-verification `- [ ]` row | refusal naming the offending phase, zero writes | `lazy_core.py` smoke harness |
 | Auto-ticked verification rows leave PHASES.md coherent for the downstream checker | post-completion | every checkbox ticked OR phase Superseded | parse PHASES.md; (manually) `check-docs-consistency.ts` clean |
 | `verify_ledger` and `_phase_completion_plan` agree on the same input | `--verify-ledger` then `__mark_complete__` on the same feature | both pass, or both name the same blocking phase | both `--test` suites green |
+| Missing `MCP_TEST_RESULTS.md` (only `VALIDATED.md`) refuses | `__mark_complete__` with `VALIDATED.md` but no/ malformed results | refusal (forged-attestation risk), no auto-tick | `lazy_core.py` smoke harness |
+| Zero-test evidence (`pass==total==0`) refuses | `__mark_complete__` with `all-passing` but `total==0` | refusal (`pass>0` required) | `lazy_core.py` smoke harness |
+| `SKIP_MCP_TEST.md` / `DEFERRED_*` fails closed | `__mark_complete__` with a skip/deferral receipt | refusal, rows NOT ticked | `lazy_core.py` smoke harness |
+| HEAD-drift on source files refuses; docs-only drift proceeds | `validated_commit != HEAD` with (a) a `.py`/script delta vs (b) `*.md`-only delta | (a) refuse-and-revalidate; (b) warn + exempt-and-tick | `lazy_core.py` smoke harness w/ git fixture |
+| Cardinality lock blocks over-tick | `__mark_complete__` where `auto_tick_count > pass_count` | refusal (marker-drift / forged-evidence guard) | `lazy_core.py` smoke harness |
+| Auto-tick is atomic + audited | exempt-and-tick path | temp-file + `os.replace`; each rewritten row carries `<!-- auto-ticked: validated_commit=<sha> -->`; count logged in `COMPLETED.md` | parse PHASES.md + COMPLETED.md |
+| Kill-switch restores legacy strict behavior | `LAZY_STRICT_EVIDENCE_GATE` set, un-ticked verification rows | legacy refusal, zero PHASES.md mutation | `lazy_core.py` smoke harness w/ env override |
 
 ## Open Questions (for `/spec` research + NEEDS_INPUT to resolve)
 
 1. **Reconciliation direction (A vs B above)** — ✅ RESOLVED (operator, 2026-06-19): **A — extend the carve-out to completion time, gated on on-disk evidence.** `_phase_completion_plan` applies the verification-only exemption only when `/mcp-test` evidence certifies passing AND all remaining unchecked rows are verification-marked. Single-repo, reversible change in `lazy_core.py` + smoke tests. See Technical Design (LOCKED).
 2. **On-disk evidence as override vs satisfier** — ✅ RESOLVED (completeness-policy D7, 2026-06-19): **A — auto-tick the certified verification rows.** When evidence certifies passing, the gate rewrites the matching `- [ ]` verification rows to `- [x]` (same byte-stable in-place rewrite as the phase-Status auto-flip), leaving PHASES.md coherent for the downstream `check-docs-consistency.ts` with no sibling-repo edit. Conditional on Decision 1 = A (chosen). See Technical Design (LOCKED).
-3. **Which evidence is authoritative** — `VALIDATED.md` alone, or also `MCP_TEST_RESULTS.md` (result: all-passing, pass==total, validated_commit==HEAD)? `SKIP_MCP_TEST.md` / `DEFERRED_*` cases? *Research-answerable + edge-case mapping.*
-4. **check-docs-consistency.ts reconciliation** — it lives in a repo a harness agent cannot edit. If Direction A auto-ticks the rows, the checker needs no change. Confirm that's the full story, or whether the carve-out must also be mirrored into that script (operator-applied). *Research-answerable.*
-5. **Lint enforcement vs gate relaxation** — is the recurring cycle better fixed by stronger up-front lint (force authors to mark rows correctly) or by the gate honoring evidence? (The upstream marker work already addressed the mid-feature lint side.) *Research-answerable.*
+3. **Which evidence is authoritative** — ✅ RESOLVED (research, 2026-06-19): require the **union** of `VALIDATED.md` (attestation envelope) AND `MCP_TEST_RESULTS.md` (raw provenance: `all-passing`, `pass==total`, `pass>0`), with `validated_commit == HEAD`. Neither file alone suffices. `SKIP_MCP_TEST.md` / `DEFERRED_*` **fail closed** (refuse, do not tick). HEAD-drift on docs-only files warns-and-proceeds; on source/script/config files refuses-and-revalidates (TOCTOU). See the authoritative-evidence decision table in Technical Design.
+4. **check-docs-consistency.ts reconciliation** — ✅ RESOLVED (research, 2026-06-19): **no sibling-repo edit needed.** Auto-ticking is fully sufficient for the naive count-everything checker (it evaluates physical `- [x]` state, not semantic intent), *provided the normalization pass is exhaustive* (covers Superseded phases + variable-whitespace checkboxes). Confirms the Decision 2 = A assumption.
+5. **Lint enforcement vs gate relaxation** — ✅ RESOLVED (research, 2026-06-19): **both** ("Swiss Cheese" defense). Evidence-gate alone is unsafe (a hallucinated marker on an implementation row would auto-tick unwritten code — mitigated gate-side by the cardinality lock); lint alone leaves the friction. This feature owns the completion-gate evidence side; the MID-feature lint side is partly upstream in `harness-hardening-retro-fixes`. See Technical Design.
 
 ## Research References
 
-To be populated in Phase 3 after the Gemini deep-research pass. Upstream reality-check sources read during Phase 1: `harness-hardening-retro-fixes/PHASES.md` Phase 2 (verification-only marker contract), `lazy_core.py` (`_phase_completion_plan`, `verify_ledger`, `remaining_unchecked_are_verification_only`), `user/scripts/CLAUDE.md` (verification-only canonical marker section).
+- **`RESEARCH.md`** — Gemini deep-research report: "Reconciling Redundant Completion Gates in Autonomous AI Pipelines." Frames the fix as CI/CD artifact-normalization governed by a Verification Summary Attestation (VSA) model (SLSA / in-toto prior art). Sources the authoritative-evidence decision table, the atomic-write contract, the cardinality lock, and the kill-switch.
+- **`RESEARCH_SUMMARY.md`** — condensed analysis: confirms Direction A; resolves Open Questions 3–5; lists the implementation contracts `/spec-phases` + `/write-plan` must carry into phases.
+- **`NEEDS_INPUT_RESOLVED_2026-06-19.md`** — operator resolution of Decisions 1–2 (Direction A; auto-tick).
+- Upstream reality-check sources (Phase 1): `harness-hardening-retro-fixes/PHASES.md` Phase 2 (verification-only marker contract), `lazy_core.py` (`_phase_completion_plan` @ ~1824, `verify_ledger` @ ~2017, `remaining_unchecked_are_verification_only` @ ~1419, `__mark_complete__` call site @ ~3097), `user/scripts/CLAUDE.md` (verification-only canonical marker section).
 
-> **Baseline LOCKED (2026-06-19) — stub-shaping pass complete.** This SPEC is no longer a stub: the gating product/ownership decisions (Open Questions 1-2, surfaced via NEEDS_INPUT.md and operator-resolved — see `NEEDS_INPUT_RESOLVED_2026-06-19.md`) are baked into Technical Design (LOCKED): Direction A, evidence-gated, with auto-ticking of certified verification rows. All `lazy_core.py` code references in Current Behavior / Technical Design were code-grounded and verified at the cited locations on 2026-06-19 (`_phase_completion_plan` @ 1777/1838, `remaining_unchecked_are_verification_only` @ 1372, `verify_ledger` @ 1970, `__mark_complete__` call site @ 3050). Open Questions 3-5 remain research-answerable (authoritative-evidence edge cases, downstream-checker confirmation, lint-vs-gate framing) and are harvested into RESEARCH_PROMPT.md by Phase 2 — do not bake the final gate-code edge handling here until research closes them.
+**Key findings that shaped the design:**
+- Require BOTH evidence files (VSA envelope + raw provenance); `pass>0`; `validated_commit == HEAD` with a docs-only-diff carve-out for TOCTOU.
+- SKIP / DEFERRED fail closed — no auto-tick without passing evidence or an operator override.
+- Auto-tick alone satisfies the uneditable downstream `check-docs-consistency.ts` (no sibling-repo edit) — given an exhaustive normalization pass.
+- Atomic write (`os.replace`), line-anchored + code-fence-safe regex, audit-trail comment, cardinality lock, and an env-var kill-switch are mandatory safety mechanisms.
+
+> **Research integrated (2026-06-19) — Phase 3 finalization complete.** The gating product/ownership decisions (Open Questions 1–2, operator-resolved via `NEEDS_INPUT_RESOLVED_2026-06-19.md`) and the research-answerable edge cases (Open Questions 3–5, resolved from `RESEARCH.md`) are now fully baked into Technical Design (LOCKED) → "Research-derived implementation contract." Direction A, evidence-gated, with atomic + audited auto-ticking of certified verification rows, a cardinality over-relaxation guard, and a kill-switch. `lazy_core.py` line references are spec-level anchors verified on 2026-06-19; minor drift from the live file is expected and resolved by symbol name during implementation. Ready for `/spec-phases`.
