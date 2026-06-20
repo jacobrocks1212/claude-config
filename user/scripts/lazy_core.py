@@ -1902,6 +1902,239 @@ def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# evaluate_completion_evidence — authoritative-evidence decision table
+#   (completion-coherence-gate-reconciliation Phase 1).
+#
+# A PURE, side-effect-free read of a feature's on-disk /mcp-test receipts that
+# returns one of three LOCKED verdict literals — ``exempt-and-tick`` /
+# ``warn-exempt`` / ``refuse`` — implementing the SPEC's Technical Design
+# (LOCKED) authoritative-evidence decision table. The completion gate (Phase 3)
+# branches on these literals; once landed they are a contract.
+#
+# It NEVER mutates PHASES.md (that is autotick_verification_rows, Phase 2) and
+# is NOT wired into the completion gate here (Phase 3). The only I/O is reading
+# the sentinel files + (for the HEAD-drift row) one ``git diff --name-only``
+# via the existing subprocess pattern. It reuses parse_sentinel + _current_head
+# and the SAME pass/total/validated_commit parse shape the
+# __write_validated_from_results__ freshness backstop uses — no parallel reader.
+# ---------------------------------------------------------------------------
+
+def _coerce_evidence_count(raw):
+    """Coerce a YAML count field to int, or None. Mirrors the
+    __write_validated_from_results__ ``_coerce_count`` tolerance: a bool is NOT
+    a count (YAML ``True`` is int 1 in Python), an int passes through, and a
+    digit-string (quoted YAML) is coerced.
+    """
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    return None
+
+
+# Sentinel filenames that, in the ABSENCE of passing results, mean "skip" or
+# "defer" — both fail CLOSED (refuse, do NOT tick) per the decision table.
+_FAIL_CLOSED_EVIDENCE_SENTINELS = (
+    "SKIP_MCP_TEST.md",
+    "DEFERRED_NON_CLOUD.md",
+    "DEFERRED_REQUIRES_DEVICE.md",
+)
+
+
+def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
+    """Evaluate a feature's on-disk /mcp-test evidence → completion verdict.
+
+    Returns ``{verdict, reason, pass_count, validated_commit}`` where:
+      - ``verdict`` ∈ {``"exempt-and-tick"``, ``"warn-exempt"``, ``"refuse"``}
+        (the LOCKED contract Phase 3 branches on).
+      - ``reason``  — a human-readable explanation (for diagnostics / receipts).
+      - ``pass_count`` — the cardinality numerator Phase 2's auto-tick asserts
+        against (``int`` on an exempt/warn verdict; ``None`` on most refusals).
+      - ``validated_commit`` — the sha Phase 2 stamps into each auto-tick audit
+        comment (``str`` on exempt/warn; ``None`` when unavailable).
+
+    Decision table (SPEC Technical Design, LOCKED). The gate requires the UNION
+    of VALIDATED.md (kind: validated, the VSA attestation envelope) AND
+    MCP_TEST_RESULTS.md (kind: mcp-test-results, result: all-passing,
+    pass==total, pass>0, the raw provenance) — neither file alone suffices:
+
+      * both present + passing + validated_commit == HEAD → exempt-and-tick
+      * VALIDATED.md present, results missing/malformed       → refuse (forged)
+      * results present, VALIDATED.md missing                 → refuse (no VSA)
+      * SKIP_MCP_TEST.md / DEFERRED_* (no passing results)    → refuse (closed)
+      * pass==total==0                                        → refuse (zero-test)
+      * validated_commit != HEAD, docs-only (*.md) drift      → warn-exempt
+      * validated_commit != HEAD, any source/script/config    → refuse (TOCTOU)
+      * neither file                                          → refuse (no evidence)
+    """
+    def _refuse(reason: str, *, pass_count=None, validated_commit=None) -> dict:
+        return {
+            "verdict": "refuse",
+            "reason": reason,
+            "pass_count": pass_count,
+            "validated_commit": validated_commit,
+        }
+
+    validated_meta = parse_sentinel(feature_dir / "VALIDATED.md")
+    has_validated = (
+        validated_meta is not None
+        and validated_meta.get("kind") == "validated"
+    )
+
+    results_meta = parse_sentinel(feature_dir / "MCP_TEST_RESULTS.md")
+    has_results_kind = (
+        results_meta is not None
+        and results_meta.get("kind") == "mcp-test-results"
+    )
+
+    # --- Fail-closed sentinels (skip / defer) when no passing results back them.
+    # These are checked when the passing-results union is NOT satisfied; a
+    # passing run alongside a stray skip file still evaluates on the evidence.
+    def _fail_closed_present() -> str | None:
+        for fname in _FAIL_CLOSED_EVIDENCE_SENTINELS:
+            if (feature_dir / fname).exists():
+                return fname
+        return None
+
+    # --- Neither evidence file → no evidence of verification execution.
+    if not has_validated and not has_results_kind:
+        closed = _fail_closed_present()
+        if closed:
+            return _refuse(
+                f"{closed} present without passing /mcp-test evidence — "
+                "skip/defer fails closed (no auto-tick)"
+            )
+        return _refuse(
+            "neither VALIDATED.md nor MCP_TEST_RESULTS.md present — "
+            "no evidence of verification execution"
+        )
+
+    # --- results present, VALIDATED.md missing → policy/VSA layer never ran.
+    if not has_validated:
+        return _refuse(
+            "MCP_TEST_RESULTS.md present but VALIDATED.md (kind: validated) "
+            "missing — the attestation/VSA layer never ran"
+        )
+
+    # --- VALIDATED.md present, results missing/malformed → forged-attestation.
+    if not has_results_kind:
+        closed = _fail_closed_present()
+        if closed:
+            return _refuse(
+                f"{closed} present without passing MCP_TEST_RESULTS.md — "
+                "skip/defer fails closed (no auto-tick)"
+            )
+        return _refuse(
+            "VALIDATED.md present but MCP_TEST_RESULTS.md missing or malformed "
+            "(no 'kind: mcp-test-results') — forged-attestation risk"
+        )
+
+    # --- Both present. Require a genuinely-passing run.
+    if results_meta.get("result") != "all-passing":
+        return _refuse(
+            f"MCP_TEST_RESULTS.md result is "
+            f"{results_meta.get('result')!r} — expected 'all-passing'"
+        )
+    pass_count = _coerce_evidence_count(results_meta.get("pass_count"))
+    total_count = _coerce_evidence_count(results_meta.get("total_count"))
+    if pass_count is None or total_count is None:
+        return _refuse(
+            "MCP_TEST_RESULTS.md pass_count/total_count missing or malformed"
+        )
+    if pass_count != total_count:
+        return _refuse(
+            f"MCP_TEST_RESULTS.md pass_count ({pass_count}) != total_count "
+            f"({total_count}) — a partial pass cannot exempt"
+        )
+    # pass>0 mandatory: pass==total==0 is the CI false-positive anti-pattern.
+    if pass_count == 0:
+        return _refuse(
+            "MCP_TEST_RESULTS.md reports pass_count == total_count == 0 — a "
+            "zero-test suite cannot certify (pass>0 required)"
+        )
+
+    validated_commit = results_meta.get("validated_commit")
+    if validated_commit is not None:
+        validated_commit = str(validated_commit)
+
+    # --- Freshness / HEAD-drift carve-out.
+    head = _current_head(repo_root)
+    if validated_commit is None or head is None:
+        # No recorded commit, or HEAD unresolvable (non-git tree): cannot prove
+        # drift either way. Treat as fresh-enough (warn) — the upstream
+        # __write_validated_from_results__ gate already required a fresh commit
+        # to MINT VALIDATED.md, so a missing field here is the legacy path.
+        return {
+            "verdict": "exempt-and-tick",
+            "reason": "passing evidence; validated_commit/HEAD unresolved "
+                      "(legacy/non-git) — freshness UNVERIFIED",
+            "pass_count": pass_count,
+            "validated_commit": validated_commit,
+        }
+    if validated_commit == head:
+        return {
+            "verdict": "exempt-and-tick",
+            "reason": "VALIDATED.md + passing MCP_TEST_RESULTS.md, "
+                      "validated_commit == HEAD",
+            "pass_count": pass_count,
+            "validated_commit": validated_commit,
+        }
+
+    # validated_commit != HEAD → inspect the diff. Docs-only (*.md) → warn +
+    # exempt-and-tick; any non-.md (source/script/config) path → refuse-and-
+    # revalidate (TOCTOU: the validated code is not the code being promoted).
+    changed = _git_diff_name_only(repo_root, validated_commit, head)
+    if changed is None:
+        # Diff unresolvable (e.g. validated_commit not in this repo). Conservative
+        # — cannot prove the drift is docs-only, so refuse-and-revalidate.
+        return _refuse(
+            f"validated_commit {validated_commit} != HEAD {head} and the diff "
+            "could not be resolved — re-run /mcp-test against current HEAD",
+            pass_count=pass_count,
+            validated_commit=validated_commit,
+        )
+    non_docs = [p for p in changed if not p.lower().endswith(".md")]
+    if non_docs:
+        return _refuse(
+            f"validated_commit {validated_commit} != HEAD {head} with "
+            f"source/script/config drift ({', '.join(non_docs[:5])}) — "
+            "refuse-and-revalidate (TOCTOU)",
+            pass_count=pass_count,
+            validated_commit=validated_commit,
+        )
+    return {
+        "verdict": "warn-exempt",
+        "reason": f"validated_commit {validated_commit} != HEAD {head} but the "
+                  "drift is docs-only (*.md) — safe to exempt-and-tick",
+        "pass_count": pass_count,
+        "validated_commit": validated_commit,
+    }
+
+
+def _git_diff_name_only(
+    repo_root: Path, base: str, head: str
+) -> list[str] | None:
+    """Return the list of paths changed between ``base`` and ``head``, or None.
+
+    Best-effort, mirroring _current_head's subprocess posture: a non-git root,
+    an unknown commit, or an unavailable git all yield None (the caller treats
+    None conservatively as "cannot prove docs-only" → refuse).
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "diff", "--name-only", base, head],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Completion ledger verification
 # ---------------------------------------------------------------------------
 

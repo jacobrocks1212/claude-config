@@ -20088,5 +20088,205 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# completion-coherence-gate-reconciliation — Phase 1
+#   evaluate_completion_evidence — authoritative-evidence decision table.
+# One fixture per row of the SPEC's Technical Design (LOCKED) decision table.
+# ===========================================================================
+
+def _cc_write_validated(spec_dir: Path) -> None:
+    """Write a minimal kind: validated VALIDATED.md into spec_dir."""
+    (spec_dir / "VALIDATED.md").write_text(
+        "---\n"
+        "kind: validated\n"
+        "feature_id: cc-feature\n"
+        "date: 2026-06-19\n"
+        "---\n\n# Validated\n",
+        encoding="utf-8",
+    )
+
+
+def _cc_seed_and_commit(repo_root: Path) -> str:
+    """Seed a tracked README then git-commit the tree; return HEAD's sha.
+
+    Wraps ``_git_fixture_commit`` so fixtures whose only other files live in an
+    untracked-empty spec dir still produce a non-empty initial commit (git does
+    not track empty dirs, so a bare ``add -A`` would stage nothing and the
+    commit would fail with "nothing to commit").
+    """
+    readme = repo_root / "README.md"
+    if not readme.exists():
+        readme.write_text("seed\n", encoding="utf-8")
+    return _git_fixture_commit(repo_root)
+
+
+def test_eval_evidence_exempt_and_tick_happy_path():
+    """VALIDATED.md + passing MCP_TEST_RESULTS.md (validated_commit == HEAD) →
+    verdict 'exempt-and-tick', pass_count surfaced, validated_commit surfaced.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "cc-feature"
+        spec_dir.mkdir(parents=True)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(spec_dir, ["s1", "s2"])  # pass==total==2
+        head = _cc_seed_and_commit(repo_root)
+        # Re-stamp results with the real HEAD now that the tree is committed.
+        _write_mcp_test_results(spec_dir, ["s1", "s2"], validated_commit=head)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "exempt-and-tick", v
+        assert v["pass_count"] == 2, v
+        assert v["validated_commit"] == head, v
+
+
+def test_eval_evidence_forged_attestation_results_missing_refuses():
+    """VALIDATED.md present but MCP_TEST_RESULTS.md absent → refuse (forged)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _cc_seed_and_commit(repo_root)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_results_without_validated_refuses():
+    """MCP_TEST_RESULTS.md present, VALIDATED.md absent → refuse (no VSA)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results(spec_dir, ["s1"])
+        head = _cc_seed_and_commit(repo_root)
+        _write_mcp_test_results(spec_dir, ["s1"], validated_commit=head)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_skip_fail_closed_refuses():
+    """SKIP_MCP_TEST.md present + no passing results → refuse, no tick."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_skip_mcp_test(spec_dir)
+        _cc_seed_and_commit(repo_root)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_deferred_fail_closed_refuses():
+    """DEFERRED_NON_CLOUD.md present + no passing results → refuse, no tick."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "DEFERRED_NON_CLOUD.md").write_text(
+            "---\nkind: deferred-non-cloud\nfeature_id: cc-feature\n"
+            "date: 2026-06-19\n---\n", encoding="utf-8",
+        )
+        _cc_seed_and_commit(repo_root)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_zero_test_refuses():
+    """VALIDATED.md + results with pass==total==0 → refuse (CI false-positive)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        # zero scenarios → pass_count == total_count == 0.
+        _write_mcp_test_results(spec_dir, [], pass_count=0, total_count=0)
+        head = _cc_seed_and_commit(repo_root)
+        _write_mcp_test_results(
+            spec_dir, [], pass_count=0, total_count=0, validated_commit=head
+        )
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_head_drift_docs_only_warn_exempt():
+    """validated_commit != HEAD, drift is *.md only → warn-exempt."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(spec_dir, ["s1", "s2"])
+        first = _cc_seed_and_commit(repo_root)
+        # Second commit changes ONLY a markdown file.
+        (repo_root / "NOTES.md").write_text("docs change\n", encoding="utf-8")
+        second = _git_fixture_commit(repo_root)
+        assert first != second
+        # Results recorded the FIRST (validated) commit; HEAD is now the second.
+        _write_mcp_test_results(spec_dir, ["s1", "s2"], validated_commit=first)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "warn-exempt", v
+        assert v["pass_count"] == 2, v
+
+
+def test_eval_evidence_head_drift_source_refuses():
+    """validated_commit != HEAD, drift includes a .py file → refuse-and-revalidate."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(spec_dir, ["s1", "s2"])
+        first = _cc_seed_and_commit(repo_root)
+        # Second commit changes a SOURCE file.
+        (repo_root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+        second = _git_fixture_commit(repo_root)
+        assert first != second
+        _write_mcp_test_results(spec_dir, ["s1", "s2"], validated_commit=first)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_neither_present_refuses():
+    """Neither VALIDATED.md nor MCP_TEST_RESULTS.md → refuse (no evidence)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_seed_and_commit(repo_root)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+_TESTS = _TESTS + [
+    ("test_eval_evidence_exempt_and_tick_happy_path",
+     test_eval_evidence_exempt_and_tick_happy_path),
+    ("test_eval_evidence_forged_attestation_results_missing_refuses",
+     test_eval_evidence_forged_attestation_results_missing_refuses),
+    ("test_eval_evidence_results_without_validated_refuses",
+     test_eval_evidence_results_without_validated_refuses),
+    ("test_eval_evidence_skip_fail_closed_refuses",
+     test_eval_evidence_skip_fail_closed_refuses),
+    ("test_eval_evidence_deferred_fail_closed_refuses",
+     test_eval_evidence_deferred_fail_closed_refuses),
+    ("test_eval_evidence_zero_test_refuses",
+     test_eval_evidence_zero_test_refuses),
+    ("test_eval_evidence_head_drift_docs_only_warn_exempt",
+     test_eval_evidence_head_drift_docs_only_warn_exempt),
+    ("test_eval_evidence_head_drift_source_refuses",
+     test_eval_evidence_head_drift_source_refuses),
+    ("test_eval_evidence_neither_present_refuses",
+     test_eval_evidence_neither_present_refuses),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())
