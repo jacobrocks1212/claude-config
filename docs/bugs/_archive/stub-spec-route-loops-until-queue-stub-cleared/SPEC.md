@@ -2,9 +2,11 @@
 
 > When a feature is marked a stub via `queue.json` `"stub": true`, `lazy-state.py` routes it to `Step 4.5: stub-spec detected` and dispatches `/spec` to shape the baseline. But `/spec`'s Phase-1 `--batch` contract only drafts/locks the baseline SPEC — it does not clear the `queue.json` `stub` flag. So a stub-shaping cycle that drafts the baseline, commits, and returns leaves `is_stub_spec()` still true (it keys on `queue_entry.get("stub") is True`), and the next probe re-routes to Step 4.5 again. The loop is *commit-masked*: HEAD advances each cycle (`repeat_count` resets to 1) while routing never leaves the step (`step_repeat_count` climbs) — the exact "productive-looking oscillation" signature the step counter exists to catch.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-20
+**Fixed:** 2026-06-20
+**Fix commit:** 380c57e
 **Placement:** docs/bugs/stub-spec-route-loops-until-queue-stub-cleared
 **Source:** First-hand reproduction in a live `/lazy-batch 25` run, claude-config self-edit, 2026-06-20 (feature `long-build-and-runtime-ownership`)
 **Related:** `user/scripts/lazy-state.py` (`is_stub_spec` L823; queue-stub cross-check L859; Step 4.5 routing L1979–1983); `user/skills/spec/SKILL.md` ("Phase 1 under `--batch`" — drafts/locks baseline, no queue-stub clear); `user/skills/_components/lazy-batch-prompts/...` (stub→research-pending handoff); `user/skills/lazy-batch/SKILL.md` Step 1a (`step_repeat_count` oscillation tripwire is the only safety net)
