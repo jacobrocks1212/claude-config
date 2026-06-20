@@ -89,7 +89,7 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 ## Work Units
 
 - [x] WU-1 — Evidence reader + authoritative-evidence decision table (Phase 1)
-- [ ] WU-2 — Atomic, line-anchored, audited auto-tick rewrite (Phase 2)
+- [x] WU-2 — Atomic, line-anchored, audited auto-tick rewrite (Phase 2)
 - [ ] WU-3 — Wire evidence-gated exemption into `_phase_completion_plan` / `__mark_complete__` + kill-switch (Phase 3)
 
 ---

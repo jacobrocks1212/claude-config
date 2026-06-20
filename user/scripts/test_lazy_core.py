@@ -20266,6 +20266,133 @@ def test_eval_evidence_neither_present_refuses():
         assert v["verdict"] == "refuse", v
 
 
+# ===========================================================================
+# completion-coherence-gate-reconciliation — Phase 2
+#   autotick_verification_rows — atomic, line-anchored, audited rewrite.
+# ===========================================================================
+
+_CC_PHASES_TWO_MARKERS = (
+    "# Phases\n\n"
+    "### Phase 1: Impl\n\n"
+    "**Status:** Complete\n\n"
+    "- [x] real implementation row done\n"
+    "- [ ] still-open implementation row\n\n"
+    "**Runtime Verification**\n\n"
+    "- [ ] pytest suite green <!-- verification-only -->\n"
+    "- [ ] parity audit clean <!-- verification-only -->\n\n"
+    "```\n"
+    "- [ ] fenced example box (must NOT be ticked)\n"
+    "```\n"
+)
+
+
+def test_autotick_happy_path_ticks_only_marker_rows():
+    """Two verification-marked rows + one fenced + one plain impl row: after
+    autotick(pass_count=2) exactly the two marker rows are - [x] each carrying
+    the audit comment; fenced + impl rows byte-unchanged; ticked_count == 2.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PHASES.md"
+        p.write_text(_CC_PHASES_TWO_MARKERS, encoding="utf-8")
+        sha = "deadbeefcafe"
+        res = lazy_core.autotick_verification_rows(p, sha, 2)
+        assert res["ok"] is True, res
+        assert res["ticked_count"] == 2, res
+        text = p.read_text(encoding="utf-8")
+        assert text.count(f"<!-- auto-ticked: validated_commit={sha} -->") == 2, text
+        assert "- [x] pytest suite green" in text, text
+        assert "- [x] parity audit clean" in text, text
+        assert "- [ ] fenced example box (must NOT be ticked)" in text, text
+        assert "- [ ] still-open implementation row" in text, text
+
+
+def test_autotick_variable_whitespace_marker_matched():
+    """A '- [  ]' (two-space) marker row IS matched and ticked."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PHASES.md"
+        p.write_text(
+            "### Phase 1: X\n\n**Runtime Verification**\n\n"
+            "- [  ] wide gap row <!-- verification-only -->\n",
+            encoding="utf-8",
+        )
+        res = lazy_core.autotick_verification_rows(p, "abc123", 1)
+        assert res["ok"] is True, res
+        assert res["ticked_count"] == 1, res
+        text = p.read_text(encoding="utf-8")
+        assert "- [x] wide gap row" in text, text
+
+
+def test_autotick_cardinality_abort_writes_nothing():
+    """pass_count=1 against a 2-marker-row file → ok: False, file byte-unmodified."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PHASES.md"
+        before = _CC_PHASES_TWO_MARKERS
+        p.write_text(before, encoding="utf-8")
+        res = lazy_core.autotick_verification_rows(p, "sha9", 1)
+        assert res["ok"] is False, res
+        assert p.read_text(encoding="utf-8") == before, "file was mutated on abort"
+
+
+def test_autotick_superseded_phase_row_untouched():
+    """An unchecked marker row under a Superseded phase is left alone + not counted."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PHASES.md"
+        text = (
+            "### Phase 1: Old\n\n**Status:** Superseded\n\n"
+            "- [ ] superseded verification row <!-- verification-only -->\n\n"
+            "### Phase 2: New\n\n**Status:** Complete\n\n"
+            "**Runtime Verification**\n\n"
+            "- [ ] active verification row <!-- verification-only -->\n"
+        )
+        p.write_text(text, encoding="utf-8")
+        res = lazy_core.autotick_verification_rows(p, "shaS", 1)
+        assert res["ok"] is True, res
+        assert res["ticked_count"] == 1, res
+        out = p.read_text(encoding="utf-8")
+        assert "- [ ] superseded verification row" in out, out
+        assert "- [x] active verification row" in out, out
+
+
+def test_autotick_idempotent_rerun_no_double_comment():
+    """Re-running over already-ticked rows: ticked_count == 0, no duplicate audit
+    comment, rows unchanged.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "PHASES.md"
+        p.write_text(_CC_PHASES_TWO_MARKERS, encoding="utf-8")
+        sha = "idem01"
+        first = lazy_core.autotick_verification_rows(p, sha, 2)
+        assert first["ticked_count"] == 2, first
+        after_first = p.read_text(encoding="utf-8")
+        second = lazy_core.autotick_verification_rows(p, sha, 2)
+        assert second["ok"] is True, second
+        assert second["ticked_count"] == 0, second
+        after_second = p.read_text(encoding="utf-8")
+        assert after_second == after_first, "idempotent re-run mutated the file"
+        assert after_second.count(
+            f"<!-- auto-ticked: validated_commit={sha} -->"
+        ) == 2, "duplicate audit comment appeared"
+
+
+_TESTS = _TESTS + [
+    ("test_autotick_happy_path_ticks_only_marker_rows",
+     test_autotick_happy_path_ticks_only_marker_rows),
+    ("test_autotick_variable_whitespace_marker_matched",
+     test_autotick_variable_whitespace_marker_matched),
+    ("test_autotick_cardinality_abort_writes_nothing",
+     test_autotick_cardinality_abort_writes_nothing),
+    ("test_autotick_superseded_phase_row_untouched",
+     test_autotick_superseded_phase_row_untouched),
+    ("test_autotick_idempotent_rerun_no_double_comment",
+     test_autotick_idempotent_rerun_no_double_comment),
+]
+
+
 _TESTS = _TESTS + [
     ("test_eval_evidence_exempt_and_tick_happy_path",
      test_eval_evidence_exempt_and_tick_happy_path),

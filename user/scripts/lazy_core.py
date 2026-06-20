@@ -2135,6 +2135,153 @@ def _git_diff_name_only(
 
 
 # ---------------------------------------------------------------------------
+# autotick_verification_rows — atomic, line-anchored, audited auto-tick rewrite
+#   (completion-coherence-gate-reconciliation Phase 2).
+#
+# Given a feature whose Phase-1 verdict is exempt-and-tick / warn-exempt, rewrite
+# every remaining unchecked verification-marked row (``- [ ]`` carrying the
+# canonical ``_VERIFICATION_ONLY_MARKER`` on the SAME line) to ``- [x]`` —
+# atomically (via _atomic_write), fence-safely, with a byte-stable audit comment,
+# under a cardinality over-relaxation guard, and Superseded-aware. NOT wired into
+# the completion gate here (Phase 3 owns the ordering: tick → re-check → receipt).
+# ---------------------------------------------------------------------------
+
+# An unchecked checkbox row, capturing the leading dash+bracket so the rewrite
+# preserves indentation and replaces ONLY the inner blank with 'x'. Tolerates
+# variable interior whitespace (``- [ ]`` / ``- [  ]``).
+_UNCHECKED_ROW_RE = re.compile(r"^(\s*-\s+\[)\s+(\]\s.*)$")
+
+# Idempotency marker: a row already carrying this comment is NOT re-ticked and
+# the comment is NOT duplicated.
+_AUTOTICK_COMMENT_PREFIX = "<!-- auto-ticked: validated_commit="
+
+
+def autotick_verification_rows(
+    phases_path: Path, validated_commit, pass_count: int
+) -> dict:
+    """Rewrite unchecked verification-marked rows to ``- [x]`` atomically.
+
+    Returns ``{ticked_count: int, ok: bool, reason: str|None}``.
+
+    A row is rewritten iff ALL hold:
+      * it matches ``^\\s*-\\s+\\[\\s+\\]`` (an unchecked box, variable interior
+        whitespace tolerated),
+      * it carries ``_VERIFICATION_ONLY_MARKER`` (or its enclosing subsection
+        header does — header-scope, mirroring
+        ``remaining_unchecked_are_verification_only``),
+      * it is NOT inside a ``` code fence,
+      * it is NOT under a phase whose Status is ``Superseded``.
+
+    Each rewritten row gets a byte-stable
+    ``<!-- auto-ticked: validated_commit=<sha> -->`` audit comment appended so a
+    later auditor distinguishes gate mutations from human/agent edits.
+
+    **Cardinality lock (over-relaxation guard):** if the number of rows that
+    WOULD be ticked exceeds ``pass_count``, the rewrite ABORTS writing nothing
+    (``ok: False``) — catching marker-drift hallucination / forged evidence.
+
+    **Atomic:** the file is rewritten via ``_atomic_write`` (temp-in-same-dir →
+    ``os.replace``); a cardinality abort leaves the file byte-identical (no
+    partial write — the count is computed BEFORE any write).
+
+    **Idempotent:** a row already carrying the audit comment is skipped (not
+    re-ticked, no duplicate comment); ``ticked_count`` counts only rows newly
+    flipped this call.
+    """
+    text = phases_path.read_text(encoding="utf-8")
+    src_lines = text.splitlines(keepends=True)
+
+    # First PASS — identify the line indices to tick (cardinality computed
+    # BEFORE any mutation so an abort writes nothing).
+    to_tick: list[int] = []
+    section_has_marker = False
+    in_superseded_phase = False
+    in_fence = False
+    for idx, raw in enumerate(src_lines):
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        if heading:
+            heading_text = heading.group(1)
+            if re.match(r"Phase\s+\d+", heading_text):
+                # New phase block — reset subsection + superseded tracking.
+                in_superseded_phase = False
+                section_has_marker = False
+            else:
+                section_has_marker = _VERIFICATION_ONLY_MARKER in raw
+            continue
+        if stripped.startswith("**"):
+            bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            if bold:
+                bold_text = bold.group(1)
+                if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
+                    in_superseded_phase = True
+                    continue
+                if _VERIFICATION_ONLY_MARKER in raw:
+                    section_has_marker = True
+                # else: preserve current scope (non-marker bold is prose).
+                continue
+        m = _UNCHECKED_ROW_RE.match(raw.rstrip("\r\n"))
+        if not m:
+            continue
+        if in_superseded_phase:
+            continue
+        row_has_marker = _VERIFICATION_ONLY_MARKER in raw
+        if not (row_has_marker or section_has_marker):
+            continue
+        # Idempotency: an already-audited row is not re-ticked.
+        if _AUTOTICK_COMMENT_PREFIX in raw:
+            continue
+        to_tick.append(idx)
+
+    # Cardinality lock — abort writing nothing on over-relaxation.
+    if len(to_tick) > pass_count:
+        return {
+            "ticked_count": 0,
+            "ok": False,
+            "reason": (
+                f"cardinality lock: {len(to_tick)} verification row(s) would be "
+                f"ticked but only {pass_count} test(s) passed — refusing the "
+                "auto-tick (marker-drift / forged-evidence guard)"
+            ),
+        }
+
+    if not to_tick:
+        return {"ticked_count": 0, "ok": True, "reason": None}
+
+    # Second PASS — rewrite the identified rows in place, preserving the line
+    # ending and flipping ONLY the inner blank to 'x', then appending the audit
+    # comment before the line ending.
+    audit = f"{_AUTOTICK_COMMENT_PREFIX}{validated_commit} -->"
+    tick_set = set(to_tick)
+    out_lines: list[str] = []
+    for idx, raw in enumerate(src_lines):
+        if idx not in tick_set:
+            out_lines.append(raw)
+            continue
+        # Split the line ending off.
+        ending = ""
+        body = raw
+        if raw.endswith("\r\n"):
+            ending, body = "\r\n", raw[:-2]
+        elif raw.endswith("\n"):
+            ending, body = "\n", raw[:-1]
+        elif raw.endswith("\r"):
+            ending, body = "\r", raw[:-1]
+        m = _UNCHECKED_ROW_RE.match(body)
+        # ``m`` is guaranteed (idx came from the same regex in pass 1).
+        new_body = f"{m.group(1)}x{m.group(2)} {audit}"
+        out_lines.append(new_body + ending)
+
+    _atomic_write(phases_path, "".join(out_lines))
+    return {"ticked_count": len(to_tick), "ok": True, "reason": None}
+
+
+# ---------------------------------------------------------------------------
 # Completion ledger verification
 # ---------------------------------------------------------------------------
 
