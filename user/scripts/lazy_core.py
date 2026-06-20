@@ -1061,6 +1061,53 @@ def _unchecked_wus_in_plan_scope(phases_text: str, phase_set: set[int]) -> list[
     return out
 
 
+def _all_wus_in_plan_scope(phases_text: str, phase_set: set[int]) -> list[str]:
+    """Return ALL deliverable label strings — checked ([x]) AND unchecked ([ ]) —
+    in PHASES.md scoped to the plan's phases.
+
+    Companion to ``_unchecked_wus_in_plan_scope()``. The stale-plan gate uses the
+    TOTAL row count to disambiguate the two cases that an empty
+    ``_unchecked_wus_in_plan_scope()`` result conflates:
+
+      (a) every referenced WU is already ``[x]``  -> unchecked empty, TOTAL non-empty
+          -> the plan is genuinely stale (work done, frontmatter never flipped).
+      (b) the plan's ``phases:`` scope resolves to ZERO rows  -> unchecked empty AND
+          TOTAL empty -> the scope is UNDEFINED in PHASES.md (e.g. a ``phases: [0]``
+          decomposition part with no matching ``### Phase 0`` section — write-plan
+          emits these for touchpoint-audit ``block`` verdicts and tracks the
+          decomposition WUs in the PLAN BODY, not a PHASES Phase 0). This is NOT a
+          "work done" signal; declaring it stale would vacuously flip the plan
+          Complete and silently drop the work. The gate must fall through (to the
+          plan's own per-WU checkboxes, then to /execute-plan) instead.
+
+    Same fence/heading/``## `` reset walk as ``_unchecked_wus_in_plan_scope()`` — only
+    the checkbox-mark class differs (``[ xX]`` here vs. unchecked-only there).
+    """
+    current_phase: int | None = None
+    out: list[str] = []
+    in_fence = False
+    for line in phases_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        h = re.match(r"^###\s+Phase\s+(\d+)", line)
+        if h:
+            current_phase = int(h.group(1))
+            continue
+        if line.startswith("## "):
+            current_phase = None
+            continue
+        if current_phase is None or current_phase not in phase_set:
+            continue
+        m = re.match(r"^\s*-\s*\[\s*[xX]?\s*\]\s*(.+?)\s*$", line)
+        if m:
+            out.append(m.group(1))
+    return out
+
+
 def find_implementation_plans(spec_dir: Path) -> list[Path]:
     """Find non-retro implementation plans, filtering out plans whose
     frontmatter marks them Complete, and sorting by the lowest ``phases:``

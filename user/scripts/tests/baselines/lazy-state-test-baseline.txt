@@ -71,6 +71,8 @@
   [stale-plan-all-refs-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [ready-plan-unchecked-in-scope-still-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [finalize-plan-verification-rows-only-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
+  [stale-empty-scope-decomposition-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
   [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
   PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md

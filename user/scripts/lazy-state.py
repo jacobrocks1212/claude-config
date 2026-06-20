@@ -81,6 +81,9 @@ from lazy_core import (
     _plan_lowest_phase,
     _plan_phase_set,
     _unchecked_wus_in_plan_scope,
+    _all_wus_in_plan_scope,
+    _plan_wu_checkbox_counts,
+    _plan_unchecked_wus_are_verification_only,
     _phases_text_scoped_to,
     find_implementation_plans,
     find_retro_plans,
@@ -1867,11 +1870,40 @@ def compute_state(
                 #       PHASES.md down to the plan's phases and reuse the
                 #       verification-only predicate so a genuine implementation
                 #       row in scope still falls through to /execute-plan.
-                scoped_text = _phases_text_scoped_to(phases_text, plan_phase_set)
-                finalize_stale = (
-                    not in_scope_unchecked
-                    or remaining_unchecked_are_verification_only(scoped_text)
-                )
+                # Empty-PHASES-scope guard (decomposition-part vacuous-stale fix,
+                # f1-global-scale part-0, 2026-06-19). _unchecked_wus_in_plan_scope()
+                # returning [] is AMBIGUOUS: it means EITHER (a) every referenced WU
+                # is already [x] (genuinely stale) OR (b) the plan's phases: scope
+                # resolves to ZERO rows in PHASES.md (scope UNDEFINED — not "done").
+                # Case (b) is real: write-plan emits a `phases: [0]` decomposition
+                # part for touchpoint-audit `block` verdicts but adds no matching
+                # `### Phase 0` section to PHASES.md (the decomposition WUs live in
+                # the PLAN BODY). Treating (b) as stale vacuously flips the plan
+                # Complete and SILENTLY DROPS the decomposition. Disambiguate via the
+                # TOTAL (checked + unchecked) in-scope row count.
+                scope_total = _all_wus_in_plan_scope(phases_text, plan_phase_set)
+                if scope_total:
+                    # Phase scope has >=1 deliverable row in PHASES.md — the original
+                    # PHASES-scoped gate applies (shapes (1) all-checked, (2)
+                    # verification-only remainder).
+                    scoped_text = _phases_text_scoped_to(phases_text, plan_phase_set)
+                    finalize_stale = (
+                        not in_scope_unchecked
+                        or remaining_unchecked_are_verification_only(scoped_text)
+                    )
+                else:
+                    # Phase scope resolves to ZERO PHASES.md rows -> fall back to the
+                    # plan's OWN per-WU checkboxes (the ISSUE-6 machine source of truth
+                    # /execute-plan ticks). Stale ONLY when the plan has parseable WU
+                    # boxes AND every non-verification one is already [x]; ANY unchecked
+                    # real WU, or no parseable boxes at all, -> NOT stale -> fall
+                    # through to /execute-plan so the decomposition actually runs.
+                    plan_text = plan.read_text(encoding="utf-8", errors="replace")
+                    wu_unchecked, wu_checked = _plan_wu_checkbox_counts(plan_text)
+                    finalize_stale = bool(wu_checked) and (
+                        wu_unchecked == 0
+                        or _plan_unchecked_wus_are_verification_only(plan_text)
+                    )
                 if finalize_stale:
                     # Stale already-applied plan: every implementation WU this plan
                     # references (scoped to its phases: field) is already [x] — only
@@ -3698,6 +3730,99 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         # No RETRO_DONE.md → stays in Step 7 (not past Step 8).
 
+    elif name == "stale-empty-scope-decomposition-executes":
+        # Empty-PHASES-scope guard (f1-global-scale part-0, 2026-06-19). A plan
+        # declares phases: [0] (a write-plan touchpoint-`block` decomposition part)
+        # but PHASES.md has NO `### Phase 0` section — the decomposition WUs live
+        # in the PLAN BODY (WU-0A/WU-0B), still unchecked. The plan's PHASES scope
+        # therefore resolves to ZERO rows.
+        #
+        # Pre-fix (RED): _unchecked_wus_in_plan_scope(phases, {0}) is empty →
+        # finalize_stale vacuously True → __flip_plan_complete_stale__ → the
+        # decomposition is SILENTLY SKIPPED.
+        #
+        # Post-fix (GREEN): scope_total is empty → fall back to the plan's OWN
+        # per-WU checkboxes; WU-0A/WU-0B are unchecked → finalize_stale False →
+        # sub_skill="execute-plan" so the decomposition actually runs.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-decomp", "name": "Feature Decomp",
+                 "spec_dir": "feat-decomp", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dc = features / "feat-decomp"
+        dc.mkdir()
+        (dc / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (dc / "RESEARCH.md").write_text("# R\n")
+        (dc / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        # PHASES.md: Phases 1-2 only (NO Phase 0). Phase 1 has an unchecked row so
+        # overall unchecked > 0 and Step 7 plan-selection is entered.
+        (dc / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [ ] WU1 implement core logic\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = dc / "plans"
+        plans.mkdir()
+        # part-0 decomposition plan: phases: [0] (no PHASES Phase 0), with unchecked
+        # plan-body WU boxes → real work remains → must execute, not flip.
+        (plans / "all-phases-decomp-part-0.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-decomp\n"
+            "status: Ready\ncreated: 2026-06-19\nphases: [0]\n---\n\n"
+            "# Decomposition Prerequisite\n\n"
+            "## Work Units\n"
+            "- [ ] WU-0A — Extract completion arrays\n"
+            "- [ ] WU-0B — Extract registration groups\n"
+        )
+        # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
+
+    elif name == "stale-empty-scope-all-plan-wus-checked-flips":
+        # Discriminating control for the empty-PHASES-scope fallback: same shape as
+        # `stale-empty-scope-decomposition-executes`, but the plan-body WU boxes are
+        # ALL [x] — the decomposition genuinely ran in a prior session and only the
+        # plan frontmatter status was never flipped. The fallback must then flip
+        # stale (avoid a wasted execute-plan cycle), proving the fix discriminates
+        # done-vs-undone rather than blanket-disabling the stale gate for phases:[0].
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-decdone", "name": "Feature Decomp Done",
+                 "spec_dir": "feat-decdone", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dd = features / "feat-decdone"
+        dd.mkdir()
+        (dd / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (dd / "RESEARCH.md").write_text("# R\n")
+        (dd / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (dd / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [ ] WU1 implement core logic\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] WU3 integration tests\n"
+        )
+        plans = dd / "plans"
+        plans.mkdir()
+        (plans / "all-phases-decdone-part-0.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-decdone\n"
+            "status: Ready\ncreated: 2026-06-19\nphases: [0]\n---\n\n"
+            "# Decomposition Prerequisite\n\n"
+            "## Work Units\n"
+            "- [x] WU-0A — Extract completion arrays\n"
+            "- [x] WU-0B — Extract registration groups\n"
+        )
+        # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
+
     elif name == "realign-hash-gate-detects-changed-upstream":
         # WU-8 Fixture 1: realign freshness gate hash comparison.
         #
@@ -4273,6 +4398,23 @@ def run_smoke_tests() -> int:
             ("finalize-plan-verification-rows-only-flips", False, False, {
                 "sub_skill": "__flip_plan_complete_stale__",
                 "feature_id": "feat-fin",
+            }),
+
+            # Empty-PHASES-scope guard (f1-global-scale part-0, 2026-06-19): a
+            # phases:[0] decomposition part with no PHASES Phase 0 and UNCHECKED
+            # plan-body WU boxes must route to execute-plan (NOT vacuously flip
+            # stale and silently drop the decomposition).
+            ("stale-empty-scope-decomposition-executes", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-decomp",
+                "current_step": "Step 7a: execute plan",
+            }),
+            # Discriminating control: same empty-PHASES-scope shape but the
+            # plan-body WU boxes are ALL [x] → genuinely stale (decomposition done,
+            # frontmatter never flipped) → the fallback flips it Complete.
+            ("stale-empty-scope-all-plan-wus-checked-flips", False, False, {
+                "sub_skill": "__flip_plan_complete_stale__",
+                "feature_id": "feat-decdone",
             }),
 
             # WU-8 Fixture 1: realign hash gate detects changed upstream.
