@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: long-build-and-runtime-ownership
-status: Ready
+status: In-progress
 created: 2026-06-20
 complexity: complex
 phases: [1]
