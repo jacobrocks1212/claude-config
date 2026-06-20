@@ -2,9 +2,11 @@
 
 > During a `/lazy-batch` run on AlgoBooth, an orchestrator-caused environment transient — a stale Windows named-pipe handle / zombie node process left behind by a `dev:restart` — prevented the dev sidecar from booting. Because the runtime never came up, every MCP assertion went pending and the failure surfaced as a *validation BLOCKED at retry 5*, inflating the feature's validation-escalation count even though no code was wrong. The validation-retry accounting does not distinguish a self-inflicted environment transient from a genuine code failure.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-20
+**Fix commit:** 1fc0b3e
 **Placement:** docs/bugs/env-transient-counts-against-validation-retry-budget
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/skills/lazy-batch/SKILL.md` Step 1d.0 (`--ensure-runtime` readiness gate) + `validation_escalation` retry accounting (`lazy_core.py`); `repos/algobooth/.claude/skills/mcp-test/SKILL.md` Step 2/Step 5 (orchestrated runtime-up path); `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` `mcp-test-runtime` variants

@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — this fix lives entirely in the claude-config harness (`lazy_core.py` Python + a prompt component + SKILL/doc prose). claude-config has **no MCP-reachable app surface** (it is the harness itself, not an app); the fix is validated by the hermetic injected-probe smoke harnesses (`lazy_core` characterization tests + `lazy-state.py --test` / `bug-state.py --test`), which ARE the runtime-equivalent verification surface. This is the structural "no app integration / tooling" untestable class per `docs/features/mcp-testing/SPEC.md`, not an audio claim.
 
-**Status:** Complete
+**Status:** Fixed
 
 ## Validated Assumptions
 
