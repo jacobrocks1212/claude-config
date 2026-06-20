@@ -22249,5 +22249,136 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# Phase 4 (long-build-and-runtime-ownership) WU-1 — promote_artifact_atomically:
+# Atomic Artifact Promotion (SPEC M5 Detect; LD4 detect-half).
+#
+# Composed AROUND run_transient_build (NOT inside it): the build writes into a
+# staging dir, and the artifact is `os.replace()`d into the final path ONLY on
+# `exit_code == 0` (atomic NTFS MoveFileEx / POSIX rename). A non-zero exit (a
+# torn / failed build) leaves the production artifact UNTOUCHED — no partial
+# promotion. Injectable `replace` keeps `--test` hermetic and lets the atomicity
+# ordering be asserted (the single mutation is os.replace, not copy-then-delete).
+# ===========================================================================
+
+
+def test_promote_artifact_atomically_symbol_present():
+    """promote_artifact_atomically is a public symbol on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "promote_artifact_atomically"), (
+        "lazy_core.promote_artifact_atomically missing — Phase 4 WU-1 not implemented"
+    )
+
+
+def test_promote_artifact_atomically_exit0_promotes_via_replace():
+    """exit_code == 0: the injected `replace` is called staging→final exactly
+    once → {promoted: True}; the call is os.replace (atomic rename), the single
+    mutation (NOT a copy-then-delete)."""
+    _guard()
+    replace_calls = []
+
+    def fake_replace(src, dst):
+        replace_calls.append((str(src), str(dst)))
+
+    result = lazy_core.promote_artifact_atomically(
+        "/repo/target/release_staging", "/repo/target/release",
+        exit_code=0, replace=fake_replace,
+    )
+    assert result["promoted"] is True, f"exit 0 must promote; got {result!r}"
+    assert len(replace_calls) == 1, (
+        f"promotion must be a SINGLE atomic os.replace, not copy-then-delete; "
+        f"got {len(replace_calls)} replace calls"
+    )
+    src, dst = replace_calls[0]
+    assert src.endswith("release_staging") and dst.endswith("release"), (
+        f"replace must move staging→final; got {replace_calls[0]!r}"
+    )
+
+
+def test_promote_artifact_atomically_nonzero_exit_leaves_production_untouched():
+    """exit_code != 0 (torn/failed build): `replace` is NEVER called and the
+    final artifact is untouched → {promoted: False, reason: ...}. This is the
+    load-bearing no-partial-promotion guarantee — it MUST fail if promotion ran
+    unconditionally."""
+    _guard()
+    replace_calls = []
+
+    def fake_replace(src, dst):
+        replace_calls.append((str(src), str(dst)))
+
+    result = lazy_core.promote_artifact_atomically(
+        "/repo/target/release_staging", "/repo/target/release",
+        exit_code=101, replace=fake_replace,
+    )
+    assert result["promoted"] is False, (
+        f"a non-zero exit must NOT promote; got {result!r}"
+    )
+    assert "reason" in result and result["reason"], (
+        f"a non-promotion must carry a reason; got {result!r}"
+    )
+    assert len(replace_calls) == 0, (
+        "replace must NEVER be called on a non-zero exit (no partial promotion); "
+        f"got {replace_calls!r}"
+    )
+
+
+def test_promote_artifact_atomically_real_tempdir_exit0_moves_artifact():
+    """Real temp-dir variant (default real os.replace): on exit 0 the staging
+    artifact ends up at final_dir and no partial file remains at staging."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        staging = root / "release_staging"
+        final = root / "release"
+        staging.write_text("ARTIFACT-BYTES", encoding="utf-8")
+        assert not final.exists(), "precondition: no final artifact yet"
+
+        result = lazy_core.promote_artifact_atomically(
+            str(staging), str(final), exit_code=0,
+        )
+        assert result["promoted"] is True, f"expected promotion; got {result!r}"
+        assert final.exists(), "final artifact must exist after promotion"
+        assert final.read_text(encoding="utf-8") == "ARTIFACT-BYTES", (
+            "promoted artifact must carry the staging bytes"
+        )
+        assert not staging.exists(), (
+            "staging must be gone after an atomic rename (no partial left behind)"
+        )
+
+
+def test_promote_artifact_atomically_real_tempdir_nonzero_leaves_final():
+    """Real temp-dir variant: on a non-zero exit the existing final artifact is
+    byte-for-byte untouched and the staging partial is NOT promoted."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        staging = root / "release_staging"
+        final = root / "release"
+        staging.write_text("PARTIAL-TORN", encoding="utf-8")
+        final.write_text("GOOD-PRODUCTION", encoding="utf-8")
+
+        result = lazy_core.promote_artifact_atomically(
+            str(staging), str(final), exit_code=1,
+        )
+        assert result["promoted"] is False, f"expected no promotion; got {result!r}"
+        assert final.read_text(encoding="utf-8") == "GOOD-PRODUCTION", (
+            "the production artifact must be untouched on a torn build"
+        )
+
+
+_TESTS = _TESTS + [
+    ("test_promote_artifact_atomically_symbol_present",
+     test_promote_artifact_atomically_symbol_present),
+    ("test_promote_artifact_atomically_exit0_promotes_via_replace",
+     test_promote_artifact_atomically_exit0_promotes_via_replace),
+    ("test_promote_artifact_atomically_nonzero_exit_leaves_production_untouched",
+     test_promote_artifact_atomically_nonzero_exit_leaves_production_untouched),
+    ("test_promote_artifact_atomically_real_tempdir_exit0_moves_artifact",
+     test_promote_artifact_atomically_real_tempdir_exit0_moves_artifact),
+    ("test_promote_artifact_atomically_real_tempdir_nonzero_leaves_final",
+     test_promote_artifact_atomically_real_tempdir_nonzero_leaves_final),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

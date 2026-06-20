@@ -73,7 +73,7 @@ Before each step, `Read` the listed component files from disk. After compaction,
 
 ## Work Units
 
-- [ ] WU-1 — `promote_artifact_atomically` (staging → `os.replace` only on exit 0)
+- [x] WU-1 — `promote_artifact_atomically` (staging → `os.replace` only on exit 0)
 - [ ] WU-2 — `--cycle-begin` git-consistency reconciliation + friction-detector composition
 
 ## Phase: long-build-and-runtime-ownership P4 — Torn-build atomic-promotion + `--cycle-begin` git-consistency recovery (M5 Detect)

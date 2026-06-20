@@ -6798,6 +6798,69 @@ def _default_build_wait(spawned):
         return (None, "")
 
 
+def promote_artifact_atomically(
+    staging_dir,
+    final_dir,
+    *,
+    exit_code,
+    replace=None,
+):
+    """Atomically promote a staging build artifact into its production path —
+    ONLY on a clean build exit. Returns ``{"promoted": bool, "reason": str}``.
+
+    The detect-half of LD4 (SPEC M5 Detect / Atomic Artifact Promotion). It is
+    deliberately composed AROUND ``run_transient_build`` (NOT folded inside it),
+    so the build target writes into ``staging_dir`` and this function swaps it
+    into ``final_dir`` in a SINGLE atomic ``os.replace`` rename — atomic on NTFS
+    (``MoveFileEx``) and POSIX (``rename``) — but ONLY when ``exit_code == 0``.
+
+    A non-zero ``exit_code`` (a failed or torn-mid-flight build) is the
+    load-bearing safety case: ``replace`` is NEVER called, so the production
+    artifact at ``final_dir`` is left byte-for-byte untouched and the partial
+    output stays quarantined in ``staging_dir``. A torn build is therefore
+    mathematically harmless to production.
+
+    Atomicity contract: promotion is a single ``os.replace`` (rename), never a
+    copy-then-delete. Tests inject ``replace`` and assert it is the only mutation
+    + called staging→final exactly once.
+
+    Args:
+        staging_dir: path the build wrote into (``target/release_staging``).
+        final_dir: the production artifact path (``target/release``).
+        exit_code: the build's exit code. Promotion happens iff this is 0.
+        replace: injectable ``callable(src, dst)`` performing the atomic rename
+            (default: ``os.replace``). Hermetic tests inject a spy.
+
+    Returns:
+        ``{"promoted": True}`` on a clean-exit promotion, or
+        ``{"promoted": False, "reason": <str>}`` when promotion was withheld
+        (non-zero exit) or the rename failed (best-effort — a rename error never
+        raises; it returns ``promoted: False`` with the error reason).
+    """
+    if replace is None:
+        replace = os.replace
+
+    if exit_code != 0:
+        return {
+            "promoted": False,
+            "reason": (
+                f"build exit_code={exit_code} (non-zero) — production artifact "
+                "left untouched, partial output quarantined in staging"
+            ),
+        }
+
+    try:
+        replace(staging_dir, final_dir)
+    except OSError as exc:  # noqa: BLE001
+        # A rename failure must not crash the promotion caller — report it as a
+        # non-promotion so the production artifact is treated as unchanged.
+        return {
+            "promoted": False,
+            "reason": f"atomic replace failed: {exc!r}",
+        }
+    return {"promoted": True}
+
+
 def kernel_start_time(
     pid,
     *,
