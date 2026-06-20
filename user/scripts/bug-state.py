@@ -515,6 +515,7 @@ def compute_state(
     park_needs_input: bool = False,
     park_blocked: bool = False,
     per_feature_cycle_cap: int | None = None,
+    strict_research_halt: bool = False,
 ) -> dict[str, Any]:
     """Walk the bug lifecycle and return the next action as a JSON-serializable dict.
 
@@ -548,10 +549,19 @@ def compute_state(
       mirrors lazy-state's `--per-feature-cycle-cap` parse surface (audited by
       lazy_parity_audit.py) — matching the `--type bug` benign-parse precedent. It
       is accepted and ignored here (no behavior change; output byte-identical).
+    strict_research_halt: PARITY-ONLY param (feature-budget-guard-and-skip-ahead
+      Phase 3). Dependency-aware skip-ahead past a research-pending/BLOCKED head is
+      a FEATURE-pipeline mechanic — the bug pipeline has NO research gate, so the
+      flag is a no-op here. This param exists ONLY so the bug-state argparse mirrors
+      lazy-state's `--strict-research-halt` parse surface (audited by
+      lazy_parity_audit.py), matching the `--per-feature-cycle-cap` benign-parse
+      precedent. Accepted and ignored (no behavior change; output byte-identical).
     """
-    # per_feature_cycle_cap is accepted for argparse parity only; the bug pipeline
-    # has no budget-guard trip in v1. Referenced here to silence unused-arg lints.
+    # per_feature_cycle_cap / strict_research_halt are accepted for argparse parity
+    # only; the bug pipeline has no budget-guard trip and no research gate in v1.
+    # Referenced here to silence unused-arg lints.
     _ = per_feature_cycle_cap
+    _ = strict_research_halt
     # Cloud has no audio device — force no-device like lazy-state.py does.
     if cloud:
         real_device = False
@@ -4077,6 +4087,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--strict-research-halt", action="store_true",
+        help=(
+            "PARITY-ONLY (feature-budget-guard-and-skip-ahead Phase 3): mirrors "
+            "lazy-state.py's --strict-research-halt so the documented unified flag "
+            "surface parses on both scripts (audited by lazy_parity_audit.py). "
+            "Dependency-aware skip-ahead past a gated head is a FEATURE-pipeline "
+            "mechanic — the bug pipeline has NO research gate, so this flag is "
+            "accepted and ignored here (benign no-op; output byte-identical)."
+        ),
+    )
+    parser.add_argument(
         "--verify-ledger", default=None, metavar="SPEC_PATH",
         help=(
             "Scripted completion-ledger guard (replaces the prose guard blocks "
@@ -4709,6 +4730,7 @@ def main() -> int:
         park_needs_input=args.park_needs_input,
         park_blocked=args.park_blocked,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
+        strict_research_halt=args.strict_research_halt,
     )
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.

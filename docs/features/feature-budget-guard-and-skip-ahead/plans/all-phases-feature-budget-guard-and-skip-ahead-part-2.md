@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: feature-budget-guard-and-skip-ahead
-status: Ready
+status: Complete
 complexity: complex
 phases: [3]
 ---
@@ -91,9 +91,9 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — Two-key readiness predicates (`parse_independent_marker` + `skip_ahead_ready`)
-- [ ] WU-2 — Skip-ahead branch in `compute_state()` + `--strict-research-halt` flag
-- [ ] WU-3 — All-gated terminal + skip-ahead audit log + fixtures
+- [x] WU-1 — Two-key readiness predicates (`parse_independent_marker` + `skip_ahead_ready`)
+- [x] WU-2 — Skip-ahead branch in `compute_state()` + `--strict-research-halt` flag
+- [x] WU-3 — All-gated terminal + skip-ahead audit log + fixtures
 
 ---
 

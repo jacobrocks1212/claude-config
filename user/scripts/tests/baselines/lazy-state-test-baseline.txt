@@ -79,6 +79,7 @@
   PASS [realign-fresh-hashless-upstream-not-stale] hashless upstream skipped; real drift still stale
   [per-feature-counter] per_feature_forward_cycles rides both advance triggers, meta-exempt, per-feature keyed: ok
   [budget-guard] trip/defer + re-trip/evict + override + exhaustion terminal + marker-gated no-op: ok
+  [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
 {
   "error": "feature_id already queued: adhoc-test",
   "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"

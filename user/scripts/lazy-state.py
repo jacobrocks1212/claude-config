@@ -153,6 +153,15 @@ def _state(
     # byte-identical to the pre-feature baseline — same discipline as "parked".
     if _BUDGET_GUARD is not None:
         out["budget_guard"] = dict(_BUDGET_GUARD)
+    # feature-budget-guard-and-skip-ahead Phase 3: the gated heads skip-ahead
+    # advanced PAST this probe are ONLY surfaced when skip-ahead actually skipped
+    # at least one gated head (_GATED_HEADS non-empty). When empty the key is
+    # entirely absent so default output (no gated head / --strict-research-halt)
+    # stays byte-identical to the pre-Phase-3 baseline — same discipline as
+    # "parked" / "budget_guard". The Phase-4 wrapper consumes it for the
+    # end-of-run gated-head flush.
+    if _GATED_HEADS:
+        out["gated_heads"] = list(_GATED_HEADS)
     return out
 
 
@@ -175,6 +184,15 @@ _PARK_MODE: bool = False
 # default output byte-identical). Both reset at the start of each compute_state().
 _DEFERRED_BUDGET: list = []
 _BUDGET_GUARD: dict | None = None
+
+# feature-budget-guard-and-skip-ahead Phase 3: skip-ahead state for this
+# compute_state() invocation. _GATED_HEADS accumulates the gated (research-pending
+# or BLOCKED) head feature ids that skip-ahead advanced PAST this probe — a
+# run-scoped surfaced list (the Phase-4 end-of-run flush consumes it via the
+# "gated_heads" probe key). Reset at the start of each compute_state(); the key is
+# absent from default output (no gated head / --strict-research-halt) so byte-
+# identity with the pre-Phase-3 baseline is preserved.
+_GATED_HEADS: list = []
 
 
 # ---------------------------------------------------------------------------
@@ -1209,6 +1227,7 @@ def compute_state(
     park_needs_input: bool = False,
     park_blocked: bool = False,
     per_feature_cycle_cap: int | None = None,
+    strict_research_halt: bool = False,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -1230,12 +1249,15 @@ def compute_state(
     _DEVICE_DEFERRED.clear()
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
-    global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD
+    global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
     # Reset the per-feature budget-guard state for this invocation.
     _DEFERRED_BUDGET = []
     _BUDGET_GUARD = None
+    # feature-budget-guard-and-skip-ahead Phase 3: reset the skip-ahead gated-head
+    # surfaced list for this invocation.
+    _GATED_HEADS = []
     repo_root = repo_root.resolve()
 
     # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
@@ -1268,6 +1290,19 @@ def compute_state(
     # so callers can distinguish "queue exhausted" from "id typo / not queued".
     scope_id_seen: bool = False
     budget_deferred_skipped: list[str] = []
+    # feature-budget-guard-and-skip-ahead Phase 3: skip-ahead bookkeeping.
+    # gated_ids accumulates the feature ids of gated heads skipped this probe
+    # (research-pending or BLOCKED) so a downstream candidate with a hard dep on
+    # ANY of them is correctly NOT skipped onto. skip_ahead_blocked tracks
+    # candidates we declined to dispatch (downstream or unmarked) so the all-gated
+    # terminal can distinguish "blocked behind a gated head" from a clean queue.
+    gated_ids: set[str] = set()
+    skip_ahead_blocked: list[str] = []
+    # The first gated head encountered — dispatched as a fallback if the loop
+    # exhausts without finding a skip-ahead-ready alternative (so a single gated
+    # item still reaches its per-feature terminal; only a realized skip past a
+    # genuine independent alternative changes behavior).
+    gated_head_fallback: dict | None = None
 
     # feature-budget-guard-and-skip-ahead Phase 2: per-feature budget guard setup.
     # The guard is MARKER-GATED — it only evaluates when a live run marker is
@@ -1312,6 +1347,28 @@ def compute_state(
         if _bg_marker is not None
         else None
     )
+
+    # feature-budget-guard-and-skip-ahead Phase 3: gated-head detector. A queue
+    # head is "gated" when it is research-pending (a RESEARCH_PROMPT.md / a
+    # NEEDS_RESEARCH.md with no RESEARCH.md / RESEARCH_SUMMARY.md) OR carries a
+    # BLOCKED.md. This is the SAME research-pending peek the --skip-needs-research
+    # branch uses, plus BLOCKED. Cheap filesystem read; no per-feature state
+    # machine. Used by the skip-ahead branch below (default-on; --strict-research-
+    # halt disables it).
+    def _is_gated_head(sp: Path) -> bool:
+        needs_research_file = sp / "NEEDS_RESEARCH.md"
+        research_prompt = sp / "RESEARCH_PROMPT.md"
+        research = sp / "RESEARCH.md"
+        research_summary = sp / "RESEARCH_SUMMARY.md"
+        research_pending = (
+            needs_research_file.exists()
+            or (
+                research_prompt.exists()
+                and not research.exists()
+                and not research_summary.exists()
+            )
+        )
+        return research_pending or (sp / "BLOCKED.md").exists()
 
     for entry in queue:
         name = entry.get("name")
@@ -1569,6 +1626,80 @@ def compute_state(
                     }
                 _DEFERRED_BUDGET.append(feature_id)
                 continue
+        # feature-budget-guard-and-skip-ahead Phase 3: dependency-aware skip-ahead
+        # past a gated head (default-on; --strict-research-halt disables it). This
+        # is the FINAL gate before a candidate is dispatched, so it sees only
+        # candidates that survived every prior skip (completion / cloud / device /
+        # research-batch / park / budget). Two cases:
+        #   (1) This candidate is itself GATED (research-pending or BLOCKED). Under
+        #       default skip-ahead we record it as a gated head (gated_ids +
+        #       _GATED_HEADS), log the audit line, and `continue` past it — its
+        #       on-disk state is untouched and it is surfaced at the end-of-run
+        #       flush. Under --strict-research-halt we do NOT skip: fall through to
+        #       dispatch it so the legacy halt-on-first-gated-head behavior is
+        #       reproduced (Step 3 BLOCKED.md / Step 5 needs-research terminal
+        #       fires below exactly as before).
+        #   (2) A gated head was already skipped this probe (gated_ids non-empty)
+        #       and this candidate is downstream/unmarked. skip_ahead_ready is the
+        #       two-key predicate (no hard dep on a gated id AND independent:true);
+        #       a candidate that FAILS it is NOT dispatched (degrades to today's
+        #       strict halt for that item) — recorded in skip_ahead_blocked and
+        #       skipped. A candidate that PASSES dispatches normally below.
+        if not strict_research_halt:
+            if _is_gated_head(spec_path):
+                gated_ids.add(feature_id)
+                _GATED_HEADS.append(feature_id)
+                # Remember the FIRST gated head as a fallback dispatch target. If
+                # the loop exhausts with NO skip-ahead-ready candidate found (e.g.
+                # a single-item queue, or every other item is downstream/unmarked),
+                # we dispatch this gated head normally so its per-feature terminal
+                # (Step 3 BLOCKED / Step 5 needs-research) fires for the orchestrator
+                # to act on — preserving single-/lazy behavior byte-for-byte. The
+                # skip is only REALIZED when an independent alternative actually
+                # exists. (This is what keeps the pre-feature single-item
+                # needs-research / blocked terminals unchanged.)
+                if gated_head_fallback is None:
+                    gated_head_fallback = {
+                        "name": name,
+                        "id": feature_id,
+                        "spec_path": spec_path,
+                        "tier": entry.get("tier"),
+                        "queue_entry": entry,
+                    }
+                _diag(
+                    f"skip-ahead: '{feature_id}' is a gated head "
+                    f"(research-pending or BLOCKED); advancing past it to the next "
+                    f"skip-ahead-ready item (default-on; --strict-research-halt "
+                    f"restores the legacy halt)."
+                )
+                continue
+            if gated_ids:
+                # A gated head was skipped earlier this probe — this candidate may
+                # only be dispatched if it passes the two-key readiness predicate.
+                try:
+                    _sa_spec_text = (spec_path / "SPEC.md").read_text(encoding="utf-8") \
+                        if (spec_path / "SPEC.md").exists() else ""
+                except OSError:
+                    _sa_spec_text = ""
+                _sa_deps = parse_dep_block(_sa_spec_text)
+                _sa_independent = lazy_core.parse_independent_marker(
+                    _sa_spec_text, entry
+                )
+                _sa_ready = lazy_core.skip_ahead_ready(
+                    _sa_deps, gated_ids, _sa_independent
+                )
+                # Skip-ahead audit (RESEARCH_SUMMARY rich-audit leg): gated-head
+                # id(s) + the skipped-to candidate + the evaluated dep array +
+                # the readiness verdict — emitted on EVERY skip-ahead evaluation.
+                _diag(
+                    f"skip-ahead audit: gated_heads={sorted(gated_ids)!r} "
+                    f"candidate='{feature_id}' independent={_sa_independent} "
+                    f"deps={[{'feature_id': d.get('feature_id'), 'kind': d.get('kind')} for d in _sa_deps]!r} "
+                    f"→ {'DISPATCH' if _sa_ready else 'SKIP (not skip-ahead-ready)'}"
+                )
+                if not _sa_ready:
+                    skip_ahead_blocked.append(feature_id)
+                    continue
         current = {
             "name": name,
             "id": feature_id,
@@ -1577,6 +1708,31 @@ def compute_state(
             "queue_entry": entry,
         }
         break
+
+    # feature-budget-guard-and-skip-ahead Phase 3: gated-head fallback (ADDITIVE
+    # skip-ahead invariant). The loop exhausted without dispatching a skip-ahead-
+    # ready candidate, yet at least one gated head was skipped past. A skip is only
+    # ever REALIZED when an INDEPENDENT alternative actually dispatched (in which
+    # case current is not None). Whenever no such alternative exists — a single
+    # gated item, OR a gated head with only downstream/unmarked siblings — fall
+    # back to dispatching the FIRST gated head normally so its per-feature terminal
+    # (Step 3 BLOCKED / Step 5 needs-research) fires for the orchestrator to act on,
+    # exactly as the pre-feature single-/lazy path did. This makes default-on skip-
+    # ahead STRICTLY ADDITIVE: it changes behavior ONLY by advancing onto a genuine
+    # independent item, never by stranding a gated head behind a false terminal. The
+    # gated head is still surfaced (its own terminal is "not a false completion" — it
+    # is the SPEC's all-gated clean terminal "or equivalent"). Byte-identity with the
+    # pre-Phase-3 single-item path is preserved because _GATED_HEADS is cleared (no
+    # skip was realized → no gated_heads probe key surfaces).
+    if current is None and gated_head_fallback is not None:
+        current = gated_head_fallback
+        _GATED_HEADS = []
+        gated_ids = set()
+        _diag(
+            f"skip-ahead: no skip-ahead-ready alternative to gated head "
+            f"'{current['id']}' — dispatching it normally (per-feature terminal "
+            f"fires). Skip not realized (additive invariant)."
+        )
 
     # feature-budget-guard-and-skip-ahead Phase 2: persist the budget-guard marker
     # updates (deferral counts + eviction list) when any trip fired this probe.
@@ -1623,6 +1779,14 @@ def compute_state(
                     "progress is preserved and surfaced at the end-of-run flush."
                 ),
             )
+        # feature-budget-guard-and-skip-ahead Phase 3 note: there is no separate
+        # "all-gated" terminal here. The gated-head fallback above ALWAYS dispatches
+        # the first gated head when no skip-ahead-ready alternative was found, so a
+        # current-is-None state with gated heads cannot occur — the gated head's own
+        # per-feature terminal (Step 3 blocked / Step 5 needs-research) is the SPEC's
+        # all-gated clean terminal "or equivalent" (never a false completion). The
+        # existing --skip-needs-research batch path below keeps its own
+        # queue-blocked-on-research terminal unchanged.
         if cloud and cloud_saturated_skipped:
             return _state(
                 terminal_reason="cloud-queue-exhausted",
@@ -5201,6 +5365,162 @@ def run_smoke_tests() -> int:
             else:
                 os.environ["LAZY_STATE_DIR"] = _bg_prev_env
 
+        # -------------------------------------------------------------------
+        # Functional check: feature-budget-guard-and-skip-ahead Phase 3 —
+        # dependency-aware skip-ahead past a gated head (default-on; two-key
+        # readiness predicate; --strict-research-halt opt-out).
+        #
+        # Queue head feat-sa-head is research-gated (RESEARCH_PROMPT.md, no
+        # RESEARCH.md/RESEARCH_SUMMARY.md → needs-research). The remaining
+        # candidates exercise each readiness arm:
+        #   feat-sa-indep — independent: true (SPEC frontmatter), no hard dep →
+        #                   skip-ahead-READY (the one that should dispatch).
+        #   feat-sa-unmarked — ready to plan, NO independent marker → NOT skipped
+        #                   onto (degrades to strict halt for it).
+        #   feat-sa-down — independent: true BUT a HARD dep on the gated head →
+        #                   downstream → NOT skipped onto.
+        # Skip-ahead is NOT marker-gated (it is default-on), so no run marker is
+        # written here.
+        # -------------------------------------------------------------------
+        def _sa_make(root: Path, fid: str, *, spec: str, research: bool = True,
+                     phases: bool = True) -> None:
+            fdir = root / "docs" / "features" / fid
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "SPEC.md").write_text(spec, encoding="utf-8")
+            if research:
+                (fdir / "RESEARCH.md").write_text("# R\n")
+                (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+            if phases:
+                (fdir / "PHASES.md").write_text(
+                    "# Phases\n\n### Phase 1\n- [ ] Build\n"
+                )
+                (fdir / "plans").mkdir(exist_ok=True)
+                (fdir / "plans" / f"all-phases-{fid}.md").write_text("# Plan\n")
+
+        sa_root = td_path / "skip-ahead"
+        (sa_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (sa_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sa-head", "name": "SA Head",
+                 "spec_dir": "feat-sa-head", "tier": 1},
+                {"id": "feat-sa-down", "name": "SA Down",
+                 "spec_dir": "feat-sa-down", "tier": 2},
+                {"id": "feat-sa-unmarked", "name": "SA Unmarked",
+                 "spec_dir": "feat-sa-unmarked", "tier": 3},
+                {"id": "feat-sa-indep", "name": "SA Indep",
+                 "spec_dir": "feat-sa-indep", "tier": 4},
+            ]
+        }))
+        (sa_root / "docs" / "features" / "ROADMAP.md").write_text("# Roadmap\n")
+        # Gated head: research-pending (prompt only, no research) → needs-research.
+        sa_head = sa_root / "docs" / "features" / "feat-sa-head"
+        sa_head.mkdir(parents=True, exist_ok=True)
+        (sa_head / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (sa_head / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+        # Downstream: marked independent BUT a HARD dep on the gated head.
+        _sa_make(
+            sa_root, "feat-sa-down",
+            spec=(
+                "---\nindependent: true\n---\n\n# Spec\n\n**Status:** Draft\n\n"
+                "**Depends on:**\n- feat-sa-head — hard — needs the head's output\n"
+            ),
+        )
+        # Unmarked: ready to plan, NO independent marker.
+        _sa_make(
+            sa_root, "feat-sa-unmarked",
+            spec="# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+        )
+        # Independent + dep-free → the skip-ahead-ready dispatch target.
+        _sa_make(
+            sa_root, "feat-sa-indep",
+            spec=(
+                "---\nindependent: true\n---\n\n# Spec\n\n**Status:** Draft\n\n"
+                "**Depends on:** (none)\n"
+            ),
+        )
+
+        # (a) Default (no --strict-research-halt): skip past the gated head and the
+        #     downstream/unmarked candidates onto the independent one.
+        sa_st = compute_state(sa_root, cloud=False, real_device=True)
+        if sa_st.get("feature_id") != "feat-sa-indep":
+            failures.append(
+                "[skip-ahead] default: expected feat-sa-indep dispatched past the "
+                f"gated head, got feature_id={sa_st.get('feature_id')!r} "
+                f"(terminal={sa_st.get('terminal_reason')!r})"
+            )
+        if sa_st.get("gated_heads") != ["feat-sa-head"]:
+            failures.append(
+                "[skip-ahead] default: expected gated_heads=['feat-sa-head'] "
+                f"surfaced, got {sa_st.get('gated_heads')!r}"
+            )
+
+        # (b) Unmarked NOT skipped onto / downstream NOT skipped onto: remove the
+        #     independent candidate so ONLY the gated head + downstream + unmarked
+        #     remain. No skip-ahead-ready item exists → fall back to the gated
+        #     head's per-feature terminal (needs-research), NOT a dispatch of the
+        #     unmarked or downstream item, NOT a false completion.
+        import shutil as _sa_shutil
+        _sa_shutil.rmtree(sa_root / "docs" / "features" / "feat-sa-indep")
+        sa_q2 = json.loads(
+            (sa_root / "docs" / "features" / "queue.json").read_text()
+        )
+        sa_q2["queue"] = [e for e in sa_q2["queue"] if e["id"] != "feat-sa-indep"]
+        (sa_root / "docs" / "features" / "queue.json").write_text(json.dumps(sa_q2))
+        sa_st2 = compute_state(sa_root, cloud=False, real_device=True)
+        if sa_st2.get("terminal_reason") != "needs-research" \
+                or sa_st2.get("feature_id") != "feat-sa-head":
+            failures.append(
+                "[skip-ahead] no-ready-alt: expected fallback to the gated head's "
+                "needs-research terminal (unmarked + downstream NOT dispatched), got "
+                f"terminal={sa_st2.get('terminal_reason')!r} "
+                f"feature_id={sa_st2.get('feature_id')!r}"
+            )
+        # The unmarked/downstream items must NOT have been dispatched.
+        if sa_st2.get("feature_id") in ("feat-sa-unmarked", "feat-sa-down"):
+            failures.append(
+                "[skip-ahead] no-ready-alt: an unmarked/downstream item was wrongly "
+                f"dispatched: {sa_st2.get('feature_id')!r}"
+            )
+
+        # (c) --strict-research-halt restores the legacy halt-on-first-gated-head:
+        #     even with the independent candidate present (restore it), the gated
+        #     head halts the run (needs-research) and skip-ahead does NOT advance.
+        _sa_make(
+            sa_root, "feat-sa-indep",
+            spec=(
+                "---\nindependent: true\n---\n\n# Spec\n\n**Status:** Draft\n\n"
+                "**Depends on:** (none)\n"
+            ),
+        )
+        (sa_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sa-head", "name": "SA Head",
+                 "spec_dir": "feat-sa-head", "tier": 1},
+                {"id": "feat-sa-indep", "name": "SA Indep",
+                 "spec_dir": "feat-sa-indep", "tier": 4},
+            ]
+        }))
+        sa_st3 = compute_state(
+            sa_root, cloud=False, real_device=True, strict_research_halt=True
+        )
+        if sa_st3.get("terminal_reason") != "needs-research" \
+                or sa_st3.get("feature_id") != "feat-sa-head":
+            failures.append(
+                "[skip-ahead] --strict-research-halt: expected the legacy "
+                "halt-on-first-gated-head (needs-research on feat-sa-head), got "
+                f"terminal={sa_st3.get('terminal_reason')!r} "
+                f"feature_id={sa_st3.get('feature_id')!r}"
+            )
+        if "gated_heads" in sa_st3:
+            failures.append(
+                "[skip-ahead] --strict-research-halt: gated_heads key must be absent "
+                f"(skip-ahead disabled), got {sa_st3.get('gated_heads')!r}"
+            )
+        print("  [skip-ahead] default skip-onto-independent + unmarked/downstream "
+              "NOT-skipped + --strict-research-halt legacy halt: ok")
+
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
         enq_features = td_path / "enqueue-test" / "docs" / "features"
@@ -6449,6 +6769,20 @@ def main() -> int:
                             "→ terminal eviction). Marker-gated: a no-op when no run marker is "
                             "present (output byte-identical to the pre-feature baseline)."
                         ))
+    parser.add_argument("--strict-research-halt", action="store_true",
+                        help=(
+                            "feature-budget-guard-and-skip-ahead Phase 3: OPT OUT of the default-on "
+                            "dependency-aware skip-ahead. By DEFAULT (flag absent), when the queue "
+                            "head is gated (research-pending or BLOCKED), the queue-selection loop "
+                            "skips past it onto the first skip-ahead-ready item — one whose deps have "
+                            "no hard dependency on a gated id AND which carries an explicit "
+                            "independent: true (a.k.a. no_shared_state) marker in its SPEC frontmatter "
+                            "or queue entry. Unmarked/downstream items are NOT skipped onto (they "
+                            "degrade to today's strict halt). With this flag SET, that skip-ahead is "
+                            "DISABLED and the legacy halt-on-first-gated-head behavior is restored. "
+                            "Output is byte-identical to the pre-Phase-3 baseline when set (or when "
+                            "no head is gated)."
+                        ))
     parser.add_argument("--verify-ledger", default=None, metavar="SPEC_PATH",
                         help=(
                             "Scripted completion-ledger guard (replaces the prose guard blocks "
@@ -7355,6 +7689,7 @@ def main() -> int:
         park_needs_input=args.park_needs_input,
         park_blocked=args.park_blocked,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
+        strict_research_halt=args.strict_research_halt,
     )
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.

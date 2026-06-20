@@ -19595,6 +19595,114 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# Tests: feature-budget-guard-and-skip-ahead Phase 3 — two-key readiness
+#   predicates (Locked Decision 5).
+#     parse_independent_marker(spec_text, queue_entry) -> bool
+#       True for explicit `independent: true` in SPEC frontmatter OR queue entry;
+#       True for the `no_shared_state: true` alias; False when absent (default).
+#       Deterministic on-disk read; no LLM judgment.
+#     skip_ahead_ready(deps, gated_ids, independent) -> bool
+#       Two-key predicate: False if any HARD dep feature_id is in gated_ids;
+#       else require `independent` truthy. soft/composes deps never block.
+# ---------------------------------------------------------------------------
+
+
+def test_parse_independent_marker_spec_frontmatter_true():
+    """P3 RED: `independent: true` in the SPEC frontmatter → True."""
+    _guard()
+    spec = (
+        "---\nindependent: true\n---\n\n# Spec\n\n**Status:** Draft\n"
+    )
+    assert lazy_core.parse_independent_marker(spec, {}) is True
+
+
+def test_parse_independent_marker_queue_entry_true():
+    """P3 RED: `independent: true` in the queue entry (no SPEC marker) → True."""
+    _guard()
+    spec = "# Spec\n\n**Status:** Draft\n"
+    assert lazy_core.parse_independent_marker(spec, {"independent": True}) is True
+
+
+def test_parse_independent_marker_no_shared_state_alias():
+    """P3 RED: the `no_shared_state: true` alias (SPEC or queue) → True."""
+    _guard()
+    spec = "---\nno_shared_state: true\n---\n\n# Spec\n"
+    assert lazy_core.parse_independent_marker(spec, {}) is True
+    assert lazy_core.parse_independent_marker(
+        "# Spec\n", {"no_shared_state": True}
+    ) is True
+
+
+def test_parse_independent_marker_absent_default_false():
+    """P3 RED: no marker anywhere → False (the safe default)."""
+    _guard()
+    spec = "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+    assert lazy_core.parse_independent_marker(spec, {}) is False
+    # An explicitly-false marker is also False (not just absent).
+    assert lazy_core.parse_independent_marker(
+        "---\nindependent: false\n---\n", {}
+    ) is False
+
+
+def test_skip_ahead_ready_independent_no_hard_dep_on_gated_true():
+    """P3 RED: independent AND no hard dep on a gated id → True."""
+    _guard()
+    deps = [{"feature_id": "other", "kind": "hard", "reason": "x"}]
+    assert lazy_core.skip_ahead_ready(
+        deps, gated_ids={"head"}, independent=True
+    ) is True
+
+
+def test_skip_ahead_ready_hard_dep_on_gated_false_even_if_marked():
+    """P3 RED: a HARD dep on a currently-gated id → False even when marked."""
+    _guard()
+    deps = [{"feature_id": "head", "kind": "hard", "reason": "needs it"}]
+    assert lazy_core.skip_ahead_ready(
+        deps, gated_ids={"head"}, independent=True
+    ) is False
+
+
+def test_skip_ahead_ready_soft_composes_dep_on_gated_does_not_block():
+    """P3 RED: soft/composes deps on a gated id do NOT block (need exist, not Complete)."""
+    _guard()
+    deps = [
+        {"feature_id": "head", "kind": "soft", "reason": "x"},
+        {"feature_id": "head", "kind": "composes", "reason": "y"},
+    ]
+    assert lazy_core.skip_ahead_ready(
+        deps, gated_ids={"head"}, independent=True
+    ) is True
+
+
+def test_skip_ahead_ready_unmarked_but_dep_free_false():
+    """P3 RED: dep-free but NOT marked independent → False (degrades to strict halt)."""
+    _guard()
+    assert lazy_core.skip_ahead_ready(
+        [], gated_ids={"head"}, independent=False
+    ) is False
+
+
+_TESTS = _TESTS + [
+    ("test_parse_independent_marker_spec_frontmatter_true",
+     test_parse_independent_marker_spec_frontmatter_true),
+    ("test_parse_independent_marker_queue_entry_true",
+     test_parse_independent_marker_queue_entry_true),
+    ("test_parse_independent_marker_no_shared_state_alias",
+     test_parse_independent_marker_no_shared_state_alias),
+    ("test_parse_independent_marker_absent_default_false",
+     test_parse_independent_marker_absent_default_false),
+    ("test_skip_ahead_ready_independent_no_hard_dep_on_gated_true",
+     test_skip_ahead_ready_independent_no_hard_dep_on_gated_true),
+    ("test_skip_ahead_ready_hard_dep_on_gated_false_even_if_marked",
+     test_skip_ahead_ready_hard_dep_on_gated_false_even_if_marked),
+    ("test_skip_ahead_ready_soft_composes_dep_on_gated_does_not_block",
+     test_skip_ahead_ready_soft_composes_dep_on_gated_does_not_block),
+    ("test_skip_ahead_ready_unmarked_but_dep_free_false",
+     test_skip_ahead_ready_unmarked_but_dep_free_false),
+]
+
+
+# ---------------------------------------------------------------------------
 # Tests: loop-detected-false-positives-from-probe-and-reboot-churn
 #   Phase 2 — resolution-aware step_count reset (symptom 3).
 #

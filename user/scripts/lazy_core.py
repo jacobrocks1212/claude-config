@@ -8417,6 +8417,136 @@ def read_per_feature_forward_cycles(marker: dict | None) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+# ---------------------------------------------------------------------------
+# feature-budget-guard-and-skip-ahead Phase 3 — two-key skip-ahead predicates
+#   (Locked Decision 5). Both are pure/near-pure and deterministic (no LLM
+#   judgment): parse_independent_marker reads on-disk markers; skip_ahead_ready
+#   combines a (caller-parsed) dep list with the gated-id set + the marker.
+# ---------------------------------------------------------------------------
+
+# The affirmative shared-state-isolation markers. `independent: true` is the
+# primary; `no_shared_state: true` is a documented alias (SPEC Locked Decision 5).
+_INDEPENDENT_MARKER_KEYS = ("independent", "no_shared_state")
+# Matches a frontmatter line `independent: true` / `no_shared_state: true`
+# (case-insensitive value; leading whitespace tolerated). Truthy ONLY for an
+# explicit `true` — `false`/absent default to NOT-independent (the safe rail).
+_INDEPENDENT_MARKER_RE = re.compile(
+    r"^\s*(independent|no_shared_state)\s*:\s*true\s*$",
+    re.IGNORECASE,
+)
+
+
+def _coerce_marker_truthy(value: object) -> bool:
+    """True iff `value` is an explicit affirmative (bool True or a 'true' string).
+
+    Deliberately strict: only ``True`` or a case-insensitive ``"true"`` count.
+    A queue.json entry can carry either a JSON bool or a string; anything else
+    (False, None, 0, "false", "") is NOT independent — the safe default.
+    """
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return False
+
+
+def parse_independent_marker(spec_text: str, queue_entry: dict | None) -> bool:
+    """Deterministic two-source read of the `independent: true` isolation marker
+    (feature-budget-guard-and-skip-ahead Phase 3, Locked Decision 5).
+
+    Returns ``True`` iff an explicit ``independent: true`` (or its
+    ``no_shared_state: true`` alias) is present in EITHER the SPEC.md frontmatter
+    OR the ``queue.json`` entry. Default (marker absent, or explicitly ``false``)
+    is ``False`` — the shared-state-isolation rail that makes default-on
+    skip-ahead safe (absent-flag items degrade to today's strict halt). On-disk,
+    deterministic — no LLM judgment.
+
+    Args:
+        spec_text: the raw SPEC.md text (its frontmatter is scanned line-by-line;
+            only the leading ``---`` fenced block is consulted when present, else
+            the whole head of the file — a leading marker before any heading).
+        queue_entry: the feature's ``queue.json`` entry (may be ``None``/empty).
+
+    Returns:
+        ``True`` if the affirmative marker is present in either source, else
+        ``False``.
+    """
+    # Source 1: the queue entry (a JSON bool or string under either key).
+    if isinstance(queue_entry, dict):
+        for key in _INDEPENDENT_MARKER_KEYS:
+            if _coerce_marker_truthy(queue_entry.get(key)):
+                return True
+    # Source 2: the SPEC.md frontmatter. Scan the leading `---` fenced block if
+    # present; otherwise scan the head of the file up to the first markdown
+    # heading (a bare leading `independent: true` line). The regex matches ONLY
+    # an explicit `: true`, so a `: false` line is never a false positive.
+    if isinstance(spec_text, str) and spec_text:
+        lines = spec_text.splitlines()
+        in_fence = False
+        fence_seen = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped == "---":
+                if not fence_seen and not in_fence:
+                    in_fence = True
+                    fence_seen = True
+                    continue
+                if in_fence:
+                    # Closing fence — stop scanning the frontmatter block.
+                    break
+            if fence_seen and not in_fence:
+                # We have already consumed a fenced block; don't scan the body.
+                break
+            if not fence_seen and stripped.startswith("#"):
+                # No frontmatter fence and we hit a heading → no leading marker.
+                break
+            if _INDEPENDENT_MARKER_RE.match(line):
+                return True
+    return False
+
+
+def skip_ahead_ready(
+    deps: list[dict] | None,
+    gated_ids: set[str] | frozenset[str],
+    independent: bool,
+) -> bool:
+    """Two-key skip-ahead readiness predicate (feature-budget-guard-and-skip-ahead
+    Phase 3, Locked Decision 5).
+
+    A candidate is "skip-ahead-ready" iff BOTH keys hold:
+
+      1. **No hard dep on a gated id.** None of its ``hard`` deps resolve to a
+         currently-gated item (research-pending or BLOCKED). ``soft``/``composes``
+         deps do NOT block — they need the upstream to *exist*, not be Complete,
+         and a gated-but-specced upstream exists.
+      2. **Affirmative isolation marker.** ``independent`` is truthy (the
+         ``parse_independent_marker`` result — the shared-state isolation rail).
+
+    Pure: ``deps`` is the caller-parsed dep list (from ``parse_dep_block``), so
+    this predicate has no I/O and is directly characterizable.
+
+    Args:
+        deps: the candidate's parsed ``**Depends on:**`` deps (list of
+            ``{feature_id, kind, reason}``; ``None``/empty ⇒ no deps).
+        gated_ids: the set of currently-gated feature ids (research-pending or
+            BLOCKED heads the loop has skipped this probe).
+        independent: the ``parse_independent_marker`` verdict for this candidate.
+
+    Returns:
+        ``True`` iff both keys hold; ``False`` otherwise (degrades to strict halt
+        for an unmarked or downstream candidate).
+    """
+    # Key 1: a HARD dep on any gated id blocks skip-ahead (it is genuinely
+    # downstream of the gated head). soft/composes are ignored.
+    for dep in (deps or []):
+        if not isinstance(dep, dict):
+            continue
+        if dep.get("kind") == "hard" and dep.get("feature_id") in gated_ids:
+            return False
+    # Key 2: require the affirmative isolation marker.
+    return bool(independent)
+
+
 def advance_run_counters(state: dict) -> dict | None:
     """Advance the persisted forward_cycles or meta_cycles counter in the marker —
     ONLY when an actual dispatch (registry consume) has landed since the last
