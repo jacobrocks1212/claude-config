@@ -145,11 +145,19 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        string (the lockstep test asserts producer prose == that constant).
 
    • "Defer this {ITEM}; continue the rest of the queue":
-       Edit {SPEC_ROOT}/queue.json: move this {ITEM}'s entry to the END of the
-       `queue` array (preserve valid JSON; the queue.topo-order rule may emit an
-       advisory warning for a deferred hard-upstream — acceptable for an
-       operator-chosen defer). LEAVE BLOCKED.md IN PLACE (the {ITEM} stays
-       blocked; it simply no longer heads the queue). Do NOT neutralize.
+       Run the deterministic, operator-only / out-of-cycle reorder subcommand —
+       do NOT hand-edit queue.json (the orchestrator calls the script; HARD
+       CONSTRAINT 1's no-direct-queue.json-edit rule holds):
+         python3 ~/.claude/scripts/{STATE_SCRIPT} --repo-root {repo_root} \
+             --reorder-queue --id <this-{ITEM}-id> --to tail
+       This moves this {ITEM}'s entry to the END of the `queue` array atomically
+       (the script reuses lazy_core.reorder_queue / `_atomic_write`; the
+       queue.topo-order rule may emit an advisory warning for a deferred
+       hard-upstream — acceptable for an operator-chosen defer). It is gated by
+       refuse_if_cycle_active, so it runs only from the orchestrator session
+       (out-of-cycle), never a cycle subagent. LEAVE BLOCKED.md IN PLACE (the
+       {ITEM} stays blocked; it simply no longer heads the queue). Do NOT
+       neutralize.
 
    • "Other" (custom directive): enact the operator's NOTES as faithfully as you
      can with Edit/Write/Read/Bash and (if a skill fits) the Skill tool. If the
