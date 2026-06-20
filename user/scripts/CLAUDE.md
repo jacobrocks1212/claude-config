@@ -74,6 +74,18 @@ table): Step 2 find current item → Step 3 BLOCKED/NEEDS_INPUT → Step 4 SPEC 
 stub-spec → Step 4.6 upstream realign → Step 5 research gate → Step 6 PHASES → Step 7
 plan/execute → **Step 8 retro → Step 9 MCP gate → Step 10 mark-complete**.
 
+> **Step-4.5 clear-owner (`stub-spec-route-loops-until-queue-stub-cleared`, 2026-06-20).** At the
+> Step-4.5 branch, `_stub_is_queue_flag_only(spec_text, queue_entry)` detects the post-baseline
+> state where the `queue.json` `"stub": true` flag is the LONE surviving stub marker (the `/spec`
+> Phase-1 rewrite already dropped the SPEC-text markers — `_spec_text_has_stub_marker`, factored
+> out of `is_stub_spec`). When it fires, `lazy-state.py` clears the flag via
+> `lazy_core.clear_queue_stub(queue_path, feature_id)` (script-owned, never an orchestrator
+> hand-edit) and FALLS THROUGH to Step 5 — closing the commit-masked Step-4.5 loop (HEAD advanced
+> each cycle while the route never left Step 4.5). A true pre-baseline stub (SPEC-text marker still
+> present) is byte-identical to before: dispatch `/spec` at Step 4.5. Feature-pipeline only —
+> `bug-state.py` has no stub step, so `clear_queue_stub` (shared `lazy_core`) is invoked solely by
+> `lazy-state.py` (correct divergence, no parity mirror).
+
 ## Three environments + the device axis
 
 Two orthogonal axes; three environments. See `docs/features/CLAUDE.md` (in AlgoBooth) for

@@ -23127,6 +23127,86 @@ def test_reorder_queue_malformed_json_dies():
         assert raised, "malformed queue JSON must raise SystemExit via _die"
 
 
+# ---------------------------------------------------------------------------
+# clear_queue_stub helper (stub-spec-route-loops-until-queue-stub-cleared — Phase 1)
+# ---------------------------------------------------------------------------
+
+def _write_temp_stub_queue(td: "Path", entries: "list[dict]") -> "Path":
+    """Write a docs/features/queue.json-shaped file from raw entry dicts."""
+    qp = Path(td) / "queue.json"
+    qp.write_text(
+        json.dumps({"queue": entries}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return qp
+
+
+def test_clear_queue_stub_removes_stub_when_present():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_stub_queue(td, [
+            {"id": "a", "name": "A", "stub": True},
+            {"id": "b", "name": "B"},
+        ])
+        result = lazy_core.clear_queue_stub(qp, "a")
+        assert result["cleared"] is True
+        assert result["feature_id"] == "a"
+        assert result["queue_length"] == 2
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        entry = next(e for e in data["queue"] if e["id"] == "a")
+        assert "stub" not in entry, "the stub key must be popped"
+        # JSON-serializable
+        json.dumps(result)
+
+
+def test_clear_queue_stub_absent_is_byte_stable_noop():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_stub_queue(td, [
+            {"id": "a", "name": "A"},
+            {"id": "b", "name": "B"},
+        ])
+        before = qp.read_bytes()
+        result = lazy_core.clear_queue_stub(qp, "a")
+        assert result["cleared"] is False
+        assert qp.read_bytes() == before, "absent-stub no-op must leave the file byte-stable"
+
+
+def test_clear_queue_stub_missing_feature_id_dies():
+    with tempfile.TemporaryDirectory() as td:
+        qp = _write_temp_stub_queue(td, [{"id": "a", "name": "A", "stub": True}])
+        before = qp.read_bytes()
+        raised = False
+        try:
+            lazy_core.clear_queue_stub(qp, "zzz")
+        except SystemExit:
+            raised = True
+        assert raised, "missing feature_id must raise SystemExit via _die"
+        assert qp.read_bytes() == before, "die path must leave the queue untouched"
+
+
+def test_clear_queue_stub_malformed_json_dies():
+    with tempfile.TemporaryDirectory() as td:
+        qp = Path(td) / "queue.json"
+        qp.write_text("{ not valid json", encoding="utf-8")
+        raised = False
+        try:
+            lazy_core.clear_queue_stub(qp, "a")
+        except SystemExit:
+            raised = True
+        assert raised, "malformed queue JSON must raise SystemExit via _die"
+
+
+_TESTS = _TESTS + [
+    ("test_clear_queue_stub_removes_stub_when_present",
+     test_clear_queue_stub_removes_stub_when_present),
+    ("test_clear_queue_stub_absent_is_byte_stable_noop",
+     test_clear_queue_stub_absent_is_byte_stable_noop),
+    ("test_clear_queue_stub_missing_feature_id_dies",
+     test_clear_queue_stub_missing_feature_id_dies),
+    ("test_clear_queue_stub_malformed_json_dies",
+     test_clear_queue_stub_malformed_json_dies),
+]
+
+
 _TESTS = _TESTS + [
     ("test_reorder_queue_to_tail_moves_entry_last",
      test_reorder_queue_to_tail_moves_entry_last),

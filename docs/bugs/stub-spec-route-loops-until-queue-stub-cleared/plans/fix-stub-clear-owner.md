@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: stub-spec-route-loops-until-queue-stub-cleared
-status: Ready
+status: Complete
 created: 2026-06-20
 complexity: complex
 phases: [1]
@@ -24,7 +24,7 @@ phases: [1]
 
 ## Work Units
 
-- [ ] WU-1 — Script-owned clear-and-advance at the Step-4.5 → Step-5 boundary
+- [x] WU-1 — Script-owned clear-and-advance at the Step-4.5 → Step-5 boundary
 
 (Single WU: the helper, discriminator, routing wire, and tests are one mutually-dependent fix — the `clear_queue_stub` helper is untestable in isolation from its sole caller and the discriminator, and the smoke fixture asserts the end-to-end clear-and-advance. Splitting would create untestable intermediate states. This satisfies the partitioning "merge only when tightly coupled / single-file co-creation" exception, not "merge for convenience".)
 

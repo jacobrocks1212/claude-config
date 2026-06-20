@@ -820,22 +820,22 @@ def backfill_receipts(repo_root: Path) -> dict[str, Any]:
 # SPEC parsing
 # ---------------------------------------------------------------------------
 
-def is_stub_spec(spec_text: str, queue_entry: dict[str, Any] | None = None) -> bool:
-    """Detect stub-spec markers per /lazy Step 4.5.
+def _spec_text_has_stub_marker(spec_text: str) -> bool:
+    """True iff the SPEC body carries an in-SPEC stub marker.
 
-    A SPEC is a stub iff any of these match:
-    - Legacy markers in spec_text (`**Status:** Draft (research stub)`,
-      `> Stub generated from advanced feature research`) — kept for back-compat.
-    - Canonical pre-Gemini marker `Draft (pre-Gemini)` substring in spec_text
-      (per AlgoBooth docs/CLAUDE.md).
-    - `queue_entry.get("stub") is True` — the queue.json cross-check (per
-      AlgoBooth docs/CLAUDE.md). Triggers stub mode even when the SPEC trailer
-      is absent.
+    Factored out of ``is_stub_spec`` so BOTH that function AND the Step-4.5
+    lone-surviving-marker discriminator (``_stub_is_queue_flag_only``) test the
+    EXACT same SPEC-text conditions — no duplicated marker list
+    (stub-spec-route-loops-until-queue-stub-cleared).
 
-    Stub mode routes to interactive /spec at Step 4.5; the baseline doesn't
-    exist yet and needs design conversation. Structured-but-research-pending
-    specs (no stub markers, missing RESEARCH.md) are a different state — they
-    halt at Step 5 with needs-research and wait for a Gemini upload.
+    The SPEC-text markers (unlike the ``queue.json`` flag) live IN the SPEC, so
+    they self-clear when ``/spec`` Phase 1 rewrites the SPEC into a structured
+    baseline. The matched forms:
+    - Legacy markers (`**Status:** Draft (research stub)`,
+      `> Stub generated from advanced feature research`) — back-compat.
+    - Canonical pre-Gemini marker `Draft (pre-Gemini)`, anchored to the
+      **Status:** line OR a `>` blockquote so arbitrary inline prose mentions
+      do NOT false-positive.
     """
     if "**Status:** Draft (research stub)" in spec_text:
         return True
@@ -856,9 +856,50 @@ def is_stub_spec(spec_text: str, queue_entry: dict[str, Any] | None = None) -> b
         return True
     if re.search(r"^\s*>.*Draft \(pre-Gemini\)", spec_text, re.MULTILINE):
         return True
+    return False
+
+
+def is_stub_spec(spec_text: str, queue_entry: dict[str, Any] | None = None) -> bool:
+    """Detect stub-spec markers per /lazy Step 4.5.
+
+    A SPEC is a stub iff any of these match:
+    - A SPEC-text stub marker (legacy `Draft (research stub)` / pre-Gemini
+      trailer — see ``_spec_text_has_stub_marker``).
+    - `queue_entry.get("stub") is True` — the queue.json cross-check (per
+      AlgoBooth docs/CLAUDE.md). Triggers stub mode even when the SPEC trailer
+      is absent.
+
+    Stub mode routes to interactive /spec at Step 4.5; the baseline doesn't
+    exist yet and needs design conversation. Structured-but-research-pending
+    specs (no stub markers, missing RESEARCH.md) are a different state — they
+    halt at Step 5 with needs-research and wait for a Gemini upload.
+    """
+    if _spec_text_has_stub_marker(spec_text):
+        return True
     if queue_entry is not None and queue_entry.get("stub") is True:
         return True
     return False
+
+
+def _stub_is_queue_flag_only(
+    spec_text: str, queue_entry: dict[str, Any] | None
+) -> bool:
+    """True iff the queue.json `"stub"` flag is the LONE surviving stub marker.
+
+    The Step-4.5 clear-and-advance discriminator
+    (stub-spec-route-loops-until-queue-stub-cleared): after a `/spec` Phase 1
+    cycle shapes the baseline, the SPEC-text stub markers are gone (the rewrite
+    drops them) but the `queue.json` flag survives. That post-baseline state —
+    queue flag True AND no SPEC-text marker — is reachable ONLY after a
+    baseline-shaping cycle, so it is the deterministic "baseline locked" signal.
+    Returns False on a TRUE pre-baseline stub (a SPEC-text marker still present),
+    so the clear never fires before the baseline is shaped.
+    """
+    return (
+        queue_entry is not None
+        and queue_entry.get("stub") is True
+        and not _spec_text_has_stub_marker(spec_text)
+    )
 
 
 def parse_dep_block(spec_text: str) -> list[dict[str, str]]:
@@ -1977,7 +2018,26 @@ def compute_state(
     spec_text = spec_file.read_text(encoding="utf-8")
 
     # Step 4.5: Stub spec
-    if is_stub_spec(spec_text, current.get("queue_entry")):
+    #
+    # stub-spec-route-loops-until-queue-stub-cleared: when the queue.json
+    # `"stub"` flag is the LONE surviving stub marker (the `/spec` Phase 1
+    # rewrite already dropped the SPEC-text markers but nobody cleared the queue
+    # flag), the baseline is locked. Clear the flag exactly once — under script
+    # ownership, never an orchestrator hand-edit (HARD CONSTRAINT 1) — and FALL
+    # THROUGH to Step 4.6 / Step 5, closing the commit-masked Step-4.5 loop. The
+    # discriminator is reachable only post-baseline (SPEC-text markers gone), so
+    # it never fires on a true pre-baseline stub.
+    if _stub_is_queue_flag_only(spec_text, current.get("queue_entry")):
+        clear_result = lazy_core.clear_queue_stub(
+            repo_root / "docs" / "features" / "queue.json", feature_id
+        )
+        _diag(
+            f"Step 4.5 clear-and-advance: queue stub flag was the lone surviving "
+            f"marker for {feature_id} (baseline locked) — cleared "
+            f"(cleared={clear_result.get('cleared')}), advancing to Step 5"
+        )
+        # Fall through to Step 4.6 / Step 5 (do NOT return / re-dispatch /spec).
+    elif is_stub_spec(spec_text, current.get("queue_entry")):
         return _state(
             **common,
             current_step="Step 4.5: stub-spec detected",
@@ -3020,8 +3080,12 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         (sdir / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
     elif name == "stub-queue-flag-only":
-        # queue.json `"stub": true` cross-check fires Step 4.5 even when the
-        # SPEC body has no stub marker (belt-and-suspenders per docs/CLAUDE.md).
+        # queue.json `"stub": true` cross-check fires Step 4.5 — but here the
+        # SPEC ALSO carries a genuine pre-baseline SPEC-text stub marker
+        # (`> Draft (pre-Gemini)`), so this is a TRUE pre-baseline stub. The
+        # lone-surviving-marker discriminator must NOT clear-and-advance: with
+        # a SPEC-text marker still present the route stays at Step 4.5 (the
+        # baseline has not been shaped yet).
         (features / "queue.json").write_text(json.dumps({
             "queue": [
                 {"id": "feat-stub-queue", "name": "Stub Queue",
@@ -3032,9 +3096,34 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         sdir = features / "feat-stub-queue"
         sdir.mkdir()
         (sdir / "SPEC.md").write_text(
-            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n\n"
+            "> Draft (pre-Gemini). Open questions in this spec are captured "
+            "in RESEARCH_PROMPT.md and will be addressed by the upcoming "
+            "manual Gemini deep-research sprint.\n"
         )
         (sdir / "RESEARCH_PROMPT.md").write_text("# Prompt\n")
+    elif name == "stub-queue-flag-lone-survivor":
+        # stub-spec-route-loops-until-queue-stub-cleared: the queue flag is the
+        # LONE surviving stub marker — `/spec` Phase 1 already rewrote the SPEC
+        # into a structured baseline (no SPEC-text stub marker remains) but the
+        # `"stub": true` queue flag was never cleared. The discriminator must
+        # clear the flag and FALL THROUGH to Step 5 (generate research prompt)
+        # in the SAME probe, instead of re-firing Step 4.5 (the commit-masked
+        # loop). No research files present.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-stub-lone", "name": "Stub Lone",
+                 "spec_dir": "feat-stub-lone", "tier": 1, "stub": True}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        sdir = features / "feat-stub-lone"
+        sdir.mkdir()
+        # Structured baseline: NO SPEC-text stub marker. The queue flag is the
+        # lone surviving marker.
+        (sdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
     elif name == "spec-status-complete":
         # SPEC.md Status: Complete WITH a COMPLETED.md receipt → genuinely done
         # even when the ROADMAP grep wouldn't match (no strikethrough/COMPLETE).
@@ -4485,12 +4574,21 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-stub-marker",
                 "current_step": "Step 4.5: stub-spec detected",
             }),
-            # queue.json `"stub": true` cross-check fires Step 4.5 even when
-            # the SPEC body has no stub marker.
+            # queue.json `"stub": true` + a genuine pre-baseline SPEC-text
+            # marker → a TRUE pre-baseline stub → Step 4.5 (NOT cleared).
             ("stub-queue-flag-only", False, False, {
                 "sub_skill": "spec",
                 "feature_id": "feat-stub-queue",
                 "current_step": "Step 4.5: stub-spec detected",
+            }),
+            # stub-spec-route-loops-until-queue-stub-cleared: the queue flag is
+            # the LONE surviving marker (baseline already shaped) → the
+            # discriminator clears the flag and advances to Step 5 in the same
+            # probe (on-disk clear asserted in the extra-assertions block).
+            ("stub-queue-flag-lone-survivor", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-stub-lone",
+                "current_step": "Step 5: generate research prompt",
             }),
             ("needs-realign", False, False, {
                 "sub_skill": "realign-spec",
@@ -4874,6 +4972,39 @@ def run_smoke_tests() -> int:
                     failures.append(
                         f"[{name}] expected sub_skill_args to reference "
                         f"ADHOC_BRIEF.md; got {args!r}"
+                    )
+            if name == "stub-queue-flag-lone-survivor":
+                # The discriminator MUST have cleared the on-disk queue flag.
+                qp = root / "docs" / "features" / "queue.json"
+                qdata = json.loads(qp.read_text(encoding="utf-8"))
+                entry = next(
+                    (e for e in qdata.get("queue", [])
+                     if e.get("id") == "feat-stub-lone"),
+                    None,
+                )
+                if entry is None:
+                    failures.append(
+                        f"[{name}] queue entry feat-stub-lone disappeared"
+                    )
+                elif "stub" in entry:
+                    failures.append(
+                        f"[{name}] expected the queue 'stub' flag to be "
+                        f"cleared on baseline-lock; got entry={entry!r}"
+                    )
+            if name == "stub-queue-flag-only":
+                # The true pre-baseline stub MUST keep its queue flag (the
+                # discriminator only clears when the SPEC-text marker is gone).
+                qp = root / "docs" / "features" / "queue.json"
+                qdata = json.loads(qp.read_text(encoding="utf-8"))
+                entry = next(
+                    (e for e in qdata.get("queue", [])
+                     if e.get("id") == "feat-stub-queue"),
+                    None,
+                )
+                if entry is None or entry.get("stub") is not True:
+                    failures.append(
+                        f"[{name}] a true pre-baseline stub must NOT have its "
+                        f"queue flag cleared; got entry={entry!r}"
                     )
             if name == "device-deferred-pending" and real_device:
                 # The re-open MUST thread the specific deferred scenario IDs so

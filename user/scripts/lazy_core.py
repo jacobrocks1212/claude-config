@@ -264,6 +264,68 @@ def reorder_queue(
     }
 
 
+def clear_queue_stub(queue_path: "Path", feature_id: str) -> dict:
+    """Pop the ``"stub"`` key from a queue entry — the Step-4.5 clear-owner.
+
+    The stub→research-pending transition (``lazy-state.py`` Step 4.5 → Step 5)
+    has no clear-owner for the ``queue.json`` ``"stub"`` flag between
+    baseline-lock and research-arrival: ``is_stub_spec`` keeps reading the
+    surviving flag, so Step 4.5 re-fires every cycle (the commit-masked loop —
+    ``docs/bugs/stub-spec-route-loops-until-queue-stub-cleared``). This helper
+    clears the flag exactly once, at baseline-lock, under script ownership
+    (HARD CONSTRAINT 1 forbids an orchestrator hand-edit of ``queue.json``).
+
+    Mirrors ``reorder_queue``'s load → validate-list → mutate → ``_atomic_write``
+    shape, reusing ``_die`` / ``_atomic_write`` / ``_diag``.
+
+    A missing ``feature_id`` or malformed queue JSON calls ``_die`` (exit 2,
+    zero mutation) — never a silent no-op. An entry that does NOT carry
+    ``"stub"`` is a byte-stable no-op (``cleared: False`` — no rewrite).
+
+    Returns ``{"cleared": bool, "feature_id": str, "queue_length": int}``.
+    """
+    if not queue_path.exists():
+        _die("queue.json not found", queue_path)
+        return {}  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid queue.json: {exc}", queue_path)
+        return {}  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die("queue.json 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == feature_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {feature_id}", queue_path)
+        return {}  # pragma: no cover
+
+    entry = items[idx]
+    if "stub" not in entry:
+        # No stub key — byte-stable no-op (no rewrite).
+        return {
+            "cleared": False,
+            "feature_id": feature_id,
+            "queue_length": len(items),
+        }
+
+    entry.pop("stub", None)
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(f"clear_queue_stub: cleared 'stub' flag for {feature_id}")
+    return {
+        "cleared": True,
+        "feature_id": feature_id,
+        "queue_length": len(items),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Sentinel parsing (per _components/sentinel-frontmatter.md)
 # ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@
   [research-path-byte-identical-when-research-present] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [stub-pre-gemini-marker] cloud=False skip_nr=False real_device=True: Step 4.5: stub-spec detected
   [stub-queue-flag-only] cloud=False skip_nr=False real_device=True: Step 4.5: stub-spec detected
+  [stub-queue-flag-lone-survivor] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [needs-realign] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
   [spec-status-complete] cloud=False skip_nr=False real_device=True: all-features-complete
   [complete-no-receipt] cloud=False skip_nr=False real_device=True: Step 2: completion claimed without receipt
