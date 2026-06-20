@@ -6945,6 +6945,18 @@ def main() -> int:
                             "read paths): a marker bound to a DIFFERENT session id "
                             "reads as absent (non-destructive session isolation)."
                         ))
+    # cycle-subagent-fabricates-policy-or-stray-branch Phase 2: read-only query
+    # mirroring --marker-present, but it ALSO prints the run marker's
+    # work_branch. Used by block-sentinel-write-on-stray-branch.sh to learn the
+    # reference branch (bash never re-derives branch identity; Python owns it).
+    parser.add_argument("--marker-work-branch", action="store_true",
+                        help=(
+                            "Read-only: print the run marker's work_branch and "
+                            "exit 0 if a live marker carrying a branch is present "
+                            "for the current repo (--repo-root, default cwd); exit "
+                            "1 if absent/stale/legacy-no-branch. Never creates "
+                            "state. Used by the stray-branch write-time hook."
+                        ))
     # unified-pipeline-orchestrator Phase 1: merged work-list view. Reads BOTH
     # docs/features/queue.json and docs/bugs/queue.json (via the existing
     # loaders), orders them (priority desc / lower-tier-or-severity first; tie →
@@ -7217,6 +7229,23 @@ def main() -> int:
     if args.marker_present:
         marker = lazy_core.read_run_marker(session_id=args.session_id)
         return 0 if marker is not None else 1
+
+    # cycle-subagent-fabricates-policy-or-stray-branch Phase 2: --marker-work-
+    # branch — a read-only query mirroring --marker-present that ADDITIONALLY
+    # prints the marker's work_branch. set_active_repo_root(args.repo_root) ran
+    # above, so marker_work_branch() resolves THIS repo's keyed state dir. The
+    # helper returns the branch (live marker carrying one) or None (absent /
+    # stale / session-mismatched / legacy-no-branch). Read-only: it routes
+    # through read_run_marker → claude_state_dir(create=False), so an absent
+    # probe never creates the state dir. Exit 0 + print the branch when present;
+    # exit 1 (no stdout branch) otherwise. The write-time stray-branch hook fails
+    # OPEN on the exit-1 path (no known branch to enforce against).
+    if args.marker_work_branch:
+        branch = lazy_core.marker_work_branch(session_id=args.session_id)
+        if branch:
+            sys.stdout.write(branch + "\n")
+            return 0
+        return 1
 
     # unified-pipeline-orchestrator Phase 1: --next-merged — read-only merged
     # work-list head. Reuses BOTH existing queue loaders (this script's

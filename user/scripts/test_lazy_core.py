@@ -22833,5 +22833,210 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# cycle-subagent-fabricates-policy-or-stray-branch — Phase 2
+#   marker work_branch field + lazy_core read helper (WU-2)
+#   --marker-work-branch CLI query on lazy-state.py + bug-state.py (WU-3)
+#
+# The marker did NOT carry a work_branch until this fix. The Phase-3 write-time
+# stray-branch hook needs a reference branch to compare HEAD against; Python owns
+# branch identity (same contract as --marker-present), so the marker captures it
+# at run-start and a read-only CLI query exposes it.
+# ---------------------------------------------------------------------------
+
+
+def test_marker_work_branch_field_written(_real_time=None):
+    """write_run_marker stamps a `work_branch` field, resolved via
+    _emit_work_branch on the marker's repo_root. RED before the field exists."""
+    import time as _t
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "wb-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td,
+                max_cycles=5, now=_t.time(),
+            )
+            assert "work_branch" in marker, (
+                "write_run_marker must stamp a work_branch field "
+                f"(keys: {sorted(marker)})"
+            )
+            # _emit_work_branch on a non-git temp dir returns the documented
+            # fallback string — non-empty, never a crash.
+            assert isinstance(marker["work_branch"], str) and marker["work_branch"], (
+                f"work_branch must be a non-empty str, got {marker['work_branch']!r}"
+            )
+            # The on-disk marker JSON carries the same value.
+            on_disk = lazy_core.read_run_marker(now=_t.time())
+            assert on_disk is not None and on_disk.get("work_branch") == marker["work_branch"], (
+                "read_run_marker must echo the stamped work_branch"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_work_branch_helper_reads_value():
+    """lazy_core.marker_work_branch() returns the marker's work_branch."""
+    import time as _t
+    assert hasattr(lazy_core, "marker_work_branch"), (
+        "lazy_core.marker_work_branch read helper is missing"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "wb-helper-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            written = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td,
+                max_cycles=5, now=_t.time(),
+            )
+            got = lazy_core.marker_work_branch(now=_t.time())
+            assert got == written["work_branch"], (
+                f"helper returned {got!r}, expected {written['work_branch']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_work_branch_helper_legacy_marker_returns_none():
+    """A legacy marker dict lacking work_branch → helper returns None (no KeyError)."""
+    import time as _t
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "wb-legacy-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            written = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td,
+                max_cycles=5, now=_t.time(),
+            )
+            # Simulate a legacy marker: strip the field on disk.
+            marker_path = state_dir / "lazy-run-marker.json"
+            data = json.loads(marker_path.read_text(encoding="utf-8"))
+            data.pop("work_branch", None)
+            marker_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+            got = lazy_core.marker_work_branch(now=_t.time())
+            assert got is None, f"legacy marker must yield None, got {got!r}"
+        finally:
+            _clear_state_dir()
+
+
+def test_marker_work_branch_helper_no_marker_returns_none():
+    """No marker present → helper returns None (no crash)."""
+    import time as _t
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "wb-absent-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            got = lazy_core.marker_work_branch(now=_t.time())
+            assert got is None, f"absent marker must yield None, got {got!r}"
+        finally:
+            _clear_state_dir()
+
+
+def _run_marker_work_branch_cli(script_name: str):
+    """Shared body: --marker-work-branch on the named state script (parity).
+
+    Writes a marker carrying a known work_branch in-process (hermetic, no real
+    git), then runs the script's --marker-work-branch and asserts present/absent/
+    legacy/read-only behavior.
+    """
+    import time as _t
+    script = _SCRIPTS_DIR / script_name
+    assert script.exists(), f"{script_name} missing"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "cli-state"
+        # NOTE: do NOT mkdir state_dir — the read-only probe must not create it.
+        repo_root = Path(td) / "repo"
+        repo_root.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(script)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # (a) ABSENT marker → exit 1, no stdout branch, and the read-only probe
+        #     must NOT create the state dir.
+        r = run(["--repo-root", str(repo_root), "--marker-work-branch"])
+        assert r.returncode == 1, (
+            f"{script_name} --marker-work-branch with no marker must exit 1, "
+            f"got {r.returncode}; stderr={r.stderr[:300]!r}"
+        )
+        assert not state_dir.exists(), (
+            "an absent --marker-work-branch probe must not create the state dir "
+            "(read-only invariant)"
+        )
+
+        # Now write a marker carrying a known work_branch (in-process).
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline=("bug" if "bug" in script_name else "feature"),
+                cloud=False, repo_root=str(repo_root),
+                max_cycles=5, now=_t.time(),
+            )
+            # Force a deterministic, recognizable branch value on disk.
+            marker_path = state_dir / "lazy-run-marker.json"
+            data = json.loads(marker_path.read_text(encoding="utf-8"))
+            data["work_branch"] = "main"
+            marker_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+        finally:
+            _clear_state_dir()
+
+        # (b) PRESENT marker with branch → exit 0, prints the branch.
+        r = run(["--repo-root", str(repo_root), "--marker-work-branch"])
+        assert r.returncode == 0, (
+            f"{script_name} --marker-work-branch with a live marker must exit 0, "
+            f"got {r.returncode}; stderr={r.stderr[:300]!r}"
+        )
+        assert r.stdout.strip() == "main", (
+            f"{script_name} must print the stored work_branch 'main', "
+            f"got {r.stdout!r}"
+        )
+
+        # (c) LEGACY marker (no work_branch field) → exit 1, no crash.
+        marker_path = state_dir / "lazy-run-marker.json"
+        data = json.loads(marker_path.read_text(encoding="utf-8"))
+        data.pop("work_branch", None)
+        marker_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+        r = run(["--repo-root", str(repo_root), "--marker-work-branch"])
+        assert r.returncode == 1, (
+            f"{script_name} --marker-work-branch on a legacy marker must exit 1, "
+            f"got {r.returncode}; stderr={r.stderr[:300]!r}"
+        )
+
+
+def test_marker_work_branch_cli_lazy_state():
+    """lazy-state.py --marker-work-branch: present/absent/legacy/read-only."""
+    _run_marker_work_branch_cli("lazy-state.py")
+
+
+def test_marker_work_branch_cli_bug_state_parity():
+    """bug-state.py --marker-work-branch behaves identically (parity)."""
+    _run_marker_work_branch_cli("bug-state.py")
+
+
+_TESTS = _TESTS + [
+    ("test_marker_work_branch_field_written",
+     test_marker_work_branch_field_written),
+    ("test_marker_work_branch_helper_reads_value",
+     test_marker_work_branch_helper_reads_value),
+    ("test_marker_work_branch_helper_legacy_marker_returns_none",
+     test_marker_work_branch_helper_legacy_marker_returns_none),
+    ("test_marker_work_branch_helper_no_marker_returns_none",
+     test_marker_work_branch_helper_no_marker_returns_none),
+    ("test_marker_work_branch_cli_lazy_state",
+     test_marker_work_branch_cli_lazy_state),
+    ("test_marker_work_branch_cli_bug_state_parity",
+     test_marker_work_branch_cli_bug_state_parity),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

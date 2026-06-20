@@ -4348,6 +4348,27 @@ def main() -> int:
             "be passed. Omitting adds a deprecation note to the output."
         ),
     )
+    # cycle-subagent-fabricates-policy-or-stray-branch Phase 2 (parity with
+    # lazy-state.py): --marker-work-branch read-only query + the --session-id it
+    # honors. The run marker is shared between the feature and bug pipelines, so
+    # the stray-branch write-time hook can query either script.
+    parser.add_argument(
+        "--marker-work-branch", action="store_true",
+        help=(
+            "Read-only: print the run marker's work_branch and exit 0 if a live "
+            "marker carrying a branch is present for the current repo "
+            "(--repo-root, default cwd); exit 1 if absent/stale/legacy-no-branch. "
+            "Never creates state. Used by the stray-branch write-time hook."
+        ),
+    )
+    parser.add_argument(
+        "--session-id", default=None,
+        help=(
+            "Optional session id for --marker-work-branch (and other read paths): "
+            "a marker bound to a DIFFERENT session id reads as absent "
+            "(non-destructive session isolation)."
+        ),
+    )
     args = parser.parse_args()
 
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
@@ -4359,6 +4380,21 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # cycle-subagent-fabricates-policy-or-stray-branch Phase 2 (parity with
+    # lazy-state.py): --marker-work-branch — a read-only query that prints the
+    # run marker's work_branch. The marker is SHARED with the feature pipeline
+    # (both resolve the same per-repo keyed state dir), so the bug pipeline's
+    # write-time stray-branch hook can query EITHER script. set_active_repo_root
+    # ran above; marker_work_branch() routes through read_run_marker →
+    # claude_state_dir(create=False) (read-only, never creates state). Exit 0 +
+    # print the branch when a live marker carries one; exit 1 otherwise.
+    if args.marker_work_branch:
+        branch = lazy_core.marker_work_branch(session_id=args.session_id)
+        if branch:
+            sys.stdout.write(branch + "\n")
+            return 0
+        return 1
 
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator

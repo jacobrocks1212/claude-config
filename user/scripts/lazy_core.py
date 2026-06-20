@@ -7731,6 +7731,15 @@ def write_run_marker(
         # Default True ensures legacy/migrated callers default to the stricter
         # gate — an attended run cannot checkpoint-stop without operator auth.
         "attended": attended,
+        # cycle-subagent-fabricates-policy-or-stray-branch Phase 2: capture the
+        # work branch the orchestrator is on at run-start so the write-time
+        # stray-branch hook (block-sentinel-write-on-stray-branch.sh) has a
+        # reference branch to compare HEAD against. Resolved via _emit_work_branch
+        # (best-effort; a non-git root yields its documented fallback string,
+        # never raises). Legacy markers lacking this field read as None via
+        # marker_work_branch() (back-compat, same pattern as attended /
+        # per_feature_forward_cycles).
+        "work_branch": _emit_work_branch(Path(repo_root)),
     }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
@@ -7832,6 +7841,32 @@ def read_run_marker(
             return None
 
     return marker
+
+
+def marker_work_branch(
+    now: float | None = None,
+    session_id: str | None = None,
+) -> str | None:
+    """Return the run marker's ``work_branch`` field, or None.
+
+    cycle-subagent-fabricates-policy-or-stray-branch Phase 2: the single read
+    helper the ``--marker-work-branch`` CLI query and the write-time
+    stray-branch hook share — branch identity is owned in ONE place (same
+    contract as ``--marker-present`` owning presence). Returns None when:
+      - no live (non-stale) marker is present, OR
+      - the marker is a legacy one lacking the ``work_branch`` field, OR
+      - the field is present but empty/falsy.
+    A None result is the hook's fail-OPEN signal: with no known work branch
+    there is nothing to enforce against. Never raises on a missing field
+    (back-compat, like ``attended`` / ``per_feature_forward_cycles``).
+    """
+    marker = read_run_marker(now=now, session_id=session_id)
+    if not isinstance(marker, dict):
+        return None
+    branch = marker.get("work_branch")
+    if isinstance(branch, str) and branch:
+        return branch
+    return None
 
 
 def bind_marker_session(session_id: str) -> bool:
