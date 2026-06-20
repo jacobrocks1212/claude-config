@@ -147,6 +147,12 @@ def _state(
     # byte-identical to the pre-WU-1 Phase-4 baseline.
     if _PARK_MODE:
         out["parked"] = list(_PARKED)
+    # feature-budget-guard-and-skip-ahead Phase 2: the budget_guard trip action is
+    # ONLY surfaced when a trip actually fired this probe (_BUDGET_GUARD set). When
+    # None the key is entirely absent so default output (no marker / no trip) stays
+    # byte-identical to the pre-feature baseline — same discipline as "parked".
+    if _BUDGET_GUARD is not None:
+        out["budget_guard"] = dict(_BUDGET_GUARD)
     return out
 
 
@@ -160,6 +166,15 @@ _DEVICE_DEFERRED: list[str] = []
 # Reset at the start of each compute_state() call, alongside _DEVICE_DEFERRED.
 _PARKED: list = []
 _PARK_MODE: bool = False
+
+# feature-budget-guard-and-skip-ahead Phase 2: per-feature budget guard state for
+# this compute_state() invocation. _DEFERRED_BUDGET accumulates the feature ids the
+# guard deferred/evicted this probe (run-scoped skip-list, NOT written to
+# queue.json). _BUDGET_GUARD holds the rich trip-action metadata surfaced into the
+# probe JSON (None when no trip fired → the "budget_guard" key is absent, keeping
+# default output byte-identical). Both reset at the start of each compute_state().
+_DEFERRED_BUDGET: list = []
+_BUDGET_GUARD: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1215,9 +1230,12 @@ def compute_state(
     _DEVICE_DEFERRED.clear()
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
-    global _PARK_MODE, _PARKED
+    global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # Reset the per-feature budget-guard state for this invocation.
+    _DEFERRED_BUDGET = []
+    _BUDGET_GUARD = None
     repo_root = repo_root.resolve()
 
     # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
@@ -1249,6 +1267,52 @@ def compute_state(
     # no entry matched, we emit "scoped-id-not-found" instead of "all-features-complete"
     # so callers can distinguish "queue exhausted" from "id typo / not queued".
     scope_id_seen: bool = False
+    budget_deferred_skipped: list[str] = []
+
+    # feature-budget-guard-and-skip-ahead Phase 2: per-feature budget guard setup.
+    # The guard is MARKER-GATED — it only evaluates when a live run marker is
+    # present (the same gate the counter advances ride). Absent a marker (single
+    # /lazy, or a hermetic --test fixture without a pinned marker) the guard never
+    # trips and output is byte-identical to the pre-feature baseline.
+    _bg_marker = lazy_core.read_run_marker()
+    _bg_per_feature = lazy_core.read_per_feature_forward_cycles(_bg_marker)
+    _bg_evicted: list = list((_bg_marker or {}).get("budget_evicted", [])) \
+        if isinstance(_bg_marker, dict) else []
+    _bg_deferred_counts: dict = dict((_bg_marker or {}).get("budget_deferred", {})) \
+        if isinstance(_bg_marker, dict) else {}
+    # ready_queue_depth = count of ready (on-disk, non-completed, non-evicted) queue
+    # features — the Q_depth the fair-share ceiling divides by. Computed as a
+    # deterministic pre-pass over the queue (the same id-set the loop enumerates).
+    _bg_ready_depth = 0
+    if _bg_marker is not None:
+        _bg_seen_depth: set = set()
+        for _e in queue:
+            _eid = _e.get("id")
+            _esub = _e.get("spec_dir")
+            _ename = _e.get("name")
+            if not _eid or not _esub or not _ename or _eid in _bg_seen_depth:
+                continue
+            _bg_seen_depth.add(_eid)
+            _esp = (repo_root / "docs" / "features" / _esub).resolve()
+            if not _esp.exists():
+                continue
+            if completion_claimed(roadmap_text, _ename, _esp) and (
+                spec_status(_esp) == "Superseded" or has_completion_receipt(_esp)
+            ):
+                continue
+            if _eid in _bg_evicted:
+                continue
+            _bg_ready_depth += 1
+    _bg_max_cycles = int((_bg_marker or {}).get("max_cycles", 0) or 0) \
+        if isinstance(_bg_marker, dict) else 0
+    _bg_ceiling = (
+        lazy_core.compute_per_feature_ceiling(
+            _bg_max_cycles, _bg_ready_depth, override=per_feature_cycle_cap
+        )
+        if _bg_marker is not None
+        else None
+    )
+
     for entry in queue:
         name = entry.get("name")
         feature_id = entry.get("id")
@@ -1428,6 +1492,83 @@ def compute_state(
                 "Re-enters when resolved."
             )
             continue
+        # feature-budget-guard-and-skip-ahead Phase 2: per-feature budget guard.
+        # MARKER-GATED — only evaluates when a live run marker is present. This is
+        # the FINAL skip branch (after completion / cloud / device / research /
+        # park), mirroring the --park-* skip-list shape: on trip the feature is
+        # appended to the run-scoped _DEFERRED_BUDGET list and we `continue` to the
+        # next ready item — a run-scoped reorder that does NOT touch queue.json.
+        if _bg_marker is not None and _bg_ceiling is not None:
+            # An already-evicted feature is removed from the live queue for the rest
+            # of the run (its on-disk progress is preserved for human audit).
+            if feature_id in _bg_evicted:
+                budget_deferred_skipped.append(feature_id)
+                _diag(
+                    f"budget-guard: {name} — already evicted this run "
+                    f"(budget_evicted); skipped. On-disk progress preserved."
+                )
+                continue
+            _bg_count = int(_bg_per_feature.get(feature_id, 0) or 0)
+            if _bg_count >= _bg_ceiling:
+                # Trip. First trip → defer to tail (bounded re-entry once); a 2nd
+                # trip on the SAME feature in the SAME run → terminal eviction.
+                prior_defers = int(_bg_deferred_counts.get(feature_id, 0) or 0)
+                _bg_action = "defer" if prior_defers < 1 else "evict"
+                if _bg_action == "defer":
+                    _bg_deferred_counts[feature_id] = prior_defers + 1
+                    _diag(
+                        f"budget-guard: {name} — per-feature forward cycles "
+                        f"({_bg_count}) reached the computed ceiling ({_bg_ceiling}); "
+                        f"deferred to the live-queue tail (run-scoped). Advancing to "
+                        f"the next ready item."
+                    )
+                else:
+                    if feature_id not in _bg_evicted:
+                        _bg_evicted.append(feature_id)
+                    _diag(
+                        f"budget-guard: {name} — 2nd budget trip this run "
+                        f"({_bg_count} >= {_bg_ceiling}); TERMINAL EVICTION "
+                        f"(dead-lettered, removed from the live queue). On-disk "
+                        f"progress preserved for human audit."
+                    )
+                budget_deferred_skipped.append(feature_id)
+                # Surface the FIRST trip's rich audit metadata (the orchestrator
+                # translates it into a PushNotification reporting the COMPUTED
+                # ceiling). next_id is back-filled after the loop picks a dispatch.
+                if _BUDGET_GUARD is None:
+                    # sub_skill_phase: cheap, best-effort PHASES current-phase of the
+                    # tripped feature (audit-only context — the orchestrator reports
+                    # it in the trip notification). First In-progress phase heading,
+                    # else the first phase heading, else None.
+                    _bg_phase = None
+                    try:
+                        _bg_phases_md = spec_path / "PHASES.md"
+                        if _bg_phases_md.exists():
+                            _bg_recs = lazy_core.parse_phases(
+                                _bg_phases_md.read_text(encoding="utf-8")
+                            )
+                            _bg_inprog = [
+                                r for r in _bg_recs
+                                if (r.get("status") or "") == "In-progress"
+                            ]
+                            _bg_pick = _bg_inprog[0] if _bg_inprog else (
+                                _bg_recs[0] if _bg_recs else None
+                            )
+                            if _bg_pick is not None:
+                                _bg_phase = _bg_pick.get("heading")
+                    except (OSError, ValueError):
+                        _bg_phase = None
+                    _BUDGET_GUARD = {
+                        "feature_id": feature_id,
+                        "count_at_trip": _bg_count,
+                        "computed_ceiling": _bg_ceiling,
+                        "action": _bg_action,
+                        "next_id": None,
+                        "sub_skill_phase": _bg_phase,
+                        "commit_hash": lazy_core.git_head_short_sha(repo_root),
+                    }
+                _DEFERRED_BUDGET.append(feature_id)
+                continue
         current = {
             "name": name,
             "id": feature_id,
@@ -1437,7 +1578,51 @@ def compute_state(
         }
         break
 
+    # feature-budget-guard-and-skip-ahead Phase 2: persist the budget-guard marker
+    # updates (deferral counts + eviction list) when any trip fired this probe.
+    # Marker-gated + best-effort (a write error never breaks dispatch). The
+    # deferral/eviction state must survive to the NEXT probe so a re-trip on the
+    # same feature escalates (1st defer → 2nd evict) and an evicted feature stays
+    # out of the live queue for the rest of the run.
+    if _bg_marker is not None and _BUDGET_GUARD is not None:
+        # Back-fill the dispatch target onto the surfaced trip metadata (the
+        # sub_skill_phase of the TRIPPED feature was captured at trip time above).
+        if current is not None:
+            _BUDGET_GUARD["next_id"] = current["id"]
+        try:
+            _bg_fresh = lazy_core.read_run_marker()
+            if isinstance(_bg_fresh, dict):
+                _bg_fresh["budget_deferred"] = _bg_deferred_counts
+                _bg_fresh["budget_evicted"] = _bg_evicted
+                _bg_marker_path = lazy_core.claude_state_dir() / lazy_core._MARKER_FILENAME
+                lazy_core._atomic_write(
+                    _bg_marker_path, json.dumps(_bg_fresh, indent=2) + "\n"
+                )
+        except (OSError, ValueError):
+            pass
+
     if current is None:
+        # feature-budget-guard-and-skip-ahead Phase 2: honest exhaustion terminal.
+        # When the queue advanced past every workable item and the ONLY reason
+        # nothing dispatched is the budget guard (deferred/evicted items), return a
+        # distinct terminal — NOT all-features-complete (a false completion).
+        # Placed BEFORE the generic all-parked / all-complete fallbacks but AFTER
+        # the specific global terminals (cloud/device/research/scoped-id keep their
+        # precedence). Gated on a budget-deferral having actually occurred.
+        if _bg_marker is not None and budget_deferred_skipped and not (
+            (cloud and cloud_saturated_skipped)
+            or ((not real_device) and device_saturated_skipped)
+            or (skip_needs_research and research_pending_skipped)
+            or (scope_feature_id is not None and not scope_id_seen)
+        ):
+            return _state(
+                terminal_reason="queue-exhausted-budget-deferred",
+                notify_message=(
+                    f"Queue exhausted — {len(budget_deferred_skipped)} feature(s) "
+                    "deferred/evicted by the per-feature budget guard; their on-disk "
+                    "progress is preserved and surfaced at the end-of-run flush."
+                ),
+            )
         if cloud and cloud_saturated_skipped:
             return _state(
                 terminal_reason="cloud-queue-exhausted",
@@ -4851,6 +5036,170 @@ def run_smoke_tests() -> int:
                 os.environ.pop("LAZY_STATE_DIR", None)
             else:
                 os.environ["LAZY_STATE_DIR"] = _pf_prev_env
+
+        # Functional check (feature-budget-guard-and-skip-ahead Phase 2, WU-4):
+        # the per-feature budget guard trips at the computed ceiling, defers the
+        # tripped feature to the live-queue tail (run-scoped reorder, NOT written
+        # to queue.json), dispatches the next ready item, surfaces a budget_guard
+        # probe field, escalates a 2nd trip to terminal eviction, and returns an
+        # honest exhaustion terminal when only budget-deferred/evicted items remain.
+        def _bg_make_feature(root: Path, fid: str) -> None:
+            """Build a minimal mid-implementation feature dir that dispatches a
+            real sub_skill (execute-plan)."""
+            fdir = root / "docs" / "features" / fid
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "SPEC.md").write_text(
+                "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+            )
+            (fdir / "RESEARCH.md").write_text("# Research\n")
+            (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n")
+            (fdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n"
+            )
+            (fdir / "plans").mkdir(exist_ok=True)
+            (fdir / "plans" / f"all-phases-{fid}.md").write_text("# Plan\n")
+
+        bg_root = td_path / "budget-guard"
+        (bg_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (bg_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-bg1", "name": "BG One", "spec_dir": "feat-bg1", "tier": 1},
+                {"id": "feat-bg2", "name": "BG Two", "spec_dir": "feat-bg2", "tier": 1},
+            ]
+        }))
+        (bg_root / "docs" / "features" / "ROADMAP.md").write_text("# Roadmap\n")
+        _bg_make_feature(bg_root, "feat-bg1")
+        _bg_make_feature(bg_root, "feat-bg2")
+
+        bg_state_dir = td_path / "budget-guard-state"
+        bg_state_dir.mkdir(parents=True, exist_ok=True)
+        _bg_prev_env = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(bg_state_dir)
+        try:
+            import time as _bg_time
+            # Ceiling for C=20, Q=2: min(20*4//10=8, (20//2)*2=20)=8; max(6,8)=8.
+            # Pin feat-bg1's per-feature count AT the ceiling (8) so it trips; leave
+            # feat-bg2 below it so it dispatches.
+            def _bg_write_marker(per_feature: dict, **extra) -> None:
+                lazy_core.write_run_marker(
+                    pipeline="feature", cloud=False, repo_root=str(bg_root),
+                    max_cycles=20, now=_bg_time.time(),
+                )
+                mp = bg_state_dir / lazy_core._MARKER_FILENAME
+                m = json.loads(mp.read_text(encoding="utf-8"))
+                m["per_feature_forward_cycles"] = per_feature
+                m.update(extra)
+                mp.write_text(json.dumps(m) + "\n", encoding="utf-8")
+
+            # (a) Trip/defer: feat-bg1 count >= ceiling → deferred, feat-bg2 dispatched.
+            _bg_write_marker({"feat-bg1": 8, "feat-bg2": 0})
+            st = compute_state(bg_root, cloud=False, real_device=True)
+            if st.get("feature_id") != "feat-bg2":
+                failures.append(
+                    "[budget-guard] trip/defer: expected feat-bg2 dispatched (feat-bg1 "
+                    f"deferred past ceiling), got feature_id={st.get('feature_id')!r}"
+                )
+            bg = st.get("budget_guard")
+            if not bg or bg.get("action") != "defer":
+                failures.append(
+                    "[budget-guard] trip/defer: expected budget_guard.action='defer', "
+                    f"got {bg!r}"
+                )
+            elif bg.get("feature_id") != "feat-bg1" or bg.get("computed_ceiling") != 8 \
+                    or bg.get("next_id") != "feat-bg2" or bg.get("count_at_trip") != 8:
+                failures.append(
+                    "[budget-guard] trip/defer: budget_guard metadata wrong "
+                    f"(feature_id/computed_ceiling=8/next_id=feat-bg2/count_at_trip=8), "
+                    f"got {bg!r}"
+                )
+            # queue.json must NOT have been rewritten (run-scoped reorder only).
+            q_after = json.loads(
+                (bg_root / "docs" / "features" / "queue.json").read_text()
+            )
+            if [e["id"] for e in q_after["queue"]] != ["feat-bg1", "feat-bg2"]:
+                failures.append(
+                    "[budget-guard] defer must be run-scoped — queue.json order was "
+                    f"rewritten: {[e['id'] for e in q_after['queue']]!r}"
+                )
+            # The marker must record the deferral count for feat-bg1 (== 1).
+            m_after = lazy_core.read_run_marker(now=_bg_time.time())
+            if (m_after or {}).get("budget_deferred", {}).get("feat-bg1") != 1:
+                failures.append(
+                    "[budget-guard] defer must record budget_deferred[feat-bg1]=1, "
+                    f"got {(m_after or {}).get('budget_deferred')!r}"
+                )
+
+            # (b) Bounded re-trip → eviction: marker already records 1 deferral for
+            # feat-bg1 AND it trips again → action=evict (terminal, no infinite loop).
+            _bg_write_marker(
+                {"feat-bg1": 8, "feat-bg2": 0},
+                budget_deferred={"feat-bg1": 1},
+            )
+            st2 = compute_state(bg_root, cloud=False, real_device=True)
+            bg2 = st2.get("budget_guard")
+            if not bg2 or bg2.get("action") != "evict":
+                failures.append(
+                    "[budget-guard] re-trip: expected budget_guard.action='evict' on "
+                    f"the 2nd trip of the same feature, got {bg2!r}"
+                )
+            if st2.get("feature_id") != "feat-bg2":
+                failures.append(
+                    "[budget-guard] re-trip: feat-bg2 must still dispatch after "
+                    f"feat-bg1 is evicted, got {st2.get('feature_id')!r}"
+                )
+            m_after2 = lazy_core.read_run_marker(now=_bg_time.time())
+            if "feat-bg1" not in (m_after2 or {}).get("budget_evicted", []):
+                failures.append(
+                    "[budget-guard] re-trip: feat-bg1 must be recorded in "
+                    f"budget_evicted[], got {(m_after2 or {}).get('budget_evicted')!r}"
+                )
+
+            # (c) Override: --per-feature-cycle-cap forces a fixed ceiling. With a
+            # cap of 100, feat-bg1's count of 8 is below it → no trip, feat-bg1
+            # dispatches normally (no budget_guard).
+            _bg_write_marker({"feat-bg1": 8, "feat-bg2": 0})
+            st3 = compute_state(
+                bg_root, cloud=False, real_device=True, per_feature_cycle_cap=100
+            )
+            if st3.get("feature_id") != "feat-bg1" or st3.get("budget_guard"):
+                failures.append(
+                    "[budget-guard] override: --per-feature-cycle-cap 100 must lift the "
+                    f"ceiling so feat-bg1 dispatches untripped, got "
+                    f"feature_id={st3.get('feature_id')!r} budget_guard={st3.get('budget_guard')!r}"
+                )
+
+            # (d) Exhaustion terminal: BOTH features over the ceiling AND already
+            # deferred once → both evict → only budget-handled items remain → a
+            # distinct exhaustion terminal, NOT all-features-complete.
+            _bg_write_marker(
+                {"feat-bg1": 8, "feat-bg2": 8},
+                budget_deferred={"feat-bg1": 1, "feat-bg2": 1},
+            )
+            st4 = compute_state(bg_root, cloud=False, real_device=True)
+            if st4.get("terminal_reason") != "queue-exhausted-budget-deferred":
+                failures.append(
+                    "[budget-guard] exhaustion: expected terminal_reason="
+                    "'queue-exhausted-budget-deferred' when only budget-deferred/"
+                    f"evicted items remain, got {st4.get('terminal_reason')!r}"
+                )
+
+            # (e) Marker-gated no-op: with NO run marker, the guard never trips even
+            # at a high count — default output byte-identical (no budget_guard key).
+            (bg_state_dir / lazy_core._MARKER_FILENAME).unlink(missing_ok=True)
+            st5 = compute_state(bg_root, cloud=False, real_device=True)
+            if st5.get("feature_id") != "feat-bg1" or "budget_guard" in st5:
+                failures.append(
+                    "[budget-guard] marker-gated: with no marker the guard must be a "
+                    f"no-op (feat-bg1 dispatched, no budget_guard key), got "
+                    f"feature_id={st5.get('feature_id')!r} has_bg={'budget_guard' in st5}"
+                )
+            print("  [budget-guard] trip/defer + re-trip/evict + override + "
+                  "exhaustion terminal + marker-gated no-op: ok")
+        finally:
+            if _bg_prev_env is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _bg_prev_env
 
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.

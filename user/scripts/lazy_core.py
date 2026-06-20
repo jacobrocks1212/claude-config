@@ -4437,6 +4437,24 @@ def _git(repo_root: Path, *args: str, timeout: int = 60) -> subprocess.Completed
     )
 
 
+def git_head_short_sha(repo_root: Path) -> str | None:
+    """Return the short SHA of ``git rev-parse --short HEAD`` for ``repo_root``,
+    or ``None`` on any failure (non-git tree, OS error, non-zero exit).
+
+    Fail-open by design (feature-budget-guard-and-skip-ahead Phase 2): the budget
+    guard's ``budget_guard.commit_hash`` audit field is best-effort context, never
+    a gate — a degraded snapshot must not break trip evaluation.
+    """
+    try:
+        proc = _git(repo_root, "rev-parse", "--short", "HEAD")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    sha = proc.stdout.strip()
+    return sha or None
+
+
 def archive_fixed(
     repo_root: Path,
     spec_path: Path,
