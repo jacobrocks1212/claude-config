@@ -2,9 +2,11 @@
 
 > `/lazy-batch` cycle subagents produced artifacts grounded in nothing they actually read. One subagent hallucinated a "manual-only" commit policy from a `commit-policy.md` that does not exist and skipped a required commit; another committed a halt sentinel (NEEDS_INPUT.md) to a self-invented `audit/...` branch off the work branch instead of on `main`, so the resume path would not have found it. Both required manual orchestrator recovery. Root cause: the **cycle-base prompt template** (`_components/lazy-batch-prompts/cycle-base-prompt.md`) — the script-assembled prompt every cycle subagent receives — pins neither read-before-cite grounding for `commit-policy.md` nor a forbid-branch-creation clause; and there is no mechanical detector for either failure.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-20
+**Fix commit:** 2f444bc
 **Placement:** docs/bugs/cycle-subagent-fabricates-policy-or-stray-branch
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)
 **Related:** `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` `hard-contract` section (items 2 + 3 — the artifact every cycle subagent actually receives); `user/skills/lazy-batch/SKILL.md` cycle-subagent prompt (consumer); `user/skills/_components/lazy-dispatch-template.md` (dispatch envelope); HARD CONSTRAINT 9 (no fabricated features — the sibling fabrication class already hardened)

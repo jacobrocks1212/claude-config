@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all 4 phases implemented (2026-06-20); validation pending (the `__mark_fixed__` gate owns the terminal flip + `FIXED.md` after the validation tail).
+**Status:** Fixed
 
 **MCP runtime:** not-required — pure harness change (prompt-template prose, a bash PreToolUse hook, Python state-script marker field + CLI query, settings/doc wiring). No AlgoBooth app surface, store, audio path, or UI state is touched; verification is via `project-skills.py` residue-check + `lazy_core`/hook pytest, not the Tauri+MCP dev runtime.
 
