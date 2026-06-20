@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — pure-Python unit-test fixture text edit in `user/scripts/test_lazy_parity.py`; no app surface, no Tauri/MCP-reachable behavior (docs/features/mcp-testing/SPEC.md "untestable: build/test tooling" class). Verification is `pytest user/scripts/ -q`.
 

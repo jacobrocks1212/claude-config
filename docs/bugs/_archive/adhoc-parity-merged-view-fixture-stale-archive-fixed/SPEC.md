@@ -2,9 +2,11 @@
 
 > Two merged-view dispatch parity unit tests use stale hermetic "full" SKILL.md fixture text that omits the `--archive-fixed` predicate now required by `_MERGED_VIEW_PREDICATES`, turning `pytest user/scripts/ -q` red.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-19
+**Fixed:** 2026-06-19
+**Fix commit:** 9d6db64
 **Placement:** docs/bugs/adhoc-parity-merged-view-fixture-stale-archive-fixed
 **Related:** `user/scripts/lazy_parity_audit.py` (`_MERGED_VIEW_PREDICATES`), `user/scripts/test_lazy_parity.py` (`TestMergedViewDispatchParity`); origin: `completion-coherence-gate-reconciliation` feature (its full-suite verification row was blocked behind a `| tail` pipe that masked this red test).
 
