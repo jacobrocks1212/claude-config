@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all 5 phases' implementation work landed (part-5 wired the orchestrator to the M4 verdict + coupled-pair mirror); validation tail pending (`not-required` MCP gate → Locked-Decisions coverage audit → `__mark_complete__`, orchestrator-owned). Top-level **Status:** flips to Complete only at the gate.
+**Status:** Complete
 
 **MCP runtime:** not-required — this is a harness-internals feature entirely in `lazy_core`/`lazy-state.py` Python, a stdlib bash `PreToolUse` hook, `settings.json`, and harness prose/skill docs. There is NO AlgoBooth app surface, store, audio path, UI state, or MCP-reachable behavior in any deliverable (the SPEC's "User Experience" section states explicitly: "There is **no end-user-facing AlgoBooth product surface**"). All verification is via the hermetic Python `--test` smoke harnesses and bash hook-pipe tests — the `mcp-testing/SPEC.md` "build tooling / harness script" untestable class. The "runtime" this feature OWNS is the dev/MCP server as a *managed process*, not a surface this feature's own tests assert through MCP.
 

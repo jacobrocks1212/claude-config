@@ -2,13 +2,6 @@
   "_note": "Feature stubs sourced from the /lazy-batch session-log audit 2026-06-19 (AlgoBooth, 19 sessions). Each is a pre-Gemini stub ('> Draft (pre-Gemini)' trailer + \"stub\": true), so lazy-state.py routes it to /spec (Step 4.5) to shape the baseline interactively before research/plan. Tier orders priority.",
   "queue": [
     {
-      "id": "long-build-and-runtime-ownership",
-      "name": "Long-Build + Runtime Ownership",
-      "spec_dir": "long-build-and-runtime-ownership",
-      "tier": 1,
-      "stub": false
-    },
-    {
       "id": "host-capability-declaration-for-gated-features",
       "name": "Host-Capability Declaration for Gated Features",
       "spec_dir": "host-capability-declaration-for-gated-features",

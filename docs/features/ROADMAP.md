@@ -19,7 +19,7 @@ the historical / manually-authored spec archive (not under pipeline management).
 
 ~~- Completion / Coherence Gate Reconciliation (`completion-coherence-gate-reconciliation`) — three completion gates (`apply_pseudo`, `check-docs-consistency.ts`, `lazy_core`) disagree on the MCP-verification carve-out, so fully-validated features get refused at the finish line and nearly every completion needs an extra coherence-recovery meta-cycle. Operator-flagged; highest-frequency friction in the corpus.~~  ✅ COMPLETE
 ~~- Feature Budget Guard + Skip-Ahead (`feature-budget-guard-and-skip-ahead`) — one stubborn feature can consume an entire batch budget, and a blocked/research-gated head item strands the whole independent queue behind it.~~  ✅ COMPLETE
-- Long-Build + Runtime Ownership (`long-build-and-runtime-ownership`) — long builds and the dev/MCP runtime die at the subagent turn boundary, forcing hand-rolled rebuild→health-poll loops and orphaned cycles.
+~~- Long-Build + Runtime Ownership (`long-build-and-runtime-ownership`) — long builds and the dev/MCP runtime die at the subagent turn boundary, forcing hand-rolled rebuild→health-poll loops and orphaned cycles.~~  ✅ COMPLETE
 
 ## Tier 2 — proposed (session-audit stubs 2026-06-19)
 

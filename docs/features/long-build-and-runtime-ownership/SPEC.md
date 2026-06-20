@@ -2,7 +2,7 @@
 
 > Long-running builds and the dev/MCP runtime are owned at a level that survives the subagent turn boundary, so `/mcp-test` never meets a reaped runtime and no production edit is orphaned by a build dying mid-cycle.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-06-20
 
