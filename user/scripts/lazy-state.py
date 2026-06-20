@@ -6918,6 +6918,13 @@ def main() -> int:
     parser.add_argument("--to", dest="reorder_to", default=None,
                         help=("Reorder destination for --reorder-queue: "
                               "tail | head | remove | <integer index>."))
+    parser.add_argument("--reassert-owner", dest="reassert_owner",
+                        action="store_true",
+                        help=("Orchestrator-only / out-of-cycle: re-claim a live "
+                              "foreign-stamped run marker for the owning session "
+                              "(requires --session-id). Gated by "
+                              "refuse_if_cycle_active (exit 3 for a cycle "
+                              "subagent). single-slot-marker-ownership-race."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
     parser.add_argument("--materialize-wi", type=int, default=None,
@@ -7537,11 +7544,21 @@ def main() -> int:
         # to attended=True, enabling the stop-authorization gate on --run-end.
         # Scheduled/cron invocations pass --unattended → attended=False → the
         # overnight-pause checkpoint path is allowed without operator authorization.
+        # single-slot-marker-ownership-race-disarms-owning-run Phase 1: thread the
+        # orchestrator's known owning session_id into the marker so it is born
+        # OWNER-BOUND rather than bind-pending — closing the UNBOUND→wrong-bind
+        # window at its source (Repro A + Repro B, since the resume --run-start
+        # carries --session-id too). A foreign session can no longer be the first
+        # writer of the slot. When args.session_id is absent (legacy/manual
+        # --run-start with no --session-id), write_run_marker still stamps
+        # session_id=None exactly as before and the run falls back to the
+        # _bind_marker_on_allow anchor — the fix is additive, no regression.
         marker = lazy_core.write_run_marker(
             pipeline="feature",
             cloud=args.cloud,
             repo_root=args.repo_root,
             max_cycles=args.max_cycles,
+            session_id=args.session_id,
             attended=not args.unattended,
         )
         out: dict = dict(marker)
@@ -7938,6 +7955,21 @@ def main() -> int:
             queue_label="queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.reassert_owner:
+        # single-slot-marker-ownership-race-disarms-owning-run Phase 2: the owner
+        # RE-ARM path. Orchestrator-only — refuse FIRST (before any read/mutate)
+        # so a cycle subagent gets exit 3 with ZERO side effects, exactly like
+        # --run-start / --reorder-queue.
+        lazy_core.refuse_if_cycle_active("--reassert-owner")
+        if not args.session_id:
+            _die("--reassert-owner requires --session-id")
+        prior = lazy_core.marker_owner_status(args.session_id)
+        reasserted = lazy_core.reassert_marker_owner(args.session_id)
+        sys.stdout.write(json.dumps(
+            {"reasserted": reasserted, "prior_status": prior}, indent=2
+        ) + "\n")
         return 0
 
     if args.materialize_wi is not None:

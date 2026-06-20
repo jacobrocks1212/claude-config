@@ -206,6 +206,22 @@ Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/
 > walker on the same branch) — checkpoint-discriminated so a sanctioned checkpoint-resume (which always
 > carries that file) still overwrites. The checkpoint is read non-destructively (existence only).
 > Closes the residual same-repo/same-branch/same-pipeline gap left open by `multi-repo-concurrent-runs`.
+>
+> **Single-slot marker ownership — born owner-bound + owner detect/re-arm
+> (`single-slot-marker-ownership-race-disarms-owning-run`).** The run marker's owner is a single mutable
+> `session_id` slot. Previously the marker was written bind-pending (`session_id: None`) at `--run-start`
+> and bound later by the first orchestrator guard ALLOW — leaving a window in which a WRONG (non-owner)
+> session could stamp the slot first, after which the TRUE owner's own dispatches read `None` (staleness
+> path B) and silently fast-path-allowed for the rest of the run (the guard disarmed mid-run, no signal).
+> Now both `--run-start` handlers thread `session_id=args.session_id` so the marker is **born owner-bound**
+> — a foreign session can never be the first writer (Repro A + the checkpoint-resume Repro B both closed at
+> the source; legacy `--run-start` without `--session-id` still falls back to the unchanged
+> `_bind_marker_on_allow` anchor). As a backstop for the legacy/un-threaded paths, the owner gets a
+> NON-DESTRUCTIVE detect (`lazy_core.marker_owner_status` → `absent` / `owned-by-me` / `foreign-stamped`,
+> distinguishing "no run" from "wrong-stamped run" without deleting a live foreign-stamped marker) and a
+> re-arm (`reassert_marker_owner` + the orchestrator-only `--reassert-owner` CLI action, cycle-guarded
+> exit 3) to re-claim its own run's guard. Coupled pair on both state scripts (the marker is shared;
+> parity-guarded). See `docs/bugs/single-slot-marker-ownership-race-disarms-owning-run`.
 
 ## What's NOT Tracked
 

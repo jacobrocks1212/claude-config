@@ -242,6 +242,38 @@ in another repo (it also kills stale-marker contagion across repos).
     `block-sentinel-write-on-stray-branch.sh`, which denies a pipeline-sentinel Write while HEAD != the
     marker's `work_branch` (fail-OPEN on exit 1 — no known branch to enforce against). Branch identity is
     owned in this ONE helper; bash never re-derives it (same contract as `--marker-present` owning presence).
+  - **Run-start owner bind + owner-side detect/re-arm (`single-slot-marker-ownership-race-disarms-owning-run`,
+    2026-06-20).** The run marker's owner is a SINGLE mutable `session_id` slot, first-writer-wins. Two
+    layers now keep a WRONG-session bind from silently disarming the true owner's dispatch guard (the
+    under-fire race — the owner reading `None` from staleness path B can't tell "no run" from "my run,
+    foreign-stamped"):
+    - **Born owner-bound (Phase 1 — the primary fix).** Both `--run-start` handlers now thread
+      `session_id=args.session_id` into `write_run_marker`, so the marker is born stamped with the
+      orchestrator's KNOWN owning session — never bind-pending. A foreign session can no longer be the
+      first writer of the slot (it was never `None`), so `bind_marker_session`'s first-writer-wins
+      protection now protects the CORRECT owner from run-start. This ELIMINATES the bind-pending window
+      at its source — closing both Repro A (pre-allow bind race) and Repro B (checkpoint-resume re-bind;
+      the resume is itself a `--run-start` carrying `--session-id`). Backward-compatible: a `--run-start`
+      WITHOUT `--session-id` (legacy/manual) still writes `session_id: None` and falls back to the
+      unchanged `_bind_marker_on_allow` anchor in `lazy_guard.py` (now a confirming idempotent no-op on
+      the bound normal path, retained for the legacy path). Coupled-pair edit — `lazy-state.py` +
+      `bug-state.py`, the marker is shared.
+    - **Owner detect + re-arm backstop (Phase 2 — for the legacy/un-threaded paths).**
+      `lazy_core.marker_owner_status(session_id, *, now=None) -> "absent" | "owned-by-me" | "foreign-stamped"`
+      is a NON-DESTRUCTIVE three-way detect: it reuses `read_run_marker`'s age/corrupt rules for
+      `absent` (delegating with NO session_id so path B never fires) but does NOT delete on a session
+      mismatch — it reports `foreign-stamped` instead of collapsing to `None`, making "no run" and
+      "wrong-stamped run" DISTINGUISHABLE. `owned-by-me` = bind-pending (`None`) OR equal session.
+      HARD: `marker_owner_status` MUST stay non-destructive on `foreign-stamped` — deleting there
+      re-introduces the 2026-06-12 ~14:53Z silent-disarm-by-delete. `lazy_core.reassert_marker_owner(session_id, *, now=None)`
+      atomically re-stamps a `foreign-stamped` slot to the caller (returns True) and is a no-op on
+      `absent` / `owned-by-me` (returns False, idempotent) — the owner re-claiming its own run's guard.
+      It is exposed ONLY via the orchestrator-only `--reassert-owner` CLI action (requires `--session-id`,
+      prints `{reasserted, prior_status}`), gated by `refuse_if_cycle_active("--reassert-owner")` FIRST
+      (a cycle subagent → exit 3, zero side effects, the same contract as `--run-start` / `--reorder-queue`).
+      Coupled pair on both scripts (the marker is shared; parity-guarded by
+      `lazy_parity_audit.py::audit_state_script_parity`'s `--reassert-owner` check). See
+      `docs/bugs/single-slot-marker-ownership-race-disarms-owning-run`.
 
 ## Cycle-counter advance: two orthogonal triggers (lazy-batch-unified-driver-parity-and-accounting Phase 1)
 

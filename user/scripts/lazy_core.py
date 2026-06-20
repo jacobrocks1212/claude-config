@@ -8051,6 +8051,105 @@ def bind_marker_session(session_id: str) -> bool:
         return False
 
 
+def marker_owner_status(
+    session_id: str,
+    *,
+    now: float | None = None,
+) -> str:
+    """Owner-side, NON-DESTRUCTIVE detect: distinguish "no run" from "wrong-stamped run".
+
+    single-slot-marker-ownership-race-disarms-owning-run Phase 2 (Proven Finding
+    #4(b)). The silent disarm exists because the OWNER reading ``None`` from
+    ``read_run_marker(session_id=owner)`` (staleness path B) cannot tell:
+      - "no run is live" (correct fast-path allow), from
+      - "my run IS live but the slot was stamped with a foreign session".
+    This helper makes the two DISTINGUISHABLE, returning one of:
+
+      - ``"absent"``        — no live marker (missing / age-stale / corrupt). It
+                              REUSES ``read_run_marker``'s age + corrupt rules
+                              verbatim (by delegating to it with NO session_id,
+                              so path B never fires here) — an age-stale or
+                              corrupt marker IS deleted by that call, exactly as
+                              ``read_run_marker`` would, which is correct: a
+                              presumed-dead/unreadable marker has no owner to
+                              protect.
+      - ``"owned-by-me"``   — a live marker whose ``session_id`` is None
+                              (bind-pending — the owner's, not yet stamped) OR
+                              equals the caller.
+      - ``"foreign-stamped"`` — a live marker whose NON-None ``session_id``
+                              differs from the caller.
+
+    HARD CONTRACT: this function is NON-DESTRUCTIVE on the ``foreign-stamped``
+    case — it NEVER deletes a live marker on a session mismatch (deleting there
+    re-introduces the 2026-06-12 ~14:53Z silent-disarm-by-delete that path B's
+    non-destructive rule exists to avoid). The only deletions are the age/corrupt
+    ones inherited from ``read_run_marker`` (a marker with no live owner).
+
+    Args:
+        session_id: the calling owner's session id (the expected owner on record).
+        now: epoch float for age comparison (injectable; defaults to time.time()).
+
+    Returns:
+        "absent" | "owned-by-me" | "foreign-stamped".
+    """
+    # Delegate age/corrupt staleness to read_run_marker with NO session_id, so
+    # path B (session mismatch) is DISABLED and we do the owner comparison here
+    # non-destructively. An age-stale/corrupt/missing marker → None → "absent".
+    marker = read_run_marker(now=now)
+    if marker is None:
+        return "absent"
+    marker_session = marker.get("session_id")
+    if marker_session is None or marker_session == session_id:
+        return "owned-by-me"
+    return "foreign-stamped"
+
+
+def reassert_marker_owner(
+    session_id: str,
+    *,
+    now: float | None = None,
+) -> bool:
+    """RE-ARM: re-claim a live, foreign-stamped marker slot for the calling owner.
+
+    single-slot-marker-ownership-race-disarms-owning-run Phase 2 (Proven Finding
+    #4(c)). The owner-side re-claim path: when ``marker_owner_status`` is
+    ``foreign-stamped`` (a live marker whose slot holds a non-None session OTHER
+    than the caller), atomically re-stamp the slot to ``session_id`` and return
+    True. For ``absent`` or ``owned-by-me`` it is a no-op returning False
+    (idempotent — a second call after a re-claim sees ``owned-by-me`` and
+    no-ops).
+
+    This is the ONLY sanctioned mutator of a foreign-stamped slot. It is exposed
+    ONLY through the orchestrator-only ``--reassert-owner`` CLI action (guarded by
+    ``refuse_if_cycle_active``): only the run's actual orchestrator (which holds
+    the ``repo_root``-keyed state dir and its own session_id) re-claims its own
+    run's guard.
+
+    Args:
+        session_id: the calling owner's session id to re-stamp into the slot.
+        now: epoch float for age comparison (injectable; defaults to time.time()).
+
+    Returns:
+        True if the slot was foreign-stamped and is now re-claimed; False on an
+        absent / owned-by-me marker, or any read/write failure (fail-safe no-op).
+    """
+    try:
+        if marker_owner_status(session_id, now=now) != "foreign-stamped":
+            return False
+        # Re-read the live marker (NO session_id → no path-B disarm) and re-stamp.
+        marker = read_run_marker(now=now)
+        if marker is None:
+            return False
+        marker["session_id"] = session_id
+        marker_path = claude_state_dir() / _MARKER_FILENAME
+        _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-safe: a re-arm failure is non-fatal; the owner can retry. Never
+        # raise into the CLI handler.
+        return False
+
+
 def delete_run_marker(clear_registry: bool = False) -> bool:
     """Delete the run marker file from the state dir.
 

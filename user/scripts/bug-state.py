@@ -4158,6 +4158,14 @@ def main() -> int:
               "tail | head | remove | <integer index>."),
     )
     parser.add_argument(
+        "--reassert-owner", dest="reassert_owner", action="store_true",
+        help=("Orchestrator-only / out-of-cycle: re-claim a live foreign-stamped "
+              "run marker for the owning session (requires --session-id). Gated "
+              "by refuse_if_cycle_active (exit 3 for a cycle subagent). "
+              "Coupled-pair mirror of lazy-state.py --reassert-owner "
+              "(single-slot-marker-ownership-race; the marker is shared)."),
+    )
+    parser.add_argument(
         "--bug-id", default=None,
         help="Scope this run to a single bug by id. Absent → default behavior.",
     )
@@ -4608,11 +4616,18 @@ def main() -> int:
         # Phase 7 / lazy-validation-readiness (coupled-pair mirror of lazy-state.py):
         # pass attended=not args.unattended so interactive /lazy-bug-batch runs
         # default to attended=True, enabling the stop-authorization gate.
+        # single-slot-marker-ownership-race-disarms-owning-run Phase 1 (coupled-pair
+        # mirror of lazy-state.py): thread the orchestrator's owning session_id so
+        # the bug-pipeline marker is born OWNER-BOUND, closing the bind-pending
+        # window at its source. The marker is SHARED between pipelines, so this
+        # threading must match lazy-state.py exactly. Absent --session-id →
+        # session_id=None as before (legacy path, _bind_marker_on_allow fallback).
         marker = lazy_core.write_run_marker(
             pipeline="bug",
             cloud=args.cloud,
             repo_root=args.repo_root,
             max_cycles=args.max_cycles,
+            session_id=args.session_id,
             attended=not args.unattended,
         )
         out: dict = dict(marker)
@@ -4893,6 +4908,22 @@ def main() -> int:
             queue_label="bugs/queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.reassert_owner:
+        # single-slot-marker-ownership-race-disarms-owning-run Phase 2 (coupled-pair
+        # mirror of lazy-state.py --reassert-owner). The owner RE-ARM path. The run
+        # marker is SHARED between pipelines, so this action is identical here.
+        # Orchestrator-only — refuse FIRST so a cycle subagent gets exit 3 with
+        # ZERO side effects.
+        lazy_core.refuse_if_cycle_active("--reassert-owner")
+        if not args.session_id:
+            _die("--reassert-owner requires --session-id")
+        prior = lazy_core.marker_owner_status(args.session_id)
+        reasserted = lazy_core.reassert_marker_owner(args.session_id)
+        sys.stdout.write(json.dumps(
+            {"reasserted": reasserted, "prior_status": prior}, indent=2
+        ) + "\n")
         return 0
 
     if args.test:

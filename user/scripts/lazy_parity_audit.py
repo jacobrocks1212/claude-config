@@ -303,14 +303,20 @@ _ACTIVE_REPO_BINDING_RE = re.compile(
 # subcommand is a coupled-pair surface — a primitive added to one state script
 # must appear in the other to stay green.  Match the argparse flag literal.
 _REORDER_QUEUE_RE = re.compile(r'"--reorder-queue"')
+# single-slot-marker-ownership-race-disarms-owning-run Phase 2: the orchestrator-
+# only --reassert-owner subcommand (owner re-arm of a foreign-stamped marker) is
+# likewise a coupled-pair surface — the run marker is SHARED between pipelines, so
+# the re-claim action added to one state script must appear in the other.
+_REASSERT_OWNER_RE = re.compile(r'"--reassert-owner"')
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
     """Assert the shared per-repo state-dir surface is consistent across the
     feature and bug state scripts: each must call
-    ``set_active_repo_root(args.repo_root)`` at main(), AND each must carry the
-    operator-only ``--reorder-queue`` subcommand (coupled-pair parity).  Returns
-    one finding per script missing either surface; empty means parity holds.
+    ``set_active_repo_root(args.repo_root)`` at main(), each must carry the
+    operator-only ``--reorder-queue`` subcommand, AND each must carry the
+    orchestrator-only ``--reassert-owner`` subcommand (coupled-pair parity).
+    Returns one finding per script missing any surface; empty means parity holds.
 
     This is additive — it audits the Python state machines (not the SKILL.md
     pairs) and runs alongside the manifest pair audit in the default (no
@@ -341,6 +347,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"lazy_core.reorder_queue, gated by refuse_if_cycle_active) so "
                 f"both state scripts expose the same queue-mutation surface "
                 f"(no-sanctioned-queue-reorder-command coupled-pair parity)"
+            )
+        if _REASSERT_OWNER_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"orchestrator-only --reassert-owner subcommand (calls "
+                f"lazy_core.reassert_marker_owner, gated by refuse_if_cycle_active) "
+                f"so both state scripts expose the same shared-marker re-arm "
+                f"surface (single-slot-marker-ownership-race coupled-pair parity)"
             )
     return findings
 

@@ -11797,6 +11797,7 @@ def test_f1b_register_emission_stores_normalized_prompt_text():
 
 
 import os as _os_env  # alias to avoid shadowing the existing `_os` alias
+import time as _t  # module-level time alias (mirrors the per-test `import time as _t`)
 
 
 def _set_state_dir(path: "Path") -> None:
@@ -23157,6 +23158,403 @@ _TESTS = _TESTS + [
      test_marker_work_branch_cli_lazy_state),
     ("test_marker_work_branch_cli_bug_state_parity",
      test_marker_work_branch_cli_bug_state_parity),
+]
+
+
+# ---------------------------------------------------------------------------
+# single-slot-marker-ownership-race-disarms-owning-run
+#   Phase 1 — run-start owner bind (close the bind-pending window)
+#   Phase 2 — owner-side detect + re-arm backstop
+#
+# Hermetic fixtures over the real write_run_marker / read_run_marker /
+# bind_marker_session / marker_owner_status / reassert_marker_owner producers,
+# using the existing _set_state_dir temp-dir override (no mocks beyond it).
+# The wrong-bind ordering is injected directly (call bind_marker_session(foreign)
+# after the owner-bound run-start) — a deterministic stand-in for the real race.
+# ---------------------------------------------------------------------------
+
+
+def test_run_start_owner_bind_closes_repro_a():
+    """Repro A closed: a marker born owner-bound survives a foreign bind.
+
+    write_run_marker(session_id="OWNER") then bind_marker_session("FOREIGN")
+    returns False (already bound) AND the on-disk session_id is STILL "OWNER";
+    read_run_marker(session_id="OWNER") returns the marker (owner is NOT
+    disarmed). Pre-fix the run-start wrote session_id=None, letting the foreign
+    bind win — this fixture is RED against that code.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="OWNER", now=_t.time(),
+            )
+            # A concurrent non-owner reaches bind_marker_session BEFORE any
+            # owner allow. The slot was never None → first-writer-wins protects
+            # the CORRECT owner: the foreign bind is refused.
+            bound = lazy_core.bind_marker_session("FOREIGN")
+            assert bound is False, (
+                "a foreign bind against an owner-bound marker must be refused "
+                "(first-writer-wins now protects the correct owner)"
+            )
+            marker_path = Path(td) / "lazy-run-marker.json"
+            data = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert data["session_id"] == "OWNER", (
+                f"the slot must STILL hold the owner, got {data['session_id']!r}"
+            )
+            # The owner reads its OWN run successfully (path B does not disarm it).
+            m = lazy_core.read_run_marker(session_id="OWNER")
+            assert m is not None and m["session_id"] == "OWNER", (
+                "the owner must read its own marker — not be silently disarmed"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_legacy_unbound_preserved():
+    """Legacy unbound preserved: no session_id → bind-pending, foreign bind wins.
+
+    write_run_marker() with NO session_id still writes session_id=None, and a
+    subsequent bind_marker_session("FOREIGN") returns True (the documented legacy
+    bind path). Proves the Phase-1 fix is additive, not a silent semantic change
+    for the no-`--session-id` caller.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=_t.time(),
+            )
+            marker_path = Path(td) / "lazy-run-marker.json"
+            data = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert data["session_id"] is None, (
+                "legacy run-start (no session_id) must still write None "
+                "(bind-pending), preserving the documented legacy path"
+            )
+            bound = lazy_core.bind_marker_session("FOREIGN")
+            assert bound is True, (
+                "the legacy bind-pending path must still allow the first bind"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_cli_threads_session_id_lazy_state():
+    """lazy-state.py --run-start --session-id OWNER writes an owner-bound marker."""
+    _run_start_cli_owner_bind("lazy-state.py", "feature")
+
+
+def test_run_start_cli_threads_session_id_bug_state_parity():
+    """bug-state.py --run-start --session-id OWNER writes an owner-bound marker."""
+    _run_start_cli_owner_bind("bug-state.py", "bug")
+
+
+def _run_start_cli_owner_bind(script_name: str, pipeline: str) -> None:
+    """The --run-start CLI handler threads --session-id into the marker (coupled
+    pair). With --session-id the on-disk marker is born owner-bound; without it
+    the marker stays bind-pending (session_id=None)."""
+    _guard()
+    script = _SCRIPTS_DIR / script_name
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "cli-state"
+        state_dir.mkdir()
+        repo_root = Path(td) / "repo"
+        repo_root.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        # Orchestrator immunity so --run-start's refuse_if_cycle_active does not
+        # trip on any ambient marker.
+        env["LAZY_ORCHESTRATOR"] = "1"
+
+        r = subprocess.run(
+            [sys.executable, str(script), "--repo-root", str(repo_root),
+             "--run-start", "--session-id", "OWNER"],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 0, (
+            f"{script_name} --run-start --session-id must exit 0, got "
+            f"{r.returncode}; stderr={r.stderr[:300]!r}"
+        )
+        marker_path = state_dir / "lazy-run-marker.json"
+        data = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert data["session_id"] == "OWNER", (
+            f"{script_name} --run-start must thread --session-id into the marker; "
+            f"got session_id={data.get('session_id')!r}"
+        )
+        assert data["pipeline"] == pipeline, data.get("pipeline")
+
+
+# --- Phase 2: detect + re-arm helpers --------------------------------------
+
+
+def test_marker_owner_status_detect_three_way():
+    """marker_owner_status returns absent / owned-by-me / foreign-stamped and is
+    NON-destructive on foreign-stamped (the file survives the call)."""
+    _guard()
+    now = _t.time()
+    # (a) absent — no marker at all.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "absent"
+        finally:
+            _clear_state_dir()
+    # (b) absent — age-stale marker (older than the 24h staleness window).
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            stale_now = now - (48 * 3600)
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="FOREIGN", now=stale_now,
+            )
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "absent", (
+                "a stale foreign marker must read as absent, not foreign-stamped"
+            )
+        finally:
+            _clear_state_dir()
+    # (c) owned-by-me — bind-pending (session_id None) reads as the owner's.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "owned-by-me"
+        finally:
+            _clear_state_dir()
+    # (d) owned-by-me — slot equals the caller.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="OWNER", now=now,
+            )
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "owned-by-me"
+        finally:
+            _clear_state_dir()
+    # (e) foreign-stamped — live marker, non-None foreign session; NON-destructive.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="FOREIGN", now=now,
+            )
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "foreign-stamped"
+            marker_path = Path(td) / "lazy-run-marker.json"
+            assert marker_path.exists(), (
+                "marker_owner_status must NOT delete the marker on foreign-stamped "
+                "(non-destructive — re-introducing delete here is the silent disarm)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_reassert_marker_owner_re_arms_foreign_stamped():
+    """reassert_marker_owner re-claims a foreign-stamped slot, is idempotent, and
+    is a no-op on absent / owned-by-me."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="FOREIGN", now=now,
+            )
+            # First re-arm: foreign-stamped → re-claim, return True.
+            assert lazy_core.reassert_marker_owner("OWNER", now=now) is True
+            marker_path = Path(td) / "lazy-run-marker.json"
+            data = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert data["session_id"] == "OWNER", (
+                f"re-arm must re-stamp the slot to the owner; got "
+                f"{data['session_id']!r}"
+            )
+            # Second call: now owned-by-me → no-op, return False (idempotent).
+            assert lazy_core.reassert_marker_owner("OWNER", now=now) is False
+            assert marker_path.exists()
+        finally:
+            _clear_state_dir()
+    # absent → no-op, False.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.reassert_marker_owner("OWNER", now=now) is False
+        finally:
+            _clear_state_dir()
+
+
+def test_reassert_marker_owner_repro_b_resume_owner_bound():
+    """Repro B closed: a checkpoint-resume --run-start carrying a session_id is
+    owner-bound (the resume window no longer re-opens for an owner that passes
+    --session-id). Simulated via write_run_checkpoint / consume_run_checkpoint
+    then write_run_marker(session_id=owner)."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Live run, then checkpoint it (the pause).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="OWNER", now=now,
+            )
+            lazy_core.write_run_checkpoint(
+                "Step 7a: execute plan",
+                {"forward_cycles": 3, "meta_cycles": 1, "max_cycles": 20},
+            )
+            consumed = lazy_core.consume_run_checkpoint()
+            assert consumed is not None, "checkpoint must be consumable on resume"
+            # Resume --run-start re-writes the marker WITH the owner session_id.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                session_id="OWNER", now=now,
+            )
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "owned-by-me", (
+                "a resumed run that carries --session-id is owner-bound — the "
+                "Repro-B re-bind window no longer re-opens"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_legacy_disarm_detected_and_re_armed():
+    """The legacy path (run-start with NO session_id → bind-pending → foreign bind
+    wins) is DETECTED as foreign-stamped and RE-ARMED — proving Phase 2 backstops
+    the path Phase 1 leaves open."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Legacy run-start: bind-pending.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            # A foreign session wins the bind in the open window.
+            assert lazy_core.bind_marker_session("FOREIGN") is True
+            # The true owner can SEE the wrong stamp (not just "absent").
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "foreign-stamped"
+            # And re-claim it.
+            assert lazy_core.reassert_marker_owner("OWNER", now=now) is True
+            assert lazy_core.marker_owner_status("OWNER", now=now) == "owned-by-me"
+        finally:
+            _clear_state_dir()
+
+
+def test_reassert_owner_cli_cycle_refusal_lazy_state():
+    """lazy-state.py --reassert-owner is refused (exit 3, zero side effects) for a
+    cycle subagent and re-claims for the orchestrator."""
+    _run_reassert_owner_cli("lazy-state.py", "feature")
+
+
+def test_reassert_owner_cli_cycle_refusal_bug_state_parity():
+    """bug-state.py --reassert-owner behaves identically (coupled pair)."""
+    _run_reassert_owner_cli("bug-state.py", "bug")
+
+
+def _run_reassert_owner_cli(script_name: str, pipeline: str) -> None:
+    """--reassert-owner: cycle-subagent refused exit 3 / zero side effects; the
+    orchestrator path re-claims a foreign-stamped slot."""
+    _guard()
+    script = _SCRIPTS_DIR / script_name
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "cli-state"
+        state_dir.mkdir()
+        repo_root = Path(td) / "repo"
+        repo_root.mkdir()
+        # Seed a live FOREIGN-stamped marker in-process.
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline=pipeline, cloud=False, repo_root=str(repo_root),
+                session_id="FOREIGN", now=_t.time(),
+            )
+        finally:
+            _clear_state_dir()
+        marker_path = state_dir / "lazy-run-marker.json"
+
+        base_env = dict(_os_env.environ)
+        base_env["LAZY_STATE_DIR"] = str(state_dir)
+        for k in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT"):
+            base_env.pop(k, None)
+
+        # (1) Cycle subagent → refused exit 3, marker UNCHANGED (zero side effects).
+        sub_env = dict(base_env)
+        sub_env["LAZY_CYCLE_SUBAGENT"] = "1"
+        r = subprocess.run(
+            [sys.executable, str(script), "--repo-root", str(repo_root),
+             "--reassert-owner", "--session-id", "OWNER"],
+            capture_output=True, text=True, env=sub_env,
+        )
+        assert r.returncode == 3, (
+            f"{script_name} --reassert-owner must refuse a cycle subagent with "
+            f"exit 3, got {r.returncode}; stderr={r.stderr[:300]!r}"
+        )
+        data = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert data["session_id"] == "FOREIGN", (
+            "a refused --reassert-owner must leave the marker UNCHANGED "
+            "(zero side effects)"
+        )
+
+        # (2) Orchestrator → re-claims; verdict JSON reports the prior status.
+        orch_env = dict(base_env)
+        orch_env["LAZY_ORCHESTRATOR"] = "1"
+        r = subprocess.run(
+            [sys.executable, str(script), "--repo-root", str(repo_root),
+             "--reassert-owner", "--session-id", "OWNER"],
+            capture_output=True, text=True, env=orch_env,
+        )
+        assert r.returncode == 0, (
+            f"{script_name} --reassert-owner must succeed for the orchestrator, "
+            f"got {r.returncode}; stderr={r.stderr[:300]!r}"
+        )
+        verdict = json.loads(r.stdout)
+        assert verdict["reasserted"] is True, verdict
+        assert verdict["prior_status"] == "foreign-stamped", verdict
+        data = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert data["session_id"] == "OWNER", (
+            "the orchestrator re-claim must re-stamp the slot to OWNER"
+        )
+
+        # (3) --reassert-owner without --session-id dies (exit 2).
+        r = subprocess.run(
+            [sys.executable, str(script), "--repo-root", str(repo_root),
+             "--reassert-owner"],
+            capture_output=True, text=True, env=orch_env,
+        )
+        assert r.returncode == 2, (
+            f"{script_name} --reassert-owner without --session-id must _die "
+            f"(exit 2), got {r.returncode}"
+        )
+
+
+_TESTS = _TESTS + [
+    ("test_run_start_owner_bind_closes_repro_a",
+     test_run_start_owner_bind_closes_repro_a),
+    ("test_run_start_legacy_unbound_preserved",
+     test_run_start_legacy_unbound_preserved),
+    ("test_run_start_cli_threads_session_id_lazy_state",
+     test_run_start_cli_threads_session_id_lazy_state),
+    ("test_run_start_cli_threads_session_id_bug_state_parity",
+     test_run_start_cli_threads_session_id_bug_state_parity),
+    ("test_marker_owner_status_detect_three_way",
+     test_marker_owner_status_detect_three_way),
+    ("test_reassert_marker_owner_re_arms_foreign_stamped",
+     test_reassert_marker_owner_re_arms_foreign_stamped),
+    ("test_reassert_marker_owner_repro_b_resume_owner_bound",
+     test_reassert_marker_owner_repro_b_resume_owner_bound),
+    ("test_legacy_disarm_detected_and_re_armed",
+     test_legacy_disarm_detected_and_re_armed),
+    ("test_reassert_owner_cli_cycle_refusal_lazy_state",
+     test_reassert_owner_cli_cycle_refusal_lazy_state),
+    ("test_reassert_owner_cli_cycle_refusal_bug_state_parity",
+     test_reassert_owner_cli_cycle_refusal_bug_state_parity),
 ]
 
 

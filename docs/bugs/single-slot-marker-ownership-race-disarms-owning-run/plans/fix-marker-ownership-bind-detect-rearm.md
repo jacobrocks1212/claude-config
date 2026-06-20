@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: single-slot-marker-ownership-race-disarms-owning-run
-status: Ready
+status: Complete
 created: 2026-06-20
 complexity: complex
 phases: [1, 2]
@@ -87,12 +87,12 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — Thread `session_id=args.session_id` into both scripts' `--run-start` `write_run_marker` call (close the bind-pending window)
-- [ ] WU-2 — Repro-A-closed + legacy-unbound-preserved fixtures (Phase 1 regression net)
-- [ ] WU-3 — `marker_owner_status` detect helper + `reassert_marker_owner` re-arm helper (`lazy_core.py`)
-- [ ] WU-4 — Orchestrator-only `--reassert-owner` CLI action on both scripts (cycle-guarded)
-- [ ] WU-5 — Detect/re-arm/Repro-B/legacy-disarm fixtures + `--reassert-owner` cycle-refusal fixture
-- [ ] WU-6 — Docs: `user/scripts/CLAUDE.md` + root `CLAUDE.md` (bind/detect/re-arm model + reverse-references)
+- [x] WU-1 — Thread `session_id=args.session_id` into both scripts' `--run-start` `write_run_marker` call (close the bind-pending window)
+- [x] WU-2 — Repro-A-closed + legacy-unbound-preserved fixtures (Phase 1 regression net)
+- [x] WU-3 — `marker_owner_status` detect helper + `reassert_marker_owner` re-arm helper (`lazy_core.py`)
+- [x] WU-4 — Orchestrator-only `--reassert-owner` CLI action on both scripts (cycle-guarded)
+- [x] WU-5 — Detect/re-arm/Repro-B/legacy-disarm fixtures + `--reassert-owner` cycle-refusal fixture
+- [x] WU-6 — Docs: `user/scripts/CLAUDE.md` + root `CLAUDE.md` (bind/detect/re-arm model + reverse-references)
 
 ---
 
