@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: concurrent-same-branch-walkers-no-arbitration
-status: Ready
+status: Complete
 created: 2026-06-20
 complexity: complex
 phases: [1]
@@ -89,7 +89,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — Checkpoint-discriminated same-pipeline concurrent-walker refusal in `refuse_run_start_clobber` (impl + tests + docs)
+- [x] WU-1 — Checkpoint-discriminated same-pipeline concurrent-walker refusal in `refuse_run_start_clobber` (impl + tests + docs)
 
 ---
 

@@ -197,6 +197,14 @@ Hooks run before/after tool calls. Defined in `settings.json`, scripts in `user/
 > in repo A no longer arms the guard/inject/containment in a session for repo B, and a stale
 > marker in one repo cannot block unrelated work in another. Fail-OPEN preserved: a query error
 > falls back to prior behavior. See `user/scripts/CLAUDE.md` → "Per-repo keyed state dir".
+>
+> **Same-pipeline concurrent-walker refusal (`concurrent-same-branch-walkers-no-arbitration`).**
+> Within a single repo, `refuse_run_start_clobber` (shared `lazy_core` helper, both pipelines) now
+> refuses a second `--run-start` even for the **same pipeline** when the existing marker is live +
+> age-fresh AND no `lazy-run-checkpoint.json` is waiting (a genuinely-concurrent second `/lazy-batch`
+> walker on the same branch) — checkpoint-discriminated so a sanctioned checkpoint-resume (which always
+> carries that file) still overwrites. The checkpoint is read non-destructively (existence only).
+> Closes the residual same-repo/same-branch/same-pipeline gap left open by `multi-repo-concurrent-runs`.
 
 ## What's NOT Tracked
 

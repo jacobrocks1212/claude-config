@@ -8684,9 +8684,25 @@ def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None
     existing session_id compare is impossible here.  The robust, mechanical
     discriminator is the PIPELINE field: a feature ``--run-start`` clobbering a
     live ``bug`` marker (or vice versa) is exactly the D-B signature and is ALWAYS
-    a cross-run accident.  A SAME-pipeline re-``--run-start`` is the legitimate
-    checkpoint-resume case (the same run continuing after a sanctioned pause) and
-    is ALLOWED to overwrite — the resume path restores its own counters.
+    a cross-run accident → refused.
+
+    SAME-pipeline arbitration is CHECKPOINT-DISCRIMINATED
+    (concurrent-same-branch-walkers-no-arbitration, 2026-06-20).  A same-pipeline
+    re-``--run-start`` is NOT unconditionally a resume: a genuinely-concurrent
+    SECOND walker on the same repo+branch+pipeline is also same-pipeline and would
+    silently clobber the first walker's live marker (the residual gap left open by
+    ``multi-repo-concurrent-runs``).  The discriminator is the presence of
+    ``lazy-run-checkpoint.json`` on disk: a legitimate checkpoint-resume always
+    carries that file (written by ``--run-end --reason checkpoint``, consumed by
+    the handler's own ``consume_run_checkpoint()`` LATER), whereas a fresh second
+    walker has none.  So:
+      - same-pipeline + checkpoint file PRESENT  → ALLOW overwrite (sanctioned
+        resume — the resume path restores its own counters).
+      - same-pipeline + checkpoint file ABSENT (marker live + age-fresh)  → REFUSE
+        (exit 3, zero side effects), naming the in-flight run.
+    The checkpoint read here is NON-DESTRUCTIVE — an existence check ONLY, NEVER
+    ``consume_run_checkpoint()`` (which deletes the resume signal the ``--run-start``
+    handler legitimately consumes at a LATER step).
 
     Reads the marker file RAW (not via ``read_run_marker``) so the session-id
     staleness path (path B, which returns None for a non-owner caller and would
@@ -8733,7 +8749,34 @@ def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None
     if not existing_pipeline:
         return  # no pipeline field → fail-open
     if existing_pipeline == incoming_pipeline:
-        return  # same-pipeline re-run-start (checkpoint resume) → allow overwrite
+        # Same-pipeline arbitration is checkpoint-discriminated: a sanctioned
+        # checkpoint-resume carries lazy-run-checkpoint.json (read existence-only,
+        # NON-destructively — NEVER consume_run_checkpoint, which deletes the
+        # resume signal the --run-start handler consumes at a later step).
+        checkpoint_present = (
+            claude_state_dir(create=False) / _CHECKPOINT_FILENAME
+        ).exists()
+        if checkpoint_present:
+            return  # same-pipeline checkpoint-resume → allow overwrite
+        # Live, age-fresh, same-pipeline marker WITHOUT a checkpoint → a genuinely-
+        # concurrent SECOND walker on this repo+branch+pipeline → refuse the clobber.
+        existing_session = existing.get("session_id")
+        forward_cycles = existing.get("forward_cycles")
+        sys.stderr.write(
+            f"REFUSED: `--run-start` (pipeline={incoming_pipeline!r}) would CLOBBER "
+            f"an ACTIVE run marker for the SAME pipeline with NO checkpoint waiting "
+            f"(pipeline={existing_pipeline!r}, session_id={existing_session!r}, "
+            f"started_at={started_at_str!r}, forward_cycles={forward_cycles!r}). A "
+            f"second autonomous walker is already live on this same repo + branch + "
+            f"pipeline — overwriting its marker would leave both walkers running with "
+            f"no arbitration (collisions on feature selection and push ordering "
+            f"surface mid-run). STOP and do NOT start a second {incoming_pipeline} "
+            f"walker here. If the in-flight run is genuinely dead, end it first "
+            f"(`--run-end`) from its own orchestrator; a legitimate checkpoint-resume "
+            f"would carry lazy-run-checkpoint.json (absent here). This op was refused "
+            f"with ZERO side effects (the existing marker is untouched).\n"
+        )
+        sys.exit(3)
 
     # Live, well-formed, DIFFERENT-pipeline marker → refuse the clobber.
     existing_session = existing.get("session_id")

@@ -17514,15 +17514,112 @@ def test_run_start_clobber_refuses_cross_pipeline_live_marker():
 
 
 def test_run_start_clobber_allows_same_pipeline_resume():
-    """A feature --run-start over a LIVE feature marker (same pipeline =
-    checkpoint resume) does NOT refuse — write_run_marker proceeds to overwrite."""
+    """A feature --run-start over a LIVE feature marker WITH a checkpoint file
+    present (a sanctioned resume) does NOT refuse — write_run_marker overwrites.
+
+    concurrent-same-branch-walkers-no-arbitration P1: the same-pipeline branch is
+    now checkpoint-discriminated, so this fixture must seed lazy-run-checkpoint.json
+    (the resume signal). WITHOUT a checkpoint the identical setup now correctly
+    REFUSES (see test_run_start_clobber_refuses_same_pipeline_concurrent_no_checkpoint)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
             lazy_core.write_run_marker(pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0)
+            # Seed the resume signal: a legitimate checkpoint-resume always has
+            # lazy-run-checkpoint.json on disk (written by --run-end --reason checkpoint).
+            lazy_core.write_run_checkpoint(
+                "Step 7a: execute plan",
+                {"forward_cycles": 3, "meta_cycles": 0, "max_cycles": 20},
+                now=1_000_000.0,
+            )
             code, _ = _capture_clobber_refusal("feature", now=1_000_010.0)
-            assert code is None, "same-pipeline re-run-start must NOT refuse (resume)"
+            assert code is None, "same-pipeline re-run-start WITH checkpoint must NOT refuse (resume)"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_refuses_same_pipeline_concurrent_no_checkpoint():
+    """A feature --run-start over a LIVE feature marker with NO checkpoint file is
+    a genuinely-concurrent SECOND walker (not a resume) → REFUSE (exit 3), names
+    the in-flight run, leaves the marker byte-for-byte untouched.
+
+    concurrent-same-branch-walkers-no-arbitration P1: the core new behavior. The
+    pre-fix code returned None unconditionally on the same-pipeline branch (defect)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0)
+            run_path = Path(td) / "lazy-run-marker.json"
+            before = run_path.read_text(encoding="utf-8")
+            # No checkpoint file seeded → a second concurrent walker.
+            code, msg = _capture_clobber_refusal("feature", now=1_000_010.0)
+            assert code == 3, f"same-pipeline concurrent (no checkpoint) must exit 3, got {code}"
+            # The diagnostic names the in-flight run (started_at and/or feature).
+            assert "feature" in msg, msg
+            assert "1970-01-12T13:46:40Z" in msg or "started_at" in msg, msg
+            assert run_path.read_text(encoding="utf-8") == before, "marker must be untouched (zero side effects)"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_allows_same_pipeline_with_checkpoint_present():
+    """A LIVE same-pipeline marker AND a checkpoint file present is a sanctioned
+    resume → allow (code None). The refuse path must read the checkpoint
+    NON-destructively (existence only) — the file must STILL EXIST afterward."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0)
+            lazy_core.write_run_checkpoint(
+                "Step 7a: execute plan",
+                {"forward_cycles": 3, "meta_cycles": 0, "max_cycles": 20},
+                now=1_000_000.0,
+            )
+            ckpt_path = Path(td) / "lazy-run-checkpoint.json"
+            assert ckpt_path.exists(), "precondition: checkpoint seeded"
+            code, _ = _capture_clobber_refusal("feature", now=1_000_010.0)
+            assert code is None, "same-pipeline WITH checkpoint must NOT refuse (sanctioned resume)"
+            assert ckpt_path.exists(), "refuse path must read checkpoint NON-destructively (file still present)"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_allows_same_pipeline_age_stale():
+    """A same-pipeline marker >24h old with NO checkpoint is a presumed-dead run
+    and may be overwritten — no refusal. The age gate runs BEFORE the pipeline
+    check, so this never reaches the new same-pipeline-concurrent branch."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0)
+            # now is >24h (86400s) after started_at → age-stale → reclaim, no refusal.
+            code, _ = _capture_clobber_refusal("feature", now=1_000_000.0 + 90_000.0)
+            assert code is None, "age-stale same-pipeline marker must not refuse (reclaim preserved)"
+        finally:
+            _clear_state_dir()
+
+
+def test_run_start_clobber_cross_pipeline_unchanged_with_checkpoint():
+    """Regression guard: a checkpoint file present does NOT excuse a CROSS-pipeline
+    clobber. A LIVE bug marker + a checkpoint file, feature --run-start → still
+    REFUSES (exit 3). The new checkpoint discriminator must not leak cross-pipeline."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(pipeline="bug", cloud=False, repo_root="/r", now=1_000_000.0)
+            lazy_core.write_run_checkpoint(
+                "Step 7a: execute plan",
+                {"forward_cycles": 3, "meta_cycles": 0, "max_cycles": 20},
+                now=1_000_000.0,
+            )
+            code, msg = _capture_clobber_refusal("feature", now=1_000_010.0)
+            assert code == 3, f"cross-pipeline clobber must exit 3 even with checkpoint, got {code}"
+            assert "bug" in msg and "feature" in msg, msg
         finally:
             _clear_state_dir()
 
@@ -19715,14 +19812,22 @@ _TESTS = _TESTS + [
      test_run_end_ack_unhardened_clears_sessionless_friction),
     ("test_run_start_clobber_allows_over_age_stale_marker",
      test_run_start_clobber_allows_over_age_stale_marker),
+    ("test_run_start_clobber_allows_same_pipeline_age_stale",
+     test_run_start_clobber_allows_same_pipeline_age_stale),
     ("test_run_start_clobber_allows_same_pipeline_resume",
      test_run_start_clobber_allows_same_pipeline_resume),
+    ("test_run_start_clobber_allows_same_pipeline_with_checkpoint_present",
+     test_run_start_clobber_allows_same_pipeline_with_checkpoint_present),
     ("test_run_start_clobber_allows_when_no_marker",
      test_run_start_clobber_allows_when_no_marker),
     ("test_run_start_clobber_corrupt_marker_fails_open",
      test_run_start_clobber_corrupt_marker_fails_open),
+    ("test_run_start_clobber_cross_pipeline_unchanged_with_checkpoint",
+     test_run_start_clobber_cross_pipeline_unchanged_with_checkpoint),
     ("test_run_start_clobber_refuses_cross_pipeline_live_marker",
      test_run_start_clobber_refuses_cross_pipeline_live_marker),
+    ("test_run_start_clobber_refuses_same_pipeline_concurrent_no_checkpoint",
+     test_run_start_clobber_refuses_same_pipeline_concurrent_no_checkpoint),
     ("test_run_start_clobber_symbol_present",
      test_run_start_clobber_symbol_present),
     ("test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo",

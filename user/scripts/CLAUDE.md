@@ -173,8 +173,17 @@ in another repo (it also kills stale-marker contagion across repos).
   carry this binding.
 - **Same-repo refusal / cross-repo concurrency.** `refuse_run_start_clobber` reads the keyed
   dir's marker raw: a live, non-stale, DIFFERENT-pipeline marker in *this* repo's subdir refuses a
-  second `--run-start` (exit 3, zero side effects, naming the in-flight run). A different repo is a
-  different subdir → never refuses. Age-staleness (24h) makes a presumed-dead marker reclaimable.
+  second `--run-start` (exit 3, zero side effects, naming the in-flight run). A live, non-stale,
+  **SAME-pipeline** marker is ALSO refused now (exit 3, zero side effects, naming the in-flight run's
+  `started_at`/`forward_cycles`) — UNLESS a `lazy-run-checkpoint.json` is present, the
+  sanctioned-resume discriminator. This closes the `multi-repo-concurrent-runs`
+  **same-repo / same-branch / same-pipeline** residual gap: a genuinely-concurrent second `/lazy-batch`
+  walker (no checkpoint waiting) no longer silently clobbers the first walker's marker. The checkpoint
+  is read NON-destructively (existence only — never `consume_run_checkpoint`, which deletes the resume
+  signal the `--run-start` handler consumes LATER). A different repo is a
+  different subdir → never refuses. Age-staleness (24h) makes a presumed-dead marker reclaimable (the
+  age gate runs before the pipeline check, so a stale same-pipeline marker reclaims without reaching the
+  new refusal). Closed by `docs/bugs/concurrent-same-branch-walkers-no-arbitration`.
 - **Legacy migration.** On the first production `claude_state_dir()` resolution (env unset),
   `migrate_legacy_state_dir()` moves any legacy un-keyed base-dir files (`lazy-run-marker.json`,
   `lazy-prompt-registry.json`, `lazy-deny-ledger.jsonl`, `lazy-cycle-active.json`,
