@@ -34,8 +34,8 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test` and `python user/scripts/test_lazy_core.py` both green, with the new `evaluate_completion_evidence` fixtures asserting: a temp feature dir carrying `VALIDATED.md` + a passing `MCP_TEST_RESULTS.md` (validated_commit == fixture HEAD) returns `verdict == "exempt-and-tick"`; the same dir with `MCP_TEST_RESULTS.md` removed returns `verdict == "refuse"`. This is a runnable command (`pytest user/scripts/test_lazy_core.py -q`), not "unit tests pass" in the abstract.
 
 **Runtime Verification** *(checked by the Python test suite — this repo has no MCP runtime):*
-- [ ] `python -m pytest user/scripts/test_lazy_core.py -q` green with the new evidence-table fixtures <!-- verification-only -->
-- [ ] `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` green (shared `lazy_core` import surface unbroken) <!-- verification-only -->
+- [x] `python -m pytest user/scripts/test_lazy_core.py -q` green with the new evidence-table fixtures <!-- verification-only -->
+- [x] `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` green (shared `lazy_core` import surface unbroken) <!-- verification-only -->
 
 **Prerequisites:** None (first phase).
 
@@ -77,7 +77,7 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py -q` green with a fixture that writes a temp PHASES.md containing one fenced `- [ ]` block, one plain implementation `- [ ]`, and two `- [ ]` rows carrying `<!-- verification-only -->`; after `autotick_verification_rows(path, sha, pass_count=2)` the file has exactly the two marker rows flipped to `- [x]` each with the audit comment, the fenced and implementation rows byte-unchanged, and `ticked_count == 2`. A second cardinality fixture with `pass_count=1` against the same 2-row file returns `ok: false` and leaves the file unmodified.
 
 **Runtime Verification** *(checked by the Python test suite):*
-- [ ] `python -m pytest user/scripts/test_lazy_core.py -q` green with the auto-tick rewrite fixtures (atomicity, fence-safety, cardinality lock, idempotency) <!-- verification-only -->
+- [x] `python -m pytest user/scripts/test_lazy_core.py -q` green with the auto-tick rewrite fixtures (atomicity, fence-safety, cardinality lock, idempotency) <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: the verdict dict supplies `validated_commit` (sha for the audit comment) and `pass_count` (cardinality-lock numerator). This phase consumes those; it does not re-read `MCP_TEST_RESULTS.md`.
@@ -109,9 +109,9 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test`, `python user/scripts/bug-state.py --test`, and `python user/scripts/test_lazy_core.py -q` all green. The decisive end-to-end fixture: a temp feature dir with passing evidence (validated_commit == HEAD) and a PHASES.md whose only unchecked rows are `<!-- verification-only -->`-marked, run through `--apply-pseudo __mark_complete__`, yields a `COMPLETED.md` on disk, every verification row flipped to `- [x]` with an audit comment, `auto_ticked_rows` recorded in both the receipt and the JSON result, and exit 0 — with NO recovery cycle. Re-running with `LAZY_STRICT_EVIDENCE_GATE=1` against the un-ticked file refuses (exit 1) and leaves PHASES.md byte-unchanged.
 
 **Runtime Verification** *(checked by the Python test suite + the repo's full gate set):*
-- [ ] `python user/scripts/lazy-state.py --test` + `python user/scripts/bug-state.py --test` green; baselines regenerated only via `_normalize_smoke_output` if intentionally changed <!-- verification-only -->
-- [ ] `python -m pytest user/scripts/ -q` full suite green <!-- verification-only -->
-- [ ] `python user/scripts/lazy_parity_audit.py --report` clean — the completion-gate change is mirrored to / shared across both state machines via `lazy_core`, no unexplained drift <!-- verification-only -->
+- [x] `python user/scripts/lazy-state.py --test` + `python user/scripts/bug-state.py --test` green; baselines regenerated only via `_normalize_smoke_output` if intentionally changed <!-- verification-only -->
+- [x] `python -m pytest user/scripts/ -q` full suite green <!-- verification-only -->
+- [x] `python user/scripts/lazy_parity_audit.py --report` clean — the completion-gate change is mirrored to / shared across both state machines via `lazy_core`, no unexplained drift <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: `evaluate_completion_evidence` verdict.
@@ -143,6 +143,7 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 ## Implementation Notes
 
+- **Unblocking bug (Fixed):** Full-suite verification row (Phase 3 `pytest user/scripts/ -q`) was unblocked by the spun-off bug `adhoc-parity-merged-view-fixture-stale-archive-fixed` (now Fixed+archived), which corrected stale parity fixtures missing `--archive-fixed`; without it the 883-test suite had failures.
 - **Single-repo, reversible change.** Per Technical Design (LOCKED, Direction A): all edits are in `lazy_core.py` (+ its two state-machine importers' `--test` fixtures + `CLAUDE.md` docs). No sibling-repo (`check-docs-consistency.ts`) edit — the exhaustive auto-tick normalization satisfies the naive count-everything checker (SPEC Open Question 4 / RESEARCH_SUMMARY finding 6).
 - **Lint side is out of scope here (Swiss-Cheese, owned upstream).** SPEC Open Question 5: this feature owns the completion-gate EVIDENCE side; the authoring-time marker-correctness lint (marker only on test-shaped rows) is partly upstream in `harness-hardening-retro-fixes`. The gate-side mitigation for a hallucinated marker on an implementation row is the Phase-2 cardinality lock (`ticked_count <= pass_count`). Not re-litigated here.
 - **`lazy_core.py` line anchors** (`:97`, `:1396`, `:1419`, `:1824`, `:2780`+) verified live 2026-06-19; minor drift resolved by symbol name during implementation, per the SPEC's note.
