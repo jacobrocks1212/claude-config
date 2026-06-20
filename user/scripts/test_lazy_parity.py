@@ -643,31 +643,61 @@ class TestStateScriptParity:
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
         (scripts / "lazy-state.py").write_text(
-            "def main():\n    lazy_core.set_active_repo_root(args.repo_root)\n",
+            'def main():\n    lazy_core.set_active_repo_root(args.repo_root)\n'
+            '    parser.add_argument("--reorder-queue")\n',
             encoding="utf-8",
         )
-        # bug-state.py is MISSING the binding → must be flagged.
+        # bug-state.py is MISSING the binding (but HAS --reorder-queue) → exactly
+        # one finding, naming the binding gap.
         (scripts / "bug-state.py").write_text(
-            "def main():\n    pass  # no active-repo binding\n",
+            'def main():\n    pass  # no active-repo binding\n'
+            '    parser.add_argument("--reorder-queue")\n',
             encoding="utf-8",
         )
         findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
         assert len(findings) == 1, findings
         assert "bug-state.py" in findings[0]
         assert "STATE" in findings[0]
+        assert "set_active_repo_root" in findings[0]
+
+    def test_audit_state_script_parity_fires_when_reorder_queue_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """The check FIRES (one finding) when a state script drops the
+        --reorder-queue subcommand (coupled-pair queue-mutation surface)."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        # Both bind the active repo; only lazy-state.py carries --reorder-queue.
+        (scripts / "lazy-state.py").write_text(
+            'set_active_repo_root(args.repo_root)\n'
+            'parser.add_argument("--reorder-queue")\n',
+            encoding="utf-8",
+        )
+        (scripts / "bug-state.py").write_text(
+            'set_active_repo_root(args.repo_root)  # no --reorder-queue\n',
+            encoding="utf-8",
+        )
+        findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
+        assert len(findings) == 1, findings
+        assert "bug-state.py" in findings[0]
+        assert "--reorder-queue" in findings[0]
 
     def test_audit_state_script_parity_clean_when_both_bind(
         self, tmp_path: Path
     ) -> None:
         """No findings when both scripts carry the binding (bare or lazy_core.
-        prefixed form)."""
+        prefixed form) AND the --reorder-queue subcommand."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
         (scripts / "lazy-state.py").write_text(
-            "set_active_repo_root( args.repo_root )\n", encoding="utf-8"
+            'set_active_repo_root( args.repo_root )\n'
+            'parser.add_argument("--reorder-queue")\n',
+            encoding="utf-8",
         )
         (scripts / "bug-state.py").write_text(
-            "lazy_core.set_active_repo_root(args.repo_root)\n", encoding="utf-8"
+            'lazy_core.set_active_repo_root(args.repo_root)\n'
+            'parser.add_argument("--reorder-queue")\n',
+            encoding="utf-8",
         )
         assert lazy_parity_audit.audit_state_script_parity(tmp_path) == []
 

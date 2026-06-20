@@ -149,10 +149,15 @@ No `**Depends on:**` block in the SPEC (bug investigation spec). No hard upstrea
 
 **Scope:** Add a `--reorder-queue`-presence assertion to `lazy_parity_audit.py::audit_state_script_parity` so a future silent drop of the subcommand from EITHER state script is a hard finding. This locks the coupled-pair parity the SPEC requires.
 
-**Deliverables:**
-- [ ] In `audit_state_script_parity` (line 304), add a regex (e.g. `--reorder-queue` literal presence) checked against EACH script in `_STATE_SCRIPTS`; a script missing it appends a finding naming the script + the missing surface, mirroring the existing `_ACTIVE_REPO_BINDING_RE` finding shape.
-- [ ] Verify the audit passes after Phases 2–3 (both scripts carry the subcommand) and fails if either is removed: `python3 user/scripts/lazy_parity_audit.py --repo-root <repo>` exits 0; a manual removal experiment (not committed) exits 1 with the new finding.
-- [ ] Tests: extend `test_lazy_parity.py` if it characterizes `audit_state_script_parity` (add a fixture asserting the new finding fires when a script lacks `--reorder-queue`); otherwise the live audit run is the gate.
+- [x] In `audit_state_script_parity` (line 304), add a regex (e.g. `--reorder-queue` literal presence) checked against EACH script in `_STATE_SCRIPTS`; a script missing it appends a finding naming the script + the missing surface, mirroring the existing `_ACTIVE_REPO_BINDING_RE` finding shape.
+- [x] Verify the audit passes after Phases 2–3 (both scripts carry the subcommand) and fails if either is removed: `python3 user/scripts/lazy_parity_audit.py --repo-root <repo>` exits 0; a manual removal experiment (not committed) exits 1 with the new finding.
+- [x] Tests: extend `test_lazy_parity.py` if it characterizes `audit_state_script_parity` (add a fixture asserting the new finding fires when a script lacks `--reorder-queue`); otherwise the live audit run is the gate.
+
+**Implementation Notes (P4 — 2026-06-20):**
+- Added `_REORDER_QUEUE_RE = re.compile(r'"--reorder-queue"')` and a second per-script check in `audit_state_script_parity`'s existing `_STATE_SCRIPTS` loop, appending a `lazy-parity [state-scripts] STATE: <script> must carry the operator-only --reorder-queue subcommand …` finding (same prefix/shape as the `_ACTIVE_REPO_BINDING_RE` finding). Findings flow through `audit_all_pairs` → main `sys.exit(1 if findings)`.
+- `test_lazy_parity.py`: added `test_audit_state_script_parity_fires_when_reorder_queue_missing` and updated the existing binding-missing + clean tests so their fixtures now also carry `"--reorder-queue"` (otherwise the new assertion would change their finding counts). 30 matching tests pass via pytest.
+- Live audit exits 0 with both scripts wired. Negative check (neutralize all 3 `"--reorder-queue"` literals in bug-state.py): audit exits 1 with the new finding — assertion is load-bearing, not a no-op. bug-state.py restored byte-clean.
+- Review verdict: PASS.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_parity_audit.py --repo-root <repo>` exits 0 with both scripts carrying `--reorder-queue`; the new finding string is reachable (demonstrated by a throwaway edit removing the subcommand from one script → exit 1).
 
