@@ -22075,5 +22075,179 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# Phase 3 (long-build-and-runtime-ownership) WU-2 — run_transient_build:
+# the M3.2 Transient Build contract over the single spawn_detached primitive.
+#
+# LD5: one cross-platform spawn primitive, TWO supervisory contracts. The
+# Persistent Service contract (Phase 2's ensure_runtime) leaves the process
+# detached and behind for re-attach in later cycles. The Transient Build
+# contract — run_transient_build — spawns detached ONLY to survive subagent
+# reaping, but synchronously AWAITS the build's conclusion (capturing stdout for
+# telemetry), then returns. It does NOT write `.runtime.lock.json` and does NOT
+# abandon the process for a future cycle. Atomic Artifact Promotion is composed
+# AROUND it in Phase 4 — kept OUT of run_transient_build itself.
+#
+# All hermetic via injected `spawn`/`wait` callables — no real build process.
+# ===========================================================================
+
+
+def test_run_transient_build_symbol_present():
+    """run_transient_build is a public symbol on lazy_core."""
+    _guard()
+    assert hasattr(lazy_core, "run_transient_build"), (
+        "lazy_core.run_transient_build missing — Phase 3 WU-2 not implemented"
+    )
+
+
+def test_run_transient_build_spawns_through_detached_path():
+    """The build is spawned via spawn_detached (the injected `spawn` records the
+    detached creationflags / start_new_session) — survives a subagent tear by
+    construction, NOT a bare subprocess.run."""
+    _guard()
+    spawn_calls = []
+
+    def fake_spawn(cmd, **kwargs):
+        spawn_calls.append(kwargs)
+        return _FakeProc(pid=7777)
+
+    lazy_core.run_transient_build(
+        ["cargo", "build", "--release"], cwd="/tmp",
+        spawn=fake_spawn, wait=lambda proc: (0, "ok"),
+        platform="linux", which=lambda name: None,
+    )
+    assert len(spawn_calls) == 1, (
+        f"expected exactly one detached spawn, got {len(spawn_calls)}"
+    )
+    # POSIX detached signature: start_new_session=True, no Windows creationflags.
+    assert spawn_calls[0].get("start_new_session") is True, (
+        "the build must be spawned through the DETACHED path (spawn_detached) — "
+        f"start_new_session not set; kwargs: {spawn_calls[0]!r}"
+    )
+
+
+def test_run_transient_build_windows_detached_flags():
+    """On Windows the build is spawned with the DETACHED_PROCESS breakaway flags
+    (proof it routes through spawn_detached, not a plain Popen)."""
+    _guard()
+    spawn_calls = []
+
+    def fake_spawn(cmd, **kwargs):
+        spawn_calls.append(kwargs)
+        return _FakeProc(pid=8888)
+
+    lazy_core.run_transient_build(
+        ["tauri", "build"], cwd="C:\\repo",
+        spawn=fake_spawn, wait=lambda proc: (0, ""),
+        platform="win32",
+    )
+    flags = spawn_calls[0].get("creationflags")
+    expected = (_DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+                | _CREATE_BREAKAWAY_FROM_JOB)
+    assert flags == expected, (
+        f"Windows transient build must carry detached breakaway flags "
+        f"{expected:#x}; got {flags!r}"
+    )
+
+
+def test_run_transient_build_awaits_and_returns_exit_code_and_stdout():
+    """The contract synchronously AWAITS conclusion (injected `wait` returns an
+    exit code + stdout) and returns {exit_code, stdout, ...} — NOT abandoned."""
+    _guard()
+
+    def fake_wait(proc):
+        return (0, "Compiling… Finished release [optimized] target(s)")
+
+    result = lazy_core.run_transient_build(
+        ["cargo", "build", "--release"], cwd="/tmp",
+        spawn=lambda cmd, **k: _FakeProc(pid=9001),
+        wait=fake_wait, platform="linux", which=lambda name: None,
+    )
+    assert result["exit_code"] == 0, f"expected exit_code 0; got {result!r}"
+    assert "Finished release" in result["stdout"], (
+        f"stdout must be captured for telemetry; got {result!r}"
+    )
+
+
+def test_run_transient_build_propagates_nonzero_exit():
+    """A failing build's non-zero exit code is propagated (the orchestrator
+    needs it to skip Atomic Artifact Promotion in Phase 4)."""
+    _guard()
+    result = lazy_core.run_transient_build(
+        ["npm", "run", "build"], cwd="/tmp",
+        spawn=lambda cmd, **k: _FakeProc(pid=9002),
+        wait=lambda proc: (101, "error[E0277]: the trait bound is not satisfied"),
+        platform="linux", which=lambda name: None,
+    )
+    assert result["exit_code"] == 101, f"non-zero exit must propagate; got {result!r}"
+
+
+def test_run_transient_build_does_not_write_runtime_lock():
+    """LD5 two-contracts distinction: the Transient Build contract does NOT write
+    `.runtime.lock.json` and does NOT register a persistent process for a future
+    cycle. Assert no lock file appears at the repo root after the build."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        lock_path = repo / ".runtime.lock.json"
+        assert not lock_path.exists(), "precondition: no lock before the build"
+
+        lazy_core.run_transient_build(
+            ["cargo", "build", "--release"], cwd=str(repo),
+            spawn=lambda cmd, **k: _FakeProc(pid=9003),
+            wait=lambda proc: (0, "done"),
+            platform="linux", which=lambda name: None,
+        )
+        assert not lock_path.exists(), (
+            "run_transient_build must NOT write .runtime.lock.json (that is the "
+            "Persistent Service contract's job — LD5 two-contracts distinction)"
+        )
+
+
+def test_run_transient_build_does_not_call_lock_writer(monkeypatch=None):
+    """Defense-in-depth: even with an injected spy, write_runtime_lock is NEVER
+    invoked by run_transient_build (the persistent path is structurally absent)."""
+    _guard()
+    called = {"n": 0}
+    original = lazy_core.write_runtime_lock
+
+    def spy(*args, **kwargs):
+        called["n"] += 1
+        return original(*args, **kwargs)
+
+    lazy_core.write_runtime_lock = spy
+    try:
+        lazy_core.run_transient_build(
+            ["tauri", "build"], cwd="/tmp",
+            spawn=lambda cmd, **k: _FakeProc(pid=9004),
+            wait=lambda proc: (0, ""),
+            platform="linux", which=lambda name: None,
+        )
+    finally:
+        lazy_core.write_runtime_lock = original
+    assert called["n"] == 0, (
+        "run_transient_build must never call write_runtime_lock — the lock writer "
+        "belongs to the Persistent Service contract only"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_run_transient_build_symbol_present",
+     test_run_transient_build_symbol_present),
+    ("test_run_transient_build_spawns_through_detached_path",
+     test_run_transient_build_spawns_through_detached_path),
+    ("test_run_transient_build_windows_detached_flags",
+     test_run_transient_build_windows_detached_flags),
+    ("test_run_transient_build_awaits_and_returns_exit_code_and_stdout",
+     test_run_transient_build_awaits_and_returns_exit_code_and_stdout),
+    ("test_run_transient_build_propagates_nonzero_exit",
+     test_run_transient_build_propagates_nonzero_exit),
+    ("test_run_transient_build_does_not_write_runtime_lock",
+     test_run_transient_build_does_not_write_runtime_lock),
+    ("test_run_transient_build_does_not_call_lock_writer",
+     test_run_transient_build_does_not_call_lock_writer),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

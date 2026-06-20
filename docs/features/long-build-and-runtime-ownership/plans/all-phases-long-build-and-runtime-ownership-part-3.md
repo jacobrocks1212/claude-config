@@ -74,8 +74,8 @@ Before each step, `Read` the listed component files from disk — never from mem
 
 ## Work Units
 
-- [ ] WU-1 — `long-build-ownership-guard.sh` PreToolUse hook + `settings.json` registration
-- [ ] WU-2 — `run_transient_build` Transient Build contract over `spawn_detached`
+- [x] WU-1 — `long-build-ownership-guard.sh` PreToolUse hook + `settings.json` registration
+- [x] WU-2 — `run_transient_build` Transient Build contract over `spawn_detached`
 - [ ] WU-3 — Prose: advisory→enforced `long-build-ownership.md` + repo-root CLAUDE.md Hooks-table row
 
 ## Phase: long-build-and-runtime-ownership P3 — Enforce the long-build ownership boundary

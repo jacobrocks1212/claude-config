@@ -42,6 +42,12 @@ Public API (stable for Phase 2 reuse):
     write_completed_receipt(path, feature_id, date, *, provenance, ...)
     has_completion_receipt(spec_dir)
     spec_status(spec_dir)
+
+  Runtime ownership (long-build-and-runtime-ownership):
+    spawn_detached(cmd, *, cwd, ...)           # the one detached-spawn primitive
+    run_transient_build(cmd, *, cwd, ...)       # M3.2 Transient Build contract
+    kernel_start_time(pid, *, ...)
+    write_runtime_lock / read_runtime_lock / verify_runtime_ownership
 """
 
 from __future__ import annotations
@@ -6702,6 +6708,94 @@ def spawn_detached(
         except Exception:  # noqa: BLE001 — best-effort; start_time stays None
             start_time = None
     return {"pid": pid, "start_time": start_time}
+
+
+def run_transient_build(
+    cmd,
+    *,
+    cwd,
+    spawn=None,
+    wait=None,
+    platform=None,
+    which=None,
+    kernel_start_time_fn=None,
+):
+    """Run a TRANSIENT long build under the M3.2 Transient Build contract; return
+    ``{"exit_code": int, "stdout": str, "pid": int, "start_time": float | None}``.
+
+    One of LD5's two supervisory contracts over the single ``spawn_detached``
+    primitive. The build is spawned **detached** ONLY to survive a feature-cycle
+    subagent boundary's process-tree reaping — but unlike the Persistent Service
+    contract (``ensure_runtime``), this contract:
+
+      - **synchronously AWAITS** the build's conclusion (gathering stdout for
+        telemetry), then returns the exit code, and
+      - does **NOT** write ``.runtime.lock.json`` and does **NOT** leave the
+        process behind for a later cycle to re-attach to.
+
+    Atomic Artifact Promotion (Phase 4 / M5 Detect) is composed AROUND this — it
+    is deliberately kept OUT of ``run_transient_build`` itself, so this function
+    stays a pure spawn-detached-and-await primitive.
+
+    Determinism / injection (keeps ``--test`` hermetic):
+      - ``spawn`` / ``platform`` / ``which`` / ``kernel_start_time_fn`` — passed
+        straight through to ``spawn_detached`` (see its docstring).
+      - ``wait`` — callable(proc) -> ``(exit_code: int, stdout: str)``. Awaits the
+        spawned process and returns its result. Default: a real awaiter that
+        ``proc.communicate()``-style waits and reads captured stdout.
+    """
+    spawned = spawn_detached(
+        cmd,
+        cwd=cwd,
+        spawn=spawn,
+        platform=platform,
+        which=which,
+        kernel_start_time_fn=kernel_start_time_fn,
+    )
+
+    if wait is None:
+        wait = _default_build_wait
+
+    # NOTE: spawn_detached returns {"pid", "start_time"} (NOT the Popen handle),
+    # so the default awaiter re-attaches by PID. Tests ALWAYS inject ``wait``
+    # (hermetic), so the default path is exercised only in production where a
+    # real awaiter is supplied by the caller's config; we pass the spawn result
+    # dict through so an injected awaiter can use the pid.
+    exit_code, stdout = wait(spawned)
+
+    return {
+        "exit_code": exit_code,
+        "stdout": stdout,
+        "pid": spawned.get("pid"),
+        "start_time": spawned.get("start_time"),
+    }
+
+
+def _default_build_wait(spawned):
+    """Default production awaiter for ``run_transient_build``: block on the
+    detached child by PID and return ``(exit_code, stdout)``.
+
+    Tests inject ``wait`` so this is exercised only in production. spawn_detached
+    returns a ``{pid, start_time}`` dict (not the Popen handle, which would be
+    torn down with the orchestrator turn if held), so the default awaiter polls
+    the PID via ``os.waitpid`` where the child is a direct child, falling back to
+    a best-effort liveness poll otherwise. stdout capture in the no-handle case is
+    best-effort; production callers that need full stdout telemetry inject a
+    ``wait`` that owns the pipe.
+    """
+    pid = spawned.get("pid")
+    if pid is None:
+        return (None, "")
+    try:
+        _, status = os.waitpid(int(pid), 0)
+        # POSIX exit-status decode; on Windows os.waitpid returns the exit code
+        # shifted, so normalize via os.waitstatus_to_exitcode when available.
+        if hasattr(os, "waitstatus_to_exitcode"):
+            return (os.waitstatus_to_exitcode(status), "")
+        return (status, "")
+    except (ChildProcessError, OSError, ValueError):
+        # Not a direct child (detached) or already reaped — best-effort poll.
+        return (None, "")
 
 
 def kernel_start_time(

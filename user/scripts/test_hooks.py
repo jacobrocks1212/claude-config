@@ -4387,6 +4387,194 @@ def test_guard_unbound_marker_hardening_cap_still_ledgers():
         )
 
 
+# ===========================================================================
+# long-build-and-runtime-ownership Phase 3 (WU-1) — long-build-ownership-guard.sh
+#
+# A NET-NEW fail-OPEN PreToolUse(Bash) guard (M5 Prevent / LD4) that redirects
+# subagent-owned long builds to orchestrator ownership.  On a match it emits a
+# `deny` JSON whose reason names the orchestrator-takeover signature (the
+# "fail-open block" in this hook framework — a non-zero exit is a hard error, so
+# the block is a permissionDecision: deny, NOT exit 2).  Matcher is anchored to
+# EXACT long-build binary invocations (env-assignment prefix tolerated) and must
+# NOT redirect ls/cat/lint/cargo-check.  ANY internal error → exit 0 allow +
+# breadcrumb (mirrors the sibling guards).
+#
+# These tests pipe synthetic PreToolUse JSON on stdin and assert the emitted
+# deny/allow, reusing the containment test harness (_bash_preToolUse_json /
+# _run_bash / _base_env).  The guard takeover-signature string is asserted via
+# the SSOT constant so the test and the hook never drift.
+# ===========================================================================
+
+_LONGBUILD_GUARD_SH = _HOOKS_DIR / "long-build-ownership-guard.sh"
+
+# The orchestrator-takeover signature the deny reason MUST name (SSOT; part 5
+# consumes the same literal).  The guard's deny reason is required to carry this
+# exact token so the orchestrator can recognize the redirect deterministically.
+_LONGBUILD_TAKEOVER_SIGNATURE = "LONG-BUILD-OWNERSHIP-TAKEOVER"
+
+
+def _run_longbuild_guard(
+    stdin_text: str, state_dir: Path
+) -> subprocess.CompletedProcess:
+    """Pipe *stdin_text* into the long-build-ownership guard hook."""
+    return _run_bash(_LONGBUILD_GUARD_SH, stdin_text, _base_env(state_dir))
+
+
+def test_longbuild_guard_file_exists():
+    """The net-new guard hook must exist on disk (WU-1)."""
+    assert _LONGBUILD_GUARD_SH.exists(), (
+        f"long-build-ownership-guard.sh missing — Phase 3 WU-1 not implemented: "
+        f"{_LONGBUILD_GUARD_SH}"
+    )
+
+
+def test_longbuild_guard_denies_tauri_build():
+    """`tauri build` → deny + the takeover-signature in the reason."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("tauri build"), state_dir
+        )
+        assert result.returncode == 0, (
+            f"guard must exit 0 (deny is JSON, not exit code); "
+            f"got {result.returncode}; stderr: {result.stderr!r}"
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`tauri build` must deny; stdout: {result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert _LONGBUILD_TAKEOVER_SIGNATURE in reason, (
+            f"deny reason must name the takeover signature "
+            f"{_LONGBUILD_TAKEOVER_SIGNATURE!r}; got {reason!r}"
+        )
+
+
+def test_longbuild_guard_denies_cargo_build_release():
+    """`cargo build --release` → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("cargo build --release"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`cargo build --release` must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_npm_run_build():
+    """`npm run build` → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run build"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npm run build` must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_env_prefix_tolerance():
+    """A leading env assignment (`ENV=1 tauri build`) → still deny (the matcher
+    tolerates the env-assignment prefix before the long-build binary)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("FOO=bar BAZ=1 tauri build"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"env-prefixed `tauri build` must deny (prefix tolerance); "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_false_positive_scope():
+    """False-positive scope guard: short/unrelated commands must ALLOW (no deny).
+    `cargo check --release` is explicitly allowed — it is the FAST pre-build
+    check the long-build rule recommends, NOT a long build."""
+    allow_cmds = [
+        "ls -la",
+        "cat foo.txt",
+        "npm run lint",
+        "cargo check --release",
+        "npm run build:docs",   # not the exact `npm run build` token
+        "echo tauri build",     # a substring inside another command, not the head
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in allow_cmds:
+            result = _run_longbuild_guard(
+                _bash_preToolUse_json(cmd), state_dir
+            )
+            assert result.returncode == 0, (
+                f"{cmd!r} must exit 0; stderr: {result.stderr!r}"
+            )
+            assert _containment_decision(result) != "deny", (
+                f"{cmd!r} must NOT deny (false-positive scope guard); "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_longbuild_guard_fail_open_on_malformed_json():
+    """A malformed payload (bad JSON on stdin) → fail-open allow (exit 0, no
+    deny), mirroring the sibling guards."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH, "{ this is not valid json", _base_env(state_dir)
+        )
+        assert result.returncode == 0, (
+            f"malformed payload must fail-open (exit 0); "
+            f"got {result.returncode}; stderr: {result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"malformed payload must NOT deny (fail-open); stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_non_bash_tool_allows():
+    """A non-Bash tool call (e.g. Read) → allow (the guard scopes to Bash)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        payload = json.loads(_bash_preToolUse_json("tauri build"))
+        payload["tool_name"] = "Read"
+        payload["tool_input"] = {"file_path": "tauri build"}
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH, json.dumps(payload), _base_env(state_dir)
+        )
+        assert _containment_decision(result) != "deny", (
+            f"non-Bash tool must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_registered_in_settings():
+    """Mount-site verification (d8 mount-site failure class): the net-new guard
+    must be REGISTERED as a command in user/settings.json's PreToolUse
+    `matcher: Bash` array — a hook on disk but unregistered is dead code."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    bash_blocks = [b for b in pretooluse if b.get("matcher") == "Bash"]
+    assert bash_blocks, "no PreToolUse matcher:Bash block found in settings.json"
+    commands = [
+        h.get("command", "")
+        for block in bash_blocks
+        for h in block.get("hooks", [])
+    ]
+    assert any("long-build-ownership-guard.sh" in c for c in commands), (
+        f"long-build-ownership-guard.sh not registered in the PreToolUse "
+        f"matcher:Bash array; registered commands: {commands!r}"
+    )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -4548,6 +4736,27 @@ _TESTS = [
      test_guard_bound_marker_deny_still_ledgers_and_accrues_debt),
     ("test_guard_unbound_marker_hardening_cap_still_ledgers",
      test_guard_unbound_marker_hardening_cap_still_ledgers),
+    # long-build-and-runtime-ownership Phase 3 (WU-1) — long-build-ownership
+    # guard: deny exact long-build signatures (env-prefix tolerant) with the
+    # takeover signature; allow short/lint/check; fail-open on malformed; non-Bash
+    # allow; registered in settings.json (mount-site).
+    ("test_longbuild_guard_file_exists", test_longbuild_guard_file_exists),
+    ("test_longbuild_guard_denies_tauri_build",
+     test_longbuild_guard_denies_tauri_build),
+    ("test_longbuild_guard_denies_cargo_build_release",
+     test_longbuild_guard_denies_cargo_build_release),
+    ("test_longbuild_guard_denies_npm_run_build",
+     test_longbuild_guard_denies_npm_run_build),
+    ("test_longbuild_guard_env_prefix_tolerance",
+     test_longbuild_guard_env_prefix_tolerance),
+    ("test_longbuild_guard_allows_false_positive_scope",
+     test_longbuild_guard_allows_false_positive_scope),
+    ("test_longbuild_guard_fail_open_on_malformed_json",
+     test_longbuild_guard_fail_open_on_malformed_json),
+    ("test_longbuild_guard_non_bash_tool_allows",
+     test_longbuild_guard_non_bash_tool_allows),
+    ("test_longbuild_guard_registered_in_settings",
+     test_longbuild_guard_registered_in_settings),
 ]
 
 

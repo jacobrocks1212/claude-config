@@ -72,6 +72,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/lazy-cycle-containment.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/long-build-ownership-guard.sh",
+            "timeout": 5
           }
         ]
       },
