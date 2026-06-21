@@ -14526,6 +14526,264 @@ def test_detect_noncanonical_blocker_empty_and_missing_dir():
 
 
 # ---------------------------------------------------------------------------
+# host-capability-declaration-for-gated-features
+#   WU-1 (Phase 1): _HOST_CAPABILITY_REGISTRY + parse_requires_host +
+#                   unknown_capability_ids
+#   WU-2 (Phase 2): probe_binary_capability / probe_env_capability
+#   WU-3 (Phase 3): host_present_capabilities resolver + per-run cache
+# ---------------------------------------------------------------------------
+
+def test_host_capability_registry_keys_shape_valid():
+    """Every _HOST_CAPABILITY_REGISTRY key matches ^[a-z0-9][a-z0-9-]*$ and the
+    seed v1 vocabulary is present."""
+    _guard()
+    reg = lazy_core._HOST_CAPABILITY_REGISTRY
+    assert isinstance(reg, dict) and reg, "registry must be a non-empty dict"
+    shape = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+    for key in reg:
+        assert shape.match(key), f"registry id {key!r} is not shape-valid"
+    for seed in ("real-audio-device", "zimtohrli-toolchain", "gpu"):
+        assert seed in reg, f"seed capability {seed!r} missing from registry"
+
+
+def test_parse_requires_host_from_spec_frontmatter_only():
+    """A list value in the SPEC frontmatter parses to the capability set."""
+    _guard()
+    spec = (
+        "---\n"
+        "title: x\n"
+        "requires_host: [zimtohrli-toolchain, gpu]\n"
+        "---\n"
+        "# Heading\n"
+    )
+    assert lazy_core.parse_requires_host(spec, None) == {
+        "zimtohrli-toolchain",
+        "gpu",
+    }
+
+
+def test_parse_requires_host_from_queue_entry_only():
+    """A queue entry list value parses; spec has no field."""
+    _guard()
+    spec = "# No frontmatter here\n"
+    entry = {"feature_id": "x", "requires_host": ["real-audio-device"]}
+    assert lazy_core.parse_requires_host(spec, entry) == {"real-audio-device"}
+
+
+def test_parse_requires_host_union_of_both_sources():
+    """SPEC + queue entry union into one set."""
+    _guard()
+    spec = "---\nrequires_host: [gpu]\n---\n"
+    entry = {"requires_host": ["zimtohrli-toolchain"]}
+    assert lazy_core.parse_requires_host(spec, entry) == {
+        "gpu",
+        "zimtohrli-toolchain",
+    }
+
+
+def test_parse_requires_host_absent_is_empty_set():
+    """No requires_host anywhere ⇒ empty set (ungated baseline-regression lock)."""
+    _guard()
+    spec = "---\ntitle: x\n---\n# Body\n"
+    assert lazy_core.parse_requires_host(spec, None) == set()
+    assert lazy_core.parse_requires_host(spec, {"feature_id": "x"}) == set()
+    assert lazy_core.parse_requires_host("", None) == set()
+
+
+def test_parse_requires_host_comma_and_space_string_tolerant():
+    """A comma/space-separated string value parses to the same set as a list."""
+    _guard()
+    spec_comma = "---\nrequires_host: gpu, zimtohrli-toolchain\n---\n"
+    spec_space = "---\nrequires_host: gpu zimtohrli-toolchain\n---\n"
+    expected = {"gpu", "zimtohrli-toolchain"}
+    assert lazy_core.parse_requires_host(spec_comma, None) == expected
+    assert lazy_core.parse_requires_host(spec_space, None) == expected
+    # queue entry string form too
+    assert lazy_core.parse_requires_host(
+        "", {"requires_host": "gpu, zimtohrli-toolchain"}
+    ) == expected
+
+
+def test_parse_requires_host_rejects_malformed_id():
+    """A malformed id (uppercase / leading dash) is dropped — the parse never
+    emits a shape-invalid id (the chosen tolerant-drop contract)."""
+    _guard()
+    spec = "---\nrequires_host: [GPU, -bad, real-audio-device]\n---\n"
+    result = lazy_core.parse_requires_host(spec, None)
+    assert result == {"real-audio-device"}, (
+        f"malformed ids must be dropped, got {result!r}"
+    )
+
+
+def test_unknown_capability_ids_returns_typo():
+    """unknown_capability_ids returns ids not in the registry; registered ⇒ empty."""
+    _guard()
+    assert lazy_core.unknown_capability_ids({"typo-cap"}) == {"typo-cap"}
+    assert lazy_core.unknown_capability_ids({"gpu"}) == set()
+    assert lazy_core.unknown_capability_ids(
+        {"gpu", "typo-cap"}
+    ) == {"typo-cap"}
+    assert lazy_core.unknown_capability_ids(set()) == set()
+
+
+# --- WU-2: probe primitives -------------------------------------------------
+
+class _FakeCompleted:
+    """Minimal subprocess.CompletedProcess stand-in for hermetic probe tests."""
+
+    def __init__(self, returncode):
+        self.returncode = returncode
+
+
+def test_probe_binary_capability_exit_zero_true():
+    """Injected run returning exit 0 ⇒ True."""
+    _guard()
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return _FakeCompleted(0)
+
+    assert lazy_core.probe_binary_capability(["tool", "--version"], run=run) is True
+    assert calls, "the injected run must have been invoked (active invocation)"
+
+
+def test_probe_binary_capability_exit_nonzero_false():
+    """Injected run returning exit 1 ⇒ False."""
+    _guard()
+    assert (
+        lazy_core.probe_binary_capability(
+            ["tool", "--version"], run=lambda *a, **k: _FakeCompleted(1)
+        )
+        is False
+    )
+
+
+def test_probe_binary_capability_windowsapps_alias_false():
+    """The \\WindowsApps zero-byte App-Execution-Alias false-positive guard:
+    an injected run simulating the alias (non-zero exit / would-hang surrogate)
+    ⇒ False. Asserts the active-invocation contract, NOT a which()/exists()
+    presence check."""
+    _guard()
+
+    def alias_run(argv, **kwargs):
+        # The alias stub resolves on PATH but exits non-zero on invocation
+        # (the GUI Store prompt path is surrogated as a timeout/non-zero exit).
+        return _FakeCompleted(9009)  # cmd.exe "not recognized" style code
+
+    assert lazy_core.probe_binary_capability(["python3", "--version"], run=alias_run) is False
+
+
+def test_probe_binary_capability_run_error_false():
+    """An injected run that raises (timeout / OSError) ⇒ False, never propagates."""
+    _guard()
+
+    def boom(argv, **kwargs):
+        raise OSError("would hang")
+
+    assert lazy_core.probe_binary_capability(["x"], run=boom) is False
+
+
+def test_probe_env_capability_set_unset_falsy():
+    """Env probe: set truthy ⇒ True; unset ⇒ False; falsy value ⇒ False."""
+    _guard()
+    assert lazy_core.probe_env_capability("CAP", environ={"CAP": "1"}) is True
+    assert lazy_core.probe_env_capability("CAP", environ={}) is False
+    for falsy in ("0", "", "false", "no", "off"):
+        assert (
+            lazy_core.probe_env_capability("CAP", environ={"CAP": falsy}) is False
+        ), f"falsy value {falsy!r} must read as absent"
+
+
+# --- WU-3: host_present_capabilities resolver + per-run cache ---------------
+
+def test_host_present_capabilities_injected_probes():
+    """Resolver returns exactly the True-valued ids from an injected probe map."""
+    _guard()
+    probes = {
+        "gpu": lambda: True,
+        "zimtohrli-toolchain": lambda: False,
+        "real-audio-device": lambda: True,
+    }
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["LAZY_STATE_DIR"] = td
+        try:
+            present = lazy_core.host_present_capabilities(probes=probes, cache=False)
+        finally:
+            os.environ.pop("LAZY_STATE_DIR", None)
+    assert present == {"gpu", "real-audio-device"}
+
+
+def test_host_present_capabilities_cache_per_run_and_reprobe():
+    """Cache writes once per run marker; a NEW run marker re-probes."""
+    _guard()
+    counter = {"n": 0}
+
+    def gpu_probe():
+        counter["n"] += 1
+        return True
+
+    probes = {"gpu": gpu_probe}
+    import time as _time
+
+    base = _time.time()
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["LAZY_STATE_DIR"] = td
+        try:
+            # Run marker #1 (fresh started_at so read_run_marker keeps it) —
+            # first call probes + caches, second call hits cache.
+            lazy_core.write_run_marker("feature", False, td, max_cycles=10, now=base)
+            first = lazy_core.host_present_capabilities(probes=probes, cache=True)
+            assert first == {"gpu"}
+            assert counter["n"] == 1
+            lazy_core.host_present_capabilities(probes=probes, cache=True)
+            assert counter["n"] == 1, "second call within a run must hit the cache"
+            # New run marker (distinct started_at, still fresh) — must re-probe.
+            lazy_core.delete_run_marker()
+            lazy_core.write_run_marker("feature", False, td, max_cycles=10, now=base + 5)
+            lazy_core.host_present_capabilities(probes=probes, cache=True)
+            assert counter["n"] == 2, "a new run marker must re-probe"
+        finally:
+            os.environ.pop("LAZY_STATE_DIR", None)
+
+
+def test_host_present_capabilities_no_marker_probes_fresh():
+    """No run marker ⇒ probes fresh every call (no cache)."""
+    _guard()
+    counter = {"n": 0}
+
+    def gpu_probe():
+        counter["n"] += 1
+        return True
+
+    probes = {"gpu": gpu_probe}
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["LAZY_STATE_DIR"] = td
+        try:
+            lazy_core.host_present_capabilities(probes=probes, cache=True)
+            lazy_core.host_present_capabilities(probes=probes, cache=True)
+        finally:
+            os.environ.pop("LAZY_STATE_DIR", None)
+    assert counter["n"] == 2, "no marker ⇒ no cache ⇒ probe each call"
+
+
+def test_host_present_capabilities_default_bindings_present():
+    """Default (probes=None) binds the production registry — every registry id
+    has a callable bound (no KeyError / missing binding)."""
+    _guard()
+    # Inject a fully-stubbed map mirroring the registry keys to confirm the
+    # resolver iterates the registry, not a hard-coded id list.
+    stub = {k: (lambda: False) for k in lazy_core._HOST_CAPABILITY_REGISTRY}
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["LAZY_STATE_DIR"] = td
+        try:
+            present = lazy_core.host_present_capabilities(probes=stub, cache=False)
+        finally:
+            os.environ.pop("LAZY_STATE_DIR", None)
+    assert present == set(), "all-false stub ⇒ empty present set"
+
+
+# ---------------------------------------------------------------------------
 # End of Phase 4 test definitions
 # ---------------------------------------------------------------------------
 
@@ -23635,6 +23893,48 @@ _TESTS = _TESTS + [
      test_reassert_owner_cli_cycle_refusal_lazy_state),
     ("test_reassert_owner_cli_cycle_refusal_bug_state_parity",
      test_reassert_owner_cli_cycle_refusal_bug_state_parity),
+]
+
+
+# host-capability-declaration-for-gated-features (Phases 1-3)
+_TESTS = _TESTS + [
+    # WU-1 — registry + parse_requires_host + unknown_capability_ids
+    ("test_host_capability_registry_keys_shape_valid",
+     test_host_capability_registry_keys_shape_valid),
+    ("test_parse_requires_host_from_spec_frontmatter_only",
+     test_parse_requires_host_from_spec_frontmatter_only),
+    ("test_parse_requires_host_from_queue_entry_only",
+     test_parse_requires_host_from_queue_entry_only),
+    ("test_parse_requires_host_union_of_both_sources",
+     test_parse_requires_host_union_of_both_sources),
+    ("test_parse_requires_host_absent_is_empty_set",
+     test_parse_requires_host_absent_is_empty_set),
+    ("test_parse_requires_host_comma_and_space_string_tolerant",
+     test_parse_requires_host_comma_and_space_string_tolerant),
+    ("test_parse_requires_host_rejects_malformed_id",
+     test_parse_requires_host_rejects_malformed_id),
+    ("test_unknown_capability_ids_returns_typo",
+     test_unknown_capability_ids_returns_typo),
+    # WU-2 — probe primitives
+    ("test_probe_binary_capability_exit_zero_true",
+     test_probe_binary_capability_exit_zero_true),
+    ("test_probe_binary_capability_exit_nonzero_false",
+     test_probe_binary_capability_exit_nonzero_false),
+    ("test_probe_binary_capability_windowsapps_alias_false",
+     test_probe_binary_capability_windowsapps_alias_false),
+    ("test_probe_binary_capability_run_error_false",
+     test_probe_binary_capability_run_error_false),
+    ("test_probe_env_capability_set_unset_falsy",
+     test_probe_env_capability_set_unset_falsy),
+    # WU-3 — host_present_capabilities resolver + per-run cache
+    ("test_host_present_capabilities_injected_probes",
+     test_host_present_capabilities_injected_probes),
+    ("test_host_present_capabilities_cache_per_run_and_reprobe",
+     test_host_present_capabilities_cache_per_run_and_reprobe),
+    ("test_host_present_capabilities_no_marker_probes_fresh",
+     test_host_present_capabilities_no_marker_probes_fresh),
+    ("test_host_present_capabilities_default_bindings_present",
+     test_host_present_capabilities_default_bindings_present),
 ]
 
 

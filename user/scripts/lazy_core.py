@@ -6454,6 +6454,88 @@ _RUNTIME_RECOVERY_MAX_ATTEMPTS = 5
 _RUNTIME_RECOVERY_BACKOFF_BASE = 1.0
 
 
+# ---------------------------------------------------------------------------
+# host-capability-declaration-for-gated-features — Phase 2
+#   Active-invocation probe primitives (hermetic, injected).
+#
+# Each per-capability host check is an injected callable, modeled on
+# ensure_runtime's probe/restart/stale_check contract (real defaults bound only
+# when the callable is None). Binary capabilities use ACTIVE INVOCATION — run the
+# tool and check its exit code — NEVER shutil.which()/os.path.exists(). That is
+# load-bearing on this Windows host: a zero-byte `python3.exe`/`python.exe` App
+# Execution Alias stub in \WindowsApps on $PATH resolves under which() but its
+# invocation opens a GUI Microsoft Store prompt and silently HANGS the pipeline
+# (research Area 2). Stale path caches are the same hazard class. The exit-code
+# gate (and the short timeout in the real default) is what guards against it.
+# ---------------------------------------------------------------------------
+
+# The real-default binary-probe invocation timeout (seconds). A probe that hangs
+# is the exact failure mode active invocation exists to prevent, so bound it.
+_BINARY_PROBE_TIMEOUT_SECONDS = 5
+
+
+def probe_binary_capability(argv, *, run=None) -> bool:
+    """Return True iff invoking ``argv`` exits 0 — the active-invocation binary
+    capability probe (host-capability-declaration Phase 2).
+
+    Runs ``argv`` (e.g. ``[tool, "--version"]``) via the injected ``run``
+    callable and returns ``exit code == 0``. NEVER consults the filesystem for
+    presence (no ``shutil.which`` / ``os.path.exists``) — that is the
+    \\WindowsApps App-Execution-Alias false-positive guard.
+
+    The default ``run`` is a real ``subprocess.run`` with a short timeout,
+    ``capture_output=True`` and ``shell=False``; ``--test`` injects a stub so no
+    real binary is ever invoked. Any invocation error (timeout, OSError, a stub
+    that raises) is swallowed and reported as ``False`` — an un-runnable tool is
+    an absent capability, never a propagated exception that bricks the probe.
+
+    Args:
+        argv: the command + args to invoke (list of str).
+        run: injectable invoker returning an object with a ``returncode`` attr
+            (a ``subprocess.CompletedProcess``-shape). ``None`` ⇒ real default.
+
+    Returns:
+        ``True`` iff the invocation completed with exit code 0, else ``False``.
+    """
+    if run is None:
+        def run(_argv, **_kwargs):  # noqa: ANN001 — real default
+            return subprocess.run(
+                _argv,
+                capture_output=True,
+                shell=False,
+                timeout=_BINARY_PROBE_TIMEOUT_SECONDS,
+            )
+    try:
+        completed = run(argv)
+    except Exception:  # noqa: BLE001 — any invocation failure ⇒ absent
+        return False
+    return getattr(completed, "returncode", 1) == 0
+
+
+def probe_env_capability(var_name, *, environ=None) -> bool:
+    """Return True iff env var ``var_name`` is set to a non-falsy value — the
+    env-var capability probe (host-capability-declaration Phase 2).
+
+    Generalizes the ``$ALGOBOOTH_REAL_AUDIO_DEVICE`` device read. Truthy iff the
+    var is present AND its stripped, lowercased value is NOT in the shared
+    ``_FALSY_ENV_VALUES`` set (``""``/``0``/``false``/``no``/``off``) — so an
+    inherited empty export does not register a capability as present.
+
+    Args:
+        var_name: the environment variable name.
+        environ: injectable mapping (``--test`` passes a dict). ``None`` ⇒
+            the real ``os.environ``.
+
+    Returns:
+        ``True`` iff set to a non-falsy value, else ``False``.
+    """
+    env = os.environ if environ is None else environ
+    val = env.get(var_name)
+    if val is None:
+        return False
+    return str(val).strip().lower() not in _FALSY_ENV_VALUES
+
+
 def ensure_runtime(
     repo_root: Path,
     *,
@@ -9914,6 +9996,282 @@ def parse_independent_marker(spec_text: str, queue_entry: dict | None) -> bool:
             if _INDEPENDENT_MARKER_RE.match(line):
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# host-capability-declaration-for-gated-features — Phase 1
+#   The `requires_host:` declaration parse + the closed-registry vocabulary.
+#
+# A feature records the named host capabilities its runtime validation requires
+# in a `requires_host:` set (SPEC frontmatter and/or queue.json entry). The set
+# is matched against the host's probed-present set; a miss defers the feature to
+# a capability-bearing host. The vocabulary is a CLOSED registry: a capability id
+# exists only if the registry maps it to a probe callable (the callable wiring
+# lands in Phase 3 — Phase 1 defines the id vocabulary as the dict's KEYS). An
+# unregistered id is a loud fail-fast (Phase 4), never a silent defer-forever.
+# ---------------------------------------------------------------------------
+
+# Capability ids share the feature-id shape: lowercase alnum, internal dashes.
+_HOST_CAPABILITY_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+# The closed v1 registry. KEYS are the closed vocabulary (the only ids a feature
+# may declare); VALUES are probe-callable PLACEHOLDERS — Phase 3 (WU-3) rebinds
+# each to a real injected probe via host_present_capabilities' production
+# bindings. A capability id only "exists" if it is a key here; an id absent from
+# this map is an unknown-capability fail-fast (Phase 4). Keep this the single
+# source of truth for "what ids exist" — both the fail-fast and the Phase-5
+# match read it.
+_HOST_CAPABILITY_REGISTRY: dict[str, object] = {
+    # Generalizes the proven $ALGOBOOTH_REAL_AUDIO_DEVICE device axis.
+    "real-audio-device": None,
+    # A C++ toolchain (Zimtohrli golden:report) — the canonical binary-host gap
+    # (session a0eae4be: audio-quality-analysis et al. gate on this absent).
+    "zimtohrli-toolchain": None,
+    # A GPU device.
+    "gpu": None,
+}
+
+# Module-load assertion: every registered id is shape-valid (a typo in the
+# registry itself is a developer error, surfaced at import, never at runtime).
+assert all(
+    _HOST_CAPABILITY_ID_RE.match(_cap_id) for _cap_id in _HOST_CAPABILITY_REGISTRY
+), "every _HOST_CAPABILITY_REGISTRY key must match ^[a-z0-9][a-z0-9-]*$"
+
+
+def _coerce_capability_ids(value: object) -> set[str]:
+    """Coerce a raw `requires_host:` value into a set of shape-valid capability
+    ids (tolerant input, same spirit as the independent-marker coercion).
+
+    Accepts a list/tuple of strings OR a single string (comma- and/or
+    whitespace-separated). Each token is stripped; tokens that do NOT match the
+    capability-id shape are DROPPED (the parse never emits a shape-invalid id —
+    an unregistered-but-shaped typo is caught later by ``unknown_capability_ids``
+    at the fail-fast; a mis-shaped token is simply not a capability). Anything
+    that is neither a string nor a list/tuple yields the empty set.
+    """
+    def _split(raw: str) -> list[str]:
+        # Tolerate an inline YAML/JSON flow-list literal `[a, b]` (frontmatter is
+        # scanned as raw lines, not YAML-parsed) by stripping the surrounding
+        # brackets, then split on commas/whitespace and strip any quotes.
+        raw = raw.strip()
+        if raw.startswith("[") and raw.endswith("]"):
+            raw = raw[1:-1]
+        return [tok.strip().strip("'\"") for tok in re.split(r"[,\s]+", raw)]
+
+    tokens: list[str] = []
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, str):
+                tokens.extend(_split(item))
+    elif isinstance(value, str):
+        tokens.extend(_split(value))
+    return {t for t in tokens if t and _HOST_CAPABILITY_ID_RE.match(t)}
+
+
+# Matches a frontmatter line `requires_host: <value>` (case-insensitive key,
+# leading whitespace tolerated). The captured tail is coerced by
+# _coerce_capability_ids — a list literal `[a, b]` or a bare comma/space string.
+_REQUIRES_HOST_RE = re.compile(
+    r"^\s*requires_host\s*:\s*(.*?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_requires_host(spec_text: str, queue_entry: dict | None) -> set[str]:
+    """Deterministic two-source read of a feature's `requires_host:` capability
+    set (host-capability-declaration-for-gated-features Phase 1).
+
+    Mirrors ``parse_independent_marker``'s two-source fenced-block walk. Returns
+    the UNION of the capability ids declared in EITHER the SPEC.md frontmatter OR
+    the ``queue.json`` entry. Absent/legacy (no ``requires_host:`` anywhere) ⇒
+    the EMPTY set — the ungated baseline-regression rail (a feature without the
+    field behaves exactly as today). On-disk, deterministic — no LLM judgment.
+
+    Input is tolerant (via ``_coerce_capability_ids``): a YAML/JSON list value
+    ``[a, b]`` and a bare comma/space-separated string both parse to the same
+    set; shape-invalid tokens are dropped (never emitted).
+
+    Args:
+        spec_text: the raw SPEC.md text (its leading ``---`` fenced frontmatter
+            block is scanned when present, else the head of the file up to the
+            first markdown heading — a bare leading marker).
+        queue_entry: the feature's ``queue.json`` entry (may be ``None``/empty).
+
+    Returns:
+        The set of declared capability ids (possibly empty).
+    """
+    result: set[str] = set()
+    # Source 1: the queue entry (a JSON list or string under `requires_host`).
+    if isinstance(queue_entry, dict) and "requires_host" in queue_entry:
+        result |= _coerce_capability_ids(queue_entry.get("requires_host"))
+    # Source 2: the SPEC.md frontmatter. Scan the leading `---` fenced block if
+    # present; otherwise scan the head of the file up to the first heading.
+    if isinstance(spec_text, str) and spec_text:
+        lines = spec_text.splitlines()
+        in_fence = False
+        fence_seen = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped == "---":
+                if not fence_seen and not in_fence:
+                    in_fence = True
+                    fence_seen = True
+                    continue
+                if in_fence:
+                    # Closing fence — stop scanning the frontmatter block.
+                    break
+            if fence_seen and not in_fence:
+                # We have already consumed a fenced block; don't scan the body.
+                break
+            if not fence_seen and stripped.startswith("#"):
+                # No frontmatter fence and we hit a heading → no leading marker.
+                break
+            m = _REQUIRES_HOST_RE.match(line)
+            if m:
+                result |= _coerce_capability_ids(m.group(1))
+    return result
+
+
+def unknown_capability_ids(required: set[str]) -> set[str]:
+    """Return the subset of ``required`` ids NOT in the closed registry.
+
+    Pure helper — the fail-fast input for Phase 4 (an unregistered id is a loud,
+    immediate validation failure, never a silent defer-forever). Empty set ⇒
+    every required id is registered.
+    """
+    return set(required) - set(_HOST_CAPABILITY_REGISTRY)
+
+
+# ---------------------------------------------------------------------------
+# host-capability-declaration-for-gated-features — Phase 3
+#   Host-present-set resolver + per-run probe cache + production bindings.
+#
+# Composes the Phase-2 primitives into ONE resolver returning the host's
+# present-capability set, bound to the closed registry, hermetic via injection
+# (real production bindings used only when probes is None). The result is cached
+# in the per-repo keyed state dir keyed to the run-marker identity: cache for the
+# run, re-probe on a new run marker (the cheapest correct option). No marker ⇒
+# probe fresh (no cache). Phase-5's match diffs each candidate's requires_host
+# set against this present set.
+# ---------------------------------------------------------------------------
+
+_HOST_PROBE_CACHE_FILENAME = "lazy-host-capability-cache.json"
+
+# AlgoBooth-specific probe configuration — kept config-overridable here, NOT
+# hard-coded into the resolver flow (so a non-AlgoBooth repo can override the
+# binary argv / env var names without touching the resolver). Each entry names
+# the probe primitive + its argument for the production binding below.
+_HOST_CAPABILITY_PROBE_CONFIG: dict[str, dict] = {
+    "real-audio-device": {"kind": "env", "var": "ALGOBOOTH_REAL_AUDIO_DEVICE"},
+    "zimtohrli-toolchain": {"kind": "binary", "argv": ["zimtohrli", "--version"]},
+    # GPU presence on this Windows host: a documented active-invocation probe
+    # (nvidia-smi exits 0 iff an NVIDIA GPU + driver are present). A host without
+    # the binary reports absent — never a which()/exists() false positive.
+    "gpu": {"kind": "binary", "argv": ["nvidia-smi", "-L"]},
+}
+
+
+def _default_host_probes() -> dict:
+    """Build the production ``{capability-id: callable}`` map from the closed
+    registry + the (config-overridable) probe config.
+
+    Each callable closes over its config entry and calls the matching Phase-2
+    primitive with the real default invoker/environ. An id present in the
+    registry but missing a config entry binds to a constant-False probe (it can
+    never be present until a probe is configured — fail-safe absent, never a
+    crash). Real defaults are bound ONLY here (the resolver passes ``probes=None``
+    through to this), mirroring ``ensure_runtime``'s injected-callable contract.
+    """
+    probes: dict[str, object] = {}
+    for cap_id in _HOST_CAPABILITY_REGISTRY:
+        cfg = _HOST_CAPABILITY_PROBE_CONFIG.get(cap_id)
+        if not cfg:
+            probes[cap_id] = (lambda: False)
+        elif cfg.get("kind") == "env":
+            var = cfg["var"]
+            probes[cap_id] = (lambda v=var: probe_env_capability(v))
+        elif cfg.get("kind") == "binary":
+            argv = cfg["argv"]
+            probes[cap_id] = (lambda a=argv: probe_binary_capability(a))
+        else:
+            probes[cap_id] = (lambda: False)
+    return probes
+
+
+def host_present_capabilities(*, probes=None, cache: bool = True) -> set[str]:
+    """Resolve the host's present-capability set (host-capability-declaration
+    Phase 3).
+
+    For each ``_HOST_CAPABILITY_REGISTRY`` id, evaluates its bound probe callable
+    and returns the set of ids whose probe returned truthy. ``probes`` injects a
+    ``{capability-id: callable}`` map so ``--test`` stays hermetic; ``None`` binds
+    the real production probes (``_default_host_probes``). A registry id with no
+    entry in ``probes`` is treated as absent.
+
+    Caching (cache=True, the default): the present-set is cached as JSON under
+    ``claude_state_dir()`` keyed to the live run marker's identity (``started_at``).
+    A second call within the SAME run hits the cache (no re-probe); a NEW run
+    marker (different ``started_at``) re-probes and rewrites the cache. With NO
+    run marker present there is no run identity to key on, so the probe runs
+    FRESH every call (no cache write/read). The cache read is non-destructive.
+
+    Args:
+        probes: injected ``{capability-id: callable() -> bool}`` map; ``None`` ⇒
+            real production bindings.
+        cache: when True, read/write the per-run cache; when False, always probe
+            fresh (used by callers that want a one-shot uncached resolution).
+
+    Returns:
+        The set of present capability ids.
+    """
+    probe_map = _default_host_probes() if probes is None else probes
+
+    # Resolve the live run identity (the cache key). Read-only marker access —
+    # never creates the state dir, never mutates the marker.
+    run_id = None
+    if cache:
+        marker = read_run_marker()
+        if isinstance(marker, dict):
+            run_id = marker.get("started_at")
+
+    cache_path = None
+    if cache and run_id is not None:
+        cache_path = claude_state_dir(create=False) / _HOST_PROBE_CACHE_FILENAME
+        # Cache hit: same run id ⇒ return the cached present-set without probing.
+        try:
+            if cache_path.exists():
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                if (
+                    isinstance(cached, dict)
+                    and cached.get("run_id") == run_id
+                    and isinstance(cached.get("present"), list)
+                ):
+                    return set(cached["present"])
+        except (OSError, json.JSONDecodeError, ValueError):
+            # Corrupt/unreadable cache ⇒ ignore and re-probe (non-fatal).
+            pass
+
+    # Probe fresh: evaluate each registry id's bound callable.
+    present: set[str] = set()
+    for cap_id in _HOST_CAPABILITY_REGISTRY:
+        probe = probe_map.get(cap_id)
+        if probe is None:
+            continue
+        try:
+            if probe():
+                present.add(cap_id)
+        except Exception:  # noqa: BLE001 — a misbehaving probe ⇒ absent
+            continue
+
+    # Write the cache only when there is a run identity to key on.
+    if cache and run_id is not None and cache_path is not None:
+        try:
+            payload = {"run_id": run_id, "present": sorted(present)}
+            _atomic_write(cache_path, json.dumps(payload, indent=2) + "\n")
+        except OSError:
+            pass  # cache write best-effort — never fail the resolution
+
+    return present
 
 
 def skip_ahead_ready(

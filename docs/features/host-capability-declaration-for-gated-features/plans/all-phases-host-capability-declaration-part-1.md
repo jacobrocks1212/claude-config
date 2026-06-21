@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: host-capability-declaration-for-gated-features
-status: In-progress
+status: Complete
 complexity: complex
 phases: [1, 2, 3]
 ---
@@ -94,9 +94,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — `_HOST_CAPABILITY_REGISTRY` constant + `parse_requires_host` + `unknown_capability_ids` (Phase 1)
-- [ ] WU-2 — Active-invocation probe primitives `probe_binary_capability` / `probe_env_capability` (Phase 2)
-- [ ] WU-3 — `host_present_capabilities` resolver + per-run probe cache + production registry binding (Phase 3)
+- [x] WU-1 — `_HOST_CAPABILITY_REGISTRY` constant + `parse_requires_host` + `unknown_capability_ids` (Phase 1)
+- [x] WU-2 — Active-invocation probe primitives `probe_binary_capability` / `probe_env_capability` (Phase 2)
+- [x] WU-3 — `host_present_capabilities` resolver + per-run probe cache + production registry binding (Phase 3)
 
 ---
 

@@ -18,17 +18,19 @@ Phase-level dependencies extracted from each `**Depends on:**` upstream. The SPE
 
 **Scope:** Add the deterministic read of a feature's required-capability set and the closed-registry vocabulary constant — the pure, I/O-free foundation every later phase consumes. No probe, no match, no action yet. Mirrors `parse_independent_marker` (two-source read, safe-default-empty) and the `_INDEPENDENT_MARKER_*` constant block in `lazy_core.py`.
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `lazy_core._HOST_CAPABILITY_REGISTRY` — the closed registry constant: a mapping `capability-id → probe-callable-key` (the callable wiring lands in Phase 3; Phase 1 defines the id vocabulary as the dict's keys). Seed with the SPEC's named v1 capabilities (`real-audio-device`, plus at least one binary-toolchain id e.g. `zimtohrli-toolchain`, and `gpu`). Ids match `^[a-z0-9][a-z0-9-]*$` (asserted at module load).
-- [ ] `lazy_core.parse_requires_host(spec_text, queue_entry) -> set[str]` — two-source read (SPEC frontmatter + `queue.json` entry) returning the declared capability-id set; absent/legacy ⇒ empty set (ungated). Frontmatter scan reuses the exact fenced-block walk shape of `parse_independent_marker`. A list/array value and a comma/space string both parse to a set (tolerant input, same as the independent-marker coercion).
-- [ ] `lazy_core.unknown_capability_ids(required: set[str]) -> set[str]` — pure helper returning `required - set(_HOST_CAPABILITY_REGISTRY)` (the fail-fast input for Phase 4).
-- [ ] Tests: `test_lazy_core.py` — parse from SPEC frontmatter only; from queue entry only; from both (union); absent ⇒ empty set; legacy `requires_host` absent byte-identical; id-shape regex rejects a malformed id; `unknown_capability_ids` returns the typo'd id; registry-keys-are-shape-valid assertion. Register each in `_TESTS` (dead-coverage guard).
+- [x] `lazy_core._HOST_CAPABILITY_REGISTRY` — the closed registry constant: a mapping `capability-id → probe-callable-key` (the callable wiring lands in Phase 3; Phase 1 defines the id vocabulary as the dict's keys). Seed with the SPEC's named v1 capabilities (`real-audio-device`, plus at least one binary-toolchain id e.g. `zimtohrli-toolchain`, and `gpu`). Ids match `^[a-z0-9][a-z0-9-]*$` (asserted at module load).
+- [x] `lazy_core.parse_requires_host(spec_text, queue_entry) -> set[str]` — two-source read (SPEC frontmatter + `queue.json` entry) returning the declared capability-id set; absent/legacy ⇒ empty set (ungated). Frontmatter scan reuses the exact fenced-block walk shape of `parse_independent_marker`. A list/array value and a comma/space string both parse to a set (tolerant input, same as the independent-marker coercion).
+- [x] `lazy_core.unknown_capability_ids(required: set[str]) -> set[str]` — pure helper returning `required - set(_HOST_CAPABILITY_REGISTRY)` (the fail-fast input for Phase 4).
+- [x] Tests: `test_lazy_core.py` — parse from SPEC frontmatter only; from queue entry only; from both (union); absent ⇒ empty set; legacy `requires_host` absent byte-identical; id-shape regex rejects a malformed id; `unknown_capability_ids` returns the typo'd id; registry-keys-are-shape-valid assertion. Register each in `_TESTS` (dead-coverage guard).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` runs and the new parse/registry tests pass — `parse_requires_host` returns `{zimtohrli-toolchain}` for a fixture SPEC declaring it and `set()` for a SPEC without the field.
 
 <!-- verification-only -->
 **Runtime Verification** *(checked by the pytest suite — no app runtime in this repo):*
-- [ ] `python -m pytest user/scripts/test_lazy_core.py -q` green including the new parse + registry cases. <!-- verification-only -->
+- [x] `python -m pytest user/scripts/test_lazy_core.py -q` green including the new parse + registry cases. <!-- verification-only -->
 
 **Prerequisites:** None (first phase).
 
@@ -42,23 +44,31 @@ Phase-level dependencies extracted from each `**Depends on:**` upstream. The SPE
 - The registry's KEYS are the closed vocabulary; Phase 3 fills each key's VALUE with a real probe callable. Keep the constant the single source of truth for "what ids exist" — Phase 4's fail-fast and Phase 5's match both read it.
 - `parse_requires_host` returns a `set` (not a list) so the Phase-5 subset match is `required.issubset(present)` directly.
 
+**Implementation Notes (2026-06-20, part-1 cycle):**
+- Sited the registry + `parse_requires_host` + `unknown_capability_ids` immediately after `parse_independent_marker` in `lazy_core.py` (~line 9919). `parse_requires_host` reuses that function's exact two-source fenced-block walk.
+- Tolerant input is handled by a private `_coerce_capability_ids(value)` helper shared by both sources. It strips a surrounding inline-flow-list literal `[a, b]` (frontmatter is read as raw lines, NOT YAML-parsed) and any per-token quotes, then splits on commas/whitespace. **Pitfall:** the frontmatter regex captures the raw tail (e.g. the literal `[zimtohrli-toolchain, gpu]`), so the bracket-strip is load-bearing — without it every list-literal token is shape-invalid and dropped.
+- ⚖ policy: malformed-id contract (raise vs drop) → **drop** silently (the parse never emits a shape-invalid id). A shape-invalid token is simply "not a capability"; an in-shape-but-unregistered typo is what `unknown_capability_ids` + the Phase-4 fail-fast catch. (Scope-class: end-state product behavior is identical — a malformed id never reaches the match either way.)
+- `_HOST_CAPABILITY_REGISTRY` values are `None` placeholders in Phase 1; Phase 3 binds the real probes via `_default_host_probes` (the resolver iterates the registry KEYS, so the placeholder values are never called directly). Module-load `assert` guards registry-key shape.
+
 ---
 
 ### Phase 2: Active-invocation probe primitives (hermetic, injected)
 
 **Scope:** Build the deterministic per-capability host checks as injected callables — the active-invocation primitive that runs a tool and checks its exit code (NEVER `shutil.which()`/`os.path.exists()`), plus the env-var and device-probe variants. This phase delivers the probe *callables* in isolation; wiring them into a host-present-set resolver is Phase 3. Modeled on `ensure_runtime`'s injected `probe`/`restart`/`stale_check` callable contract.
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `lazy_core.probe_binary_capability(argv, *, run=None) -> bool` — runs `argv` (e.g. `[tool, "--version"]`) via an injected `run` callable (default a real `subprocess.run` with a short timeout, `capture_output`, no shell) and returns `True` iff exit code 0. NEVER consults the filesystem for presence. The injected `run` is what keeps `--test` hermetic.
-- [ ] `lazy_core.probe_env_capability(var_name, *, environ=None) -> bool` — truthy iff the env var is set to a non-falsy value (reuses the existing `_FALSY_ENV_VALUES` set), generalizing the `$ALGOBOOTH_REAL_AUDIO_DEVICE` device read. `environ` injectable for `--test`.
-- [ ] An explicit comment + test asserting the `\WindowsApps` zero-byte App-Execution-Alias false-positive is NOT registered: an injected `run` stub that simulates the alias (exit code != 0 / would-hang) ⇒ `probe_binary_capability` returns `False`. This is the load-bearing Windows-host hazard from research Area 2.
-- [ ] Tests: `test_lazy_core.py` — binary probe exit-0 ⇒ True; exit-nonzero ⇒ False; alias-stub ⇒ False; env probe set/unset/falsy-value; injected `run`/`environ` never touch the real host. Register in `_TESTS`.
+- [x] `lazy_core.probe_binary_capability(argv, *, run=None) -> bool` — runs `argv` (e.g. `[tool, "--version"]`) via an injected `run` callable (default a real `subprocess.run` with a short timeout, `capture_output`, no shell) and returns `True` iff exit code 0. NEVER consults the filesystem for presence. The injected `run` is what keeps `--test` hermetic.
+- [x] `lazy_core.probe_env_capability(var_name, *, environ=None) -> bool` — truthy iff the env var is set to a non-falsy value (reuses the existing `_FALSY_ENV_VALUES` set), generalizing the `$ALGOBOOTH_REAL_AUDIO_DEVICE` device read. `environ` injectable for `--test`.
+- [x] An explicit comment + test asserting the `\WindowsApps` zero-byte App-Execution-Alias false-positive is NOT registered: an injected `run` stub that simulates the alias (exit code != 0 / would-hang) ⇒ `probe_binary_capability` returns `False`. This is the load-bearing Windows-host hazard from research Area 2.
+- [x] Tests: `test_lazy_core.py` — binary probe exit-0 ⇒ True; exit-nonzero ⇒ False; alias-stub ⇒ False; env probe set/unset/falsy-value; injected `run`/`environ` never touch the real host. Register in `_TESTS`.
 
 **Minimum Verifiable Behavior:** `probe_binary_capability(["x"], run=lambda *a, **k: _FakeCompleted(returncode=0))` returns `True` and `run=lambda ...: _FakeCompleted(returncode=1)` returns `False`, asserted under `python user/scripts/test_lazy_core.py`.
 
 <!-- verification-only -->
 **Runtime Verification** *(checked by the pytest suite):*
-- [ ] `python -m pytest user/scripts/test_lazy_core.py -q` green including the alias-false-positive guard test. <!-- verification-only -->
+- [x] `python -m pytest user/scripts/test_lazy_core.py -q` green including the alias-false-positive guard test. <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: the `_HOST_CAPABILITY_REGISTRY` keys define which probe primitives are needed.
@@ -73,23 +83,29 @@ Phase-level dependencies extracted from each `**Depends on:**` upstream. The SPE
 - Phase 3 binds each registry key to one of these primitives (production wiring) and exposes a `host_present_set` resolver that takes the SAME injected callables so `compute_state` `--test` fixtures stay hermetic.
 - Keep production `subprocess.run` bounded by a short timeout — a probe that hangs is the failure mode the active-invocation design exists to prevent.
 
+**Implementation Notes (2026-06-20, part-1 cycle):**
+- Sited both primitives immediately before `ensure_runtime` in `lazy_core.py` (~line 6457), reusing the existing `_FALSY_ENV_VALUES` set for `probe_env_capability`. Real-default `run` is a `subprocess.run(capture_output=True, shell=False, timeout=_BINARY_PROBE_TIMEOUT_SECONDS=5)`.
+- `probe_binary_capability` swallows ANY invocation exception (timeout, OSError, a raising stub) and reports `False` — an un-runnable tool is an absent capability, never a propagated exception. The alias false-positive guard test surrogates the `\WindowsApps` stub as a non-zero exit (`9009`); a would-hang surrogate (a raising/timeout stub) is covered by the `run_error_false` test. Both assert the active-invocation exit-code contract, NOT a `which()`/`exists()` presence check.
+
 ---
 
 ### Phase 3: Host-present-set resolver + per-run probe cache
 
 **Scope:** Compose the Phase-2 primitives into a single `lazy_core` resolver that returns the host's present-capability set, bound to the closed registry, with injected callables for hermetic `--test`; cache the result in the per-repo keyed state dir for the run-marker's lifetime (re-probe on a new run). This is the `host.present` side of the Phase-5 match.
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `lazy_core.host_present_capabilities(*, probes=None, cache=True) -> set[str]` — for each registry id, evaluates its bound probe callable; returns the set of present ids. `probes` injects a `{capability-id: callable}` map (default: the real production bindings from the registry) so `--test` passes a stub map and no real host is touched. Mirrors `ensure_runtime`'s "real defaults bound only when callables are None" pattern.
-- [ ] Per-run cache: write/read the present-set as JSON under `lazy_core.claude_state_dir()` keyed to the current run marker (cache-per-run, re-probe on a new run marker — the auto-accepted mechanical-internal choice from SPEC "The host-capability probe"). Cache miss / no marker ⇒ probe fresh. Non-destructive read.
-- [ ] Production registry binding: each `_HOST_CAPABILITY_REGISTRY` id maps to a concrete Phase-2 primitive (`real-audio-device` → `probe_env_capability("ALGOBOOTH_REAL_AUDIO_DEVICE")`; `zimtohrli-toolchain` → `probe_binary_capability([...])`; `gpu` → a documented probe). Keep AlgoBooth-specific argv in the config-overridable dict pattern, not hard-coded into the resolver flow.
-- [ ] Tests: `test_lazy_core.py` — resolver with injected all-present / all-absent / mixed probe maps; cache writes once per run + re-probes on a new run marker; no-marker path probes fresh; hermetic (injected probes only). Register in `_TESTS`.
+- [x] `lazy_core.host_present_capabilities(*, probes=None, cache=True) -> set[str]` — for each registry id, evaluates its bound probe callable; returns the set of present ids. `probes` injects a `{capability-id: callable}` map (default: the real production bindings from the registry) so `--test` passes a stub map and no real host is touched. Mirrors `ensure_runtime`'s "real defaults bound only when callables are None" pattern.
+- [x] Per-run cache: write/read the present-set as JSON under `lazy_core.claude_state_dir()` keyed to the current run marker (cache-per-run, re-probe on a new run marker — the auto-accepted mechanical-internal choice from SPEC "The host-capability probe"). Cache miss / no marker ⇒ probe fresh. Non-destructive read.
+- [x] Production registry binding: each `_HOST_CAPABILITY_REGISTRY` id maps to a concrete Phase-2 primitive (`real-audio-device` → `probe_env_capability("ALGOBOOTH_REAL_AUDIO_DEVICE")`; `zimtohrli-toolchain` → `probe_binary_capability([...])`; `gpu` → a documented probe). Keep AlgoBooth-specific argv in the config-overridable dict pattern, not hard-coded into the resolver flow.
+- [x] Tests: `test_lazy_core.py` — resolver with injected all-present / all-absent / mixed probe maps; cache writes once per run + re-probes on a new run marker; no-marker path probes fresh; hermetic (injected probes only). Register in `_TESTS`.
 
 **Minimum Verifiable Behavior:** `host_present_capabilities(probes={"gpu": lambda: True, "zimtohrli-toolchain": lambda: False, ...})` returns exactly `{gpu, ...}` (the True-valued ids), asserted under `python user/scripts/test_lazy_core.py`.
 
 <!-- verification-only -->
 **Runtime Verification** *(checked by the pytest suite):*
-- [ ] `python -m pytest user/scripts/test_lazy_core.py -q` green including resolver + cache cases. <!-- verification-only -->
+- [x] `python -m pytest user/scripts/test_lazy_core.py -q` green including resolver + cache cases. <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: the registry (which ids to probe).
@@ -104,6 +120,11 @@ Phase-level dependencies extracted from each `**Depends on:**` upstream. The SPE
 **Integration Notes for Next Phase:**
 - `compute_state` (Phase 5) calls `host_present_capabilities` ONCE per probe and diffs against each candidate's `requires_host` set. Pass the resolver's result down rather than re-probing per feature.
 - The cache key must include the run-marker identity so a `--test` fixture without a marker re-probes deterministically.
+
+**Implementation Notes (2026-06-20, part-1 cycle):**
+- Resolver + per-run cache + production bindings sited after `unknown_capability_ids` in the Phase-1 block (`lazy_core.py`). Name resolution is at call-time so the forward references to `claude_state_dir` / `read_run_marker` / the Phase-2 probes resolve fine despite earlier textual placement of the resolver relative to `claude_state_dir`.
+- **Cache key = the live run marker's `started_at`** (the run identity). Cache file `lazy-host-capability-cache.json` under `claude_state_dir()` stores `{run_id, present:[...]}`; a read whose `run_id != started_at` is a miss → re-probe + rewrite. **No marker ⇒ no run identity ⇒ probe fresh every call (no cache)** — this is also why the `--test` no-marker fixture re-probes deterministically. Corrupt/unreadable cache → ignored + re-probed (non-fatal); cache write is best-effort (`OSError` swallowed). Read is non-destructive (`create=False`).
+- Production bindings live in `_HOST_CAPABILITY_PROBE_CONFIG` (config-overridable: `real-audio-device`→env `ALGOBOOTH_REAL_AUDIO_DEVICE`; `zimtohrli-toolchain`→binary `[zimtohrli, --version]`; `gpu`→binary `[nvidia-smi, -L]`) consumed by `_default_host_probes()`. A registry id with no config entry binds to a constant-`False` probe (fail-safe absent, never a crash). The resolver iterates the registry KEYS, so an id missing from the injected `probes` map is treated as absent. **Pitfall (Windows-host hermeticity):** `read_run_marker()` uses real `time.time()` for its 24h age-staleness, so cache tests must write the marker with a near-`now` `started_at` (not an epoch like `1000.0`, which reads as age-stale and is deleted) — two fresh markers `base` / `base+5s` give distinct run ids.
 
 ---
 
