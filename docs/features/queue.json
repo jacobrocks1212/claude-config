@@ -5,8 +5,7 @@
       "id": "host-capability-declaration-for-gated-features",
       "name": "Host-Capability Declaration for Gated Features",
       "spec_dir": "host-capability-declaration-for-gated-features",
-      "tier": 2,
-      "stub": true
+      "tier": 2
     }
   ]
 }
