@@ -2,9 +2,11 @@
 
 > `test_lazy_parity.py::TestStateScriptParity`'s synthetic `tmp_path` stubs predate the `--reassert-owner` and `requires_host` fail-fast parity assertions added to `audit_state_script_parity`, so the audit returns extra findings the fixtures don't expect. Test-fixture-only; no production drift.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-20
+**Fixed:** 2026-06-20
+**Fix commit:** 7667072
 **Placement:** docs/bugs/adhoc-stale-state-script-parity-test-fixtures
 **Related:** `docs/bugs/single-slot-marker-ownership-race-disarms-owning-run` (added `--reassert-owner`); `host-capability-declaration-for-gated-features` (added the `requires_host:` fail-fast parity check); `docs/bugs/no-sanctioned-queue-reorder-command` (added `--reorder-queue`); `user/scripts/lazy_parity_audit.py::audit_state_script_parity`
 
