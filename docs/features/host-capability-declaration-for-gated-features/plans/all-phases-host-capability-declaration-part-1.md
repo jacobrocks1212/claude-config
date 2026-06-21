@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: host-capability-declaration-for-gated-features
-status: Ready
+status: In-progress
 complexity: complex
 phases: [1, 2, 3]
 ---
