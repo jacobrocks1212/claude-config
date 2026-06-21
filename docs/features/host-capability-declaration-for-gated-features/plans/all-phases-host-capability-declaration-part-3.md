@@ -89,7 +89,7 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — `bug-state.py` parity mirror of shared `lazy_core` helpers + `lazy-parity-manifest.json` registration + parity audit green
+- [x] WU-1 — `bug-state.py` parity mirror of shared `lazy_core` helpers + `lazy-parity-manifest.json` registration + parity audit green
 - [ ] WU-2 — Coupled-pair wrapper glue (4 `/lazy*` SKILL.md) + docs (`user/scripts/CLAUDE.md`, sentinel schema) + full-gate closeout
 
 ---

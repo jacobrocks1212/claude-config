@@ -35,6 +35,8 @@
   PASS [step9-stale-mcp-results] cloud=False real_device=True: Step 9: stale MCP results — re-verify
   PASS [step9-fresh-mcp-results] cloud=False real_device=True: Step 9b: write validated
   PASS [malformed-queue-entry-diagnostic] cloud=False real_device=True: Step 4: investigate bug
+  PASS [requires-host-unknown-failfast] cloud=False real_device=True: Step 3: blocked
+  PASS [requires-host-registered-no-failfast] cloud=False real_device=True: Step 4: investigate bug
   PASS [enqueue-adhoc-writes-entry] entry written with correct fields
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'

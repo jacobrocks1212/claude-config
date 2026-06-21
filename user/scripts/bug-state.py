@@ -696,6 +696,69 @@ def compute_state(
                 continue
 
         # -----------------------------------------------------------------------
+        # host-capability-declaration-for-gated-features Phase 6 (bug-pipeline
+        # PARITY). Mirror the feature pipeline's requires_host: PARSE + the
+        # unknown-id FAIL-FAST. A bug whose SPEC/queue entry declares a
+        # requires_host: id NOT in the closed registry has no probe and could
+        # never be reported present on ANY host, so deferring it would strand the
+        # bug in silent, infinite queue starvation. It is a loud, immediate
+        # validation failure: a canonical BLOCKED.md (blocker_kind:
+        # unknown-host-capability) naming the offending id(s) + the registry's
+        # known ids, halting on terminal_reason="blocked".
+        #
+        # PARITY SCOPE (justified divergence, registered in
+        # lazy-parity-manifest.json): the PARSE (lazy_core.parse_requires_host) +
+        # the fail-fast are mirrored identically. The feature pipeline's
+        # capability-MISS DEFER (DEFERRED_REQUIRES_HOST.md skip + the
+        # host-capability-saturated terminal) is NOT mirrored here — that branch
+        # is queue-selection/curation-shaped on the feature side; the bug pipeline
+        # does not gate runtime validation by an N-capability axis in v1 (it has
+        # only the single device axis above). The SHARED lazy_core helpers do not
+        # diverge — bug-state.py simply does not expose the capability-miss branch.
+        # -----------------------------------------------------------------------
+        try:
+            _hc_spec_text = (spec_dir / "SPEC.md").read_text(encoding="utf-8") \
+                if (spec_dir / "SPEC.md").exists() else ""
+        except OSError:
+            _hc_spec_text = ""
+        required_host = lazy_core.parse_requires_host(_hc_spec_text, entry)
+        if required_host:
+            unknown = lazy_core.unknown_capability_ids(required_host)
+            if unknown:
+                blocked_file = spec_dir / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_unknown_host_capability_blocker(
+                        bug_id, unknown
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=bug_id,
+                        phase="Host-capability validation",
+                        blocker_kind="unknown-host-capability",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"unknown-host-capability: {bug_name} declares unregistered "
+                    f"requires_host: id(s) {sorted(unknown)!r} — wrote BLOCKED.md "
+                    f"(blocker_kind: unknown-host-capability). Fix the typo or "
+                    f"register a probe."
+                )
+                return _bug_state(
+                    feature_id=bug_id,
+                    feature_name=bug_name,
+                    spec_path=str(spec_dir),
+                    current_step=STEP_BLOCKED,
+                    terminal_reason=TR_BLOCKED,
+                    notify_message=(
+                        f"BLOCKED: {bug_name} — unregistered requires_host: "
+                        f"capability id(s) {', '.join(sorted(unknown))}. "
+                        "Awaiting input."
+                    ),
+                )
+
+        # -----------------------------------------------------------------------
         # Operator-deferred skip: DEFERRED.md present → operator parked this bug.
         # Skip and continue to the next candidate so the queue keeps moving.
         # Re-include by deleting DEFERRED.md.
@@ -1311,6 +1374,52 @@ def _write_yaml_sentinel(path: Path, kind: str, **fields: Any) -> None:
     path.write_text(body, encoding="utf-8")
 
 
+def _write_yaml_blocked_sentinel(
+    path: Path, *, feature_id: str, phase: str, blocker_kind: str,
+    blocked_at: str, retry_count: int = 0, body: str = "",
+) -> None:
+    """Write a canonical BLOCKED.md (kind: blocked) with a human-readable body.
+
+    host-capability-declaration-for-gated-features Phase 6 (bug-pipeline parity):
+    the unknown-host-capability fail-fast routes through the EXISTING canonical
+    BLOCKED.md path (no new sentinel name) — a byte-for-byte mirror of the
+    lazy-state.py helper of the same name, so the shared blocker body formatter
+    (lazy_core.format_unknown_host_capability_blocker) is reused identically.
+    Frontmatter is the parser's source of truth; the body is the human-readable
+    context required by the BLOCKED.md schema. The filename is exactly
+    `BLOCKED.md`, so the noncanonical-blocker + stray-branch hooks are satisfied.
+    """
+    try:
+        import yaml  # type: ignore[import]
+        fm = {
+            "kind": "blocked",
+            "feature_id": feature_id,
+            "phase": phase,
+            "blocker_kind": blocker_kind,
+            "blocked_at": blocked_at,
+            "retry_count": retry_count,
+        }
+        text = (
+            "---\n"
+            + yaml.safe_dump(fm, sort_keys=False).strip()
+            + "\n---\n\n"
+            + (body if body else "# Blocked\n")
+        )
+    except ImportError:
+        pairs = "\n".join(
+            f"{k}: {v}" for k, v in {
+                "kind": "blocked",
+                "feature_id": feature_id,
+                "phase": phase,
+                "blocker_kind": blocker_kind,
+                "blocked_at": blocked_at,
+                "retry_count": retry_count,
+            }.items()
+        )
+        text = f"---\n{pairs}\n---\n\n" + (body if body else "# Blocked\n")
+    path.write_text(text, encoding="utf-8")
+
+
 def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
     """Build one named fixture under tmpdir/<name>/ and return its repo root.
 
@@ -1585,6 +1694,59 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             bug_id="bug-dd",
             deferred_scenarios=["BQ-AUDIO-01", "BQ-AUDIO-02"],
             date="2026-05-21",
+        )
+
+    elif name == "requires-host-unknown-failfast":
+        # host-capability-declaration-for-gated-features Phase 6 (bug-pipeline
+        # parity). A bug whose SPEC declares a requires_host: id NOT in the closed
+        # registry must FAIL FAST — a loud BLOCKED.md (blocker_kind:
+        # unknown-host-capability), NEVER a silent defer-forever — identically to
+        # the feature pipeline. The leading `---` frontmatter block is required so
+        # lazy_core.parse_requires_host scans it (bug SPECs that open with `# Title`
+        # have no pre-heading head to scan).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-rhuf", "name": "Requires Host Unknown Bug",
+                 "spec_dir": "bug-rhuf"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-rhuf"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "---\n"
+            "requires_host: [typo-cap]\n"
+            "---\n\n"
+            "# Requires Host Unknown Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-01\n",
+            encoding="utf-8",
+        )
+
+    elif name == "requires-host-registered-no-failfast":
+        # host-capability-declaration-for-gated-features Phase 6 (bug-pipeline
+        # parity, discriminating guard). A bug declaring ONLY registered
+        # requires_host: ids must NOT trip the fail-fast — it proceeds to its
+        # normal lifecycle step (here: spec-bug investigation). Proves the
+        # fail-fast is scoped to UNREGISTERED ids, not any requires_host: at all.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-rhrn", "name": "Requires Host Registered Bug",
+                 "spec_dir": "bug-rhrn"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-rhrn"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "---\n"
+            "requires_host: [zimtohrli-toolchain]\n"
+            "---\n\n"
+            "# Requires Host Registered Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-06-02\n\n"
+            "## Description\n\nSomething is broken.\n",
+            encoding="utf-8",
         )
 
     elif name == "hybrid-ordering":
@@ -2685,6 +2847,36 @@ def run_smoke_tests() -> int:
                 f"(queue overrides severity); got feature_id={fid!r}"
             )
 
+    def _assert_unknown_host_capability_blocked(
+        got: dict[str, Any], failures: list[str], name: str
+    ) -> None:
+        """host-capability parity: the fail-fast must write a canonical BLOCKED.md
+        carrying blocker_kind: unknown-host-capability whose body names the
+        offending unregistered id (mirrors the feature-pipeline assertion)."""
+        spec_path = got.get("spec_path")
+        if not spec_path:
+            failures.append(f"[{name}] no spec_path in state to locate BLOCKED.md")
+            return
+        blocked = Path(spec_path) / "BLOCKED.md"
+        if not blocked.exists():
+            failures.append(
+                f"[{name}] expected a BLOCKED.md to be written by the "
+                f"unknown-host-capability fail-fast at {blocked}"
+            )
+            return
+        meta = parse_sentinel(blocked) or {}
+        if meta.get("blocker_kind") != "unknown-host-capability":
+            failures.append(
+                f"[{name}] expected blocker_kind 'unknown-host-capability'; "
+                f"got {meta.get('blocker_kind')!r}"
+            )
+        text = blocked.read_text(encoding="utf-8")
+        if "typo-cap" not in text:
+            failures.append(
+                f"[{name}] BLOCKED.md body must name the offending id 'typo-cap'; "
+                f"not found in {blocked}"
+            )
+
     cases: list[tuple] = [
         # 1. Fresh Open Bug — no investigation, no PHASES → spec-bug (investigate)
         (
@@ -3098,6 +3290,34 @@ def run_smoke_tests() -> int:
                 )
                 else None
             ),
+        ),
+        # 31. host-capability parity (Phase 6): a bug declaring an UNREGISTERED
+        #     requires_host: id must FAIL FAST — terminal_reason "blocked" with
+        #     blocker_kind: unknown-host-capability — exactly like the feature
+        #     pipeline, NEVER a silent defer-forever.
+        (
+            "requires-host-unknown-failfast", False, True,
+            {
+                "feature_id": "bug-rhuf",
+                "terminal_reason": TR_BLOCKED,
+                "current_step": STEP_BLOCKED,
+            },
+            # Extra: BLOCKED.md must carry blocker_kind: unknown-host-capability
+            # and the body must name the offending id.
+            lambda got, failures, name: _assert_unknown_host_capability_blocked(
+                got, failures, name
+            ),
+        ),
+        # 32. host-capability parity (Phase 6, discriminating guard): a bug
+        #     declaring ONLY registered requires_host: ids must NOT trip the
+        #     fail-fast — it proceeds to its normal lifecycle step (spec-bug).
+        (
+            "requires-host-registered-no-failfast", False, True,
+            {
+                "feature_id": "bug-rhrn",
+                "sub_skill": SKILL_INVESTIGATE,
+                "current_step": STEP_INVESTIGATE,
+            },
         ),
     ]
 

@@ -308,6 +308,27 @@ _REORDER_QUEUE_RE = re.compile(r'"--reorder-queue"')
 # likewise a coupled-pair surface — the run marker is SHARED between pipelines, so
 # the re-claim action added to one state script must appear in the other.
 _REASSERT_OWNER_RE = re.compile(r'"--reassert-owner"')
+# host-capability-declaration-for-gated-features Phase 6: the requires_host:
+# PARSE + the unregistered-id FAIL-FAST is a MIRRORED coupled-pair surface — a
+# requires_host: id with no registry probe could never be present on ANY host, so
+# a silent defer would strand the item in infinite queue starvation; BOTH state
+# scripts must fail fast (canonical BLOCKED.md, blocker_kind:
+# unknown-host-capability) using the SHARED lazy_core.format_unknown_host_capability_blocker
+# body formatter. A drop of the fail-fast from one script is a hard finding here.
+#
+# JUSTIFIED DIVERGENCE (NOT audited as a missing surface): the feature pipeline's
+# capability-MISS DEFER (DEFERRED_REQUIRES_HOST.md skip + the
+# host-capability-saturated terminal) is feature-pipeline-shaped (queue-selection
+# curation). bug-state.py intentionally does NOT expose that branch — it has only
+# the single device axis in v1. The SHARED lazy_core helpers (parse_requires_host,
+# unknown_capability_ids, format_unknown_host_capability_blocker,
+# write_deferred_requires_host) do not diverge; only the bug pipeline's *use* of
+# the miss-defer is absent. So this audit checks ONLY the mirrored fail-fast, not
+# the (correctly feature-only) miss-defer.
+_HOST_CAPABILITY_FAILFAST_RE = re.compile(
+    r"format_unknown_host_capability_blocker"
+)
+_HOST_CAPABILITY_BLOCKER_KIND_RE = re.compile(r"unknown-host-capability")
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
@@ -355,6 +376,19 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"lazy_core.reassert_marker_owner, gated by refuse_if_cycle_active) "
                 f"so both state scripts expose the same shared-marker re-arm "
                 f"surface (single-slot-marker-ownership-race coupled-pair parity)"
+            )
+        if (
+            _HOST_CAPABILITY_FAILFAST_RE.search(text) is None
+            or _HOST_CAPABILITY_BLOCKER_KIND_RE.search(text) is None
+        ):
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"requires_host: unregistered-id FAIL-FAST (calls "
+                f"lazy_core.format_unknown_host_capability_blocker, writes a "
+                f"canonical BLOCKED.md with blocker_kind: unknown-host-capability) "
+                f"so both state scripts fail fast on an unprobeable capability id "
+                f"instead of silently deferring forever "
+                f"(host-capability-declaration-for-gated-features coupled-pair parity)"
             )
     return findings
 
