@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: host-capability-declaration-for-gated-features
-status: In-progress
+status: Complete
 complexity: complex
 phases: [6]
 ---
@@ -90,7 +90,7 @@ This plan references reusable component files by path instead of inlining their 
 ## Work Units
 
 - [x] WU-1 — `bug-state.py` parity mirror of shared `lazy_core` helpers + `lazy-parity-manifest.json` registration + parity audit green
-- [ ] WU-2 — Coupled-pair wrapper glue (4 `/lazy*` SKILL.md) + docs (`user/scripts/CLAUDE.md`, sentinel schema) + full-gate closeout
+- [x] WU-2 — Coupled-pair wrapper glue (4 `/lazy*` SKILL.md) + docs (`user/scripts/CLAUDE.md`, sentinel schema) + full-gate closeout
 
 ---
 

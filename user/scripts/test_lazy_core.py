@@ -15969,13 +15969,15 @@ def test_p7_sanctioned_stop_terminal_constant_exists():
     assert isinstance(sst, (set, frozenset)), (
         f"SANCTIONED_STOP_TERMINAL must be a set/frozenset; got {type(sst)!r}"
     )
-    # Check all 9 sanctioned reasons are present.
+    # Check all sanctioned reasons are present (incl. the host-capability-axis
+    # terminal added by host-capability-declaration-for-gated-features Phase 6).
     required = {
         "all-features-complete",
         "all-bugs-fixed",
         "max-cycles",
         "cloud-queue-exhausted",
         "device-queue-exhausted",
+        "host-capability-saturated",
         "queue-missing",
         "blocked-halt-for-manual",
         "needs-research",

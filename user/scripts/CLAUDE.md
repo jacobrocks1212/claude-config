@@ -86,7 +86,7 @@ plan/execute → **Step 8 retro → Step 9 MCP gate → Step 10 mark-complete**.
 > `bug-state.py` has no stub step, so `clear_queue_stub` (shared `lazy_core`) is invoked solely by
 > `lazy-state.py` (correct divergence, no parity mirror).
 
-## Three environments + the device axis
+## Three environments + the device axis + the host-capability axis
 
 Two orthogonal axes; three environments. See `docs/features/CLAUDE.md` (in AlgoBooth) for
 the full table. In short:
@@ -101,6 +101,61 @@ the full table. In short:
 **Skip ≠ defer.** `SKIP_MCP_TEST.md` = permanent waiver (untestable on any host).
 `DEFERRED_*` = re-opened later on the right host. Faking one for the other is the
 anti-pattern the lint warns on.
+
+### The host-capability axis (`host-capability-declaration-for-gated-features`)
+
+The device axis above is **hard-coded to ONE capability** — the real audio device, keyed on
+the single `$ALGOBOOTH_REAL_AUDIO_DEVICE` env signal. The host-capability axis **generalizes
+that device-saturated skip into an N-capability axis**: a feature whose runtime validation
+needs an arbitrary named host capability (a C++ toolchain like Zimtohrli, a GPU, a specific CLI
+binary) declares it on-disk in a `requires_host:` set, and `lazy-state.py` defers/skips it on a
+host that lacks the capability — exactly as the device axis defers a real-device-only assertion.
+
+- **Declaration (`requires_host:`).** A two-source read (`lazy_core.parse_requires_host` — SPEC
+  frontmatter + the `queue.json` entry) returns the declared capability-id set; absent/legacy ⇒
+  the EMPTY set (ungated, byte-identical to today). Ids match `^[a-z0-9][a-z0-9-]*$`, drawn from a
+  **closed registry** (`lazy_core._HOST_CAPABILITY_REGISTRY` — a hardcoded `id → probe-callable`
+  map). Composite requirements are a **flat AND-set**: `set(requires_host).issubset(host_present)`.
+- **Probe (active invocation, NOT `which()`).** The host's present-capability set is resolved by
+  `lazy_core.host_present_capabilities` with **injected probe callables** (hermetic `--test`). A
+  binary probe MUST run the tool (`subprocess.run([tool, "--version"])`) and check the exit code —
+  NEVER `shutil.which()` / `os.path.exists()`. This guards the Windows `\WindowsApps` zero-byte
+  App-Execution-Alias false-positive (a `which()`-resolvable stub whose invocation opens a GUI
+  Store prompt and hangs the pipeline). The result is cached per-run in the per-repo keyed state
+  dir (re-probe on a new run marker).
+- **Fail-fast on an unregistered id (`BLOCKED.md`).** An id with no registry probe could never be
+  reported present on ANY host, so a silent defer would strand the feature in infinite queue
+  starvation. `compute_state` fails fast FIRST: a canonical `BLOCKED.md`
+  (`blocker_kind: unknown-host-capability`) naming the offending id + the registry's known ids
+  (`lazy_core.format_unknown_host_capability_blocker`). **Mirrored into `bug-state.py` for parity**
+  (parity-audited by `lazy_parity_audit.py::audit_state_script_parity`); the capability-miss DEFER
+  below is feature-pipeline-shaped (justified divergence — bug-state.py does not expose it).
+- **The `DEFERRED_REQUIRES_HOST.md` re-open contract (alongside `DEFERRED_REQUIRES_DEVICE.md`).**
+  On a capability miss (`missing = requires_host − host.present` non-empty) for a feature past
+  implementation with no `VALIDATED.md`, `compute_state` writes a re-openable
+  `DEFERRED_REQUIRES_HOST.md` (`kind: deferred-requires-host`, `missing_capabilities: [...]`
+  load-bearing non-empty), records the skip, and advances the queue via the existing skip-ahead
+  plumbing — exactly the `DEFERRED_REQUIRES_DEVICE.md` shape. On a **capability-bearing host** the
+  probe reports `missing` empty and the feature **re-opens** with no special case (it simply does
+  not skip) and proceeds to runtime validation → `__mark_complete__`. The sentinel is in
+  `lazy_core._FAIL_CLOSED_EVIDENCE_SENTINELS` so the completion gate treats it as defer-not-evidence
+  (a host-deferred feature never reaches `Complete` on a host lacking the capability). When the
+  queue exhausts to only capability-gated features, the terminal is **`host-capability-saturated`**
+  (a clean stop in `lazy_core.SANCTIONED_STOP_TERMINAL`, the host-axis mirror of
+  `device-queue-exhausted`); the notification names each feature + its missing id(s). The
+  `host_deferred_features` probe key surfaces each deferred feature_id for the orchestrator's
+  end-of-run flush (the device axis's `device_deferred_features` analog). **Skip ≠ defer** holds
+  here too — `DEFERRED_REQUIRES_HOST.md` re-opens on a capability-host, it is never a permanent waiver.
+
+> **Documented vN upgrade paths (OUT of v1 scope).** v1 is coarse named-presence + flat AND-set.
+> Future axes are deliberately deferred, none requiring an engine change to the `requires_host:`
+> array shape: **version matrices** via a namespaced-suffix taxonomy (`zimtohrli-v2`, `cuda-11` —
+> Bazel `constraint_value` / Nix naming, NOT a semantic-version solver); **OR-groups / optional
+> capabilities** via separate config profiles (Bazel `select()`-style); a **host-manifest probe
+> override** (a state-init seam to override the deterministic probe with an operator-maintained
+> manifest, for air-gapped hosts); and **fleet-wide deferral-starvation monitoring** (v1 surfaces
+> each deferral; cross-host accumulation tracking is vN). See the feature's SPEC "Documented vN
+> upgrade paths" block.
 
 ## Completion is receipt-gated
 

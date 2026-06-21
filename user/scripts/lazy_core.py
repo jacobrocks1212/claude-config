@@ -7924,6 +7924,14 @@ SANCTIONED_STOP_TERMINAL: frozenset[str] = frozenset({
     "max-cycles",              # hard cycle cap reached
     "cloud-queue-exhausted",   # cloud run out of queue items
     "device-queue-exhausted",  # device run out of queue items
+    # host-capability-declaration-for-gated-features Phase 6: the host-axis
+    # generalization of device-queue-exhausted — every remaining feature is
+    # gated on a host capability absent on THIS host (DEFERRED_REQUIRES_HOST.md).
+    # A clean, sanctioned stop (re-opens on a capability-bearing host), so the
+    # orchestrator may end a run on it without --operator-authorized, exactly
+    # like the device terminal. Feature-pipeline-only in practice (bug-state.py
+    # does not emit it), but membership is harmless for the shared frozenset.
+    "host-capability-saturated",  # all remaining features gated on an absent host capability
     "queue-missing",           # queue.json absent → cannot continue
     "blocked-halt-for-manual", # script-emitted BLOCKED.md halt
     "needs-research",          # NEEDS_INPUT.md needs-research halt
