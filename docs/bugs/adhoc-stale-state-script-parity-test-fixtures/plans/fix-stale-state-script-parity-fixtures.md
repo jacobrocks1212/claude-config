@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: adhoc-stale-state-script-parity-test-fixtures
-status: Ready
+status: Complete
 created: 2026-06-20
 complexity: mechanical
 phases: [1]
@@ -24,7 +24,7 @@ phases: [1]
 
 ## Work Units
 
-- [ ] WU-1 — Update the three `TestStateScriptParity` fixtures to the full four-surface token set
+- [x] WU-1 — Update the three `TestStateScriptParity` fixtures to the full four-surface token set
 
 ## EXECUTION MODEL — READ THIS FIRST
 
