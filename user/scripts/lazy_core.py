@@ -2154,6 +2154,13 @@ _FAIL_CLOSED_EVIDENCE_SENTINELS = (
     "SKIP_MCP_TEST.md",
     "DEFERRED_NON_CLOUD.md",
     "DEFERRED_REQUIRES_DEVICE.md",
+    # host-capability-declaration-for-gated-features Phase 5: the host-axis
+    # generalization of DEFERRED_REQUIRES_DEVICE.md. A capability-deferred
+    # feature is defer-NOT-evidence — the completion gate must treat it as a
+    # skip/defer (fail CLOSED: refuse, do NOT tick), exactly like the device
+    # sentinel, so a host-deferred feature never reaches Complete on a host that
+    # lacks the capability.
+    "DEFERRED_REQUIRES_HOST.md",
 )
 
 # Kill-switch env vars (completion-coherence-gate-reconciliation Phase 3 /
@@ -10272,6 +10279,121 @@ def host_present_capabilities(*, probes=None, cache: bool = True) -> set[str]:
             pass  # cache write best-effort — never fail the resolution
 
     return present
+
+
+# ---------------------------------------------------------------------------
+# host-capability-declaration-for-gated-features — Phases 4 + 5
+#   Shared blocker-body formatter (Phase 4) + DEFERRED_REQUIRES_HOST.md writer
+#   (Phase 5). Both live in lazy_core so the bug-pipeline parity mirror in Part 3
+#   is a one-line reuse, not a re-implementation (the marker/sentinel infra is
+#   shared between lazy-state.py and bug-state.py).
+# ---------------------------------------------------------------------------
+
+def utc_now_iso(now: float | None = None) -> str:
+    """Return an ISO-8601 UTC timestamp with a trailing ``Z`` (the BLOCKED.md
+    ``blocked_at`` format). ``now`` (epoch seconds) is injectable for hermetic
+    tests; default is the real wall clock. Timezone-aware (no naive-UTC
+    deprecation warning under Python ≥3.12).
+    """
+    if now is None:
+        now = time.time()
+    return (
+        datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+    )
+
+
+def format_unknown_host_capability_blocker(
+    feature_id: str, unknown: set[str] | list[str]
+) -> str:
+    """Build the human-readable BLOCKED.md body for the Phase-4
+    unknown-host-capability fail-fast.
+
+    Names BOTH the offending unregistered id(s) AND the sorted closed-registry
+    ids so the operator can either fix the typo or register a new probe — the
+    Bazel "No matching toolchains found" / Nix evaluation-failure shape (fail
+    fast at parse, never spin on an unfulfillable requirement). Shared so the
+    bug-pipeline parity mirror is a one-line reuse.
+    """
+    unknown_sorted = sorted(set(unknown))
+    registry_sorted = sorted(_HOST_CAPABILITY_REGISTRY)
+    return (
+        "# Blocked — unregistered host capability\n\n"
+        "## Details\n\n"
+        f"Feature `{feature_id}` declares a `requires_host:` capability id that is "
+        f"NOT in the closed host-capability registry: "
+        f"{', '.join(f'`{u}`' for u in unknown_sorted)}.\n\n"
+        "An unregistered id has no probe and could never be reported present on "
+        "ANY host, so deferring it would strand the feature in silent, infinite "
+        "queue starvation. This is a loud, immediate validation failure instead.\n\n"
+        "## Known (registered) capability ids\n\n"
+        f"{', '.join(f'`{r}`' for r in registry_sorted)}\n\n"
+        "## Recovery Suggestion\n\n"
+        "Either fix the typo in the feature's `requires_host:` set to a known id "
+        "above, or register a new probe for the capability in "
+        "`lazy_core._HOST_CAPABILITY_REGISTRY` (+ a binding in "
+        "`_HOST_CAPABILITY_PROBE_CONFIG`). Then rename/neutralize this BLOCKED.md.\n"
+    )
+
+
+def write_deferred_requires_host(
+    path: Path,
+    *,
+    feature_id: str,
+    missing_capabilities: list[str],
+    deferred_by: str = "lazy",
+    date: str | None = None,
+) -> None:
+    """Write a capability-keyed ``DEFERRED_REQUIRES_HOST.md`` sentinel
+    (host-capability-declaration Phase 5).
+
+    The host-axis generalization of ``DEFERRED_REQUIRES_DEVICE.md``: it records
+    that the feature is testable, just NOT on THIS host (≥1 required capability
+    absent), so it re-opens on a host that provides the capability rather than
+    being permanently waived or back-of-queued. ``missing_capabilities`` is
+    LOAD-BEARING and MUST be non-empty — it is the self-limiting scope a
+    capability-bearing host re-opens. Atomic write; the body keeps the
+    human-readable re-open context.
+
+    Args:
+        path: destination ``DEFERRED_REQUIRES_HOST.md`` path.
+        feature_id: the deferred feature's id.
+        missing_capabilities: the absent required capability ids (non-empty).
+        deferred_by: ``lazy`` | ``lazy-batch`` (the writer).
+        date: ``YYYY-MM-DD`` (default: today).
+    """
+    if not missing_capabilities:
+        raise ValueError(
+            "write_deferred_requires_host: missing_capabilities MUST be non-empty "
+            "(it is the self-limiting scope a capability-host re-opens)."
+        )
+    if date is None:
+        date = datetime.date.today().isoformat()
+    missing_sorted = sorted(set(missing_capabilities))
+    fm = {
+        "kind": "deferred-requires-host",
+        "feature_id": feature_id,
+        "missing_capabilities": missing_sorted,
+        "deferred_by": deferred_by,
+        "date": date,
+    }
+    body = (
+        "---\n"
+        + yaml.safe_dump(fm, sort_keys=False).strip()
+        + "\n---\n\n"
+        "# Deferred — requires host capability\n\n"
+        "## What was deferred and why\n\n"
+        f"Feature `{feature_id}`'s runtime validation requires host "
+        f"capability/ies {', '.join(f'`{m}`' for m in missing_sorted)}, which "
+        "is absent on this host. The feature is testable — just not HERE — so it "
+        "is deferred (not skipped/waived) and re-opens automatically on a host "
+        "that provides the capability.\n\n"
+        "## How to resume\n\n"
+        "Run `/lazy` (or `/lazy-batch`) on a host that provides the missing "
+        "capability/ies above. The capability-match re-opens this feature into "
+        "runtime validation and deletes this sentinel on success.\n"
+    )
+    _atomic_write(path, body)
 
 
 def skip_ahead_ready(

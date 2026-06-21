@@ -141,6 +141,13 @@ def _state(
         # can surface lingering In-progress device-deferrals deterministically,
         # not only when the queue exhausts. Mirrors _DIAGNOSTICS.
         "device_deferred_features": list(_DEVICE_DEFERRED),
+        # host-capability-declaration-for-gated-features Phase 5: features the
+        # host-capability axis deferred this probe (each has
+        # DEFERRED_REQUIRES_HOST.md + no VALIDATED.md because ≥1 required
+        # capability is absent on THIS host). Always present (mirrors
+        # device_deferred_features) so orchestrators surface lingering
+        # In-progress host-deferrals deterministically, not only at exhaustion.
+        "host_deferred_features": list(_HOST_DEFERRED),
     }
     # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
     # When False the key must be entirely absent so default output (no flag) is
@@ -168,6 +175,17 @@ def _state(
 # Device-deferred features observed this invocation (see _state()). Reset at the
 # start of each compute_state() call alongside lazy_core._DIAGNOSTICS.
 _DEVICE_DEFERRED: list[str] = []
+
+# host-capability-declaration-for-gated-features Phase 5: host-capability-deferred
+# features observed this invocation (the host-axis mirror of _DEVICE_DEFERRED).
+# Each carries DEFERRED_REQUIRES_HOST.md (missing ≥1 required capability on THIS
+# host) + no VALIDATED.md. Surfaced in the always-present host_deferred_features
+# probe key so /lazy-status + orchestrators can flush lingering host-deferrals
+# deterministically. _HOST_SATURATED holds the rich per-feature {feature_id,
+# missing} records for the host-capability-saturated terminal's notification.
+# Both reset at the start of each compute_state().
+_HOST_DEFERRED: list[str] = []
+_HOST_SATURATED: list[dict] = []
 
 # Park mode: when True (--park-needs-input and/or --park-blocked flag),
 # NEEDS_INPUT.md and/or feature-local BLOCKED.md items are skipped (parked)
@@ -1269,6 +1287,7 @@ def compute_state(
     park_blocked: bool = False,
     per_feature_cycle_cap: int | None = None,
     strict_research_halt: bool = False,
+    host_present: set[str] | None = None,
 ) -> dict[str, Any]:
     # `real_device` defaults to True (behavior-preserving: a feature completes
     # exactly as before). ALL device-deferral logic below is gated on the
@@ -1288,6 +1307,8 @@ def compute_state(
     # clear_diagnostics() resets lazy_core._DIAGNOSTICS — the canonical list.
     clear_diagnostics()
     _DEVICE_DEFERRED.clear()
+    _HOST_DEFERRED.clear()
+    _HOST_SATURATED.clear()
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
@@ -1411,6 +1432,24 @@ def compute_state(
         )
         return research_pending or (sp / "BLOCKED.md").exists()
 
+    # host-capability-declaration-for-gated-features Phase 5: lazily-resolved
+    # host present-capability set. Injected (host_present is not None) ⇒ used as-is
+    # (the hermetic --test seam). Otherwise resolved ONCE via the real Phase-3
+    # probe resolver, but ONLY when a feature actually declares requires_host: —
+    # an all-ungated queue never touches the host probe (baseline-regression rail:
+    # zero new I/O on the no-requires_host path). The resolver is per-run-cached
+    # internally; this holder caches the per-compute_state() resolution.
+    _host_present_holder: dict = {"value": host_present, "resolved": host_present is not None}
+
+    def _resolve_host_present() -> set[str]:
+        if not _host_present_holder["resolved"]:
+            try:
+                _host_present_holder["value"] = lazy_core.host_present_capabilities()
+            except Exception:  # noqa: BLE001 — a degraded probe ⇒ empty present set
+                _host_present_holder["value"] = set()
+            _host_present_holder["resolved"] = True
+        return set(_host_present_holder["value"] or set())
+
     for entry in queue:
         name = entry.get("name")
         feature_id = entry.get("id")
@@ -1522,6 +1561,95 @@ def compute_state(
                     "re-opens on a real-device /lazy host."
                 )
                 continue
+        # host-capability-declaration-for-gated-features Phases 4 + 5: the
+        # host-capability gate. Parse the feature's requires_host: set (two-source:
+        # SPEC frontmatter + queue entry). An ungated feature (empty set) is
+        # byte-identical to today — no probe, no defer, no fail-fast.
+        try:
+            _hc_spec_text = (spec_path / "SPEC.md").read_text(encoding="utf-8") \
+                if (spec_path / "SPEC.md").exists() else ""
+        except OSError:
+            _hc_spec_text = ""
+        required_host = lazy_core.parse_requires_host(_hc_spec_text, entry)
+        if required_host:
+            # Phase 4 — fail-fast on an unregistered capability id. An id with no
+            # registry entry has no probe and could never be "present" anywhere,
+            # so it would silently defer FOREVER (the starvation hazard). It is a
+            # loud, immediate validation failure: write a real BLOCKED.md
+            # (blocker_kind: unknown-host-capability) naming the offending id(s)
+            # and the sorted registry ids, and halt on terminal_reason="blocked"
+            # (the existing canonical-blocker terminal — no new sentinel name, so
+            # the write-time stray-branch + noncanonical-blocker hooks cover it).
+            # This MUST precede the Phase-5 match below.
+            unknown = lazy_core.unknown_capability_ids(required_host)
+            if unknown:
+                blocked_file = spec_path / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_unknown_host_capability_blocker(
+                        feature_id, unknown
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=feature_id,
+                        phase="Host-capability validation",
+                        blocker_kind="unknown-host-capability",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"unknown-host-capability: {name} declares unregistered "
+                    f"requires_host: id(s) {sorted(unknown)!r} — wrote BLOCKED.md "
+                    f"(blocker_kind: unknown-host-capability). Fix the typo or "
+                    f"register a probe."
+                )
+                return _state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=str(spec_path),
+                    current_step="Step 3: blocked",
+                    terminal_reason="blocked",
+                    notify_message=(
+                        f"BLOCKED: {name} — unregistered requires_host: "
+                        f"capability id(s) {', '.join(sorted(unknown))}. "
+                        "Awaiting input."
+                    ),
+                )
+            # Phase 5 — capability match + defer-to-capability-host. Only a feature
+            # PAST implementation (the device-skip precondition) whose required set
+            # is not yet certified (no VALIDATED.md) can be host-deferred — a
+            # mid-implementation feature still has actionable Step-7 work and must
+            # NOT be skipped. Compute missing = required - host.present (flat AND;
+            # any miss ⇒ defer). On a non-empty miss write DEFERRED_REQUIRES_HOST.md
+            # (re-openable), skip so the queue advances, and surface the deferral.
+            # An empty miss is the no-special-case re-open: fall through to dispatch.
+            host_validated = (spec_path / "VALIDATED.md").exists()
+            if (
+                not host_validated
+                and _phases_effectively_complete(spec_path)
+            ):
+                present = _resolve_host_present()
+                missing = sorted(required_host - present)
+                if missing:
+                    host_deferred_file = spec_path / "DEFERRED_REQUIRES_HOST.md"
+                    if not host_deferred_file.exists():
+                        lazy_core.write_deferred_requires_host(
+                            host_deferred_file,
+                            feature_id=feature_id,
+                            missing_capabilities=missing,
+                            deferred_by=("lazy-batch" if _bg_marker is not None else "lazy"),
+                        )
+                    _HOST_DEFERRED.append(feature_id)
+                    _HOST_SATURATED.append(
+                        {"feature_id": feature_id, "missing": list(missing)}
+                    )
+                    _diag(
+                        f"host-capability miss: {name} requires "
+                        f"{', '.join(missing)} (absent on this host); deferred to a "
+                        f"capability-host (DEFERRED_REQUIRES_HOST.md). Re-opens on a "
+                        f"host that provides the capability."
+                    )
+                    continue
         if skip_needs_research:
             # Cheap filesystem peek — don't run the full per-feature state machine.
             # Skip features that would terminate the loop with needs-research.
@@ -1809,6 +1937,7 @@ def compute_state(
         if _bg_marker is not None and budget_deferred_skipped and not (
             (cloud and cloud_saturated_skipped)
             or ((not real_device) and device_saturated_skipped)
+            or _HOST_SATURATED
             or (skip_needs_research and research_pending_skipped)
             or (scope_feature_id is not None and not scope_id_seen)
         ):
@@ -1849,6 +1978,30 @@ def compute_state(
                     "carry real-device-only assertions deferred to a real-device "
                     "/lazy host (set ALGOBOOTH_REAL_AUDIO_DEVICE=1 or run on native "
                     "hardware)."
+                ),
+            )
+        # host-capability-declaration-for-gated-features Phase 5: the
+        # host-capability-saturated terminal (the host-axis generalization of
+        # device-queue-exhausted). Placed beside device-queue-exhausted with the
+        # SAME precedence ordering — after the budget-deferred / cloud / device
+        # terminals, before research / scoped-id / all-complete — so a host-gated
+        # remainder is an HONEST distinct terminal, NOT a false all-features-
+        # complete. Gated on a host-deferral having actually occurred this probe.
+        if _HOST_SATURATED:
+            # The notification names the feature + missing cap id(s) per the SPEC
+            # format: "host-capability miss — <feature-id> requires <cap-id>
+            # (absent on this host); deferred to capability-host".
+            _hc_lines = "; ".join(
+                f"{rec['feature_id']} requires {', '.join(rec['missing'])}"
+                for rec in _HOST_SATURATED
+            )
+            return _state(
+                terminal_reason="host-capability-saturated",
+                notify_message=(
+                    f"host-capability miss — {_hc_lines} (absent on this host); "
+                    f"deferred to capability-host. "
+                    f"{len(_HOST_SATURATED)} feature(s) await a capability-bearing "
+                    "host."
                 ),
             )
         if skip_needs_research and research_pending_skipped:
@@ -2613,6 +2766,37 @@ def _write_yaml_sentinel(path: Path, kind: str, **fields: Any) -> None:
     fm = {"kind": kind, **fields}
     body = "---\n" + yaml.safe_dump(fm, sort_keys=False).strip() + "\n---\n\n# Sentinel\n"
     path.write_text(body, encoding="utf-8")
+
+
+def _write_yaml_blocked_sentinel(
+    path: Path, *, feature_id: str, phase: str, blocker_kind: str,
+    blocked_at: str, retry_count: int = 0, body: str = "",
+) -> None:
+    """Write a canonical BLOCKED.md (kind: blocked) with a human-readable body.
+
+    host-capability-declaration-for-gated-features Phase 4: the unknown-host-
+    capability fail-fast routes through the EXISTING canonical BLOCKED.md path
+    (no new sentinel name). Frontmatter is the parser's source of truth; the
+    body is the human-readable `## Details` / `## Recovery Suggestion` context
+    required by the BLOCKED.md schema. The filename is exactly `BLOCKED.md`, so
+    the noncanonical-blocker + stray-branch hooks (which gate TOOL writes, not
+    this in-process state-machine write) are satisfied either way.
+    """
+    fm = {
+        "kind": "blocked",
+        "feature_id": feature_id,
+        "phase": phase,
+        "blocker_kind": blocker_kind,
+        "blocked_at": blocked_at,
+        "retry_count": retry_count,
+    }
+    text = (
+        "---\n"
+        + yaml.safe_dump(fm, sort_keys=False).strip()
+        + "\n---\n\n"
+        + (body if body else "# Blocked\n")
+    )
+    path.write_text(text, encoding="utf-8")
 
 
 def _build_fixture(tmpdir: Path, name: str) -> Path:
@@ -3537,6 +3721,104 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             reason="audio item blocked by no-device ALSA failure under HeadlessPumpDriver",
             deferred_by="lazy", date="2026-05-30",
         )
+    elif name == "host-unknown-cap-failfast":
+        # host-capability-declaration Phase 4: a feature past implementation
+        # declares requires_host: [typo-cap] — an id NOT in the closed registry.
+        # The unknown-id fail-fast MUST write BLOCKED.md
+        # (blocker_kind: unknown-host-capability) naming the typo + the sorted
+        # registry ids, NOT silently defer forever.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-huc", "name": "Feature HUC",
+                 "spec_dir": "feat-huc", "tier": 1,
+                 "requires_host": ["typo-cap"]}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        huc = features / "feat-huc"
+        huc.mkdir()
+        (huc / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (huc / "RESEARCH.md").write_text("# R\n")
+        (huc / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (huc / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "host-registered-cap-no-failfast":
+        # host-capability-declaration Phase 4 guard: a feature declaring ONLY a
+        # registered id (gpu) must NOT trip the unknown-id fail-fast. On a host
+        # that HAS the capability it proceeds normally (here gpu is injected
+        # present in the test, so no defer either).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-hrc", "name": "Feature HRC",
+                 "spec_dir": "feat-hrc", "tier": 1,
+                 "requires_host": ["gpu"]}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        hrc = features / "feat-hrc"
+        hrc.mkdir()
+        (hrc / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (hrc / "RESEARCH.md").write_text("# R\n")
+        (hrc / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (hrc / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "host-cap-miss-defers":
+        # host-capability-declaration Phase 5: a feature past implementation
+        # declares requires_host: [gpu, real-audio-device]; the injected host
+        # present-set has only real-audio-device. missing = {gpu} (composite
+        # AND, any miss ⇒ defer). The capability-miss branch MUST write
+        # DEFERRED_REQUIRES_HOST.md and skip so the queue advances → terminal
+        # host-capability-saturated (single-item queue).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-hcm", "name": "Feature HCM",
+                 "spec_dir": "feat-hcm", "tier": 1,
+                 "requires_host": ["gpu", "real-audio-device"]}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        hcm = features / "feat-hcm"
+        hcm.mkdir()
+        (hcm / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (hcm / "RESEARCH.md").write_text("# R\n")
+        (hcm / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (hcm / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "host-cap-present-reopens":
+        # host-capability-declaration Phase 5 re-open: the SAME shape as
+        # host-cap-miss-defers, but the injected host present-set contains EVERY
+        # required cap (missing empty). The feature must NOT skip — it proceeds
+        # into runtime validation (Step 9 mcp-test dispatch, no
+        # DEFERRED_REQUIRES_HOST.md written). Re-open is no-special-case.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-hcp", "name": "Feature HCP",
+                 "spec_dir": "feat-hcp", "tier": 1,
+                 "requires_host": ["gpu"]}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        hcp = features / "feat-hcp"
+        hcp.mkdir()
+        (hcp / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (hcp / "RESEARCH.md").write_text("# R\n")
+        (hcp / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (hcp / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+    elif name == "host-ungated-baseline":
+        # host-capability-declaration Phase 5 baseline-regression guard: a feature
+        # with NO requires_host: marker is byte-identical to today. Past
+        # implementation + retro done + no VALIDATED.md → Step 9 mcp-test
+        # dispatch, NEVER a host-capability deferral.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-hub", "name": "Feature HUB",
+                 "spec_dir": "feat-hub", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        hub = features / "feat-hub"
+        hub.mkdir()
+        (hub / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (hub / "RESEARCH.md").write_text("# R\n")
+        (hub / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (hub / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
     elif name == "stale-mcp-results-reverify":
         # Workstation Step 9 path: on-disk MCP_TEST_RESULTS.md claims all-passing
         # but carries a stale validated_commit (all-zeros sha) that does NOT match
@@ -4731,6 +5013,46 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-dws",
                 "current_step": "Step 9: re-open device-deferred scenarios (real-device host)",
             }, True),
+            # host-capability-declaration Phase 4: an unregistered requires_host:
+            # id fails fast → BLOCKED.md (blocker_kind: unknown-host-capability),
+            # NOT a silent defer. (host_present is irrelevant — fail-fast runs
+            # before the match; pass empty set for hermeticity.)
+            ("host-unknown-cap-failfast", False, False, {
+                "terminal_reason": "blocked",
+                "feature_id": "feat-huc",
+                "current_step": "Step 3: blocked",
+            }, True, set()),
+            # host-capability-declaration Phase 4 guard: a feature declaring ONLY
+            # a registered id (gpu) with gpu present does NOT trip the fail-fast
+            # and does NOT defer — it reaches Step 9 mcp-test normally.
+            ("host-registered-cap-no-failfast", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-hrc",
+                "current_step": "Step 9: run MCP tests",
+            }, True, {"gpu"}),
+            # host-capability-declaration Phase 5 (a) composite AND-defer: two
+            # caps, one present one absent ⇒ missing = {gpu} ⇒ deferral skip ⇒
+            # host-capability-saturated terminal (single-item queue).
+            ("host-cap-miss-defers", False, False, {
+                "terminal_reason": "host-capability-saturated",
+            }, True, {"real-audio-device"}),
+            # host-capability-declaration Phase 5 (b) re-open: every required cap
+            # present (missing empty) ⇒ no skip ⇒ dispatched into Step 9 runtime
+            # validation. Re-open is no-special-case.
+            ("host-cap-present-reopens", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-hcp",
+                "current_step": "Step 9: run MCP tests",
+            }, True, {"gpu"}),
+            # host-capability-declaration Phase 5 (d) ungated-unaffected baseline
+            # regression: a feature with NO requires_host: marker is byte-
+            # identical to today — Step 9 mcp-test, never a deferral. (host_present
+            # empty proves an ungated feature ignores the host probe entirely.)
+            ("host-ungated-baseline", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-hub",
+                "current_step": "Step 9: run MCP tests",
+            }, True, set()),
             # Stale MCP results freshness gate (WU-4). The on-disk
             # MCP_TEST_RESULTS.md carries validated_commit=all-zeros, which cannot
             # equal the fixture's actual git HEAD. The implementation must detect
@@ -4910,15 +5232,18 @@ def run_smoke_tests() -> int:
         ]
         for case in cases:
             # Cases are 4-tuples (real_device defaults to True — behavior
-            # preserving) or 5-tuples that pin real_device explicitly for the
-            # device-deferral fixtures.
+            # preserving), 5-tuples that pin real_device explicitly for the
+            # device-deferral fixtures, or 6-tuples whose 6th element is an
+            # injected host_present set (host-capability-declaration Phase 5 —
+            # the hermetic seam so --test never touches the real host probe).
             name, cloud, skip_nr, expected = case[0], case[1], case[2], case[3]
             real_device = case[4] if len(case) > 4 else True
+            host_present = case[5] if len(case) > 5 else None
             root = _build_fixture(td_path, name)
             try:
                 got = compute_state(
                     root, cloud=cloud, skip_needs_research=skip_nr,
-                    real_device=real_device,
+                    real_device=real_device, host_present=host_present,
                 )
             except SystemExit as exc:
                 failures.append(f"[{name}] SystemExit: {exc.code}")
@@ -5021,6 +5346,121 @@ def run_smoke_tests() -> int:
                     failures.append(
                         f"[{name}] expected device-saturated diagnostics; "
                         f"got diagnostics={diag!r}"
+                    )
+            if name == "host-unknown-cap-failfast":
+                # The fail-fast MUST have written a real BLOCKED.md whose body
+                # names BOTH the offending typo'd id and the sorted registry ids.
+                bf = root / "docs" / "features" / "feat-huc" / "BLOCKED.md"
+                if not bf.exists():
+                    failures.append(
+                        f"[{name}] expected BLOCKED.md to be written by the "
+                        f"unknown-host-capability fail-fast; missing"
+                    )
+                else:
+                    meta = lazy_core.parse_sentinel(bf) or {}
+                    if meta.get("blocker_kind") != "unknown-host-capability":
+                        failures.append(
+                            f"[{name}] expected blocker_kind: "
+                            f"unknown-host-capability; got {meta.get('blocker_kind')!r}"
+                        )
+                    body = bf.read_text(encoding="utf-8")
+                    if "typo-cap" not in body:
+                        failures.append(
+                            f"[{name}] BLOCKED.md body must name the offending "
+                            f"id 'typo-cap'; got body={body!r}"
+                        )
+                    # The sorted registry ids must be named so the operator can
+                    # fix the typo or register a probe.
+                    for reg_id in sorted(lazy_core._HOST_CAPABILITY_REGISTRY):
+                        if reg_id not in body:
+                            failures.append(
+                                f"[{name}] BLOCKED.md body must name registry "
+                                f"id {reg_id!r}; got body={body!r}"
+                            )
+            if name == "host-registered-cap-no-failfast":
+                # The guard against an over-broad fail-fast: a registered id must
+                # NOT write BLOCKED.md.
+                bf = root / "docs" / "features" / "feat-hrc" / "BLOCKED.md"
+                if bf.exists():
+                    failures.append(
+                        f"[{name}] a registered requires_host: id must NOT trip "
+                        f"the fail-fast, but BLOCKED.md was written"
+                    )
+            if name == "host-cap-miss-defers":
+                # The capability-miss branch MUST write DEFERRED_REQUIRES_HOST.md
+                # carrying the missing cap id (gpu), and surface it in the
+                # host_deferred_features probe key + a per-probe diagnostic.
+                df = root / "docs" / "features" / "feat-hcm" / "DEFERRED_REQUIRES_HOST.md"
+                if not df.exists():
+                    failures.append(
+                        f"[{name}] expected DEFERRED_REQUIRES_HOST.md to be "
+                        f"written on a capability miss; missing"
+                    )
+                else:
+                    meta = lazy_core.parse_sentinel(df) or {}
+                    if meta.get("kind") != "deferred-requires-host":
+                        failures.append(
+                            f"[{name}] expected kind: deferred-requires-host; "
+                            f"got {meta.get('kind')!r}"
+                        )
+                    missing = meta.get("missing_capabilities") or []
+                    if "gpu" not in missing:
+                        failures.append(
+                            f"[{name}] DEFERRED_REQUIRES_HOST.md must name the "
+                            f"missing cap 'gpu'; got missing_capabilities={missing!r}"
+                        )
+                    # The present cap must NOT be listed as missing (composite AND).
+                    if "real-audio-device" in missing:
+                        failures.append(
+                            f"[{name}] a present cap must NOT be in "
+                            f"missing_capabilities; got {missing!r}"
+                        )
+                hdf = got.get("host_deferred_features") or []
+                if "feat-hcm" not in hdf:
+                    failures.append(
+                        f"[{name}] expected feat-hcm in host_deferred_features; "
+                        f"got {hdf!r}"
+                    )
+                diag = got.get("diagnostics") or []
+                if not any("host-capability" in d and "gpu" in d for d in diag):
+                    failures.append(
+                        f"[{name}] expected a host-capability diagnostic naming "
+                        f"the missing id; got diagnostics={diag!r}"
+                    )
+                nm = got.get("notify_message") or ""
+                if "feat-hcm" not in nm or "gpu" not in nm:
+                    failures.append(
+                        f"[{name}] terminal notify_message must name the feature "
+                        f"+ missing cap; got {nm!r}"
+                    )
+            if name == "host-cap-present-reopens":
+                # Re-open: NO DEFERRED_REQUIRES_HOST.md is written when missing
+                # is empty.
+                df = root / "docs" / "features" / "feat-hcp" / "DEFERRED_REQUIRES_HOST.md"
+                if df.exists():
+                    failures.append(
+                        f"[{name}] missing-empty re-open must NOT write "
+                        f"DEFERRED_REQUIRES_HOST.md, but it exists"
+                    )
+                if got.get("host_deferred_features"):
+                    failures.append(
+                        f"[{name}] re-open must not surface host_deferred_features; "
+                        f"got {got.get('host_deferred_features')!r}"
+                    )
+            if name == "host-ungated-baseline":
+                # Ungated baseline regression: no requires_host: ⇒ no deferral
+                # sentinel, no host_deferred_features.
+                df = root / "docs" / "features" / "feat-hub" / "DEFERRED_REQUIRES_HOST.md"
+                if df.exists():
+                    failures.append(
+                        f"[{name}] an ungated feature must NOT write "
+                        f"DEFERRED_REQUIRES_HOST.md"
+                    )
+                if got.get("host_deferred_features"):
+                    failures.append(
+                        f"[{name}] ungated feature must not surface "
+                        f"host_deferred_features; got "
+                        f"{got.get('host_deferred_features')!r}"
                     )
             if name == "stale-plan-all-refs-checked-flips":
                 # current_step substring check: after the fix the impl agent will

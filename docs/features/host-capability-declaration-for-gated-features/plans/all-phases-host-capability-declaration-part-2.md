@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: host-capability-declaration-for-gated-features
-status: Ready
+status: Complete
 complexity: complex
 phases: [4, 5]
 ---
@@ -93,9 +93,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Unregistered-id fail-fast → `BLOCKED.md` (`blocker_kind: unknown-host-capability`) in `compute_state` (Phase 4)
-- [ ] WU-2 — `DEFERRED_REQUIRES_HOST.md` sentinel schema + writer + `_FAIL_CLOSED_EVIDENCE_SENTINELS` entry (Phase 5)
-- [ ] WU-3 — Capability-miss skip branch + re-open + `host-capability-saturated` terminal + probe field in `compute_state` (Phase 5)
+- [x] WU-1 — Unregistered-id fail-fast → `BLOCKED.md` (`blocker_kind: unknown-host-capability`) in `compute_state` (Phase 4)
+- [x] WU-2 — `DEFERRED_REQUIRES_HOST.md` sentinel schema + writer + `_FAIL_CLOSED_EVIDENCE_SENTINELS` entry (Phase 5)
+- [x] WU-3 — Capability-miss skip branch + re-open + `host-capability-saturated` terminal + probe field in `compute_state` (Phase 5)
 
 ---
 

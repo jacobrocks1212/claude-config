@@ -14783,6 +14783,81 @@ def test_host_present_capabilities_default_bindings_present():
     assert present == set(), "all-false stub ⇒ empty present set"
 
 
+# --- Phases 4 + 5: blocker formatter + DEFERRED_REQUIRES_HOST.md writer ------
+
+def test_format_unknown_host_capability_blocker_names_typo_and_registry():
+    """The Phase-4 blocker body names BOTH the offending typo id AND the sorted
+    registry ids (so the operator can fix the typo or register a probe)."""
+    _guard()
+    body = lazy_core.format_unknown_host_capability_blocker(
+        "feat-x", {"typo-cap"}
+    )
+    assert "typo-cap" in body, "body must name the offending unregistered id"
+    for reg_id in lazy_core._HOST_CAPABILITY_REGISTRY:
+        assert reg_id in body, f"body must name registry id {reg_id!r}"
+    # It is human-readable: keeps the Details + Recovery sections.
+    assert "## Details" in body
+    assert "## Recovery Suggestion" in body
+
+
+def test_write_deferred_requires_host_emits_valid_sentinel():
+    """The writer emits a frontmatter-valid DEFERRED_REQUIRES_HOST.md carrying
+    the (sorted) missing_capabilities + kind: deferred-requires-host."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "DEFERRED_REQUIRES_HOST.md"
+        lazy_core.write_deferred_requires_host(
+            path,
+            feature_id="feat-x",
+            missing_capabilities=["zimtohrli-toolchain", "gpu"],
+            deferred_by="lazy-batch",
+            date="2026-06-20",
+        )
+        meta = lazy_core.parse_sentinel(path)
+    assert meta is not None
+    assert meta.get("kind") == "deferred-requires-host"
+    assert meta.get("feature_id") == "feat-x"
+    # Sorted (deterministic on-disk shape).
+    assert meta.get("missing_capabilities") == ["gpu", "zimtohrli-toolchain"]
+    assert meta.get("deferred_by") == "lazy-batch"
+    assert meta.get("date") == "2026-06-20"
+
+
+def test_write_deferred_requires_host_empty_missing_raises():
+    """missing_capabilities is load-bearing — an empty list raises (a blanket
+    whole-feature deferral with no scope is malformed)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "DEFERRED_REQUIRES_HOST.md"
+        raised = False
+        try:
+            lazy_core.write_deferred_requires_host(
+                path, feature_id="feat-x", missing_capabilities=[]
+            )
+        except ValueError:
+            raised = True
+        assert raised, "empty missing_capabilities must raise ValueError"
+        assert not path.exists(), "no sentinel must be written on the raise path"
+
+
+def test_deferred_requires_host_is_fail_closed_evidence_sentinel():
+    """DEFERRED_REQUIRES_HOST.md is a member of _FAIL_CLOSED_EVIDENCE_SENTINELS
+    (the completion gate treats it as defer-not-evidence, parallel to the device
+    sentinel) so a host-deferred feature never reaches Complete here."""
+    _guard()
+    assert "DEFERRED_REQUIRES_HOST.md" in lazy_core._FAIL_CLOSED_EVIDENCE_SENTINELS
+
+
+def test_utc_now_iso_format_z_suffix():
+    """utc_now_iso returns an ISO-8601 UTC timestamp with a trailing Z; the
+    injected epoch is deterministic."""
+    _guard()
+    # 2021-01-01T00:00:00Z is epoch 1609459200.
+    assert lazy_core.utc_now_iso(1609459200) == "2021-01-01T00:00:00Z"
+    live = lazy_core.utc_now_iso()
+    assert live.endswith("Z") and "T" in live
+
+
 # ---------------------------------------------------------------------------
 # End of Phase 4 test definitions
 # ---------------------------------------------------------------------------
@@ -23935,6 +24010,18 @@ _TESTS = _TESTS + [
      test_host_present_capabilities_no_marker_probes_fresh),
     ("test_host_present_capabilities_default_bindings_present",
      test_host_present_capabilities_default_bindings_present),
+    # Phases 4 + 5 — blocker formatter + DEFERRED_REQUIRES_HOST.md writer +
+    # fail-closed membership + utc_now_iso
+    ("test_format_unknown_host_capability_blocker_names_typo_and_registry",
+     test_format_unknown_host_capability_blocker_names_typo_and_registry),
+    ("test_write_deferred_requires_host_emits_valid_sentinel",
+     test_write_deferred_requires_host_emits_valid_sentinel),
+    ("test_write_deferred_requires_host_empty_missing_raises",
+     test_write_deferred_requires_host_empty_missing_raises),
+    ("test_deferred_requires_host_is_fail_closed_evidence_sentinel",
+     test_deferred_requires_host_is_fail_closed_evidence_sentinel),
+    ("test_utc_now_iso_format_z_suffix",
+     test_utc_now_iso_format_z_suffix),
 ]
 
 

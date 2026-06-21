@@ -120,6 +120,54 @@ Body keeps a `## What was deferred and why` section: the control-run evidence
 reading, and the re-enable path (*"re-run on a real-device MCP host to certify
 these for real"*).
 
+#### `DEFERRED_REQUIRES_HOST.md` — `kind: deferred-requires-host`  *(new — host-capability deferral)*
+
+Records that a feature's runtime validation requires one or more **named host
+capabilities** (from the closed `lazy_core._HOST_CAPABILITY_REGISTRY` vocabulary
+— e.g. `zimtohrli-toolchain`, `real-audio-device`, `gpu`) that are **absent on
+THIS host**, so the feature is **deferred to a capability-bearing host, NOT
+skipped**. Written by `lazy-state.py` (`compute_state` queue selection) when, for
+a feature past implementation, `missing = requires_host − host.present` is
+non-empty. It is the **host-axis generalization of `DEFERRED_REQUIRES_DEVICE.md`**
+(the device axis is a single hard-coded capability; this generalizes to a named,
+registry-keyed capability set).
+
+| Sentinel | Means | Resolution |
+|----------|-------|------------|
+| `SKIP_MCP_TEST.md` | Permanent waiver — un-testable on *any* host. | Never re-opened. |
+| `DEFERRED_REQUIRES_DEVICE.md` | Assertion needs a real audio device. | A real-device `/lazy` host re-opens it. |
+| `DEFERRED_REQUIRES_HOST.md` | Validation needs a named host capability absent here (toolchain / GPU / device). | A host that **provides the capability** re-opens it (`compute_state` capability match) and certifies, then deletes it + writes `VALIDATED.md`. |
+
+`lazy-state.py` keys on this file the same way it keys on the device sentinel: a
+host LACKING a required capability with this sentinel + no `VALIDATED.md` is
+**host-capability-saturated** — the capability-miss branch skips it so the queue
+advances (terminal `host-capability-saturated`), mirroring the device-saturated
+skip. The feature does NOT reach `Complete` on a host that lacks the capability
+(`DEFERRED_REQUIRES_HOST.md` is in `_FAIL_CLOSED_EVIDENCE_SENTINELS`), so
+`Complete` always means fully validated.
+
+Required:
+
+```yaml
+---
+kind: deferred-requires-host
+feature_id: <id>
+missing_capabilities: [<capability-id>, ...]   # WHICH registry capabilities are absent on this host — a capability-host re-opens exactly these
+deferred_by: lazy   # one of: lazy | lazy-batch
+date: <YYYY-MM-DD>
+---
+```
+
+`missing_capabilities` is **load-bearing and MUST be non-empty** — it is the
+self-limiting scope a capability-bearing host re-opens (the writer raises if it
+is empty). Each id is drawn from the closed registry; an *unregistered* id never
+reaches this sentinel — it fails fast at parse via the `unknown-host-capability`
+`BLOCKED.md` path instead (see `BLOCKED.md` above).
+
+Body keeps a `## What was deferred and why` section (the absent capability + why
+the host lacks it) and a `## How to resume` section (*"run `/lazy` on a host that
+provides the missing capability"*).
+
 #### `VALIDATED.md` — `kind: validated`
 
 Required:
@@ -459,6 +507,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 | BLOCKED.md | A skill hits an unrecoverable obstacle | Human resolves (delete or human-manual fix); blocked-resolution mode neutralizes by **rename** → `BLOCKED_RESOLVED_<date>.md` (`--neutralize-sentinel`), preserving audit trail |
 | DEFERRED_NON_CLOUD.md | /lazy-cloud cannot run a step in cloud | /lazy Step 10 (feature completion) |
 | DEFERRED_REQUIRES_DEVICE.md | /mcp-test on a no-real-device host can't certify a real-device-only assertion | A real-device /lazy host re-opens (Step 9), certifies the deferred scenarios, then deletes it + writes VALIDATED.md |
+| DEFERRED_REQUIRES_HOST.md | `lazy-state.py` `compute_state` finds a feature's `requires_host:` capability absent on this host (`missing` non-empty) | A host that **provides** the capability re-opens it (capability match), certifies, then deletes it + writes VALIDATED.md |
 | VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
 | RETRO_DONE.md | DORMANT — /retro is unwired (2026-06); never written for new features (retained for lint-validity + restore) | /lazy Step 10 (folded into COMPLETED.md if a stale one exists) |
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |

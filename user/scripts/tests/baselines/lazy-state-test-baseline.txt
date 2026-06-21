@@ -1,18 +1,3 @@
-{
-  "id": "adhoc-bug-1",
-  "spec_dir": "adhoc-bug-1",
-  "status": "queued"
-}
-{
-  "id": "adhoc-bug-1",
-  "spec_dir": "adhoc-bug-1",
-  "status": "duplicate"
-}
-{
-  "id": "broken-submit-button",
-  "spec_dir": "broken-submit-button",
-  "status": "queued"
-}
   [fresh-queue] cloud=False skip_nr=False real_device=True: Step 4: no SPEC, no research
   [blocker] cloud=False skip_nr=False real_device=True: Step 3: blocked
   [misnamed-blocker-stray] cloud=False skip_nr=False real_device=True: Step 3: mis-named blocker
@@ -60,6 +45,11 @@
   [device-deferred-cleared] cloud=False skip_nr=False real_device=True: Step 10: mark complete
   [device-deferred-stale-validated] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
   [device-deferred-with-skip] cloud=False skip_nr=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
+  [host-unknown-cap-failfast] cloud=False skip_nr=False real_device=True: Step 3: blocked
+  [host-registered-cap-no-failfast] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [host-cap-miss-defers] cloud=False skip_nr=False real_device=True: host-capability-saturated
+  [host-cap-present-reopens] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [host-ungated-baseline] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [stale-mcp-results-reverify] cloud=False skip_nr=False real_device=True: Step 9: stale MCP results — re-verify
   [skip-pipeline-granted-needs-input] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   [skip-operator-granted-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
@@ -80,7 +70,22 @@
   PASS [realign-fresh-hashless-upstream-not-stale] hashless upstream skipped; real drift still stale
   [per-feature-counter] per_feature_forward_cycles rides both advance triggers, meta-exempt, per-feature keyed: ok
   [budget-guard] trip/defer + re-trip/evict + override + exhaustion terminal + marker-gated no-op: ok
-  [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
+  [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok{
+  "id": "adhoc-bug-1",
+  "spec_dir": "adhoc-bug-1",
+  "status": "queued"
+}
+{
+  "id": "adhoc-bug-1",
+  "spec_dir": "adhoc-bug-1",
+  "status": "duplicate"
+}
+{
+  "id": "broken-submit-button",
+  "spec_dir": "broken-submit-button",
+  "status": "queued"
+}
+
 {
   "error": "feature_id already queued: adhoc-test",
   "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
