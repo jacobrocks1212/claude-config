@@ -36,3 +36,17 @@ This feature lets a pipeline feature declare the host capabilities (a C++ toolch
 - **Defer-to-back-of-queue — run-scoped reorder (`feature-budget-guard` pattern)** — Move the feature to the live-queue tail this run; retry it later in the same run. Pros: reuses the budget-guard skip-list directly; no new sentinel. Cons: pointless for a capability miss — the host won't grow the toolchain mid-run, so the feature just hits the same wall at the tail; no cross-host re-open, so it never completes on a capability-poor host. Right tool for a transient/stubborn feature, wrong tool for a stable host-capability gap.
 
 **Recommendation:** Defer-to-capability-host — it is the only option that preserves the "`Complete` means fully validated" invariant across hosts, matches the established defer-≠-skip contract, and generalizes the proven `DEFERRED_REQUIRES_DEVICE.md` device axis rather than inventing new semantics.
+
+## Resolution
+
+*Recorded on 2026-06-20 22:55:00 UTC.*
+
+### 1. Source-of-truth ownership for host capabilities (how feature requirements and host inventory are each known)
+
+**Choice:** Per-feature `requires_host:` marker + runtime host probe
+**Notes:**
+
+### 2. Capability-miss action (defer-to-capability-host vs permanent skip vs defer-to-back-of-queue)
+
+**Choice:** Defer-to-capability-host — re-openable, generalizing `DEFERRED_REQUIRES_DEVICE.md`
+**Notes:**
