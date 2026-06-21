@@ -2,7 +2,7 @@
 
 > Let a feature declare the host capabilities (binary toolchains, audio/GPU devices) its runtime validation requires, and have the state script proactively defer/skip features whose capabilities are absent on the current host — instead of each one churning through BLOCKED/SKIP/AskUserQuestion at the Step-9 mcp-test boundary.
 
-**Status:** Final
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-06-20
 **Source:** `/lazy-batch` session-log audit 2026-06-19 (AlgoBooth — 19 sessions, last 2 weeks)

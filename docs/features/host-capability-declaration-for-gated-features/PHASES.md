@@ -214,7 +214,7 @@ Phase-level dependencies extracted from each `**Depends on:**` upstream. The SPE
 
 **Scope:** Close the harness contracts: mirror every new shared `lazy_core` helper into the bug pipeline (`bug-state.py` — the marker/sentinel infra is shared), update the parity manifest, add the thin notification/skip glue to all four coupled `/lazy*` wrappers in lockstep, and document the new axis. No new behavior — this phase makes the Phase-1..5 work parity-clean and surfaced.
 
-**Status:** In-progress
+**Status:** Complete
 
 **Deliverables:**
 - [x] `bug-state.py` parity: any `lazy_core` helper Phases 1-5 added that the bug pipeline shares (probe resolver, sentinel writer) is reachable/mirrored; the unknown-id fail-fast and capability-miss defer apply identically IF bugs can declare `requires_host:` (decision: mirror the parsing + fail-fast for parity; the capability-miss skip is feature-pipeline-shaped but the shared helpers must not diverge). Update `lazy-parity-manifest.json` with the new canonical units (or register a justified divergence).
