@@ -13,7 +13,7 @@
 - unified-pipeline-orchestrator — composes — Adds a host-capability probe sibling to the toolify-framework subcommands (`--ensure-runtime` / `--gate-coverage`), reusing `lazy_core`'s injected-callable + hermetic-`--test` harness shape.
 - multi-repo-concurrent-runs — soft — Any host-probe cache lives in the per-repo keyed state dir (`claude_state_dir()` / `repo_key`); the probe reads host state, never another repo's.
 
-<!-- TODO: confirm kind for feature-budget-guard-and-skip-ahead — composes vs soft depending on Decision 1 ownership outcome -->
+<!-- Decision 1 resolved (marker + runtime probe): feature-budget-guard-and-skip-ahead kind is `composes` — the capability-gated head defers and skip-ahead advances exactly as a research-gated head does. -->
 
 ---
 
@@ -57,17 +57,17 @@ Per "state script is the source of truth," the probe + match + action live in `l
 
 ### The declaration (`requires_host:`)
 
-- A feature's required-capability set is parsed by a single `lazy_core` helper (mirroring `marker_work_branch()` / dep-block parsing): present → a set of capability ids; absent/legacy → empty set (ungated). **Exact on-disk location is Decision 1.**
+- A feature's required-capability set is parsed by a single `lazy_core` helper (mirroring `marker_work_branch()` / dep-block parsing): present → a set of capability ids; absent/legacy → empty set (ungated). **On-disk location (Decision 1, resolved):** a per-feature `requires_host:` marker (the requirement side stays declarative, as today); the *host inventory* side is resolved by runtime probe (below), not a manifest.
 - Capability ids match `^[a-z0-9][a-z0-9-]*$` (same shape as feature-ids), drawn from a host-probe-able vocabulary defined alongside the probe.
 
 ### The host-capability probe
 
-- The host's present-capability set is resolved by a new `lazy_core` helper with **injected probe callables** (so `--test` stays hermetic — same pattern `ensure_runtime` uses for its probe/restart/stale callables). Each capability id maps to a deterministic host check (binary-on-PATH, env-var-set, device-enumeration). **The source of truth for "what this host has" — runtime probe vs declared host manifest vs both — is Decision 1.**
+- The host's present-capability set is resolved by a new `lazy_core` helper with **injected probe callables** (so `--test` stays hermetic — same pattern `ensure_runtime` uses for its probe/restart/stale callables). Each capability id maps to a deterministic host check (binary-on-PATH, env-var-set, device-enumeration). **Source of truth for "what this host has" (Decision 1, resolved): a runtime host probe** — the machine answers for itself (zero operator upkeep, always reflects ground truth), generalizing the existing `$ALGOBOOTH_REAL_AUDIO_DEVICE` device probe to N checks. A declared host manifest is NOT the v1 source of truth; it remains available as a later probe-override layer if probe authoring proves heavy (reversible).
 - The probe result is cacheable in the per-repo keyed state dir (`claude_state_dir()`); whether to cache for the run or re-probe per cycle is a mechanical-internal choice (auto-accepted: cache per run, re-probe on a new run marker — cheapest correct option).
 
 ### The match + action
 
-- In `compute_state()` queue selection, before dispatching the current feature's next runtime-verification sub-skill, compute `missing = feature.requires_host - host.present`. On non-empty `missing`, take the **Decision-2 action** and emit a probe field the orchestrator translates into a notification + (if deferring) a live-queue skip, reusing the `feature-budget-guard-and-skip-ahead` skip-list + skip-ahead plumbing.
+- In `compute_state()` queue selection, before dispatching the current feature's next runtime-verification sub-skill, compute `missing = feature.requires_host - host.present`. On non-empty `missing`, take the **Decision-2 action (resolved): defer-to-capability-host** — write a capability-keyed `DEFERRED_REQUIRES_HOST.md` sentinel carrying the missing capability ids (re-openable; generalizing `DEFERRED_REQUIRES_DEVICE.md`), and emit a probe field the orchestrator translates into a notification + a live-queue skip, reusing the `feature-budget-guard-and-skip-ahead` skip-list + skip-ahead plumbing. The deferral preserves the "`Complete` means fully validated" invariant: the feature is testable, just not on this host, so it re-opens on a host that provides the capability rather than being permanently waived (skip) or pointlessly retried at the same wall (back-of-queue).
 - **Fold into Step 0.52 vs a distinct pre-screen stage** is a mechanical-internal choice (auto-accepted: a distinct, capability-specific match in `compute_state` reusing the skip-ahead plumbing — keeps the advisory MCP-tool pre-screen and the hard capability gate separate-concern; Step 0.52 stays advisory-only).
 
 ### Reused infrastructure (no new code where it exists)
@@ -76,7 +76,7 @@ Per "state script is the source of truth," the probe + match + action live in `l
 |------|---------------------------|
 | Per-repo probe-cache state | `lazy_core.claude_state_dir()` / `repo_key` (multi-repo-concurrent-runs) |
 | Live-queue defer + skip-ahead | `feature-budget-guard-and-skip-ahead` skip-list + readiness predicate |
-| Re-open-on-capability-host sentinel | `DEFERRED_REQUIRES_DEVICE.md` device-axis pattern (generalized) |
+| Re-open-on-capability-host sentinel | `DEFERRED_REQUIRES_HOST.md` (new, capability-keyed) — generalizes the `DEFERRED_REQUIRES_DEVICE.md` device-axis re-open pattern |
 | Hermetic injected-callable probe harness | `lazy_core.ensure_runtime`'s injected probe/restart/stale callables |
 | Pre-screen-at-curation-time framing | Step 0.52 validation-readiness pre-screen (`validation_readiness.py`) |
 
@@ -105,12 +105,12 @@ These are deferred into the Gemini research prompt, NOT lifted to the operator (
 - **Declaration vocabulary ownership.** Should the capability-id vocabulary be open (any string the author coins) or a closed registry validated against the probe's known checks? What do similar declarative-requirement systems do to prevent typo'd / never-probed capability ids?
 - **Composite/AND-OR requirements.** Is a flat AND-set of required capabilities sufficient, or do real features need OR-groups / optional capabilities ("GPU OR a 4-core CPU fallback")?
 
-## Decisions Pending Operator Input (product-behavior, baseline-gating)
+## Locked Decisions (operator-resolved 2026-06-20)
 
-> These two GATE the baseline architecture and are user-authority calls research cannot decide (they pick the ownership model and the pipeline behavior). Surfaced via `NEEDS_INPUT.md`; this section is overwritten with the resolutions before the baseline is finalized.
+> These two GATE the baseline architecture and were user-authority calls research could not decide (they pick the ownership model and the pipeline behavior). Resolved by the operator on 2026-06-20 (see `NEEDS_INPUT_RESOLVED_2026-06-20.md`); the baseline narrative above reflects these.
 
-- **Decision 1 — Source-of-truth ownership for host capabilities.** TBD (pending input): how the feature's required capabilities AND the host's present capabilities are each declared/known. Options: (A) per-feature `requires_host:` marker + runtime host probe; (B) per-feature marker + a host-local manifest the operator maintains; (C) both feature requirement and host inventory as static manifests (no runtime probe). See NEEDS_INPUT.md.
-- **Decision 2 — Capability-miss action.** TBD (pending input): defer-to-capability-host (re-openable, generalizing `DEFERRED_REQUIRES_DEVICE.md`) vs skip (permanent waiver, `SKIP_MCP_TEST.md`-class) vs defer-to-back-of-queue (run-scoped reorder). See NEEDS_INPUT.md.
+- **Decision 1 — Source-of-truth ownership for host capabilities — RESOLVED: per-feature `requires_host:` marker + runtime host probe.** The feature's required capabilities stay declarative in a per-feature `requires_host:` marker; the host's present-capability inventory is resolved by a deterministic runtime probe (binary-on-PATH / env-var / device-enumeration, injected callables for hermetic `--test`), NOT an operator-maintained manifest. Lowest operator upkeep, always reflects ground truth, generalizes the proven `$ALGOBOOTH_REAL_AUDIO_DEVICE` device probe. A host manifest remains a later probe-override layer (reversible).
+- **Decision 2 — Capability-miss action — RESOLVED: defer-to-capability-host (re-openable).** On a capability miss the script writes a capability-keyed `DEFERRED_REQUIRES_HOST.md` sentinel (carrying the missing capability ids) and advances the queue via skip-ahead; a host that provides the capability re-opens the deferred feature. This preserves the "`Complete` means fully validated" invariant across hosts and generalizes `DEFERRED_REQUIRES_DEVICE.md` — chosen over permanent skip (`SKIP_MCP_TEST.md`-class, wrong semantics: the feature IS testable elsewhere) and back-of-queue reorder (pointless — the host won't grow the toolchain mid-run, no cross-host re-open).
 
 ## Research References
 
