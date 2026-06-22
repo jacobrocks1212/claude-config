@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: bug-state-scoped-query-loses-deferred-bug-identity
-status: Ready
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [3, 4]
@@ -94,8 +94,8 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — Add `all-remaining-deferred` + scoped deferred terminals → `Deferred` (and park scoped → Blocked/Needs-input) in `_SIDE_STATE_BY_TERMINAL` + curated-stage unit tests
-- [ ] WU-2 — End-to-end regression guard: `lazy-queue-doc.py` emits a real SPEC link + `⏸ Deferred`, zero `docs/bugs/unknown/SPEC.md`
+- [x] WU-1 — Add `all-remaining-deferred` + scoped deferred terminals → `Deferred` (and park scoped → Blocked/Needs-input) in `_SIDE_STATE_BY_TERMINAL` + curated-stage unit tests
+- [x] WU-2 — End-to-end regression guard: `lazy-queue-doc.py` emits a real SPEC link + `⏸ Deferred`, zero `docs/bugs/unknown/SPEC.md`
 
 ---
 

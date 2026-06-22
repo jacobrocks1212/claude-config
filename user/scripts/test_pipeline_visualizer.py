@@ -105,6 +105,30 @@ class TestCuratedStageFeature:
         assert curated_stage(None, "cloud-queue-exhausted", "feature") == "Deferred"
         assert curated_stage(None, "device-queue-exhausted", "feature") == "Deferred"
 
+    def test_global_all_remaining_deferred_maps_to_deferred(self):
+        # bug-state-scoped-query-loses-deferred-bug-identity P3 — the global
+        # unscoped deferral terminal must roll up to Deferred (previously
+        # fell through to Pending, the original symptom on the unscoped path).
+        from pipeline_visualizer.curated_stage import curated_stage
+        assert curated_stage(None, "all-remaining-deferred", "feature") == "Deferred"
+
+    def test_scoped_deferred_terminals_map_to_deferred(self):
+        # P3 — the scoped per-feature deferred terminals from Part 2 (feature
+        # side; cloud/device/host-capability axes) roll up to Deferred.
+        from pipeline_visualizer.curated_stage import curated_stage
+        assert curated_stage(None, "cloud-queue-exhausted-scoped", "feature") == "Deferred"
+        assert curated_stage(None, "device-queue-exhausted-scoped", "feature") == "Deferred"
+        assert curated_stage(None, "host-capability-saturated-scoped", "feature") == "Deferred"
+        # The unscoped host-capability axis is the host-axis mirror of device.
+        assert curated_stage(None, "host-capability-saturated", "feature") == "Deferred"
+
+    def test_scoped_park_terminals_map_to_their_side_state(self):
+        # P3 — a parked scoped match is in a blocked/needs-input side-state,
+        # NOT a deferred one.
+        from pipeline_visualizer.curated_stage import curated_stage
+        assert curated_stage(None, "blocked-scoped", "feature") == "Blocked"
+        assert curated_stage(None, "needs-input-scoped", "feature") == "Needs-input"
+
     def test_terminal_reason_precedence_over_step(self):
         from pipeline_visualizer.curated_stage import curated_stage
         # Even with a workflow step, a side-state terminal_reason wins.
@@ -146,6 +170,26 @@ class TestCuratedStageBug:
         assert curated_stage("Step 3: blocked", "blocked", "bug") == "Blocked"
         assert curated_stage(None, "needs-input", "bug") == "Needs-input"
         assert curated_stage(None, "cloud-queue-exhausted", "bug") == "Deferred"
+
+    def test_global_all_remaining_deferred_maps_to_deferred(self):
+        # P3 — the unscoped bug deferral terminal (the reproduced symptom path)
+        # must roll up to Deferred, not Pending.
+        from pipeline_visualizer.curated_stage import curated_stage
+        assert curated_stage(None, "all-remaining-deferred", "bug") == "Deferred"
+
+    def test_scoped_deferred_terminals_map_to_deferred(self):
+        # P3 — the scoped per-bug deferred terminals from Part 1 (bug side;
+        # operator-deferred / cloud / device axes) roll up to Deferred.
+        from pipeline_visualizer.curated_stage import curated_stage
+        assert curated_stage(None, "operator-deferred", "bug") == "Deferred"
+        assert curated_stage(None, "cloud-queue-exhausted-scoped", "bug") == "Deferred"
+        assert curated_stage(None, "device-queue-exhausted-scoped", "bug") == "Deferred"
+
+    def test_scoped_park_terminals_map_to_their_side_state(self):
+        # P3 — a parked scoped bug match sits in blocked/needs-input.
+        from pipeline_visualizer.curated_stage import curated_stage
+        assert curated_stage(None, "blocked-scoped", "bug") == "Blocked"
+        assert curated_stage(None, "needs-input-scoped", "bug") == "Needs-input"
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,24 @@ _SIDE_STATE_BY_TERMINAL = {
     "needs-spec-input": "Needs-input",
     "cloud-queue-exhausted": "Deferred",
     "device-queue-exhausted": "Deferred",
+    # Deferred rollup (bug-state-scoped-query-loses-deferred-bug-identity P3).
+    # The global unscoped bug deferral terminal — fixes the rollup even on the
+    # UNSCOPED display path that the original symptom exercised.
+    "all-remaining-deferred": "Deferred",
+    # Host-capability axis (the host-axis mirror of device-queue-exhausted).
+    "host-capability-saturated": "Deferred",
+    # Scoped per-bug / per-feature deferred terminals introduced in Parts 1 & 2
+    # (literals matched VERBATIM to the TR_* constants in bug-state.py /
+    # lazy-state.py). operator-deferred is bug-side only; cloud/device scoped
+    # are shared; host-capability scoped is feature-side only.
+    "operator-deferred": "Deferred",
+    "cloud-queue-exhausted-scoped": "Deferred",
+    "device-queue-exhausted-scoped": "Deferred",
+    "host-capability-saturated-scoped": "Deferred",
+    # Scoped PARK terminals — a parked match is in a blocked / needs-input
+    # side-state, NOT a deferred one.
+    "blocked-scoped": "Blocked",
+    "needs-input-scoped": "Needs-input",
 }
 
 # --- Workflow rollup: literal current_step → curated node. ---

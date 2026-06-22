@@ -120,10 +120,27 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 **Scope:** Add the missing `_SIDE_STATE_BY_TERMINAL` entries so every deferred terminal_reason rolls up to the `Deferred` curated node. Today only `cloud-queue-exhausted` / `device-queue-exhausted` map to `Deferred`; the global `all-remaining-deferred` and the new scoped per-bug/per-feature deferred terminals from Phases 1–2 are missing, so even with a scoped id the curated stage falls through to `Pending` (Rule-3 default) instead of `Deferred`.
 
 **Deliverables:**
-- [ ] Add `"all-remaining-deferred": "Deferred"` to `_SIDE_STATE_BY_TERMINAL` (the global unscoped bug terminal — fixes the rollup even for the unscoped display path).
-- [ ] Add each NEW scoped deferred terminal_reason literal introduced in Phases 1 & 2 → `"Deferred"` (verbatim string match to the constants chosen there).
-- [ ] Confirm the host-capability-saturated / park scoped terminals (if any new literals) also map to `Deferred` (or the correct side-state — a parked-blocked scoped terminal may roll to `Blocked`/`Needs-input` rather than `Deferred`; settle per the side-state the bug is actually in).
-- [ ] Tests: extend the curated-stage unit tests asserting each new terminal_reason → its correct curated node.
+- [x] Add `"all-remaining-deferred": "Deferred"` to `_SIDE_STATE_BY_TERMINAL` (the global unscoped bug terminal — fixes the rollup even for the unscoped display path).
+- [x] Add each NEW scoped deferred terminal_reason literal introduced in Phases 1 & 2 → `"Deferred"` (verbatim string match to the constants chosen there).
+- [x] Confirm the host-capability-saturated / park scoped terminals (if any new literals) also map to `Deferred` (or the correct side-state — a parked-blocked scoped terminal may roll to `Blocked`/`Needs-input` rather than `Deferred`; settle per the side-state the bug is actually in).
+- [x] Tests: extend the curated-stage unit tests asserting each new terminal_reason → its correct curated node.
+
+#### Implementation Notes (Phase 3 — landed 2026-06-22, Part 3)
+
+**Status:** Implemented (validation runtime: not-required — pure-function display mapping; curated-stage unit tests are the gate).
+**Review verdict:** PASS (1 file `curated_stage.py` — `_SIDE_STATE_BY_TERMINAL` additions only; no behavior change to the workflow tables; the `unknown` fallback is a `lazy-queue-doc.py` concern untouched here).
+
+**`_SIDE_STATE_BY_TERMINAL` additions (VERBATIM from Parts 1 & 2):**
+- `all-remaining-deferred` → `Deferred` (global unscoped bug terminal — fixes the unscoped display path the original symptom exercised)
+- `host-capability-saturated` → `Deferred` (host-axis mirror of `device-queue-exhausted`)
+- `operator-deferred` → `Deferred` (bug-side scoped, Part 1)
+- `cloud-queue-exhausted-scoped` → `Deferred` (shared, Parts 1 & 2)
+- `device-queue-exhausted-scoped` → `Deferred` (shared, Parts 1 & 2)
+- `host-capability-saturated-scoped` → `Deferred` (feature-side only, Part 2)
+- `blocked-scoped` → `Blocked` (park scoped — NOT Deferred)
+- `needs-input-scoped` → `Needs-input` (park scoped — NOT Deferred)
+
+**Tests:** `test_pipeline_visualizer.py` — added `test_global_all_remaining_deferred_maps_to_deferred`, `test_scoped_deferred_terminals_map_to_deferred`, `test_scoped_park_terminals_map_to_their_side_state` to BOTH `TestCuratedStageFeature` and `TestCuratedStageBug`. Authored RED (current code returned `Pending` for the unmapped terminals), now GREEN.
 
 **Minimum Verifiable Behavior:** A unit-test call `curated_stage(...)` (or the module's mapping) returns `"Deferred"` for `terminal_reason="all-remaining-deferred"` and for each new scoped deferred terminal — today `all-remaining-deferred` is unmapped and rolls to `Pending`.
 
@@ -146,9 +163,23 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 **Scope:** Add the SPEC-required regression guard: a repo whose `docs/bugs/` contains a `DEFERRED.md` bug renders that bug as `[<bug-id>](docs/bugs/<bug-id>/SPEC.md)` with state `⏸ Deferred` and a WORKING SPEC link — NOT `[unknown](docs/bugs/unknown/SPEC.md)` / `Pending`. This closes the loop across all three layers (bug-state scoped identity → curated Deferred rollup → generator render) and asserts the downstream (`probe.py` + `lazy-queue-doc.py`) — which needs NO change — now renders correctly given the fixed upstream data.
 
 **Deliverables:**
-- [ ] Add a `test_lazy_queue_doc.py` (or probe-test) fixture: a temp repo with one `DEFERRED.md` bug, generate via the `probe_state` → `curated_stage` → `_render_table` path, and assert the rendered output contains the real `docs/bugs/<bug-id>/SPEC.md` link + the `⏸` Deferred glyph and contains NO `docs/bugs/unknown/SPEC.md` substring.
-- [ ] Confirm the `_item_id` / `_rel_spec_path` `"unknown"` fallback is RETAINED (defensive last resort) but is no longer reached for the deferred case — assert via the absence of `unknown` in the rendered output for the fixture.
-- [ ] (If feasible in-fixture) assert the feature-side scoped deferral renders its feature id likewise, exercising Phase 2's mirror through the generator.
+- [x] Add a `test_lazy_queue_doc.py` (or probe-test) fixture: a temp repo with one `DEFERRED.md` bug, generate via the `probe_state` → `curated_stage` → `_render_table` path, and assert the rendered output contains the real `docs/bugs/<bug-id>/SPEC.md` link + the `⏸` Deferred glyph and contains NO `docs/bugs/unknown/SPEC.md` substring.
+- [x] Confirm the `_item_id` / `_rel_spec_path` `"unknown"` fallback is RETAINED (defensive last resort) but is no longer reached for the deferred case — assert via the absence of `unknown` in the rendered output for the fixture.
+- [x] (If feasible in-fixture) assert the feature-side scoped deferral renders its feature id likewise, exercising Phase 2's mirror through the generator.
+
+#### Implementation Notes (Phase 4 — landed 2026-06-22, Part 3)
+
+**Status:** Implemented (validation runtime: not-required — generator/probe unit test over a hermetic temp repo; no production change to `probe.py` / `lazy-queue-doc.py`).
+**Review verdict:** PASS (tests-only — `test_lazy_queue_doc.py` new `TestDeferredBugEndToEndRegression` class; the downstream renderers are byte-unchanged, confirming the SPEC's "already-correct given good upstream data" claim).
+
+**Fixture + assertions (`TestDeferredBugEndToEndRegression` in `test_lazy_queue_doc.py`):**
+- `_seed_deferred_bug_repo` builds a hermetic temp repo: `docs/bugs/queue.json` + one bug dir with `SPEC.md` (Open/P1) + a `DEFERRED.md` (`kind: deferred`) sentinel.
+- `test_deferred_bug_renders_real_spec_link_not_unknown` — drives the real `probe_state(repo_root)` → `render_doc` path; asserts ZERO `docs/bugs/unknown/SPEC.md` (and no `unknown` substring at all) + the real `[<bug-id>](docs/bugs/<bug-id>/SPEC.md)` link.
+- `test_deferred_bug_curated_stage_is_deferred_glyph` — asserts the probed bug carries its own id + `terminal_reason == "operator-deferred"` (Part 1 scoped identity) rolling up to `curated_stage == "Deferred"` (Phase 3), and the `⏸` glyph appears in the rendered doc.
+- `test_unknown_fallback_retained_in_source_but_not_reached` — asserts `or "unknown"` is still present in `lazy-queue-doc.py` source (defensive fallback RETAINED, per the plan's no-delete instruction).
+- `test_feature_side_deferred_renders_feature_id` — opportunistic Part 2 mirror: a `host-capability-saturated-scoped` feature renders its own `docs/features/<id>/SPEC.md`, never `docs/features/unknown/SPEC.md`.
+
+**Gates:** `test_pipeline_visualizer.py` + `test_lazy_queue_doc.py` + `test_lazy_core.py` = 878 passed; `bug-state.py --test` / `lazy-state.py --test` green; `lazy_parity_audit.py --repo-root .` exit 0. B.4.5 MCP integration SKIP — `MCP runtime: not-required`.
 
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-queue-doc.py --repo-root <DEFERRED.md-fixture> --stdout` output contains `docs/bugs/<bug-id>/SPEC.md` and the `⏸` Deferred glyph, and contains zero occurrences of `docs/bugs/unknown/SPEC.md`. (Today it renders the `unknown` broken link.) Verified by the new generator/probe test fixture.
 
