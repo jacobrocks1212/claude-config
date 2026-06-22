@@ -6638,6 +6638,17 @@ def ensure_runtime(
     """Ensure the dev runtime + MCP server are up, CURRENT, **and verifiably
     owned**; return the M4 liveness/recovery verdict.
 
+    REVERSE-REFERENCE (ensure-runtime-recovery-starves-cold-compile): the
+    long-build-and-runtime-ownership LD3 bounded-recovery contract below was
+    RE-SCOPED by ``docs/bugs/ensure-runtime-recovery-starves-cold-compile``. The
+    ≤5×backoff ``_recover_runtime`` loop is now reserved for a genuinely *dead*
+    runtime (both ports down — a real crash); a runtime still *compiling* (the
+    cold Rust build: Vite :1420 up, backend :3333 not yet serving) is instead
+    PATIENTLY WAITED on via ``_await_compile_serving`` (never kill-restarted),
+    because restart-and-immediately-probe starved a multi-minute cold compile
+    into 5 wasted kill-restarts → a false BLOCKED. See ``_ensure_runtime_m4`` /
+    ``_classify_compile_state`` / ``_await_compile_serving``.
+
     long-build-and-runtime-ownership Phase 2 (LD2/LD3) reworks this IN PLACE
     into the idempotent M4 gatekeeper. The verdict is a **superset** of the
     legacy ``{status, mcp_tools_present, health_code}`` shape::

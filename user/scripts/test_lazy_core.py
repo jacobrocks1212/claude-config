@@ -19596,13 +19596,16 @@ def test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states():
             read_lock=lambda: {**owned, "controller_session_id": "foreign"},
             kernel_start_time_fn=lambda p, **k: 999.0, sleep=lambda s: None,
         )
-        # BLOCKED: owned DEAD that never recovers.
+        # BLOCKED: owned DEAD that never recovers (genuinely dead: Vite also down,
+        # so the cold-compile discriminator classifies `dead` deterministically —
+        # the default config now carries the :1420 key, so an explicit down probe
+        # keeps this hermetic).
         blocked = _ensure_runtime_via_marker(
             td, sid, config=_M4_CONFIG,
             probe=lambda: (0, None),
             restart=lambda: True, stale_check=lambda: False,
             read_lock=lambda: owned, kernel_start_time_fn=lambda p, **k: 100.0,
-            sleep=lambda s: None,
+            sleep=lambda s: None, frontend_probe=lambda: False,
         )
         for verdict in (ready, hijacked, blocked):
             assert _M4_KEYS.issubset(verdict.keys()), verdict
@@ -19611,6 +19614,41 @@ def test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states():
         assert ready["state"] == "READY", ready
         assert hijacked["state"] == "HIJACKED", hijacked
         assert blocked["state"] == "BLOCKED", blocked
+
+
+def test_ensure_runtime_handler_wiring_threads_frontend_probe_for_compiling():
+    """ensure-runtime-recovery-starves-cold-compile Phase 3 (WU-5): the handler's
+    marker→ensure_runtime delegate threads the frontend signal through to the M4
+    path so a `compiling` runtime (backend down, Vite up) reaches READY via the
+    patient wait — WITHOUT the handler doing any manual re-classification. Asserts
+    the production discriminator is reachable through the same thin pass-through
+    wiring the handler uses (config-driven default binding + no new handler arg)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sid = "live-run-session"
+        owned = {**_owned_lock(start_time=100.0), "controller_session_id": sid}
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            calls["probe"] += 1
+            # Backend answers 200 from the 3rd probe (a cold compile finishing).
+            return (200, {"tools": ["render_chart"]}) if calls["probe"] >= 3 else (0, None)
+
+        compiling = _ensure_runtime_via_marker(
+            td, sid, config=_M4_CONFIG,
+            probe=probe,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: owned, kernel_start_time_fn=lambda p, **k: 100.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: True,  # Vite up → compiling, the handler waits
+        )
+        assert compiling["state"] == "READY", compiling
+        assert calls["restart"] == 0, (
+            f"a compiling runtime reaching the handler must be waited, not restarted: {calls}"
+        )
+        assert _M4_KEYS.issubset(compiling.keys()), compiling
+        json.dumps(compiling)  # handler json.dumps it
 
 
 def test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset():
@@ -20054,6 +20092,8 @@ _TESTS = _TESTS + [
     # long-build-and-runtime-ownership Phase 2 / WU-3: --ensure-runtime CLI surface.
     ("test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states",
      test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states),
+    ("test_ensure_runtime_handler_wiring_threads_frontend_probe_for_compiling",
+     test_ensure_runtime_handler_wiring_threads_frontend_probe_for_compiling),
     ("test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset",
      test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset),
     ("test_ensure_runtime_cli_handler_emits_m4_json_subprocess",

@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: ensure-runtime-recovery-starves-cold-compile
-status: In-progress
+status: Complete
 created: 2026-06-21
 complexity: complex
 phases: [1, 2, 3]
@@ -88,8 +88,8 @@ Upstream plans and PHASES.md files this plan was authored against.
 - [x] WU-2 — Thread `frontend_probe` injection through `ensure_runtime` + hermetic Phase-1 tests (Phase 1)
 - [x] WU-3 — `_await_compile_serving` patient wait + `_cold_compile_timeout_blocker` (Phase 2)
 - [x] WU-4 — Rewire `_ensure_runtime_m4` recovery entry points on `_classify_compile_state` + two-port fixtures (Phase 2)
-- [ ] WU-5 — `lazy-state.py --ensure-runtime` handler frontend-probe binding + handler-wiring test (Phase 3)
-- [ ] WU-6 — `lazy-batch` Step 1d.0 prose + reverse-reference + parity/baseline confirmation (Phase 3)
+- [x] WU-5 — `lazy-state.py --ensure-runtime` handler frontend-probe binding + handler-wiring test (Phase 3)
+- [x] WU-6 — `lazy-batch` Step 1d.0 prose + reverse-reference + parity/baseline confirmation (Phase 3)
 
 ## Execution Schedule
 

@@ -7987,6 +7987,16 @@ def main() -> int:
                 live_session_id = _marker.get("session_id")
         except Exception:  # noqa: BLE001 — fail-open to legacy mode
             live_session_id = None
+        # ensure-runtime-recovery-starves-cold-compile (Phase 3): the production
+        # two-port cold-compile discriminator needs NO new handler argument — the
+        # default config (`_ENSURE_RUNTIME_DEFAULT_CONFIG`) carries the `:1420`
+        # frontend keys, so `ensure_runtime` auto-binds the real
+        # `_default_frontend_probe` (Phase 1 default-binding). The handler stays a
+        # thin marker-read + delegate; the frontend probe is wired entirely inside
+        # `lazy_core.ensure_runtime` from the config — no manual classification or
+        # probe construction here. A repo without a :1420 frontend overrides the
+        # key off in its own config (then the discriminator degrades to the
+        # :3333-only DEAD path, byte-identical to before this fix).
         result = lazy_core.ensure_runtime(
             Path(args.repo_root), live_session_id=live_session_id
         )
