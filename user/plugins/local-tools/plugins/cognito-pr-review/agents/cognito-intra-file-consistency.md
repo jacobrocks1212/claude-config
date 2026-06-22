@@ -134,6 +134,7 @@ Schema rules specific to this agent:
 - `consistent` findings are dropped downstream and should not exceed one per changed block — record the trail once and move on.
 - Maximum 5 duplication findings (Axis i) per cluster. Rank by blast radius and confidence; report the top 5.
 - Do not report duplication findings below confidence 80.
+- For findings that clear the ≥80 threshold: emit `confidence: "CONFIRMED"` when the agent has actively verified the finding (a concrete second occurrence found in the file, a caller/blast-radius traced to ground truth); emit `"UNVERIFIED"` when hedged or unproven ("may", "could", "potentially", or cleared the bar on weaker grounds). The engine owns the label-to-score mapping — emit only the string.
 - Consistency findings (Axis ii) are always severity `nit`; duplication findings follow the scaffold's verdict-to-severity mapping (`reuse`/`refactor` → `important`).
 
 ---

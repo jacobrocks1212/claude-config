@@ -116,7 +116,7 @@ If no existing system covers a capability, record every symbol, skill, Grep quer
 
 ## Code Consistency Rules (sub-capability — preserved)
 
-After reuse analysis, perform a consistency pass against the baselines identified in Step 2. These rules apply to **all** files in the cluster; flag divergences with severity `important` when confidence ≥ 80.
+After reuse analysis, perform a consistency pass against the baselines identified in Step 2. These rules apply to **all** files in the cluster; flag divergences with severity `important` when confidence ≥ 80. For findings that clear the ≥80 threshold: emit `confidence: "CONFIRMED"` when actively verified (a concrete duplicate traced to ground truth, a caller/blast-radius confirmed); emit `"UNVERIFIED"` when hedged or unproven ("may", "could", "potentially"). The engine owns the label-to-score mapping — emit only the string.
 
 ### Consistent Field Naming
 
@@ -171,6 +171,7 @@ Write exactly one file to `{cacheDir}/agent-output/reuse-{cluster}.json`, confor
 - Test file consistency is HIGH PRIORITY — test patterns establish team conventions. When a new implementation file is added with its test file, compare both against the baseline's implementation and test file.
 - Maximum 5 reuse/duplicate findings per cluster to prevent token bloat. Rank by blast radius and confidence, report the top 5.
 - Do not report findings below confidence 80.
+- For findings that clear the ≥80 threshold: emit `confidence: "CONFIRMED"` when actively verified (a concrete second occurrence found, a caller/blast-radius traced to ground truth); emit `"UNVERIFIED"` when hedged or unproven ("may", "could", "potentially", or cleared the bar on weaker grounds). The engine owns the label-to-score mapping — emit only the string.
 
 ---
 

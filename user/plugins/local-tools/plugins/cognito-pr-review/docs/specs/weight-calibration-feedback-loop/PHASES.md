@@ -78,12 +78,14 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 
 **Scope:** The four weighting-relevant agents emit a `confidence` label (`CONFIRMED`/`UNVERIFIED`) on every finding, feeding the gate Phase 1 built. Simultaneously fix investigation grounding to diff against the PR head instead of `main` (SPEC friction #7 / symptom #6). Both investigation changes co-located here to keep a single writer on `investigation.md`.
 
+**Status:** Complete (2026-06-22).
+
 **Deliverables:**
-- [ ] `agents/sweep.md`: emit `confidence: CONFIRMED|UNVERIFIED` per finding; define the rubric (hedge-phrase / "may produce…" findings → `UNVERIFIED`).
-- [ ] `agents/investigation.md`: emit `confidence`; Solver-Verifier-confirmed hypotheses → `CONFIRMED`, otherwise `UNVERIFIED`.
-- [ ] `agents/cognito-intra-file-consistency.md` + `agents/cognito-consistency-checker.md`: emit `confidence`; fold the existing prose "confidence 80" gate into the emitted label.
-- [ ] `agents/investigation.md`: ground analysis against the **PR head** (the diff under review), not local `main` (`:53-62`). Document the base ref it must use.
-- [ ] Confirm the Phase-1 engine maps the emitted labels correctly end-to-end (no engine change expected; verify).
+- [x] `agents/sweep.md`: emit `confidence: CONFIRMED|UNVERIFIED` per finding; define the rubric (hedge-phrase / "may produce…" findings → `UNVERIFIED`).
+- [x] `agents/investigation.md`: emit `confidence`; Solver-Verifier-confirmed hypotheses → `CONFIRMED`, otherwise `UNVERIFIED`.
+- [x] `agents/cognito-intra-file-consistency.md` + `agents/cognito-consistency-checker.md`: emit `confidence`; fold the existing prose "confidence 80" gate into the emitted label.
+- [x] `agents/investigation.md`: ground analysis against the **PR head** (the diff under review), not local `main` (`:53-62`). Document the base ref it must use.
+- [x] Confirm the Phase-1 engine maps the emitted labels correctly end-to-end (no engine change expected; verify).
 
 **Minimum Verifiable Behavior:** A review run (or a captured `combined-findings.json` from a real run) shows each of the four sources carrying a `confidence` field, and an `UNVERIFIED` finding receives a reduced `effective_weight` in `processed-findings.json` per Phase 1's gate.
 
@@ -105,6 +107,19 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 **Integration Notes for Next Phase:**
 - Phase 3 also edits `sweep.md` — it runs *after* this phase to avoid two concurrent writers on that file.
 - Phase 5's `CONFIRMED/UNVERIFIED` pre-disposition label reads the same field emitted here; keep the label strings identical so buddy can surface them verbatim.
+
+#### Implementation Notes
+
+**2026-06-22 — Batch 1 (WU-2a / WU-2b / WU-2c): all four weighting-relevant agents now emit `confidence`; investigation re-grounded against the PR head.**
+- **Schema position is uniform across all four agents:** `"confidence": "CONFIRMED" | "UNVERIFIED"` sits **after the `evidence`/`reference` block and before `suggestion`** in each finding object. Label strings are byte-identical everywhere (`CONFIRMED`/`UNVERIFIED`) so the engine maps them and Phase 5/buddy can surface them verbatim.
+- **WU-2a (`agents/sweep.md`):** added the schema field (`:2121`), a field-doc line (`:2145`), and a new `## Confidence Rubric` section (`:2151`). Sweep-specific rule: hedge-phrase rules ("may produce…") → `UNVERIFIED`; rule whose concrete trigger pattern is literally present in the diff → `CONFIRMED`. Embedded `**Weight:**` literals deliberately untouched (count unchanged at 111) — those are WU-3a's job.
+- **WU-2b (`agents/investigation.md`):** (1) Confidence wired into the Solver-Verifier protocol via a new "Confidence Label" subsection right after the existing "Only include if Stage 2 succeeds" gate — Stage-2-success-with-ground-truth → `CONFIRMED`, weaker grounds → `UNVERIFIED`; schema field (`:204`) + required-field prose (`:231`). (2) **PR-head grounding rewrite:** the "Codebase Exploration" section now declares the cached PR files / diff under review as the *authority* on the PR's code state (liveness, dead-code, branch reachability), with `main` demoted to comparison-only; includes the `priority:true` live-branch example (the 16683 mislabel). The MCP-tools caveat (`:88`) reframed consistently. The old "local codebase is on 'main', NOT the PR branch" framing is gone.
+- **WU-2c (shared scaffold + 2 consistency agents):** the schema field was added to the shared scaffold `user/skills/_components/pr-review-reuse-agent-scaffold.md` (`:108`) — **propagation confirmed: consumed by exactly the two consistency agents** (`cognito-consistency-checker.md`, `cognito-intra-file-consistency.md`); the other grep hits are a CLAUDE.md doc reference and a plan file, not agents. Both agents fold their existing prose "confidence ≥ 80" *report* gate into the emitted *label* (threshold preserved; the label expresses how strongly the finding cleared the bar). The field is additive/optional from the engine's view (`resolveConfidence` defaults absent→`1.0`), so it is non-breaking for any future consumer.
+- **Engine end-to-end (deliverable 5, verify-only):** confirmed `resolveConfidence` (`post-process.ts:222-229`) maps `CONFIRMED→1.0`, `UNVERIFIED→0.5`, absent→`1.0`, and the field flows through the `...f` spread into `processed_findings`. No engine change required (Phase 1 already shipped it).
+- **Quality gates:** `npx tsc --noEmit` clean; `npx tsx post-process.test.ts` 9/9 pass (no regression — agent prompt changes don't touch the engine). Structural greps verified: `confidence` schema field present in all four agents + scaffold; sweep weight-literal count unchanged (111).
+- **Review verdict:** PASS (ground-truth verified: yes — orchestrator independently re-ran `git diff --stat`/`wc -l`/`grep` on all five files; all matched the subagent reports).
+- **MCP integration test:** N/A — no MCP-reachable surface (`MCP runtime: not-required`).
+- Files modified: `agents/sweep.md`, `agents/investigation.md`, `agents/cognito-consistency-checker.md`, `agents/cognito-intra-file-consistency.md`, `user/skills/_components/pr-review-reuse-agent-scaffold.md`.
 
 ---
 

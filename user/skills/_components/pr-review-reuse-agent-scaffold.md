@@ -105,6 +105,7 @@ The file MUST conform to this schema:
         "snippet": "<relevant code excerpt>",
         "reference": "<file:line or skill name — local codebase or cache, note which>"
       },
+      "confidence": "CONFIRMED" | "UNVERIFIED",
       "suggestion": "<reuse / extend / refactor / wrap X — or empty string for acceptable-new>",
       "blast_radius": "<get_callers summary listing callers that would be affected, for refactor verdicts; null for all others>",
       "negative_search_trail": "<comma-separated list of skills, docs, and symbols searched that came back empty — required and non-empty for acceptable-new; null for all other verdicts>",
@@ -124,3 +125,4 @@ The file MUST conform to this schema:
 - `severity` for this agent's findings is always `"important"` — downstream post-processing remaps by verdict (`refactor`/`reuse` → `important`, `extend`/`wrap` → `nit`, `acceptable-new` → dropped).
 - `line` is the line in the PR file where the duplicate or reusable logic lives. Use 0 if the finding applies to the whole file.
 - `candidate` is an empty string (not null) for `acceptable-new` verdicts.
+- `confidence` is `"CONFIRMED"` when the agent has actively verified the finding (a concrete second occurrence found, a caller/blast-radius traced to ground truth); `"UNVERIFIED"` when hedged or unproven ("may", "could", "potentially", or unconfirmed against evidence).

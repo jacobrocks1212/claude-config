@@ -48,18 +48,20 @@ Cache files for this PR:
 
 ## Codebase Exploration
 
-You may read ANY file in the local repository for exploration purposes. However:
+You may read ANY file in the local repository for exploration purposes. However, understand the authority hierarchy:
 
-**The local codebase is on the 'main' branch, NOT the PR branch.**
+**The PR head — the cached PR file versions and the diff under review — is the authority on the current state of the PR's code.**
 
-Use local codebase reads for:
+Use the cached PR files (under `{cacheDir}/files/` and `{cacheDir}/diffs/`) as the source of truth when judging whether a branch is reachable, whether code is live or dead, or what the PR's logic actually does. Example: if the diff adds `priority: true` to a branch condition, that branch is LIVE in the PR's code. Do not call it dead because it does not exist on `main`.
+
+**The local codebase (`main`) is comparison-only**, not an authority on what the PR's code does. Use it for:
 - Finding existing patterns to compare against
 - Checking how similar problems are solved elsewhere
-- Validating that referenced APIs/methods exist and work as expected
+- Validating that referenced APIs/methods exist and work as expected upstream
 - Understanding the broader context of the code being changed
 - Assessing blast radius by checking who calls/uses the changed code
 
-Do NOT use local files as the "current state" of PR files — use the cached versions for that.
+Do NOT use local `main` files to determine the current state of PR files — use the cached PR versions for that.
 
 Use Grep/Glob freely against the local codebase to trace callers, find similar implementations, and verify that alternatives you might suggest actually exist.
 
@@ -83,7 +85,7 @@ When tree-sitter MCP tools are available, prefer them over raw Read/Grep for str
 
 **Fallback:** If MCP tools are unavailable, return errors, or produce incomplete results, fall back to Read/Grep/Glob — the same approach used before these tools existed. MCP tools are an optimization, not a requirement.
 
-**Same caveat as Codebase Exploration:** These tools query the local codebase on the main branch, not the PR branch. Use them for pattern comparison, caller tracing, and blast radius assessment — not for reading the current state of PR files.
+**Same caveat as Codebase Exploration:** These tools query the local codebase on the `main` branch, so their output is comparison-only — not an authority on the PR's code state. Use them for pattern comparison, caller tracing, and blast radius assessment against the existing codebase. For the current state of PR files, always use the cached PR versions.
 
 ---
 
@@ -118,6 +120,15 @@ Every reported finding must include:
 - How it proves the issue
 
 **Only include the finding if Stage 2 succeeds.** Discard hypotheses that cannot be verified.
+
+### Confidence Label
+
+Every included finding must carry a `confidence` label — emit the string exactly as shown:
+
+- `"CONFIRMED"` — Stage 2 succeeded with concrete ground-truth evidence: you traced the execution path to a specific trigger, found a second occurrence, or traced callers/blast-radius to a verified result.
+- `"UNVERIFIED"` — Stage 2 passed on weaker grounds: you could not fully confirm the finding, or the language is hedged ("may produce…", "could…", "potentially…"). Include only if the risk is real enough to warrant surfacing despite uncertainty.
+
+The engine owns the label→score mapping. Emit only the string — never a number.
 
 Do NOT report findings based on general best practices alone. Every finding must cite specific code evidence from this PR or codebase.
 
@@ -190,6 +201,7 @@ Emit a single JSON object conforming exactly to this schema. Include the `"group
         "snippet": "var entry = await ctx.GetAsync<FormEntry>(id); // line 42\nentry.UpdateIndex(); // line 43 — NullReferenceException if entry deleted",
         "reference": "Cognito/Services/EntryIndexService.cs:42-43 (cached), confirmed GetAsync can return null via Cognito.Core/Storage/IStorageContext.cs:28 (local)"
       },
+      "confidence": "CONFIRMED",
       "suggestion": "Add a null check after GetAsync and return early or log a warning if the entry was deleted.",
       "escalation_candidate": false,
       "specialist_domain": null
@@ -216,6 +228,7 @@ Emit a single JSON object conforming exactly to this schema. Include the `"group
 - `findings` may be an empty array if the investigation surface is clean
 - `escalations` may be an empty array if no specialist escalations are warranted
 - `specialist_domain` is `null` unless `escalation_candidate` is `true`
+- `confidence` is required on every finding: `"CONFIRMED"` or `"UNVERIFIED"` (see Solver-Verifier Protocol above for the rubric — emit only the string, never a number)
 - Every `evidence.reference` must cite file path + line range and indicate whether it came from the PR cache or the local codebase
 
 ---

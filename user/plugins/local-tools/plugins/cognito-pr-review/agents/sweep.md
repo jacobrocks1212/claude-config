@@ -2118,6 +2118,7 @@ Emit a single JSON object with two arrays: `findings` and `escalations`. Include
         "snippet": "var results = storageContext.Query<FormEntry>().Where(e => e.FormId == formId);",
         "reference": "Cognito/Services/EntryService.cs:42 (cached)"
       },
+      "confidence": "CONFIRMED" | "UNVERIFIED",
       "suggestion": "Replace with GetRange<FormEntry>(prefix) or GetAll<FormEntry>() depending on the query scope.",
       "escalation_candidate": false,
       "specialist_domain": null
@@ -2141,8 +2142,18 @@ Key fields unique to the sweep agent (required for post-processing):
 - `rule_category` — the rule's category (used for multiplier lookup)
 - `effective_weight` — the computed weight after applying category multiplier
 - `tier` — "important" or "skim" (the file's triage tier)
+- `confidence` — `CONFIRMED` when the rule's trigger is literally present in the diff and the finding is verified; `UNVERIFIED` when the finding is hedged ("may produce…", "could…", "potentially…") or could not be confirmed against evidence
 
 Emit an empty array `[]` for either key if there are no findings or escalations in that category.
+
+## Confidence Rubric
+
+Every finding must include a `confidence` field. Emit ONLY the string label — never a number. The engine maps labels to scores.
+
+- **`CONFIRMED`** — a hypothesis you have actively verified: the rule's trigger pattern is literally present in the diff, a concrete second occurrence was found, or a caller/blast-radius was traced to ground truth.
+- **`UNVERIFIED`** — hedged or unproven: the finding uses language like "may produce…", "could…", or "potentially…", or you could not confirm the pattern against evidence.
+
+Sweep-specific guidance: findings that fire on hedge-phrase rules ("may produce…") emit `UNVERIFIED`. Findings where the rule's concrete pattern is literally present in the diff emit `CONFIRMED`.
 
 ## Review Process
 
