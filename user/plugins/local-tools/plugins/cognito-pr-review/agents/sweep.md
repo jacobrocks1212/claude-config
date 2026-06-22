@@ -43,21 +43,23 @@ The tier of the file being reviewed determines the confidence threshold:
 - **Skim tier:** Surface findings where effective_weight >= 0.7 (elevated threshold — noise reduction)
 
 When evaluating a potential finding:
-1. Identify which rule it matches
-2. Look up the rule's weight from the embedded rules below (default 0.7 if not found)
-3. Apply the category multiplier for that rule's category
-4. Compare effective_weight against the tier threshold
-5. Only report the finding if it meets the threshold
+1. Identify which rule it matches (rule_id and rule_category)
+2. Read `knowledge/weights.yaml` (sibling to this file's parent directory — path: `<repo-root>/knowledge/weights.yaml`) to resolve the rule's weight at runtime. `knowledge/weights.yaml` is the **single source of truth** for all weights — the sweep agent and the post-processor both read it directly.
+   - Look up `rule_weights[<rule_id>].weight` (default `0.7` if the rule_id is absent)
+   - Look up `category_multipliers[<mapped_category>]` using the category mapping below (default `1.0` if the category is absent)
+   - Compute: `effective_weight = rule_weights[rule_id].weight × category_multipliers[mapped_category]`
+3. Compare effective_weight against the tier threshold
+4. Only report the finding if it meets the threshold
 
-Category multipliers (from weights.yaml):
-- architecture: 1.0
-- frontend: 1.0
-- api_design: 1.0
-- consistency: 0.8
-- testing: 0.9
-- security: 1.2
-- performance: 0.9
-- template_binding: 0.7
+Category name mapping (rule_category → weights.yaml key):
+- `csharp-architecture` → `architecture`
+- `api-design` → `api_design`
+- `frontend-vue` → `frontend`
+- `code-consistency` → `consistency`
+- `testing` → `testing`
+- `security` → `security`
+- `performance` → `performance`
+- `template-binding` → `template_binding`
 
 ## Embedded Rules
 
@@ -66,7 +68,7 @@ Category multipliers (from weights.yaml):
 Category: `csharp-architecture` | Multiplier: 1.0
 
 #### Prefer Abstract Over Lambda (`prefer-abstract-over-lambda`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Use abstract classes with sealed private implementations rather than lambda-based patterns for strategy/provider patterns.
 
@@ -90,7 +92,7 @@ public abstract class StripeEventContext
 ```
 
 #### No DI Default Values (`no-di-default-values`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Never use default values for service constructor parameters. Register all dependencies in the DI container instead.
 
@@ -109,7 +111,7 @@ public CognitoPayService(
 ```
 
 #### No Unused DI Injection (`no-unused-di-injection`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Don't inject dependencies you don't use. Remove constructor parameters and backing fields for services no method in the class actually calls. Separately, when a controller needs IStorageContext, inject IOrganizationContext through the constructor and read orgContext.StorageContext — don't inject an unrelated service (e.g. IFormsService) solely to dereference IOrganizationContext off it via a cast.
 
@@ -153,7 +155,7 @@ public class MyController : ServiceController
 ```
 
 #### No StorageContext.Query (`no-storage-context-query`)
-**Severity:** critical | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** critical
 
 StorageContext.Query<T>() is obsolete. Use Get<T>(id) for ID lookups, GetRange<T>(prefix) for prefix-based scans, or GetAll<T>() for full scans.
 
@@ -173,7 +175,7 @@ await foreach (var form in StorageContext.GetAll<Form>().ConfigureAwait(false))
 ```
 
 #### Colocate Interfaces (`colocate-interfaces`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 Place interfaces in the same file as their primary implementation when there's a 1:1 relationship.
 
@@ -198,12 +200,12 @@ public class CognitoPayService : ICognitoPayService { }
 ```
 
 #### Specific Class Names (`specific-class-names`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 Class names should indicate their purpose and scope. Avoid vague names like ProviderContext, ServiceHelper, DataManager, Utility. Prefer names like StripeEventContext, PaymentProviderContext, EntryIndexBuildMetrics.
 
 #### Model Namespace Entities Only (`model-namespace-entities-only`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 The .Model namespace should only contain actual entities, not DTOs, filter criteria, or other classes.
 
@@ -224,7 +226,7 @@ namespace Cognito.Core.CognitoPay
 ```
 
 #### Sync Over Async Conventions (`sync-over-async-conventions`)
-**Severity:** critical | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** critical
 
 Prefer async/await. Sync-over-async (.Result) is allowed when necessary, but every async operation in the call chain MUST use ConfigureAwait(false). Task.Run should NOT be used.
 
@@ -252,7 +254,7 @@ var result = GetDataAsync().Result;
 ```
 
 #### Isolate Non-Critical Operations (`isolate-non-critical-operations`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 When adding non-critical operations (logging, index updates, telemetry, customer resolution, etc.) inside a shared try/catch block, wrap them in their own try/catch if a failure should not prevent the remaining logic from executing.
 
@@ -297,7 +299,7 @@ catch (Exception e)
 ```
 
 #### Always Pass CancellationToken (`always-pass-cancellation-token`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Enable graceful cancellation by accepting and passing CancellationToken.
 
@@ -318,7 +320,7 @@ public async Task<Order?> GetByIdAsync(string id, CancellationToken cancellation
 ```
 
 #### ConfigureAwait in Library Code (`configure-await-in-library-code`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 In library/service code (not ASP.NET controllers), use ConfigureAwait(false) to avoid deadlocks.
 
@@ -335,7 +337,7 @@ var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
 ```
 
 #### Method Name Reflects Behavior (`method-name-reflects-behavior`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Method names should reflect whether they read or write. Names like Resolve, Get, Find, Query suggest read-only operations and should not mutate state. Use Update, Set, Create, Save for methods that write.
 
@@ -360,7 +362,7 @@ public async Task<bool> UpdateFieldMappingAsync(Form form, FormEntry entry)
 ```
 
 #### Reuse Existing Enums (`reuse-existing-enums`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Before creating new enums, check if an equivalent enum already exists in the codebase. Reuse existing types for consistency.
 
@@ -383,7 +385,7 @@ public PaymentProcessor Processor { get; set; }
 ```
 
 #### Composite ID Separator (`composite-id-separator`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 Use pipe `|` as the separator for composite IDs, not dash or underscore. This is the established convention in the codebase.
 
@@ -400,7 +402,7 @@ public class ProcessorCustomerMap { }
 ```
 
 #### Prefer Async Storage Over Sync Service (`prefer-async-storage-over-sync-service`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 In async methods, use async StorageContext methods instead of sync FormsService wrappers. FormsService.GetEntry() and GetForm() are sync and block the thread.
 
@@ -424,7 +426,7 @@ private async Task VerifyAccessAsync(string entryId)
 ```
 
 #### DotnetOnly for Computed Properties (`dotnetonly-for-computed-properties`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Mark computed/derived properties with [DotnetOnly] to exclude them from the dynamic model (ExoWeb) and generated TypeScript type definitions.
 
@@ -448,7 +450,7 @@ public bool IsPersonForm =>
 ```
 
 #### Lazy-Loaded Module Services (`lazy-loaded-module-services`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 When a service needs to resolve another service via Module<T>, use a lazy-loaded property pattern instead of inline resolution. This avoids repeated GetService() calls and follows the established pattern.
 
@@ -485,7 +487,7 @@ public class MyService
 ```
 
 #### No Cross-Controller Duplication (`no-cross-controller-duplication`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Don't duplicate logic across controllers. If two controllers need the same behavior, extract it into a shared service method or base controller method.
 
@@ -509,7 +511,7 @@ public IEnumerable<T> GetActiveEntries() { ... }
 ```
 
 #### Avoid Organization.GetStorageContext (`avoid-org-get-storage-context`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Avoid Organization.GetStorageContext() — treat it as deprecated. Obtain IStorageContext through dependency injection. Preferred patterns in order: 1) Constructor-inject IOrganizationContext; 2) Constructor-inject IStorageContext directly; 3) As a last resort in non-controller code, cast an existing service via ((IOrganizationContext)Service).StorageContext.
 
@@ -563,7 +565,7 @@ var ctx = ((IOrganizationContext)FormsService).StorageContext;
 ---
 
 #### Prefer Bool Equality Over Coalesce (`prefer-bool-equality-over-coalesce`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.7
+**Severity:** minor
 
 When testing a nullable bool produced by a null-conditional chain, prefer `x?.Prop == true` over `(x?.Prop ?? false)`. Both are equivalent, but `== true` is the clearer, team-preferred idiom.
 
@@ -580,7 +582,7 @@ if (storeFormResult.oldForm?.IsPersonForm == true && !form.IsPersonForm)
 ---
 
 #### Visitor Base Dispatch (`visitor-use-base-dispatch`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 When subclassing an ExpressionVisitor-style base (e.g. `ModelExpression.ExpressionVisitor`), drive traversal through the base `Visit` dispatch and override typed `Visit*` methods. Do not hand-roll a recursive walk — the base dispatch carries `EnsureSufficientExecutionStack` stack-overflow protection that a custom recursion silently loses. Precedent: `ModelPath.PathBuilder`, `JavaScriptExpressionTranslator.ExpressionBuilder`.
 
@@ -599,7 +601,7 @@ protected override Expression VisitBinary(BinaryExpression b) { /* ... */ }
 ```
 
 #### Prefer bool? Over Custom Tri-State Enum (`prefer-bool-nullable-for-tristate`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 For true/false/unknown logic prefer native `bool?` over a hand-rolled three-valued enum. C#'s lifted `&`, `|`, `!` already implement three-valued logic on `bool?`; a custom enum only adds a type, truth tables, and a mapping layer. Introduce an enum only when states carry domain meaning beyond truth values.
 
@@ -615,7 +617,7 @@ bool? result = left & right;   // null = unknown; lifted & is three-valued AND
 ```
 
 #### Qualify Generic Type Names (`qualify-generic-type-names`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 Give enums and domain types a feature qualifier rather than a bare generic noun — `Viability`/`Mode` is ambiguous at the use site where `WorkflowActionViability` reads correctly. Avoid obscure/academic names a reader must look up (e.g. `Kleene`); name for the concept, not the theory. Complements the class-naming rule by covering enums and obscure names.
 
@@ -635,12 +637,12 @@ enum WorkflowActionViability { ... }   // qualified, concept-named
 Category: `api_design` | Multiplier: 1.0
 
 #### Appropriate HTTP Methods (`appropriate-http-methods`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Use appropriate HTTP methods for operations. GET for retrieving resources, POST for creating or triggering actions, PUT for updating, DELETE for removing. Examples of bad usage: `[HttpPost] GetSession()` (should be GET), `[HttpGet] CreateUser()` (should be POST).
 
 #### Singular Resource Endpoints (`singular-resource-endpoints`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 Use singular nouns for single-resource endpoints.
 
@@ -657,7 +659,7 @@ public Task<ActionResult> GetSession(string id) { }
 ```
 
 #### ProducesResponseType Decoration (`produces-response-type`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Decorate controller actions with [ProducesResponseType] to enable auto-generated TypeScript types for the client.
 
@@ -683,12 +685,12 @@ public async Task<ActionResult> CreateSession(string id)
 ```
 
 #### Split Large Controllers (`split-large-controllers`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Break up controllers that handle multiple unrelated concerns. This reduces merge conflicts and improves maintainability. Example splits: CognitoPayController → CognitoPayAccountController + CognitoPayWebhookController.
 
 #### Unique Idempotency Keys (`unique-idempotency-keys`)
-**Severity:** critical | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** critical
 
 Ensure idempotency keys are unique for each API call. Reusing RequestOptions with the same key causes unintended behavior.
 
@@ -709,7 +711,7 @@ await subscriptionService.CreateAsync(subOptions,
 ```
 
 #### Async Suffix (`async-suffix`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 All async methods should have the Async suffix.
 
@@ -724,7 +726,7 @@ public async Task<File> UploadFileAsync(Stream stream) { }
 ```
 
 #### Defensive Null Checks (`defensive-null-checks`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Add null guards even when the type specifies non-null. Callers may not respect the contract.
 
@@ -746,7 +748,7 @@ public async Task UploadAsync(FileInfo file)
 ```
 
 #### Cache Service Instances (`cache-service-instances`)
-**Severity:** important | **Weight:** 0.775 | **Effective:** 0.775
+**Severity:** important
 
 Don't create new service instances on every request. Cache them as fields.
 
@@ -766,7 +768,7 @@ private MyService Service => _service ??= new MyService();
 ```
 
 #### View Model Includes All UI-Consumed Fields (`view-model-includes-all-ui-consumed-fields`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Controller view-model payloads must include every field the UI consumes. If a TypeScript type extension exists on the client purely to tack on fields the backend doesn't return, the payload is incomplete.
 
@@ -803,7 +805,7 @@ return Json(forms.Select(f => new
 Category: `frontend` | Multiplier: 1.0
 
 #### No Redundant Props (`no-redundant-props`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Don't add props that duplicate data already available through injection or context (e.g., session).
 
@@ -821,7 +823,7 @@ const { session } = inject('session');
 ```
 
 #### Verify Props Exist (`verify-props-exist`)
-**Severity:** critical | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** critical
 
 Don't reference props in templates that aren't defined in defineProps.
 
@@ -846,7 +848,7 @@ defineProps<{ userId: string }>();
 ```
 
 #### No Unnecessary Wrapper Properties (`no-unnecessary-wrapper-properties`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Don't create wrapper properties, computed values, or indirection when direct property access works. If a property is already reactive/tracked, bind to it directly.
 
@@ -865,7 +867,7 @@ field.meta.addProperty({ name: "selectionTypeDisplayValue", type: String }).calc
 ```
 
 #### Dialog Dismissal Consistency (`dialog-dismissal-consistency`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Handle all dialog dismissal paths consistently. Cancel/revert logic must trigger for Cancel button, X button, Escape key, and backdrop click.
 
@@ -894,7 +896,7 @@ $.fn.dialog({
 ```
 
 #### Loading State Finally (`loading-state-finally`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Always use finally block to reset loading state.
 
@@ -922,7 +924,7 @@ try {
 ```
 
 #### Use PropType for Functions (`use-prop-type-for-functions`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 When defining function props, use PropType for proper TypeScript typing.
 
@@ -944,7 +946,7 @@ props: {
 ```
 
 #### Use toRef for Composables (`use-toref-for-composables`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** minor
 
 When passing props to composables, use toRef so the composable receives a ref instead of a function.
 
@@ -960,7 +962,7 @@ const result = useMyComposable(toRef(props, 'value'));
 ```
 
 #### Composables Called Synchronously (`composables-called-synchronously`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Composables (useXyz functions) must be called synchronously in the component setup function or composable body — never from inside async callbacks, promise .then() handlers, or event handlers. Store the composable result in a top-level variable and reference it from callbacks.
 
@@ -990,7 +992,7 @@ export function useMyFeature() {
 ```
 
 #### No Any in Union Types (`no-any-in-union-types`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Adding `| any` to a union pollutes the entire type to become any.
 
@@ -1005,7 +1007,7 @@ type Config = string | number | null;  // Be specific
 ```
 
 #### Client-Server Edge Case Parity (`client-server-edge-case-parity`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 When implementing equivalent logic on client and server, ensure edge cases are handled identically. Test both paths with the same inputs.
 
@@ -1018,7 +1020,7 @@ if (!value || value === '') continue;
 ```
 
 #### Type-Safe Filter Keys (`type-safe-filter-keys`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Use keyof constraints for filter config keys to ensure they match the criteria type. This catches mismatches like 'FormId' vs 'FormIds' at compile time.
 
@@ -1050,7 +1052,7 @@ interface FilterConfig<T> {
 ```
 
 #### Prefer Vue Testing Library (`prefer-vue-testing-library`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Use Vue Testing Library (@testing-library/vue) for component tests that check behavior (element visibility, button clicks, user interactions). Use @vue/test-utils only when testing prop changes, data flow, or internal component mechanics that have no DOM representation.
 
@@ -1071,7 +1073,7 @@ await fireEvent.click(screen.getByRole('button'));
 ```
 
 #### Use Typed Emits (`use-typed-emits`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Use typed emits via defineEmits<T>() for type-safe event emission. This catches misspelled event names and wrong payload types at compile time.
 
@@ -1091,7 +1093,7 @@ emit('update', payload); // Type-checked
 ```
 
 #### No Consumer Local Type Extension (`no-consumer-local-type-extension`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.70
+**Severity:** important
 
 Don't extend a shared server-generated type with a consumer-local interface just to tack on fields the UI needs. If the UI reads a field, the backend payload should supply it flat — add the field to the controller's anonymous object and to the shared type.
 
@@ -1123,7 +1125,7 @@ const forms = ref<PersonFormInfo[]>([]);
 ---
 
 #### Overly Wide Type Unions (`no-overwide-type-unions`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.7
+**Severity:** minor
 
 Type unions should match the values the data actually produces. Don't add members (e.g. `number`, `string`) that no code path can emit. If a third-party prop forces a wider type, narrow at the boundary or add a comment explaining the extra arm is defensive.
 
@@ -1141,7 +1143,7 @@ const selected = ref<number | null>(null);
 ---
 
 #### No Inline Styles (`no-inline-styles`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.7
+**Severity:** minor
 
 Avoid inline `style="..."` attributes in Vue templates. Use a Tailwind utility class or move the rule into the component's `<style>` block so styling stays consistent and themeable.
 
@@ -1161,7 +1163,7 @@ Avoid inline `style="..."` attributes in Vue templates. Use a Tailwind utility c
 Category: `performance` | Multiplier: 0.9
 
 #### Validate Size Before Allocating (`validate-size-before-allocating`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 When accepting file uploads or large data, enforce size limits before reading into memory.
 
@@ -1178,7 +1180,7 @@ var content = await stream.ReadAllBytesAsync();
 ```
 
 #### Reuse HttpClient (`reuse-httpclient`)
-**Severity:** critical | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** critical
 
 Don't create new HttpClient per request - it causes socket exhaustion. Use a shared instance or IHttpClientFactory.
 
@@ -1200,7 +1202,7 @@ public async Task<string> FetchDataAsync(string url)
 ```
 
 #### Use FastHasFlag (`use-fast-has-flag`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Use behavior.FastHasFlag instead of HasFlag for better performance.
 
@@ -1215,7 +1217,7 @@ if (behavior.FastHasFlag(FieldBehavior.Required)) { }
 ```
 
 #### Move Loop Invariants Outside (`move-loop-invariants-outside`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 Don't compute the same value repeatedly inside a loop if it doesn't change.
 
@@ -1238,7 +1240,7 @@ foreach (var item in items)
 ```
 
 #### Lazy List Resolution (`lazy-list-resolution`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 When a list will be filtered or limited, delay resolution until after filtering to avoid loading data you'll discard.
 
@@ -1257,7 +1259,7 @@ await foreach (var entry in filtered) { }
 ```
 
 #### Lazy Evaluation for Memory (`lazy-evaluation-for-memory`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 Don't eagerly materialize collections when lazy evaluation works. Return IEnumerable instead of List for large datasets.
 
@@ -1279,7 +1281,7 @@ public IEnumerable<Image> GetPageImages(Document doc)
 ```
 
 #### Don't Load to Discard (`dont-load-to-discard`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 When you can determine the final shape of a result early, truncate before expensive operations, not after.
 
@@ -1295,12 +1297,12 @@ return await db.GetFirstUserAsync();  // Or .Take(1).FirstOrDefault()
 ```
 
 #### Avoid String Allocations (`avoid-string-allocations`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Use alternatives to methods like string.Split that allocate arrays when simpler approaches exist. For example, use `entry.Form.Id` instead of parsing from a composite string.
 
 #### Check After Await Not Before (`check-after-await-not-before`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 For race condition safety, check conditions after the await completes, not before.
 
@@ -1318,7 +1320,7 @@ if (isLoading) return;  // Check state after async operation
 ```
 
 #### Avoid Unnecessary ToList (`avoid-unnecessary-tolist`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Don't call .ToList() when the result is consumed as IEnumerable, passed to further LINQ operations, or iterated with foreach. Unnecessary materialization wastes memory and hides deferred execution intent.
 
@@ -1340,17 +1342,17 @@ foreach (var item in items) { Process(item); }
 Category: `testing` | Multiplier: 0.9
 
 #### Verify Assertions Match Behavior (`verify-assertions-match-behavior`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 Double-check that assertions actually test what they claim to test.
 
 #### Consistent Assertion Style (`consistent-assertion-style`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Don't mix Throws and ThrowsExactly without reason. Be consistent.
 
 #### Assert.IsTrue Needs Message (`assert-true-needs-message`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Always provide a message to improve clarity in test results on failure.
 
@@ -1365,12 +1367,12 @@ Assert.IsTrue(result.IsValid, "Expected result to be valid");
 ```
 
 #### Outer Class Not TestClass (`outer-class-not-testclass`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 If using nested test classes, the outer class shouldn't have [TestClass] or tests will be duplicated.
 
 #### No Test-Only Service Params (`no-test-only-service-params`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 Don't pollute service methods with parameters only used by tests. Work around in the test instead.
 
@@ -1387,17 +1389,17 @@ var form = StorageContext.Get<Form>(formId, bypassCache: true);
 ```
 
 #### No Public for Tests (`no-public-for-tests`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 If a method is only called from tests, don't make it public. Consider test-specific alternatives or internal access.
 
 #### Validate AI-Generated Content (`validate-ai-generated-content`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 AI-generated expressions, code, or content needs validation before use.
 
 #### Missing Test for Public Method (`missing-test-for-public-method`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 New public methods in services, repositories, or controllers should have test coverage for both success and error paths.
 
@@ -1417,12 +1419,12 @@ public async Task ProcessDataAsync_WithInvalidInput_ThrowsValidationException() 
 ```
 
 #### Missing Test for Complex Method (`missing-test-for-complex-method`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 Methods with high cyclomatic complexity (multiple branches, error handling) need more thorough test coverage. Each branch should be tested.
 
 #### Fluff Test: Constructor Only (`fluff-test-constructor-only`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Tests that only verify an object can be constructed provide little value. Test behavior, not instantiation.
 
@@ -1446,7 +1448,7 @@ public void Constructor_WithNullDependency_ThrowsArgumentNullException()
 ```
 
 #### Fluff Test: Mock Only (`fluff-test-mock-only`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Tests that only verify mock interactions without asserting outcomes test implementation details, not behavior.
 
@@ -1473,7 +1475,7 @@ public void Process_SavesEntityWithCorrectValues()
 ```
 
 #### Fluff Test: Tautological (`fluff-test-tautological`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Tests that assert a mock returns exactly what you told it to return only verify the mock framework works.
 
@@ -1492,7 +1494,7 @@ Assert.IsTrue(result.IsValid);  // Testing actual logic
 ```
 
 #### Fluff Test: NotNull Only (`fluff-test-notnull-only`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Tests that only assert a result is not null don't verify correctness. Assert on specific expected values or properties.
 
@@ -1511,7 +1513,7 @@ Assert.AreEqual(Status.Complete, result.Status);
 ```
 
 #### Fluff Test: Doesn't Throw (`fluff-test-doesnt-throw`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Tests that just execute code without assertions only verify it doesn't throw. This is insufficient unless exception behavior is the explicit test goal.
 
@@ -1535,7 +1537,7 @@ public void Process_ValidInput_ReturnsExpectedResult()
 ```
 
 #### Invalid Hardcoded Entity ID (`invalid-hardcoded-entity-id`)
-**Severity:** important | **Weight:** 0.525 | **Effective:** 0.47
+**Severity:** important
 
 Hardcoded entity IDs in tests should match the actual schema format. Using arbitrary strings like "abc" or "test-id" may hide validation bugs.
 
@@ -1561,7 +1563,7 @@ var formId = "42";
 ```
 
 #### Test File Should Not Exist (`test-file-should-not-exist`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 Tests for a class should be co-located in the existing test file for that class, not scattered across multiple files.
 
@@ -1578,12 +1580,12 @@ Tests for a class should be co-located in the existing test file for that class,
 ```
 
 #### Tests Should Be Colocated (`tests-should-be-colocated`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 Related tests (same class, same feature) should be in the same test file. Scattering tests makes maintenance harder. Exceptions: splitting a large (>1000 line) test file by feature area, separating unit from integration tests, or tests for genuinely different classes.
 
 #### Test File Missing for New Service (`test-file-missing-for-new-service`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** important
 
 New service, repository, or controller classes should have a corresponding test file created.
 
@@ -1600,7 +1602,7 @@ New service, repository, or controller classes should have a corresponding test 
 ```
 
 #### No DOM-Coupled Assertions (`no-dom-coupled-assertions`)
-**Severity:** important | **Weight:** 0.775 | **Effective:** 0.70
+**Severity:** important
 
 Don't write test assertions coupled to DOM structure or CSS classes. Use user-centric queries (getByRole, getByText, getByLabelText) and assert on visible behavior, not implementation details.
 
@@ -1625,7 +1627,7 @@ expect(screen.getByRole('button', { name: /submit/i }))
 ```
 
 #### Consolidate Parameterized Tests (`consolidate-parameterized-tests`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.63
+**Severity:** minor
 
 When several tests share one Arrange/Act/Assert shape and differ only in inputs/expected output, collapse them into a single [DataTestMethod] with [DataRow] cases ([Theory]/[InlineData] in xUnit). Preserve every distinct assertion as a row; keep unique-setup, soundness-regression, or differently-shaped cases as their own methods. Distinct from fluff-test-* (individually low-value tests) — this targets redundant repetition across otherwise-valid tests.
 
@@ -1649,7 +1651,7 @@ public void Eval_ReturnsExpected(string input, bool? expected) { Assert.AreEqual
 Category: `consistency` | Multiplier: 0.8
 
 #### Extract Magic Strings (`extract-magic-strings`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Don't use magic strings - extract them to constants and reuse.
 
@@ -1665,17 +1667,17 @@ if (type == FormType) { }
 ```
 
 #### Consistent Helper Usage (`consistent-helper-usage`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 When a helper method exists, use it consistently throughout the file rather than inline implementations in some places.
 
 #### Keep Comments Accurate (`keep-comments-accurate`)
-**Severity:** minor | **Weight:** 0.775 | **Effective:** 0.62
+**Severity:** minor
 
 When a function's scope or behavior changes during development, update its documentation to match. Don't leave stale comments.
 
 #### No TODOs in Code (`no-todos-in-code`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Don't leave TODO comments in code. Track them as engineering bugs instead.
 
@@ -1690,17 +1692,17 @@ Don't leave TODO comments in code. Track them as engineering bugs instead.
 ```
 
 #### No Commented Code (`no-commented-code`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Remove commented-out code. Use version control to recover old code.
 
 #### Consistent Indentation (`consistent-indentation`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Don't mix spaces and tabs within a file. Follow the project's convention.
 
 #### Event Handler Cleanup (`event-handler-cleanup`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 Store event handler references and remove them when no longer needed to prevent memory leaks.
 
@@ -1719,7 +1721,7 @@ element.removeEventListener('change', handler);
 ```
 
 #### Pair Subscribe/Unsubscribe (`pair-subscribe-unsubscribe`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 When subscribing to events, always implement corresponding unsubscribe logic to prevent memory leaks.
 
@@ -1737,7 +1739,7 @@ path.UnsubscribePathChange(handler);
 ```
 
 #### Use Instance's Actual Type (`use-instances-actual-type`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 When unregistering objects from pools/caches, use the instance's actual type to handle inheritance correctly.
 
@@ -1756,7 +1758,7 @@ public void Unregister(object instance) {
 ```
 
 #### No Debug/Design Comments (`no-debug-design-comments`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Remove debug markers, design notes, and AI attribution comments before committing. These include emoji markers, @design annotations, and "copilot added" notes.
 
@@ -1777,7 +1779,7 @@ Remove debug markers, design notes, and AI attribution comments before committin
 ```
 
 #### Delete Unused Placeholder Files (`delete-unused-placeholder-files`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Delete files that only contain TODO placeholders with no real implementation.
 
@@ -1796,7 +1798,7 @@ export function queryOrdersPage(params = {}) {
 Delete the file entirely if it's not being used, or implement it properly before committing.
 
 #### Consistent Field Naming (`consistent-field-naming`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Private fields within a class must use consistent naming. Don't mix _camelCase and camelCase for private fields in the same class. Prefer non-underscored field names (camelCase) for controller fields.
 
@@ -1819,7 +1821,7 @@ public class FormsAdminController
 ```
 
 #### Purposeful Utility Placement (`purposeful-utility-placement`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Don't dump feature-specific modules into a generic utilities/ directory. Reserve utilities/ for truly generic, reusable helpers.
 
@@ -1841,7 +1843,7 @@ utilities/debounce.ts  # Generic utilities only
 ```
 
 #### Remove Orphaned UI Bindings (`remove-orphaned-ui-bindings`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 When replacing a provisional or dev-testing UI with a production component, delete the obsolete component and all its wired handlers and bindings together: the .vue file, the HTM binding, and any companion global handler in build.js.
 
@@ -1866,7 +1868,7 @@ Cognito.Forms.OldComponentChanged = function (form, args) {
 ```
 
 #### Update All Callers on Signature Change (`update-all-callers-on-signature-change`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 When adding a new parameter to a shared function — even an optional one — update every existing caller to pass the new argument.
 
@@ -1896,7 +1898,7 @@ renderElement(element, legacyType, children, null /* idScope n/a: legacy path */
 ---
 
 #### No Temporal/Phased Comments (`no-temporal-phased-comments`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Comments should describe the stable, current behavior or invariant — not the development timeline. Avoid "Today / Post-fix", "before the fix", "after this change" framing, which becomes misleading once merged. Especially common in AI-generated test comments.
 
@@ -1915,7 +1917,7 @@ Comments should describe the stable, current behavior or invariant — not the d
 ---
 
 #### Avoid Pointless Local Wrap (`avoid-pointless-local-wrap`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Avoid introducing a local variable that holds an expression used exactly once on the following line and adds no naming value. Inline it. Keeping a local is fine when it documents intent or preserves symmetry with a sibling method.
 
@@ -1931,7 +1933,7 @@ return ReferenceIndexService.GetReferencedBySync(formId, nameof(Form), nameof(Fo
 ```
 
 #### Comments Add Context, No Jargon (`comments-add-context-no-jargon`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 Keep only comments that add context the code can't convey, written plainly. Cut comments that restate the code or use domain jargon a reader must look up (e.g. "correlated atom"). When a symbol named in a comment is renamed/removed, update or delete the comment in the same change so it never references a name that no longer exists. Complements keep-comments-accurate and no-temporal-phased-comments with jargon/dangling-reference angles.
 
@@ -1948,32 +1950,32 @@ Keep only comments that add context the code can't convey, written plainly. Cut 
 ---
 
 #### Reuse Service Duplication (`reuse-service-duplication`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 A new *Service class may duplicate an existing service in the codebase. Sweep cannot verify local-codebase facts, so: FLAG this file as a reuse-duplication candidate whenever a new service class is introduced (name ending in Service, and it is not an override or extension of an existing base), then ESCALATE to the reuse-candidacy stage for a human reviewer with local-codebase access to confirm whether an existing service already covers this responsibility.
 
 #### Reuse Utility Duplication (`reuse-utility-duplication`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 A new helper or utility function may duplicate an existing one in the codebase. Sweep cannot verify local-codebase facts, so: FLAG this file as a reuse-duplication candidate whenever a new standalone helper or utility function is added outside of a class body (free function, exported function, or module-level function with a generic name such as format*, parse*, get*, build*, calculate*, or normalize*), then ESCALATE to the reuse-candidacy stage for a human reviewer with local-codebase access to confirm whether an equivalent utility already exists.
 
 #### Reuse DTO/Type Overlap (`reuse-dto-type-overlap`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 A new DTO, view-model, or plain TypeScript interface may overlap with an existing domain type in the codebase. Sweep cannot verify local-codebase facts, so: FLAG this file as a reuse-duplication candidate whenever a new type, interface, or DTO is introduced that carries a name closely matching a common domain concept (e.g. Entry, Form, Submission, Person, Field, Response, Result, Settings, Config, Options), then ESCALATE to the reuse-candidacy stage for a human reviewer with local-codebase access to confirm whether an existing domain type or generated server type already covers these fields.
 
 #### Reuse Endpoint Duplication (`reuse-endpoint-duplication`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 A new controller action or API endpoint may duplicate an existing route in the codebase. Sweep cannot verify local-codebase facts, so: FLAG this file as a reuse-duplication candidate whenever a new controller method is added that targets a resource path already implied by the controller name or existing action names in the same file (e.g. a second GET for the same resource, or a new controller whose route prefix matches a sibling controller), then ESCALATE to the reuse-candidacy stage for a human reviewer with local-codebase access to confirm whether an existing endpoint already services this route.
 
 #### Intrafile Block Duplication (`intrafile-block-duplication`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** important
 
 An added or modified block may duplicate logic that already exists ELSEWHERE IN THE SAME FILE. Sweep cannot verify in-file structural facts across the whole file, so: FLAG this file as an intra-file duplication candidate whenever an added block (function, branch, query, or repeated statement sequence) closely mirrors another block already present in the same file, then ESCALATE to the intra-file consistency stage for an agent with structural (tree-sitter) access to confirm whether the change should have reused or refactored the existing in-file member.
 
 #### Intrafile Convention Divergence (`intrafile-convention-divergence`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.56
+**Severity:** minor
 
 An added or modified block may diverge from the conventions established by the surrounding code in the same file (naming, error handling, logging, or the structural shape of sibling members). Sweep cannot verify whole-file conventions, so: FLAG this file as an intra-file consistency candidate when a change appears to introduce a naming or structural pattern inconsistent with its siblings, then ESCALATE to the intra-file consistency stage for an agent with structural access to confirm the divergence.
 
@@ -1983,7 +1985,7 @@ An added or modified block may diverge from the conventions established by the s
 Category: `security` | Multiplier: 1.2
 
 #### Sanitize Imported HTML (`sanitize-imported-html`)
-**Severity:** critical | **Weight:** 0.7 | **Effective:** 0.84
+**Severity:** critical
 
 Any HTML content imported from external sources must go through the HTML sanitation filter server-side.
 
@@ -1999,7 +2001,7 @@ element.innerHTML = sanitizedHtml;
 ```
 
 #### Validate Input Ranges (`validate-input-ranges`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.84
+**Severity:** important
 
 When accepting user input that has a valid range, clamp to that range on the server to handle invalid input gracefully.
 
@@ -2014,17 +2016,17 @@ var size = Math.Max(0, Math.Min(6, inputSize));
 ```
 
 #### Feature Flags for Changes (`feature-flags-for-changes`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.84
+**Severity:** minor
 
 Behavioral changes should be behind feature flags to enable rollback and gradual rollout.
 
 #### Log Telemetry at Limits (`log-telemetry-at-limits`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.84
+**Severity:** minor
 
 When implementing throttling or limits, log telemetry so you can monitor and adjust.
 
 #### Sensible Defaults Not Unlimited (`sensible-defaults-not-unlimited`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.84
+**Severity:** important
 
 When adding new configuration, start with reasonable limits rather than unlimited.
 
@@ -2034,7 +2036,7 @@ When adding new configuration, start with reasonable limits rather than unlimite
 Category: `template_binding` | Multiplier: 0.7
 
 #### Use Convert Not Extra Property (`use-convert-not-extra-property`)
-**Severity:** important | **Weight:** 0.7 | **Effective:** 0.49
+**Severity:** important
 
 Use inline convert in bindings instead of creating calculated model properties for simple transformations.
 
@@ -2050,7 +2052,7 @@ Use inline convert in bindings instead of creating calculated model properties f
 ```
 
 #### Omit Default Binding Source (`omit-default-binding-source`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.49
+**Severity:** minor
 
 The default binding source is $dataItem, so specifying it is unnecessary.
 
@@ -2065,7 +2067,7 @@ The default binding source is $dataItem, so specifying it is unnecessary.
 ```
 
 #### Boolean Props No True (`boolean-props-no-true`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.49
+**Severity:** minor
 
 Boolean properties in templates don't need explicit ='true'.
 
@@ -2080,7 +2082,7 @@ Boolean properties in templates don't need explicit ='true'.
 ```
 
 #### Extract Large Additions (`extract-large-additions`)
-**Severity:** minor | **Weight:** 0.7 | **Effective:** 0.49
+**Severity:** minor
 
 When adding significant amounts of code, consider pulling it into a separate file for organization.
 <!-- RULES_END -->

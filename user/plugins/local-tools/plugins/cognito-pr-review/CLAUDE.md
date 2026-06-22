@@ -19,7 +19,7 @@ Claude Code plugin for reviewing Cognito Forms PRs using a hierarchical investig
 | `/cognito-pr-review:learn-from-pr PR#` | Extract rules + EMA calibration |
 | `/cognito-pr-review:calibrate` | Bulk weight calibration |
 | `/cognito-pr-review:weights` | View/adjust rule weights |
-| `/cognito-pr-review:rebuild-agents` | Re-embed rules into agent prompts |
+| `/cognito-pr-review:rebuild-agents` | Regenerate sweep's rule *content* (weights are read live from `weights.yaml`, never embedded) |
 
 ## Architecture
 
@@ -48,14 +48,14 @@ The **intra-file consistency stage** (also `review-pr.md` Step 5b, a second clus
 - `agents/journey-planner.md` — Opus; produces journey file + validates triage
 - `agents/triage.md` — Opus; classifies files into critical/important/skim
 - `agents/investigation.md` — Opus; deep-dive with Solver-Verifier protocol
-- `agents/sweep.md` — Sonnet; embedded YAML rules, weight-aware thresholds (incl. `reuse-*` and `intrafile-*` flag+escalate rules)
+- `agents/sweep.md` — Sonnet; rule *content* embedded between `RULES_START/END`, but **weights read live from `knowledge/weights.yaml`** (same source + `rule_weight × category_multiplier` formula + `CATEGORY_MAP` as `post-process.ts`); weight-aware tier thresholds (incl. `reuse-*` and `intrafile-*` flag+escalate rules); emits `confidence` (`CONFIRMED`/`UNVERIFIED`) per finding
 - `agents/cognito-consistency-checker.md` — Opus; per-cluster reuse-candidacy agent (grown from the orphaned checker); reads the shared reuse-discovery protocol + agent scaffold; investigation-level access
 - `agents/cognito-intra-file-consistency.md` — Opus; per-cluster intra-file duplication + surrounding-code consistency agent; reads the same protocol + scaffold; investigation-level access; emits `source:"intrafile"`
 - `agents/synthesizer-v2.md` — Sonnet; narrative review synthesis (incl. "Reuse & Duplication" + "Intra-File Consistency" sections)
 
 ### Knowledge
 - `knowledge/rules/*.yaml` — 95 rules across 8 categories
-- `knowledge/weights.yaml` — Per-rule EMA weights, category multipliers, and source-level weights (`source_weights`: `investigation` 0.9 / `intrafile` 0.7 / `reuse` 0.7; sweep keeps `rule_weight × category_multiplier`). post-process gates **every** source on `weight × confidence` (confidence label→number lives in the engine's `resolveConfidence`: `CONFIRMED`=1.0 / `UNVERIFIED`=0.5, absent→1.0); the `MIN_EFFECTIVE_WEIGHT` 0.3 floor applies to all sources.
+- `knowledge/weights.yaml` — Per-rule EMA weights, category multipliers, and source-level weights (`source_weights`: `investigation` 0.9 / `intrafile` 0.7 / `reuse` 0.7; sweep keeps `rule_weight × category_multiplier`). post-process gates **every** source on `weight × confidence` (confidence label→number lives in the engine's `resolveConfidence`: `CONFIRMED`=1.0 / `UNVERIFIED`=0.5, absent→1.0); the `MIN_EFFECTIVE_WEIGHT` 0.3 floor applies to all sources. `weights.yaml` is the **single source of truth** for weights, read live at runtime by BOTH `post-process.ts` (`loadWeights()`) and `agents/sweep.md` (same formula + `CATEGORY_MAP`) — a weight edit takes effect with recalibration alone; `/rebuild-agents` is no longer required for weights.
 
 ## Editing Guidelines
 
@@ -67,7 +67,7 @@ The **intra-file consistency stage** (also `review-pr.md` Step 5b, a second clus
 
 ### When editing agents (*.md)
 - YAML frontmatter specifies model, color, and allowed-tools
-- `sweep.md` has embedded rules between `RULES_START`/`RULES_END` markers — use `/cognito-pr-review:rebuild-agents` to re-embed after rule changes
+- `sweep.md` has embedded rule *content* between `RULES_START`/`RULES_END` markers — use `/cognito-pr-review:rebuild-agents` to regenerate it after rule changes. **Weights are NOT embedded** — sweep reads them live from `knowledge/weights.yaml`; do not add `**Weight:**`/`**Effective:**` literals back
 - `investigation.md` has unrestricted read access (cache + local codebase); `sweep.md` has cache-only access
 - The reuse-class agents (`cognito-consistency-checker.md`, `cognito-intra-file-consistency.md`) share `~/.claude/skills/_components/pr-review-reuse-agent-scaffold.md` (access model + tree-sitter guidance + output schema + verdict/severity reminders) — `Read` at runtime, one source of truth, do not fork. They differ only by the documented per-agent overrides (output prefix, baseline source, extra verdicts)
 - Agent output JSON schema must match what `post-process.ts` expects

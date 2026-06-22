@@ -72,8 +72,8 @@ For each agent that receives rules:
 - Locate the `<!-- RULES_START -->` and `<!-- RULES_END -->` markers in the file
 - Replace everything between the markers with the full rule set from ALL 8 YAML categories
 - Organize rules by category using H3 headings (e.g., `### Architecture Rules`, `### API Design Rules`, `### Frontend Rules`, `### Performance Rules`, `### Testing Rules`, `### Code Consistency Rules`, `### Security Rules`, `### Template Binding Rules`)
-- Include the rule weight from `weights.yaml` alongside each rule
 - Preserve everything outside the markers (frontmatter, threshold instructions, escalation section, output format)
+- **Do not embed numeric weights** — weights live solely in `knowledge/weights.yaml` and are read live by the sweep agent at runtime
 
 ### 4. Report Changes
 

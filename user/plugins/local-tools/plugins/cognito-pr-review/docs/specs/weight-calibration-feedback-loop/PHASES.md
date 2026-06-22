@@ -127,10 +127,12 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 
 **Scope:** Remove the split-brain where the sweep agent gates on weights *embedded in its prompt* while `post-process.ts` reads `weights.yaml` live. Have `sweep.md` read `weights.yaml` at runtime (drop the embedded `**Weight:**/**Effective:**` values and the `≥0.5/≥0.7` embedded-number gate); stop `rebuild-agents.md` from embedding weights. After this, a weight edit takes effect with recalibration alone — `/rebuild-agents` is no longer required for weights.
 
+**Status:** Complete (2026-06-22).
+
 **Deliverables:**
-- [ ] `agents/sweep.md`: replace "look up the rule's weight from the embedded rules below" (`:47`) with a live read of `knowledge/weights.yaml`; remove per-rule embedded weight literals; keep the tier-gate *logic* but source the numbers live.
-- [ ] `commands/rebuild-agents.md`: remove the weight-embedding special case for sweep (`:71-76`); `/rebuild-agents` continues to regenerate *rule content* but no longer bakes in weights.
-- [ ] Confirm post-process (`loadWeights()` `:175-185`) and sweep now read the **same** source of truth — document that weights.yaml is now the single authority.
+- [x] `agents/sweep.md`: replace "look up the rule's weight from the embedded rules below" (`:47`) with a live read of `knowledge/weights.yaml`; remove per-rule embedded weight literals; keep the tier-gate *logic* but source the numbers live.
+- [x] `commands/rebuild-agents.md`: remove the weight-embedding special case for sweep (`:71-76`); `/rebuild-agents` continues to regenerate *rule content* but no longer bakes in weights.
+- [x] Confirm post-process (`loadWeights()` `:175-185`) and sweep now read the **same** source of truth — document that weights.yaml is now the single authority.
 
 **Minimum Verifiable Behavior:** Edit a rule weight in `weights.yaml`, run the sweep path **without** `/rebuild-agents`, and confirm the new weight governs the tier gate (a rule pushed below the important-tier threshold is now skim/dropped) — matching what `post-process.ts` already does live.
 
@@ -151,6 +153,18 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 
 **Integration Notes for Next Phase:**
 - After this phase, "recalibration is sufficient" is true — Phase 4's auto-recalibration can rely on weight edits taking effect immediately, with no rebuild step in the loop.
+
+#### Implementation Notes
+
+**2026-06-22 — Batch 1 (WU-3a / WU-3b): split-brain killed — `knowledge/weights.yaml` is now the single source of truth for sweep weights.**
+- **WU-3a (`agents/sweep.md`):** removed all 111 embedded `**Weight:** X | **Effective:** Y` per-rule annotations (`grep -c` now `0` for both literals); rule content (id/severity/description/examples) and the `<!-- RULES_START -->`/`<!-- RULES_END -->` markers are untouched. Replaced the `:47` "look up the weight from the embedded rules below" step with a runtime instruction to read `knowledge/weights.yaml` and compute `effective_weight = rule_weights[<rule_id>].weight (default 0.7) × category_multipliers[<mapped_category>] (default 1.0)` — **mirroring the engine exactly** (`post-process.ts` `computeEffectiveWeight` `:232-246`, `getCategoryMultiplier` `:209-220`, `ruleEntry?.weight ?? 0.7`). The rule_category→yaml-key name mapping table mirrors the engine's `CATEGORY_MAP` constant (`:158-167`) — all 8 entries (architecture, api_design, frontend, consistency, testing, security, performance, template_binding). Tier thresholds (Important `≥0.5`, Skim `≥0.7`) kept as logic; only their per-rule inputs now come from the live file. The Phase-2 `confidence` field/rubric is intact.
+- **WU-3a review caught + fixed:** the first impl pass embedded `(multiplier: X.X)` literal values in the category-name-mapping table — that re-creates the very split-brain this phase removes (a `category_multipliers` edit would have gone stale in the prompt). A fix subagent stripped the parenthetical values so the table conveys ONLY the name mapping; the multiplier VALUES are now read live from `category_multipliers`. `grep -c "multiplier:" agents/sweep.md` → `0`.
+- **WU-3b (`commands/rebuild-agents.md`):** removed the `:75` "Include the rule weight from `weights.yaml` alongside each rule" instruction; added a "Do not embed numeric weights — weights live solely in `knowledge/weights.yaml` and are read live by the sweep agent" note in its place. The marker-replacement mechanism and all other (content) regeneration behavior are intact, so `/rebuild-agents` still regenerates rule content between the markers but bakes in no numbers.
+- **Single-source-of-truth confirmed (deliverable 3):** `agents/sweep.md` and `post-process.ts` `loadWeights()` (`:179-189`) now both read the same `knowledge/weights.yaml`, using the same effective-weight formula and the same `CATEGORY_MAP`. A weight edit takes effect for both the sweep agent's tier gate AND the post-processor with recalibration alone — `/rebuild-agents` is no longer required for weights.
+- **Quality gates:** `npx tsc --noEmit` clean; `npx tsx post-process.test.ts` 9/9 pass (engine unchanged — guard against regression). Structural greps: 0 weight literals, 0 embedded multiplier values, 8 category-map rows, confidence work intact.
+- **Review verdict:** PASS (after one fix round; ground-truth verified: yes — orchestrator independently re-ran `grep`/`wc -l` and diffed the live-read formula + category map against the engine source).
+- **MCP integration test:** N/A — markdown/agent-prompt change, no MCP-reachable surface.
+- Files modified: `agents/sweep.md`, `commands/rebuild-agents.md`.
 
 ---
 

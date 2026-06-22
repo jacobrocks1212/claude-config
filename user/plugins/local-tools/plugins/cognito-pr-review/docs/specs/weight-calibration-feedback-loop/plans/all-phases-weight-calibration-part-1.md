@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: weight-calibration-feedback-loop
-status: Ready
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [2, 3]
@@ -112,8 +112,8 @@ Phase 3 follows Phase 2 because **both edit `agents/sweep.md`** — Phase 2's WU
 - [x] WU-2a — sweep.md emits `confidence` per finding
 - [x] WU-2b — investigation.md emits `confidence` + grounds against PR head
 - [x] WU-2c — consistency agents emit `confidence` (scaffold schema + two agent rubrics)
-- [ ] WU-3a — sweep.md reads weights.yaml live; drop embedded weight literals
-- [ ] WU-3b — rebuild-agents.md stops embedding sweep weights
+- [x] WU-3a — sweep.md reads weights.yaml live; drop embedded weight literals
+- [x] WU-3b — rebuild-agents.md stops embedding sweep weights
 
 ---
 
