@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Complete — Phases 1-3 implementation landed and all verification rows reconciled (2026-06-22); VALIDATED.md + SKIP_MCP_TEST.md receipts present; 34/34 pytest passing. The orchestrator's `__mark_complete__` gate owns COMPLETED.md.
+**Status:** Complete
 
 ## Implementation Notes (2026-06-22)
 

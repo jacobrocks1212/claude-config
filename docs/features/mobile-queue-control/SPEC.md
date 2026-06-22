@@ -2,7 +2,7 @@
 
 > An auto-generated, always-current, **read-only** markdown document — one per lazy-enabled repo — that renders the repo's lazy feature + bug queue (with per-item drill-in) on **GitHub mobile**. Generated purely from on-disk lazy state and kept up to date as the pipeline progresses. **Reads happen on GitHub mobile; writes (reorder / remove / enqueue) stay in chat** via the existing `--reorder-queue` / `--enqueue-adhoc` CLI — nothing new is built for writes.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-06-22
 

@@ -24,4 +24,4 @@ the historical / manually-authored spec archive (not under pipeline management).
 ## Tier 2 — proposed (session-audit stubs 2026-06-19)
 
 ~~- Host-Capability Declaration for Gated Features (`host-capability-declaration-for-gated-features`) — features gated on absent host capabilities (C++ toolchains, audio devices) churn through BLOCKED/SKIP/AskUserQuestion instead of skipping proactively.~~  ✅ COMPLETE
-- Lazy Queue Status Doc (GitHub-Mobile Readable) — (ad-hoc, enqueued 2026-06-22)
+~~- Lazy Queue Status Doc (GitHub-Mobile Readable) — (ad-hoc, enqueued 2026-06-22)~~  ✅ COMPLETE
