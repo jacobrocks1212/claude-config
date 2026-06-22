@@ -1,0 +1,45 @@
+# Implementation Phases — Feature queue on-disk auto-discovery
+
+> Phases for [`SPEC.md`](./SPEC.md)
+
+**MCP runtime:** not-required — this is a harness state-script change (`user/scripts/lazy-state.py`). It has no app/Tauri/MCP-reachable surface; it is verified entirely by the in-file `--test` smoke harness + `test_lazy_core.py`, not by the live dev runtime. (claude-config has no Tauri runtime at all.)
+
+## Cross-feature Integration Notes
+
+(No hard deps on Complete upstreams — this is a self-contained state-script enhancement.)
+
+---
+
+### Phase 1: Opt-in on-disk feature auto-discovery in `load_queue`
+
+**Scope:** Extend `lazy-state.py::load_queue` so that, when `docs/features/queue.json` carries a top-level `"autodiscover": true` flag (sibling of `"queue"`), the in-memory work-list is merged with on-disk open feature dirs — exactly mirroring how `bug-state.py::load_bug_queue` merges `_find_open_bug_dirs`. Flag absent/false ⇒ byte-identical to today (every other repo, incl. AlgoBooth, unaffected). The merge is a **probe-time, in-memory** operation: nothing is ever written into `queue.json`. A new `_find_open_feature_dirs` helper performs the disk scan with the completed-feature exclusion filter, and a `feature_tier` helper reads `**Priority:**` for discovered-entry ordering. The `queue-missing` terminal is reconciled so an empty explicit queue plus non-empty disk discovery is NOT `queue-missing` (mirroring the bug loader's "queue is OPTIONAL" contract). Finally, enable the flag in claude-config's own `docs/features/queue.json` so claude-config opts into feature auto-discovery, and verify the additive mirror passes `lazy_parity_audit.py`.
+
+**Deliverables:**
+- [ ] `feature_tier(spec_path: Path) -> int` helper in `lazy-state.py` — reads the discovered feature SPEC.md's `**Priority:**` header (`P0`→0 … `P3`→3, absent/unparseable → a default-last rank), mirroring `bug-state.py::bug_severity` shape. Used only for discovered-entry ordering. [VERIFY: grep -n "def bug_severity" user/scripts/bug-state.py]
+- [ ] `_find_open_feature_dirs(features_dir: Path, queued_ids: set[str]) -> list[Path]` helper in `lazy-state.py`, structurally mirroring `bug-state.py::_find_open_feature_dirs`'s analog `_find_open_bug_dirs`: scans `features_dir` one level deep; skips `_archive/` + any underscore-prefixed dir; skips dirs already in `queued_ids`; requires a `SPEC.md`; **excludes** dirs whose `**Status:**` is `Superseded` OR (`Complete` AND a valid `COMPLETED.md` receipt via `has_completion_receipt`); a `Complete`-WITHOUT-receipt dir is NOT silently skipped (surfaced for the completion gate, with a `_diag`). Sorts by `feature_tier` rank then directory name (stable). [VERIFY: grep -n "def _find_open_bug_dirs" user/scripts/bug-state.py] [VERIFY: grep -n "def has_completion_receipt" user/scripts/lazy_core.py]
+- [ ] `load_queue` extended: after reading `queue.json`, if `data.get("autodiscover") is True`, dedupe the explicit-entry ids and append discovered on-disk open feature dirs (NOT already queued) as discovered entries of shape `{id: <dirname>, name: <SPEC '# ' title or dirname>, spec_dir: <dirname>, tier: <feature_tier rank>, queue_entry: None}` — the SAME raw-queue-item key shape the `compute_state` walk loop consumes (`id`/`name`/`spec_dir`/`tier`). Flag absent/falsy ⇒ return the raw queue list unchanged (byte-identical). [VERIFY: grep -n "def load_queue" user/scripts/lazy-state.py] [VERIFY: grep -n "entry.get(\"spec_dir\")" user/scripts/lazy-state.py]
+- [ ] `queue-missing` terminal reconciliation in `compute_state` (~1350): the `if not queue:` → `queue-missing` early-return must treat the post-`load_queue` merged list as the queue, so an empty explicit `queue.json` queue + non-empty disk discovery does NOT return `queue-missing`. (Because discovery is folded INTO `load_queue`, the existing `if not queue:` check already sees the merged list — confirm no separate `queue.json`-existence short-circuit fires first; adjust the `queue-missing` notify path if the file exists but `"queue": []` + autodiscover yields a non-empty merged list.) [VERIFY: grep -n "queue-missing" user/scripts/lazy-state.py]
+- [ ] Enablement: set `"autodiscover": true` in `docs/features/queue.json` (claude-config repo root) so this repo opts in. [VERIFY: ls docs/features/queue.json]
+- [ ] Tests (`lazy-state.py --test` new fixtures): (a) **flag-off regression** — a `Draft`-SPEC feature dir present on disk but NOT in `queue.json` and NO `autodiscover` flag ⇒ invisible (byte-identical to today); (b) **flag-on discovery** — same dir WITH `autodiscover: true` ⇒ discovered and dispatched (e.g. routes to `/spec`); (c) **excludes Complete+receipt** — a `Complete` dir with a valid `COMPLETED.md` is NOT re-enqueued; (d) **surfaces Complete-without-receipt** — a `Complete` dir with NO receipt IS surfaced (→ `completion-unverified`), with a diag; (e) **dedupes explicit-entry twin** — a feature both explicitly queued AND on disk appears once (explicit entry wins, listed first); (f) **ordering** — multiple discovered dirs sort by `**Priority:**` rank then directory name; (g) **empty-explicit-queue + autodiscover** — `"queue": []` + `autodiscover: true` + one open disk dir ⇒ NOT `queue-missing`.
+- [ ] Re-pin both `--test` baselines: regenerate `tests/baselines/lazy-state-test-baseline.txt` (new fixtures shift output) and confirm `tests/baselines/bug-state-test-baseline.txt` is unchanged (bug-state.py untouched). Regenerate ONLY by piping live `--test` through `_normalize_smoke_output` per `user/scripts/CLAUDE.md` → Testing — never by hand.
+- [ ] Verify `bug-state.py` is **unchanged** and `python user/scripts/lazy_parity_audit.py` passes. The feature-only loader extension is a JUSTIFIED, additive divergence (the parity audit checks only the specific mirrored surfaces — `set_active_repo_root`, `--reorder-queue`, `--reassert-owner`, the host-capability fail-fast — none of which this change touches; it does NOT audit `load_queue`/`load_bug_queue` symmetry). Confirm the audit stays green; if it newly flags this loader, that is a finding to surface, not silently suppress.
+
+**Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test` is green (incl. the seven new fixtures above), and `python user/scripts/lazy_parity_audit.py` exits 0. Plus the manual repro from the SPEC: with `autodiscover: true` set in claude-config's `docs/features/queue.json`, `python user/scripts/lazy-state.py` surfaces an on-disk `docs/features/<slug>/SPEC.md` that has no `queue.json` entry (where today it returns only explicit entries / `queue-missing`).
+
+**Runtime Verification** *(checked by integration test or manual testing):*
+- [ ] (none — there is no live runtime for this repo; the `--test` smoke harness + parity audit + manual `lazy-state.py` repro above are the complete verification surface. This row is intentionally empty so no Step-9 MCP gate is implied.)
+
+**Prerequisites:** None (first and only phase).
+
+**Files likely modified:**
+- `user/scripts/lazy-state.py` — `load_queue` extension, new `_find_open_feature_dirs` + `feature_tier` helpers, `queue-missing` reconciliation, new `--test` fixtures + assertions.
+- `docs/features/queue.json` — add `"autodiscover": true`.
+- `tests/baselines/lazy-state-test-baseline.txt` — re-pinned for the new fixtures.
+- (Read-only reference, NOT modified: `user/scripts/bug-state.py`, `user/scripts/lazy_core.py`, `user/scripts/lazy_parity_audit.py`.)
+
+**Testing Strategy:**
+In-file hermetic `--test` fixtures (the only fast regression net for the state machine; a refactor that keeps `--test` green has preserved behavior). Each new fixture is a temp-dir repo built by `_build_fixture` exercising one discovery branch (flag-off / flag-on / Complete-exclusion / receipt-surface / dedupe / ordering / empty-queue-non-missing). `lazy_core.has_completion_receipt` and `spec_status` are reused for the exclusion filter rather than re-implemented. Cross-script invariant: because the change is feature-only, `bug-state.py --test` and `test_lazy_core.py` must stay green untouched, and `lazy_parity_audit.py` must remain green (additive divergence, no mirrored surface removed).
+
+**Integration Notes for Next Phase:**
+- (No next phase.) Coupling Rule reminder for any follow-on: the `autodiscover` flag is **repo-local by construction** — only claude-config sets it; AlgoBooth and all other repos omit it and are byte-identical to today. Do NOT promote it to a global default without a separate decision (SPEC Open Question 2 explicitly defers that).
+- The discovered-entry shape (`queue_entry: None`, raw-queue-item keys) is the integration seam: the `compute_state` walk loop reads `entry.get("spec_dir")` / `entry.get("tier")` directly, so discovered entries MUST carry those raw keys (NOT the bug loader's normalized `spec_path` key — the two loaders' return shapes legitimately differ: `load_queue` returns raw queue items, `load_bug_queue` returns normalized dicts).
