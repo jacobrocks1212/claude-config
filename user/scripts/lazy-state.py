@@ -179,6 +179,37 @@ def _state(
     return out
 
 
+def _scoped_skip_state(
+    *,
+    feature_id: str,
+    feature_name: str,
+    spec_path: Path,
+    current_step: str,
+    terminal_reason: str,
+    notify_message: str,
+) -> dict[str, Any]:
+    """Build a scoped, identity-preserving _state for a --feature-id match that
+    WOULD have been skipped by one of the feature-side "skipped-but-matched"
+    branches (cloud-saturated / device-saturated / host-capability-deferred /
+    parked).
+
+    bug-state-scoped-query-loses-deferred-bug-identity, Phase 2 (feature-side
+    parity twin of bug-state.py's Phase-1 _scoped_skip_state): the UNIFORM
+    scoped-return shape across all the feature-side scoped skip branches. Each
+    branch's UNSCOPED path (scope_feature_id is None) stays byte-identical — this
+    helper is reached ONLY on a scoped match. Modeled on the completion-unverified
+    scoped return that already returns a scoped _state from inside the queue loop.
+    """
+    return _state(
+        feature_id=feature_id,
+        feature_name=feature_name,
+        spec_path=str(spec_path),
+        current_step=current_step,
+        terminal_reason=terminal_reason,
+        notify_message=notify_message,
+    )
+
+
 # Device-deferred features observed this invocation (see _state()). Reset at the
 # start of each compute_state() call alongside lazy_core._DIAGNOSTICS.
 _DEVICE_DEFERRED: list[str] = []
@@ -250,6 +281,42 @@ REAL_DEVICE_ENV = "ALGOBOOTH_REAL_AUDIO_DEVICE"
 
 TR_STALE_UPSTREAM = "stale_upstream"
 STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
+
+# ---------------------------------------------------------------------------
+# Scoped per-feature deferred terminal_reason / current_step constants
+# (bug-state-scoped-query-loses-deferred-bug-identity, Phase 2 — feature-side
+# parity twin of bug-state.py's Phase-1 scoped literals).
+#
+# When a --feature-id scoped query matches an entry that WOULD have been skipped
+# by one of the feature-side "skipped-but-matched" branches (cloud-saturated /
+# device-saturated / host-capability-deferred / parked), compute_state returns a
+# SCOPED, identity-preserving _state carrying the feature's own id + a per-feature
+# deferred terminal_reason — instead of `continue`-ing into the global
+# null-identity terminal (cloud-queue-exhausted / device-queue-exhausted /
+# host-capability-saturated / queue-exhausted-all-parked).
+#
+# Parity with bug-state.py's literals where the axis matches (cloud/device/park);
+# the feature side adds the host-capability axis (no bug-side analog) and has NO
+# operator-DEFERRED.md branch (bug-pipeline-only — JUSTIFIED divergence).
+# Part 3 (curated_stage.py) maps these literals VERBATIM:
+#   cloud-queue-exhausted-scoped     → Deferred
+#   device-queue-exhausted-scoped    → Deferred
+#   host-capability-saturated-scoped → Deferred
+#   blocked-scoped                   → Blocked
+#   needs-input-scoped               → Needs-input
+TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"
+TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
+TR_HOST_DEFERRED_SCOPED = "host-capability-saturated-scoped"
+TR_BLOCKED_SCOPED = "blocked-scoped"
+TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
+
+# Scoped per-feature deferred current_step strings (kept GENERIC so the curated
+# stage resolves from the terminal_reason, which dominates — NOT the step).
+STEP_CLOUD_DEFERRED_SCOPED = "Cloud-deferred (scoped)"
+STEP_DEVICE_DEFERRED_SCOPED = "Device-deferred (scoped)"
+STEP_HOST_DEFERRED_SCOPED = "Host-capability-deferred (scoped)"
+STEP_BLOCKED_PARKED_SCOPED = "Blocked, parked (scoped)"
+STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -1709,6 +1776,26 @@ def compute_state(
             deferred = (spec_path / "DEFERRED_NON_CLOUD.md").exists()
             validated = (spec_path / "VALIDATED.md").exists()
             if deferred and not validated and _phases_effectively_complete(spec_path):
+                # Scoped-match identity preservation (Phase 2 — feature-side
+                # parity twin of bug-state.py's Phase-1 cloud-saturated scoped
+                # return). A scoped --feature-id query on a cloud-saturated feature
+                # returns its OWN identity + a scoped cloud-deferred terminal,
+                # instead of `continue`-ing into the global null-identity
+                # cloud-queue-exhausted. UNSCOPED (scope_feature_id is None) is
+                # byte-identical — the guard fires ONLY on a scoped match.
+                if scope_feature_id is not None and feature_id == scope_feature_id:
+                    return _scoped_skip_state(
+                        feature_id=feature_id,
+                        feature_name=name,
+                        spec_path=spec_path,
+                        current_step=STEP_CLOUD_DEFERRED_SCOPED,
+                        terminal_reason=TR_CLOUD_DEFERRED_SCOPED,
+                        notify_message=(
+                            f"{name}: cloud-saturated (DEFERRED_NON_CLOUD.md, no "
+                            "VALIDATED.md). Scoped query returns its identity; "
+                            "awaiting workstation /lazy validation."
+                        ),
+                    )
                 cloud_saturated_skipped.append(name)
                 continue
         if not real_device:
@@ -1725,14 +1812,34 @@ def compute_state(
             device_deferred = (spec_path / "DEFERRED_REQUIRES_DEVICE.md").exists()
             validated = (spec_path / "VALIDATED.md").exists()
             if device_deferred and not validated and _phases_effectively_complete(spec_path):
+                meta = parse_sentinel(spec_path / "DEFERRED_REQUIRES_DEVICE.md") or {}
+                scen = meta.get("deferred_scenarios") or []
+                scen_str = ", ".join(str(s) for s in scen) if scen else "(unspecified)"
+                # Scoped-match identity preservation (Phase 2 — feature-side parity
+                # twin of bug-state.py's Phase-1 device-saturated scoped return). A
+                # scoped --feature-id query on a device-saturated feature returns
+                # its OWN identity + a scoped device-deferred terminal, instead of
+                # `continue`-ing into the global null-identity device-queue-exhausted.
+                # UNSCOPED is byte-identical — fires ONLY on a scoped match.
+                if scope_feature_id is not None and feature_id == scope_feature_id:
+                    return _scoped_skip_state(
+                        feature_id=feature_id,
+                        feature_name=name,
+                        spec_path=spec_path,
+                        current_step=STEP_DEVICE_DEFERRED_SCOPED,
+                        terminal_reason=TR_DEVICE_DEFERRED_SCOPED,
+                        notify_message=(
+                            f"{name}: device-saturated — real-device-only "
+                            f"assertions deferred [{scen_str}] "
+                            "(DEFERRED_REQUIRES_DEVICE.md). Scoped query returns "
+                            "its identity; re-opens on a real-device /lazy host."
+                        ),
+                    )
                 device_saturated_skipped.append(name)
                 _DEVICE_DEFERRED.append(name)
                 # Per-feature diagnostic on EVERY probe (not only when the queue
                 # exhausts) so a lingering In-progress device-deferral is always
                 # visible, even when a later feature is dispatched this cycle.
-                meta = parse_sentinel(spec_path / "DEFERRED_REQUIRES_DEVICE.md") or {}
-                scen = meta.get("deferred_scenarios") or []
-                scen_str = ", ".join(str(s) for s in scen) if scen else "(unspecified)"
                 _diag(
                     f"device-saturated skipped: {name} — real-device-only "
                     f"assertions deferred [{scen_str}] (DEFERRED_REQUIRES_DEVICE.md); "
@@ -1817,6 +1924,30 @@ def compute_state(
                             missing_capabilities=missing,
                             deferred_by=("lazy-batch" if _bg_marker is not None else "lazy"),
                         )
+                    # Scoped-match identity preservation (Phase 2): a scoped
+                    # --feature-id query on a host-capability-deferred feature
+                    # returns its OWN identity + a scoped host-capability-deferred
+                    # terminal, instead of `continue`-ing into the global
+                    # null-identity host-capability-saturated. The
+                    # DEFERRED_REQUIRES_HOST.md re-open sentinel is written ABOVE
+                    # regardless (the on-disk re-open contract is scope-independent);
+                    # only the queue-skip vs. scoped-return decision differs. UNSCOPED
+                    # is byte-identical — fires ONLY on a scoped match. (No bug-side
+                    # analog — the host-capability axis is feature-pipeline-only.)
+                    if scope_feature_id is not None and feature_id == scope_feature_id:
+                        return _scoped_skip_state(
+                            feature_id=feature_id,
+                            feature_name=name,
+                            spec_path=spec_path,
+                            current_step=STEP_HOST_DEFERRED_SCOPED,
+                            terminal_reason=TR_HOST_DEFERRED_SCOPED,
+                            notify_message=(
+                                f"{name}: host-capability-saturated — requires "
+                                f"{', '.join(missing)} (absent on this host); "
+                                "deferred (DEFERRED_REQUIRES_HOST.md). Scoped query "
+                                "returns its identity; re-opens on a capability-host."
+                            ),
+                        )
                     _HOST_DEFERRED.append(feature_id)
                     _HOST_SATURATED.append(
                         {"feature_id": feature_id, "missing": list(missing)}
@@ -1854,6 +1985,23 @@ def compute_state(
         # `continue`s, so the NEEDS_INPUT branch is not reached for it). This is
         # the root-cause fix for park-mode-halts-on-blocked (SPEC D1).
         if park_blocked and (spec_path / "BLOCKED.md").exists():
+            # Scoped-match identity preservation (Phase 2 — feature-side parity twin
+            # of bug-state.py's Phase-1 parked-blocked scoped return): a scoped
+            # --feature-id on a parked-blocked feature returns a scoped BLOCKED-family
+            # state naming the feature, instead of `continue`-ing into
+            # queue-exhausted-all-parked. UNSCOPED is byte-identical.
+            if scope_feature_id is not None and feature_id == scope_feature_id:
+                return _scoped_skip_state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=spec_path,
+                    current_step=STEP_BLOCKED_PARKED_SCOPED,
+                    terminal_reason=TR_BLOCKED_SCOPED,
+                    notify_message=(
+                        f"{name}: feature-local BLOCKED.md, parked (park mode). "
+                        "Scoped query returns its identity; re-enters when resolved."
+                    ),
+                )
             _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "BLOCKED.md"))
             _diag(
                 f"parked: {name} — feature-local BLOCKED.md; skipped (park mode). "
@@ -1871,6 +2019,23 @@ def compute_state(
         if park_blocked and not (spec_path / "BLOCKED.md").exists():
             _stray = lazy_core.detect_noncanonical_blocker(spec_path)
             if _stray is not None:
+                # Scoped-match identity preservation (Phase 2): a mis-named blocker
+                # is a BLOCKED-family park — same scoped treatment as the canonical
+                # BLOCKED park branch above. UNSCOPED is byte-identical.
+                if scope_feature_id is not None and feature_id == scope_feature_id:
+                    return _scoped_skip_state(
+                        feature_id=feature_id,
+                        feature_name=name,
+                        spec_path=spec_path,
+                        current_step=STEP_BLOCKED_PARKED_SCOPED,
+                        terminal_reason=TR_BLOCKED_SCOPED,
+                        notify_message=(
+                            f"{name}: feature-local mis-named blocker "
+                            f"'{_stray.name}', parked (park mode). Scoped query "
+                            "returns its identity; re-enters when renamed to "
+                            "BLOCKED.md or neutralized."
+                        ),
+                    )
                 _PARKED.append(lazy_core.build_parked_entry(feature_id, _stray))
                 _diag(
                     f"parked: {name} — feature-local mis-named blocker "
@@ -1890,6 +2055,22 @@ def compute_state(
             and (spec_path / "NEEDS_INPUT.md").exists()
             and not (spec_path / "BLOCKED.md").exists()
         ):
+            # Scoped-match identity preservation (Phase 2 — feature-side parity twin
+            # of bug-state.py's Phase-1 parked-needs-input scoped return): a scoped
+            # --feature-id on a parked-needs-input feature returns a scoped
+            # NEEDS-INPUT-family state. UNSCOPED is byte-identical.
+            if scope_feature_id is not None and feature_id == scope_feature_id:
+                return _scoped_skip_state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=spec_path,
+                    current_step=STEP_NEEDS_INPUT_PARKED_SCOPED,
+                    terminal_reason=TR_NEEDS_INPUT_SCOPED,
+                    notify_message=(
+                        f"{name}: unresolved NEEDS_INPUT.md, parked (park mode). "
+                        "Scoped query returns its identity; re-enters when resolved."
+                    ),
+                )
             _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "NEEDS_INPUT.md"))
             _diag(
                 f"parked: {name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
@@ -7490,6 +7671,170 @@ def run_smoke_tests() -> int:
         except (TypeError, SystemExit) as e:
             failures.append(f"[{fix_not_found}] unexpected exception: {type(e).__name__}: {e}")
             print(f"  FAIL [{fix_not_found}] {type(e).__name__} — {e}")
+
+        # -------------------------------------------------------------------
+        # Fixtures: scoped deferred identity preservation
+        # (bug-state-scoped-query-loses-deferred-bug-identity, Phase 2 —
+        #  feature-side parity twin of bug-state.py's Phase-1 scoped fixtures).
+        #
+        # A --feature-id scoped query on a feature that WOULD be skipped by the
+        # cloud-saturated / device-saturated / host-capability-deferred branch must
+        # return the feature's OWN identity + a scoped deferred terminal_reason,
+        # NOT feature_id: null / the global exhausted terminal. UNSCOPED byte-
+        # identity is guarded by the existing baseline-regression-default fixture
+        # AND the table-driven cloud-saturated / host-cap-miss-defers cases above.
+        # -------------------------------------------------------------------
+
+        # Fixture A (scoped cloud-saturated identity): a cloud-saturated feature
+        # (DEFERRED_NON_CLOUD.md + no VALIDATED.md + phases complete) queried with
+        # --feature-id under --cloud returns its id + TR_CLOUD_DEFERRED_SCOPED.
+        fix_scoped_cloud = "scoped-cloud-saturated-identity"
+        sc_root = td_path / "scoped-cloud-id"
+        sc_feat = sc_root / "docs" / "features"
+        sc_feat.mkdir(parents=True, exist_ok=True)
+        (sc_feat / "ROADMAP.md").write_text("# Roadmap\n")
+        (sc_feat / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sc", "name": "Feature SC", "spec_dir": "feat-sc", "tier": 1},
+            ]
+        }))
+        sc_d = sc_feat / "feat-sc"
+        sc_d.mkdir()
+        (sc_d / "SPEC.md").write_text("# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n")
+        (sc_d / "RESEARCH.md").write_text("# R\n")
+        (sc_d / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (sc_d / "PHASES.md").write_text("# P\n\n- [x] Done\n")
+        _write_yaml_sentinel(
+            sc_d / "DEFERRED_NON_CLOUD.md", "deferred-non-cloud",
+            feature_id="feat-sc", deferred_step=8, reason="cloud limitation",
+            deferred_by="lazy-cloud", date="2026-06-22",
+        )
+        try:
+            got_sc = compute_state(
+                sc_root, cloud=True, real_device=True,
+                scope_feature_id="feat-sc",
+            )
+            sc_ok = True
+            if got_sc.get("feature_id") != "feat-sc":
+                failures.append(
+                    f"[{fix_scoped_cloud}] expected feature_id='feat-sc', "
+                    f"got {got_sc.get('feature_id')!r}"
+                )
+                sc_ok = False
+            if got_sc.get("terminal_reason") != TR_CLOUD_DEFERRED_SCOPED:
+                failures.append(
+                    f"[{fix_scoped_cloud}] expected terminal_reason="
+                    f"{TR_CLOUD_DEFERRED_SCOPED!r}, got {got_sc.get('terminal_reason')!r}"
+                )
+                sc_ok = False
+            if not got_sc.get("spec_path"):
+                failures.append(f"[{fix_scoped_cloud}] expected non-null spec_path")
+                sc_ok = False
+            print(
+                f"  {'PASS' if sc_ok else 'FAIL'} [{fix_scoped_cloud}] "
+                f"scoped cloud query returns feat-sc + scoped terminal"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_scoped_cloud}] SystemExit: {exc.code}")
+
+        # Fixture B (scoped device-saturated identity): a device-saturated feature
+        # (DEFERRED_REQUIRES_DEVICE.md + no VALIDATED.md + phases complete) queried
+        # with --feature-id on a no-real-device host returns its id +
+        # TR_DEVICE_DEFERRED_SCOPED.
+        fix_scoped_device = "scoped-device-saturated-identity"
+        sd_root = td_path / "scoped-device-id"
+        sd_feat = sd_root / "docs" / "features"
+        sd_feat.mkdir(parents=True, exist_ok=True)
+        (sd_feat / "ROADMAP.md").write_text("# Roadmap\n")
+        (sd_feat / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sd", "name": "Feature SD", "spec_dir": "feat-sd", "tier": 1},
+            ]
+        }))
+        sd_d = sd_feat / "feat-sd"
+        sd_d.mkdir()
+        (sd_d / "SPEC.md").write_text("# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n")
+        (sd_d / "RESEARCH.md").write_text("# R\n")
+        (sd_d / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (sd_d / "PHASES.md").write_text("# P\n\n- [x] Done\n")
+        _write_yaml_sentinel(
+            sd_d / "DEFERRED_REQUIRES_DEVICE.md", "deferred-requires-device",
+            feature_id="feat-sd",
+            deferred_scenarios=["AQ-TE-05"],
+            reason="sustained zero-dropout not certifiable under HeadlessPumpDriver",
+            deferred_by="lazy", date="2026-06-22",
+        )
+        try:
+            got_sd = compute_state(
+                sd_root, cloud=False, real_device=False,
+                scope_feature_id="feat-sd",
+            )
+            sd_ok = True
+            if got_sd.get("feature_id") != "feat-sd":
+                failures.append(
+                    f"[{fix_scoped_device}] expected feature_id='feat-sd', "
+                    f"got {got_sd.get('feature_id')!r}"
+                )
+                sd_ok = False
+            if got_sd.get("terminal_reason") != TR_DEVICE_DEFERRED_SCOPED:
+                failures.append(
+                    f"[{fix_scoped_device}] expected terminal_reason="
+                    f"{TR_DEVICE_DEFERRED_SCOPED!r}, got {got_sd.get('terminal_reason')!r}"
+                )
+                sd_ok = False
+            print(
+                f"  {'PASS' if sd_ok else 'FAIL'} [{fix_scoped_device}] "
+                f"scoped device query returns feat-sd + scoped terminal"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_scoped_device}] SystemExit: {exc.code}")
+
+        # Fixture C (scoped host-capability-deferred identity): a feature past
+        # implementation declaring requires_host: [gpu] queried with --feature-id
+        # on a host whose injected present-set lacks gpu returns its id +
+        # TR_HOST_DEFERRED_SCOPED (NOT the global host-capability-saturated).
+        fix_scoped_host = "scoped-host-capability-identity"
+        sh_root = td_path / "scoped-host-id"
+        sh_feat = sh_root / "docs" / "features"
+        sh_feat.mkdir(parents=True, exist_ok=True)
+        (sh_feat / "ROADMAP.md").write_text("# Roadmap\n")
+        (sh_feat / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sh", "name": "Feature SH", "spec_dir": "feat-sh", "tier": 1,
+                 "requires_host": ["gpu"]},
+            ]
+        }))
+        sh_d = sh_feat / "feat-sh"
+        sh_d.mkdir()
+        (sh_d / "SPEC.md").write_text("# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n")
+        (sh_d / "RESEARCH.md").write_text("# R\n")
+        (sh_d / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (sh_d / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        try:
+            got_sh = compute_state(
+                sh_root, cloud=False, real_device=True,
+                scope_feature_id="feat-sh",
+                host_present=set(),  # gpu absent → missing = {gpu}
+            )
+            sh_ok = True
+            if got_sh.get("feature_id") != "feat-sh":
+                failures.append(
+                    f"[{fix_scoped_host}] expected feature_id='feat-sh', "
+                    f"got {got_sh.get('feature_id')!r}"
+                )
+                sh_ok = False
+            if got_sh.get("terminal_reason") != TR_HOST_DEFERRED_SCOPED:
+                failures.append(
+                    f"[{fix_scoped_host}] expected terminal_reason="
+                    f"{TR_HOST_DEFERRED_SCOPED!r}, got {got_sh.get('terminal_reason')!r}"
+                )
+                sh_ok = False
+            print(
+                f"  {'PASS' if sh_ok else 'FAIL'} [{fix_scoped_host}] "
+                f"scoped host-capability query returns feat-sh + scoped terminal"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_scoped_host}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
         # Fixture WU-1-park: --park-needs-input mode (Phase 4)

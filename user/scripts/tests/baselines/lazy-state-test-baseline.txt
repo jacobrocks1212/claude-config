@@ -110,6 +110,9 @@
   PASS [scoped-feature-id] scope_feature_id selected feat-scope-beta
   PASS [baseline-regression-default] default picks feat-scope-alpha at 'Step 6: plan feature (phases + plan)'
   PASS [scoped-feature-id-not-found] terminal_reason='scoped-id-not-found' (impl landed)
+  PASS [scoped-cloud-saturated-identity] scoped cloud query returns feat-sc + scoped terminal
+  PASS [scoped-device-saturated-identity] scoped device query returns feat-sd + scoped terminal
+  PASS [scoped-host-capability-identity] scoped host-capability query returns feat-sh + scoped terminal
   PASS [park-needs-input-default-halt] default: terminal_reason='needs-input', parked key absent=True
   PASS [park-needs-input-mode-skip] park mode: dispatched='feat-after', parked count=1
   PASS [park-needs-input-resolved-reenter] resolved: dispatched='feat-parked', parked=[]

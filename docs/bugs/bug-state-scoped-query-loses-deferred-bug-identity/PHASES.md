@@ -71,11 +71,33 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 **Settled (⚖ scope-class):** feature-side has NO operator `DEFERRED.md` branch (that is a bug-pipeline construct) — its deferral axes are cloud / device / host-capability. The mirror covers exactly the feature-side skip branches that `continue` on a scoped match; it does NOT invent a feature-side operator-deferred branch. The feature pipeline orders by int `tier` (the bug pipeline by severity string) — this JUSTIFIED divergence is unchanged.
 
 **Deliverables:**
-- [ ] In `lazy-state.py::compute_state`, when `scope_feature_id` is set AND the current entry matches AND it would be skipped by the cloud-saturated branch (~1701–1713), return a scoped `_state(feature_id=…, feature_name=…, spec_path=…, current_step=<per-feature cloud-deferred>, terminal_reason=<scoped cloud-deferred>)` instead of `continue`.
-- [ ] Mirror the scoped-return in the device-saturated skip branch (~1714+) and the host-capability-miss DEFER branch (the `DEFERRED_REQUIRES_HOST.md` skip → `host-capability-saturated`) and the feature-side park branches.
-- [ ] Add the scoped per-feature terminal_reason constant(s) (feature-side analogs of Phase 1's, literal strings chosen for parity / curated-stage mapping in Phase 3).
-- [ ] Preserve the UNSCOPED feature path byte-identically (the `baseline-regression-default` smoke fixtures guard this — keep them green).
-- [ ] Tests: add `lazy-state.py --test` fixtures asserting `--feature-id <cloud-deferred-feature>` (and device / host-capability) returns the feature's own id + scoped deferred terminal, NOT `feature_id: null` / the global exhausted terminal.
+- [x] In `lazy-state.py::compute_state`, when `scope_feature_id` is set AND the current entry matches AND it would be skipped by the cloud-saturated branch (~1701–1713), return a scoped `_state(feature_id=…, feature_name=…, spec_path=…, current_step=<per-feature cloud-deferred>, terminal_reason=<scoped cloud-deferred>)` instead of `continue`.
+- [x] Mirror the scoped-return in the device-saturated skip branch (~1714+) and the host-capability-miss DEFER branch (the `DEFERRED_REQUIRES_HOST.md` skip → `host-capability-saturated`) and the feature-side park branches.
+- [x] Add the scoped per-feature terminal_reason constant(s) (feature-side analogs of Phase 1's, literal strings chosen for parity / curated-stage mapping in Phase 3).
+- [x] Preserve the UNSCOPED feature path byte-identically (the `baseline-regression-default` smoke fixtures guard this — keep them green).
+- [x] Tests: add `lazy-state.py --test` fixtures asserting `--feature-id <cloud-deferred-feature>` (and device / host-capability) returns the feature's own id + scoped deferred terminal, NOT `feature_id: null` / the global exhausted terminal.
+
+#### Implementation Notes (Phase 2 — landed 2026-06-22, Part 2)
+
+**Status:** Implemented (validation runtime: not-required — pure CLI; `--test` trio + parity audit are the gate).
+**Review verdict:** PASS (inline review — 1 file `lazy-state.py` + 1 baseline; UNSCOPED path byte-identical via the `baseline-regression-default` fixture + the table-driven `cloud-saturated`/`host-cap-miss-defers` cases staying green; every scoped guard wraps `if scope_feature_id is not None and feature_id == scope_feature_id:` BEFORE the unchanged append/continue; no branch lost its unscoped `continue`; the host branch still writes `DEFERRED_REQUIRES_HOST.md` regardless — only the queue-skip vs. scoped-return decision is scoped).
+
+**Scoped terminal_reason literals introduced (feature-side; Part 3 consumes these VERBATIM):**
+- `TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"` → curated `Deferred` (parity with bug side)
+- `TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"` → curated `Deferred` (parity with bug side)
+- `TR_HOST_DEFERRED_SCOPED = "host-capability-saturated-scoped"` → curated `Deferred` (NEW — feature-only host-capability axis, no bug-side analog)
+- `TR_BLOCKED_SCOPED = "blocked-scoped"` → curated `Blocked` (parity with bug side)
+- `TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"` → curated `Needs-input` (parity with bug side)
+
+**Scoped current_step literals (generic — curated stage resolves from terminal):** `STEP_CLOUD_DEFERRED_SCOPED`, `STEP_DEVICE_DEFERRED_SCOPED`, `STEP_HOST_DEFERRED_SCOPED`, `STEP_BLOCKED_PARKED_SCOPED`, `STEP_NEEDS_INPUT_PARKED_SCOPED`.
+
+**Files modified:** `user/scripts/lazy-state.py` (5 new `TR_*` + 5 new `STEP_*` constants; new shared `_scoped_skip_state(...)` helper modeled on the completion-unverified scoped return + bug-state.py's twin; scoped early-returns added to ALL FIVE feature-side skip clusters — cloud-saturated, device-saturated, host-capability-deferred, parked-blocked + mis-named-blocker, parked-needs-input; 3 new `--test` fixtures: scoped-cloud-saturated-identity (A), scoped-device-saturated-identity (B), scoped-host-capability-identity (C)). `user/scripts/tests/baselines/lazy-state-test-baseline.txt` re-byte-pinned via `_normalize_smoke_output`.
+
+**Justified divergences (no operator-DEFERRED.md axis; +host-capability axis):** the feature pipeline has NO operator `DEFERRED.md` branch (bug-pipeline-only), so no `TR_OPERATOR_DEFERRED_SCOPED` analog is authored. The feature side ADDS the host-capability axis (`TR_HOST_DEFERRED_SCOPED`), which has no bug-side analog. `lazy_parity_audit.py --repo-root .` exits 0 — the scoped-terminal sets legitimately differ along these two axes and the audit flags no missing parity entry, so NO `lazy-parity-manifest.json` change was required.
+
+**Gates:** `lazy-state.py --test` green (incl. 3 new scoped fixtures + the unchanged baseline-regression-default), `bug-state.py --test` green (shared `lazy_core`, no regression), `test_lazy_core.py` 764/764, `lazy_parity_audit.py --repo-root .` exit 0. B.4.5 MCP integration SKIP — `MCP runtime: not-required` (pure CLI tooling, no MCP surface).
+
+**Part 3 contract:** `curated_stage.py`'s `_SIDE_STATE_BY_TERMINAL` additions must map all 5 feature-side scoped literals above VERBATIM (cloud/device/host → `Deferred`; blocked → `Blocked`; needs-input → `Needs-input`) ALONGSIDE the bug-side literals from Part 1.
 
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --repo-root <fixture> --feature-id <DEFERRED_NON_CLOUD-feature> --cloud` emits a scoped state carrying that feature's id + a Deferred-mapping terminal (not a null-identity `cloud-queue-exhausted`). Verified by the new `lazy-state.py --test` fixture.
 

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: bug-state-scoped-query-loses-deferred-bug-identity
-status: In-progress
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [2]
@@ -93,9 +93,9 @@ This plan references reusable component files by path. **Before executing each s
 
 ## Work Units
 
-- [ ] WU-1 — Scoped per-feature deferred terminal_reason constant(s) + cloud/device scoped early-returns in lazy-state.py
-- [ ] WU-2 — Host-capability + park scoped-match early-returns (feature-side)
-- [ ] WU-3 — `lazy-state.py --test` fixtures (scoped feature identity) + `lazy_parity_audit.py` green
+- [x] WU-1 — Scoped per-feature deferred terminal_reason constant(s) + cloud/device scoped early-returns in lazy-state.py
+- [x] WU-2 — Host-capability + park scoped-match early-returns (feature-side)
+- [x] WU-3 — `lazy-state.py --test` fixtures (scoped feature identity) + `lazy_parity_audit.py` green
 
 ---
 
