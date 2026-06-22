@@ -18756,6 +18756,7 @@ def test_ensure_runtime_m4_dead_when_pid_missing_routes_to_recovery():
             live_session_id=_SESSION,
             kernel_start_time_fn=lambda pid, **kw: None,  # PID dead → DEAD
             sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
         )
         # DEAD routed into recovery (a HIJACKED would NEVER restart).
         assert calls["restart"] >= 1, "DEAD (missing PID) must enter recovery"
@@ -18782,6 +18783,7 @@ def test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused_routes_t
             live_session_id=_SESSION,
             kernel_start_time_fn=lambda pid, **kw: 555.0,  # owned + alive
             sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
         )
         assert calls["restart"] >= 1, "DEAD (health refused) must enter recovery"
         assert result["state"] == "BLOCKED", result
@@ -18825,6 +18827,7 @@ def test_ensure_runtime_m4_no_lock_plus_down_routes_to_recovery():
             live_session_id=_SESSION,
             kernel_start_time_fn=lambda pid, **kw: None,
             sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
         )
         assert calls["restart"] >= 1, "no-lock + down must enter recovery (DEAD)"
         assert result["state"] == "BLOCKED", result
@@ -18925,6 +18928,7 @@ def test_ensure_runtime_m4_dead_recovers_within_five():
             sleep=lambda s: None,
             write_lock=lambda **kw: None,
             recover_identity=lambda: {"pid": 5001, "start_time": 555.0},
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
         )
         assert result["state"] == "READY", result
         assert calls["restart"] == 3, calls
@@ -18958,6 +18962,7 @@ def test_ensure_runtime_m4_dead_exhausts_to_blocked():
                 AssertionError("lock must NOT be rewritten on a failed recovery")
             ),
             recover_identity=lambda: {"pid": 5002, "start_time": 666.0},
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
         )
         assert result["state"] == "BLOCKED", result
         assert calls["restart"] == 5, f"recovery must cap at 5: {calls}"
@@ -19321,6 +19326,226 @@ def test_ensure_runtime_frontend_probe_default_binds_when_config_carries_keys():
         )
         assert result["state"] == "READY", result
         assert result["ownership_verified"] is True, result
+
+
+# ---------------------------------------------------------------------------
+# ensure-runtime-recovery-starves-cold-compile Phase 2 — patient compiling-aware
+# wait. A runtime classified `compiling` (Vite :1420 up, backend :3333 not yet
+# serving) is WAITED on (owned, cold-compile-sized, NEVER kill-restarted) and
+# ends on "actually serving" (:3333 200 + sidecar when asserted). The bounded
+# ≤5×backoff crash-recovery loop is reserved strictly for a genuinely `dead`
+# runtime. All probes injected → hermetic (no real runtime/network/clock).
+# ---------------------------------------------------------------------------
+
+
+def test_cold_compile_timeout_blocker_distinct_from_blocked_blocker():
+    """_cold_compile_timeout_blocker() returns a non-empty string DISTINGUISHABLE
+    from the generic recovery-exhausted _blocked_blocker (Open Question 5: distinct
+    verdict text, same blocker_kind downstream)."""
+    _guard()
+    cold = lazy_core._cold_compile_timeout_blocker()
+    generic = lazy_core._blocked_blocker(5)
+    assert isinstance(cold, str) and cold.strip(), cold
+    assert cold != generic, "cold-compile timeout text must differ from generic"
+    # It should read as a cold-compile / still-compiling timeout, not a crash.
+    assert "compil" in cold.lower(), cold
+
+
+def test_ensure_runtime_m4_compiling_patiently_waits_never_restarts_then_ready():
+    """compiling (:3333 down, :1420 up): the runtime is patiently WAITED on —
+    restart() is NEVER called — and reaches READY once :3333 answers 200 within
+    the patience ceiling. This is the starvation root cause structurally gone."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            # Initial probe (M4 Health) + the patient-wait re-probes. Answer 200
+            # only on the 4th probe call (simulating a cold compile finishing).
+            calls["probe"] += 1
+            return (200, {"tools": ["render_chart"]}) if calls["probe"] >= 4 else (0, None)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_FRONTEND,
+            probe=probe,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # owned + alive
+            sleep=lambda s: None,
+            frontend_probe=lambda: True,  # Vite up → compiling, not dead
+        )
+        assert result["state"] == "READY", result
+        assert calls["restart"] == 0, (
+            f"a compiling runtime must NEVER be kill-restarted: {calls}"
+        )
+        assert result["ownership_verified"] is True, result
+
+
+def test_ensure_runtime_m4_compiling_crosses_to_dead_falls_through_to_recovery():
+    """compiling that crosses to dead mid-wait (Vite :1420 goes DOWN) → the patient
+    wait abandons and falls through to the bounded _recover_runtime crash path
+    (restart IS called, capped at 5)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0, "frontend": 0}
+
+        def frontend_probe():
+            # Vite up on the first observation (→ compiling), then DOWN (→ dead).
+            calls["frontend"] += 1
+            return calls["frontend"] <= 1
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_FRONTEND,
+            probe=lambda: (0, None),  # backend never serves
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=frontend_probe,
+        )
+        # Crossed to dead → bounded recovery ran (restart fired), then exhausted.
+        assert calls["restart"] >= 1, (
+            f"a compiling→dead transition must fall through to recovery: {calls}"
+        )
+        assert calls["restart"] <= 5, "recovery must stay bounded at 5"
+        assert result["state"] == "BLOCKED", result
+
+
+def test_ensure_runtime_m4_compiling_never_serves_blocks_with_distinct_text():
+    """compiling that never serves within the ceiling → BLOCKED whose
+    terminal_blocker is the DISTINCT _cold_compile_timeout_blocker text (NOT the
+    generic _blocked_blocker), and restart() is STILL never called during the
+    compiling wait."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_FRONTEND,
+            probe=lambda: (0, None),  # backend never serves
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: True,  # Vite STAYS up → compiling the whole time
+        )
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 0, (
+            f"restart must NEVER fire during a compiling wait: {calls}"
+        )
+        assert result["terminal_blocker"] == lazy_core._cold_compile_timeout_blocker(), (
+            result["terminal_blocker"]
+        )
+
+
+def test_ensure_runtime_m4_compiling_waits_for_sidecar_too():
+    """compiling that reaches :3333 200 but with a DEAD sidecar pipe (config asserts
+    it) does NOT return READY on the 200 alone — the patient wait composes the
+    sidecar assertion (a serving-but-pipe-dead runtime is not READY)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        cfg = {**_M4_CONFIG_FRONTEND, "assert_sidecar_connected": True}
+        calls = {"probe": 0, "restart": 0}
+
+        def probe():
+            calls["probe"] += 1
+            # backend answers 200 from the 2nd probe on
+            return (200, {"tools": ["render_chart"]}) if calls["probe"] >= 2 else (0, None)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=cfg,
+            probe=probe,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: True,  # Vite up → compiling
+            sidecar_check=lambda: False,  # pipe stays dead → never READY
+        )
+        # A 200 with a dead pipe never satisfies the patient wait → BLOCKED, and
+        # the patient wait never kill-restarts (sidecar reconnection is awaited).
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 0, (
+            f"the compiling+sidecar wait must not restart: {calls}"
+        )
+
+
+def test_ensure_runtime_m4_genuine_dead_unchanged_bounded_recovery():
+    """genuine dead (both ports down: :3333 refused AND :1420 down) → UNCHANGED
+    bounded _recover_runtime (restart fired, capped at 5, exhausts to BLOCKED with
+    the GENERIC _blocked_blocker — NOT the cold-compile text). The preserved
+    crash-recovery path."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_FRONTEND,
+            probe=lambda: (0, None),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite ALSO down → genuinely dead
+        )
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 5, f"genuine dead must run bounded recovery: {calls}"
+        assert result["terminal_blocker"] == lazy_core._blocked_blocker(5), (
+            "genuine dead must carry the GENERIC blocker, not cold-compile text"
+        )
+
+
+def test_ensure_runtime_m4_default_off_byte_identical_dead_recovery():
+    """default-off / repo-agnostic (a non-:1420 repo overrides the frontend signal
+    OFF via an empty frontend_health_url) → frontend_probe default-binds to
+    `lambda: False`, so every non-serving runtime classifies `dead` ⇒ byte-identical
+    to today's DEAD→recovery path (bounded recovery, generic _blocked_blocker). The
+    discriminator is inert when the frontend signal is absent — no injected
+    frontend_probe needed, exercising the real config-driven default binding."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        # A repo with NO :1420 frontend overrides the key off (the base default
+        # carries :1420 — the AlgoBooth-flavored harness default — so a non-:1420
+        # repo opts out exactly the way the sidecar key opts in/out).
+        cfg_no_frontend = {**_M4_CONFIG, "frontend_health_url": ""}
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=cfg_no_frontend,  # frontend off → frontend_probe binds lambda: False
+            probe=lambda: (0, None),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            # NO injected frontend_probe → exercises the config-driven default bind.
+        )
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 5, f"default-off must run today's recovery: {calls}"
+        assert result["terminal_blocker"] == lazy_core._blocked_blocker(5), result
 
 
 # ---------------------------------------------------------------------------
@@ -19811,6 +20036,21 @@ _TESTS = _TESTS + [
      test_ensure_runtime_legacy_config_without_frontend_keys_does_not_crash),
     ("test_ensure_runtime_frontend_probe_default_binds_when_config_carries_keys",
      test_ensure_runtime_frontend_probe_default_binds_when_config_carries_keys),
+    # ensure-runtime-recovery-starves-cold-compile Phase 2: patient compiling wait.
+    ("test_cold_compile_timeout_blocker_distinct_from_blocked_blocker",
+     test_cold_compile_timeout_blocker_distinct_from_blocked_blocker),
+    ("test_ensure_runtime_m4_compiling_patiently_waits_never_restarts_then_ready",
+     test_ensure_runtime_m4_compiling_patiently_waits_never_restarts_then_ready),
+    ("test_ensure_runtime_m4_compiling_crosses_to_dead_falls_through_to_recovery",
+     test_ensure_runtime_m4_compiling_crosses_to_dead_falls_through_to_recovery),
+    ("test_ensure_runtime_m4_compiling_never_serves_blocks_with_distinct_text",
+     test_ensure_runtime_m4_compiling_never_serves_blocks_with_distinct_text),
+    ("test_ensure_runtime_m4_compiling_waits_for_sidecar_too",
+     test_ensure_runtime_m4_compiling_waits_for_sidecar_too),
+    ("test_ensure_runtime_m4_genuine_dead_unchanged_bounded_recovery",
+     test_ensure_runtime_m4_genuine_dead_unchanged_bounded_recovery),
+    ("test_ensure_runtime_m4_default_off_byte_identical_dead_recovery",
+     test_ensure_runtime_m4_default_off_byte_identical_dead_recovery),
     # long-build-and-runtime-ownership Phase 2 / WU-3: --ensure-runtime CLI surface.
     ("test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states",
      test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states),

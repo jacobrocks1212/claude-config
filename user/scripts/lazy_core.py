@@ -6526,6 +6526,15 @@ _RUNTIME_RECOVERY_MAX_ATTEMPTS = 5
 # injected/real sleep so --test asserts the schedule without real sleeps.
 _RUNTIME_RECOVERY_BACKOFF_BASE = 1.0
 
+# Cold-compile patient-wait ceiling (ensure-runtime-recovery-starves-cold-compile,
+# Phase 2). A runtime classified `compiling` (Vite :1420 up, backend :3333 not yet
+# serving) is WAITED on — never kill-restarted — on a cold-compile-sized budget.
+# REUSES the existing production restart()-awaiter's `90 × 5s` ≈ 7.5-min sizing
+# (NOT the ≤5×backoff ~31s crash budget, which would starve a cold Rust compile —
+# the root cause). Injected sleep keeps --test hermetic (no real 7.5-min wait).
+_COLD_COMPILE_WAIT_MAX_POLLS = 90
+_COLD_COMPILE_WAIT_INTERVAL = 5.0
+
 
 # ---------------------------------------------------------------------------
 # host-capability-declaration-for-gated-features — Phase 2
@@ -6862,6 +6871,29 @@ def _blocked_blocker(attempts):
     )
 
 
+def _cold_compile_timeout_blocker():
+    """The patient-wait cold-compile-timeout terminal_blocker message
+    (ensure-runtime-recovery-starves-cold-compile, Phase 2 / Open Question 5).
+
+    DISTINCT verbatim text from ``_blocked_blocker`` so the operator can tell a
+    cold-compile that genuinely never finished apart from a generic
+    crash-recovery exhaustion — but it still maps to the SAME downstream
+    ``blocker_kind: mcp-runtime-unready`` (no new blocker_kind). It describes the
+    patient-wait semantics: the runtime was COMPILING (Vite up, backend not yet
+    serving) and was WAITED on — never kill-restarted — for the full
+    cold-compile budget without the backend ever reaching a serving state.
+    """
+    secs = int(_COLD_COMPILE_WAIT_MAX_POLLS * _COLD_COMPILE_WAIT_INTERVAL)
+    return (
+        f"Cold compile timed out — the runtime was still COMPILING (Vite dev "
+        f"server up, backend /health not yet serving) and was patiently waited "
+        f"on for ~{secs}s ({_COLD_COMPILE_WAIT_MAX_POLLS} polls) WITHOUT a "
+        f"kill-restart, but the backend never reached a serving state. The "
+        f"compile genuinely never finished (not a crash-recovery exhaustion). "
+        f"Halting (blocker_kind: mcp-runtime-unready)."
+    )
+
+
 def _ensure_runtime_m4(
     cfg,
     *,
@@ -6884,9 +6916,51 @@ def _ensure_runtime_m4(
     blocker, NEVER restart/kill); STALE/DEAD enter the bounded exponential-backoff
     recovery loop (≤ ``_RUNTIME_RECOVERY_MAX_ATTEMPTS`` restarts) → READY on a
     re-probe success (lock rewritten) or BLOCKED on exhaustion.
+
+    ensure-runtime-recovery-starves-cold-compile (Phase 2): the LD3 bounded loop is
+    RE-SCOPED to genuine crashes. Each point that today routes a non-serving runtime
+    into ``_recover_runtime`` now first consults ``_classify_compile_state(code,
+    frontend_probe())``: a ``compiling`` runtime (Vite :1420 up, backend :3333 not
+    yet serving — a cold Rust compile in progress) is PATIENTLY WAITED on via
+    ``_await_compile_serving`` (never kill-restarted); only a genuinely ``dead``
+    runtime (both ports down) enters the ≤5×backoff crash loop. A ``compiling → dead``
+    transition mid-wait falls through to that same crash loop. Default-off: when no
+    frontend signal is present (``frontend_probe → False``), every non-serving runtime
+    classifies as ``dead`` ⇒ byte-identical to today's recovery behavior.
     """
+    if frontend_probe is None:
+        # Defensive default for legacy/un-threaded callers (e.g. a test that does
+        # not inject one): no frontend signal ⇒ never `compiling` ⇒ today's path.
+        frontend_probe = lambda: False
     code, payload = probe()
     lock = read_lock()
+
+    def _route_non_serving(from_state, *, ownership_verified, code, payload):
+        """Branch a non-serving runtime on the two-port classifier: `compiling` →
+        patient wait (never restart); `dead`/default-off → bounded crash recovery.
+        A `compiling → dead` transition during the patient wait routes back here as
+        the bounded crash loop."""
+        try:
+            frontend_up = bool(frontend_probe())
+        except Exception:  # noqa: BLE001 — a probe error is treated as down (dead)
+            frontend_up = False
+        if _classify_compile_state(code, frontend_up) == "compiling":
+            verdict = _await_compile_serving(
+                cfg, ownership_verified=ownership_verified, probe=probe,
+                frontend_probe=frontend_probe, sleep=sleep, write_lock=write_lock,
+                recover_identity=recover_identity, tool_name=tool_name,
+                initial_code=code, initial_payload=payload,
+                sidecar_check=sidecar_check,
+            )
+            if verdict is not _COMPILE_WENT_DEAD:
+                return verdict
+            # compiling → dead mid-wait: fall through to bounded crash recovery.
+        return _recover_runtime(
+            cfg, from_state, ownership_verified=ownership_verified, probe=probe,
+            restart=restart, sleep=sleep, write_lock=write_lock,
+            recover_identity=recover_identity, tool_name=tool_name,
+            initial_code=code, initial_payload=payload, sidecar_check=sidecar_check,
+        )
 
     # ---- Phase 1: Identity ---------------------------------------------------
     if not isinstance(lock, dict):
@@ -6899,10 +6973,8 @@ def _ensure_runtime_m4(
                 payload=payload, tool_name=tool_name,
                 terminal_blocker=_hijacked_blocker(lock),
             )
-        return _recover_runtime(
-            cfg, "DEAD", ownership_verified=False, probe=probe, restart=restart,
-            sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
-            tool_name=tool_name, initial_code=code, initial_payload=payload,
+        return _route_non_serving(
+            "DEAD", ownership_verified=False, code=code, payload=payload,
         )
 
     owned = verify_runtime_ownership(
@@ -6922,10 +6994,8 @@ def _ensure_runtime_m4(
         except Exception:  # noqa: BLE001 — best-effort
             live_start = None
         if live_start is None:
-            return _recover_runtime(
-                cfg, "DEAD", ownership_verified=False, probe=probe, restart=restart,
-                sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
-                tool_name=tool_name, initial_code=code, initial_payload=payload,
+            return _route_non_serving(
+                "DEAD", ownership_verified=False, code=code, payload=payload,
             )
         # Live foreign PID — HIJACKED strict fail-safe: set the terminal_blocker
         # and return WITHOUT restart() or any kill of the foreign process (LD3).
@@ -6938,11 +7008,13 @@ def _ensure_runtime_m4(
     # Ownership verified (the recorded PID is ours, alive, current session).
     # ---- Phase 2: Staleness --------------------------------------------------
     if stale_check():
-        return _recover_runtime(
-            cfg, "STALE", ownership_verified=True, probe=probe, restart=restart,
-            sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
-            tool_name=tool_name, initial_code=code, initial_payload=payload,
-            sidecar_check=sidecar_check,
+        # A serving-but-stale runtime (code==200) classifies as `serving`, so it
+        # rebuilds via _recover_runtime (the existing STALE→rebuild path). A stale
+        # runtime that is ALSO not yet serving while Vite is up (a new-crate STALE
+        # during a cold compile) classifies `compiling` ⇒ patient wait, not a
+        # starved kill-restart (the cold-compile re-scope).
+        return _route_non_serving(
+            "STALE", ownership_verified=True, code=code, payload=payload,
         )
 
     # ---- Phase 3: Health -----------------------------------------------------
@@ -6956,23 +7028,129 @@ def _ensure_runtime_m4(
         # READY byte-for-byte. The recovery re-probe re-asserts the pipe, so a
         # restart that fixes HTTP but not the pipe ends BLOCKED, never READY.
         if sidecar_check is not None and not sidecar_check():
-            return _recover_runtime(
-                cfg, "DEAD", ownership_verified=True, probe=probe, restart=restart,
-                sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
-                tool_name=tool_name, initial_code=code, initial_payload=payload,
-                sidecar_check=sidecar_check,
+            # code==200 ⇒ classifies `serving`, so _route_non_serving falls through
+            # to the existing _recover_runtime pipe-reap path (unchanged behavior).
+            return _route_non_serving(
+                "DEAD", ownership_verified=True, code=code, payload=payload,
             )
         return _runtime_verdict(
             "READY", ownership_verified=True, health_code=code,
             payload=payload, tool_name=tool_name,
         )
     # Owned, alive, current — but /health refused ⇒ the runtime endpoint is not
-    # serving ⇒ DEAD → recover.
-    return _recover_runtime(
-        cfg, "DEAD", ownership_verified=True, probe=probe, restart=restart,
-        sleep=sleep, write_lock=write_lock, recover_identity=recover_identity,
-        tool_name=tool_name, initial_code=code, initial_payload=payload,
-        sidecar_check=sidecar_check,
+    # serving. Branch on the two-port classifier: a cold compile (Vite up) is
+    # PATIENTLY WAITED on (the starvation fix); a genuinely dead backend (Vite
+    # also down) enters today's bounded crash recovery.
+    return _route_non_serving(
+        "DEAD", ownership_verified=True, code=code, payload=payload,
+    )
+
+
+_COMPILE_WENT_DEAD = object()
+"""Sentinel returned by ``_await_compile_serving`` when the runtime crossed from
+``compiling`` to ``dead`` mid-wait (Vite went down) — the M4 caller routes this
+into the bounded ``_recover_runtime`` crash path. NOT a verdict dict, so a caller
+must check identity before treating the return as a verdict."""
+
+
+def _await_compile_serving(
+    cfg,
+    *,
+    ownership_verified,
+    probe,
+    frontend_probe,
+    sleep,
+    write_lock,
+    recover_identity,
+    tool_name,
+    initial_code,
+    initial_payload,
+    sidecar_check=None,
+):
+    """Patient, NON-killing wait for a `compiling` runtime to reach serving
+    (ensure-runtime-recovery-starves-cold-compile, Phase 2).
+
+    A runtime classified ``compiling`` (Vite :1420 up, backend :3333 not yet
+    serving) is the cold Rust compile still running — it must be WAITED on, never
+    kill-restarted (the starvation root cause). This poller:
+
+      - polls ``probe()`` on the cold-compile-sized ceiling
+        (``_COLD_COMPILE_WAIT_MAX_POLLS × _COLD_COMPILE_WAIT_INTERVAL`` ≈ 7.5 min,
+        REUSING the production restart()-awaiter sizing — NOT the ≤5×backoff crash
+        budget), NEVER calling ``restart()``/``kill`` while compiling;
+      - returns a READY verdict once ``probe()`` answers 200 (AND, when
+        ``sidecar_check`` is asserted, the sidecar pipe is connected — REUSING the
+        existing recovery sidecar composition; rewriting the ownership lock via
+        ``recover_identity``/``write_lock`` exactly like ``_recover_runtime``);
+      - returns the ``_COMPILE_WENT_DEAD`` sentinel if the frontend goes down
+        mid-wait (``compiling → dead``) so the M4 caller falls through to bounded
+        ``_recover_runtime``;
+      - on ceiling exhaustion while STILL compiling, returns a BLOCKED verdict
+        whose ``terminal_blocker`` is the DISTINCT ``_cold_compile_timeout_blocker``
+        text (still ``blocker_kind: mcp-runtime-unready`` downstream).
+
+    ``sleep`` is injected so ``--test`` is hermetic (no real 7.5-min wait).
+    """
+    code, payload = initial_code, initial_payload
+    for poll in range(_COLD_COMPILE_WAIT_MAX_POLLS):
+        if code == 200:
+            # Backend is serving. Compose the sidecar assertion (a serving-but-
+            # pipe-dead runtime is NOT ready — keep waiting for the pipe, exactly
+            # as _recover_runtime does on its healthy re-probe).
+            if sidecar_check is not None and not sidecar_check():
+                pass  # fall through to the re-poll below (pipe not yet connected)
+            else:
+                # Serving + (sidecar connected | not asserted) → READY. Rewrite
+                # the ownership lock so the NEXT cycle verifies against the now-
+                # serving process (best-effort, mirroring _recover_runtime).
+                if recover_identity is not None:
+                    try:
+                        ident = recover_identity()
+                    except Exception:  # noqa: BLE001
+                        ident = None
+                    if isinstance(ident, dict):
+                        try:
+                            write_lock(
+                                pid=ident.get("pid"),
+                                start_time=ident.get("start_time"),
+                                port=cfg.get("port"),
+                                artifact_hash=ident.get("artifact_hash"),
+                                controller_session_id=ident.get("controller_session_id"),
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+                return _runtime_verdict(
+                    "READY", ownership_verified=ownership_verified,
+                    health_code=code, payload=payload, tool_name=tool_name,
+                )
+        else:
+            # Backend not yet serving — is it still compiling (Vite up) or has it
+            # crossed to dead (Vite down)?
+            if not frontend_probe():
+                # compiling → dead: abandon the patient wait, route to bounded
+                # crash-recovery (the M4 caller checks the sentinel identity).
+                return _COMPILE_WENT_DEAD
+        # Still compiling (or serving-but-pipe-dead). Wait — NEVER restart/kill.
+        try:
+            sleep(_COLD_COMPILE_WAIT_INTERVAL)
+        except Exception:  # noqa: BLE001 — a sleep error never aborts the wait
+            pass
+        code, payload = probe()
+
+    # Final re-check after the loop's last probe: a 200 that landed exactly on the
+    # last poll should still resolve READY rather than time out.
+    if code == 200 and (sidecar_check is None or sidecar_check()):
+        return _runtime_verdict(
+            "READY", ownership_verified=ownership_verified,
+            health_code=code, payload=payload, tool_name=tool_name,
+        )
+
+    # Ceiling exhausted while still compiling (or pipe never reconnected) → a
+    # DISTINCT cold-compile-timeout BLOCKED (same blocker_kind downstream).
+    return _runtime_verdict(
+        "BLOCKED", ownership_verified=ownership_verified, health_code=code,
+        payload=payload, tool_name=tool_name,
+        terminal_blocker=_cold_compile_timeout_blocker(),
     )
 
 
