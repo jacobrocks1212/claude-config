@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 
 **MCP runtime:** not-required — this is a harness state-script change (`user/scripts/lazy-state.py`). It has no app/Tauri/MCP-reachable surface; it is verified entirely by the in-file `--test` smoke harness + `test_lazy_core.py`, not by the live dev runtime. (claude-config has no Tauri runtime at all.)
 
@@ -29,7 +29,7 @@
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test` is green (incl. the seven new fixtures above), and `python user/scripts/lazy_parity_audit.py` exits 0. Plus the manual repro from the SPEC: with `autodiscover: true` set in claude-config's `docs/features/queue.json`, `python user/scripts/lazy-state.py` surfaces an on-disk `docs/features/<slug>/SPEC.md` that has no `queue.json` entry (where today it returns only explicit entries / `queue-missing`).
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] (none — there is no live runtime for this repo; the `--test` smoke harness + parity audit + manual `lazy-state.py` repro above are the complete verification surface. This row is intentionally empty so no Step-9 MCP gate is implied.)
+- [x] (none — there is no live runtime for this repo; the `--test` smoke harness + parity audit + manual `lazy-state.py` repro above are the complete verification surface. ON-DISK EVIDENCE: `lazy-state.py --test` green (incl. 7 new autodiscover fixtures); `bug-state.py --test` green (baseline unchanged); `test_lazy_core.py` 769 passed / 0 failed (2026-06-22); `lazy_parity_audit.py --repo-root .` exit 0 — all confirmed live in this coherence-recovery cycle.)
 
 **Prerequisites:** None (first and only phase).
 
