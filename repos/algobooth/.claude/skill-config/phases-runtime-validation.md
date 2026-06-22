@@ -32,3 +32,25 @@ Record the OBSERVED ground truth (the actual tool calls + numbers, or the logged
 **When to skip (record the reason):** an assumption may be marked code-provable in the ledger ONLY if it carries none of the runtime-coupled smells from Step A — pure logic, types, config, UI layout, or a behavior-preserving refactor with snapshot/golden coverage, with no sidecar/IPC/audio-observable behavior in play. The skip is stated in the ledger row itself; free-text notes outside the ledger are not sufficient.
 
 **Anti-pattern (the four-attempt trap):** reading source to "confirm" a runtime assumption that crosses a boundary. Unit-green and a plausible code read are NOT runtime confirmation. For cross-boundary or runtime-observable behavior, observe the running system before planning on it. This gate pairs with the production-faithful **Testing Strategy** guidance (what you then test) — this gate governs what you *confirm before planning*, that one governs what you *assert when implementing*.
+
+---
+
+#### MCP Tool-Existence Audit (AlgoBooth — BEFORE DRAFTING PHASES)
+
+> **Why this gate exists.** A feature whose `/mcp-test` scenario calls an MCP tool that is not yet registered in AlgoBooth's tool surface used to fail only at Step 9 (pipeline end) — forcing a corrective add-phase or `adhoc-mcp-*` spin-off and 3–6 wasted validation cycles (`d8-effect-chains`, `f5-slip-mode`, `change-queue`, …). See `docs/bugs/mcp-tooling-not-predetermined-at-planning`. Predetermine MCP tool existence HERE, at planning time, and auto-author the build phase up front.
+
+**Step A — Enumerate the MCP tools the SPEC's validation will call.** Read every tool named in the SPEC's `## Validation Criteria`, `## Locked Decisions` (including any required-MCP-tooling decision captured at `/spec`), and the `## Audio Quality Contracts` table (the `Tool` column) where present.
+
+**Step B — Resolve the tool catalog and grep the live registry.** Read `.claude/skill-config/mcp-tool-catalog.md` (the per-repo catalog declaring the live-registry source paths: `scripts/mcp-test/tool-methods.ts` + the Rust `inventory::submit!` sites under `src-tauri/src/ipc/mcp/registrations/`). For each enumerated tool, grep both sources for the tool-name registration and record one ledger row per tool in the catalog's declared format:
+
+| tool-name | registered? | source (file:line, or "no hits") |
+|---|---|---|
+| … | yes / no | … |
+
+`how-confirmed` is always `grep` here. **Catalog absent → this audit is a no-op** (record the skip reason) — though AlgoBooth always configures it.
+
+**Step C — On a MISS (zero hits in both sources): AUTO-AUTHOR a build phase up front.** Insert an ordinary `- [ ]` build deliverable into the drafted PHASES.md naming the missing tool and citing the driving SPEC decision — e.g. `- [ ] Register MCP tool \`set_slip_pad_template\` exposing <surface> (required by Locked Decision N; absent from the tool catalog)`. This is the DEFAULT per the bug's Locked Decision 2 — NOT a `NEEDS_INPUT.md` halt and NOT a late `/mcp-test` discovery. Predetermine existence + schedule the build; leave the tool's signature/handler shape for `/execute-plan`. The auto-authored row is a PLAIN build deliverable — never a gate-owned row (no status flip / receipt write).
+
+**Step D — NEEDS_INPUT fallback (genuinely-ambiguous only).** Reserve `NEEDS_INPUT.md` for the case where the missing tool's surface/shape cannot be inferred from the SPEC at all (so even a stub deliverable cannot be named). A merely-missing tool with an inferable surface is auto-authored, never halted.
+
+> **Worked example.** A SPEC names `set_slip_pad_template` in `## Validation Criteria`. The audit enumerates `{set_slip_pad_template}`, greps `tool-methods.ts` + the `inventory::submit!` sites via `mcp-tool-catalog.md` — zero hits in both → ledger row `set_slip_pad_template | no | no hits in either source` → auto-authored up-front deliverable `- [ ] Register MCP tool \`set_slip_pad_template\` (required by Validation Criteria; absent from catalog)`. The tool now lands BEFORE `/mcp-test`, eliminating the corrective loop (the `f5-slip-mode` failure mode). A SPEC whose tools all resolve to `registered? = yes` produces a clean ledger and no auto-authored phase.

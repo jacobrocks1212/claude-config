@@ -183,6 +183,8 @@ Some phase plans rest on assumptions about how the *running* system behaves — 
 
 The gate below includes the **SPEC-example capability audit**: every API surface / source type / construct the SPEC's code examples consume gets a negative-evidence grep (explicit rejection paths: `unimplemented!`, `todo!`, `return Err`, "not supported") with a ledger row — a SPEC example consuming an explicitly-rejected capability is a planning-time halt, never a late validation discovery.
 
+The gate also includes the **MCP tool-existence audit** (where a repo declares `.claude/skill-config/mcp-tool-catalog.md`): every MCP tool the SPEC's validation will call is enumerated and grepped against the repo's live tool registry — a required-but-missing tool AUTO-AUTHORS a "build MCP tool X" deliverable up front rather than being discovered late at `/mcp-test` (see `docs/bugs/mcp-tooling-not-predetermined-at-planning`). Catalog absent → the MCP audit no-ops.
+
 !`cat .claude/skill-config/phases-runtime-validation.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-validation.md`
 
 ### Step 3: Propose Phase Structure

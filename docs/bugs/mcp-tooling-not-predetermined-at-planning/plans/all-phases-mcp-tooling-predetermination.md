@@ -120,8 +120,8 @@ Upstream plans and PHASES.md files this plan was authored against.
 ## Work Units
 
 - [x] WU-1 — Author `mcp-tool-catalog.md` per-repo skill-config (Phase 1)
-- [ ] WU-2 — Extend `phases-runtime-validation.md` with MCP tool-existence audit + auto-author rule (Phase 2)
-- [ ] WU-3 — Point `/spec-phases` Step 2.7 at the new MCP-tool audit behavior (Phase 2)
+- [x] WU-2 — Extend `phases-runtime-validation.md` with MCP tool-existence audit + auto-author rule (Phase 2)
+- [x] WU-3 — Point `/spec-phases` Step 2.7 at the new MCP-tool audit behavior (Phase 2)
 - [ ] WU-4 — Add required-MCP-tooling Locked-Decision capture to `/spec` + AlgoBooth `spec-testing-guidance.md` (Phase 3)
 - [ ] WU-5 — Wire tooling decisions into the completion gate (`mcp-coverage-audit.md`) + update root `CLAUDE.md` (Phase 4)
 
