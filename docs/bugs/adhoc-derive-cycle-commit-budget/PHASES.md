@@ -1,6 +1,7 @@
 # Derive cycle-commit budget from a single source of truth — Implementation Phases
 
 **Status:** In-progress
+**MCP runtime:** not-required — claude-config is a docs/scripts harness repo with no Tauri app, no MCP HTTP server, and no audio/UI surface; this fix touches lazy_core.py / its docs only. Validation is the hermetic Python --test smoke harness. (Per docs/features/mcp-testing/SPEC.md untestable classes: build tooling / non-app script with no runtime app integration.)
 **Spec:** docs/bugs/adhoc-derive-cycle-commit-budget/SPEC.md
 **Bug:** adhoc-derive-cycle-commit-budget
 
