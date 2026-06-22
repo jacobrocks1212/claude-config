@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "files": [
+    { "path": "A.cs" },
+    { "path": "B.cs" },
+    { "path": "C.cs" },
+    { "path": "D.cs" },
+    { "path": "E.cs" },
+    { "path": "F.cs" },
+    { "path": "G.cs" },
+    { "path": "H.cs" }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "manifest_path": "phase1-manifest.json",
+  "investigation": [
+    {
+      "group": "group-A",
+      "findings": [
+        {
+          "file": "A.cs",
+          "line": 5,
+          "severity": "important",
+          "title": "Missing null guard in public method",
+          "hypothesis": "Callers can pass null reference causing NRE",
+          "evidence": {
+            "snippet": "public void Process(string input) { input.Trim(); }",
+            "reference": "A.cs:5"
+          },
+          "suggestion": "Add null check before using input",
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
+    },
+    {
+      "group": "group-E",
+      "findings": [
+        {
+          "file": "E.cs",
+          "line": 12,
+          "severity": "important",
+          "title": "Unverified assumption about collection ordering",
+          "confidence": "UNVERIFIED",
+          "hypothesis": "Collection may not preserve insertion order",
+          "evidence": {
+            "snippet": "var first = items[0];",
+            "reference": "E.cs:12"
+          },
+          "suggestion": "Use OrderBy before indexing",
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
+    },
+    {
+      "group": "group-H-investigation",
+      "findings": [
+        {
+          "file": "H.cs",
+          "line": 10,
+          "severity": "blocking",
+          "title": "Data loss risk on concurrent update",
+          "hypothesis": "Race condition can cause data loss",
+          "evidence": {
+            "snippet": "if (exists) Update(entity); else Insert(entity);",
+            "reference": "H.cs:10"
+          },
+          "suggestion": "Use an upsert operation with locking",
+          "escalation_candidate": true,
+          "specialist_domain": "concurrency"
+        }
+      ],
+      "escalations": []
+    }
+  ],
+  "reuse": [
+    {
+      "group": "group-B",
+      "findings": [
+        {
+          "file": "B.cs",
+          "line": 20,
+          "severity": "important",
+          "title": "Duplicates existing OrganizationHelper.Validate",
+          "verdict": "refactor",
+          "candidate": "OrganizationHelper.Validate",
+          "hypothesis": "Logic duplicates an existing well-tested helper",
+          "evidence": {
+            "snippet": "if (org == null || org.Id == 0) throw new ArgumentException();",
+            "reference": "B.cs:20"
+          },
+          "suggestion": "Replace with OrganizationHelper.Validate(org)",
+          "blast_radius": "low",
+          "negative_search_trail": null,
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
+    }
+  ],
+  "intrafile": [
+    {
+      "group": "group-C",
+      "findings": [
+        {
+          "file": "C.cs",
+          "line": 35,
+          "severity": "important",
+          "title": "Inconsistent date formatting vs rest of file",
+          "verdict": "refactor",
+          "candidate": "DateTimeExtensions.ToIso8601",
+          "hypothesis": "File uses ISO format everywhere except this method",
+          "evidence": {
+            "snippet": "return date.ToString(\"MM/dd/yyyy\");",
+            "reference": "C.cs:35"
+          },
+          "suggestion": "Use DateTimeExtensions.ToIso8601(date)",
+          "blast_radius": "low",
+          "negative_search_trail": null,
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
+    },
+    {
+      "group": "group-F",
+      "findings": [
+        {
+          "file": "F.cs",
+          "line": 50,
+          "severity": "nit",
+          "title": "Magic string duplicated within file",
+          "verdict": "refactor",
+          "confidence": "UNVERIFIED",
+          "candidate": "existing constant at line 8",
+          "hypothesis": "Magic string already defined as a constant earlier in the file",
+          "evidence": {
+            "snippet": "var key = \"submission_id\";",
+            "reference": "F.cs:50"
+          },
+          "suggestion": "Reference the existing SubmissionIdKey constant",
+          "blast_radius": "none",
+          "negative_search_trail": null,
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
+    }
+  ],
+  "sweep": {
+    "findings": [
+      {
+        "file": "D.cs",
+        "line": 7,
+        "severity": "nit",
+        "title": "Missing defensive null check",
+        "description": "Method parameters are not guarded against null",
+        "suggestion": "Add null checks at method entry",
+        "rule_id": "defensive-null-checks",
+        "rule_category": "code-consistency",
+        "effective_weight": 0.56,
+        "tier": "skim",
+        "escalation_candidate": false,
+        "specialist_domain": null
+      },
+      {
+        "file": "G.cs",
+        "line": 99,
+        "severity": "nit",
+        "title": "Hardcoded entity ID in test",
+        "description": "Test uses a hardcoded integer as an entity ID which may not be valid",
+        "suggestion": "Use a properly seeded test entity",
+        "rule_id": "invalid-hardcoded-entity-id",
+        "rule_category": "code-consistency",
+        "confidence": "UNVERIFIED",
+        "effective_weight": 0.42,
+        "tier": "skim",
+        "escalation_candidate": false,
+        "specialist_domain": null
+      },
+      {
+        "file": "H.cs",
+        "line": 10,
+        "severity": "nit",
+        "title": "Defensive null check missing on public method parameter",
+        "description": "Parameter is used without null guard",
+        "suggestion": "Add null check",
+        "rule_id": "defensive-null-checks",
+        "rule_category": "code-consistency",
+        "effective_weight": 0.56,
+        "tier": "skim",
+        "escalation_candidate": false,
+        "specialist_domain": null
+      }
+    ],
+    "escalations": []
+  }
+}

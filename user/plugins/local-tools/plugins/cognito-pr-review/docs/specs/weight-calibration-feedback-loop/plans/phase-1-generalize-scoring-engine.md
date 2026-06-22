@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: weight-calibration-feedback-loop
-status: Ready
+status: Complete
 created: 2026-06-22
 phases: [1]
 complexity: complex
@@ -100,7 +100,7 @@ npx tsx --test post-process.test.ts        # the new black-box test — must pas
 ## Work Units
 
 - [x] WU-1 — Add `source_weights` to `weights.yaml`
-- [ ] WU-2 — Generalize `post-process.ts` scoring to all sources × confidence (+ black-box tests)
+- [x] WU-2 — Generalize `post-process.ts` scoring to all sources × confidence (+ black-box tests)
 
 ---
 

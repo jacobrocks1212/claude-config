@@ -37,6 +37,7 @@ interface InvestigationFinding {
 	suggestion: string;
 	escalation_candidate: boolean;
 	specialist_domain: string | null;
+	confidence?: "CONFIRMED" | "UNVERIFIED";
 }
 
 interface ReuseFinding {
@@ -56,6 +57,7 @@ interface ReuseFinding {
 	negative_search_trail: string | null;
 	escalation_candidate: boolean;
 	specialist_domain: string | null;
+	confidence?: "CONFIRMED" | "UNVERIFIED";
 }
 
 interface SweepFinding {
@@ -71,6 +73,7 @@ interface SweepFinding {
 	tier: "critical" | "important" | "skim";
 	escalation_candidate: boolean;
 	specialist_domain: string | null;
+	confidence?: "CONFIRMED" | "UNVERIFIED";
 }
 
 interface Escalation {
@@ -110,6 +113,7 @@ interface WeightsConfig {
 	ema_alpha: number;
 	category_multipliers: Record<string, number>;
 	rule_weights: Record<string, { weight: number; data_points: number }>;
+	source_weights: Record<string, number>;
 }
 
 interface Manifest {
@@ -215,12 +219,30 @@ function getCategoryMultiplier(ruleCategory: string, weights: WeightsConfig): nu
 	return 1.0;
 }
 
-/** Compute effective_weight = rule_weight × category_multiplier. */
-function computeEffectiveWeight(finding: SweepFinding, weights: WeightsConfig): number {
-	const ruleEntry = weights.rule_weights[finding.rule_id];
-	const ruleWeight = ruleEntry?.weight ?? 0.7; // default if rule not in weights
-	const categoryMultiplier = getCategoryMultiplier(finding.rule_category, weights);
-	return ruleWeight * categoryMultiplier;
+/** Map a finding's confidence label to a numeric multiplier. Absent/unknown → 1.0 (back-compat). */
+function resolveConfidence(finding: { confidence?: string }): number {
+	switch (finding.confidence) {
+		case "CONFIRMED": return 1.0;
+		case "UNVERIFIED": return 0.5;
+		default: return 1.0;
+	}
+}
+
+/** Compute effective_weight = base × confidence_multiplier. */
+function computeEffectiveWeight(
+	finding: { source: string; rule_id?: string; rule_category?: string; confidence?: string },
+	weights: WeightsConfig
+): number {
+	let base: number;
+	if (finding.source === "sweep") {
+		const ruleEntry = weights.rule_weights[finding.rule_id as string];
+		const ruleWeight = ruleEntry?.weight ?? 0.7;
+		const categoryMultiplier = getCategoryMultiplier(finding.rule_category as string, weights);
+		base = ruleWeight * categoryMultiplier;
+	} else {
+		base = weights.source_weights?.[finding.source] ?? 0.7;
+	}
+	return base * resolveConfidence(finding);
 }
 
 // ── Previous review parsing ────────────────────────────────────────────────────
@@ -317,7 +339,7 @@ function step1_computeWeights(
 				...f,
 				source: "investigation",
 				group: group.group,
-				effective_weight: 1.0, // investigation findings get max weight for ranking
+				effective_weight: computeEffectiveWeight({ ...f, source: "investigation" }, weights),
 			});
 		}
 	}
@@ -343,7 +365,7 @@ function step1_computeWeights(
 				severity,
 				source: "reuse",
 				group: group.group,
-				effective_weight: 1.0,
+				effective_weight: computeEffectiveWeight({ ...f, source: "reuse" }, weights),
 			});
 		}
 	}
@@ -369,14 +391,14 @@ function step1_computeWeights(
 				severity,
 				source: "intrafile",
 				group: group.group,
-				effective_weight: 1.0,
+				effective_weight: computeEffectiveWeight({ ...f, source: "intrafile" }, weights),
 			});
 		}
 	}
 
 	// Sweep findings get recomputed effective_weight
 	for (const f of combined.sweep.findings) {
-		const effectiveWeight = computeEffectiveWeight(f, weights);
+		const effectiveWeight = computeEffectiveWeight({ ...f, source: "sweep" }, weights);
 		findings.push({
 			...f,
 			source: "sweep",
@@ -396,7 +418,7 @@ function step2_dropBelowThreshold(findings: ProcessedFinding[]): {
 	const kept: ProcessedFinding[] = [];
 
 	for (const f of findings) {
-		if (f.source === "sweep" && f.effective_weight < MIN_EFFECTIVE_WEIGHT) {
+		if (f.effective_weight < MIN_EFFECTIVE_WEIGHT) {
 			droppedCount++;
 		} else {
 			kept.push(f);
