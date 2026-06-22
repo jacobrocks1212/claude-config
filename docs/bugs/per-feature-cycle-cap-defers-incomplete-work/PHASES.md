@@ -43,9 +43,9 @@ No-op — `repos/claude-config/.claude/skill-config/mcp-tool-catalog.md` is abse
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/test_lazy_core.py` both pass with the re-pinned + new fixtures, AND `python3 -c "import sys; sys.path.insert(0,'user/scripts'); import lazy_core; assert lazy_core.compute_per_feature_ceiling(12, 2) is None; assert lazy_core.compute_per_feature_ceiling(12, 2, override=4) == 4"` exits 0 — the default returns `None`, the override re-arms.
 
 **Runtime Verification** *(checked by the hermetic --test harness — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/lazy_core.py`-importing assertion above passes (default `None`, override verbatim).
-- [ ] <!-- verification-only --> `lazy-state.py --test` default-off fixture: long-running feature under a live marker, no flag → no budget trip.
-- [ ] <!-- verification-only --> `lazy-state.py --test` opt-in fixture: same feature WITH `--per-feature-cycle-cap N` → trip/defer fires (guard re-arms).
+- [x] <!-- verification-only --> `python3 user/scripts/lazy_core.py`-importing assertion above passes (default `None`, override verbatim).
+- [x] <!-- verification-only --> `lazy-state.py --test` default-off fixture: long-running feature under a live marker, no flag → no budget trip.
+- [x] <!-- verification-only --> `lazy-state.py --test` opt-in fixture: same feature WITH `--per-feature-cycle-cap N` → trip/defer fires (guard re-arms).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable MCP behavior in this repo; validation is the Python `--test` harness (see header `**MCP runtime:** not-required`).
 
@@ -87,9 +87,9 @@ No-op — `repos/claude-config/.claude/skill-config/mcp-tool-catalog.md` is abse
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` matches the regenerated `lazy-state-test-baseline.txt` byte-for-byte (via `_normalize_smoke_output`), `python3 user/scripts/bug-state.py --test` matches its UNCHANGED baseline, and `python3 user/scripts/lazy_parity_audit.py` exits 0.
 
 **Runtime Verification** *(checked by the hermetic --test harness):*
-- [ ] <!-- verification-only --> `lazy-state.py --test` output == regenerated `lazy-state-test-baseline.txt` (normalized).
-- [ ] <!-- verification-only --> `bug-state.py --test` output == its UNCHANGED baseline (proves zero bug-pipeline drift).
-- [ ] <!-- verification-only --> `lazy_parity_audit.py` exits 0 (feature-only divergence preserved).
+- [x] <!-- verification-only --> `lazy-state.py --test` output == regenerated `lazy-state-test-baseline.txt` (normalized).
+- [x] <!-- verification-only --> `bug-state.py --test` output == its UNCHANGED baseline (proves zero bug-pipeline drift).
+- [x] <!-- verification-only --> `lazy_parity_audit.py` exits 0 (feature-only divergence preserved).
 
 **MCP Integration Test Assertions:** N/A — docs + baseline regeneration, no runtime-observable MCP behavior.
 
