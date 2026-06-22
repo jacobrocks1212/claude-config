@@ -14,10 +14,10 @@ phases: [1]
 # Implementation Plan — feature-queue-lacks-on-disk-autodiscovery  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/feature-queue-lacks-on-disk-autodiscovery/PHASES.md` (feature-queue-lacks-on-disk-autodiscovery, 1 phase)
+- `docs/bugs/_archive/feature-queue-lacks-on-disk-autodiscovery/PHASES.md` (feature-queue-lacks-on-disk-autodiscovery, 1 phase)
 
 **SPEC.md files:**
-- `docs/bugs/feature-queue-lacks-on-disk-autodiscovery/SPEC.md`
+- `docs/bugs/_archive/feature-queue-lacks-on-disk-autodiscovery/SPEC.md`
 
 **Total phases:** 1
 **Plan version:** v2 (reference-based — components loaded from disk per step)

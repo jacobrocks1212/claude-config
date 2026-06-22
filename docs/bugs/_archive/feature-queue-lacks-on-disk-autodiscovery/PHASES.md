@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Complete
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a harness state-script change (`user/scripts/lazy-state.py`). It has no app/Tauri/MCP-reachable surface; it is verified entirely by the in-file `--test` smoke harness + `test_lazy_core.py`, not by the live dev runtime. (claude-config has no Tauri runtime at all.)
 

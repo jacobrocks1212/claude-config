@@ -2,9 +2,11 @@
 
 > `bug-state.py` auto-discovers open bug dirs on disk (hybrid load over `docs/bugs/queue.json`), but `lazy-state.py` reads features **only** from `docs/features/queue.json` — so a new `docs/features/<slug>/SPEC.md` is inert until explicitly `--enqueue-adhoc`'d. The operator wants claude-config opted into feature auto-discovery, mirroring bugs.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-22
+**Fixed:** 2026-06-22
+**Fix commit:** febc24e
 **Placement:** docs/bugs/feature-queue-lacks-on-disk-autodiscovery
 **Related:** `user/scripts/CLAUDE.md` → "What the lazy system is" / Coupling Rule; `bug-state.py::load_bug_queue` + `_find_open_bug_dirs` (the mirror target); `lazy-state.py::load_queue`; `lazy_parity_audit.py::audit_state_script_parity` (coupled-pair guard); `docs/features/mobile-queue-control` (the feature whose manual enqueue surfaced this)
 
