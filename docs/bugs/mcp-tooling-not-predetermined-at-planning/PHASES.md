@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress — all 4 phases implemented (P1–P4 done); validation tail (`/mcp-test` → `__mark_fixed__`) is orchestrator-owned and pending. Do NOT set Fixed / write FIXED.md here.
+
 **MCP runtime:** not-required — this is a harness-defect fix entirely in skill/component markdown + per-repo skill-config docs (`docs-only` class per `docs/features/mcp-testing/SPEC.md`); no AlgoBooth app surface, store, or audio path is modified, so nothing here is MCP-reachable. The behavior is verified by re-running the (shared, deterministic) capability-audit prose against a seeded missing-tool case and by the existing `lint-skills.py` / `project-skills.py` checks, not by a Tauri+MCP runtime.
 
 ## Resolved Open Questions (from SPEC, resolvable in /plan-bug)
@@ -122,10 +124,19 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 **Scope:** Close the defense-in-depth loop (Locked Decision 3): ensure the required-MCP-tooling Locked Decisions captured in Phase 3 are picked up by the existing completion-time coverage gate (`user/skills/_components/mcp-coverage-audit.md` + `lazy-state.py --gate-coverage`) as assertable coverage, and update the harness docs (`CLAUDE.md` component descriptions + the bug's reverse-reference). No new gate logic is needed if Phase 3 lands the decision in the canonical surface the gate already parses — this phase CONFIRMS that and documents the now-two-seam contract.
 
 **Deliverables:**
-- [ ] Confirm (and, if the surface shape needs a note, document in `mcp-coverage-audit.md`) that a required-MCP-tooling Locked Decision captured per Phase 3 is enumerated by the `--gate-coverage` algorithm — so the completion gate asserts the tool's scenario coverage. Add a one-line note to `mcp-coverage-audit.md` cross-referencing the new planning-time predetermination seam (this bug) as the upstream that makes such decisions exist.
-- [ ] Update `CLAUDE.md` (repo root) component descriptions where they describe `phases-runtime-validation.md` / the MCP seams, so the layout doc reflects the new planning-time MCP tool-existence audit.
-- [ ] Reverse-reference: add an Implementation Notes line to this PHASES.md (or SPEC `## Related`) confirming no spin-off legs were created (all work is in-scope harness edits) — see Implementation Notes below.
-- [ ] Tests: `lint-skills.py --check-projected --check-capabilities` passes; `project-skills.py` re-projects cleanly across `_default/` and the AlgoBooth projection.
+- [x] Confirm (and, if the surface shape needs a note, document in `mcp-coverage-audit.md`) that a required-MCP-tooling Locked Decision captured per Phase 3 is enumerated by the `--gate-coverage` algorithm — so the completion gate asserts the tool's scenario coverage. Add a one-line note to `mcp-coverage-audit.md` cross-referencing the new planning-time predetermination seam (this bug) as the upstream that makes such decisions exist.
+- [x] Update `CLAUDE.md` (repo root) component descriptions where they describe `phases-runtime-validation.md` / the MCP seams, so the layout doc reflects the new planning-time MCP tool-existence audit.
+- [x] Reverse-reference: add an Implementation Notes line to this PHASES.md (or SPEC `## Related`) confirming no spin-off legs were created (all work is in-scope harness edits) — see Implementation Notes below.
+- [x] Tests: `lint-skills.py --check-projected --check-capabilities` passes; `project-skills.py` re-projects cleanly across `_default/` and the AlgoBooth projection.
+
+**Status:** Done — no algorithm change needed (the Phase-3 capture is an ordinary `## Locked Decisions` row the gate already parses); cross-reference note added to `mcp-coverage-audit.md`; root `CLAUDE.md` component descriptions updated.
+
+#### Implementation Notes (Phase 4 — 2026-06-22)
+- Confirmed `mcp-coverage-audit.md` Step 1 already enumerates a `## Locked Decisions` H2 table (first column = ID / one-line title) — the EXACT shape Phase 3 captures the required-MCP-tooling decision in. NO `--gate-coverage` / `lazy_core.gate_coverage` algorithm change is needed; the new decision is recognized as an ordinary Locked Decision.
+- Added a "Planning-time predetermination seam" cross-reference blockquote to `user/skills/_components/mcp-coverage-audit.md` naming this bug as the upstream and describing the two-seam (planning-time auto-author / completion-time assert) defense-in-depth contract.
+- Updated root `CLAUDE.md` `**Key components:**` list: added a `phases-runtime-validation.md` entry (the new planning-time MCP tool-existence audit + the per-repo `mcp-tool-catalog.md` registry) and extended the `mcp-coverage-audit.md` entry with the completion-time-half cross-reference.
+- **No spin-off legs** — all work is in-scope harness markdown edits (already noted in the global Implementation Notes block above); both reverse-reference directions are N/A.
+- **Review verdict:** PASS — traces to Locked Decision 3 + SPEC `## Affected Area` "Completion gate" row; final lint + projection green.
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities` exits clean after all edits, and a required-MCP-tooling Locked Decision (Phase 3 shape) traced through the `mcp-coverage-audit.md` Step 1 enumeration is recognized as a decision (so the completion gate will assert on it) — confirming both the planning-time (Phase 2) and completion-time (this phase) seams cover the same requirement.
 

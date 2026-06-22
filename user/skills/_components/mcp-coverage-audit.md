@@ -6,6 +6,8 @@ This component is the gate. The `__mark_complete__` consumer runs it BEFORE the 
 
 The audit is docs-only — it reads SPEC.md and `mcp-tests/*.md` and runs no Tauri / no MCP server / no shell execution beyond `grep`. It therefore runs identically in cloud and workstation.
 
+> **Planning-time predetermination seam (cross-ref — `docs/bugs/mcp-tooling-not-predetermined-at-planning`).** A **required-MCP-tooling Locked Decision** captured at `/spec` (a `## Locked Decisions` table row naming the MCP tools a feature's validation requires to exist) is enumerated by this gate's Step 1 with NO algorithm change — it is an ordinary `## Locked Decisions` table row, the canonical surface this audit already parses. That capture is the COMPLETION-time half of a two-seam, defense-in-depth contract: the PLANNING-time half is `/spec-phases`' MCP tool-existence audit (`phases-runtime-validation.md`), which greps the per-repo `mcp-tool-catalog.md` and AUTO-AUTHORS a "build MCP tool X" phase up front on a miss — so a missing tool lands before `/mcp-test` instead of being discovered late. This gate then asserts the tool's scenario coverage at `__mark_complete__`. The two seams cover the SAME requirement from opposite ends of the pipeline; this audit needs no change to recognize the new decision.
+
 > **The audit algorithm now lives in code (unified-pipeline-orchestrator Phase 5).** The deterministic verdict — enumerate the SPEC Locked-Decision surface, grep `mcp-tests/*.md` **resolving symlink / 64-byte-pointer targets** (the Windows blindspot the prose grep silently missed), return covered/uncovered per decision — is the `lazy-state.py --gate-coverage <spec_path>` subcommand (`lazy_core.gate_coverage`). Run it for the mechanical verdict:
 >
 > ```bash
