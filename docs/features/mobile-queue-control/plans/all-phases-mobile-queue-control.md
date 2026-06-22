@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: mobile-queue-control
-status: Ready
+status: Complete
 created: 2026-06-22
 phases: [1, 2, 3]
 complexity: complex
@@ -94,13 +94,13 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — Generator skeleton + state read (probe_state reuse, arg surface, byte-stable doc body)
-- [ ] WU-2 — Renderer: Features/Bugs tables + SPEC links + "Needs attention" triage + freshness header
-- [ ] WU-3 — Phase 1 pytest suite (state-fidelity, byte-stability, triage)
-- [ ] WU-4 — Drill-in: inline curated summary (status · phase N/M · next · exec-summary) + phase-progress reader
-- [ ] WU-5 — SPEC.md link + absolute-URL fallback option
-- [ ] WU-6 — Phase 2 pytest extension (phase N/M, exec-summary, fallback form)
-- [ ] WU-7 — Phase 3 pipeline-wiring doc edit + byte-stable no-op acceptance test
+- [x] WU-1 — Generator skeleton + state read (probe_state reuse, arg surface, byte-stable doc body)
+- [x] WU-2 — Renderer: Features/Bugs tables + SPEC links + "Needs attention" triage + freshness header
+- [x] WU-3 — Phase 1 pytest suite (state-fidelity, byte-stability, triage)
+- [x] WU-4 — Drill-in: inline curated summary (status · phase N/M · next · exec-summary) + phase-progress reader
+- [x] WU-5 — SPEC.md link + absolute-URL fallback option
+- [x] WU-6 — Phase 2 pytest extension (phase N/M, exec-summary, fallback form)
+- [x] WU-7 — Phase 3 pipeline-wiring doc edit + byte-stable no-op acceptance test
 
 ## Execution Schedule
 

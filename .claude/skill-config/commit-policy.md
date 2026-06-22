@@ -12,3 +12,10 @@
   complete.
 - **Symlink awareness** — edits to `user/**`, `repos/**`, `personal/**`, `workspace/**` write
   through to live `~/.claude/` locations; `git status` in this repo reflects them directly.
+- **`LAZY_QUEUE.md` regen (mobile-queue-control)** — before each per-cycle commit, the orchestrator
+  runs `python user/scripts/lazy-queue-doc.py --repo-root <repo>` so the regenerated root-level
+  `LAZY_QUEUE.md` (the GitHub-mobile-readable queue status doc) is staged by the existing `git add -A`
+  and rides the cycle's commit on `main`. The generator is a PURE read over on-disk lazy state — it
+  embeds no wall-clock, so an unchanged-state regen is byte-identical and adds nothing to the commit
+  (no spurious diff). It is orchestrator-invoked only — NEVER called from the `lazy-state.py` /
+  `bug-state.py` compute path (preserves "pure read, never writes during a probe").

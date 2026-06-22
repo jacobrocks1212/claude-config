@@ -484,6 +484,20 @@ The orchestrator fires `PushNotification` at exactly four canonical event points
 
    This is distinct from a terminal notification — the run CONTINUES (the guard defers the over-budget feature and advances to the next independent item, if one exists). A trip notification fires in-cycle, not at halt. If the budget guard trips AND the resulting terminal is `queue-exhausted-budget-deferred` (all remaining items are budget-deferred with no independent successor), the trip notification fires first, then the halt notification fires (point 2 above).
 
+> **Per-cycle `LAZY_QUEUE.md` regen (mobile-queue-control, claude-config + AlgoBooth).** At each per-cycle
+> commit point (the pseudo-skill commit below, and the recovery-cycle commit at Step 1d that stages residue),
+> BEFORE the `git add -A` that stages the cycle's changes, run
+> `python user/scripts/lazy-queue-doc.py --repo-root <repo_root>` so the regenerated root-level
+> `LAZY_QUEUE.md` (the GitHub-mobile-readable queue status doc) is staged by the existing `git add -A` and
+> rides the cycle's commit on `main`. The generator is a PURE read over on-disk lazy state via
+> `pipeline_visualizer.probe.probe_state` — it embeds NO wall-clock, so an unchanged-state regen is
+> byte-identical and adds nothing to the commit (no spurious diff). It is **orchestrator-invoked only** —
+> NEVER called from the `lazy-state.py` / `bug-state.py` compute path (this keeps the "pure read, never
+> writes during a probe" / one-writer discipline; no state-machine change). For AlgoBooth, the equivalent
+> invocation lands in that repo's `/lazy-batch`(-cloud) cycle commit (a one-line `--repo-root`-addressable
+> add — the generator itself needs no AlgoBooth-side change; cross-repo wiring is documented for the operator,
+> not authored from this repo's tree).
+
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 
 If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** — a small sentinel-file write + commit, NOT a real skill that performs implementation work. Perform the action inline (orchestrator session) instead of dispatching a subagent. This is the spirit-preserving relaxation of HARD CONSTRAINT 1: sentinel files are documentation, and dispatching an Opus subagent to write a 10-line YAML block + run `git commit` wastes a full subagent's worth of context.
