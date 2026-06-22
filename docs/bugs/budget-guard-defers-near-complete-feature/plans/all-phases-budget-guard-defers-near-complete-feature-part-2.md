@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: budget-guard-defers-near-complete-feature
-status: Ready
+status: In-progress
 created: 2026-06-21
 complexity: complex
 phases: [3, 4]
