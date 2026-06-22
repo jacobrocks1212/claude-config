@@ -169,6 +169,13 @@ def _state(
     # end-of-run gated-head flush.
     if _GATED_HEADS:
         out["gated_heads"] = list(_GATED_HEADS)
+    # budget-guard-defers-near-complete-feature Phase 3: the end-of-run resume
+    # flush auto-resumed a near-complete budget-deferred feature this probe. Only
+    # surfaced when the flush actually resumed one (_BUDGET_RESUMED set) so default
+    # output stays byte-identical to the pre-flush baseline — same discipline as
+    # "budget_guard" / "gated_heads".
+    if _BUDGET_RESUMED is not None:
+        out["budget_resumed_near_complete"] = _BUDGET_RESUMED
     return out
 
 
@@ -211,6 +218,12 @@ _BUDGET_GUARD: dict | None = None
 # absent from default output (no gated head / --strict-research-halt) so byte-
 # identity with the pre-Phase-3 baseline is preserved.
 _GATED_HEADS: list = []
+
+# budget-guard-defers-near-complete-feature Phase 3: the feature_id the end-of-run
+# resume flush auto-resumed this probe (None when the flush did not resume one →
+# the "budget_resumed_near_complete" probe key is absent, keeping default output
+# byte-identical). Reset at the start of each compute_state().
+_BUDGET_RESUMED: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1312,6 +1325,7 @@ def compute_state(
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
+    global _BUDGET_RESUMED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
     # Reset the per-feature budget-guard state for this invocation.
@@ -1320,6 +1334,9 @@ def compute_state(
     # feature-budget-guard-and-skip-ahead Phase 3: reset the skip-ahead gated-head
     # surfaced list for this invocation.
     _GATED_HEADS = []
+    # budget-guard-defers-near-complete-feature Phase 3: reset the end-of-run
+    # resume-flush surfaced feature_id for this invocation.
+    _BUDGET_RESUMED = None
     repo_root = repo_root.resolve()
 
     # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
@@ -1793,6 +1810,22 @@ def compute_state(
                 # trip on the SAME feature in the SAME run → terminal eviction.
                 prior_defers = _bg_prior_defers
                 _bg_action = "defer" if prior_defers < 1 else "evict"
+                # budget-guard-defers-near-complete-feature Phase 3: a NEAR-COMPLETE
+                # feature is at the finish line — dead-lettering it via eviction is
+                # exactly the bug. When the one-shot grace is spent (prior_defers>=1)
+                # such a feature would otherwise evict here; instead we keep it
+                # DEFERRED (never escalate to evict) so the end-of-run resume flush
+                # below can rescue it to validation. Monopoly protection is
+                # unchanged for NON-near-complete features (they still escalate to
+                # evict on the 2nd trip).
+                if _bg_action == "evict" and _bg_near_complete:
+                    _bg_action = "defer"
+                    _diag(
+                        f"budget-guard: {name} — near-complete (verification-only "
+                        f"PHASES + plan-Complete, no BLOCKED.md) but grace already "
+                        f"spent this run; HELD AS DEFERRED (not evicted) so the "
+                        f"end-of-run resume flush can finish its validation."
+                    )
                 if _bg_action == "defer":
                     _bg_deferred_counts[feature_id] = prior_defers + 1
                     _diag(
@@ -1985,6 +2018,53 @@ def compute_state(
                 )
         except (OSError, ValueError):
             pass
+
+    if current is None:
+        # budget-guard-defers-near-complete-feature Phase 3: end-of-run
+        # near-complete resume flush (the documented safety net for Theory 3).
+        # The queue exhausted to ONLY budget-deferred/evicted items. Before
+        # returning the queue-exhausted-budget-deferred terminal, re-scan the
+        # budget-deferred features (this-probe skip list) IN QUEUE ORDER and, for
+        # the FIRST one that is NOW near-complete AND was NOT evicted (terminal
+        # eviction is intentional dead-lettering — never auto-resumed), DISPATCH it
+        # to validation instead of parking it for a future run (where it risks a
+        # 2nd-trip eviction and leaves a hot runtime idle). Near-completion is
+        # re-evaluated at flush time (independent of the Phase-2 grace flag). One
+        # resume per probe — the next probe resumes the next near-complete deferred
+        # feature; the terminal fires only when NONE qualifies. Marker-gated (the
+        # whole budget guard is marker-gated) — absent a marker budget_deferred_skipped
+        # is empty and this is a no-op.
+        if _bg_marker is not None and budget_deferred_skipped:
+            _bg_deferred_set = set(budget_deferred_skipped)
+            for _fl_entry in queue:
+                _fl_id = _fl_entry.get("id")
+                _fl_sub = _fl_entry.get("spec_dir")
+                _fl_name = _fl_entry.get("name")
+                if not _fl_id or not _fl_sub or not _fl_name:
+                    continue
+                if _fl_id not in _bg_deferred_set or _fl_id in _bg_evicted:
+                    continue
+                _fl_spec = (repo_root / "docs" / "features" / _fl_sub).resolve()
+                if not _fl_spec.exists():
+                    continue
+                if not lazy_core.feature_is_near_complete(_fl_spec, repo_root):
+                    continue
+                # Resume this near-complete deferred feature to validation.
+                current = {
+                    "name": _fl_name,
+                    "id": _fl_id,
+                    "spec_path": _fl_spec,
+                    "tier": _fl_entry.get("tier"),
+                    "queue_entry": _fl_entry,
+                }
+                _BUDGET_RESUMED = _fl_id
+                _diag(
+                    f"budget-guard: end-of-run resume flush — deferred feature "
+                    f"'{_fl_id}' is now near-complete (verification-only PHASES + "
+                    f"plan-Complete, no BLOCKED.md); RESUMED to validation instead "
+                    f"of parking it for a future run. (budget_resumed_near_complete)"
+                )
+                break
 
     if current is None:
         # feature-budget-guard-and-skip-ahead Phase 2: honest exhaustion terminal.
@@ -6147,6 +6227,113 @@ def run_smoke_tests() -> int:
                 )
             print("  [ncg-grace] near-completion grace + one-shot bound + "
                   "corrective discount + corrective-cycle record: ok")
+
+            # ---------------------------------------------------------------
+            # budget-guard-defers-near-complete-feature Phase 3 — end-of-run
+            # near-complete resume flush. When the queue exhausts to only
+            # budget-deferred items, a deferred feature that is NOW near-complete
+            # is auto-resumed (dispatched to validation) at the flush instead of
+            # returning the queue-exhausted-budget-deferred terminal — and the
+            # near-complete escalation never evicts (the flush rescues it). The
+            # genuine all-parked terminal still fires when NO deferred feature is
+            # near-complete; an evicted feature is NEVER resumed.
+            # ---------------------------------------------------------------
+            # (j) Resume flush: feat-nc is near-complete AND already budget-deferred
+            # once this run (budget_deferred[feat-nc]=1), at the ceiling so it
+            # re-trips. With Phase-3 the near-complete re-trip DEFERS (never evicts),
+            # and because feat-nc2 is ALSO over the ceiling (deferred/evicted) the
+            # queue exhausts → the flush resumes feat-nc (near-complete) to validation
+            # instead of the terminal. budget_resumed_near_complete=feat-nc.
+            _ncg_write_marker(
+                {"feat-nc": 8, "feat-nc2": 8},
+                budget_deferred={"feat-nc": 1, "feat-nc2": 1},
+            )
+            stj = compute_state(ncg_root, cloud=False, real_device=True)
+            if stj.get("feature_id") != "feat-nc":
+                failures.append(
+                    "[ncg-flush] a deferred-then-near-complete feature must be "
+                    "auto-resumed at the end-of-run flush, got "
+                    f"feature_id={stj.get('feature_id')!r} "
+                    f"terminal_reason={stj.get('terminal_reason')!r}"
+                )
+            if stj.get("budget_resumed_near_complete") != "feat-nc":
+                failures.append(
+                    "[ncg-flush] the resume must surface "
+                    "budget_resumed_near_complete='feat-nc', got "
+                    f"{stj.get('budget_resumed_near_complete')!r}"
+                )
+            if stj.get("terminal_reason") == "queue-exhausted-budget-deferred":
+                failures.append(
+                    "[ncg-flush] the terminal must NOT fire when a deferred feature "
+                    "is resumable at the flush"
+                )
+
+            # (k) Terminal unchanged for the genuine case: BOTH deferred features
+            # are NOT near-complete (plain mid-implementation dirs) and over the
+            # ceiling + grace spent → both evict → no resumable feature → the
+            # queue-exhausted-budget-deferred terminal STILL fires.
+            ncg_term_root = td_path / "ncg-terminal"
+            (ncg_term_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+            (ncg_term_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+                "queue": [
+                    {"id": "feat-t1", "name": "T One", "spec_dir": "feat-t1", "tier": 1},
+                    {"id": "feat-t2", "name": "T Two", "spec_dir": "feat-t2", "tier": 1},
+                ]
+            }))
+            (ncg_term_root / "docs" / "features" / "ROADMAP.md").write_text("# Roadmap\n")
+            _bg_make_feature(ncg_term_root, "feat-t1")
+            _bg_make_feature(ncg_term_root, "feat-t2")
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(ncg_term_root),
+                max_cycles=20, now=_ncg_time.time(),
+            )
+            mtp = ncg_state_dir / lazy_core._MARKER_FILENAME
+            mt = json.loads(mtp.read_text(encoding="utf-8"))
+            mt["repo_root"] = str(ncg_term_root)
+            mt["per_feature_forward_cycles"] = {"feat-t1": 8, "feat-t2": 8}
+            mt["budget_deferred"] = {"feat-t1": 1, "feat-t2": 1}
+            mtp.write_text(json.dumps(mt) + "\n", encoding="utf-8")
+            stk = compute_state(ncg_term_root, cloud=False, real_device=True)
+            if stk.get("terminal_reason") != "queue-exhausted-budget-deferred":
+                failures.append(
+                    "[ncg-flush] when NO deferred feature is near-complete the "
+                    "queue-exhausted-budget-deferred terminal must STILL fire, got "
+                    f"terminal_reason={stk.get('terminal_reason')!r} "
+                    f"feature_id={stk.get('feature_id')!r}"
+                )
+            if "budget_resumed_near_complete" in stk:
+                failures.append(
+                    "[ncg-flush] no resume key when nothing is resumable, got "
+                    f"{stk.get('budget_resumed_near_complete')!r}"
+                )
+
+            # (l) Evicted is never resumed: feat-nc is near-complete but ALREADY in
+            # the marker's budget_evicted[] (genuine monopoly eviction earlier this
+            # run); feat-nc2 is a non-near-complete deferred filler so the queue
+            # exhausts. The flush must NOT resume the evicted feat-nc → the terminal
+            # fires (no near-complete NON-evicted feature exists).
+            _ncg_write_marker(
+                {"feat-nc": 8, "feat-nc2": 8},
+                budget_evicted=["feat-nc"],
+                budget_deferred={"feat-nc2": 1},
+            )
+            # feat-nc2 must be a NON-near-complete deferred filler for this case.
+            # Rebuild feat-nc2 as a plain mid-implementation dir (overwrite PHASES).
+            (ncg_root / "docs" / "features" / "feat-nc2" / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n"
+            )
+            stl = compute_state(ncg_root, cloud=False, real_device=True)
+            if stl.get("feature_id") == "feat-nc" or (
+                stl.get("budget_resumed_near_complete") == "feat-nc"
+            ):
+                failures.append(
+                    "[ncg-flush] an EVICTED near-complete feature must NEVER be "
+                    "resumed by the flush, got "
+                    f"feature_id={stl.get('feature_id')!r} "
+                    f"resumed={stl.get('budget_resumed_near_complete')!r}"
+                )
+            print("  [ncg-flush] end-of-run near-complete resume flush + "
+                  "genuine-terminal-unchanged + evicted-never-resumed: ok")
         finally:
             if _ncg_prev_env is None:
                 os.environ.pop("LAZY_STATE_DIR", None)
