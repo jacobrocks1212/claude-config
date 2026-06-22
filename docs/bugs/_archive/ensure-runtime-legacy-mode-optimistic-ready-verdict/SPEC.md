@@ -2,9 +2,11 @@
 
 > `ensure_runtime` returns `state: READY` with `health_code: 0` (both ports down) whenever it falls to legacy mode (unbound run marker), so `/lazy-batch` Step 1d.0 dispatches an `mcp-test` agent against a dead runtime — wasted work the orchestrator then has to recover by taking over the cold compile itself.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-22
+**Fixed:** 2026-06-22
+**Fix commit:** 55abfc3
 **Placement:** docs/bugs/ensure-runtime-legacy-mode-optimistic-ready-verdict
 **Related:**
 - `docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile/` — the **inverse** failure (false *BLOCKED* — starved a cold compile by kill-restarting). Fixed the M4 two-port discriminator; this bug is the false-*READY* sibling that lives in the **legacy** path the two-port fix never touched.
