@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all three phases implemented (code + tests + docs landed, gates green); validation tail pending. The `__mark_fixed__` gate owns the `Fixed` flip + `FIXED.md` receipt; this file never flips it itself.
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a pure harness-script change to `user/scripts/lazy_core.py` (and its CLI seam in `lazy-state.py`), validated entirely by the in-file `--test` smoke harness + `test_lazy_core.py` via injected probe/restart/stale_check/sleep callables. There is no AlgoBooth app surface, store, audio path, UI, or event reachable from MCP here (the dev runtime is the *subject under test*, not an MCP-testable target). Per `docs/bugs/CLAUDE.md`, harness-script defects have no MCP-reachable surface — the hermetic state-machine smoke tests ARE the runtime validation.
 

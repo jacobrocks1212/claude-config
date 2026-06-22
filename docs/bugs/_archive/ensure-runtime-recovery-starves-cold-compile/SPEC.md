@@ -2,9 +2,11 @@
 
 > The M4 runtime recovery loop (`_recover_runtime`, ≤5 kill+restart with 1·2·4·8·16s backoff) kill-restarts a runtime that is only "DEAD" because its **cold Rust compile hasn't finished yet**. Each `restart()` (`npm run dev:restart` = `kill-dev && tauri dev`) kills the in-flight compile, so it never completes; all 5 attempts fail and the orchestrator writes a **false** `BLOCKED.md blocker_kind: mcp-runtime-unready`, halting the pipeline.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-21
+**Fixed:** 2026-06-21
+**Fix commit:** d17dbc0
 **Placement:** docs/bugs/ensure-runtime-recovery-starves-cold-compile
 **Related:** `docs/features/long-build-and-runtime-ownership/` (SPEC LD3 bounded-recovery contract; the M4 verdict; `run_transient_build` Transient Build contract; `long-build-ownership-guard.sh`); `user/scripts/CLAUDE.md` → `--ensure-runtime` CLI doc; `docs/bugs/env-transient-counts-against-validation-retry-budget` (sidecar-pipe readiness — same `_recover_runtime` loop); `lazy-batch/SKILL.md` Step 1d.0 (sole consumer)
 
