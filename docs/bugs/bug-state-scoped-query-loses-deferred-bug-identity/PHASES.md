@@ -22,11 +22,31 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 - **Park branches:** under `--park-blocked` / `--park-needs-input`, a scoped match that would be parked returns a scoped state naming the bug + its park reason (blocked/needs-input) rather than falling through to `queue-exhausted-all-parked`. (Park-mode is only active under explicit flags, so this is additive and unscoped behavior is unchanged.)
 
 **Deliverables:**
-- [ ] Add scoped per-bug terminal_reason constant(s) for the deferred/cloud/device/parked scoped-match cases (named beside the existing `TR_*` constants in `bug-state.py`).
-- [ ] In `compute_state`'s queue loop, when `scope_bug_id` is set AND the current entry matches AND it would be skipped by the operator-deferred branch (`DEFERRED.md` present), return a scoped `_bug_state(feature_id=bug_id, feature_name=bug_name, spec_path=str(spec_dir), current_step=<per-bug deferred step>, terminal_reason=<scoped deferred reason>, notify_message=…)` instead of `continue`.
-- [ ] Mirror the same scoped-return treatment in the cloud-saturated skip branch (~666–675), the device-saturated skip branch (~682–696), and the two park branches (~782–824) for a scoped match.
-- [ ] Preserve the UNSCOPED path exactly: when `scope_bug_id is None`, every branch still `continue`s into the existing global terminals. Add an explicit guard (`if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):`) so the early-return fires ONLY for the scoped-match case.
-- [ ] Tests: add `bug-state.py --test` fixtures asserting `--bug-id <deferred-bug>` returns `feature_id == <bug-id>` + a non-null `spec_path` + the scoped deferred `terminal_reason` (NOT `feature_id: null` / `all-remaining-deferred`); plus a regression fixture asserting the UNSCOPED query against the same fixture still returns the global `all-remaining-deferred` terminal.
+- [x] Add scoped per-bug terminal_reason constant(s) for the deferred/cloud/device/parked scoped-match cases (named beside the existing `TR_*` constants in `bug-state.py`).
+- [x] In `compute_state`'s queue loop, when `scope_bug_id` is set AND the current entry matches AND it would be skipped by the operator-deferred branch (`DEFERRED.md` present), return a scoped `_bug_state(feature_id=bug_id, feature_name=bug_name, spec_path=str(spec_dir), current_step=<per-bug deferred step>, terminal_reason=<scoped deferred reason>, notify_message=…)` instead of `continue`.
+- [x] Mirror the same scoped-return treatment in the cloud-saturated skip branch (~666–675), the device-saturated skip branch (~682–696), and the two park branches (~782–824) for a scoped match.
+- [x] Preserve the UNSCOPED path exactly: when `scope_bug_id is None`, every branch still `continue`s into the existing global terminals. Add an explicit guard (`if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):`) so the early-return fires ONLY for the scoped-match case.
+- [x] Tests: add `bug-state.py --test` fixtures asserting `--bug-id <deferred-bug>` returns `feature_id == <bug-id>` + a non-null `spec_path` + the scoped deferred `terminal_reason` (NOT `feature_id: null` / `all-remaining-deferred`); plus a regression fixture asserting the UNSCOPED query against the same fixture still returns the global `all-remaining-deferred` terminal.
+
+#### Implementation Notes (Phase 1 — landed 2026-06-22, Part 1)
+
+**Status:** Implemented (validation runtime: not-required — pure CLI; `--test` trio is the gate).
+**Review verdict:** PASS (inline review — 1 file `bug-state.py` + 1 baseline; unscoped path byte-identical via Fixture B; every scoped guard wraps `if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):` BEFORE the unchanged append/continue; no branch lost its unscoped `continue`).
+
+**Scoped terminal_reason literals introduced (Parts 2/3 consume these VERBATIM):**
+- `TR_OPERATOR_DEFERRED_SCOPED = "operator-deferred"` → curated `Deferred`
+- `TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"` → curated `Deferred`
+- `TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"` → curated `Deferred`
+- `TR_BLOCKED_SCOPED = "blocked-scoped"` → curated `Blocked`
+- `TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"` → curated `Needs-input`
+
+**Scoped current_step literals (generic — curated stage resolves from terminal, which dominates):** `STEP_OPERATOR_DEFERRED_SCOPED`, `STEP_CLOUD_DEFERRED_SCOPED`, `STEP_DEVICE_DEFERRED_SCOPED`, `STEP_BLOCKED_PARKED_SCOPED`, `STEP_NEEDS_INPUT_PARKED_SCOPED`.
+
+**Files modified:** `user/scripts/bug-state.py` (5 new `TR_*` + 5 new `STEP_*` constants; new shared `_scoped_skip_state(...)` helper modeled on the completion-unverified scoped return; scoped early-returns added to ALL FOUR skip-branch clusters — operator-deferred, cloud-saturated, device-saturated, and the three park sites [BLOCKED.md / mis-named-blocker / NEEDS_INPUT.md]; 4 new `--test` fixtures: scoped-operator-deferred-identity (A), unscoped-operator-deferred-regression (B), scoped-cloud-saturated-identity (C1), scoped-device-saturated-identity (C2)). `user/scripts/tests/baselines/bug-state-test-baseline.txt` re-byte-pinned via `_normalize_smoke_output` (+4 PASS lines).
+
+**Gates:** `bug-state.py --test` green, `lazy-state.py --test` green (shared `lazy_core`, no regression), `test_lazy_core.py` 764/764, `lazy_parity_audit.py --repo-root .` exit 0 (Phase 1 is bug-state-only; feature-side mirror is Part 2). Real CLI MVB confirmed: `--bug-id <DEFERRED.md-bug>` emits `feature_id=<bug-id>`, non-null `spec_path`, `terminal_reason=operator-deferred`.
+
+**Part 2/3 contract:** the curated-stage mapping table above is the verbatim source for Part 3's `_SIDE_STATE_BY_TERMINAL` additions; Part 2 mirrors the cloud/device scoped literals onto `lazy-state.py` (the feature pipeline has NO operator `DEFERRED.md` branch — justified divergence).
 
 **Minimum Verifiable Behavior:** `python user/scripts/bug-state.py --repo-root <fixture-or-AlgoBooth> --bug-id <DEFERRED.md-bug>` emits `{"feature_id": "<bug-id>", "spec_path": "…/<bug-id>", "terminal_reason": "operator-deferred", …}` with a non-null id (today it emits `feature_id: null`, `terminal_reason: all-remaining-deferred`). Verified by the new `bug-state.py --test` fixture and a direct CLI run.
 

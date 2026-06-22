@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: bug-state-scoped-query-loses-deferred-bug-identity
-status: Ready
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [1]
@@ -93,9 +93,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Add scoped per-bug deferred terminal_reason constant(s) + scoped operator-deferred early-return
-- [ ] WU-2 — Mirror scoped early-return into the cloud/device/park scoped-match branches
-- [ ] WU-3 — `bug-state.py --test` fixtures: scoped identity preserved + unscoped baseline regression
+- [x] WU-1 — Add scoped per-bug deferred terminal_reason constant(s) + scoped operator-deferred early-return
+- [x] WU-2 — Mirror scoped early-return into the cloud/device/park scoped-match branches
+- [x] WU-3 — `bug-state.py --test` fixtures: scoped identity preserved + unscoped baseline regression
 
 ---
 
