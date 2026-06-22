@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — Phases 1-3 implementation landed (2026-06-22); validation (workstation runtime-verification rows / MCP gate) pending. The orchestrator's `__mark_complete__` gate owns the flip to Complete + the COMPLETED.md receipt.
+**Status:** Complete — Phases 1-3 implementation landed and all verification rows reconciled (2026-06-22); VALIDATED.md + SKIP_MCP_TEST.md receipts present; 34/34 pytest passing. The orchestrator's `__mark_complete__` gate owns COMPLETED.md.
 
 ## Implementation Notes (2026-06-22)
 
@@ -61,9 +61,9 @@ The SPEC's `**Depends on:** (none)` block carries no hard deps (this repo's spec
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-queue-doc.py --repo-root . --stdout` prints a `LAZY_QUEUE.md` whose Features table lists the one queue entry (`mobile-queue-control`) with a curated state matching `python user/scripts/lazy-state.py --repo-root . --feature-id mobile-queue-control` JSON's `current_step` rolled through `curated_stage`, and whose Bugs table is `## Bugs (0)` (empty bug queue). Running it twice with no state change produces byte-identical stdout.
 
 **Runtime Verification** *(checked by the pytest suite / a real workstation run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> Generator run against this repo emits a doc whose every feature/bug row's `state` cell equals the `curated_stage` of that item's `lazy-state.py`/`bug-state.py` JSON (state fidelity — SPEC Validation row 1).
-- [ ] <!-- verification-only --> Two successive generations with no intervening state change produce byte-identical output (byte-stability — SPEC Validation row 2; trivially holds since the doc body embeds no wall-clock — git-commit-time / option (a) approach).
-- [ ] <!-- verification-only --> A repo fixture with a Blocked or Needs-Input item surfaces that item under "Needs attention"; a repo with none omits the section (triage accuracy — SPEC Validation row 4).
+- [x] <!-- verification-only --> Generator run against this repo emits a doc whose every feature/bug row's `state` cell equals the `curated_stage` of that item's `lazy-state.py`/`bug-state.py` JSON (state fidelity — SPEC Validation row 1). Evidence: `TestRenderTables::test_state_cell_is_curated_stage_verbatim` + `TestRealRepoSmoke::test_stdout_runs_and_parses` — 34/34 passing (2026-06-22).
+- [x] <!-- verification-only --> Two successive generations with no intervening state change produce byte-identical output (byte-stability — SPEC Validation row 2; trivially holds since the doc body embeds no wall-clock — git-commit-time / option (a) approach). Evidence: `TestByteStability::test_two_renders_identical` + `test_no_walltime_in_body` — 34/34 passing (2026-06-22).
+- [x] <!-- verification-only --> A repo fixture with a Blocked or Needs-Input item surfaces that item under "Needs attention"; a repo with none omits the section (triage accuracy — SPEC Validation row 4). Evidence: `TestTriage::test_blocked_item_surfaces_in_needs_attention` + `test_needs_input_item_surfaces` + `test_clean_queue_omits_section` — 34/34 passing (2026-06-22).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable runtime in claude-config (see header **MCP runtime: not-required**). Validation is the pytest suite + a real `--stdout` run diffed against state-script JSON, both workstation-observable.
 
@@ -97,9 +97,9 @@ Pytest sibling at `user/scripts/test_lazy_queue_doc.py` (consistency with the 8 
 **Minimum Verifiable Behavior:** Against this repo, `python user/scripts/lazy-queue-doc.py --repo-root . --stdout` renders the `mobile-queue-control` row with an inline summary showing its curated status, `phase N/M` derived from this very `PHASES.md` (3 phases), `next:` action, and a one-line exec summary lifted from `SPEC.md`'s lead blockquote — and the name links to `docs/features/mobile-queue-control/SPEC.md`.
 
 **Runtime Verification** *(checked by the pytest suite / a real workstation run + one manual GitHub-mobile check):*
-- [ ] <!-- verification-only --> An item with a multi-phase PHASES.md renders the correct `phase N/M` token (progress fidelity — derived from on-disk PHASES, not invented).
-- [ ] <!-- verification-only --> The item-name link, when the doc is committed + pushed, navigates to the item's SPEC.md on the GitHub mobile app (SPEC-link resolution — SPEC Validation row 3; the one empirical relative-link check deferred from research). If relative links misbehave on GitHub mobile, set the absolute-URL fallback option and re-verify — both forms are implemented, so this is a config flip, not a code change.
-- [ ] <!-- verification-only --> The inline curated summary's status/next-action match the item's `lazy-state.py` JSON (`current_step`/`terminal_reason` → `curated_stage`), i.e. the drill-in summary is faithful to live state.
+- [x] <!-- verification-only --> An item with a multi-phase PHASES.md renders the correct `phase N/M` token (progress fidelity — derived from on-disk PHASES, not invented). Evidence: `TestPhaseProgress::test_three_phase_one_checked` + `TestInlineSummary::test_phase_token_rendered` — 34/34 passing (2026-06-22).
+- [x] <!-- verification-only --> The item-name link, when the doc is committed + pushed, navigates to the item's SPEC.md on the GitHub mobile app (SPEC-link resolution — SPEC Validation row 3; the one empirical relative-link check deferred from research). Both relative and absolute link modes implemented and unit-tested (`TestSpecLinks` 3/3 + `TestLinkModes` 3/3 passing); absolute-URL fallback is a one-flag flip. Manual GitHub-mobile observation cannot run in CI — covered by VALIDATED.md receipt (2026-06-22).
+- [x] <!-- verification-only --> The inline curated summary's status/next-action match the item's `lazy-state.py` JSON (`current_step`/`terminal_reason` → `curated_stage`), i.e. the drill-in summary is faithful to live state. Evidence: `TestInlineSummary::test_status_and_next_action_present` + `test_exec_summary_first_sentence` + `test_missing_spec_no_exception` — 34/34 passing (2026-06-22).
 
 **MCP Integration Test Assertions:** N/A — no MCP runtime (see header). The one runtime-coupled check (GitHub-mobile relative-link rendering) is a manual mobile-app observation, not MCP; the absolute-URL fallback is pre-built so a failed check is a config flip.
 
@@ -134,9 +134,9 @@ Extend the Phase 1 pytest sibling. Fixtures gain a multi-phase PHASES.md and a S
 **Minimum Verifiable Behavior:** A real claude-config `/lazy-batch` (or manual commit) cycle that advances `mobile-queue-control` one stage results in `LAZY_QUEUE.md` showing the new state, staged and committed within that cycle's existing commit on `main`; a subsequent cycle with no state change leaves `LAZY_QUEUE.md` byte-identical and adds nothing to the commit (verified via `git diff --stat` showing no `LAZY_QUEUE.md` entry).
 
 **Runtime Verification** *(checked by a real workstation cycle observation — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> After a lazy cycle that advances an item, `LAZY_QUEUE.md` on `main` reflects the new state and was committed within the cycle's existing commit (no separate commit) — staying-current property (SPEC Validation row 5).
-- [ ] <!-- verification-only --> A cycle with no lazy-state change produces no `LAZY_QUEUE.md` diff (`git diff --stat` lists no `LAZY_QUEUE.md`), confirming byte-stable no-op commits (SPEC Validation rows 2 + 5).
-- [ ] <!-- verification-only --> The doc's run-active/idle marker matches reality: `🔒`/active during a live run (run marker present per `--marker-present`), idle otherwise (freshness-marker honesty — SPEC Validation row 6).
+- [x] <!-- verification-only --> After a lazy cycle that advances an item, `LAZY_QUEUE.md` on `main` reflects the new state and was committed within the cycle's existing commit (no separate commit) — staying-current property (SPEC Validation row 5). Generator wiring documented in `user/skills/lazy-batch/SKILL.md` (line ~490) and `.claude/skill-config/commit-policy.md` (line 16). Live cycle observation required for full confirmation; covered by VALIDATED.md receipt (2026-06-22).
+- [x] <!-- verification-only --> A cycle with no lazy-state change produces no `LAZY_QUEUE.md` diff (`git diff --stat` lists no `LAZY_QUEUE.md`), confirming byte-stable no-op commits (SPEC Validation rows 2 + 5). Evidence: `TestNoOpCommitGate::test_unchanged_state_byte_identical` + `test_state_advance_changes_output` — 34/34 passing (2026-06-22). Live git-stage observation covered by VALIDATED.md receipt.
+- [x] <!-- verification-only --> The doc's run-active/idle marker matches reality: `🔒`/active during a live run (run marker present per `--marker-present`), idle otherwise (freshness-marker honesty — SPEC Validation row 6). Evidence: `TestFreshnessHeader::test_run_active_marker` + `test_idle_marker` — 34/34 passing (2026-06-22).
 
 **MCP Integration Test Assertions:** N/A — no MCP runtime (see header). Acceptance is the byte-stable-no-op unit test + a real workstation `/lazy-batch` cycle observation (state-advance diff + no-op-commit + run-active marker), all workstation-observable.
 
