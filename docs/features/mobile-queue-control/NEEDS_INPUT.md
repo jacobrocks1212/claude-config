@@ -56,3 +56,15 @@ mechanical-internal one — surfacing it rather than letting the plan bake it in
 requirement and GitHub mobile already shows last-commit time, but because it drops an element the
 SPEC's UX mockup explicitly draws, the operator should confirm rather than have the plan silently
 remove the visible timestamp.
+
+## Resolution
+
+*Recorded on 2026-06-22 14:21:36 UTC.*
+
+### 1. Freshness marker — embed a generated-at timestamp in LAZY_QUEUE.md, or drop it and rely on GitHub's last-commit time
+
+**Choice:** (a) No embedded timestamp — derive "last updated" from git commit time
+**Notes:** Operator confirmed the recommended path. The doc body carries no wall-clock line; the
+run-active/idle (`🔒`/idle) marker stays. Freshness is read from GitHub's native last-commit time.
+SPEC's `(updated <ts> …)` mockup is superseded by this resolution — the visible wall-clock element
+is intentionally dropped to preserve byte-stable regeneration (Phase 3 no-op-commit gate).
