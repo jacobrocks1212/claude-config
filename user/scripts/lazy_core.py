@@ -8976,6 +8976,32 @@ _CYCLE_COMMIT_BUDGET: dict[str, int] = {
     # shared `lazy_core` module — bug `__mark_fixed__` resolves the same key here.
     "__mark_complete__": 3,
     "__mark_fixed__": 3,
+    # The planning dispatch (Step 6 consolidated /plan-feature, or the direct
+    # Step 7a /write-plan) legitimately commits MORE THAN ONCE. /plan-feature
+    # runs /spec-phases (commits PHASES.md) THEN /write-plan back-to-back in one
+    # cycle (lazy-state.py:2813), and /write-plan may emit a MULTI-PART plan
+    # series (`all-phases-<slug>-part-1.md`, `-part-2.md`, … per the 8-WU
+    # partition cap, write-plan/SKILL.md Step 2.5), committing once per part.
+    # The codebase already names this "the d8 write-plan loop, where each cycle
+    # COMMITS (HEAD advances)" (lazy_core.py:4534). With the default budget of 1
+    # a normal 2-commit planning cycle false-positived `unexpected-commits` (the
+    # 2026-06-22 `d2-sample-import-ui` recurrence:
+    # `begin_head_sha=08d33d580cfe, sub_skill='write-plan', budget=1`, HEAD
+    # advanced 2 commits). This is the SAME missing-row defect class Round 15
+    # fixed for `execute-plan`, Rounds 16/17 for the `__mark_complete__` /
+    # `__mark_fixed__` pseudo-skills, and the `mcp-test` row above; the two
+    # planning skills were simply never enumerated. A genuine runaway (>3
+    # commits) still trips. Mirrors `bug-state.py` via the shared `lazy_core`
+    # module (the bug pipeline routes its own planning here via /plan-bug, which
+    # likewise dispatches /write-plan).
+    "write-plan": 3,
+    "plan-feature": 3,
+    # Bug-pipeline planning analog of /plan-feature: /plan-bug authors PHASES.md
+    # from a concluded investigation THEN dispatches /write-plan (bug-state.py
+    # routes sub_skill=SKILL_PLAN_BUG, line 1183), so its cycle likewise commits
+    # PHASES.md + one-or-more plan parts. Same missing-row defect class; budgeted
+    # identically. A genuine runaway (>3) still trips.
+    "plan-bug": 3,
 }
 
 # Slack added on top of the plan's phase count for a phase-scaled execute-plan

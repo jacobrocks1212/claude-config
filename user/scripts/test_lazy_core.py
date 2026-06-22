@@ -17314,6 +17314,44 @@ def test_detect_friction_mcp_test_cycle_multi_commit_within_budget():
     assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
 
 
+def test_detect_friction_planning_cycle_multi_commit_within_budget():
+    """Hardening 2026-06-22 recurrence (d2-sample-import-ui): the planning dispatch
+    (consolidated Step-6 /plan-feature, or the direct Step-7a /write-plan) legitimately
+    commits MORE THAN ONCE — /plan-feature runs /spec-phases (commits PHASES.md) THEN
+    /write-plan back-to-back, and /write-plan may emit a multi-part plan series
+    (`-part-1.md`, `-part-2.md`, … per the 8-WU partition cap) committing once per part.
+    With the planning skills absent from the budget table they defaulted to 1, so a
+    normal 2-commit planning cycle re-tripped `unexpected-commits`
+    (`begin_head_sha=08d33d580cfe, sub_skill='write-plan', budget=1`, HEAD advanced 2
+    commits). This is the SAME missing-row defect class Round 15 fixed for `execute-plan`,
+    Rounds 16/17 for the pseudo-skills, and the `mcp-test` row; the write-plan/plan-feature/
+    plan-bug:3 rows close it. A genuine runaway (>3) still trips — no gate weakened."""
+    _guard()
+    marker = {
+        "feature_id": "d2-sample-import-ui", "nonce": "n",
+        "run_started_at": "2026-06-22T00:00:00Z",
+        "begin_head_sha": "08d33d580cfe",
+    }
+    for ss in ("write-plan", "plan-feature", "plan-bug"):
+        got = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-22T00:00:00Z",  # identity intact
+            current_head_sha="730a4df88d17",
+            sub_skill=ss,
+            commits_since=2,  # spec-phases PHASES.md + write-plan plan-part commit
+        )
+        assert got is None, (ss, got)
+    # A genuine runaway (>3) on the same sub_skill STILL trips — no gate weakened.
+    runaway = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-22T00:00:00Z",
+        current_head_sha="730a4df88d17",
+        sub_skill="write-plan",
+        commits_since=7,
+    )
+    assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
+
+
 def test_detect_friction_within_commit_budget_returns_none():
     """WU-2: a single commit (within the conservative budget) and intact identity
     → None."""
@@ -20594,6 +20632,8 @@ _TESTS = _TESTS + [
      test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget),
     ("test_detect_friction_mcp_test_cycle_multi_commit_within_budget",
      test_detect_friction_mcp_test_cycle_multi_commit_within_budget),
+    ("test_detect_friction_planning_cycle_multi_commit_within_budget",
+     test_detect_friction_planning_cycle_multi_commit_within_budget),
     ("test_detect_friction_meta_cycle_exempt_from_unexpected_commits",
      test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
     ("test_detect_friction_over_budget_commits",
