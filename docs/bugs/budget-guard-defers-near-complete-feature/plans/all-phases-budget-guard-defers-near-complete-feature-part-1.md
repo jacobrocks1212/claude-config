@@ -92,9 +92,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Near-completion predicate (`feature_is_near_complete`)
-- [ ] WU-2 — Corrective-cycle counter helpers + marker seed (`count_validation_corrective_cycles`, `record_corrective_cycle`)
-- [ ] WU-3 — Composite trip-signal evaluator (`budget_trip_signals`)
+- [x] WU-1 — Near-completion predicate (`feature_is_near_complete`)
+- [x] WU-2 — Corrective-cycle counter helpers + marker seed (`count_validation_corrective_cycles`, `record_corrective_cycle`)
+- [x] WU-3 — Composite trip-signal evaluator (`budget_trip_signals`)
 - [ ] WU-4 — Wire grace gate + composite signals into the trip site (`lazy-state.py`)
 - [ ] WU-5 — Increment the corrective counter at the corrective-dispatch bracket
 

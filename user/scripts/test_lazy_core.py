@@ -21217,6 +21217,258 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# Tests: budget-guard-defers-near-complete-feature Phase 1 — near-completion
+#   predicate + corrective-cycle accounting + composite trip-signal evaluator.
+#
+#   WU-1 feature_is_near_complete(feature_dir, repo_root) -> bool
+#       True iff PHASES.md present AND remaining_unchecked_are_verification_only
+#       is True AND >=1 plan part status: Complete AND no BLOCKED.md. Tolerant of
+#       missing PHASES.md / plans dir (returns False, never raises).
+#   WU-2 count_validation_corrective_cycles(marker, feature_id) -> int (legacy 0)
+#        record_corrective_cycle(marker, feature_id) (increment by 1)
+#        write_run_marker seeds per_feature_corrective_cycles: {}.
+#   WU-3 budget_trip_signals(forward_count, corrective_count, ceiling,
+#        near_complete) -> {should_defer, effective_count, reason} (pure).
+# ---------------------------------------------------------------------------
+
+
+def _write_near_complete_feature_dir(td_root, *, verification_only=True,
+                                     plan_complete=True, blocked=False,
+                                     phases_present=True):
+    """Build a docs/bugs|features-style feature dir for feature_is_near_complete
+    fixtures. Returns the feature dir Path."""
+    feat = Path(td_root) / "feat"
+    feat.mkdir(parents=True, exist_ok=True)
+    if phases_present:
+        if verification_only:
+            phases = (
+                "# Phases\n\n"
+                "### Phase 1\n"
+                "- [x] Implemented the thing\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] runtime check <!-- verification-only -->\n"
+            )
+        else:
+            phases = (
+                "# Phases\n\n"
+                "### Phase 1\n"
+                "- [ ] An unchecked IMPLEMENTATION row (not verification)\n"
+            )
+        (feat / "PHASES.md").write_text(phases, encoding="utf-8")
+    plans = feat / "plans"
+    plans.mkdir(exist_ok=True)
+    status = "Complete" if plan_complete else "In-progress"
+    (plans / "all-phases-part-1.md").write_text(
+        f"---\nkind: implementation-plan\nstatus: {status}\n---\n\n# plan\n",
+        encoding="utf-8",
+    )
+    if blocked:
+        (feat / "BLOCKED.md").write_text(
+            "---\nkind: blocked\n---\n\n# blocked\n", encoding="utf-8"
+        )
+    return feat
+
+
+def test_feature_is_near_complete_true_verification_only_plan_complete():
+    """P1 RED: verification-only PHASES + a Complete plan part + no BLOCKED.md
+    ⇒ near-complete True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        feat = _write_near_complete_feature_dir(td)
+        assert lazy_core.feature_is_near_complete(feat, Path(td)) is True
+
+
+def test_feature_is_near_complete_false_unchecked_impl_row():
+    """P1 RED: an unchecked IMPLEMENTATION row (no verification-only marker) ⇒
+    False (work remains, not just validation)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        feat = _write_near_complete_feature_dir(td, verification_only=False)
+        assert lazy_core.feature_is_near_complete(feat, Path(td)) is False
+
+
+def test_feature_is_near_complete_false_blocked():
+    """P1 RED: a BLOCKED.md on disk ⇒ False even when otherwise near-complete."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        feat = _write_near_complete_feature_dir(td, blocked=True)
+        assert lazy_core.feature_is_near_complete(feat, Path(td)) is False
+
+
+def test_feature_is_near_complete_false_no_plan_complete():
+    """P1 RED: no plan part is Complete ⇒ False (not yet ready to validate)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        feat = _write_near_complete_feature_dir(td, plan_complete=False)
+        assert lazy_core.feature_is_near_complete(feat, Path(td)) is False
+
+
+def test_feature_is_near_complete_false_missing_phases_no_raise():
+    """P1 RED: a missing PHASES.md / plans dir returns False and never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        feat = Path(td) / "empty"
+        feat.mkdir()
+        # No PHASES.md, no plans dir at all.
+        assert lazy_core.feature_is_near_complete(feat, Path(td)) is False
+        # A nonexistent dir is also tolerated.
+        assert lazy_core.feature_is_near_complete(
+            Path(td) / "does-not-exist", Path(td)
+        ) is False
+
+
+def test_count_validation_corrective_cycles_legacy_absent_zero():
+    """P1 RED: a legacy/absent per_feature_corrective_cycles map ⇒ 0 (mirrors
+    read_per_feature_forward_cycles legacy tolerance)."""
+    _guard()
+    assert lazy_core.count_validation_corrective_cycles(None, "feat-A") == 0
+    assert lazy_core.count_validation_corrective_cycles({}, "feat-A") == 0
+    assert lazy_core.count_validation_corrective_cycles(
+        {"per_feature_corrective_cycles": {}}, "feat-A"
+    ) == 0
+    assert lazy_core.count_validation_corrective_cycles(
+        {"per_feature_corrective_cycles": {"feat-A": 3}}, "feat-A"
+    ) == 3
+
+
+def test_record_corrective_cycle_increments_by_one():
+    """P1 RED: record_corrective_cycle increments per_feature_corrective_cycles
+    [id] by 1 per call, keyed on feature_id."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            m = lazy_core.record_corrective_cycle(
+                lazy_core.read_run_marker(), "feat-A"
+            )
+            assert m["per_feature_corrective_cycles"].get("feat-A") == 1, m
+            m = lazy_core.record_corrective_cycle(m, "feat-A")
+            assert m["per_feature_corrective_cycles"].get("feat-A") == 2, m
+            # A second feature gets its own independent key.
+            m = lazy_core.record_corrective_cycle(m, "feat-B")
+            assert m["per_feature_corrective_cycles"].get("feat-B") == 1, m
+            assert m["per_feature_corrective_cycles"].get("feat-A") == 2, m
+        finally:
+            _clear_state_dir()
+
+
+def test_record_corrective_cycle_legacy_marker_tolerance():
+    """P1 RED: a marker lacking per_feature_corrective_cycles defaults to {} and
+    starts the count — never KeyErrors."""
+    _guard()
+    legacy = {"pipeline": "feature"}
+    m = lazy_core.record_corrective_cycle(legacy, "feat-L")
+    assert m["per_feature_corrective_cycles"].get("feat-L") == 1, m
+
+
+def test_write_run_marker_seeds_per_feature_corrective_map():
+    """P1 RED: write_run_marker seeds per_feature_corrective_cycles: {} alongside
+    the per_feature_forward_cycles seed."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            m = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            assert m.get("per_feature_corrective_cycles") == {}, m
+            on_disk = lazy_core.read_run_marker(now=_time.time())
+            assert on_disk.get("per_feature_corrective_cycles") == {}, on_disk
+        finally:
+            _clear_state_dir()
+
+
+def test_budget_trip_signals_over_ceiling_defers():
+    """P1 RED: effective_count >= ceiling AND NOT near_complete ⇒ should_defer
+    True, reason over-ceiling."""
+    _guard()
+    r = lazy_core.budget_trip_signals(6, 0, 6, False)
+    assert r["should_defer"] is True
+    assert r["effective_count"] == 6
+    assert r["reason"] == "over-ceiling"
+
+
+def test_budget_trip_signals_near_complete_grace():
+    """P1 RED: near_complete True ⇒ should_defer False even at/over ceiling
+    (grace), reason near-complete-grace."""
+    _guard()
+    r = lazy_core.budget_trip_signals(6, 0, 6, True)
+    assert r["should_defer"] is False
+    assert r["effective_count"] == 6
+    assert r["reason"] == "near-complete-grace"
+
+
+def test_budget_trip_signals_corrective_discount():
+    """P1 RED: corrective work is subtracted; effective_count < ceiling ⇒
+    should_defer False, reason corrective-discount."""
+    _guard()
+    r = lazy_core.budget_trip_signals(8, 2, 6, False)
+    assert r["effective_count"] == 6  # 8 - 2 = 6 >= ceiling → over-ceiling
+    assert r["should_defer"] is True
+    assert r["reason"] == "over-ceiling"
+    # Now discount enough to drop below the ceiling.
+    r = lazy_core.budget_trip_signals(7, 2, 6, False)
+    assert r["effective_count"] == 5  # 7 - 2 = 5 < 6
+    assert r["should_defer"] is False
+    assert r["reason"] == "corrective-discount"
+
+
+def test_budget_trip_signals_effective_count_clamped_at_zero():
+    """P1 RED: corrective_count > forward_count clamps effective_count at 0."""
+    _guard()
+    r = lazy_core.budget_trip_signals(2, 5, 6, False)
+    assert r["effective_count"] == 0
+    assert r["should_defer"] is False
+
+
+def test_budget_trip_signals_pure_no_io():
+    """P1 RED: identical inputs → identical dict, repeatable (pure fn)."""
+    _guard()
+    a = lazy_core.budget_trip_signals(6, 1, 6, False)
+    b = lazy_core.budget_trip_signals(6, 1, 6, False)
+    assert a == b
+
+
+_TESTS = _TESTS + [
+    ("test_feature_is_near_complete_true_verification_only_plan_complete",
+     test_feature_is_near_complete_true_verification_only_plan_complete),
+    ("test_feature_is_near_complete_false_unchecked_impl_row",
+     test_feature_is_near_complete_false_unchecked_impl_row),
+    ("test_feature_is_near_complete_false_blocked",
+     test_feature_is_near_complete_false_blocked),
+    ("test_feature_is_near_complete_false_no_plan_complete",
+     test_feature_is_near_complete_false_no_plan_complete),
+    ("test_feature_is_near_complete_false_missing_phases_no_raise",
+     test_feature_is_near_complete_false_missing_phases_no_raise),
+    ("test_count_validation_corrective_cycles_legacy_absent_zero",
+     test_count_validation_corrective_cycles_legacy_absent_zero),
+    ("test_record_corrective_cycle_increments_by_one",
+     test_record_corrective_cycle_increments_by_one),
+    ("test_record_corrective_cycle_legacy_marker_tolerance",
+     test_record_corrective_cycle_legacy_marker_tolerance),
+    ("test_write_run_marker_seeds_per_feature_corrective_map",
+     test_write_run_marker_seeds_per_feature_corrective_map),
+    ("test_budget_trip_signals_over_ceiling_defers",
+     test_budget_trip_signals_over_ceiling_defers),
+    ("test_budget_trip_signals_near_complete_grace",
+     test_budget_trip_signals_near_complete_grace),
+    ("test_budget_trip_signals_corrective_discount",
+     test_budget_trip_signals_corrective_discount),
+    ("test_budget_trip_signals_effective_count_clamped_at_zero",
+     test_budget_trip_signals_effective_count_clamped_at_zero),
+    ("test_budget_trip_signals_pure_no_io",
+     test_budget_trip_signals_pure_no_io),
+]
+
+
+# ---------------------------------------------------------------------------
 # Tests: feature-budget-guard-and-skip-ahead Phase 3 — two-key readiness
 #   predicates (Locked Decision 5).
 #     parse_independent_marker(spec_text, queue_entry) -> bool

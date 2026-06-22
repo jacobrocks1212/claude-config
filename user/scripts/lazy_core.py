@@ -8289,6 +8289,15 @@ def write_run_marker(
         # meta classifier. The Phase-2 trip eval reads this map vs the computed
         # ceiling. Legacy markers lacking the key default to {} on read/advance.
         "per_feature_forward_cycles": {},
+        # budget-guard-defers-near-complete-feature Phase 1: per-feature count of
+        # forward cycles attributable to validation-driven corrective work,
+        # keyed on feature_id. Incremented at the corrective-dispatch bracket
+        # (record_corrective_cycle, wired in Phase 2) and DISCOUNTED from the
+        # budget-guard trip count by budget_trip_signals so a feature that did
+        # legitimate corrective work is not punished as monopolization. Seeded
+        # {} here in lockstep with per_feature_forward_cycles; legacy markers
+        # lacking the key default to {}/0 on read (count_validation_corrective_cycles).
+        "per_feature_corrective_cycles": {},
         # ISSUE 5 (d8-effect-chains live run, 2026-06-14): the consume-count
         # watermark at which a cycle counter was last advanced. A counter advances
         # only when the registry consume-count exceeds this (one consume per real
@@ -10195,6 +10204,181 @@ def read_per_feature_forward_cycles(marker: dict | None) -> dict:
         return {}
     value = marker.get("per_feature_forward_cycles")
     return value if isinstance(value, dict) else {}
+
+
+# ---------------------------------------------------------------------------
+# budget-guard-defers-near-complete-feature Phase 1 — near-completion predicate
+#   + corrective-cycle accounting + composite trip-signal evaluator.
+#
+# These four pure/near-pure helpers are wired into the trip site (Phase 2) and
+# the end-of-run flush (Phase 3). They land first with direct red→green
+# fixtures in test_lazy_core.py — no run marker / state-machine wiring needed to
+# characterize them.
+# ---------------------------------------------------------------------------
+
+
+def feature_is_near_complete(feature_dir, repo_root=None) -> bool:
+    """True iff a feature is within one validation cycle of done — the SAME
+    "ready to validate" definition the mid-feature gate uses to fall through to
+    the Step-9 ``/mcp-test``:
+
+      - ``PHASES.md`` is present AND ``remaining_unchecked_are_verification_only``
+        is True (every still-unchecked ``- [ ]`` row is a verification-only row
+        owned by the runtime gate), AND
+      - at least one ``plans/*.md`` part carries ``status: Complete``
+        (implementation has fully landed), AND
+      - no ``BLOCKED.md`` on disk (a blocker is not near-complete).
+
+    Reuses ``remaining_unchecked_are_verification_only`` for the verification
+    check (no re-implementation) so "near-complete" == the existing predicate.
+    Tolerant of EVERY missing input — a missing PHASES.md, missing plans dir, or
+    a nonexistent feature dir returns False and NEVER raises (the grace gate must
+    fail safe toward "not near-complete" / no grace).
+
+    ``repo_root`` is accepted for call-site symmetry with the other budget
+    helpers but is not needed (everything is read relative to ``feature_dir``).
+    """
+    try:
+        feat = Path(feature_dir)
+    except (TypeError, ValueError):
+        return False
+    try:
+        if (feat / "BLOCKED.md").exists():
+            return False
+        phases_md = feat / "PHASES.md"
+        if not phases_md.exists():
+            return False
+        phases_text = phases_md.read_text(encoding="utf-8")
+        if not remaining_unchecked_are_verification_only(phases_text):
+            return False
+        plans_dir = feat / "plans"
+        if not plans_dir.is_dir():
+            return False
+        for plan_path in sorted(plans_dir.glob("*.md")):
+            try:
+                text = plan_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            # status lives in the frontmatter; a simple line scan suffices (the
+            # frontmatter is the first block, and "status: Complete" is unique to
+            # a completed plan part).
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.lower().startswith("status:"):
+                    value = stripped.split(":", 1)[1].strip()
+                    if value == "Complete":
+                        return True
+                    break  # first status: line per file is authoritative
+        return False
+    except OSError:
+        return False
+
+
+def count_validation_corrective_cycles(marker, feature_id) -> int:
+    """Read-only count of forward cycles attributable to validation-driven
+    corrective work for ``feature_id``, read from the run-marker sub-map
+    ``per_feature_corrective_cycles: {feature_id: int}``.
+
+    Legacy/absent map ⇒ 0 (same tolerance pattern as
+    ``read_per_feature_forward_cycles``). A None/non-dict marker, a missing key,
+    or a non-int value all collapse to 0 — the discount never raises and never
+    inflates the trip count.
+    """
+    if not isinstance(marker, dict):
+        return 0
+    per_feature = marker.get("per_feature_corrective_cycles")
+    if not isinstance(per_feature, dict):
+        return 0
+    try:
+        return int(per_feature.get(str(feature_id), 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def record_corrective_cycle(marker: dict, feature_id) -> dict:
+    """Increment ``marker["per_feature_corrective_cycles"][feature_id]`` by 1, in
+    place, mirroring ``_bump_per_feature_forward``'s shape.
+
+    Called at the apply-resolution / corrective-phase dispatch bracket (wired in
+    Phase 2) so a validation-failure-driven corrective dispatch is counted as
+    corrective and discounted from the budget trip. Legacy-tolerant: a marker
+    lacking the key defaults to ``{}`` and never KeyErrors. A falsy/None
+    ``feature_id`` is a no-op (no spurious key). Returns the marker (the caller
+    persists it via the atomic marker write).
+    """
+    if not isinstance(marker, dict):
+        return marker
+    if not feature_id:
+        return marker
+    per_feature = marker.get("per_feature_corrective_cycles")
+    if not isinstance(per_feature, dict):
+        per_feature = {}
+    key = str(feature_id)
+    per_feature[key] = int(per_feature.get(key, 0) or 0) + 1
+    marker["per_feature_corrective_cycles"] = per_feature
+    return marker
+
+
+def budget_trip_signals(
+    forward_count: int,
+    corrective_count: int,
+    ceiling: int,
+    near_complete: bool,
+) -> dict:
+    """Composite budget-guard trip evaluator — the SINGLE decision point Phase 2
+    substitutes for the bare ``_bg_count >= _bg_ceiling`` comparison.
+
+    Returns ``{should_defer: bool, effective_count: int, reason: str}``:
+
+      - ``effective_count = max(0, forward_count - corrective_count)`` — discount
+        validation-driven corrective work (option a), clamped at 0 so a feature
+        whose corrective cycles exceed its forward cycles never goes negative.
+      - ``should_defer`` is True ONLY when ``effective_count >= ceiling`` AND NOT
+        ``near_complete`` — a near-complete feature is granted grace (no defer)
+        even at/over the ceiling.
+      - ``reason`` distinguishes the three branches for the probe/diag:
+        ``near-complete-grace`` (grace short-circuited a would-be defer),
+        ``corrective-discount`` (the discount dropped effective below ceiling),
+        ``over-ceiling`` (a genuine trip).
+
+    Pure: same inputs → identical dict, no marker/clock I/O.
+    """
+    try:
+        fwd = int(forward_count or 0)
+    except (TypeError, ValueError):
+        fwd = 0
+    try:
+        corr = int(corrective_count or 0)
+    except (TypeError, ValueError):
+        corr = 0
+    try:
+        ceil = int(ceiling or 0)
+    except (TypeError, ValueError):
+        ceil = 0
+    effective_count = max(0, fwd - corr)
+    over_ceiling = effective_count >= ceil
+    if near_complete and over_ceiling:
+        # Grace: a near-complete feature is allowed past the ceiling.
+        return {
+            "should_defer": False,
+            "effective_count": effective_count,
+            "reason": "near-complete-grace",
+        }
+    if not over_ceiling:
+        # Below the ceiling. If the raw forward count WOULD have tripped but the
+        # corrective discount pulled it under, attribute it to the discount;
+        # otherwise it simply has not reached the ceiling yet.
+        reason = "corrective-discount" if (corr > 0 and fwd >= ceil) else "under-ceiling"
+        return {
+            "should_defer": False,
+            "effective_count": effective_count,
+            "reason": reason,
+        }
+    return {
+        "should_defer": True,
+        "effective_count": effective_count,
+        "reason": "over-ceiling",
+    }
 
 
 # ---------------------------------------------------------------------------
