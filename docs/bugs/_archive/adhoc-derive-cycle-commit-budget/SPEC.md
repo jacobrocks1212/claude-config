@@ -2,9 +2,11 @@
 
 > The hand-maintained `_CYCLE_COMMIT_BUDGET` allow-list in `lazy_core.py` silently defaults any unenumerated multi-commit sub_skill to budget 1, false-positiving `unexpected-commits` at `--cycle-end`. The missing-row defect class has recurred five times; replace the reactive literal table with a budget derived from the orchestrator dispatch-skill registry so a newly-added multi-commit sub_skill cannot silently default to 1.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-22
+**Fixed:** 2026-06-22
+**Fix commit:** 54a998d
 **Placement:** docs/bugs/adhoc-derive-cycle-commit-budget
 **Related:** `docs/bugs/per-feature-cycle-cap-defers-incomplete-work/` (sibling friction-detector spin-off); harden-harness Round 31 (2026-06-22, commit 8039dbc, origin of this item); `user/scripts/lazy_core.py` `detect_cycle_bracket_friction` / `_CYCLE_COMMIT_BUDGET`
 
