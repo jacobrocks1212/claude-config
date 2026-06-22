@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: ensure-runtime-legacy-mode-optimistic-ready-verdict
-status: In-progress
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [1, 2]
@@ -84,7 +84,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 - [x] WU-1 — Honest legacy-mode verdict from re-probe code (lazy_core.ensure_runtime)
 - [x] WU-2 — Legacy-down-still-non-200 + M4-vs-legacy parity tests
-- [ ] WU-3 — Step 1d.0 consumer health cross-check (lazy-batch SKILL.md prose) + projection/lint
+- [x] WU-3 — Step 1d.0 consumer health cross-check (lazy-batch SKILL.md prose) + projection/lint
 
 ## Execution Schedule
 
