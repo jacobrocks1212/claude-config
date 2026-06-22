@@ -2,9 +2,11 @@
 
 > `bug-state.py --bug-id <deferred-bug>` ignores the scope and returns the GLOBAL `all-remaining-deferred` terminal with `feature_id: null`, and `curated_stage.py` has no mapping for that terminal. So the `pipeline_visualizer.probe` (and `lazy-queue-doc.py` on top of it) gets no id/stage for an operator-deferred bug, and renders it as a broken `[unknown](docs/bugs/unknown/SPEC.md)` row instead of the intended `⏸ Deferred` row with a working SPEC link.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-22
+**Fixed:** 2026-06-22
+**Fix commit:** 4da82a8
 **Placement:** docs/bugs/bug-state-scoped-query-loses-deferred-bug-identity
 **Related:** `docs/features/mobile-queue-control` (the feature whose generated `LAZY_QUEUE.md` surfaced this); `docs/bugs/feature-queue-lacks-on-disk-autodiscovery` (sibling defect discovered the same session, also via mobile-queue-control); `user/scripts/bug-state.py` (`compute_state` scoped-query loop, ~601–911); `user/scripts/pipeline_visualizer/curated_stage.py` (`_SIDE_STATE_BY_TERMINAL`); `user/scripts/pipeline_visualizer/probe.py` (`probe_state` bug loop, ~190–205); `user/scripts/lazy-queue-doc.py` (`_item_id`, `_render_table`); `user/scripts/lazy_parity_audit.py` (coupled-pair parity — the latent feature-side twin)
 

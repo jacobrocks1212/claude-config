@@ -30,7 +30,7 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 
 #### Implementation Notes (Phase 1 — landed 2026-06-22, Part 1)
 
-**Status:** Implemented (validation runtime: not-required — pure CLI; `--test` trio is the gate).
+**Status:** Fixed
 **Review verdict:** PASS (inline review — 1 file `bug-state.py` + 1 baseline; unscoped path byte-identical via Fixture B; every scoped guard wraps `if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):` BEFORE the unchanged append/continue; no branch lost its unscoped `continue`).
 
 **Scoped terminal_reason literals introduced (Parts 2/3 consume these VERBATIM):**
@@ -79,7 +79,7 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 
 #### Implementation Notes (Phase 2 — landed 2026-06-22, Part 2)
 
-**Status:** Implemented (validation runtime: not-required — pure CLI; `--test` trio + parity audit are the gate).
+**Status:** Complete
 **Review verdict:** PASS (inline review — 1 file `lazy-state.py` + 1 baseline; UNSCOPED path byte-identical via the `baseline-regression-default` fixture + the table-driven `cloud-saturated`/`host-cap-miss-defers` cases staying green; every scoped guard wraps `if scope_feature_id is not None and feature_id == scope_feature_id:` BEFORE the unchanged append/continue; no branch lost its unscoped `continue`; the host branch still writes `DEFERRED_REQUIRES_HOST.md` regardless — only the queue-skip vs. scoped-return decision is scoped).
 
 **Scoped terminal_reason literals introduced (feature-side; Part 3 consumes these VERBATIM):**
@@ -127,7 +127,7 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 
 #### Implementation Notes (Phase 3 — landed 2026-06-22, Part 3)
 
-**Status:** Implemented (validation runtime: not-required — pure-function display mapping; curated-stage unit tests are the gate).
+**Status:** Complete
 **Review verdict:** PASS (1 file `curated_stage.py` — `_SIDE_STATE_BY_TERMINAL` additions only; no behavior change to the workflow tables; the `unknown` fallback is a `lazy-queue-doc.py` concern untouched here).
 
 **`_SIDE_STATE_BY_TERMINAL` additions (VERBATIM from Parts 1 & 2):**
@@ -169,7 +169,7 @@ This is the primary fix. Model the scoped early-return on the existing **complet
 
 #### Implementation Notes (Phase 4 — landed 2026-06-22, Part 3)
 
-**Status:** Implemented (validation runtime: not-required — generator/probe unit test over a hermetic temp repo; no production change to `probe.py` / `lazy-queue-doc.py`).
+**Status:** Complete
 **Review verdict:** PASS (tests-only — `test_lazy_queue_doc.py` new `TestDeferredBugEndToEndRegression` class; the downstream renderers are byte-unchanged, confirming the SPEC's "already-correct given good upstream data" claim).
 
 **Fixture + assertions (`TestDeferredBugEndToEndRegression` in `test_lazy_queue_doc.py`):**
