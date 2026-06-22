@@ -13,6 +13,11 @@ category_multipliers:
   performance: 0.9
   template_binding: 0.7
 
+source_weights:
+  investigation: 0.9
+  intrafile: 0.7
+  reuse: 0.7
+
 rule_weights:
 
   # api-design rules
