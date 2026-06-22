@@ -2,9 +2,11 @@
 
 > The per-feature budget guard trips on a raw forward-cycle count with no proximity-to-completion signal, so a feature that did legitimate corrective work (not monopolization) gets deferred to the live-queue tail one `/mcp-test` cycle from `VALIDATED.md`, leaving it parked and a rebuilt runtime idle.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-21
+**Fixed:** 2026-06-21
+**Fix commit:** 2280ad6
 **Placement:** docs/bugs/budget-guard-defers-near-complete-feature
 **Related:**
 - `docs/features/feature-budget-guard-and-skip-ahead/` (SPEC + RESEARCH + PHASES — the feature that introduced this guard; RESEARCH.md §"False Positives on Complex Work" and §"Prior Art Contradiction (The Single Signal)" pre-flag this exact failure mode)

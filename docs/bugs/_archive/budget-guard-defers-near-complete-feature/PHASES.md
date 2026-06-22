@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Complete
+**Status:** Fixed
 
 **MCP runtime:** not-required — claude-config has no Tauri app and no MCP server (per `.claude/skill-config/quality-gates.md` → "MCP exemption (Step 9)"). Validation is the repo's Python test + lint suite: `python -m pytest user/scripts/ -q`, `python user/scripts/lazy-state.py --test`, `python user/scripts/bug-state.py --test`, `python user/scripts/lazy_parity_audit.py --report`, `python user/scripts/project-skills.py`, `python user/scripts/lint-skills.py --check-projected --check-capabilities`.
 
