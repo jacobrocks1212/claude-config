@@ -2,9 +2,11 @@
 
 > The lazy feature pipeline never enumerates the MCP tool surface a feature's own `/mcp-test` scenario will call, so a missing tool is only discovered at Step 9 (pipeline end) — after full planning and implementation — forcing a corrective add-phase or `adhoc-mcp-*` spin-off and 3–6 wasted Step-9 cycles.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-22
+**Fixed:** 2026-06-22
+**Fix commit:** 273dd95
 **Placement:** docs/bugs/mcp-tooling-not-predetermined-at-planning
 **Related:** `user/skills/_components/mcp-coverage-audit.md` (the post-implementation completion gate — the symptom, not the fix); `docs/features/unified-pipeline-orchestrator/` (shipped `lazy-state.py --gate-coverage`); `user/skills/spec-phases/SKILL.md` Step 2.7 + `user/skills/_components/phases-runtime-validation.md` (the existing capability-audit seam this fix extends)
 

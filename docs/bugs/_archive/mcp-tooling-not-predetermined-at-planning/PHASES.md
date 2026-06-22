@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all 4 phases implemented (P1–P4 done); validation tail (`/mcp-test` → `__mark_fixed__`) is orchestrator-owned and pending. Do NOT set Fixed / write FIXED.md here.
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a harness-defect fix entirely in skill/component markdown + per-repo skill-config docs (`docs-only` class per `docs/features/mcp-testing/SPEC.md`); no AlgoBooth app surface, store, or audio path is modified, so nothing here is MCP-reachable. The behavior is verified by re-running the (shared, deterministic) capability-audit prose against a seeded missing-tool case and by the existing `lint-skills.py` / `project-skills.py` checks, not by a Tauri+MCP runtime.
 
@@ -28,7 +28,7 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 - [x] A "catalog absent → audit is a no-op" note in the file's header (repos without this file get no MCP-existence audit — the audit degrades to skip, never errors), mirroring how `phases-runtime-validation.md`'s gate skips when no source is configured.
 - [x] Tests: none (declarative per-repo config doc). Verified by Phase 2's audit consuming it.
 
-**Status:** Done — `repos/algobooth/.claude/skill-config/mcp-tool-catalog.md` authored.
+**Status:** Complete
 
 #### Implementation Notes (Phase 1 — 2026-06-22)
 - Authored `repos/algobooth/.claude/skill-config/mcp-tool-catalog.md`. Names two live-registry source paths: (1) `scripts/mcp-test/tool-methods.ts` (TS tool-name→method map), (2) `src-tauri/src/ipc/mcp/registrations/` (Rust `inventory::submit!` sites, entrypoint `mod.rs`). Documents the grep contract + one-row-per-tool ledger (`tool-name | registered? | source file:line`) and the catalog-absent → no-op header note.
@@ -61,7 +61,7 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 - [x] Catalog-absent degradation: when no `mcp-tool-catalog.md` is configured for the repo, the MCP-tool audit is a no-op (record the skip reason), exactly as the existing capability-audit gate skips when its source is unconfigured.
 - [x] Tests: a seeded missing-tool walkthrough recorded inline in the component (a SPEC naming a tool absent from the catalog → audit produces an auto-authored build-phase row) as the worked example, mirroring the d8-live-looping motivating-incident example already in the component.
 
-**Status:** Done — MCP tool-existence audit added to both the generic component and the AlgoBooth override; `/spec-phases` Step 2.7 prose updated.
+**Status:** Complete
 
 #### Implementation Notes (Phase 2 — 2026-06-22)
 - Added an "MCP tool-existence audit" block (enumerate → resolve catalog → grep → ledger → auto-author-on-miss → NEEDS_INPUT-only-if-ambiguous → catalog-absent no-op → seeded worked example) to BOTH `user/skills/_components/phases-runtime-validation.md` (generic) AND `repos/algobooth/.claude/skill-config/phases-runtime-validation.md` (AlgoBooth override). ⚖ policy: where to add MCP audit prose → BOTH files — the Step-2.7 injection is `cat .claude/skill-config/... || cat ~/.claude/skills/_components/...`, so the AlgoBooth override SHADOWS the generic component; adding only to the generic file would leave AlgoBooth (the one repo with an MCP surface + catalog) never running the audit. Scope-class completeness, disclosed.
@@ -95,7 +95,7 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 - [x] Extend `repos/algobooth/.claude/skill-config/spec-testing-guidance.md` (the AlgoBooth `## Audio Quality Contracts` override) to record required-but-possibly-missing tools, not only the existing-tool menu.
 - [x] Tests: none (skill-prose change). Verified by the captured Locked Decision being parseable by `--gate-coverage` (Phase 4) and consumable by the Phase-2 audit.
 
-**Status:** Done — required-MCP-tooling capture added to `/spec` (`## Validation Criteria` → Locked Decision) and the AlgoBooth `spec-testing-guidance.md` override.
+**Status:** Complete
 
 #### Implementation Notes (Phase 3 — 2026-06-22)
 - `user/skills/spec/SKILL.md`: added a "Required MCP tooling (capture as a Locked Decision)" subsection right after the Validation Criteria table. It instructs capturing required-to-exist (possibly-missing) MCP tools as a `## Locked Decisions` table row in the EXACT gate-parseable shape (`| ID | Decision |`, first column = `L4`/title), with a worked example, and to omit it when validation calls no MCP tools.
@@ -129,7 +129,7 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 - [x] Reverse-reference: add an Implementation Notes line to this PHASES.md (or SPEC `## Related`) confirming no spin-off legs were created (all work is in-scope harness edits) — see Implementation Notes below.
 - [x] Tests: `lint-skills.py --check-projected --check-capabilities` passes; `project-skills.py` re-projects cleanly across `_default/` and the AlgoBooth projection.
 
-**Status:** Done — no algorithm change needed (the Phase-3 capture is an ordinary `## Locked Decisions` row the gate already parses); cross-reference note added to `mcp-coverage-audit.md`; root `CLAUDE.md` component descriptions updated.
+**Status:** Complete
 
 #### Implementation Notes (Phase 4 — 2026-06-22)
 - Confirmed `mcp-coverage-audit.md` Step 1 already enumerates a `## Locked Decisions` H2 table (first column = ID / one-line title) — the EXACT shape Phase 3 captures the required-MCP-tooling decision in. NO `--gate-coverage` / `lazy_core.gate_coverage` algorithm change is needed; the new decision is recognized as an ordinary Locked Decision.
