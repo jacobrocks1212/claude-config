@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: bug-state-scoped-query-loses-deferred-bug-identity
-status: Ready
+status: In-progress
 created: 2026-06-22
 complexity: complex
 phases: [2]
