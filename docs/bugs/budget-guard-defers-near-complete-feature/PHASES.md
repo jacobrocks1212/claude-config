@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+
 **MCP runtime:** not-required — claude-config has no Tauri app and no MCP server (per `.claude/skill-config/quality-gates.md` → "MCP exemption (Step 9)"). Validation is the repo's Python test + lint suite: `python -m pytest user/scripts/ -q`, `python user/scripts/lazy-state.py --test`, `python user/scripts/bug-state.py --test`, `python user/scripts/lazy_parity_audit.py --report`, `python user/scripts/project-skills.py`, `python user/scripts/lint-skills.py --check-projected --check-capabilities`.
 
 ## Scope decisions resolved at planning time (⚖ D7 — scope-class)
@@ -131,10 +133,14 @@ Feature-pipeline only. `compute_per_feature_ceiling` / `budget_deferred` / `_DEF
 **Scope:** Confirm the feature-only divergence carries no owed `bug-state.py` mirror, run the FULL claude-config gate set, and update the harness docs that describe the budget guard. No new behavior — this phase certifies the change and records it.
 
 **Deliverables:**
-- [ ] `python user/scripts/lazy_parity_audit.py --report` passes clean — confirm the budget-guard helpers (`feature_is_near_complete`, `budget_trip_signals`, corrective-cycle map) are recognized as a feature-pipeline divergence (no owed mirror), or register them as such if the audit expects an explicit divergence entry. (The SPEC asserts grep-confirmed feature-only scope; this phase is the certification.)
-- [ ] Update `user/scripts/CLAUDE.md` — extend the `--per-feature-cycle-cap` / budget-guard CLI prose and the relevant section to document the near-completion grace gate, the corrective-cycle discount (`per_feature_corrective_cycles`), and the end-of-run near-complete resume flush.
-- [ ] Update the root `CLAUDE.md` budget-guard description if it references the trip behavior (verify by grep first; edit only if a stale description exists).
-- [ ] Re-run `python user/scripts/project-skills.py` and `python user/scripts/lint-skills.py --check-projected --check-capabilities` (no skill/component edits expected, but the gate doc requires the full set on feature completion).
+- [x] `python user/scripts/lazy_parity_audit.py --report` passes clean — confirm the budget-guard helpers (`feature_is_near_complete`, `budget_trip_signals`, corrective-cycle map) are recognized as a feature-pipeline divergence (no owed mirror), or register them as such if the audit expects an explicit divergence entry. (The SPEC asserts grep-confirmed feature-only scope; this phase is the certification.)
+- [x] Update `user/scripts/CLAUDE.md` — extend the `--per-feature-cycle-cap` / budget-guard CLI prose and the relevant section to document the near-completion grace gate, the corrective-cycle discount (`per_feature_corrective_cycles`), and the end-of-run near-complete resume flush.
+- [x] Update the root `CLAUDE.md` budget-guard description if it references the trip behavior (verify by grep first; edit only if a stale description exists).
+- [x] Re-run `python user/scripts/project-skills.py` and `python user/scripts/lint-skills.py --check-projected --check-capabilities` (no skill/component edits expected, but the gate doc requires the full set on feature completion).
+
+**Implementation Notes (2026-06-21):**
+- WU-7 (parity + full-suite gate): `python user/scripts/lazy_parity_audit.py --repo-root .` exits 0 (clean — `--report` is not its flag; `--repo-root` is the audit entry). NO `lazy_parity_audit.py` edit needed — the budget-guard helpers are feature-pipeline-only and the audit raises no owed-mirror demand (the default expectation; SPEC Proven Finding 2 confirmed, no design fork → no `BLOCKED.md`). FULL gate set green: `python -m pytest user/scripts/ -q` → 1062 passed (incl. the `test_no_orphaned_test_functions` dead-coverage guard); `lazy-state.py --test`, `bug-state.py --test` green; `project-skills.py` (80 skills / 91 components, no errors); `lint-skills.py --check-projected --check-capabilities` clean.
+- WU-8 (docs): extended the `--per-feature-cycle-cap` CLI prose in `user/scripts/CLAUDE.md` to document the three composite-signal behaviors (one-shot near-completion grace, corrective-cycle discount via the `per_feature_corrective_cycles` marker sub-map, and the end-of-run near-complete resume flush) + the feature-only no-mirror divergence. Root `CLAUDE.md` has NO budget-guard description (grep-confirmed empty) → no edit (per the "edit only if stale" deliverable).
 
 **Minimum Verifiable Behavior:** The FULL gate set runs clean: `python -m pytest user/scripts/ -q` (incl. dead-coverage guard) + `lazy-state.py --test` + `bug-state.py --test` + `lazy_parity_audit.py --report` + `project-skills.py` + `lint-skills.py --check-projected --check-capabilities`.
 

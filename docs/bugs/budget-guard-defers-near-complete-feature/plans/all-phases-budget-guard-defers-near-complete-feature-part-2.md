@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: budget-guard-defers-near-complete-feature
-status: In-progress
+status: Complete
 created: 2026-06-21
 complexity: complex
 phases: [3, 4]
@@ -93,8 +93,8 @@ This plan references reusable component files by path instead of inlining their 
 ## Work Units
 
 - [x] WU-6 — End-of-run near-complete resume flush (`lazy-state.py`)
-- [ ] WU-7 — Parity confirmation + full-suite gate
-- [ ] WU-8 — Budget-guard docs update (`user/scripts/CLAUDE.md`, root `CLAUDE.md` if stale)
+- [x] WU-7 — Parity confirmation + full-suite gate
+- [x] WU-8 — Budget-guard docs update (`user/scripts/CLAUDE.md`, root `CLAUDE.md` if stale)
 
 ---
 
