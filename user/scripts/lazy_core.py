@@ -6500,6 +6500,26 @@ def _mcp_tool_in_payload(payload: dict | None, tool_name: str) -> bool:
     return False
 
 
+def _mcp_tools_present_honest(payload: dict | None, tool_name: str,
+                             health_code: int) -> bool:
+    """``mcp_tools_present`` that is NOT vacuously True for a non-serving runtime
+    (ensure-runtime-legacy-mode-optimistic-ready-verdict, Phase 1 / SPEC Open
+    Question 3).
+
+    ``_mcp_tool_in_payload`` returns vacuously True for an empty ``tool_name`` (no
+    assertion configured). That is correct for a SERVING runtime (health 200), but
+    misleading for one that is not serving — it claimed ``mcp_tools_present: true``
+    alongside ``health_code: 0``. Here: an empty ``tool_name`` paired with a
+    non-200 ``health_code`` reports ``False`` (the runtime is demonstrably not
+    serving its tools); a 200 health code with no configured tool name keeps the
+    vacuous-True default; a configured tool name defers to ``_mcp_tool_in_payload``
+    in every case (unchanged).
+    """
+    if not tool_name and int(health_code or 0) != 200:
+        return False
+    return _mcp_tool_in_payload(payload, tool_name)
+
+
 # long-build-and-runtime-ownership Phase 2 (LD3) — the M4 liveness/recovery
 # verdict state enum. A `.runtime.lock.json`-owned runtime evaluates through
 # Identity → Staleness → Health into exactly one of these (BLOCKED is the
@@ -6808,29 +6828,113 @@ def ensure_runtime(
         )
 
     # ---- Legacy mode: pre-M4 boot/stale/ready flow ---------------------------
+    # ensure-runtime-legacy-mode-optimistic-ready-verdict (Phase 1): the down /
+    # stale-rebuild arms used to hard-set status='booted'/'stale-rebuilt'
+    # UNCONDITIONALLY after the post-restart re-probe, so a still-dead runtime
+    # returned state: READY with a non-200 health_code (the optimistic lie). The
+    # verdict is now DERIVED from the re-probe code, reusing the SAME honest M4
+    # routing helpers (_classify_compile_state → patient-wait / bounded-recovery)
+    # so a non-200 re-probe yields DEAD→READY-on-200|BLOCKED, never a false READY.
+    # The 200 paths are byte-identical to before (booted / stale-rebuilt / ready).
+    if sleep is None:
+        sleep = time.sleep
+
     code, payload = probe()
     if code != 200:
-        # Runtime DOWN → boot it.
+        # Runtime DOWN → boot it, then re-probe.
         restart()
         code, payload = probe()
-        status = "booted"
+        if code == 200:
+            status = "booted"  # recovered on the first restart (unchanged)
+        else:
+            # Still non-serving after the boot attempt. Route the re-probe code
+            # through the same honest classifier the M4 path uses instead of
+            # claiming READY: a `compiling` runtime (frontend up) is patiently
+            # waited on; a genuinely `dead` runtime enters bounded recovery and
+            # ends READY only on a healthy re-probe, else BLOCKED.
+            return _route_legacy_non_serving(
+                cfg, code=code, payload=payload, probe=probe, restart=restart,
+                frontend_probe=frontend_probe, sleep=sleep, tool_name=tool_name,
+                sidecar_check=sidecar_check,
+            )
     elif stale_check():
-        # Runtime UP but binary STALE → force a rebuild.
+        # Runtime UP but binary STALE → force a rebuild, then re-probe.
         restart()
         code, payload = probe()
-        status = "stale-rebuilt"
+        if code == 200:
+            status = "stale-rebuilt"  # rebuilt and serving (unchanged)
+        else:
+            # The rebuild left the runtime non-serving — do NOT claim STALE/READY
+            # honestly; route the re-probe through the same recovery machinery.
+            return _route_legacy_non_serving(
+                cfg, code=code, payload=payload, probe=probe, restart=restart,
+                frontend_probe=frontend_probe, sleep=sleep, tool_name=tool_name,
+                sidecar_check=sidecar_check,
+            )
     else:
         # Runtime UP and CURRENT.
         status = "ready"
 
+    # 200-path verdict (booted / stale-rebuilt / ready) — unchanged honest shape.
+    # (code == 200 here, so _mcp_tools_present_honest is byte-identical to the
+    # bare _mcp_tool_in_payload; used for consistency with the verdict builder.)
     return {
         "status": status,
         "state": _LEGACY_STATUS_TO_STATE.get(status, "READY"),
         "ownership_verified": False,
-        "mcp_tools_present": _mcp_tool_in_payload(payload, tool_name),
+        "mcp_tools_present": _mcp_tools_present_honest(payload, tool_name, code),
         "health_code": code,
         "terminal_blocker": None,
     }
+
+
+def _route_legacy_non_serving(
+    cfg, *, code, payload, probe, restart, frontend_probe, sleep, tool_name,
+    sidecar_check=None,
+):
+    """Honest verdict for a legacy-mode runtime still non-serving after a boot /
+    rebuild attempt (ensure-runtime-legacy-mode-optimistic-ready-verdict, Phase 1).
+
+    Mirrors the M4 path's ``_route_non_serving``: branch the non-200 re-probe on
+    ``_classify_compile_state(code, frontend_up)`` — a ``compiling`` runtime (Vite
+    :1420 up, backend not yet serving) is PATIENTLY WAITED on via
+    ``_await_compile_serving`` (never kill-restarted); a genuinely ``dead`` runtime
+    (frontend also down, the default for a non-:1420 repo) enters the bounded
+    ``_recover_runtime`` crash loop → READY on a healthy re-probe, else BLOCKED.
+
+    Legacy mode has no ownership identity, so ``ownership_verified=False`` and the
+    lock-rewrite is skipped (``recover_identity=None``, ``write_lock`` a no-op).
+    The result is the verdict SUPERSET — it NEVER returns ``state: READY`` with a
+    non-200 ``health_code`` (the honest invariant). ``mcp_tools_present`` is read
+    from whatever payload the recovery machinery resolves, so a non-serving
+    runtime with no configured tool name reports ``False`` (not vacuously True).
+    """
+    try:
+        frontend_up = bool(frontend_probe())
+    except Exception:  # noqa: BLE001 — a probe error is treated as down (dead)
+        frontend_up = False
+
+    def _noop_write_lock(**_kw):
+        # Legacy mode has no ownership lock to rewrite.
+        return None
+
+    if _classify_compile_state(code, frontend_up) == "compiling":
+        verdict = _await_compile_serving(
+            cfg, ownership_verified=False, probe=probe,
+            frontend_probe=frontend_probe, sleep=sleep, write_lock=_noop_write_lock,
+            recover_identity=None, tool_name=tool_name,
+            initial_code=code, initial_payload=payload,
+            sidecar_check=sidecar_check,
+        )
+        if verdict is not _COMPILE_WENT_DEAD:
+            return verdict
+        # compiling → dead mid-wait: fall through to bounded crash recovery.
+    return _recover_runtime(
+        cfg, "DEAD", ownership_verified=False, probe=probe, restart=restart,
+        sleep=sleep, write_lock=_noop_write_lock, recover_identity=None,
+        tool_name=tool_name, initial_code=code, initial_payload=payload,
+        sidecar_check=sidecar_check,
+    )
 
 
 def _runtime_verdict(state, *, ownership_verified, health_code, payload,
@@ -6851,7 +6955,9 @@ def _runtime_verdict(state, *, ownership_verified, health_code, payload,
         "status": status,
         "state": state,
         "ownership_verified": bool(ownership_verified),
-        "mcp_tools_present": _mcp_tool_in_payload(payload, tool_name),
+        "mcp_tools_present": _mcp_tools_present_honest(
+            payload, tool_name, health_code
+        ),
         "health_code": int(health_code or 0),
         "terminal_blocker": terminal_blocker,
     }

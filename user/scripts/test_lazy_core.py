@@ -18623,6 +18623,120 @@ def test_ensure_runtime_mcp_tool_absent_sets_false():
 
 
 # ---------------------------------------------------------------------------
+# ensure-runtime-legacy-mode-optimistic-ready-verdict (Phase 1, WU-2) — the
+# legacy branch must derive its verdict from the post-restart() re-probe code
+# instead of hard-setting status='booted'. A still-dead runtime (re-probe still
+# non-200, frontend down) must NEVER return state: READY with a non-200
+# health_code — the honest invariant the M4 path already guarantees.
+# ---------------------------------------------------------------------------
+
+# A legacy-mode config with NO :1420 frontend key (claude-config / any non-:1420
+# repo) — the frontend signal binds `lambda: False`, so a non-serving re-probe
+# classifies `dead` (byte-identical to a bare DEAD route, the repo-agnostic path).
+_LEGACY_NO_FRONTEND_CONFIG = {
+    "health_url": "http://localhost:3333/health",
+    "restart_command": "npm run dev:restart",
+    "mcp_tool_name": "",  # vacuous default — the SPEC Open Question 3 surface
+    "native_globs": ["src-tauri", "crates"],
+    "lock_filename": ".runtime.lock.json",
+    "port": 3333,
+    "frontend_health_url": "",  # no :1420 → frontend_probe binds lambda: False
+}
+
+
+def test_ensure_runtime_legacy_down_still_non200_is_not_ready():
+    """Legacy mode (live_session_id=None, no lock), runtime down, re-probe STILL
+    non-200 with the frontend down → the verdict is a DEAD-class non-READY state,
+    health_code is the honest non-200, and restart() was attempted (bounded). This
+    is the SPEC's verified symptom: the pre-fix code returns state: READY,
+    health_code: 0 here — the optimistic verdict this fix kills.
+
+    RED before WU-1: today's legacy down-arm hard-sets status='booted'
+    (_LEGACY_STATUS_TO_STATE['booted'] == 'READY') so result['state'] == 'READY'
+    with health_code == 0 — exactly the lie this asserts against.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0, "sleep": 0}
+
+        def probe():
+            return (0, None)  # down on EVERY probe (first + post-restart re-probe)
+
+        def restart():
+            calls["restart"] += 1
+            return True
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_LEGACY_NO_FRONTEND_CONFIG,
+            probe=probe,
+            restart=restart,
+            stale_check=lambda: False,
+            live_session_id=None,  # LEGACY mode — no identity
+            sleep=lambda s: calls.__setitem__("sleep", calls["sleep"] + 1),
+        )
+        # The honest invariant: never READY with a non-200 health_code.
+        assert result["state"] != "READY", result
+        assert result["state"] in {"DEAD", "BLOCKED"}, result
+        assert result["health_code"] != 200, result
+        assert not (result["state"] == "READY" and result["health_code"] != 200), result
+        # restart() was attempted to try to recover the down runtime (bounded).
+        assert calls["restart"] >= 1, f"a down runtime must attempt restart: {calls}"
+        # mcp_tools_present must NOT be vacuously True for a non-serving runtime
+        # when no tool name is configured (SPEC Open Question 3, resolved in-cycle).
+        assert result["mcp_tools_present"] is False, (
+            "non-serving legacy runtime with empty tool name must NOT claim "
+            f"mcp_tools_present True: {result}"
+        )
+
+
+def test_ensure_runtime_m4_vs_legacy_never_ready_when_non200():
+    """M4-vs-legacy parity: for the SAME down-then-still-down probe sequence,
+    NEITHER the M4 path (lock + live_session_id) NOR the legacy path (no identity)
+    ever returns state: READY with health_code != 200. The honest invariant holds
+    regardless of mode — the whole point of the producer fix.
+    """
+    _guard()
+
+    def _down_probe():
+        return (0, None)  # down on every probe
+
+    # (a) M4 path — owned lock + live_session_id, runtime genuinely dead.
+    with tempfile.TemporaryDirectory() as td_m4:
+        lock = _owned_lock(start_time=111.0)
+        m4 = lazy_core.ensure_runtime(
+            Path(td_m4),
+            config=_M4_CONFIG,
+            probe=_down_probe,
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead
+        )
+
+    # (b) Legacy path — no identity, same down-then-still-down sequence.
+    with tempfile.TemporaryDirectory() as td_legacy:
+        legacy = lazy_core.ensure_runtime(
+            Path(td_legacy),
+            config=_LEGACY_NO_FRONTEND_CONFIG,
+            probe=_down_probe,
+            restart=lambda: True,
+            stale_check=lambda: False,
+            live_session_id=None,
+            sleep=lambda s: None,
+        )
+
+    for label, verdict in (("M4", m4), ("legacy", legacy)):
+        assert not (
+            verdict["state"] == "READY" and verdict["health_code"] != 200
+        ), f"{label} path returned READY with non-200 health_code: {verdict}"
+        assert verdict["state"] != "READY", f"{label}: {verdict}"
+
+
+# ---------------------------------------------------------------------------
 # long-build-and-runtime-ownership Phase 2 — ensure_runtime reworked into the
 # M4 liveness/recovery verdict (Identity → Staleness → Health). All external
 # interactions remain injected callables (hermetic, no real network/process).
@@ -20021,6 +20135,12 @@ _TESTS = _TESTS + [
      test_ensure_runtime_up_but_stale_returns_stale_rebuilt),
     ("test_ensure_runtime_mcp_tool_absent_sets_false",
      test_ensure_runtime_mcp_tool_absent_sets_false),
+    # ensure-runtime-legacy-mode-optimistic-ready-verdict Phase 1 / WU-2:
+    # legacy-mode honest verdict from the re-probe code + M4-vs-legacy parity.
+    ("test_ensure_runtime_legacy_down_still_non200_is_not_ready",
+     test_ensure_runtime_legacy_down_still_non200_is_not_ready),
+    ("test_ensure_runtime_m4_vs_legacy_never_ready_when_non200",
+     test_ensure_runtime_m4_vs_legacy_never_ready_when_non200),
     # long-build-and-runtime-ownership Phase 2 / WU-1: M4 verdict classification.
     ("test_ensure_runtime_m4_ready_when_owned_current_healthy",
      test_ensure_runtime_m4_ready_when_owned_current_healthy),
