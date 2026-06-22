@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: per-feature-cycle-cap-defers-incomplete-work
-status: Ready
+status: In-progress
 created: 2026-06-22
 complexity: mechanical
 phases: [2]
@@ -79,7 +79,7 @@ Before each step, `Read` the listed component files from disk. After compaction,
 
 ## Work Units
 
-- [ ] WU-1 — Reword default-on → default-off across the three doc surfaces (`user/scripts/CLAUDE.md`, `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`)
+- [x] WU-1 — Reword default-on → default-off across the three doc surfaces (`user/scripts/CLAUDE.md`, `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`)
 - [ ] WU-2 — Regenerate `lazy-state-test-baseline.txt` via `_normalize_smoke_output`; confirm `bug-state-test-baseline.txt` unchanged + `lazy_parity_audit.py` green
 
 ## Execution Schedule
