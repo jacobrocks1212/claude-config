@@ -91,7 +91,7 @@
   PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
   PASS [realign-fresh-hashless-upstream-not-stale] hashless upstream skipped; real drift still stale
   [per-feature-counter] per_feature_forward_cycles rides both advance triggers, meta-exempt, per-feature keyed: ok
-  [budget-guard] trip/defer + re-trip/evict + override + exhaustion terminal + marker-gated no-op: ok
+  [budget-guard] trip/defer + re-trip/evict + override + exhaustion terminal + marker-gated no-op + default-off + opt-in-arms: ok
   [ncg-grace] near-completion grace + one-shot bound + corrective discount + corrective-cycle record: ok
   [ncg-flush] end-of-run near-complete resume flush + genuine-terminal-unchanged + evicted-never-resumed: ok
   [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
