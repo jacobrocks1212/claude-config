@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-derive-cycle-commit-budget
-status: Ready
+status: In-progress
 created: 2026-06-22
 complexity: complex
 phases: [1, 2]
