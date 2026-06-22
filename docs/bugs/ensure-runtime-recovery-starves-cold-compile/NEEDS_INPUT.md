@@ -27,3 +27,12 @@ date: 2026-06-21
 ## Why this halts (batch-mode disposition)
 
 Root cause is PROVEN — but locking the SPEC to a single fix direction is a PRODUCT-class decision the SPEC author explicitly reserved for a human ("operator chose to investigate before locking"). Marking `Concluded` now would let `/plan-bug` fabricate phases against an undecided fix scope (the exact failure the SPEC's status-lifecycle comment warns against). `**Status:**` therefore stays `Investigating`. One open investigation thread — Theory 4's relationship to shipped `long-build-and-runtime-ownership` — was **resolved inline this cycle** (the ownership stack was live on `main` before `3b08f4e8`; outcome (b) holds), and that finding is folded into this decision as a hard constraint. After the operator picks a direction, re-run advances to `/plan-bug`.
+
+## Resolution
+
+*Recorded on 2026-06-22 02:18:00 UTC.*
+
+### 1. Lock the fix direction for ensure-runtime cold-compile starvation (A surgical / B ownership / B+A combined)
+
+**Choice:** B + A's two-port readiness check
+**Notes:** Operator confirmed the recommended direction. The fix MUST (1) treat the first cold boot AND a new-crate STALE rebuild as an orchestrator-owned long build (cold-compile-sized timeout, routed through the existing `long-build-ownership` takeover + `run_transient_build`), reserving the ≤5×backoff loop strictly for recovering an already-healthy runtime that later crashes; and (2) add the `:1420`-up / `:3333`-down two-port split as both the patient-wait signal AND the serving-readiness assertion, so the wait ends on "actually serving" not "compile finished" — satisfying both hard constraints (covers the new-crate STALE rebuild; C-alone remains ruled out).
