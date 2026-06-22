@@ -304,6 +304,118 @@ def _current_head(repo_root: Path) -> str | None:
 # queue.json + ROADMAP.md
 # ---------------------------------------------------------------------------
 
+# Discovered-feature default tier rank: a feature SPEC with no parseable
+# **Priority:** sorts AFTER every explicitly-prioritized one (P0..P3 → 0..3).
+# Mirrors bug-state.py's _SEVERITY_DEFAULT (Low sorts last).
+_FEATURE_TIER_DEFAULT = 99
+
+
+def feature_tier(spec_path: Path) -> int:
+    """Return the discovered-feature ordering rank from a SPEC.md ``**Priority:**``.
+
+    ``spec_path`` is the SPEC.md FILE path (not the dir). Maps ``P0``→0 …
+    ``P3``→3; an absent/unparseable Priority returns ``_FEATURE_TIER_DEFAULT``
+    (sorts last). Used ONLY to order discovered on-disk entries — explicit
+    queue.json entries keep their own ``tier`` and always sort first.
+
+    Mirrors ``bug-state.py::bug_severity``'s header-line scan, but reads the
+    ``**Priority:**`` line and maps it to an int rank in one step (the feature
+    pipeline orders by an int ``tier``, where the bug pipeline orders by a
+    severity-string rank — the JUSTIFIED feature/bug divergence noted in the
+    SPEC's Coupling Rule).
+    """
+    if not spec_path.exists():
+        return _FEATURE_TIER_DEFAULT
+    try:
+        for line in spec_path.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^\*\*Priority:\*\*\s*[Pp]([0-3])\b", line)
+            if m:
+                return int(m.group(1))
+    except OSError:
+        pass
+    return _FEATURE_TIER_DEFAULT
+
+
+def _find_open_feature_dirs(
+    features_dir: Path, queued_ids: set[str]
+) -> list[Path]:
+    """Return on-disk open feature dirs NOT already in ``queued_ids``.
+
+    Structurally mirrors ``bug-state.py::_find_open_bug_dirs`` (the
+    feature-pipeline analog): scans ``features_dir`` one level deep, skips
+    non-dirs, underscore-prefixed dirs (``_archive/`` etc.), and any dir whose
+    name is already a queued id; requires a ``SPEC.md``; and applies the
+    completed-feature exclusion filter with receipt awareness:
+
+      - ``Superseded`` → always skipped (retired, receipt-exempt).
+      - ``Complete`` WITH a valid ``COMPLETED.md`` receipt → skipped (done).
+      - ``Complete`` WITHOUT a valid receipt → NOT skipped; surfaced so the
+        ``compute_state`` queue-walk receipt gate fires ``completion-unverified``
+        (a ``_diag`` flags the bypass), exactly as ``_find_open_bug_dirs``
+        surfaces a receiptless ``Fixed``.
+
+    Returns dirs sorted by ``(feature_tier(SPEC.md), dir name)`` — stable.
+
+    NOTE: the parameter is the features_dir (docs/features/), NOT the repo root.
+    """
+    if not features_dir.exists():
+        return []
+
+    candidates: list[tuple[int, str, Path]] = []
+    for child in features_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if child.name.startswith("_"):
+            # Skip _archive/ and any other underscore-prefixed dirs.
+            continue
+        if child.name in queued_ids:
+            # Already covered by the explicit queue.
+            continue
+        spec_md = child / "SPEC.md"
+        if not spec_md.exists():
+            continue
+        status = spec_status(child)
+        if status == "Superseded":
+            # Receipt-exempt: retired without completion — always skip.
+            continue
+        if status == "Complete":
+            if has_completion_receipt(child):
+                # Genuinely done: Complete with a valid COMPLETED.md receipt.
+                continue
+            # Complete WITHOUT receipt: do NOT silently skip. Surface this dir so
+            # the queue-walk receipt gate in compute_state fires
+            # completion-unverified — same as the queued-feature path.
+            _diag(
+                f"unqueued Complete-without-receipt dir surfaced for receipt "
+                f"gate: '{child.name}' — SPEC marks Complete but no valid "
+                "COMPLETED.md receipt found. Routing to completion gate "
+                "(completion-unverified)."
+            )
+            # Fall through to append into candidates below.
+        candidates.append((feature_tier(spec_md), child.name, child))
+
+    candidates.sort(key=lambda t: (t[0], t[1]))
+    return [c[2] for c in candidates]
+
+
+def _queue_autodiscover_enabled(repo_root: Path) -> bool:
+    """True iff docs/features/queue.json carries a top-level ``autodiscover: true``.
+
+    Read-only, defensive (a missing/malformed queue.json ⇒ False). Used by
+    ``compute_state`` to distinguish a genuinely-missing/empty queue (→
+    ``queue-missing``) from an autodiscover-enabled queue that simply has no
+    OPEN on-disk dirs (→ falls through to ``all-features-complete``).
+    """
+    queue_path = repo_root / "docs" / "features" / "queue.json"
+    if not queue_path.exists():
+        return False
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    return data.get("autodiscover") is True
+
+
 def load_queue(repo_root: Path) -> list[dict[str, Any]]:
     queue_path = repo_root / "docs" / "features" / "queue.json"
     if not queue_path.exists():
@@ -317,6 +429,47 @@ def load_queue(repo_root: Path) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         _die("queue.json 'queue' field must be an array", queue_path)
         return []  # pragma: no cover
+
+    # feature-queue-lacks-on-disk-autodiscovery: opt-in on-disk auto-discovery.
+    # When docs/features/queue.json carries a top-level "autodiscover": true flag
+    # (sibling of "queue"), merge on-disk open feature dirs NOT already queued —
+    # exactly mirroring how bug-state.py::load_bug_queue merges _find_open_bug_dirs.
+    # The merge is a PROBE-TIME, in-memory operation: nothing is ever written into
+    # queue.json. Flag absent/falsy ⇒ return the raw queue list UNCHANGED
+    # (byte-identical — every other repo, incl. AlgoBooth, is unaffected).
+    if data.get("autodiscover") is True:
+        queued_ids = {
+            e.get("id") for e in items if isinstance(e, dict) and e.get("id")
+        }
+        features_dir = repo_root / "docs" / "features"
+        discovered: list[dict[str, Any]] = []
+        for child in _find_open_feature_dirs(features_dir, queued_ids):
+            spec_md = child / "SPEC.md"
+            # Discovered entry name: SPEC '# ' title, falling back to the dirname.
+            name = child.name
+            if spec_md.exists():
+                try:
+                    for line in spec_md.read_text(encoding="utf-8").splitlines():
+                        m = re.match(r"^#\s+(.+?)\s*$", line)
+                        if m:
+                            name = m.group(1)
+                            break
+                except OSError:
+                    pass
+            # The discovered entry carries the RAW-queue-item key shape
+            # (id/name/spec_dir/tier) the compute_state walk loop reads directly
+            # (entry.get("spec_dir") / entry.get("tier")) — NOT the bug loader's
+            # normalized spec_path shape (the two loaders' return shapes
+            # legitimately differ).
+            discovered.append({
+                "id": child.name,
+                "name": name,
+                "spec_dir": child.name,
+                "tier": feature_tier(spec_md),
+                "queue_entry": None,
+            })
+        return items + discovered
+
     return items
 
 
@@ -1349,10 +1502,18 @@ def compute_state(
 
     queue = load_queue(repo_root)
     if not queue:
-        return _state(
-            terminal_reason="queue-missing",
-            notify_message="queue.json not found — /lazy cannot operate.",
-        )
+        # feature-queue-lacks-on-disk-autodiscovery: when autodiscover is enabled
+        # but the merged work-list is empty, the queue did not go MISSING — disk
+        # discovery simply found no OPEN feature dirs (all are Complete+receipt /
+        # Superseded). Mirror the bug loader's "queue is OPTIONAL" contract: fall
+        # through to the normal exhaustion logic, which resolves an empty queue to
+        # all-features-complete. The queue-missing terminal stays for the genuine
+        # no-queue-file / empty-queue-without-autodiscovery case.
+        if not _queue_autodiscover_enabled(repo_root):
+            return _state(
+                terminal_reason="queue-missing",
+                notify_message="queue.json not found — /lazy cannot operate.",
+            )
 
     roadmap_path = repo_root / "docs" / "features" / "ROADMAP.md"
     roadmap_text = roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else ""
@@ -3488,6 +3649,118 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         sup = features / "feat-sup"
         sup.mkdir()
         (sup / "SPEC.md").write_text("# Spec\n\n**Status:** Superseded\n\n**Depends on:** (none)\n")
+    elif name == "autodiscover-off":
+        # feature-queue-lacks-on-disk-autodiscovery (a): an on-disk Draft feature
+        # dir NOT in queue.json + NO autodiscover flag ⇒ INVISIBLE. The queue has
+        # one OTHER explicit feature (feat-exp, a genuinely-Complete+receipt dir so
+        # the queue exhausts to all-features-complete and the disk-only dir's
+        # absence from the work-list is observable as "all complete").
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-exp", "name": "Explicit", "spec_dir": "feat-exp", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        exp = features / "feat-exp"
+        exp.mkdir()
+        (exp / "SPEC.md").write_text("# Explicit\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            exp / "COMPLETED.md", "completed",
+            feature_id="feat-exp", date="2026-06-22", provenance="gated",
+        )
+        # On-disk Draft dir, NOT queued, NO autodiscover ⇒ must stay invisible.
+        ad = features / "feat-ad"
+        ad.mkdir()
+        (ad / "SPEC.md").write_text("# Feat AD\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+    elif name == "autodiscover-on":
+        # feature-queue-lacks-on-disk-autodiscovery (b): same feat-ad dir WITH
+        # top-level autodiscover: true ⇒ discovered + dispatched. A Draft SPEC
+        # with no research routes to Step 5 /spec.
+        (features / "queue.json").write_text(json.dumps({
+            "autodiscover": True,
+            "queue": []
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        ad = features / "feat-ad"
+        ad.mkdir()
+        (ad / "SPEC.md").write_text("# Feat AD\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+    elif name == "autodiscover-excludes-complete":
+        # feature-queue-lacks-on-disk-autodiscovery (c): a Complete dir WITH a
+        # valid COMPLETED.md receipt + autodiscover: true ⇒ NOT re-enqueued. With
+        # only that dir on disk and an empty queue, discovery yields nothing ⇒
+        # all-features-complete.
+        (features / "queue.json").write_text(json.dumps({
+            "autodiscover": True,
+            "queue": []
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        done = features / "feat-done"
+        done.mkdir()
+        (done / "SPEC.md").write_text("# Feat Done\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            done / "COMPLETED.md", "completed",
+            feature_id="feat-done", date="2026-06-22", provenance="gated",
+        )
+    elif name == "autodiscover-surfaces-receiptless-complete":
+        # feature-queue-lacks-on-disk-autodiscovery (d): a Complete dir with NO
+        # COMPLETED.md + autodiscover: true ⇒ surfaced (→ completion-unverified),
+        # exactly as the bug loader surfaces a receiptless Fixed.
+        (features / "queue.json").write_text(json.dumps({
+            "autodiscover": True,
+            "queue": []
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        rc = features / "feat-rc"
+        rc.mkdir()
+        (rc / "SPEC.md").write_text("# Feat RC\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
+        # deliberately NO COMPLETED.md receipt
+    elif name == "autodiscover-dedupes-explicit-twin":
+        # feature-queue-lacks-on-disk-autodiscovery (e): feat-dup BOTH explicitly
+        # queued AND on disk + autodiscover: true ⇒ appears once; explicit entry
+        # wins and is listed first. The explicit entry is a Draft SPEC routing to
+        # Step 5 /spec — proving the explicit (not a duplicate discovered) entry
+        # is the one dispatched.
+        (features / "queue.json").write_text(json.dumps({
+            "autodiscover": True,
+            "queue": [
+                {"id": "feat-dup", "name": "Explicit Dup", "spec_dir": "feat-dup", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dup = features / "feat-dup"
+        dup.mkdir()
+        (dup / "SPEC.md").write_text("# Feat Dup\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+    elif name == "autodiscover-orders-by-priority":
+        # feature-queue-lacks-on-disk-autodiscovery (f): two discovered dirs, one
+        # **Priority:** P1 and one **Priority:** P3 ⇒ P1 sorts before P3. Both are
+        # Draft SPECs; the P1 dir (feat-hi) must be the dispatched head.
+        (features / "queue.json").write_text(json.dumps({
+            "autodiscover": True,
+            "queue": []
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        lo = features / "feat-zlo"
+        lo.mkdir()
+        (lo / "SPEC.md").write_text(
+            "# Feat Lo\n\n**Status:** Draft\n\n**Priority:** P3\n\n**Depends on:** (none)\n"
+        )
+        hi = features / "feat-hi"
+        hi.mkdir()
+        (hi / "SPEC.md").write_text(
+            "# Feat Hi\n\n**Status:** Draft\n\n**Priority:** P1\n\n**Depends on:** (none)\n"
+        )
+    elif name == "autodiscover-empty-queue-not-missing":
+        # feature-queue-lacks-on-disk-autodiscovery (g): "queue": [] +
+        # autodiscover: true + one open disk dir ⇒ NOT queue-missing; the disk dir
+        # is dispatched (claude-config's own live scenario). Draft SPEC → Step 5.
+        (features / "queue.json").write_text(json.dumps({
+            "autodiscover": True,
+            "queue": []
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        eq = features / "feat-eq"
+        eq.mkdir()
+        (eq / "SPEC.md").write_text("# Feat EQ\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
     elif name == "dangling-queue-entry":
         # FM3: queue entry whose spec_dir does not exist on disk → skipped with
         # a diagnostic; queue exhausts to all-features-complete (not dispatched).
@@ -5032,6 +5305,53 @@ def run_smoke_tests() -> int:
             ("dangling-queue-entry", False, False, {
                 "terminal_reason": "all-features-complete",
             }),
+            # feature-queue-lacks-on-disk-autodiscovery (a): flag-off regression.
+            # An on-disk Draft dir NOT in queue.json + NO autodiscover flag is
+            # INVISIBLE — the explicit Complete+receipt feature exhausts the queue,
+            # the disk-only dir never enters the work-list. Byte-identical to today.
+            ("autodiscover-off", False, False, {
+                "terminal_reason": "all-features-complete",
+            }),
+            # (b): same dir WITH autodiscover: true ⇒ discovered + dispatched
+            # (Draft SPEC, no research → Step 5 /spec).
+            ("autodiscover-on", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-ad",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # (c): a Complete dir WITH a valid COMPLETED.md receipt + autodiscover
+            # ⇒ NOT re-enqueued; queue exhausts past it.
+            ("autodiscover-excludes-complete", False, False, {
+                "terminal_reason": "all-features-complete",
+            }),
+            # (d): a Complete dir with NO receipt + autodiscover ⇒ surfaced
+            # (→ completion-unverified), mirroring the bug loader's receiptless-Fixed.
+            ("autodiscover-surfaces-receiptless-complete", False, False, {
+                "terminal_reason": "completion-unverified",
+                "feature_id": "feat-rc",
+            }),
+            # (e): feat-dup BOTH explicitly queued AND on disk + autodiscover ⇒
+            # appears once; explicit entry wins (Draft SPEC → Step 5 /spec).
+            ("autodiscover-dedupes-explicit-twin", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-dup",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # (f): two discovered dirs ordered by **Priority:** rank — P1 (feat-hi)
+            # sorts before P3 (feat-zlo); the P1 dir is the dispatched head.
+            ("autodiscover-orders-by-priority", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-hi",
+                "current_step": "Step 5: generate research prompt",
+            }),
+            # (g): "queue": [] + autodiscover + one open disk dir ⇒ NOT
+            # queue-missing; the disk dir is dispatched (claude-config's own live
+            # scenario).
+            ("autodiscover-empty-queue-not-missing", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-eq",
+                "current_step": "Step 5: generate research prompt",
+            }),
             ("plan-frontmatter-filter", False, False, {
                 "sub_skill": "execute-plan",
                 "feature_id": "feat-j",
@@ -5470,6 +5790,48 @@ def run_smoke_tests() -> int:
                     failures.append(
                         f"[{name}] a true pre-baseline stub must NOT have its "
                         f"queue flag cleared; got entry={entry!r}"
+                    )
+            if name == "autodiscover-dedupes-explicit-twin":
+                # Direct load_queue assertion: feat-dup appears EXACTLY ONCE and
+                # the explicit (queue_entry-bearing) entry is the one retained,
+                # listed first — the discovered twin must be deduped out.
+                merged = load_queue(root)
+                dup_entries = [e for e in merged if e.get("id") == "feat-dup"]
+                if len(dup_entries) != 1:
+                    failures.append(
+                        f"[{name}] feat-dup must appear exactly once in the merged "
+                        f"work-list; got {len(dup_entries)} entries: {dup_entries!r}"
+                    )
+                elif "queue_entry" in dup_entries[0]:
+                    # A discovered entry carries an explicit queue_entry: None key;
+                    # a raw explicit queue.json item does NOT. The retained twin
+                    # must be the explicit (raw) one, so the key must be ABSENT.
+                    failures.append(
+                        f"[{name}] the retained feat-dup must be the EXPLICIT (raw "
+                        f"queue.json) entry, not the discovered twin; got "
+                        f"{dup_entries[0]!r}"
+                    )
+                if merged and merged[0].get("id") != "feat-dup":
+                    failures.append(
+                        f"[{name}] the explicit entry must be listed FIRST; got "
+                        f"head id={merged[0].get('id')!r}"
+                    )
+            if name == "autodiscover-orders-by-priority":
+                # Direct load_queue assertion: the discovered P1 dir (feat-hi)
+                # sorts before the P3 dir (feat-zlo) — by feature_tier rank, then
+                # dir name on ties.
+                merged = load_queue(root)
+                ids = [e.get("id") for e in merged]
+                if "feat-hi" in ids and "feat-zlo" in ids:
+                    if ids.index("feat-hi") >= ids.index("feat-zlo"):
+                        failures.append(
+                            f"[{name}] P1 feat-hi must sort before P3 feat-zlo; "
+                            f"got order={ids!r}"
+                        )
+                else:
+                    failures.append(
+                        f"[{name}] both discovered dirs must be in the merged "
+                        f"work-list; got ids={ids!r}"
                     )
             if name == "device-deferred-pending" and real_device:
                 # The re-open MUST thread the specific deferred scenario IDs so

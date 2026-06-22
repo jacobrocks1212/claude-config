@@ -27,6 +27,13 @@
   [complete-no-receipt] cloud=False skip_nr=False real_device=True: Step 2: completion claimed without receipt
   [superseded-no-receipt] cloud=False skip_nr=False real_device=True: all-features-complete
   [dangling-queue-entry] cloud=False skip_nr=False real_device=True: all-features-complete
+  [autodiscover-off] cloud=False skip_nr=False real_device=True: all-features-complete
+  [autodiscover-on] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [autodiscover-excludes-complete] cloud=False skip_nr=False real_device=True: all-features-complete
+  [autodiscover-surfaces-receiptless-complete] cloud=False skip_nr=False real_device=True: Step 2: completion claimed without receipt
+  [autodiscover-dedupes-explicit-twin] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [autodiscover-orders-by-priority] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [autodiscover-empty-queue-not-missing] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [plan-frontmatter-filter] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [legacy-plan-diagnostics] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [research-pending-skip] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research
@@ -64,14 +71,7 @@
   [finalize-plan-verification-rows-only-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [stale-empty-scope-decomposition-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
-  [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
-  [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
-  PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
-  PASS [realign-fresh-hashless-upstream-not-stale] hashless upstream skipped; real drift still stale
-  [per-feature-counter] per_feature_forward_cycles rides both advance triggers, meta-exempt, per-feature keyed: ok
-  [budget-guard] trip/defer + re-trip/evict + override + exhaustion terminal + marker-gated no-op: ok
-  [ncg-grace] near-completion grace + one-shot bound + corrective discount + corrective-cycle record: ok
-  [ncg-flush] end-of-run near-complete resume flush + genuine-terminal-unchanged + evicted-never-resumed: ok{
+{
   "id": "adhoc-bug-1",
   "spec_dir": "adhoc-bug-1",
   "status": "queued"
@@ -86,7 +86,14 @@
   "spec_dir": "broken-submit-button",
   "status": "queued"
 }
-
+  [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
+  [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
+  PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
+  PASS [realign-fresh-hashless-upstream-not-stale] hashless upstream skipped; real drift still stale
+  [per-feature-counter] per_feature_forward_cycles rides both advance triggers, meta-exempt, per-feature keyed: ok
+  [budget-guard] trip/defer + re-trip/evict + override + exhaustion terminal + marker-gated no-op: ok
+  [ncg-grace] near-completion grace + one-shot bound + corrective discount + corrective-cycle record: ok
+  [ncg-flush] end-of-run near-complete resume flush + genuine-terminal-unchanged + evicted-never-resumed: ok
   [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
 {
   "error": "feature_id already queued: adhoc-test",

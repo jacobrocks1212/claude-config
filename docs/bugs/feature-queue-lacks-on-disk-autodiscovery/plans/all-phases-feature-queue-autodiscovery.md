@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: feature-queue-lacks-on-disk-autodiscovery
-status: Ready
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [1]
@@ -24,8 +24,8 @@ phases: [1]
 
 ## Work Units
 
-- [ ] WU-1 — `feature_tier` + `_find_open_feature_dirs` + `load_queue` autodiscover merge + `queue-missing` reconciliation, with new `--test` fixtures (test-first)
-- [ ] WU-2 — Enable `autodiscover: true` in claude-config `queue.json`, re-pin `lazy-state` baseline, verify `bug-state.py` unchanged + `lazy_parity_audit.py` green
+- [x] WU-1 — `feature_tier` + `_find_open_feature_dirs` + `load_queue` autodiscover merge + `queue-missing` reconciliation, with new `--test` fixtures (test-first)
+- [x] WU-2 — Enable `autodiscover: true` in claude-config `queue.json`, re-pin `lazy-state` baseline, verify `bug-state.py` unchanged + `lazy_parity_audit.py` green
 
 ---
 

@@ -176,6 +176,42 @@ block; the markdown body is human context only (one exception: `NEEDS_INPUT.md`,
 body is load-bearing). Plan files: `kind ∈ {implementation-plan, retro-plan, fix-plan,
 realign-plan}`, `status` transitioned only by `/execute-plan`.
 
+## Opt-in on-disk feature auto-discovery (`feature-queue-lacks-on-disk-autodiscovery`)
+
+`bug-state.py::load_bug_queue` has always auto-discovered open `docs/bugs/<slug>/`
+dirs (hybrid load over `docs/bugs/queue.json` — "the queue is OPTIONAL").
+`lazy-state.py::load_queue` historically read features **only** from
+`docs/features/queue.json`, so a new `docs/features/<slug>/SPEC.md` was inert until
+explicitly `--enqueue-adhoc`'d. `load_queue` now mirrors the bug loader **opt-in**:
+
+- **Flag:** a top-level `"autodiscover": true` in `docs/features/queue.json` (sibling of
+  `"queue"`). **Repo-local by construction** — only claude-config sets it; AlgoBooth and
+  every other repo omit it and are **byte-identical to today** (flag absent/falsy ⇒
+  `load_queue` returns the raw queue list unchanged). Do NOT promote it to a global
+  default without a separate decision (SPEC Open Question 2 defers that).
+- **Merge is probe-time, in-memory** — discovered dirs are appended to the in-memory
+  work-list when `lazy-state.py` runs; **nothing is ever written into `queue.json`**
+  (identical to how `load_bug_queue` merges `_find_open_bug_dirs`).
+- **New helpers in `lazy-state.py`:** `_find_open_feature_dirs(features_dir, queued_ids)`
+  (structural mirror of `bug-state.py::_find_open_bug_dirs` — one-level scan; skips
+  non-dirs / `_`-prefixed dirs / already-queued ids; requires `SPEC.md`; excludes
+  `Superseded` and `Complete`+valid-`COMPLETED.md`-receipt; surfaces a
+  `Complete`-without-receipt dir for the `completion-unverified` gate) and
+  `feature_tier(spec_md)` (reads `**Priority:** P0..P3` → `0..3`, absent → `99` last;
+  the feature pipeline orders by an **int tier** where the bug pipeline orders by a
+  **severity string** — the JUSTIFIED feature/bug divergence). Discovered entries carry
+  the **raw-queue-item key shape** (`id`/`name`/`spec_dir`/`tier`/`queue_entry: None`) the
+  `compute_state` walk loop reads directly — NOT the bug loader's normalized `spec_path`
+  shape (the two loaders' return shapes legitimately differ).
+- **`queue-missing` reconciliation:** the `if not queue:` early-return short-circuits to
+  `queue-missing` ONLY when autodiscover is OFF (`_queue_autodiscover_enabled`). With the
+  flag on and an empty merged list (all on-disk dirs Complete+receipt / Superseded), it
+  falls through to the normal exhaustion logic → `all-features-complete`.
+- **Coupling:** feature-pipeline-only. `bug-state.py` is UNCHANGED; this additive
+  loader extension is a JUSTIFIED divergence (`lazy_parity_audit.py` does not audit
+  `load_queue`/`load_bug_queue` symmetry, and stays green). See
+  `docs/bugs/feature-queue-lacks-on-disk-autodiscovery`.
+
 ## CLI surface
 
 ```bash
