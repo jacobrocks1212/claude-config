@@ -6346,6 +6346,20 @@ _ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
     # opts in via its config override.
     "assert_sidecar_connected": False,
     "sidecar_status_url": "http://localhost:3333/tools/get_sidecar_status",
+    # Two-port cold-compile discriminator
+    # (ensure-runtime-recovery-starves-cold-compile, Phase 1). A cold `tauri dev`
+    # boot brings the Vite dev server up on :1420 within seconds, while the Rust
+    # backend's :3333 /health endpoint refuses connections until the (potentially
+    # multi-minute) cold Rust compile finishes. Probing ONLY :3333 cannot tell a
+    # still-compiling backend (be patient) from a genuinely-dead one (recover) —
+    # so a :3333-down/:1420-up observation is "compiling", not "dead". These keys
+    # parameterize the Vite-up signal exactly like the :3333 keys above; a repo
+    # without a :1420 frontend simply omits them (or overrides) and the
+    # discriminator degrades to today's :3333-only DEAD behavior (frontend_probe
+    # binds to lambda: False — see ensure_runtime). Read via .get() everywhere so
+    # a legacy config override lacking the keys never raises.
+    "frontend_health_url": "http://localhost:1420",
+    "frontend_port": 1420,
 }
 
 
@@ -6384,6 +6398,58 @@ def _default_sidecar_probe(sidecar_status_url: str) -> bool:
         return _sidecar_is_connected(payload)
     except (urllib.error.URLError, OSError, ValueError):
         return False
+
+
+def _default_frontend_probe(frontend_health_url: str) -> bool:
+    """Real Vite (:1420) reachability probe (stdlib urllib) → bool.
+
+    The cold-compile discriminator's "frontend up" signal
+    (ensure-runtime-recovery-starves-cold-compile, Phase 1). A cold `tauri dev`
+    brings Vite up on :1420 within seconds; reachability there while :3333
+    /health still refuses means the Rust backend is still COMPILING (be patient),
+    not dead. Mirrors ``_default_sidecar_probe``: best-effort + never raises (any
+    error — connection refused, timeout, DNS — → False, so the caller treats the
+    frontend as down and the runtime as dead). Only invoked when ``ensure_runtime``
+    is called WITHOUT an injected ``frontend_probe`` AND the config carries the
+    frontend keys (production); tests always inject a ``frontend_probe``. Any 2xx
+    OR a connection that completes the HTTP round-trip counts as up — Vite answers
+    on :1420 regardless of the path, so a non-200 status still proves reachability.
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        with urllib.request.urlopen(frontend_health_url, timeout=5):  # noqa: S310
+            return True
+    except urllib.error.HTTPError:
+        # An HTTP error response (4xx/5xx) still means Vite is LISTENING and
+        # answered — the frontend is up (compiling backend, not a dead host).
+        return True
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def _classify_compile_state(backend_code: int, frontend_up: bool) -> str:
+    """Map a two-port observation to ``"serving" | "compiling" | "dead"`` (pure).
+
+    The cold-compile discriminator (ensure-runtime-recovery-starves-cold-compile,
+    Phase 1). No I/O — the caller supplies the already-probed backend /health code
+    and the frontend-up boolean:
+
+      - ``backend_code == 200`` ⇒ ``"serving"`` (the backend answers — regardless
+        of the frontend signal; a serving backend is ready by definition).
+      - ``backend_code != 200`` AND ``frontend_up`` ⇒ ``"compiling"`` (Vite is up
+        but the backend is not yet serving — the cold Rust compile is still
+        running; be PATIENT, do NOT kill-restart).
+      - ``backend_code != 200`` AND NOT ``frontend_up`` ⇒ ``"dead"`` (nothing is
+        listening — never booted or truly crashed; the bounded crash-recovery
+        loop is correct here).
+    """
+    if backend_code == 200:
+        return "serving"
+    if frontend_up:
+        return "compiling"
+    return "dead"
 
 
 def _default_runtime_probe(health_url: str):
@@ -6558,6 +6624,7 @@ def ensure_runtime(
     recover_identity=None,
     kill=None,
     sidecar_check=None,
+    frontend_probe=None,
 ) -> dict:
     """Ensure the dev runtime + MCP server are up, CURRENT, **and verifiably
     owned**; return the M4 liveness/recovery verdict.
@@ -6667,6 +6734,20 @@ def ensure_runtime(
             sidecar_check = lambda: _default_sidecar_probe(_sidecar_url)
         else:
             sidecar_check = lambda: True
+    if frontend_probe is None:
+        # Two-port cold-compile discriminator
+        # (ensure-runtime-recovery-starves-cold-compile, Phase 1). When the config
+        # carries the :1420 frontend keys, bind the real Vite reachability probe;
+        # otherwise the discriminator degrades to today's :3333-only behavior
+        # (frontend treated as DOWN → a non-serving backend classifies as `dead`,
+        # the bounded-recovery path — byte-identical to today for a non-:1420
+        # repo). A legacy config dict without the key is tolerated via .get(), so
+        # an un-migrated override never raises. Mirrors the sidecar_check binding.
+        _frontend_url = cfg.get("frontend_health_url")
+        if _frontend_url:
+            frontend_probe = lambda: _default_frontend_probe(_frontend_url)
+        else:
+            frontend_probe = lambda: False
 
     # ---- M4 mode: Identity engaged (LD3) -------------------------------------
     # Identity is "engaged" iff the caller threads a controller session id OR an
@@ -6703,6 +6784,7 @@ def ensure_runtime(
             recover_identity=recover_identity,
             tool_name=tool_name,
             sidecar_check=sidecar_check,
+            frontend_probe=frontend_probe,
         )
 
     # ---- Legacy mode: pre-M4 boot/stale/ready flow ---------------------------
@@ -6794,6 +6876,7 @@ def _ensure_runtime_m4(
     recover_identity,
     tool_name,
     sidecar_check=None,
+    frontend_probe=None,
 ):
     """The M4 Identity → Staleness → Health classifier + bounded recovery (LD3).
 

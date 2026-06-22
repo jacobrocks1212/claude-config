@@ -22,11 +22,11 @@ The SPEC's root cause is CONFIRMED from source + two independent session logs; t
 **Scope:** Add the net-new `:1420` (Vite) probe to the ensure-runtime config and a pure classifier helper that maps the two-port observation to one of {serving, compiling, dead}. This is the cheapest cross-platform "backend still compiling, not dead" signal (SPEC Proven Findings → "The missing signal"). No control-flow rewiring yet — this phase delivers the signal and its hermetic tests in isolation so Phase 2 can consume it.
 
 **Deliverables:**
-- [ ] Add `frontend_health_url` (default `"http://localhost:1420"`) and `frontend_port` (default `1420`) keys to `_ENSURE_RUNTIME_DEFAULT_CONFIG` (`lazy_core.py:6323`), documented as the Vite-up/compiling signal and parameterized (repo-agnostic) exactly like the existing `:3333` keys. A legacy config override lacking the keys must read via `.get()` and never raise (mirror the `assert_sidecar_connected` back-compat pattern).
-- [ ] Add `_default_frontend_probe(frontend_health_url)` — a best-effort stdlib `urllib` reachability probe returning a bool (Vite reachable), modeled on `_default_runtime_probe` / `_default_sidecar_probe`; never raises (any error → False).
-- [ ] Add a pure classifier `_classify_compile_state(backend_code, frontend_up) -> "serving" | "compiling" | "dead"`: `backend_code == 200` ⇒ `serving`; `backend_code != 200 and frontend_up` ⇒ `compiling` (Vite up, backend not yet serving — be patient, do NOT kill); `backend_code != 200 and not frontend_up` ⇒ `dead`. Pure function, no I/O.
-- [ ] Thread an optional injected `frontend_probe` callable through `ensure_runtime(...)` (default-bound to `_default_frontend_probe` when the config carries the frontend keys, else `lambda: False` so the discriminator degrades to today's `:3333`-only DEAD behavior — repo-agnostic, byte-identical for a non-`:1420` repo).
-- [ ] Tests: `test_lazy_core.py` — `_classify_compile_state` truth table (all three branches); `_default_frontend_probe` returns False on a connection error; the new config keys default correctly and a legacy config dict without them does not crash `ensure_runtime`.
+- [x] Add `frontend_health_url` (default `"http://localhost:1420"`) and `frontend_port` (default `1420`) keys to `_ENSURE_RUNTIME_DEFAULT_CONFIG` (`lazy_core.py:6323`), documented as the Vite-up/compiling signal and parameterized (repo-agnostic) exactly like the existing `:3333` keys. A legacy config override lacking the keys must read via `.get()` and never raise (mirror the `assert_sidecar_connected` back-compat pattern).
+- [x] Add `_default_frontend_probe(frontend_health_url)` — a best-effort stdlib `urllib` reachability probe returning a bool (Vite reachable), modeled on `_default_runtime_probe` / `_default_sidecar_probe`; never raises (any error → False).
+- [x] Add a pure classifier `_classify_compile_state(backend_code, frontend_up) -> "serving" | "compiling" | "dead"`: `backend_code == 200` ⇒ `serving`; `backend_code != 200 and frontend_up` ⇒ `compiling` (Vite up, backend not yet serving — be patient, do NOT kill); `backend_code != 200 and not frontend_up` ⇒ `dead`. Pure function, no I/O.
+- [x] Thread an optional injected `frontend_probe` callable through `ensure_runtime(...)` (default-bound to `_default_frontend_probe` when the config carries the frontend keys, else `lambda: False` so the discriminator degrades to today's `:3333`-only DEAD behavior — repo-agnostic, byte-identical for a non-`:1420` repo).
+- [x] Tests: `test_lazy_core.py` — `_classify_compile_state` truth table (all three branches); `_default_frontend_probe` returns False on a connection error; the new config keys default correctly and a legacy config dict without them does not crash `ensure_runtime`.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` (or the targeted new tests) passes with the classifier returning `compiling` for `(0, True)`, `serving` for `(200, anything)`, and `dead` for `(0, False)`; `python3 user/scripts/lazy-state.py --test` stays green (no behavior change for the default `:3333`-only path).
 
@@ -47,6 +47,14 @@ The SPEC's root cause is CONFIRMED from source + two independent session logs; t
 - `_classify_compile_state` is the discriminator Phase 2 consumes to decide patient-wait vs. bounded-recovery vs. dead.
 - The `frontend_probe` injection seam exactly mirrors `sidecar_check`; Phase 2 binds the same way for its patient-wait re-probe.
 - Default-off semantics are load-bearing: a repo without `:1420` (no frontend keys / `frontend_probe → False`) must see byte-identical behavior to today, so Phase 2's new branch must be reachable ONLY when the frontend signal is present.
+
+#### Implementation Notes (Phase 1 — 2026-06-21)
+- **Work completed:** Added `frontend_health_url`/`frontend_port` keys to `_ENSURE_RUNTIME_DEFAULT_CONFIG`; added `_default_frontend_probe` (urllib best-effort, HTTPError ⇒ up since Vite answered, never raises) and the pure `_classify_compile_state` next to `_default_sidecar_probe`; threaded an injected `frontend_probe` through `ensure_runtime` (default-bound from `cfg.get("frontend_health_url")` else `lambda: False`) and plumbed it into `_ensure_runtime_m4`'s signature (NOT yet consumed — Phase 2 wires the branch).
+- **Integration notes:** The `frontend_probe` seam mirrors `sidecar_check` exactly. `_ensure_runtime_m4` accepts but does not yet read `frontend_probe` — the test `test_ensure_runtime_threads_injected_frontend_probe_to_m4` asserts the seam is wired without crashing; observable consumption is asserted on Phase 2's compiling fixtures.
+- **TDD:** 6 hermetic tests written first (4 RED for the right reason — missing symbols/keys/param; 2 default-off tests green by construction), then implementation made all 6 pass.
+- **Gates:** `test_lazy_core.py` 742/742; `lazy-state.py --test` + `bug-state.py --test` green (baselines unchanged — no default-path fixture changed); `lazy_parity_audit.py --repo-root .` exit 0.
+- **Review verdict:** PASS (inline review; pure-helper + config + plumbing, default-off byte-identical preserved).
+- **Files modified:** `user/scripts/lazy_core.py`, `user/scripts/test_lazy_core.py`.
 
 ---
 
