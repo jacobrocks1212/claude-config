@@ -1735,10 +1735,63 @@ def compute_state(
                 )
                 continue
             _bg_count = int(_bg_per_feature.get(feature_id, 0) or 0)
-            if _bg_count >= _bg_ceiling:
+            # budget-guard-defers-near-complete-feature Phase 2: replace the bare
+            # `_bg_count >= _bg_ceiling` comparison with the composite
+            # budget_trip_signals decision so (1) a near-complete feature is
+            # granted ONE grace cycle past the ceiling before it can defer, and
+            # (2) legitimate validation-driven corrective cycles are discounted
+            # from the trip count (effective_count = forward - corrective).
+            #   - near_complete reuses the SAME "ready to validate" predicate the
+            #     mid-feature gate uses (verification-only PHASES + plan-Complete +
+            #     no BLOCKED.md), read at trip time from the tripped feature's dir.
+            #   - corrective is read from the per_feature_corrective_cycles marker
+            #     sub-map (incremented at the corrective-dispatch bracket, WU-5).
+            #   - GRACE IS ONE-SHOT: a near-complete feature that has ALREADY been
+            #     budget-deferred this run (`prior_defers >= 1`) is treated as NOT
+            #     near-complete for the trip decision, so it cannot exploit grace
+            #     to monopolize — the normal trip/escalation re-asserts.
+            _bg_prior_defers = int(_bg_deferred_counts.get(feature_id, 0) or 0)
+            _bg_near_complete = lazy_core.feature_is_near_complete(spec_path, repo_root)
+            _bg_grace_eligible = _bg_near_complete and _bg_prior_defers < 1
+            _bg_corrective = lazy_core.count_validation_corrective_cycles(
+                _bg_marker, feature_id
+            )
+            _bg_signals = lazy_core.budget_trip_signals(
+                _bg_count, _bg_corrective, _bg_ceiling, _bg_grace_eligible
+            )
+            if _bg_grace_eligible and not _bg_signals["should_defer"] and (
+                _bg_count >= _bg_ceiling
+            ):
+                # The would-be trip was waived by the one-shot near-completion
+                # grace — announce it and DISPATCH the feature (no defer) so it
+                # reaches the terminal /mcp-test → __mark_complete__ this cycle.
+                _diag(
+                    f"budget-guard: {name} — near-complete (verification-only "
+                    f"PHASES + plan-Complete, no BLOCKED.md); GRACE GRANTED at the "
+                    f"per-feature ceiling ({_bg_count} >= {_bg_ceiling}, "
+                    f"effective={_bg_signals['effective_count']}). Dispatching to "
+                    f"finish validation instead of deferring (one-shot grace)."
+                )
+                # Surface the grace grant via the budget_guard probe key (the
+                # orchestrator reports the auto-grace alongside trips). next_id is
+                # back-filled below to this same dispatched feature.
+                if _BUDGET_GUARD is None:
+                    _BUDGET_GUARD = {
+                        "feature_id": feature_id,
+                        "count_at_trip": _bg_count,
+                        "computed_ceiling": _bg_ceiling,
+                        "action": "grace",
+                        "next_id": None,
+                        "sub_skill_phase": None,
+                        "commit_hash": lazy_core.git_head_short_sha(repo_root),
+                        "effective_count": _bg_signals["effective_count"],
+                        "corrective_count": _bg_corrective,
+                        "near_complete_grace_granted": True,
+                    }
+            if _bg_signals["should_defer"]:
                 # Trip. First trip → defer to tail (bounded re-entry once); a 2nd
                 # trip on the SAME feature in the SAME run → terminal eviction.
-                prior_defers = int(_bg_deferred_counts.get(feature_id, 0) or 0)
+                prior_defers = _bg_prior_defers
                 _bg_action = "defer" if prior_defers < 1 else "evict"
                 if _bg_action == "defer":
                     _bg_deferred_counts[feature_id] = prior_defers + 1
@@ -1792,6 +1845,13 @@ def compute_state(
                         "next_id": None,
                         "sub_skill_phase": _bg_phase,
                         "commit_hash": lazy_core.git_head_short_sha(repo_root),
+                        # budget-guard-defers-near-complete-feature Phase 2: the
+                        # composite-signal context for this trip. A trip means
+                        # grace was NOT granted (either not near-complete, or the
+                        # one-shot grace was already consumed → False).
+                        "effective_count": _bg_signals["effective_count"],
+                        "corrective_count": _bg_corrective,
+                        "near_complete_grace_granted": False,
                     }
                 _DEFERRED_BUDGET.append(feature_id)
                 continue
@@ -5937,6 +5997,163 @@ def run_smoke_tests() -> int:
                 os.environ["LAZY_STATE_DIR"] = _bg_prev_env
 
         # -------------------------------------------------------------------
+        # Functional check: budget-guard-defers-near-complete-feature Phase 2 —
+        # near-completion grace gate + corrective-cycle discount at the trip
+        # site. Reproduces the d2 incident: a feature at forward=ceiling whose
+        # remaining work is verification-only (plan-Complete, no BLOCKED.md) is
+        # DISPATCHED (one-shot grace) instead of deferred, and a feature whose
+        # forward count is over the ceiling but whose corrective cycles discount
+        # it back under the ceiling also dispatches.
+        # -------------------------------------------------------------------
+        def _ncg_make_near_complete(root: Path, fid: str) -> None:
+            """A near-complete feature: verification-only unchecked PHASES rows +
+            a plan part status: Complete + no BLOCKED.md."""
+            fdir = root / "docs" / "features" / fid
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "SPEC.md").write_text(
+                "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+            )
+            (fdir / "RESEARCH.md").write_text("# Research\n")
+            (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n")
+            (fdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Built the thing\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] runtime check <!-- verification-only -->\n"
+            )
+            (fdir / "plans").mkdir(exist_ok=True)
+            (fdir / "plans" / f"all-phases-{fid}.md").write_text(
+                "---\nkind: implementation-plan\nstatus: Complete\n---\n\n# Plan\n"
+            )
+
+        ncg_root = td_path / "near-complete-grace"
+        (ncg_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        (ncg_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-nc", "name": "NC One", "spec_dir": "feat-nc", "tier": 1},
+                {"id": "feat-nc2", "name": "NC Two", "spec_dir": "feat-nc2", "tier": 1},
+            ]
+        }))
+        (ncg_root / "docs" / "features" / "ROADMAP.md").write_text("# Roadmap\n")
+        _ncg_make_near_complete(ncg_root, "feat-nc")
+        _bg_make_feature(ncg_root, "feat-nc2")
+
+        ncg_state_dir = td_path / "near-complete-grace-state"
+        ncg_state_dir.mkdir(parents=True, exist_ok=True)
+        _ncg_prev_env = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(ncg_state_dir)
+        try:
+            import time as _ncg_time
+
+            def _ncg_write_marker(per_feature: dict, **extra) -> None:
+                lazy_core.write_run_marker(
+                    pipeline="feature", cloud=False, repo_root=str(ncg_root),
+                    max_cycles=20, now=_ncg_time.time(),
+                )
+                mp = ncg_state_dir / lazy_core._MARKER_FILENAME
+                m = json.loads(mp.read_text(encoding="utf-8"))
+                m["per_feature_forward_cycles"] = per_feature
+                m.update(extra)
+                mp.write_text(json.dumps(m) + "\n", encoding="utf-8")
+
+            # Ceiling for C=20, Q=2: 8 (same as the bg fixture).
+            # (f) Grace at the ceiling: feat-nc is AT the ceiling (8) AND
+            # near-complete AND no prior budget defer → DISPATCHED (grace), NOT
+            # deferred; budget_guard.action='grace', near_complete_grace_granted.
+            _ncg_write_marker({"feat-nc": 8, "feat-nc2": 0})
+            stf = compute_state(ncg_root, cloud=False, real_device=True)
+            if stf.get("feature_id") != "feat-nc":
+                failures.append(
+                    "[ncg-grace] near-complete feat-nc at the ceiling must be "
+                    f"DISPATCHED (grace), got feature_id={stf.get('feature_id')!r}"
+                )
+            bgf = stf.get("budget_guard")
+            if not bgf or bgf.get("action") != "grace" or not bgf.get(
+                "near_complete_grace_granted"
+            ):
+                failures.append(
+                    "[ncg-grace] expected budget_guard.action='grace' + "
+                    f"near_complete_grace_granted=True, got {bgf!r}"
+                )
+            elif bgf.get("effective_count") != 8 or bgf.get("corrective_count") != 0:
+                failures.append(
+                    "[ncg-grace] grace probe must carry effective_count=8 + "
+                    f"corrective_count=0, got {bgf!r}"
+                )
+            # feat-nc must NOT be appended to the budget-deferred set.
+            m_ncg = lazy_core.read_run_marker(now=_ncg_time.time())
+            if (m_ncg or {}).get("budget_deferred", {}).get("feat-nc"):
+                failures.append(
+                    "[ncg-grace] grace must NOT record a budget deferral for "
+                    f"feat-nc, got {(m_ncg or {}).get('budget_deferred')!r}"
+                )
+
+            # (g) One-shot grace: feat-nc near-complete but ALREADY deferred once
+            # this run (budget_deferred[feat-nc]=1) → grace is spent → it trips
+            # (evict, since prior_defers>=1) and feat-nc2 dispatches instead.
+            _ncg_write_marker(
+                {"feat-nc": 8, "feat-nc2": 0},
+                budget_deferred={"feat-nc": 1},
+            )
+            stg = compute_state(ncg_root, cloud=False, real_device=True)
+            bgg = stg.get("budget_guard")
+            if not bgg or bgg.get("near_complete_grace_granted") is not False:
+                failures.append(
+                    "[ncg-grace] one-shot: a near-complete feature that already "
+                    "consumed grace must trip (near_complete_grace_granted=False), "
+                    f"got {bgg!r}"
+                )
+            if stg.get("feature_id") != "feat-nc2":
+                failures.append(
+                    "[ncg-grace] one-shot: feat-nc2 must dispatch after feat-nc's "
+                    f"grace is spent, got {stg.get('feature_id')!r}"
+                )
+
+            # (h) Corrective discount: feat-nc2 (NOT near-complete) at forward=9
+            # (ceiling+1) but with corrective=2 → effective=9-2=7 < ceiling 8 →
+            # dispatches (discount). Pin feat-nc at the ceiling with grace already
+            # spent (budget_deferred=1) so it evicts and feat-nc2 is evaluated.
+            _ncg_write_marker(
+                {"feat-nc": 8, "feat-nc2": 9},
+                budget_deferred={"feat-nc": 1},
+                per_feature_corrective_cycles={"feat-nc2": 2},
+            )
+            sth = compute_state(ncg_root, cloud=False, real_device=True)
+            _sth_bg = sth.get("budget_guard") or {}
+            if sth.get("feature_id") != "feat-nc2" or (
+                _sth_bg.get("feature_id") == "feat-nc2"
+            ):
+                # feat-nc2 must DISPATCH (its own forward=9 would trip, but the
+                # corrective discount pulls effective to 7 < 8). The only trip
+                # surfaced is feat-nc's eviction (grace spent) — never feat-nc2.
+                failures.append(
+                    "[ncg-grace] corrective discount: feat-nc2 at forward=9 with "
+                    "corrective=2 (effective=7 < ceiling 8) must dispatch untripped "
+                    "(no feat-nc2 trip), got "
+                    f"feature_id={sth.get('feature_id')!r} "
+                    f"budget_guard={sth.get('budget_guard')!r}"
+                )
+
+            # (i) record_corrective_cycle wiring via --record-resolution-signal:
+            # the corrective-dispatch bracket increments per_feature_corrective_cycles.
+            _ncg_write_marker({"feat-nc2": 0})
+            _rc_marker = lazy_core.record_resolution_signal(
+                {"feature_id": "feat-nc2", "current_step": "Step 7a: execute plan"}
+            )
+            _rc_marker = lazy_core.record_corrective_cycle(_rc_marker, "feat-nc2")
+            if _rc_marker.get("per_feature_corrective_cycles", {}).get("feat-nc2") != 1:
+                failures.append(
+                    "[ncg-grace] record_corrective_cycle must increment "
+                    f"per_feature_corrective_cycles[feat-nc2] to 1, got {_rc_marker!r}"
+                )
+            print("  [ncg-grace] near-completion grace + one-shot bound + "
+                  "corrective discount + corrective-cycle record: ok")
+        finally:
+            if _ncg_prev_env is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _ncg_prev_env
+
+        # -------------------------------------------------------------------
         # Functional check: feature-budget-guard-and-skip-ahead Phase 3 —
         # dependency-aware skip-ahead past a gated head (default-on; two-key
         # readiness predicate; --strict-research-halt opt-out).
@@ -8034,6 +8251,24 @@ def main() -> int:
         marker = lazy_core.record_resolution_signal(
             {"feature_id": args.feature_id, "current_step": args.current_step}
         )
+        # budget-guard-defers-near-complete-feature Phase 2 (WU-5): the
+        # apply-resolution bracket IS the corrective-cycle bracket — a
+        # validation-failure-driven corrective dispatch is recorded here. Fold a
+        # sibling per_feature_corrective_cycles increment so budget_trip_signals
+        # discounts this corrective work from the budget trip count (Theory 2).
+        # Marker-gated (record_resolution_signal returns None when no run marker)
+        # + FAIL-OPEN (a persist error never breaks the resolution dispatch).
+        if isinstance(marker, dict):
+            try:
+                marker = lazy_core.record_corrective_cycle(marker, args.feature_id)
+                _bg_marker_path = (
+                    lazy_core.claude_state_dir() / lazy_core._MARKER_FILENAME
+                )
+                lazy_core._atomic_write(
+                    _bg_marker_path, json.dumps(marker, indent=2) + "\n"
+                )
+            except (OSError, ValueError):
+                pass
         sys.stdout.write(json.dumps(marker, indent=2) + "\n")
         return 0
 
