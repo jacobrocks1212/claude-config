@@ -379,6 +379,18 @@ in another repo (it also kills stale-marker contagion across repos).
       `lazy_parity_audit.py::audit_state_script_parity`'s `--reassert-owner` check). See
       `docs/bugs/single-slot-marker-ownership-race-disarms-owning-run`.
 
+> **Per-sub_skill commit budget is DERIVED, not a literal table
+> (`adhoc-derive-cycle-commit-budget`, 2026-06-22).** `detect_cycle_bracket_friction`'s
+> `unexpected-commits` budget (branch 3) is derived from the `lazy_core`-owned SSOT
+> `_MULTI_COMMIT_DISPATCH_SKILLS` (a `frozenset` of the multi-commit dispatch identities)
+> + the named ceiling `_CYCLE_COMMIT_MULTI = 3`: membership ⇒ the multi-commit ceiling, else
+> `_CYCLE_COMMIT_BUDGET_DEFAULT = 1`. This REPLACED the reactive hand-maintained
+> `_CYCLE_COMMIT_BUDGET` literal dict whose missing-row class false-positived `unexpected-commits`
+> on every newly-dispatched multi-commit sub_skill (five reactive appends). Adding a new
+> multi-commit dispatch skill now means adding its identity to the registry SSOT — co-located with
+> the dispatch-skill set — NEVER a separate budget row. Single landing site in shared `lazy_core`;
+> serves both pipelines; `budget_override` (Round 20) + `kind=="meta"` (Round 19) branches unchanged.
+
 ## Cycle-counter advance: two orthogonal triggers (lazy-batch-unified-driver-parity-and-accounting Phase 1)
 
 The run marker's `forward_cycles` / `meta_cycles` budget counters advance via **two

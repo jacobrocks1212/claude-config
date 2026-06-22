@@ -8937,72 +8937,62 @@ def clear_cycle_marker() -> bool:
 # heuristic — both signals are deterministic on-disk facts.)
 # ---------------------------------------------------------------------------
 _CYCLE_COMMIT_BUDGET_DEFAULT = 1
-_CYCLE_COMMIT_BUDGET: dict[str, int] = {
-    # Multi-batch plan execution may legitimately commit once per batch; allow a
-    # slightly higher ceiling so a normal multi-batch /execute-plan cycle is not
-    # flagged, while a true runaway (many commits) still trips.
-    "execute-plan": 3,
-    "retro-feature": 3,
-    # The Step-9 /mcp-test validation cycle legitimately commits MORE THAN ONCE.
-    # A clean pass is one commit (the engine's terminal sentinel + the PHASES
-    # reconcile, committed together — mcp-test SKILL.md Step 5.4), but a cycle may
-    # add a SECOND (or third) honest commit: the deterministic engine's audited
-    # mechanics-only self-heal (a `heals[]` field/JSONPath/threshold-typo edit to
-    # the scenario YAML or tool-methods map — SKILL.md Step 3.4) is committed
-    # separately from the sentinel+reconcile, and a `result: partial`
-    # MCP_TEST_RESULTS.md may land before the terminal sentinel on a follow-up
-    # pass. With the default budget of 1 this normal 2-commit validation cycle
-    # false-positived `unexpected-commits` (the 2026-06-16
-    # `mcp-audio-quality-observability` recurrence:
-    # `begin_head_sha=a28085bb938e, sub_skill='mcp-test', budget=1`, HEAD advanced
-    # 2 commits). This is the SAME missing-row defect class Round 15 fixed for
-    # `execute-plan` and Rounds 16/17 fixed for the `__mark_complete__` /
-    # `__mark_fixed__` pseudo-skills; `mcp-test` was simply never enumerated. A
-    # genuine runaway (>3 commits) still trips. Mirrors `bug-state.py` via the
-    # shared `lazy_core` module (the bug pipeline routes its own MCP gate here).
-    "mcp-test": 3,
-    # Pipeline-advancing terminal pseudo-skills (`__mark_complete__` /
-    # `__mark_fixed__`). These do NOT dispatch a work-skill subagent — they are
-    # the orchestrator's own inline documentation cycle, but their `__mark_complete__`
-    # route legitimately commits MORE THAN ONCE: the `--apply-pseudo` receipt+flip
-    # is one atomic commit, and the Gate-1 corrective-coverage meta path
-    # (SKILL.md §428) authors+commits mcp-tests scenario(s) and may also commit a
-    # gate-halt cycle_log / SPEC test-exempt note. With the default budget of 1
-    # this two-commit completion cycle false-positived `unexpected-commits` (the
-    # 2026-06-16 recurrence: `begin_head_sha=0a0e928c6711, sub_skill=__mark_complete__`
-    # / `730a4df88d17`). Round 15 fixed the `execute-plan` sibling of this defect
-    # but did not enumerate the pseudo-skill cycles; this row closes that gap. A
-    # genuine runaway (>3 commits) still trips. Mirrors `bug-state.py` via the
-    # shared `lazy_core` module — bug `__mark_fixed__` resolves the same key here.
-    "__mark_complete__": 3,
-    "__mark_fixed__": 3,
-    # The planning dispatch (Step 6 consolidated /plan-feature, or the direct
-    # Step 7a /write-plan) legitimately commits MORE THAN ONCE. /plan-feature
-    # runs /spec-phases (commits PHASES.md) THEN /write-plan back-to-back in one
-    # cycle (lazy-state.py:2813), and /write-plan may emit a MULTI-PART plan
-    # series (`all-phases-<slug>-part-1.md`, `-part-2.md`, … per the 8-WU
-    # partition cap, write-plan/SKILL.md Step 2.5), committing once per part.
-    # The codebase already names this "the d8 write-plan loop, where each cycle
-    # COMMITS (HEAD advances)" (lazy_core.py:4534). With the default budget of 1
-    # a normal 2-commit planning cycle false-positived `unexpected-commits` (the
-    # 2026-06-22 `d2-sample-import-ui` recurrence:
-    # `begin_head_sha=08d33d580cfe, sub_skill='write-plan', budget=1`, HEAD
-    # advanced 2 commits). This is the SAME missing-row defect class Round 15
-    # fixed for `execute-plan`, Rounds 16/17 for the `__mark_complete__` /
-    # `__mark_fixed__` pseudo-skills, and the `mcp-test` row above; the two
-    # planning skills were simply never enumerated. A genuine runaway (>3
-    # commits) still trips. Mirrors `bug-state.py` via the shared `lazy_core`
-    # module (the bug pipeline routes its own planning here via /plan-bug, which
-    # likewise dispatches /write-plan).
-    "write-plan": 3,
-    "plan-feature": 3,
-    # Bug-pipeline planning analog of /plan-feature: /plan-bug authors PHASES.md
-    # from a concluded investigation THEN dispatches /write-plan (bug-state.py
-    # routes sub_skill=SKILL_PLAN_BUG, line 1183), so its cycle likewise commits
-    # PHASES.md + one-or-more plan parts. Same missing-row defect class; budgeted
-    # identically. A genuine runaway (>3) still trips.
-    "plan-bug": 3,
-}
+# The uniform commit ceiling granted to a multi-commit dispatch identity. Every
+# multi-commit skill historically used the SAME number (3) — the per-skill budget
+# never varied, so the budget is a binary "single-commit (default 1) vs.
+# multi-commit (this ceiling)" decision keyed on registry membership below.
+_CYCLE_COMMIT_MULTI = 3
+
+# ---------------------------------------------------------------------------
+# SSOT: the multi-commit dispatch-skill registry.
+#
+# `_MULTI_COMMIT_DISPATCH_SKILLS` names EVERY dispatch identity whose cycle
+# legitimately commits MORE THAN ONCE. It is the single source of truth the
+# per-sub_skill commit budget DERIVES from (see `detect_cycle_bracket_friction`
+# branch (3)): a name in this set ⇒ `_CYCLE_COMMIT_MULTI`; any other name ⇒
+# `_CYCLE_COMMIT_BUDGET_DEFAULT` (1).
+#
+# These are the SAME string identities the dispatch sites already pass — the
+# `bug-state.py` `SKILL_*` constants (`SKILL_EXECUTE_PLAN`, `SKILL_MCP_TEST`,
+# `SKILL_WRITE_PLAN`, `SKILL_PLAN_BUG`, `SKILL_MARK_FIXED`, … `:159-166`) and the
+# `lazy-state.py` bare-literal `sub_skill="..."` dispatch sites — so this set is
+# the natural SSOT for BOTH pipelines (the shared `lazy_core` helper serves both;
+# no coupled-pair mirror).
+#
+# ADDING A NEW MULTI-COMMIT DISPATCH SKILL means adding its identity HERE,
+# co-located with the dispatch-skill set — NEVER a separate hand-maintained budget
+# row. This structural derivation replaces the prior reactive literal
+# `_CYCLE_COMMIT_BUDGET` table, whose five dated per-row provenance comments each
+# recorded a production `unexpected-commits` false-positive that was patched AFTER
+# the fact (Round 15 `execute-plan`; Rounds 16/17 the `__mark_complete__` /
+# `__mark_fixed__` pseudo-skills; a later round `mcp-test`; 2026-06-22
+# `write-plan` / `plan-feature` / `plan-bug`). Membership here closes that
+# missing-row CLASS: a newly-dispatched multi-commit skill can no longer silently
+# default to budget 1.
+#
+# The forward-advancing terminal PSEUDO-skills (`__mark_complete__` /
+# `__mark_fixed__`) are members: they dispatch no Agent subagent, but they ARE
+# dispatch identities the friction detector keys on, and their completion cycle
+# legitimately commits more than once (receipt+flip plus a Gate-1
+# corrective-coverage scenario commit).
+# ---------------------------------------------------------------------------
+_MULTI_COMMIT_DISPATCH_SKILLS: frozenset[str] = frozenset({
+    # Multi-batch plan execution commits once per batch.
+    "execute-plan",
+    "retro-feature",
+    # The Step-9 /mcp-test validation cycle commits the audited mechanics-only
+    # self-heal separately from the terminal sentinel + PHASES reconcile.
+    "mcp-test",
+    # Planning dispatch: /plan-feature runs /spec-phases (commits PHASES.md) THEN
+    # /write-plan, which may emit a multi-part plan series (one commit per part);
+    # /plan-bug is the bug-pipeline analog.
+    "write-plan",
+    "plan-feature",
+    "plan-bug",
+    # Forward-advancing terminal pseudo-skills (receipt+flip + corrective-coverage).
+    "__mark_complete__",
+    "__mark_fixed__",
+})
 
 # Slack added on top of the plan's phase count for a phase-scaled execute-plan
 # budget (hardening Round 20 D2): /execute-plan commits once per phase, but a phase
@@ -9188,8 +9178,14 @@ def detect_cycle_bracket_friction(
         if isinstance(budget_override, int) and budget_override > 0:
             budget = budget_override
         else:
-            budget = _CYCLE_COMMIT_BUDGET.get(
-                sub_skill or "", _CYCLE_COMMIT_BUDGET_DEFAULT
+            # Branch (3): DERIVE the budget from the `_MULTI_COMMIT_DISPATCH_SKILLS`
+            # registry SSOT — membership ⇒ the uniform multi-commit ceiling, else
+            # the single-commit default. No hand-maintained literal table to keep
+            # in sync (closes the recurring missing-row defect class).
+            budget = (
+                _CYCLE_COMMIT_MULTI
+                if (sub_skill or "") in _MULTI_COMMIT_DISPATCH_SKILLS
+                else _CYCLE_COMMIT_BUDGET_DEFAULT
             )
         if commits_since > budget:
             return {

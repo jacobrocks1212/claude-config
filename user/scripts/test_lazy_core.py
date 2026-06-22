@@ -17438,6 +17438,71 @@ def test_detect_friction_meta_cycle_exempt_from_unexpected_commits():
     assert real is not None and real["reason"] == "unexpected-commits", real
 
 
+def test_multi_commit_dispatch_skills_registry_membership():
+    """adhoc-derive-cycle-commit-budget WU-1: the `_MULTI_COMMIT_DISPATCH_SKILLS`
+    registry SSOT is a frozenset naming EXACTLY the dispatch identities whose cycle
+    legitimately commits more than once — the real skills plus the forward-advancing
+    terminal pseudo-skills. Membership in this set (not a hand-maintained literal
+    budget row) is what grants the multi-commit budget. A single-commit-only skill
+    (e.g. spec-bug / spec-phases) is NOT a member."""
+    _guard()
+    assert isinstance(lazy_core._MULTI_COMMIT_DISPATCH_SKILLS, frozenset)
+    expected = {
+        "execute-plan", "retro-feature", "mcp-test",
+        "write-plan", "plan-feature", "plan-bug",
+        "__mark_complete__", "__mark_fixed__",
+    }
+    assert set(lazy_core._MULTI_COMMIT_DISPATCH_SKILLS) == expected, \
+        lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
+    # Single-commit-only dispatch identities are NOT members.
+    assert "spec-bug" not in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
+    assert "spec-phases" not in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
+    # The uniform multi-commit ceiling is a named constant (not a magic literal).
+    assert lazy_core._CYCLE_COMMIT_MULTI == 3
+    assert lazy_core._CYCLE_COMMIT_BUDGET_DEFAULT == 1
+
+
+def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
+    """adhoc-derive-cycle-commit-budget WU-3 (class-closure regression): the
+    per-sub_skill commit budget is DERIVED from `_MULTI_COMMIT_DISPATCH_SKILLS`
+    membership, not from a hand-maintained literal table. This proves the
+    missing-row defect CLASS is closed: registry membership ⇒ multi-commit budget,
+    no manual budget-row append; and a skill ABSENT from the registry still defaults
+    to 1 so genuine runaways still trip."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-22T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+
+    def _friction(sub_skill, commits):
+        return lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-22T00:00:00Z",  # identity intact
+            current_head_sha="bbbb2222",
+            sub_skill=sub_skill,
+            commits_since=commits,
+        )
+
+    # (1) A registry-known multi-commit skill is budgeted multi-commit via the
+    # DERIVATION (2-3 commits → no friction), with no literal dict row backing it.
+    assert _friction("mcp-test", 2) is None
+    assert _friction("mcp-test", lazy_core._CYCLE_COMMIT_MULTI) is None
+
+    # (2) A skill ABSENT from the registry still defaults to budget 1 → a 2-commit
+    # unregistered skill trips unexpected-commits (genuine-runaway detection intact).
+    absent = _friction("brand-new-skill", 2)
+    assert absent is not None and absent["reason"] == "unexpected-commits", absent
+
+    # (3) Class-closure: membership in the registry — not a literal-table row — is
+    # what grants the multi-commit budget. Every registered name is budgeted
+    # multi-commit; one commit past the ceiling trips.
+    for ss in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS:
+        assert _friction(ss, lazy_core._CYCLE_COMMIT_MULTI) is None, ss
+        over = _friction(ss, lazy_core._CYCLE_COMMIT_MULTI + 1)
+        assert over is not None and over["reason"] == "unexpected-commits", (ss, over)
+
+
 def test_append_friction_ledger_entry_round_trips():
     """WU-3: append_friction_ledger_entry appends a kind: process-friction,
     acked: false line to the SAME deny ledger; pending_hardening() then ≥1 and
@@ -20644,6 +20709,10 @@ _TESTS = _TESTS + [
      test_detect_friction_torn_bracket_run_marker_now_absent),
     ("test_detect_friction_within_commit_budget_returns_none",
      test_detect_friction_within_commit_budget_returns_none),
+    ("test_multi_commit_dispatch_skills_registry_membership",
+     test_multi_commit_dispatch_skills_registry_membership),
+    ("test_detect_friction_registry_known_skill_budgeted_without_literal_row",
+     test_detect_friction_registry_known_skill_budgeted_without_literal_row),
     ("test_emit_dispatch_always_emits_json_on_error",
      test_emit_dispatch_always_emits_json_on_error),
     ("test_emit_dispatch_context_file_long_value",

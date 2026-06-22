@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-derive-cycle-commit-budget
-status: In-progress
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [1, 2]
@@ -89,9 +89,9 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 
 ## Work Units
 
-- [ ] WU-1 — Introduce `lazy_core` multi-commit dispatch-skill registry SSOT
-- [ ] WU-2 — Derive `detect_cycle_bracket_friction` branch-3 budget from the registry; retire the literal table
-- [ ] WU-3 — Regression test the closed class + run the full gate set
+- [x] WU-1 — Introduce `lazy_core` multi-commit dispatch-skill registry SSOT
+- [x] WU-2 — Derive `detect_cycle_bracket_friction` branch-3 budget from the registry; retire the literal table
+- [x] WU-3 — Regression test the closed class + run the full gate set
 
 ---
 

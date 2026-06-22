@@ -1,6 +1,6 @@
 # Derive cycle-commit budget from a single source of truth — Implementation Phases
 
-**Status:** Not-started
+**Status:** In-progress
 **Spec:** docs/bugs/adhoc-derive-cycle-commit-budget/SPEC.md
 **Bug:** adhoc-derive-cycle-commit-budget
 
@@ -63,9 +63,9 @@ Replace the reactive literal `_CYCLE_COMMIT_BUDGET` table's role as the source o
 budgets with a derivation from a `lazy_core`-owned dispatch-skill registry, so an
 unenumerated multi-commit sub_skill can no longer silently default to budget 1.
 
-**Status:** Not-started
+**Status:** Complete
 
-- [ ] Introduce a `lazy_core`-owned SSOT for the multi-commit dispatch-skill set — a module
+- [x] Introduce a `lazy_core`-owned SSOT for the multi-commit dispatch-skill set — a module
       constant (e.g. `_MULTI_COMMIT_DISPATCH_SKILLS: frozenset[str]`) naming every dispatch
       identity whose cycle legitimately commits more than once: the real skills
       (`execute-plan`, `retro-feature`, `mcp-test`, `write-plan`, `plan-feature`, `plan-bug`)
@@ -74,18 +74,18 @@ unenumerated multi-commit sub_skill can no longer silently default to budget 1.
       (replacing the five per-row reactive provenance comments) and that ADDING a new
       multi-commit dispatch skill means adding it HERE, co-located with the dispatch-skill
       identity — never a separate budget row.
-- [ ] Replace `detect_cycle_bracket_friction` branch (3) (`lazy_core.py:9191-9192`) so the
+- [x] Replace `detect_cycle_bracket_friction` branch (3) (`lazy_core.py:9191-9192`) so the
       budget is DERIVED: `budget = _CYCLE_COMMIT_MULTI if (sub_skill or "") in <registry>
       else _CYCLE_COMMIT_BUDGET_DEFAULT`. Keep `_CYCLE_COMMIT_BUDGET_DEFAULT = 1` and the
       uniform multi-commit ceiling (3). Leave branches (1) `kind=="meta"` exemption and (2)
       `budget_override` positive-int supersede UNTOUCHED and ordered as-is.
-- [ ] Remove the hand-maintained `_CYCLE_COMMIT_BUDGET` literal dict (and its five reactive
+- [x] Remove the hand-maintained `_CYCLE_COMMIT_BUDGET` literal dict (and its five reactive
       provenance comment blocks) now that membership derives the budget — OR retain a derived
       mapping built FROM the registry if any other reader references `_CYCLE_COMMIT_BUDGET` by
       name (grep `find_symbol_usages` / `Grep` for `_CYCLE_COMMIT_BUDGET` first; if a sole
       consumer is branch 3, delete the literal; if other consumers exist, rebuild the dict
       from the registry so the literal table is no longer hand-appended).
-- [ ] Confirm the derivation serves BOTH pipelines unchanged: `bug-state.py` routes its own
+- [x] Confirm the derivation serves BOTH pipelines unchanged: `bug-state.py` routes its own
       `mcp-test` / `__mark_fixed__` / `plan-bug` cycles through this shared
       `detect_cycle_bracket_friction`; no `bug-state.py` or `lazy-state.py` edit is required
       (the names are already what the dispatch sites pass). Note in the code comment that the
@@ -98,16 +98,16 @@ Add a regression that proves a registry-known multi-commit skill is budgeted wit
 literal row (closing the missing-row defect CLASS, not just re-pinning the current rows), and
 verify the full gate set stays green.
 
-**Status:** Not-started
+**Status:** Complete
 
-- [ ] Add `test_detect_friction_registry_known_skill_budgeted_without_literal_row` to
+- [x] Add `test_detect_friction_registry_known_skill_budgeted_without_literal_row` to
       `test_lazy_core.py`: assert a multi-commit dispatch skill in the registry is budgeted as
       multi-commit (e.g. 2-3 commits → no friction) via the DERIVATION, with no literal table
       row backing it; and that a skill ABSENT from the registry still defaults to 1 (a
       2-commit unregistered skill → `unexpected-commits`, preserving genuine-runaway
       detection). Register the new test in the module's test-runner list (alongside the
       existing `test_detect_friction_*` entries near line 20625).
-- [ ] Confirm every existing friction/budget test stays green unchanged:
+- [x] Confirm every existing friction/budget test stays green unchanged:
       `test_detect_friction_mcp_test_cycle_multi_commit_within_budget`,
       `test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget`,
       `test_detect_friction_planning_cycle_multi_commit_within_budget`,
@@ -115,7 +115,7 @@ verify the full gate set stays green.
       `test_execute_plan_commit_budget_scales_with_phase_count` /
       `..._with_wu_count` (the Round-20 `budget_override` path is OUT of scope and must be
       byte-unaffected).
-- [ ] Run the full gate set and confirm all green:
+- [x] Run the full gate set and confirm all green:
       `python3 user/scripts/lazy-state.py --test`,
       `python3 user/scripts/bug-state.py --test`,
       `python3 user/scripts/test_lazy_core.py`,
@@ -123,3 +123,44 @@ verify the full gate set stays green.
       (`tests/baselines/*-test-baseline.txt`) must be unaffected (no state-machine route
       change); if either drifts, the change leaked beyond branch 3 — investigate, do not
       regenerate the baseline by hand.
+
+## Implementation Notes — Phases 1 & 2 (2026-06-22, inline bug-pipeline execution)
+
+**Work completed (test-first, all inline — zero Agent() calls):**
+- **WU-1:** Added `lazy_core._MULTI_COMMIT_DISPATCH_SKILLS: frozenset[str]` (the SSOT
+  naming the 8 multi-commit dispatch identities: `execute-plan`, `retro-feature`,
+  `mcp-test`, `write-plan`, `plan-feature`, `plan-bug`, `__mark_complete__`,
+  `__mark_fixed__`) plus the named ceiling `_CYCLE_COMMIT_MULTI = 3`. One block comment
+  consolidates the five reactive per-row provenance comments and documents the
+  add-here-not-a-budget-row contract + the both-pipelines SSOT relationship.
+- **WU-2:** `detect_cycle_bracket_friction` branch (3) now DERIVES the budget:
+  `_CYCLE_COMMIT_MULTI if (sub_skill or "") in _MULTI_COMMIT_DISPATCH_SKILLS else
+  _CYCLE_COMMIT_BUDGET_DEFAULT`. Branch (1) `kind=="meta"` and branch (2) `budget_override`
+  left byte-identical and in order. The hand-maintained `_CYCLE_COMMIT_BUDGET` literal dict
+  was REMOVED — grep confirmed branch (3) was its SOLE consumer
+  (`grep -rn "_CYCLE_COMMIT_BUDGET\b" user/scripts/` → only `lazy_core.py`), so the safe
+  delete path applied (no rebuild-from-registry needed).
+- **WU-3:** Added `test_multi_commit_dispatch_skills_registry_membership` (locks the
+  registry contents + the two named constants) and
+  `test_detect_friction_registry_known_skill_budgeted_without_literal_row` (class-closure:
+  loops the registry asserting membership ⇒ multi-commit budget with no literal row; an
+  unregistered skill still defaults to 1 and trips at 2 commits). Both registered in the
+  module test-runner list. All existing `test_detect_friction_*` / `test_execute_plan_commit_budget_*`
+  tests pass unchanged.
+
+**Integration / both-pipelines confirmation:** the change lands ONCE in the shared
+`lazy_core.py`; `lazy-state.py --test` and `bug-state.py --test` both pass against the
+committed baselines (no state-machine route change, baselines unaffected), and
+`lazy_parity_audit.py` is green (no unintended divergence). No `bug-state.py` / `lazy-state.py`
+edit was required — the dispatch sites already pass the same string identities the registry
+enumerates.
+
+**Pitfalls:** none. The OUT-of-scope branches (`budget_override`, `kind=="meta"`) were
+verified byte-identical. `frozenset[str]` subscript syntax is fine on the project's Python.
+
+**Files modified:** `user/scripts/lazy_core.py` (registry SSOT + branch-3 derivation, literal
+dict removed), `user/scripts/test_lazy_core.py` (2 new tests + runner registrations),
+`user/scripts/CLAUDE.md` (budget-source note).
+
+**Gate set (all green):** `lazy-state.py --test`, `bug-state.py --test`,
+`test_lazy_core.py` (769/769), `lazy_parity_audit.py --repo-root . ` (exit 0).
