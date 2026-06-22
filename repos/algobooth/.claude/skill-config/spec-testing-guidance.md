@@ -22,6 +22,8 @@ If the feature affects audio output (new DSP, effects, gain changes, routing, mi
 | AQ-XX-01 | {Strudel pattern or control state} | main/cue/mix | audio_pitch / audio_filter / audio_distortion / audio_lufs / audio_spectrum / audio_reverb / audio_stereo / audio_dynamics / audio_modulation / audio_artifact_scan | {response field} | {range, threshold, or boolean} |
 ```
 
+**Required-but-possibly-missing tooling (capture as a Locked Decision).** The `Tool` column above is the menu of EXISTING audio-quality tools to assert against. Separately, if a contract row (or any Validation Criteria row) names an MCP tool that does NOT yet exist in AlgoBooth's surface — a new control-tier tool for a new store/substrate, a new template-binding tool, etc. — capture it as a **Locked Decision** naming the required tool (so `/spec-phases`' MCP tool-existence audit greps the catalog, finds it absent, and auto-authors a build phase up front rather than discovering it late at `/mcp-test`). Land the capture in the SPEC's `## Locked Decisions` table (the gate-parseable surface), e.g. `| L4 | Required MCP tooling: \`set_slip_pad_template\` must be registered before /mcp-test (absent today — build). |`. See `docs/bugs/mcp-tooling-not-predetermined-at-planning`.
+
 **Available audio quality tools and their key measurements:**
 
 | Tool | Key Measurements |

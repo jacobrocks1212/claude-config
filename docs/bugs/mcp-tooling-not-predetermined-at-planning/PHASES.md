@@ -89,9 +89,17 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 **Scope:** Extend `/spec` (and AlgoBooth's `spec-testing-guidance.md` override) to capture the MCP tools a feature's validation will require AS a Locked Decision, so (a) the Phase-2 `/spec-phases` audit has a named requirement to verify, and (b) the existing completion-time `mcp-coverage-audit` / `--gate-coverage` gate can assert on it (Locked Decision 3: defense-in-depth across both skills). Today `/spec` names tools only as a fixed menu of EXISTING tools to assert against (Evidence: spec skill source); this adds an explicit "required tooling" capture that flags tools that must EXIST/be BUILT.
 
 **Deliverables:**
-- [ ] Add a "required MCP tooling" capture step to `user/skills/spec/SKILL.md` (in/near `## Validation Criteria`): when a feature's validation will call MCP tools, enumerate them as a Locked Decision (so they land in the `## Locked Decisions` surface the coverage gate already parses).
-- [ ] Extend `repos/algobooth/.claude/skill-config/spec-testing-guidance.md` (the AlgoBooth `## Audio Quality Contracts` override) to record required-but-possibly-missing tools, not only the existing-tool menu.
-- [ ] Tests: none (skill-prose change). Verified by the captured Locked Decision being parseable by `--gate-coverage` (Phase 4) and consumable by the Phase-2 audit.
+- [x] Add a "required MCP tooling" capture step to `user/skills/spec/SKILL.md` (in/near `## Validation Criteria`): when a feature's validation will call MCP tools, enumerate them as a Locked Decision (so they land in the `## Locked Decisions` surface the coverage gate already parses).
+- [x] Extend `repos/algobooth/.claude/skill-config/spec-testing-guidance.md` (the AlgoBooth `## Audio Quality Contracts` override) to record required-but-possibly-missing tools, not only the existing-tool menu.
+- [x] Tests: none (skill-prose change). Verified by the captured Locked Decision being parseable by `--gate-coverage` (Phase 4) and consumable by the Phase-2 audit.
+
+**Status:** Done — required-MCP-tooling capture added to `/spec` (`## Validation Criteria` → Locked Decision) and the AlgoBooth `spec-testing-guidance.md` override.
+
+#### Implementation Notes (Phase 3 — 2026-06-22)
+- `user/skills/spec/SKILL.md`: added a "Required MCP tooling (capture as a Locked Decision)" subsection right after the Validation Criteria table. It instructs capturing required-to-exist (possibly-missing) MCP tools as a `## Locked Decisions` table row in the EXACT gate-parseable shape (`| ID | Decision |`, first column = `L4`/title), with a worked example, and to omit it when validation calls no MCP tools.
+- `repos/algobooth/.claude/skill-config/spec-testing-guidance.md`: extended the `## Audio Quality Contracts` block with a "Required-but-possibly-missing tooling" note distinguishing the existing-tool menu (the `Tool` column) from required-to-build tools captured as a Locked Decision.
+- **Shape alignment:** the captured surface is the same `## Locked Decisions` H2 table that `mcp-coverage-audit.md` Step 1 (and `lazy-state.py --gate-coverage`) enumerates — no new section invented, so Phase 4's assertion works without parser changes.
+- **Review verdict:** PASS — traces to Locked Decision 3 ("Seam = both") + SPEC `## Affected Area` "Spec authoring" row; projection + lint green.
 
 **Minimum Verifiable Behavior:** A spec authored through the extended `/spec` prose lands a `## Locked Decisions` entry naming the required MCP tool(s) — verifiable by checking that entry is in the canonical Locked-Decision surface `lazy-state.py --gate-coverage` and the Phase-2 audit both parse (the same H2 the `mcp-coverage-audit` algorithm enumerates).
 

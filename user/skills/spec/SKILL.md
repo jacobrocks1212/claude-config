@@ -544,6 +544,22 @@ For each major observable behavior defined in this spec, define how to verify it
 
 These criteria are used during `/implement-phase-batch` to validate spec alignment. Each row becomes a test assertion.
 
+### Required MCP tooling (capture as a Locked Decision)
+
+When any Validation Criteria row above is verified by calling an **MCP tool**, enumerate those tools and capture them as a **Locked Decision** — NOT only the existing-tool menu, but every tool the validation will REQUIRE TO EXIST (including ones that may have to be BUILT). This predetermines the tool surface at planning time so `/spec-phases`' MCP tool-existence audit can verify each exists and auto-author a build phase on a miss, and so the completion-time coverage gate can assert on it (defense-in-depth — see `docs/bugs/mcp-tooling-not-predetermined-at-planning`).
+
+**CRITICAL — shape it so the gate can see it.** Land the capture in the SPEC's `## Locked Decisions` H2 as a table row (first column = a decision ID like `L4`, or a one-line decision title) — the SAME canonical surface `lazy-state.py --gate-coverage` / `mcp-coverage-audit.md` Step 1 enumerates. Do NOT invent a new section the gate cannot parse. Example row:
+
+```markdown
+## Locked Decisions
+
+| ID | Decision |
+|----|----------|
+| L4 | Required MCP tooling: validation calls `set_slip_pad_template` + `get_scene_state`; both must be registered before `/mcp-test` (build if absent). |
+```
+
+If the feature's validation calls no MCP tools, omit this — no Locked Decision is added.
+
 ## Open Questions
 {Anything still unresolved}
 
