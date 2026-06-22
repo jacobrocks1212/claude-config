@@ -21313,7 +21313,8 @@ _TESTS = _TESTS + [
 
 
 def test_compute_per_feature_ceiling_override_short_circuits():
-    """P2 RED: an explicit override returns verbatim, ignoring the formula."""
+    """Default-off contract: an explicit override returns verbatim, bypassing
+    the now-default-off (None) path. This is the OFF-by-default OPT-IN."""
     _guard()
     assert lazy_core.compute_per_feature_ceiling(20, 5, override=3) == 3
     assert lazy_core.compute_per_feature_ceiling(20, 5, override=99) == 99
@@ -21322,42 +21323,47 @@ def test_compute_per_feature_ceiling_override_short_circuits():
 
 
 def test_compute_per_feature_ceiling_six_floor_small_run():
-    """P2 RED: small run / shallow queue → the max(6, …) floor wins.
-    C=12, Q=2: min(12*4//10=4, (12//2)*2=12)=4; max(6,4)=6."""
+    """Default-off contract: no override → None (guard OFF by default).
+    Formerly returned the 6 floor for C=12, Q=2; the budget block in
+    lazy-state.py now short-circuits on the None ceiling."""
     _guard()
-    assert lazy_core.compute_per_feature_ceiling(12, 2) == 6
+    assert lazy_core.compute_per_feature_ceiling(12, 2) is None
 
 
 def test_compute_per_feature_ceiling_deep_queue_six():
-    """P2 RED: the RESEARCH_SUMMARY deep-queue example C=32, Q=10 → 6.
-    min(32*4//10=12, (32//10)*2=6)=6; max(6,6)=6."""
+    """Default-off contract: no override → None (guard OFF by default).
+    The RESEARCH_SUMMARY deep-queue example C=32, Q=10 formerly returned 6."""
     _guard()
-    assert lazy_core.compute_per_feature_ceiling(32, 10) == 6
+    assert lazy_core.compute_per_feature_ceiling(32, 10) is None
 
 
 def test_compute_per_feature_ceiling_forty_percent_cap_arm():
-    """P2 RED: large C, shallow Q → the 40% cap arm wins.
-    C=50, Q=2: min(50*4//10=20, (50//2)*2=50)=20; max(6,20)=20."""
+    """Default-off contract: no override → None even where the 40%-cap arm
+    formerly armed (C=50, Q=2 → 20). The OPT-IN re-arms a fixed ceiling:
+    override=20 → 20 (keeps the opt-in fixed-ceiling characterized)."""
     _guard()
-    assert lazy_core.compute_per_feature_ceiling(50, 2) == 20
+    assert lazy_core.compute_per_feature_ceiling(50, 2) is None
+    assert lazy_core.compute_per_feature_ceiling(50, 2, override=20) == 20
 
 
 def test_compute_per_feature_ceiling_zero_queue_no_div_by_zero():
-    """P2 RED: Q_depth==0 returns the 6 floor (no ZeroDivisionError)."""
+    """Default-off contract: no override → None. The default-off path computes
+    nothing, so the old Q<=0 div-by-zero branch is unreachable by default; the
+    override path never divides either. The guard never arms by default."""
     _guard()
-    assert lazy_core.compute_per_feature_ceiling(20, 0) == 6
-    # Negative is also guarded (defensive) → 6 floor.
-    assert lazy_core.compute_per_feature_ceiling(20, -1) == 6
+    assert lazy_core.compute_per_feature_ceiling(20, 0) is None
+    # Negative is also None by default (no compute path runs).
+    assert lazy_core.compute_per_feature_ceiling(20, -1) is None
 
 
 def test_compute_per_feature_ceiling_pure_no_side_effects():
-    """P2 RED: identical inputs → identical outputs, repeatable (pure fn)."""
+    """Default-off contract: identical no-override inputs → identical outputs
+    (both None), repeatable (pure fn)."""
     _guard()
     a = lazy_core.compute_per_feature_ceiling(25, 4)
     b = lazy_core.compute_per_feature_ceiling(25, 4)
     assert a == b
-    # C=25, Q=4: min(25*4//10=10, (25//4)*2=12)=10; max(6,10)=10.
-    assert a == 10
+    assert a is None
 
 
 _TESTS = _TESTS + [

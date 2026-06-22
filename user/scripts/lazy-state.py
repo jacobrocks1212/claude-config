@@ -6510,8 +6510,14 @@ def run_smoke_tests() -> int:
                 mp.write_text(json.dumps(m) + "\n", encoding="utf-8")
 
             # (a) Trip/defer: feat-bg1 count >= ceiling → deferred, feat-bg2 dispatched.
+            # NOTE (per-feature-cycle-cap-defers-incomplete-work P1): the guard is now
+            # OFF by default. These trip/defer/evict/exhaustion fixtures characterize the
+            # OPT-IN path, so they pass per_feature_cycle_cap=8 — the exact ceiling the
+            # old default formula computed for C=20, Q=2 — to re-arm the same behavior.
             _bg_write_marker({"feat-bg1": 8, "feat-bg2": 0})
-            st = compute_state(bg_root, cloud=False, real_device=True)
+            st = compute_state(
+                bg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             if st.get("feature_id") != "feat-bg2":
                 failures.append(
                     "[budget-guard] trip/defer: expected feat-bg2 dispatched (feat-bg1 "
@@ -6553,7 +6559,9 @@ def run_smoke_tests() -> int:
                 {"feat-bg1": 8, "feat-bg2": 0},
                 budget_deferred={"feat-bg1": 1},
             )
-            st2 = compute_state(bg_root, cloud=False, real_device=True)
+            st2 = compute_state(
+                bg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             bg2 = st2.get("budget_guard")
             if not bg2 or bg2.get("action") != "evict":
                 failures.append(
@@ -6593,7 +6601,9 @@ def run_smoke_tests() -> int:
                 {"feat-bg1": 8, "feat-bg2": 8},
                 budget_deferred={"feat-bg1": 1, "feat-bg2": 1},
             )
-            st4 = compute_state(bg_root, cloud=False, real_device=True)
+            st4 = compute_state(
+                bg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             if st4.get("terminal_reason") != "queue-exhausted-budget-deferred":
                 failures.append(
                     "[budget-guard] exhaustion: expected terminal_reason="
@@ -6611,8 +6621,70 @@ def run_smoke_tests() -> int:
                     f"no-op (feat-bg1 dispatched, no budget_guard key), got "
                     f"feature_id={st5.get('feature_id')!r} has_bg={'budget_guard' in st5}"
                 )
+
+            # (e2) BASELINE-REGRESSION byte-identity
+            # (per-feature-cycle-cap-defers-incomplete-work P1, SPEC Open Q3):
+            # a no-marker / no-flag default probe carries NONE of the budget-block
+            # keys (the block is marker-gated AND now ceiling-gated). The default
+            # probe dict shape is byte-identical to a pre-feature run. This is the
+            # focused complement to the whole-suite byte-pinned baseline.
+            _BG_BUDGET_KEYS = {
+                "budget_guard", "budget_resumed_near_complete",
+            }
+            _bg_leaked = _BG_BUDGET_KEYS & set(st5.keys())
+            if _bg_leaked:
+                failures.append(
+                    "[budget-guard] baseline-regression: the default (no-marker / "
+                    "no-flag) probe must carry NO budget-block keys, leaked: "
+                    f"{sorted(_bg_leaked)!r}"
+                )
+
+            # (f1) DEFAULT-OFF (per-feature-cycle-cap-defers-incomplete-work P1):
+            # a LIVE marker + feat-bg1 over the OLD floor-6/ceiling-8, NO
+            # --per-feature-cycle-cap flag → compute_per_feature_ceiling returns None
+            # → the ceiling-gated budget block short-circuits → NO trip. feat-bg1
+            # dispatches untripped, no budget_guard key, and is NOT appended to the
+            # budget-deferred set. This is the core inversion: incomplete work is now
+            # COMPLETED in-flight, not deferred.
+            _bg_write_marker({"feat-bg1": 8, "feat-bg2": 0})
+            st_off = compute_state(bg_root, cloud=False, real_device=True)
+            if st_off.get("feature_id") != "feat-bg1" or "budget_guard" in st_off:
+                failures.append(
+                    "[budget-guard] default-off: with a live marker but NO "
+                    "--per-feature-cycle-cap the guard must NOT arm (feat-bg1 "
+                    "dispatched untripped, no budget_guard key), got "
+                    f"feature_id={st_off.get('feature_id')!r} "
+                    f"has_bg={'budget_guard' in st_off}"
+                )
+            m_off = lazy_core.read_run_marker(now=_bg_time.time())
+            if (m_off or {}).get("budget_deferred", {}).get("feat-bg1"):
+                failures.append(
+                    "[budget-guard] default-off: the disabled guard must NOT record a "
+                    f"deferral for feat-bg1, got {(m_off or {}).get('budget_deferred')!r}"
+                )
+
+            # (f2) OPT-IN-ARMS (per-feature-cycle-cap-defers-incomplete-work P1):
+            # the SAME marker + the SAME feat-bg1 count WITH --per-feature-cycle-cap 8
+            # (the opt-in) → the guard re-arms and trips (defer); budget_guard non-null.
+            # This proves the opt-in path still drives the retained trip machinery.
+            # (Case (a) above is this same characterization; (f2) makes the
+            # default-off↔opt-in contrast explicit against one shared marker state.)
+            _bg_write_marker({"feat-bg1": 8, "feat-bg2": 0})
+            st_arm = compute_state(
+                bg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
+            _bg_arm = st_arm.get("budget_guard")
+            if not _bg_arm or _bg_arm.get("action") != "defer" \
+                    or _bg_arm.get("feature_id") != "feat-bg1":
+                failures.append(
+                    "[budget-guard] opt-in-arms: --per-feature-cycle-cap 8 must re-arm "
+                    "the guard so feat-bg1 trips (action='defer'), got "
+                    f"budget_guard={_bg_arm!r}"
+                )
+
             print("  [budget-guard] trip/defer + re-trip/evict + override + "
-                  "exhaustion terminal + marker-gated no-op: ok")
+                  "exhaustion terminal + marker-gated no-op + default-off + "
+                  "opt-in-arms: ok")
         finally:
             if _bg_prev_env is None:
                 os.environ.pop("LAZY_STATE_DIR", None)
@@ -6682,8 +6754,14 @@ def run_smoke_tests() -> int:
             # (f) Grace at the ceiling: feat-nc is AT the ceiling (8) AND
             # near-complete AND no prior budget defer → DISPATCHED (grace), NOT
             # deferred; budget_guard.action='grace', near_complete_grace_granted.
+            # NOTE (per-feature-cycle-cap-defers-incomplete-work P1): guard now OFF
+            # by default — these grace/discount/flush fixtures characterize the OPT-IN
+            # path, so they pass per_feature_cycle_cap=8 (the ceiling the old default
+            # formula produced for C=20, Q=2) to re-arm the same trip behavior.
             _ncg_write_marker({"feat-nc": 8, "feat-nc2": 0})
-            stf = compute_state(ncg_root, cloud=False, real_device=True)
+            stf = compute_state(
+                ncg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             if stf.get("feature_id") != "feat-nc":
                 failures.append(
                     "[ncg-grace] near-complete feat-nc at the ceiling must be "
@@ -6717,7 +6795,9 @@ def run_smoke_tests() -> int:
                 {"feat-nc": 8, "feat-nc2": 0},
                 budget_deferred={"feat-nc": 1},
             )
-            stg = compute_state(ncg_root, cloud=False, real_device=True)
+            stg = compute_state(
+                ncg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             bgg = stg.get("budget_guard")
             if not bgg or bgg.get("near_complete_grace_granted") is not False:
                 failures.append(
@@ -6740,7 +6820,9 @@ def run_smoke_tests() -> int:
                 budget_deferred={"feat-nc": 1},
                 per_feature_corrective_cycles={"feat-nc2": 2},
             )
-            sth = compute_state(ncg_root, cloud=False, real_device=True)
+            sth = compute_state(
+                ncg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             _sth_bg = sth.get("budget_guard") or {}
             if sth.get("feature_id") != "feat-nc2" or (
                 _sth_bg.get("feature_id") == "feat-nc2"
@@ -6791,7 +6873,9 @@ def run_smoke_tests() -> int:
                 {"feat-nc": 8, "feat-nc2": 8},
                 budget_deferred={"feat-nc": 1, "feat-nc2": 1},
             )
-            stj = compute_state(ncg_root, cloud=False, real_device=True)
+            stj = compute_state(
+                ncg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             if stj.get("feature_id") != "feat-nc":
                 failures.append(
                     "[ncg-flush] a deferred-then-near-complete feature must be "
@@ -6836,7 +6920,9 @@ def run_smoke_tests() -> int:
             mt["per_feature_forward_cycles"] = {"feat-t1": 8, "feat-t2": 8}
             mt["budget_deferred"] = {"feat-t1": 1, "feat-t2": 1}
             mtp.write_text(json.dumps(mt) + "\n", encoding="utf-8")
-            stk = compute_state(ncg_term_root, cloud=False, real_device=True)
+            stk = compute_state(
+                ncg_term_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             if stk.get("terminal_reason") != "queue-exhausted-budget-deferred":
                 failures.append(
                     "[ncg-flush] when NO deferred feature is near-complete the "
@@ -6865,7 +6951,9 @@ def run_smoke_tests() -> int:
             (ncg_root / "docs" / "features" / "feat-nc2" / "PHASES.md").write_text(
                 "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n"
             )
-            stl = compute_state(ncg_root, cloud=False, real_device=True)
+            stl = compute_state(
+                ncg_root, cloud=False, real_device=True, per_feature_cycle_cap=8
+            )
             if stl.get("feature_id") == "feat-nc" or (
                 stl.get("budget_resumed_near_complete") == "feat-nc"
             ):

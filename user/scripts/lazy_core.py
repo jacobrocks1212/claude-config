@@ -10274,53 +10274,43 @@ def compute_per_feature_ceiling(
     max_cycles: int,
     ready_queue_depth: int,
     override: int | None = None,
-) -> int:
-    """Dynamic per-feature forward-cycle ceiling L_task (feature-budget-guard-and-
-    skip-ahead Phase 2, Locked Decision 4).
+) -> int | None:
+    """Per-feature forward-cycle ceiling L_task — **OFF by default**
+    (per-feature-cycle-cap-defers-incomplete-work Phase 1).
 
-    When ``override`` is supplied (the ``--per-feature-cycle-cap <N>`` path) it is
-    returned VERBATIM — including a deliberate 0 (a falsy-but-not-None cap). Only
-    ``None`` falls through to the formula.
+    The per-feature budget guard is DISABLED by default. With no ``override``
+    (the default ``/lazy-batch`` path), this returns ``None`` — and the entire
+    marker+ceiling-gated budget block in ``lazy-state.py`` short-circuits on
+    ``_bg_ceiling is None`` (the trip gate is ``if _bg_marker is not None and
+    _bg_ceiling is not None:``). So by default the whole-run ``max_cycles`` is the
+    SOLE budget; no single feature is ever deferred/evicted for cycle-count
+    monopolization. This reverses the prior default-on dynamic ceiling, which
+    deferred incomplete work mid-flight instead of completing it.
 
-    Otherwise:
-
-        L_task = max(6, min(C * 4 // 10, (C // Q) * 2))
-
-    with C = ``max_cycles``, Q = ``ready_queue_depth``, and INTEGER floor division
-    (``⌊⌋``) throughout. The ``max(6, …)`` floor guarantees a feature can always
-    run ≥6 cycles before tripping (small runs / shallow queues still let a feature
-    finish); the ``C * 4 // 10`` arm caps any single feature at ≤40% of the run
-    budget. ``Q_depth <= 0`` short-circuits to the 6 floor (no div-by-zero — a
-    deep queue is what shrinks the per-feature share, so an empty/zero queue can
-    only mean the floor applies).
+    When ``override`` is supplied (the ``--per-feature-cycle-cap <N>`` path — the
+    OFF-by-default OPT-IN) it is returned VERBATIM, re-arming a fixed ceiling
+    ``N`` — including a deliberate ``0`` (a falsy-but-not-None cap). Only the
+    opt-in re-arms the trip/defer/evict/grace/flush machinery, which is otherwise
+    fully retained and unmodified; it is simply never reached by default.
 
     Pure + side-effect-free for direct characterization in ``test_lazy_core.py``.
 
     Args:
         max_cycles: the run's whole-run budget (``C_global`` / marker ``max_cycles``).
-        ready_queue_depth: count of ready (non-gated, non-parked) queue features.
-        override: a fixed ceiling that bypasses the formula (``None`` ⇒ compute).
+            Unused on the default-off path; retained for the stable call signature.
+        ready_queue_depth: count of ready queue features. Likewise unused by default.
+        override: a fixed ceiling that re-arms the guard (``None`` ⇒ OFF, return None).
 
     Returns:
-        The per-feature ceiling (int).
+        ``None`` by default (guard off); the ``override`` int verbatim when supplied.
     """
     if override is not None:
         return int(override)
-    try:
-        c = int(max_cycles)
-    except (TypeError, ValueError):
-        c = 0
-    try:
-        q = int(ready_queue_depth)
-    except (TypeError, ValueError):
-        q = 0
-    if q <= 0:
-        # No (or zero) ready queue depth → only the floor can apply (the fair-share
-        # arm needs a positive divisor). Guards ZeroDivisionError deterministically.
-        return 6
-    forty_percent_arm = c * 4 // 10
-    fair_share_arm = (c // q) * 2
-    return max(6, min(forty_percent_arm, fair_share_arm))
+    # Default-off: no override ⇒ the guard does not arm. Return None so the
+    # ceiling-gated budget block in lazy-state.py short-circuits entirely. The
+    # whole-run max_cycles is the only default budget; --per-feature-cycle-cap
+    # <N> is the opt-in that re-arms a fixed ceiling.
+    return None
 
 
 def read_per_feature_forward_cycles(marker: dict | None) -> dict:

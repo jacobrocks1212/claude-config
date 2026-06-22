@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: per-feature-cycle-cap-defers-incomplete-work
-status: Ready
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [1]
@@ -89,8 +89,8 @@ SPEC `**Depends on:**` block is absent (this is an investigation SPEC); the `**R
 
 ## Work Units
 
-- [ ] WU-1 — Invert `compute_per_feature_ceiling` default to `None` + re-pin formula characterization tests
-- [ ] WU-2 — Add `lazy-state.py --test` fixtures: default-off (no trip), opt-in-arms (trip), baseline-regression byte-identity
+- [x] WU-1 — Invert `compute_per_feature_ceiling` default to `None` + re-pin formula characterization tests
+- [x] WU-2 — Add `lazy-state.py --test` fixtures: default-off (no trip), opt-in-arms (trip), baseline-regression byte-identity
 
 ## Execution Schedule
 
