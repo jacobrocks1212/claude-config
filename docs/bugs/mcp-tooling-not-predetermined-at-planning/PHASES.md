@@ -22,9 +22,16 @@ Both SPEC `## Open Questions` were marked "Resolvable in `/plan-bug`" and differ
 **Scope:** Introduce a per-repo skill-config file that declares WHERE a repo's live MCP tool surface is enumerated, so the shared (repo-agnostic) capability audit in `/spec-phases` can grep the right paths. The mechanism is shared-harness; only the catalog paths are repo-specific (Proven Finding 4). Precedent: `phases-runtime-validation.md` and `spec-testing-guidance.md` are already per-repo overridable via `.claude/skill-config/`.
 
 **Deliverables:**
-- [ ] New `repos/algobooth/.claude/skill-config/mcp-tool-catalog.md` naming the live-registry source paths: `scripts/mcp-test/tool-methods.ts` (TS tool-method registrations) and the Rust `inventory::submit!` registration sites. Documents the grep contract (how the audit derives the registered-tool-name set from each path) and the one-row-per-tool ledger format the audit consumes.
-- [ ] A "catalog absent → audit is a no-op" note in the file's header (repos without this file get no MCP-existence audit — the audit degrades to skip, never errors), mirroring how `phases-runtime-validation.md`'s gate skips when no source is configured.
-- [ ] Tests: none (declarative per-repo config doc). Verified by Phase 2's audit consuming it.
+- [x] New `repos/algobooth/.claude/skill-config/mcp-tool-catalog.md` naming the live-registry source paths: `scripts/mcp-test/tool-methods.ts` (TS tool-method registrations) and the Rust `inventory::submit!` registration sites. Documents the grep contract (how the audit derives the registered-tool-name set from each path) and the one-row-per-tool ledger format the audit consumes.
+- [x] A "catalog absent → audit is a no-op" note in the file's header (repos without this file get no MCP-existence audit — the audit degrades to skip, never errors), mirroring how `phases-runtime-validation.md`'s gate skips when no source is configured.
+- [x] Tests: none (declarative per-repo config doc). Verified by Phase 2's audit consuming it.
+
+**Status:** Done — `repos/algobooth/.claude/skill-config/mcp-tool-catalog.md` authored.
+
+#### Implementation Notes (Phase 1 — 2026-06-22)
+- Authored `repos/algobooth/.claude/skill-config/mcp-tool-catalog.md`. Names two live-registry source paths: (1) `scripts/mcp-test/tool-methods.ts` (TS tool-name→method map), (2) `src-tauri/src/ipc/mcp/registrations/` (Rust `inventory::submit!` sites, entrypoint `mod.rs`). Documents the grep contract + one-row-per-tool ledger (`tool-name | registered? | source file:line`) and the catalog-absent → no-op header note.
+- **Path provenance:** the AlgoBooth working tree is NOT checked out on this authoring machine, so the `[VERIFY]` greps could not run against the live tree. The two paths are the proven sites from SPEC Proven Finding 4, corroborated in-repo by `repos/algobooth/.claude/skills/mcp-test/SKILL.md` (`tool-methods.ts` map + `inventory::submit!` compile-time registration) and `repos/algobooth/.claude/skill-config/{investigation-runtime,phases-runtime-validation}.md` (`src-tauri/src/ipc/mcp/registrations/`). The catalog carries an explicit path-resolution note instructing the audit to confirm/record the ACTUAL resolved path in the live tree and never invent one — so this is NOT the "registry path cannot be located" blocker (the path is proven, just not greppable on this machine).
+- **Review verdict:** PASS — traces to SPEC `## Affected Area` "Repo tool catalog" row + Proven Finding 4 + Resolved Open Question 1; no gate-owned rows. Lint + projection green.
 
 **Minimum Verifiable Behavior:** The file exists at the declared path and the two registry source paths it names resolve to real files in the AlgoBooth repo (`scripts/mcp-test/tool-methods.ts` + the Rust registration site) — confirmable by reading the catalog and checking each named path is a real, greppable source of tool-name registrations.
 
