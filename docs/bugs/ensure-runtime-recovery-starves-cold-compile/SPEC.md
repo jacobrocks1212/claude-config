@@ -2,16 +2,16 @@
 
 > The M4 runtime recovery loop (`_recover_runtime`, ≤5 kill+restart with 1·2·4·8·16s backoff) kill-restarts a runtime that is only "DEAD" because its **cold Rust compile hasn't finished yet**. Each `restart()` (`npm run dev:restart` = `kill-dev && tauri dev`) kills the in-flight compile, so it never completes; all 5 attempts fail and the orchestrator writes a **false** `BLOCKED.md blocker_kind: mcp-runtime-unready`, halting the pipeline.
 
-**Status:** Investigating
+**Status:** Concluded
 **Severity:** P2
 **Discovered:** 2026-06-21
 **Placement:** docs/bugs/ensure-runtime-recovery-starves-cold-compile
 **Related:** `docs/features/long-build-and-runtime-ownership/` (SPEC LD3 bounded-recovery contract; the M4 verdict; `run_transient_build` Transient Build contract; `long-build-ownership-guard.sh`); `user/scripts/CLAUDE.md` → `--ensure-runtime` CLI doc; `docs/bugs/env-transient-counts-against-validation-retry-budget` (sidecar-pipe readiness — same `_recover_runtime` loop); `lazy-batch/SKILL.md` Step 1d.0 (sole consumer)
 
-<!-- Status lifecycle: Investigating → root cause PROVEN below, but the FIX DIRECTION is
-     a deliberate human decision (3 candidates, see Open Questions). Operator chose
-     "investigate further before locking" the direction; leaving Investigating so
-     /plan-bug does not fabricate phases against an undecided fix scope. -->
+<!-- Status lifecycle: root cause PROVEN below, and the FIX DIRECTION is now LOCKED by the
+     operator (2026-06-22): direction B + A's two-port readiness check (see ## Locked Decisions
+     and the resolved Open Question 1). Flipped Investigating → Concluded so /plan-bug authors
+     PHASES.md against the locked fix scope. -->
 
 ---
 
@@ -105,6 +105,14 @@ Mined all 58 AlgoBooth session logs (39 carried the signature); 4 parallel read-
 - **A backoff-only fix is provably insufficient (Theory 4):** in `3b08f4e8` the warm rebuild completed and ensure-runtime was *still* BLOCKED — the runtime never bound :3333. The fix must also guarantee an **owned, harness-tracked, actually-serving** runtime (overlapping the shipped `long-build-and-runtime-ownership` ownership/teardown work), not merely "wait longer for the compile."
 - **The operator's manual fix is consistent across both sessions:** warm/own the build, then boot **one orchestrator-owned** `tauri dev` and watch readiness — i.e. fix-direction B was independently arrived at twice.
 
+## Locked Decisions
+
+1. **Fix direction (LOCKED 2026-06-22 — operator decision, do NOT re-litigate in `/plan-bug`): B + A's two-port readiness check.** The fix MUST:
+   - **(B) Route the long compile through orchestrator ownership.** Treat the **first cold boot** AND a **new-crate STALE rebuild** as an orchestrator-owned long build with a cold-compile-sized timeout, routed through the existing `long-build-ownership` takeover path + `run_transient_build` (`lazy_core`), rather than the bounded crash-recovery loop. Reserve the ≤5×backoff `_recover_runtime` loop **strictly for recovering an already-healthy runtime that later crashes** (STALE/DEAD after it was once serving).
+   - **(A) Add the two-port readiness check.** Add the **`:1420`-up / `:3333`-down two-port split** as both (i) the patient-wait signal — `:1420` (Vite) reachable && `:3333` (`/health`) refused ⇒ *compiling/booting, be patient, do NOT kill* — and (ii) the **serving-readiness assertion**, so the wait ends on "**actually serving**" (`:3333` `/health` 200), not "compile finished." This requires a net-new `:1420` probe in `_ENSURE_RUNTIME_DEFAULT_CONFIG` (today's config is `:3333`-only).
+   - **Hard constraints satisfied:** covers the new-crate STALE rebuild (Theory 3); asserts **owned-and-actually-serving** readiness rather than mere compile completion (Theory 4); **C-alone (adaptive backoff) remains RULED OUT** as a standalone fix and may appear only as a component sizing the patient wait.
+   - **Rationale:** reuses already-shipped ownership machinery, and matches the fix the operator independently reached manually in **both** confirmed sessions (`ea0c2bf8`, `3b08f4e8`).
+
 ## Affected Area
 
 | Component | Files | Impact |
@@ -118,12 +126,12 @@ Mined all 58 AlgoBooth session logs (39 carried the signature); 4 parallel read-
 
 ## Open Questions
 
-The root cause is **proven** and the mining settled Q2/Q3 below. The remaining decision is the **fix direction** (operator chose to investigate before locking — captured here as the load-bearing fork for `/plan-bug`):
+The root cause is **proven**, the mining settled Q2/Q3 below, and the **fix direction is now LOCKED** (Q1 resolved — see `## Locked Decisions`). The remaining open item is purely a planning-time blocker-semantics call (Q5), which `/plan-bug` may now decide against the locked scope.
 
-1. **Which fix direction?** (deliberate human decision — do **not** let `/plan-bug` pick). Mining biases toward **B (+A's readiness check)** and rules out C-alone:
-   - **(A) Distinguish compiling-vs-dead in `_recover_runtime`.** Before each kill+restart, detect an in-progress cold compile (the **:1420-up / :3333-down** two-port split is the cheapest cross-platform signal; a live `cargo`/`rustc` child or advancing `target/` mtime are stronger but need cross-platform process/stat probes per the host-capability "probe actively, never `which()`" discipline). If compiling, **wait** on first boot rather than killing; only kill+restart a genuinely crashed/absent runtime. *Most surgical — fixes the actual misclassification.*
-   - **(B) First-boot ≠ recovery budget.** Treat the first cold boot (and a new-crate STALE rebuild) as an orchestrator-owned long build (generous, cold-compile-sized timeout, routed through the long-build-ownership takeover path) and reserve the ≤5×backoff loop strictly for recovering an already-healthy runtime that later goes STALE/DEAD. ***Strongly supported*** — the operator independently chose this manually in BOTH confirmed sessions (`ea0c2bf8`, `3b08f4e8`), and it reuses the shipped ownership machinery.
-   - **(C) Adaptive/extended backoff — RULED OUT as a standalone fix.** `3b08f4e8` proves a warm build still BLOCKED, so widening the window alone does not fix it (Theory 4). May still be a *component* of A/B (sizing the patient wait), never the whole answer.
+1. **Which fix direction? → RESOLVED (operator, 2026-06-22): B + A's two-port readiness check.** See `## Locked Decisions` for the full locked scope. Recorded options retained below for provenance:
+   - **(A) Distinguish compiling-vs-dead in `_recover_runtime`.** Before each kill+restart, detect an in-progress cold compile (the **:1420-up / :3333-down** two-port split is the cheapest cross-platform signal; a live `cargo`/`rustc` child or advancing `target/` mtime are stronger but need cross-platform process/stat probes per the host-capability "probe actively, never `which()`" discipline). If compiling, **wait** on first boot rather than killing; only kill+restart a genuinely crashed/absent runtime. *Most surgical — fixes the actual misclassification.* **(Adopted as the readiness-check half of the locked fix.)**
+   - **(B) First-boot ≠ recovery budget.** Treat the first cold boot (and a new-crate STALE rebuild) as an orchestrator-owned long build (generous, cold-compile-sized timeout, routed through the long-build-ownership takeover path) and reserve the ≤5×backoff loop strictly for recovering an already-healthy runtime that later goes STALE/DEAD. ***Strongly supported*** — the operator independently chose this manually in BOTH confirmed sessions (`ea0c2bf8`, `3b08f4e8`), and it reuses the shipped ownership machinery. **(Adopted as the ownership-routing half of the locked fix.)**
+   - **(C) Adaptive/extended backoff — RULED OUT as a standalone fix.** `3b08f4e8` proves a warm build still BLOCKED, so widening the window alone does not fix it (Theory 4). May still be a *component* of A/B (sizing the patient wait), never the whole answer. **(Not adopted as a standalone; permitted only as patient-wait sizing inside the locked fix.)**
 2. **~~Cross-platform compile-in-progress detection~~ → settled toward the two-port split.** Lock in **:1420-up / :3333-down** as the primary stdlib signal (no process walk; the host-capability axis warns against process-tree probing). Mining shows :1420 is currently un-instrumented — adding it is the concrete first move. A `target/`-mtime corroborator is optional hardening, not required for v1.
 3. **~~Scope: first-boot only?~~ → settled: cover both.** Theory 3 is now **Confirmed** (new-crate STALE rebuild starves identically), so the fix must cover first-boot **and** new-dependency STALE. A compiling-aware wait covers both for free.
 4. **Co-occurring teardown/never-serves mode (Theory 4) — relationship to shipped work — RESOLVED (this cycle, 2026-06-21).** `long-build-and-runtime-ownership` is marked **Complete 2026-06-20**, and `3b08f4e8` ran **2026-06-21**. Inline verification this cycle (`git log -- user/scripts/lazy_core.py`) confirms the full ownership stack **was landed on `main` before `3b08f4e8` ran**: commits `fecf84d` (P1 spawn_detached + runtime-lock + verify_runtime_ownership), `cb28c5b` (P2 WU-1 M4 verdict), `8395dd6` (P2 WU-2 bounded recovery), `709d6aa` (P3 long-build guard + transient-build), `a3a3aba`/`11c9b01` (P4), plus the later `11e10fe` (env-transient sidecar-pipe readiness dimension). **Outcome (b) holds:** the warm-build-still-BLOCKED symptom occurred *with ownership machinery live*, so the fix MUST pair the patient compiling-aware wait with an **owned-and-actually-serving** readiness assertion (not merely "compile done"), and this is a standing regression signal against `long-build-and-runtime-ownership`'s readiness contract. This thread is no longer open — it is folded into the fix-direction decision (Q1) as a hard constraint: backoff-only (C) is insufficient, and any direction must assert serving-readiness, not just compile completion.
