@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 
 **MCP runtime:** not-required — claude-config has no Tauri app and no MCP server (per `.claude/skill-config/quality-gates.md` → "MCP exemption (Step 9)"). Validation is the repo's Python test + lint suite: `python -m pytest user/scripts/ -q`, `python user/scripts/lazy-state.py --test`, `python user/scripts/bug-state.py --test`, `python user/scripts/lazy_parity_audit.py --report`, `python user/scripts/project-skills.py`, `python user/scripts/lint-skills.py --check-projected --check-capabilities`.
 
@@ -72,9 +72,9 @@ Feature-pipeline only. `compute_per_feature_ceiling` / `budget_deferred` / `_DEF
 **Minimum Verifiable Behavior:** `python user/scripts/lazy-state.py --test` is green AND a new `--test` fixture reproduces the d2 incident: a feature at `forward=ceiling`, verification-only PHASES, plan-Complete, no prior budget defer ⇒ the probe dispatches the feature (grace granted) rather than appending it to `budget_deferred_skipped`.
 
 **Runtime Verification** *(checked by the hermetic `--test` smoke harness):* <!-- verification-only -->
-- [ ] `lazy-state.py --test` fixture: near-complete feature at the ceiling is dispatched (grace), not deferred. <!-- verification-only -->
-- [ ] `lazy-state.py --test` fixture: near-complete feature that ALREADY consumed its grace this run (prior budget defer) IS deferred on the next trip (grace is one-shot). <!-- verification-only -->
-- [ ] `lazy-state.py --test` fixture: a feature with `corrective=2`, `forward=ceiling+1` dispatches because `effective_count = forward - corrective < ceiling` (corrective discount). <!-- verification-only -->
+- [x] `lazy-state.py --test` fixture: near-complete feature at the ceiling is dispatched (grace), not deferred. <!-- verification-only -->
+- [x] `lazy-state.py --test` fixture: near-complete feature that ALREADY consumed its grace this run (prior budget defer) IS deferred on the next trip (grace is one-shot). <!-- verification-only -->
+- [x] `lazy-state.py --test` fixture: a feature with `corrective=2`, `forward=ceiling+1` dispatches because `effective_count = forward - corrective < ceiling` (corrective discount). <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: `feature_is_near_complete`, `count_validation_corrective_cycles`, `record_corrective_cycle`, `budget_trip_signals`, and the `per_feature_corrective_cycles` seed must exist.
@@ -109,9 +109,9 @@ Feature-pipeline only. `compute_per_feature_ceiling` / `budget_deferred` / `_DEF
 **Minimum Verifiable Behavior:** A `lazy-state.py --test` fixture where a feature was budget-deferred earlier in the run and is now verification-only/plan-Complete ⇒ the terminal probe dispatches it (`budget_resumed_near_complete` set) instead of returning `queue-exhausted-budget-deferred`.
 
 **Runtime Verification** *(checked by the hermetic `--test` smoke harness):* <!-- verification-only -->
-- [ ] `lazy-state.py --test` fixture: a deferred-then-near-complete feature is auto-resumed at flush (not left parked). <!-- verification-only -->
-- [ ] `lazy-state.py --test` fixture: when all deferred features are NOT near-complete, `queue-exhausted-budget-deferred` still fires (terminal unchanged for the genuine case). <!-- verification-only -->
-- [ ] `lazy-state.py --test` fixture: an evicted feature is never resumed by the flush. <!-- verification-only -->
+- [x] `lazy-state.py --test` fixture: a deferred-then-near-complete feature is auto-resumed at flush (not left parked). <!-- verification-only -->
+- [x] `lazy-state.py --test` fixture: when all deferred features are NOT near-complete, `queue-exhausted-budget-deferred` still fires (terminal unchanged for the genuine case). <!-- verification-only -->
+- [x] `lazy-state.py --test` fixture: an evicted feature is never resumed by the flush. <!-- verification-only -->
 
 **Prerequisites:**
 - Phase 1: `feature_is_near_complete`.
@@ -145,9 +145,9 @@ Feature-pipeline only. `compute_per_feature_ceiling` / `budget_deferred` / `_DEF
 **Minimum Verifiable Behavior:** The FULL gate set runs clean: `python -m pytest user/scripts/ -q` (incl. dead-coverage guard) + `lazy-state.py --test` + `bug-state.py --test` + `lazy_parity_audit.py --report` + `project-skills.py` + `lint-skills.py --check-projected --check-capabilities`.
 
 **Runtime Verification** *(checked by the full quality-gate suite):* <!-- verification-only -->
-- [ ] `python -m pytest user/scripts/ -q` green (dead-coverage guard included). <!-- verification-only -->
-- [ ] `python user/scripts/lazy_parity_audit.py --report` green — no unexplained drift; feature-only divergence confirmed. <!-- verification-only -->
-- [ ] `python user/scripts/bug-state.py --test` green — confirms no incidental `lazy_core` regression on the bug side (shared module). <!-- verification-only -->
+- [x] `python -m pytest user/scripts/ -q` green (dead-coverage guard included). <!-- verification-only -->
+- [x] `python user/scripts/lazy_parity_audit.py --report` green — no unexplained drift; feature-only divergence confirmed. <!-- verification-only -->
+- [x] `python user/scripts/bug-state.py --test` green — confirms no incidental `lazy_core` regression on the bug side (shared module). <!-- verification-only -->
 
 **Prerequisites:**
 - Phases 1–3 complete (the behavior is fully implemented and unit/smoke-green).
