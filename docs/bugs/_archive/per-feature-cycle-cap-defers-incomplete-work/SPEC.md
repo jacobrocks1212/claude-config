@@ -2,9 +2,11 @@
 
 > The per-feature budget guard (`L_task` ceiling) is **default-on**: it trips on a per-feature forward-cycle count and defers (then evicts) a feature to the queue tail mid-progress. The operator rejects this behavior outright — a half-done feature parked at the tail is worse than letting it finish. Make the guard **opt-in** (off by default; armed only via `--per-feature-cycle-cap <N>`); rely on the whole-run `max_cycles` ceiling as the sole default budget.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-22
+**Fixed:** 2026-06-22
+**Fix commit:** a8f9307
 **Placement:** docs/bugs/per-feature-cycle-cap-defers-incomplete-work
 **Related:**
 - `docs/features/feature-budget-guard-and-skip-ahead/` (SPEC + PHASES — the feature that introduced this default-on guard; this bug reverses its default, NOT its skip-ahead half)

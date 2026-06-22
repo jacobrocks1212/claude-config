@@ -1,6 +1,6 @@
 # Implementation Phases — Per-feature cycle cap defers incomplete work instead of completing it
 
-**Status:** In-progress
+**Status:** Fixed
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
