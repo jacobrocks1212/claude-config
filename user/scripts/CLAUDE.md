@@ -327,7 +327,7 @@ guard) and `test_spawn_binding_production_tests_use_faithful_double` (faithful-d
 guard), each with a negative-fixture twin proving non-vacuity. Pure AST collectors
 (`_collect_production_binding_smells` / `_collect_spawn_double_smells`) mirroring the
 `test_no_orphaned_test_functions` precedent — no standalone lint script. See
-`docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test/`.
+`docs/bugs/_archive/adhoc-ensure-runtime-test-injects-signal-under-test/`.
 
 ### Manual live cold-boot smoke (OPERATOR / NOT claude-config CI)
 

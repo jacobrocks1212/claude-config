@@ -1,6 +1,6 @@
 # Implementation Phases — ensure_runtime production-binding test-discipline guard
 
-**Status:** In-progress
+**Status:** Fixed
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
@@ -102,7 +102,7 @@ All load-bearing assumptions for this plan are **code-provable** (static AST/sou
 - [x] Add a "manual live cold-boot smoke" step: the operator runs `python3 user/scripts/lazy-state.py --ensure-runtime --repo-root <real-AlgoBooth-checkout>` against a genuinely cold runtime (both ports down, no warm build) and confirms it reaches READY (not a false `mcp-runtime-unready` BLOCKED) — the live verification Round 34 used. Mark it explicitly as operator/manual, NOT a claude-config CI assertion (environment-dependent: needs a real checkout + cold runtime).
 - [x] Tests: docs-only phase — no automated test. Verification is a doc review (the CLAUDE.md note is present, accurate, cross-references the bug + the Phase 1–2 guard tests).
 
-**Minimum Verifiable Behavior:** The `user/scripts/CLAUDE.md` `--ensure-runtime` section contains the production-binding convention note + the manual smoke step, cross-referencing `docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test/` and the Phase 1–2 guard test names. (Docs-only; verified by reading the rendered section.)
+**Minimum Verifiable Behavior:** The `user/scripts/CLAUDE.md` `--ensure-runtime` section contains the production-binding convention note + the manual smoke step, cross-referencing `docs/bugs/_archive/adhoc-ensure-runtime-test-injects-signal-under-test/` and the Phase 1–2 guard test names. (Docs-only; verified by reading the rendered section.)
 
 **MCP Integration Test Assertions:** N/A — documentation only.
 

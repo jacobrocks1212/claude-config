@@ -5,13 +5,15 @@
 > OS-level signal whose production derivation is under test — so a defect in that
 > derivation ships behind a green test (a recurring false-green; three rounds).
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-23
+**Fixed:** 2026-06-23
+**Fix commit:** 6753d00
 **Placement:** docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test
 **Related:**
 - `docs/specs/turn-routing-enforcement/hardening-log/2026-06.md` — Round 32 (`a9ab567`, first occurrence), Round 33 (wrapper-exits-early refix, the spin-off origin), Round 34 (platform-blind `npm.cmd` spawn — the THIRD occurrence; explicitly recommends broadening this bug's scope to the spawn-invocation path)
-- `docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test/ADHOC_BRIEF.md` — the spin-off brief
+- `docs/bugs/_archive/adhoc-ensure-runtime-test-injects-signal-under-test/ADHOC_BRIEF.md` — the spin-off brief
 - `user/scripts/lazy_core.py` `ensure_runtime` / `_recover_runtime` / `_await_compile_serving` / `_classify_compile_state` — the production seam
 - `user/scripts/CLAUDE.md` → "CLI surface" `--ensure-runtime` (the multi-round patient-wait / boot-liveness contract)
 
