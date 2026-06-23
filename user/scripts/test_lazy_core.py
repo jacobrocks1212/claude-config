@@ -19964,14 +19964,21 @@ def test_ensure_runtime_production_boot_alive_live_handle_patient_waits():
 
 
 def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
-    """PRODUCTION binding, dead handle: `boot_liveness` on + NO injected
-    `boot_alive`/`restart`, and the spawned boot process has ALREADY EXITED
-    (`.poll()` returns an exit code). With both ports down the derived `boot_alive`
-    reports NOT-booting, so the runtime classifies `dead` and enters the BOUNDED
-    crash-recovery loop — fail-safe preserved (a genuinely dead host is not falsely
-    patient-waited forever). Ends BLOCKED with the GENERIC recovery-exhausted text."""
+    """PRODUCTION binding, EXITED handle that never serves: `boot_liveness` on + NO
+    injected `boot_alive`/`restart`, the spawned boot's `Popen.poll()` returns an
+    exit code, and the backend never reaches 200.
+
+    UPDATED for ensure-runtime-recovery-starves-cold-compile-round-2: the
+    Round-32 expectation (an exited handle ⇒ GENERIC ≤5×-recovery BLOCKED) was
+    PREMISED ON the now-removed wrapper-handle-only signal. With the time-window
+    grace, the harness's OWN first `restart()` writes a fresh boot stamp, so the
+    runtime is correctly seen as a cold boot in progress (`compiling`) and is
+    PATIENTLY WAITED on — never 5× kill-restarted. A backend that never serves
+    within the cold-compile budget ends BLOCKED with the COLD-COMPILE-timeout text
+    (still `blocker_kind: mcp-runtime-unready` downstream) and exactly ONE spawn.
+    Fail-safe is preserved: it still reaches BLOCKED, never a forever wait."""
     _guard()
-    dead = _FakeBootPopen(exit_code=1)  # boot already exited (poll → 1)
+    dead = _FakeBootPopen(exit_code=1)  # wrapper exited (poll → 1) — Windows reality
     fake_sub = _FakeSubprocess(dead)
     fake_time = _FakeTime()
 
@@ -19985,19 +19992,219 @@ def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
                 probe=lambda: (0, None),           # backend never serves
                 stale_check=lambda: False,
                 sleep=lambda s: None,
-                frontend_probe=lambda: False,      # Vite down
-                # NO restart, NO boot_alive → production defaults bind; the dead
-                # handle makes the derived boot_alive report NOT-booting.
+                frontend_probe=lambda: False,      # Vite down (pre-Vite window)
+                # NO restart, NO boot_alive → production defaults bind. The exited
+                # handle + fresh boot stamp ⇒ the grace reports the cold boot in
+                # progress (the Windows wrapper-exits-early case).
             )
     finally:
         lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
 
     assert result["state"] == "BLOCKED", result
+    # Patient-wait timeout (cold-compile text), NOT the 5×-crash-recovery generic —
+    # AND exactly ONE spawn (the starvation is gone).
+    assert result["terminal_blocker"] == lazy_core._cold_compile_timeout_blocker(), (
+        "an exited handle with a fresh boot stamp must patient-wait then time out "
+        f"with the COLD-COMPILE blocker, not the generic recovery text: {result['terminal_blocker']}"
+    )
+    assert fake_sub.spawns == 1, (
+        f"the never-serving cold boot must spawn ONCE then patient-wait — no 5× "
+        f"kill-restart: spawns={fake_sub.spawns}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# ensure-runtime-recovery-starves-cold-compile-round-2 — the Windows-wrapper-
+# exits-early refix (production re-fix of a9ab567). The Round-32 fix derived
+# `boot_alive` SOLELY from the `restart()`-spawned `Popen.poll()`, but on Windows
+# `npm run dev:restart` spawns a SHORT-LIVED npm/cmd shell-chain wrapper that
+# EXITS within seconds (`.poll()` returns an exit code) long before the ~3.5-min
+# cold `tauri dev`/`cargo build` child finishes — so a genuinely-compiling cold
+# boot was misclassified `dead` and the bounded `_recover_runtime` loop kill-
+# restarted it up to 5× in ~60s → false BLOCKED. The Round-32 "live handle" test
+# only proved the case where `.poll()` STAYS None — it NEVER exercised the
+# wrapper-exits-early production reality (the false-green).
+#
+# These tests reproduce that production reality: an EXITED `Popen` handle
+# (`.poll()` returns a code) PLUS the persistent boot-spawn TIME-WINDOW grace.
+# A green test here means production works: the exited-wrapper cold boot now
+# classifies `compiling` (via the grace), the recovery loop HANDS OFF to the
+# patient wait after its FIRST restart (exactly ONE spawn — no 5× kill-restart),
+# and a genuinely-stale stamp (grace aged out) still reaches BLOCKED (fail-safe).
+# ---------------------------------------------------------------------------
+
+
+def test_boot_spawn_stamp_roundtrip_and_grace_window():
+    """write/read_boot_stamp roundtrip + boot_recently_spawned time-window grace:
+    a fresh stamp is within grace; a stamp older than the grace ceiling is not; a
+    missing stamp is never within grace (fail-safe toward NOT-booting)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        # Missing stamp ⇒ never within grace.
+        assert lazy_core.boot_recently_spawned(repo, now=1000.0) is False
+        # Fresh stamp (spawned at t=1000) ⇒ within grace at t=1000 + small delta.
+        lazy_core.write_boot_stamp(repo, spawn_ts=1000.0)
+        assert lazy_core.read_boot_stamp(repo) == 1000.0
+        assert lazy_core.boot_recently_spawned(repo, now=1000.0) is True
+        assert lazy_core.boot_recently_spawned(
+            repo, now=1000.0 + lazy_core._BOOT_SPAWN_GRACE_SECONDS - 1
+        ) is True
+        # Aged-out stamp ⇒ NOT within grace (fail-safe: a stuck/dead host ages out
+        # of the patient-wait grace and reaches bounded recovery → BLOCKED).
+        assert lazy_core.boot_recently_spawned(
+            repo, now=1000.0 + lazy_core._BOOT_SPAWN_GRACE_SECONDS + 1
+        ) is False
+
+
+def test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn():
+    """THE production-reproducing test (ensure-runtime-recovery-starves-cold-compile
+    -round-2). PRODUCTION binding, EXITED wrapper handle (`.poll()` → exit code, the
+    Windows npm/cmd wrapper that returns immediately) + both ports down. The
+    Round-32 fix would have classified this `dead` and kill-restarted 5× → false
+    BLOCKED in ~60s. With the time-window grace + the `_recover_runtime` handoff:
+    the first restart writes a fresh boot stamp, the derived `boot_alive` reports
+    ALIVE via the grace (despite the exited handle), the runtime classifies
+    `compiling`, the recovery loop HANDS OFF to the patient wait — exactly ONE
+    spawn, NO 5× kill-restart — and ends READY once :3333 finally answers 200.
+
+    A GREEN assertion here means the production cold boot is no longer starved."""
+    _guard()
+    exited = _FakeBootPopen(exit_code=0)  # wrapper EXITED immediately (Windows)
+    fake_sub = _FakeSubprocess(exited)
+    fake_time = _FakeTime()
+    probe_calls = {"n": 0}
+
+    def probe():
+        # Both ports down through the bounded-recovery entry + the first restart,
+        # then serve once the cold compile "finishes" deep in the patient wait.
+        probe_calls["n"] += 1
+        return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
+
+    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
+    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            result = lazy_core.ensure_runtime(
+                Path(td),
+                config=_M4_CONFIG_BOOT,           # boot_liveness: True
+                probe=probe,                       # only the BACKEND probe injected
+                stale_check=lambda: False,
+                sleep=lambda s: None,              # patient-wait sleep (hermetic)
+                frontend_probe=lambda: False,      # Vite stays down (pre-Vite window)
+                # NO restart, NO boot_alive → production defaults bind. The EXITED
+                # handle is the exact Windows wrapper-exits-early condition the
+                # Round-32 test never exercised.
+            )
+    finally:
+        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+
+    assert result["state"] == "READY", result
+    # THE starvation guard: exactly ONE spawn. The Round-32 bug would re-`restart()`
+    # (kill-dev.js murders the compile) up to 5×; the handoff to patient-wait must
+    # leave the spawn count at 1.
+    assert fake_sub.spawns == 1, (
+        f"wrapper-exits-early cold boot must spawn ONCE then patient-wait — the "
+        f"5×-kill-restart starvation must be gone: spawns={fake_sub.spawns}"
+    )
+
+
+def test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn():
+    """M4-mode (PRODUCTION shape — the run-marker `--ensure-runtime` call threads a
+    real `live_session_id` + lock, so identity is engaged) reproduction of the
+    Windows wrapper-exits-early cold boot. Owned + non-serving + both ports down +
+    the spawned boot's `Popen.poll()` returns an exit code (wrapper exited). Without
+    the round-2 fix the M4 `_recover_runtime` would kill-restart 5×; with the
+    time-window grace + handoff the first restart writes a fresh stamp, the runtime
+    classifies `compiling`, hands off to the patient wait — ONE spawn — and ends
+    READY once :3333 serves. Covers the M4 seam (the legacy-mode reproduction above
+    exercises the no-marker path); both production entry shapes are now covered."""
+    _guard()
+    exited = _FakeBootPopen(exit_code=0)  # wrapper exited immediately (Windows)
+    fake_sub = _FakeSubprocess(exited)
+    fake_time = _FakeTime()
+    probe_calls = {"n": 0}
+
+    def probe():
+        probe_calls["n"] += 1
+        return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
+
+    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
+    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            lock = _owned_lock(start_time=111.0)
+            result = lazy_core.ensure_runtime(
+                Path(td),
+                config=_M4_CONFIG_BOOT,           # boot_liveness: True
+                probe=probe,
+                stale_check=lambda: False,
+                read_lock=lambda: lock,
+                live_session_id=_SESSION,          # IDENTITY engaged → M4 path
+                kernel_start_time_fn=lambda pid, **kw: 111.0,  # ownership verified
+                sleep=lambda s: None,
+                frontend_probe=lambda: False,      # Vite down (pre-Vite window)
+                # NO restart, NO boot_alive → production defaults bind (the exited
+                # handle + fresh stamp is the wrapper-exits-early case).
+            )
+    finally:
+        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+
+    assert result["state"] == "READY", result
+    assert fake_sub.spawns == 1, (
+        f"M4 wrapper-exits-early cold boot must spawn ONCE then patient-wait — no 5× "
+        f"kill-restart starvation: spawns={fake_sub.spawns}"
+    )
+
+
+def test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic():
+    """FAIL-SAFE: a genuinely dead host where NO boot is ever spawned — every
+    `restart()` FAILS to launch (the injected restart returns False without writing
+    a boot stamp), so `boot_recently_spawned` reports False every cycle and the
+    derived `boot_alive` reports NOT-booting. With both ports down the runtime stays
+    classified `dead`, exhausts the bounded ≤5× crash recovery (each backoff a real
+    restart ATTEMPT), and ends BLOCKED with the GENERIC recovery-exhausted text — it
+    is NEVER patient-waited forever. This proves the time-window grace cannot mask a
+    host where no compile was ever put in flight (the spawn-failure fail-safe)."""
+    _guard()
+    restart_calls = {"n": 0}
+
+    def failing_restart():
+        # A restart that never launches a boot: no stamp written, so the grace
+        # stays stale and the host stays `dead` → bounded recovery → generic BLOCKED.
+        restart_calls["n"] += 1
+        return False
+
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=lambda: (0, None),               # backend never serves
+            restart=failing_restart,               # boot is NEVER spawned (no stamp)
+            stale_check=lambda: False,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,
+            # NO boot_alive injected → the production grace-based default binds;
+            # with no stamp ever written it reports NOT-booting every cycle.
+        )
+
+    assert result["state"] == "BLOCKED", result
     assert result["terminal_blocker"] == lazy_core._blocked_blocker(
         lazy_core._RUNTIME_RECOVERY_MAX_ATTEMPTS
     ), (
-        "a dead boot handle must reach the GENERIC bounded-recovery blocker, NOT the "
-        f"cold-compile patient-wait text: {result['terminal_blocker']}"
+        "a host where no boot was ever spawned (no stamp, stale grace) must reach "
+        f"the GENERIC bounded-recovery blocker, never a forever wait: {result['terminal_blocker']}"
+    )
+    # Restart was attempted a BOUNDED number of times (the M4 staleness/health
+    # entry restart + the ≤5× recovery loop) — never an unbounded loop. The exact
+    # count is an implementation detail; the contract is "bounded, then BLOCKED".
+    assert restart_calls["n"] <= lazy_core._RUNTIME_RECOVERY_MAX_ATTEMPTS + 1, (
+        f"a never-spawning host must exhaust a BOUNDED recovery, never loop forever: "
+        f"{restart_calls['n']}"
+    )
+    assert restart_calls["n"] >= lazy_core._RUNTIME_RECOVERY_MAX_ATTEMPTS, (
+        f"a never-spawning dead host must use the full bounded recovery budget "
+        f"(no premature give-up): {restart_calls['n']}"
     )
 
 
@@ -20820,6 +21027,16 @@ _TESTS = _TESTS + [
      test_ensure_runtime_production_boot_alive_live_handle_patient_waits),
     ("test_ensure_runtime_production_boot_alive_dead_handle_recovers",
      test_ensure_runtime_production_boot_alive_dead_handle_recovers),
+    # ensure-runtime-recovery-starves-cold-compile-round-2: Windows wrapper-exits-
+    # early refix (production re-fix of a9ab567) — time-window grace + handoff.
+    ("test_boot_spawn_stamp_roundtrip_and_grace_window",
+     test_boot_spawn_stamp_roundtrip_and_grace_window),
+    ("test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn",
+     test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn),
+    ("test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn",
+     test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn),
+    ("test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic",
+     test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic),
     # ensure-runtime-recovery-starves-cold-compile Phase 2: patient compiling wait.
     ("test_cold_compile_timeout_blocker_distinct_from_blocked_blocker",
      test_cold_compile_timeout_blocker_distinct_from_blocked_blocker),

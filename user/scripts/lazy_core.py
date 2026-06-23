@@ -6606,6 +6606,25 @@ _RUNTIME_RECOVERY_BACKOFF_BASE = 1.0
 _COLD_COMPILE_WAIT_MAX_POLLS = 90
 _COLD_COMPILE_WAIT_INTERVAL = 5.0
 
+# Boot-spawn grace window (ensure-runtime-recovery-starves-cold-compile-round-2 —
+# the Windows-wrapper-exits-early refix). The pre-Vite boot-liveness signal cannot
+# rely SOLELY on the `restart()`-spawned `Popen.poll()` being None, because on
+# Windows the production `restart_command` (`npm run dev:restart` =
+# `node scripts/kill-dev.js && cross-env … tauri dev`) spawns a SHORT-LIVED
+# npm/cmd shell-chain WRAPPER whose handle `.poll()` returns an exit code within
+# seconds — long before the detached `tauri dev` / `cargo build` child finishes
+# the ~3.5-min cold compile. Reading only that wrapper handle misclassifies a
+# genuinely-compiling cold boot as `dead` (the Round-32 false-green: its test
+# fed a fake `Popen` whose `.poll()` stayed None, so it never exercised the
+# wrapper-exits-early production reality). The robust signal is a TIME-WINDOW
+# grace: when a boot was spawned within this many seconds, a both-ports-down
+# observation is the cold-compile window in progress — patient-wait it. The
+# window is sized to the cold-compile ceiling (`_COLD_COMPILE_WAIT_MAX_POLLS ×
+# _COLD_COMPILE_WAIT_INTERVAL` ≈ 7.5 min) so a boot that is genuinely stuck past
+# the patient-wait budget still ages out of the grace and reaches bounded
+# recovery → BLOCKED (fail-safe: a dead host is never patient-waited forever).
+_BOOT_SPAWN_GRACE_SECONDS = _COLD_COMPILE_WAIT_MAX_POLLS * _COLD_COMPILE_WAIT_INTERVAL
+
 
 # ---------------------------------------------------------------------------
 # host-capability-declaration-for-gated-features — Phase 2
@@ -6831,6 +6850,18 @@ def ensure_runtime(
             # Stash the live boot handle so the boot-liveness signal can read its
             # `.poll()` during the pre-Vite window while BOTH ports are still down.
             _boot_handle["proc"] = proc
+            # ALSO record the spawn epoch to a persistent stamp file
+            # (ensure-runtime-recovery-starves-cold-compile-round-2). The handle
+            # `.poll()` is NOT trustworthy on Windows — `restart_command` spawns a
+            # short-lived npm/cmd shell-chain wrapper that exits seconds after
+            # launching the detached `tauri dev`/`cargo build` child, so its
+            # `.poll()` reports an exit code long before the ~3.5-min cold compile
+            # finishes. The persistent stamp drives the time-window grace in
+            # `boot_alive()` below, which survives the wrapper exiting AND survives
+            # across the bounded `_recover_runtime` loop (so the loop's first
+            # restart spawns ONE compile and every subsequent iteration sees "a
+            # boot is in progress" and STOPS re-killing it — the murder-site fix).
+            write_boot_stamp(repo_root, spawn_ts=time.time())
             for _ in range(90):  # ~7.5 min ceiling (90 × 5s)
                 code, _payload = probe()
                 if code == 200:
@@ -6900,17 +6931,30 @@ def ensure_runtime(
             #     RUNNING ⇒ the pre-Vite cold window is in progress ⇒ alive
             #     (`_classify_compile_state` returns `compiling`, patient-wait);
             #   - handle present + `.poll()` is an exit code ⇒ the boot process
-            #     EXITED ⇒ not alive ⇒ both-ports-down crosses to `dead`.
+            #     EXITED. On Windows this is the COMMON case while the compile is
+            #     still running — the npm/cmd wrapper exits early
+            #     (ensure-runtime-recovery-starves-cold-compile-round-2). So an
+            #     exited handle does NOT by itself mean "dead": fall through to the
+            #     persistent boot-spawn TIME-WINDOW grace, which reports the cold
+            #     boot as still in progress for `_BOOT_SPAWN_GRACE_SECONDS` after
+            #     the spawn regardless of the wrapper handle's fate.
+            #   - no handle AND no fresh stamp ⇒ NOT booting (fail-safe — a
+            #     genuinely dead host still reaches bounded recovery and ages out of
+            #     the grace into BLOCKED; never a forever patient-wait).
             # `.poll()` never raises for a valid handle; a defensive guard keeps a
-            # surprising handle state fail-safe toward NOT-booting.
+            # surprising handle state fail-safe toward the grace check.
             def boot_alive() -> bool:
                 proc = _boot_handle.get("proc")
-                if proc is None:
-                    return False
-                try:
-                    return proc.poll() is None
-                except Exception:  # noqa: BLE001 — any handle error ⇒ NOT booting
-                    return False
+                if proc is not None:
+                    try:
+                        if proc.poll() is None:
+                            return True  # wrapper still alive ⇒ definitely booting
+                    except Exception:  # noqa: BLE001 — fall through to the grace
+                        pass
+                # Wrapper exited (or no handle this call): trust the persistent
+                # time-window grace — the Windows-robust cold-boot-in-progress
+                # detector that survives the npm/cmd wrapper exiting early.
+                return boot_recently_spawned(repo_root)
         else:
             boot_alive = lambda: False
 
@@ -7069,6 +7113,20 @@ def _route_legacy_non_serving(
         sleep=sleep, write_lock=_noop_write_lock, recover_identity=None,
         tool_name=tool_name, initial_code=code, initial_payload=payload,
         sidecar_check=sidecar_check,
+        # ensure-runtime-recovery-starves-cold-compile-round-2: the legacy path gets
+        # the SAME murder-site handoff as M4 — once the bounded loop's first
+        # restart() puts a real compile in flight (fresh boot stamp), hand off to the
+        # patient wait instead of re-killing it. Without this, the legacy
+        # no-run-marker `--ensure-runtime` call (live_session_id None) was still
+        # starved.
+        frontend_probe=frontend_probe, boot_alive=boot_alive,
+        await_compile=lambda init_code, init_payload: _await_compile_serving(
+            cfg, ownership_verified=False, probe=probe,
+            frontend_probe=frontend_probe, sleep=sleep, write_lock=_noop_write_lock,
+            recover_identity=None, tool_name=tool_name,
+            initial_code=init_code, initial_payload=init_payload,
+            sidecar_check=sidecar_check, boot_alive=boot_alive,
+        ),
     )
 
 
@@ -7226,6 +7284,18 @@ def _ensure_runtime_m4(
             restart=restart, sleep=sleep, write_lock=write_lock,
             recover_identity=recover_identity, tool_name=tool_name,
             initial_code=code, initial_payload=payload, sidecar_check=sidecar_check,
+            # ensure-runtime-recovery-starves-cold-compile-round-2: thread the
+            # cold-boot-in-progress signals so the bounded crash loop HANDS OFF to
+            # the patient wait the instant its own first `restart()` puts a genuine
+            # compile in flight — instead of re-killing it on the next iteration.
+            frontend_probe=frontend_probe, boot_alive=boot_alive,
+            await_compile=lambda init_code, init_payload: _await_compile_serving(
+                cfg, ownership_verified=ownership_verified, probe=probe,
+                frontend_probe=frontend_probe, sleep=sleep, write_lock=write_lock,
+                recover_identity=recover_identity, tool_name=tool_name,
+                initial_code=init_code, initial_payload=init_payload,
+                sidecar_check=sidecar_check, boot_alive=boot_alive,
+            ),
         )
 
     # ---- Phase 1: Identity ---------------------------------------------------
@@ -7458,6 +7528,9 @@ def _recover_runtime(
     initial_code,
     initial_payload,
     sidecar_check=None,
+    frontend_probe=None,
+    boot_alive=None,
+    await_compile=None,
 ):
     """Bounded exponential-backoff recovery for a STALE/DEAD runtime (LD3).
 
@@ -7475,6 +7548,18 @@ def _recover_runtime(
     (the zombie persists) does NOT count as recovered: the loop continues and,
     on exhaustion, the verdict is BLOCKED — never a READY against a pipe-dead
     runtime. ``None`` (legacy / default-off) preserves the HTTP-only contract.
+
+    ``frontend_probe`` / ``boot_alive`` / ``await_compile`` (ensure-runtime-
+    recovery-starves-cold-compile-round-2): the cold-boot-in-progress HANDOFF. The
+    first ``restart()`` here legitimately spawns a cold ``tauri dev`` whose Rust
+    compile runs ~3.5 min with both ports down. After EACH restart, if the re-probe
+    is non-200 but ``_classify_compile_state`` reports ``compiling`` (Vite up OR the
+    boot-spawn time-window grace is fresh), the loop HANDS OFF to the patient,
+    non-killing ``await_compile`` instead of looping a second kill-``restart()``
+    that would murder the in-progress compile (the root cause of the 5-restarts-in-
+    60s starvation). Only the M4 path threads these (production); the legacy /
+    default-off callers pass ``None`` and are byte-identical to the prior
+    HTTP-only crash loop.
     """
     code, payload = initial_code, initial_payload
     attempts = 0
@@ -7491,6 +7576,36 @@ def _recover_runtime(
         except Exception:  # noqa: BLE001 — a restart raising is a failed attempt
             continue
         code, payload = probe()
+        # ensure-runtime-recovery-starves-cold-compile-round-2 — the murder-site
+        # handoff. This `restart()` may have legitimately put a COLD COMPILE in
+        # flight (the production `restart_command` kills then re-spawns `tauri dev`;
+        # the Rust build then takes ~3.5 min with both ports down). If the re-probe
+        # is still non-200 BUT the cold boot is genuinely in progress — Vite up, OR
+        # the time-window boot-spawn grace reports a fresh spawn — DO NOT loop to a
+        # second kill-`restart()` (which would run `kill-dev.js` and MURDER the
+        # compile). Hand off to the patient, NON-killing `_await_compile_serving`
+        # instead. The grace ages out past the cold-compile ceiling, so a host that
+        # never actually compiles still exhausts the wait and reaches BLOCKED —
+        # never a forever patient-wait of a dead host (fail-safe preserved). Only
+        # wired in the M4 path (await_compile supplied); the legacy/None callers are
+        # byte-identical to before.
+        if code != 200 and await_compile is not None:
+            try:
+                fe_up = bool(frontend_probe()) if frontend_probe is not None else False
+            except Exception:  # noqa: BLE001 — a probe error ⇒ treat as down
+                fe_up = False
+            try:
+                boot_up = bool(boot_alive()) if boot_alive is not None else False
+            except Exception:  # noqa: BLE001 — a probe error ⇒ treat as not-booting
+                boot_up = False
+            if _classify_compile_state(code, fe_up, boot_up) == "compiling":
+                verdict = await_compile(code, payload)
+                if verdict is not _COMPILE_WENT_DEAD:
+                    return verdict
+                # compiling → dead during the patient wait: resume the bounded
+                # crash loop where we left off (the kill is now warranted — the
+                # boot really did die).
+                code, payload = probe()
         if code == 200:
             # HTTP is back — but if the config asserts the sidecar, the pipe must
             # ALSO be reconnected for this to count as recovered. A restart that
@@ -8101,6 +8216,71 @@ def read_runtime_lock(repo_root, *, config=None):
         return data
     except (OSError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Boot-spawn stamp (ensure-runtime-recovery-starves-cold-compile-round-2). A tiny
+# per-repo sidecar to `.runtime.lock.json` recording WHEN the last `dev:restart`
+# boot was spawned. It is the persistence behind the `_BOOT_SPAWN_GRACE_SECONDS`
+# time-window grace: the production `boot_alive()` reads it to answer "is a cold
+# boot in progress?" ROBUSTLY — independent of the short-lived npm/cmd wrapper
+# `Popen` handle whose `.poll()` exits early on Windows (the Round-32 false-green).
+#
+# Why a FILE (not just an in-process holder): the murder site is the bounded
+# `_recover_runtime` loop INSIDE a SINGLE `ensure_runtime` call — its first
+# `restart()` legitimately spawns the compile, and every SUBSEQUENT loop iteration
+# must see "a boot is in progress" to STOP re-killing it. The stamp written by that
+# first `restart()` is read back by `boot_alive()` later in the SAME call (and by a
+# follow-up `--ensure-runtime` invocation), so the grace survives both the wrapper
+# exiting AND the process boundary between orchestrator calls.
+# ---------------------------------------------------------------------------
+
+_BOOT_STAMP_FILENAME = ".runtime.boot.json"
+
+
+def _boot_stamp_path(repo_root) -> Path:
+    """Resolve the boot-spawn stamp path at the repo root (sibling of the runtime
+    lock). A fixed filename — the stamp is repo-scoped, never port-/config-scoped."""
+    return Path(repo_root) / _BOOT_STAMP_FILENAME
+
+
+def write_boot_stamp(repo_root, *, spawn_ts: float) -> None:
+    """Atomically record the boot-spawn epoch (best-effort, never raises). Written
+    by the production `restart()` closure the instant it spawns `dev:restart`."""
+    try:
+        _atomic_write(
+            _boot_stamp_path(repo_root),
+            json.dumps({"spawn_ts": float(spawn_ts)}, indent=2) + "\n",
+        )
+    except Exception:  # noqa: BLE001 — a stamp-write failure must never abort a boot
+        pass
+
+
+def read_boot_stamp(repo_root) -> float | None:
+    """Best-effort read of the boot-spawn epoch → float, or ``None`` on
+    missing/corrupt (NEVER raises)."""
+    try:
+        data = json.loads(_boot_stamp_path(repo_root).read_text(encoding="utf-8"))
+        ts = data.get("spawn_ts") if isinstance(data, dict) else None
+        return float(ts) if ts is not None else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def boot_recently_spawned(
+    repo_root, *, now: float | None = None,
+    grace_seconds: float = _BOOT_SPAWN_GRACE_SECONDS,
+) -> bool:
+    """True iff a `dev:restart` boot was spawned within ``grace_seconds`` of ``now``
+    (the time-window grace). The Windows-robust cold-boot-in-progress detector: a
+    fresh stamp means a compile is genuinely underway regardless of whether the
+    short-lived npm/cmd wrapper `Popen` has already exited. Ages out past the
+    cold-compile ceiling so a stuck/dead host is never patient-waited forever."""
+    stamp = read_boot_stamp(repo_root)
+    if stamp is None:
+        return False
+    current = time.time() if now is None else now
+    return (current - stamp) < grace_seconds
 
 
 def verify_runtime_ownership(lock, *, live_session_id, kernel_start_time_fn):
