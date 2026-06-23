@@ -294,6 +294,60 @@ python3 lazy-state.py --cycle-end                          # clear the cycle mar
 
 Exit codes: `0` success (even if terminal), `2` malformed input (bad YAML/queue.json), `1` ledger/pseudo-skill failure (`--verify-ledger`/`--apply-pseudo`/`--neutralize-sentinel` not ok), `3` C3 cycle-containment refusal (an orchestrator-only op invoked while the cycle marker is present).
 
+### Production-binding `ensure_runtime` test convention (mechanically guarded)
+
+`ensure_runtime` is the load-bearing M4 runtime owner above, and its OS-signal
+derivations (`restart`/`boot_alive`) have been re-derived round after round from
+LIVE cold-boot incidents. A `test_ensure_runtime_production_*` test exists to
+prove the PRODUCTION binding — so it MUST reach the signal under test exactly the
+way production does, and is **mechanically guarded** against faking it:
+
+- **Derive, never inject.** Reach the OS signal by swapping `lazy_core.subprocess`
+  / `lazy_core.time` (and a `*_BOOT` config) and letting the DEFAULT `restart` /
+  `boot_alive` closures derive it. The test MUST NOT pass `boot_alive=` or
+  `restart=` to `ensure_runtime(...)` — injecting the derivation under test makes
+  the test tautological (it asserts the value it handed in). The legitimate
+  external-collaborator injections that ARE allowed (hermetic seams that do not
+  short-circuit the signal): `probe`, `stale_check`, `sidecar_check`,
+  `frontend_probe`, `read_lock`, `live_session_id`, `kernel_start_time_fn`,
+  `sleep`, `write_lock`, `recover_identity`, `config`.
+- **Spawn-binding tests use the faithful double.** A production test that
+  exercises spawn RESOLUTION (asserts on `shell_spawns`) MUST drive
+  `_WindowsSpawnSemanticsSubprocess` — the faithful double that raises for a
+  bare-token no-shell argv and succeeds only for the `shell=True` string form
+  (reproducing Windows `CreateProcess`/`npm.cmd`). It MUST NOT use the
+  always-succeeds `_FakeSubprocess`, which succeeds for any argv and HIDES the
+  real spawn defect (the false-green class that let two unit-green fixes ship a
+  live-BLOCKED runtime). A liveness/timing test that only counts `.spawns`
+  (not `shell_spawns`) may still use `_FakeSubprocess` — it is not spawn-binding.
+
+**Enforcer:** the `--test` meta-tests in `test_lazy_core.py` —
+`test_ensure_runtime_production_tests_derive_not_inject_signal` (signal-injection
+guard) and `test_spawn_binding_production_tests_use_faithful_double` (faithful-double
+guard), each with a negative-fixture twin proving non-vacuity. Pure AST collectors
+(`_collect_production_binding_smells` / `_collect_spawn_double_smells`) mirroring the
+`test_no_orphaned_test_functions` precedent — no standalone lint script. See
+`docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test/`.
+
+### Manual live cold-boot smoke (OPERATOR / NOT claude-config CI)
+
+The `--test` guards above are hermetic AST discipline — they cannot prove the
+production `restart()` actually launches a runtime, because that needs a real
+checkout + a genuinely cold runtime. The ONLY thing that has ever caught the
+spawn-invocation defect is a **live cold-boot smoke**, which is an
+**operator/manual** step, NOT an in-repo CI assertion (environment-dependent):
+
+```bash
+# On a real AlgoBooth checkout with BOTH ports down and NO warm build (cold):
+python3 user/scripts/lazy-state.py --ensure-runtime --repo-root <real-AlgoBooth-checkout>
+# Confirm the verdict reaches state: READY (the cold compile is patiently waited
+# on, NOT a false `mcp-runtime-unready` BLOCKED). This is the live verification
+# Round 34 used to catch the platform-blind `npm` spawn.
+```
+
+Run this by hand against a cold runtime when changing `ensure_runtime`'s
+spawn/boot-liveness path; do NOT wire it as a claude-config CI gate.
+
 **Park-mode terminal — `queue-exhausted-all-parked`.** Under `--park` (i.e. `--park-needs-input` and/or `--park-blocked`), when the queue advances past every workable item and ONLY parked items remain (`current is None` with a non-empty `parked[]`), `compute_state` returns the honest distinct terminal `queue-exhausted-all-parked` — NOT `all-features-complete` / `all-bugs-fixed` (which would be a false completion). It is the fallback AFTER the specific global terminals (`cloud-queue-exhausted`, `device-queue-exhausted`, `queue-blocked-on-research`/`all-remaining-deferred`, `scoped-id-not-found`) and BEFORE all-complete. The orchestrator flushes the parked items (needs-input + blocked) before stopping. Same terminal on both `lazy-state.py` and `bug-state.py`.
 
 ## Per-repo keyed state dir (multi-repo-concurrent-runs)

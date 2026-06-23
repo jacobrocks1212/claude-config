@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-ensure-runtime-test-injects-signal-under-test
-status: Ready
+status: Complete
 complexity: complex
 created: 2026-06-23
 phases: [1, 2, 3]
@@ -80,9 +80,9 @@ This plan references reusable component files by path instead of inlining their 
 
 ## Work Units
 
-- [ ] WU-1 — Production-binding signal-injection smell collector + guard tests (Phase 1)
-- [ ] WU-2 — Spawn-invocation faithful-double smell detection + guard tests (Phase 2)
-- [ ] WU-3 — Document the production-binding test convention + manual live cold-boot smoke step (Phase 3)
+- [x] WU-1 — Production-binding signal-injection smell collector + guard tests (Phase 1)
+- [x] WU-2 — Spawn-invocation faithful-double smell detection + guard tests (Phase 2)
+- [x] WU-3 — Document the production-binding test convention + manual live cold-boot smoke step (Phase 3)
 
 ## Execution Schedule
 

@@ -22296,6 +22296,316 @@ _TESTS = _TESTS + [
 
 
 # ---------------------------------------------------------------------------
+# adhoc-ensure-runtime-test-injects-signal-under-test — production-binding
+# test-discipline guard (Phases 1 + 2).
+# ---------------------------------------------------------------------------
+#
+# A `test_ensure_runtime_production_*` test must reach the OS signal under test
+# by swapping `lazy_core.subprocess` / `lazy_core.time` and letting the DEFAULT
+# `restart` / `boot_alive` closures DERIVE the signal — it must NOT inject the
+# derivation itself as a keyword (`boot_alive=` / `restart=`), and a spawn-binding
+# production test must drive a FAITHFUL subprocess double with real Windows
+# spawn-resolution semantics (`_WindowsSpawnSemanticsSubprocess`), not an
+# always-succeeds `_FakeSubprocess` that hides the `CreateProcess` defect.
+#
+# These two guards mirror the `_collect_orphaned_test_names` /
+# `test_no_orphaned_test_functions` / `test_dead_coverage_guard_detects_orphan_by_name`
+# trio: a pure AST collector + a positive self-checking meta-test (GREEN on the
+# live suite) + a negative-fixture test (proves the guard catches a synthetic
+# violator AND does not flag an allow-listed sibling).
+
+# The signal-under-test derivations that a production-binding test must NEVER
+# inject as keywords (the default closures must derive them from the swapped
+# `lazy_core.subprocess`/`lazy_core.time`).
+_PRODUCTION_BINDING_SIGNAL_KWARGS = frozenset({"boot_alive", "restart"})
+
+# Legitimate external-collaborator injections — NEVER flagged. These are real
+# seams `ensure_runtime` exposes for hermetic testing that do NOT short-circuit
+# the signal under test.
+_PRODUCTION_BINDING_ALLOWED_KWARGS = frozenset({
+    "probe", "stale_check", "sidecar_check", "frontend_probe", "read_lock",
+    "live_session_id", "kernel_start_time_fn", "sleep", "write_lock",
+    "recover_identity", "config",
+})
+
+# The always-succeeds subprocess double (succeeds for any argv → hides the real
+# Windows `CreateProcess` resolution defect) vs the faithful double that raises
+# for a bare-token no-shell argv and succeeds only for the `shell=True` string.
+_ALWAYS_SUCCEEDS_SPAWN_DOUBLE = "_FakeSubprocess"
+_FAITHFUL_SPAWN_DOUBLE = "_WindowsSpawnSemanticsSubprocess"
+
+
+def _iter_production_binding_test_defs(module_source: str):
+    """Yield ``(node, name)`` for every top-level
+    ``def test_ensure_runtime_production_*`` function in ``module_source``.
+
+    AST (``ast.parse``) over regex so docstring/comment occurrences of the names
+    are ignored — same rationale as ``_collect_orphaned_test_names``. Pure: takes
+    source text, performs no I/O, so the negative fixtures can feed synthetic
+    source.
+    """
+    tree = ast.parse(module_source)
+    for node in tree.body:  # top-level only — production tests are module-level
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name.startswith("test_ensure_runtime_production_"):
+                yield node, node.name
+
+
+def _call_is_ensure_runtime(call: "ast.Call") -> bool:
+    """True iff ``call`` invokes ``ensure_runtime(...)`` or
+    ``lazy_core.ensure_runtime(...)`` (the production entry point)."""
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id == "ensure_runtime"
+    if isinstance(func, ast.Attribute):
+        return func.attr == "ensure_runtime"
+    return False
+
+
+def _collect_production_binding_smells(module_source: str) -> list:
+    """Phase 1 — pure AST collector: enumerate every
+    ``def test_ensure_runtime_production_*`` and flag the SIGNAL-INJECTION smell —
+    an ``ensure_runtime(...)`` call inside the function body carrying a
+    ``boot_alive=`` or ``restart=`` keyword (the derivations the production code
+    must DERIVE, not be handed).
+
+    Returns a sorted, stable list of ``(test_name, injected_kwarg)`` tuples — one
+    per offending injection. The legitimate external-collaborator kwargs
+    (``_PRODUCTION_BINDING_ALLOWED_KWARGS``) are NEVER flagged; only the two
+    signal derivations are smells. AST over regex (ignores docstring/comment
+    occurrences), matching the ``_collect_orphaned_test_names`` rationale. Pure
+    (``module_source`` parameter, no I/O) so the negative fixture can feed
+    synthetic source.
+    """
+    smells: list = []
+    for node, name in _iter_production_binding_test_defs(module_source):
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call) or not _call_is_ensure_runtime(sub):
+                continue
+            for kw in sub.keywords:
+                # kw.arg is None for **kwargs unpacking — never a named signal.
+                if kw.arg in _PRODUCTION_BINDING_SIGNAL_KWARGS:
+                    smells.append((name, kw.arg))
+    return sorted(set(smells))
+
+
+def _names_used_in(node: "ast.AST") -> set:
+    """The set of bare ``ast.Name`` ids referenced anywhere under ``node`` —
+    used to detect which subprocess double class a production test constructs and
+    whether it asserts on ``shell_spawns``."""
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _assigns_lazy_core_subprocess_double(node: "ast.AST"):
+    """If the function body assigns ``lazy_core.subprocess`` (directly, or as part
+    of a tuple ``lazy_core.subprocess, lazy_core.time = fake_sub, fake_time``),
+    return the set of ``ast.Name`` ids used anywhere in the function (the double's
+    class name appears among them where it is constructed). Returns None when the
+    function never swaps ``lazy_core.subprocess`` (not a spawn/subprocess-binding
+    test at all).
+    """
+    swaps_subprocess = False
+    for sub in ast.walk(node):
+        if not isinstance(sub, ast.Assign):
+            continue
+        for target in sub.targets:
+            # Direct: lazy_core.subprocess = ...   AND tuple: (lazy_core.subprocess, ...) = ...
+            elts = target.elts if isinstance(target, ast.Tuple) else [target]
+            for elt in elts:
+                if (isinstance(elt, ast.Attribute) and elt.attr == "subprocess"
+                        and isinstance(elt.value, ast.Name)
+                        and elt.value.id == "lazy_core"):
+                    swaps_subprocess = True
+    if not swaps_subprocess:
+        return None
+    return _names_used_in(node)
+
+
+def _collect_spawn_double_smells(module_source: str) -> list:
+    """Phase 2 — extend the production-binding guard: flag a SPAWN-BINDING
+    production test that drives an always-succeeds ``_FakeSubprocess`` instead of
+    the faithful ``_WindowsSpawnSemanticsSubprocess``.
+
+    Shares the AST walk with Phase 1 (``_iter_production_binding_test_defs``).
+    A test is flagged iff ALL of:
+      (a) it swaps ``lazy_core.subprocess`` with a double (subprocess-binding);
+      (b) it does NOT inject ``restart=`` (an injected restart bypasses the real
+          spawn closure, so spawn-resolution semantics are moot — and that case is
+          already the Phase-1 signal-injection smell);
+      (c) it is SPAWN-BINDING — a conservative name/marker discriminator
+          (⚖ scope-class, resolved at planning): the test name contains
+          ``spawn`` OR its body asserts on ``shell_spawns``. This keeps a
+          liveness/timing production test that legitimately uses
+          ``_FakeSubprocess`` for the ``.poll()`` sub-case (e.g.
+          ``test_ensure_runtime_production_boot_alive_live_handle_patient_waits``)
+          OUT of scope — it neither names ``spawn`` nor asserts ``shell_spawns``;
+      (d) it constructs ``_FakeSubprocess`` (always-succeeds) and NOT the faithful
+          ``_WindowsSpawnSemanticsSubprocess``.
+
+    Returns a sorted, stable list of offending ``test_name`` strings. Pure
+    (no I/O) so the negative fixture can feed synthetic source.
+    """
+    smells: list = []
+    for node, name in _iter_production_binding_test_defs(module_source):
+        names_used = _assigns_lazy_core_subprocess_double(node)
+        if names_used is None:
+            continue  # (a) not a subprocess-binding test
+        # (b) an injected restart= bypasses the spawn closure entirely.
+        injects_restart = any(
+            isinstance(sub, ast.Call) and _call_is_ensure_runtime(sub)
+            and any(kw.arg == "restart" for kw in sub.keywords)
+            for sub in ast.walk(node)
+        )
+        if injects_restart:
+            continue
+        # (c) spawn-binding discriminator. A SPAWN-RESOLUTION test is one whose
+        # body asserts on `shell_spawns` — the attribute ONLY the faithful
+        # `_WindowsSpawnSemanticsSubprocess` exposes to prove the `shell=True`
+        # resolution path was taken. We deliberately do NOT key on a `*_spawn_*`
+        # name substring: the live suite's
+        # `test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn`
+        # is a liveness/timing test (it asserts the patient-wait did not RE-spawn
+        # via the shared `.spawns` COUNT, not spawn RESOLUTION) and legitimately
+        # uses `_FakeSubprocess`; a name-substring marker would false-positive it.
+        # The `shell_spawns` assertion is the tight, conservative signal that the
+        # test is genuinely exercising Windows `CreateProcess` resolution.
+        # (⚖ scope-class — see policy note below.)
+        spawn_binding = ("shell_spawns" in names_used) or any(
+            isinstance(sub, ast.Attribute) and sub.attr == "shell_spawns"
+            for sub in ast.walk(node)
+        )
+        if not spawn_binding:
+            continue  # liveness/timing test legitimately using _FakeSubprocess
+        # (d) faithful double allowed; always-succeeds double is the smell.
+        if _FAITHFUL_SPAWN_DOUBLE in names_used:
+            continue
+        if _ALWAYS_SUCCEEDS_SPAWN_DOUBLE in names_used:
+            smells.append(name)
+    return sorted(set(smells))
+
+
+def test_ensure_runtime_production_tests_derive_not_inject_signal():
+    """Phase 1 positive self-checking meta-test: the LIVE suite's
+    ``test_ensure_runtime_production_*`` tests all reach the OS signal through the
+    default closures (swapping ``lazy_core.subprocess``/``time``) and inject
+    NEITHER ``boot_alive=`` NOR ``restart=``, so the collector reports ``[]``.
+
+    GREEN today. It FAILS — naming the offending test and the injected kwarg — if
+    a future ``test_ensure_runtime_production_*`` injects the signal under test.
+    Self-checking: this function reads its own module source.
+    """
+    _guard()
+    module_source = Path(__file__).read_text(encoding="utf-8")
+    smells = _collect_production_binding_smells(module_source)
+    assert smells == [], (
+        "production-binding guard: the following test_ensure_runtime_production_* "
+        "test(s) INJECT the signal under test as an ensure_runtime keyword instead "
+        "of deriving it through the default closure — fix by swapping "
+        f"lazy_core.subprocess/time and passing neither boot_alive= nor restart=: {smells}"
+    )
+
+
+def test_production_binding_guard_detects_signal_injection():
+    """Phase 1 negative fixture — feed synthetic module source containing a
+    ``test_ensure_runtime_production_injects`` that calls
+    ``lazy_core.ensure_runtime(..., boot_alive=lambda: True)`` and assert the
+    collector reports it BY NAME with the injected kwarg (proving non-vacuity).
+
+    A sibling ``test_ensure_runtime_production_clean`` passing only allow-listed
+    kwargs (``probe=``/``stale_check=``) must NOT be reported (allow-list /
+    would-it-fail proof against a tautological collector).
+    """
+    _guard()
+    synthetic_source = (
+        "def test_ensure_runtime_production_injects():\n"
+        "    lazy_core.ensure_runtime(Path(td), boot_alive=lambda: True)\n"
+        "\n"
+        "def test_ensure_runtime_production_clean():\n"
+        "    lazy_core.ensure_runtime(Path(td), probe=p, stale_check=sc)\n"
+    )
+    smells = _collect_production_binding_smells(synthetic_source)
+    assert smells == [("test_ensure_runtime_production_injects", "boot_alive")], (
+        "the guard must report the synthetic signal-injecting production test by "
+        f"name with the injected kwarg, and NOT flag the allow-listed sibling; got {smells}"
+    )
+
+
+def test_spawn_binding_production_tests_use_faithful_double():
+    """Phase 2 positive self-checking meta-test: the LIVE suite's spawn-binding
+    production test
+    (``test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot``)
+    already drives the faithful ``_WindowsSpawnSemanticsSubprocess``, so the
+    spawn-double collector reports ``[]``.
+
+    GREEN today. It FAILS — naming the offender — if a future spawn-binding
+    production test reverts to an always-succeeds ``_FakeSubprocess``.
+    """
+    _guard()
+    module_source = Path(__file__).read_text(encoding="utf-8")
+    smells = _collect_spawn_double_smells(module_source)
+    assert smells == [], (
+        "production-binding guard: the following spawn-binding "
+        "test_ensure_runtime_production_* test(s) drive an always-succeeds "
+        "_FakeSubprocess (which hides the Windows CreateProcess resolution defect) "
+        "instead of the faithful _WindowsSpawnSemanticsSubprocess — switch to the "
+        f"faithful double: {smells}"
+    )
+
+
+def test_spawn_double_guard_detects_always_succeeds_double():
+    """Phase 2 negative fixture — three synthetic production tests:
+
+    1. a SPAWN-BINDING test using the always-succeeds ``_FakeSubprocess`` and
+       asserting on ``shell_spawns`` → MUST be reported (non-vacuity);
+    2. a sibling spawn test using the faithful
+       ``_WindowsSpawnSemanticsSubprocess`` → MUST NOT be reported (faithful-double
+       allow);
+    3. a sibling LIVENESS/TIMING test (no ``spawn`` in name, no ``shell_spawns``
+       assertion) that legitimately uses ``_FakeSubprocess`` for the ``.poll()``
+       sub-case → MUST NOT be reported (the false-positive guard pinning
+       ``test_ensure_runtime_production_boot_alive_live_handle_patient_waits``).
+    """
+    _guard()
+    synthetic_source = (
+        "def test_ensure_runtime_production_spawn_bad():\n"
+        "    fake_sub = _FakeSubprocess(handle)\n"
+        "    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time\n"
+        "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
+        "    assert fake_sub.shell_spawns >= 1\n"
+        "\n"
+        "def test_ensure_runtime_production_spawn_good():\n"
+        "    fake_sub = _WindowsSpawnSemanticsSubprocess(handle)\n"
+        "    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time\n"
+        "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
+        "    assert fake_sub.shell_spawns >= 1\n"
+        "\n"
+        "def test_ensure_runtime_production_liveness_ok():\n"
+        "    fake_sub = _FakeSubprocess(handle)\n"
+        "    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time\n"
+        "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
+        "    assert result['state'] == 'READY'\n"
+    )
+    smells = _collect_spawn_double_smells(synthetic_source)
+    assert smells == ["test_ensure_runtime_production_spawn_bad"], (
+        "the guard must report ONLY the spawn-binding always-succeeds-double test; "
+        "the faithful-double spawn test and the liveness/timing test that "
+        f"legitimately uses _FakeSubprocess must NOT be flagged; got {smells}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_ensure_runtime_production_tests_derive_not_inject_signal",
+     test_ensure_runtime_production_tests_derive_not_inject_signal),
+    ("test_production_binding_guard_detects_signal_injection",
+     test_production_binding_guard_detects_signal_injection),
+    ("test_spawn_binding_production_tests_use_faithful_double",
+     test_spawn_binding_production_tests_use_faithful_double),
+    ("test_spawn_double_guard_detects_always_succeeds_double",
+     test_spawn_double_guard_detects_always_succeeds_double),
+]
+
+
+# ---------------------------------------------------------------------------
 # lazy-batch-unified-driver-parity-and-accounting Phase 1 (Fix-A) — Item 1.
 # ---------------------------------------------------------------------------
 #
