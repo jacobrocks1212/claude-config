@@ -1,0 +1,14 @@
+version: 1
+ema_alpha: 0.25
+
+source_weights:
+  investigation: 0.9
+  intrafile: 0.7
+  reuse: 0.7
+
+rule_weights:
+
+  # api-design rules
+  appropriate-http-methods:
+    weight: 0.7
+    data_points: 0

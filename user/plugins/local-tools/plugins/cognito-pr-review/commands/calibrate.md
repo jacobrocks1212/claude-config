@@ -288,6 +288,8 @@ Dry run complete — no weights updated.
 
 ## Notes
 
+- **Buddy-session disposition calibration** routes through the shared helper `scripts/disposition-calibration.ts` — the single implementation of the EMA update for disposition signals. Any bulk or replay calibration of dispositioned buddy sessions should invoke that helper rather than duplicating the EMA logic here.
+
 - This command is designed for **one-time bulk calibration** after initial plugin deployment, or after accumulating a batch of reviewed PRs.
 - For **ongoing incremental calibration**, use `/cognito-pr-review:learn-from-pr` after each reviewed PR. That command updates weights for a single PR immediately after human review.
 - The Haiku semantic judge is essential — proximity filtering alone would produce too many false matches in large files with many comments on nearby lines.

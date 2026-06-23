@@ -142,6 +142,25 @@ After updating weights:
   - ...
 ```
 
+#### 2.5.7 Buddy-Disposition Signal Source
+
+The §2.5.2/§2.5.4 path above (Haiku semantic judge → GitHub-comment matching) is the **non-buddy** calibration signal. It remains intact and runs unconditionally when a review artifact exists. The buddy-disposition path described here is **additive and asymmetric**: per SPEC R2, buddy recalibrates inline at session close while non-buddy defers to this learn-from-pr step.
+
+**If a persisted `buddy-session.json` exists in the PR's cache dir**, invoke the shared helper to calibrate from its dispositions:
+
+```bash
+npx tsx {plugin_root}/scripts/disposition-calibration.ts \
+  --session {cacheDir}/buddy-session.json \
+  --findings {cacheDir}/processed-findings.json \
+  --weights {plugin_root}/knowledge/weights.yaml
+```
+
+Surface the printed delta summary to the user.
+
+**Consume + clear the `pending-calibration` marker:** if `{cacheDir}/pending-calibration.json` exists (written by `review-pr.md` Step 12.7 on non-buddy completion), read it to recover the cache dir and PR, run the calibration command above for that cache dir, then delete the marker (`rm -f {cacheDir}/pending-calibration.json`) so it is consumed exactly once.
+
+The helper (`scripts/disposition-calibration.ts`) is the **single calibration implementation for dispositions** — reused by both buddy and non-buddy paths. Do not re-implement the EMA math here; all disposition-to-weight updates route through that helper.
+
 ### 3. Analyze Each Comment
 
 **Note:** False Negative comments identified in step 2.5 (reviewer comments with no matching plugin finding) are high-priority candidates for new rules. Prioritize analyzing these when proposing new rules.

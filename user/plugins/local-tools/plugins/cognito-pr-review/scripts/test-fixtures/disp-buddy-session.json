@@ -1,0 +1,34 @@
+{
+  "pr_id": 99999,
+  "cache_dir": "/tmp/disp-test-cache",
+  "chunks": [
+    {
+      "index": 0,
+      "status": "done",
+      "pass1_observations": [],
+      "dispositions": [
+        {
+          "finding_ref": "FooController.cs:42 (sweep http method)",
+          "source": "sweep",
+          "severity": "dismiss"
+        },
+        {
+          "finding_ref": "foo.ts:9",
+          "source": "investigation",
+          "severity": "important"
+        },
+        {
+          "finding_ref": "bar.ts:15 (dup of baz)",
+          "source": "reuse",
+          "severity": "dismiss"
+        },
+        {
+          "finding_ref": "qux.ts:1 (my own note)",
+          "source": "reviewer",
+          "severity": "blocking"
+        }
+      ]
+    }
+  ],
+  "added_observations": []
+}

@@ -1,0 +1,29 @@
+{
+  "processed_findings": [
+    {
+      "source": "sweep",
+      "file": "Cognito.Services/Controllers/FooController.cs",
+      "line": 42,
+      "severity": "important",
+      "title": "Use appropriate HTTP method",
+      "rule_id": "appropriate-http-methods",
+      "effective_weight": 0.56
+    },
+    {
+      "source": "investigation",
+      "file": "Cognito.Web.Client/apps/spa/src/foo.ts",
+      "line": 9,
+      "severity": "important",
+      "title": "Missing null guard in composable",
+      "effective_weight": 0.9
+    },
+    {
+      "source": "reuse",
+      "file": "Cognito.Web.Client/apps/spa/src/bar.ts",
+      "line": 15,
+      "severity": "suggestion",
+      "title": "Duplicates existing utility",
+      "effective_weight": 0.7
+    }
+  ]
+}

@@ -505,6 +505,28 @@ This makes `derive_stage` report stage `reviewed` for the cog-docs item (it dete
 
 **No ADO board write:** this step is a purely local stage signal. The ADO poller PAT is read-only; do not attempt any ADO board or work-item update here.
 
+### Step 12.7: Write pending-calibration Marker (PR Mode)
+
+Write `{cacheDir}/pending-calibration.json` so that a subsequent `/learn-from-pr` run can locate this completed review, consume the marker, and perform post-review calibration.
+
+Template (substitute live values; use ISO date `YYYY-MM-DD` for `date`):
+
+```bash
+cat > "{cacheDir}/pending-calibration.json" << 'EOF'
+{
+  "pr": {pr_id},
+  "cache_dir": "{cacheDir}",
+  "date": "{YYYY-MM-DD}"
+}
+EOF
+```
+
+**Buddy-safe by construction:** `review-pr-buddy.md` delegates only Steps 1–8 of this file (its Phase 0) and then runs its own Phase 2 completion, which includes its own REVIEWED.md write and inline recalibration. Buddy execution therefore never reaches Step 12 in this file and this marker is never written on the buddy path. That asymmetry is intentional: buddy recalibrates inline at Phase 2; non-buddy defers recalibration via this marker for `/learn-from-pr` to consume later.
+
+**PR Mode only:** no work item in Local Mode, so skip this step entirely — same as Step 12.6.
+
+**On write failure:** WARN the user (e.g. "Warning: could not write pending-calibration.json to <path> — <reason>") and continue. Never block or fail the review on this marker write.
+
 ### Step 13: Cache Cleanup (Background)
 
 Optionally clean up old caches (>7 days) — the PR cache now lives under the cog-docs item dir (gitignored), plus local-mode caches in the work repo:
