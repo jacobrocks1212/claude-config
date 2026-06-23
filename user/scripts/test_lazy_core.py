@@ -20181,6 +20181,43 @@ def test_ensure_runtime_handler_wiring_threads_frontend_probe_for_compiling():
         json.dumps(compiling)  # handler json.dumps it
 
 
+def test_ensure_runtime_handler_wiring_threads_boot_alive_for_pre_vite():
+    """ensure-runtime-starves-pre-vite-sidecar-build Phase 3 (WU-5): the handler's
+    marker→ensure_runtime delegate threads the boot-liveness signal through to the
+    M4 path so a pre-Vite runtime (BOTH ports down, boot process alive) reaches
+    READY via the patient wait — WITHOUT the handler doing any manual
+    re-classification. Asserts the production pre-Vite discriminator is reachable
+    through the same thin pass-through wiring (config-driven binding, no new
+    handler arg)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        sid = "live-run-session"
+        owned = {**_owned_lock(start_time=100.0), "controller_session_id": sid}
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            calls["probe"] += 1
+            # Backend answers 200 from the 3rd probe (a cold pre-Vite boot finishing).
+            return (200, {"tools": ["render_chart"]}) if calls["probe"] >= 3 else (0, None)
+
+        pre_vite = _ensure_runtime_via_marker(
+            td, sid, config=_M4_CONFIG_BOOT,
+            probe=probe,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: owned, kernel_start_time_fn=lambda p, **k: 100.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite NOT yet up (pre-Vite window)
+            boot_alive=lambda: True,       # boot process alive → the handler waits
+        )
+        assert pre_vite["state"] == "READY", pre_vite
+        assert calls["restart"] == 0, (
+            f"a pre-Vite live boot reaching the handler must be waited, not restarted: {calls}"
+        )
+        assert _M4_KEYS.issubset(pre_vite.keys()), pre_vite
+        json.dumps(pre_vite)  # handler json.dumps it
+
+
 def test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset():
     """No live run marker → live_session_id None → ensure_runtime runs the legacy
     boot/ready flow but STILL returns the verdict superset (state + the retained
@@ -20653,6 +20690,8 @@ _TESTS = _TESTS + [
      test_ensure_runtime_handler_wiring_emits_m4_verdict_all_states),
     ("test_ensure_runtime_handler_wiring_threads_frontend_probe_for_compiling",
      test_ensure_runtime_handler_wiring_threads_frontend_probe_for_compiling),
+    ("test_ensure_runtime_handler_wiring_threads_boot_alive_for_pre_vite",
+     test_ensure_runtime_handler_wiring_threads_boot_alive_for_pre_vite),
     ("test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset",
      test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset),
     ("test_ensure_runtime_cli_handler_emits_m4_json_subprocess",

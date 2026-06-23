@@ -9196,6 +9196,17 @@ def main() -> int:
         # probe construction here. A repo without a :1420 frontend overrides the
         # key off in its own config (then the discriminator degrades to the
         # :3333-only DEAD path, byte-identical to before this fix).
+        #
+        # ensure-runtime-starves-pre-vite-sidecar-build (Phase 3): the pre-Vite
+        # boot-liveness signal ALSO needs NO new handler argument — it is wired the
+        # same config-driven way. When a repo sets `boot_liveness: true` in its
+        # config override (AlgoBooth opts in; the base default is OFF so every other
+        # repo is byte-identical), `ensure_runtime` binds the boot-liveness source
+        # internally. The source is the in-process `Popen` handle the production
+        # `restart()` closure already owns (`.poll()` None ⇒ alive) — it lives
+        # ENTIRELY inside the single `ensure_runtime` call, so the handler needs no
+        # real handle and `--test` stays hermetic (tests inject `boot_alive`). The
+        # existing `live_session_id` threading from the run marker is UNCHANGED.
         result = lazy_core.ensure_runtime(
             Path(args.repo_root), live_session_id=live_session_id
         )

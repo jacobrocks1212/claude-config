@@ -6707,6 +6707,22 @@ def ensure_runtime(
     into 5 wasted kill-restarts → a false BLOCKED. See ``_ensure_runtime_m4`` /
     ``_classify_compile_state`` / ``_await_compile_serving``.
 
+    REVERSE-REFERENCE (ensure-runtime-starves-pre-vite-sidecar-build): the
+    cold-compile re-scope above covered only the *Vite-up* window (its sole
+    "still booting" signal is Vite :1420 being up). The PRE-VITE window — the
+    multi-minute ``BeforeDevCommand``/``sidecar:build`` phase where BOTH ports are
+    still down while the spawned boot process is alive — was still misclassified
+    ``dead`` and kill-restarted. ``docs/bugs/ensure-runtime-starves-pre-vite-
+    sidecar-build`` (the pre-Vite sibling of ``ensure-runtime-recovery-starves-
+    cold-compile``) adds a SECOND "still booting" signal, ``boot_alive`` (the
+    liveness of the ``restart()``-spawned boot process), threaded here alongside
+    ``frontend_probe``: a both-ports-down-but-live-boot observation now classifies
+    ``compiling`` (patient-wait), not ``dead``. Default-off (``boot_liveness``
+    config key absent / ``boot_alive → False``) is byte-identical to the prior
+    behavior. See ``_classify_compile_state`` (3rd ``boot_alive`` arg),
+    ``_route_legacy_non_serving`` / ``_route_non_serving``, and
+    ``_await_compile_serving`` (the went-dead check is now an OR of both signals).
+
     long-build-and-runtime-ownership Phase 2 (LD2/LD3) reworks this IN PLACE
     into the idempotent M4 gatekeeper. The verdict is a **superset** of the
     legacy ``{status, mcp_tools_present, health_code}`` shape::
