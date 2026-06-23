@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a pure harness-script change to `user/scripts/lazy_core.py` (and a thin confirmation at the `lazy-state.py --ensure-runtime` CLI seam), validated entirely by the in-file `--test` smoke harness + `test_lazy_core.py` via injected probe/restart/frontend_probe/boot-liveness/sleep callables. There is no AlgoBooth app surface, store, audio path, UI, or event reachable from MCP here (the dev runtime is the *subject under test*, not an MCP-testable target). Per `docs/bugs/CLAUDE.md`, harness-script defects have no MCP-reachable surface — the hermetic state-machine smoke tests ARE the runtime validation. The one runtime-coupled assumption (the pre-Vite both-ports-down window) is workstation-deferred to AlgoBooth where a real cold `tauri dev` boot exists; this repo has no `src-tauri/`/`package.json`, so the live spike is STRUCTURALLY SKIPPED here.
 

@@ -2,10 +2,12 @@
 
 > `lazy-state.py --ensure-runtime` kill-restarts a cold AlgoBooth dev runtime into a false `mcp-runtime-unready` BLOCKED, because the cold-compile discriminator's only "still booting" signal is Vite (`:1420`) being up — which is false during the multi-minute `BeforeDevCommand` (`npm run sidecar:build && vite`) phase, when BOTH ports are down and the boot is misclassified `dead`.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-22
-**Placement:** `docs/bugs/ensure-runtime-starves-pre-vite-sidecar-build/`
+**Fixed:** 2026-06-22
+**Fix commit:** f579df8
+**Placement:** `docs/bugs/_archive/ensure-runtime-starves-pre-vite-sidecar-build/`
 **Related:** `docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile` (prior fix — covered only the Vite-up window; this is the uncovered pre-Vite sibling); `lazy_core.ensure_runtime` / `_classify_compile_state` / `_route_legacy_non_serving` / `_recover_runtime`; AlgoBooth memory `ensure-runtime-cold-compile-starvation`; the run that surfaced it — AlgoBooth `docs/features/audio/audio-vision/domains/d2-sample-import-ui/BLOCKED.md` (Resolution UPDATE).
 
 ---
