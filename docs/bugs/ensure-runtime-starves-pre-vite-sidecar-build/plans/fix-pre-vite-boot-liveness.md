@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: ensure-runtime-starves-pre-vite-sidecar-build
-status: Ready
+status: In-progress
 created: 2026-06-22
 complexity: complex
 phases: [1, 2, 3]
@@ -86,8 +86,8 @@ The SPEC's `**Related:**` line is a bug-pipeline reference list, not a machine-p
 
 ## Work Units
 
-- [ ] WU-1 — Boot-liveness config seam + injected `boot_alive` callable + extended `_classify_compile_state`
-- [ ] WU-2 — Phase 1 hermetic tests (extended truth table + default-off back-compat)
+- [x] WU-1 — Boot-liveness config seam + injected `boot_alive` callable + extended `_classify_compile_state`
+- [x] WU-2 — Phase 1 hermetic tests (extended truth table + default-off back-compat)
 - [ ] WU-3 — Route pre-Vite live-boot off recovery in BOTH routers (`_route_legacy_non_serving` + M4 `_route_non_serving`) + `_await_compile_serving` went-dead handling
 - [ ] WU-4 — Phase 2 hermetic fixtures (legacy + M4 patient-wait, went-dead fall-through, ceiling-timeout, genuine-crash preserved, default-off)
 - [ ] WU-5 — Phase 3 CLI-seam confirmation + consumer/doc alignment + bidirectional reverse-reference

@@ -19546,6 +19546,146 @@ def test_ensure_runtime_frontend_probe_default_binds_when_config_carries_keys():
 
 
 # ---------------------------------------------------------------------------
+# ensure-runtime-starves-pre-vite-sidecar-build Phase 1 — boot-liveness signal +
+# pre-Vite-aware discriminator. _classify_compile_state gains a back-compat
+# `boot_alive` parameter so a both-ports-down observation with a LIVE boot
+# process (the pre-Vite BeforeDevCommand/sidecar:build window) classifies as the
+# patient-wait `compiling` (not `dead`). Default-off byte-identity preserved.
+# ---------------------------------------------------------------------------
+
+# A config that ALSO carries the boot-liveness key (the pre-Vite signal), built
+# on the frontend-bearing config so the two "still booting" signals compose.
+_M4_CONFIG_BOOT = {
+    **_M4_CONFIG_FRONTEND,
+    "boot_liveness": True,
+}
+
+
+def test_classify_compile_state_boot_alive_extended_truth_table():
+    """_classify_compile_state gains a back-compat `boot_alive` parameter:
+      - backend 200 ⇒ serving regardless of frontend OR boot_alive,
+      - non-200 + frontend up ⇒ compiling regardless of boot_alive (prior branch),
+      - non-200 + frontend down + boot_alive ⇒ compiling (the NEW pre-Vite branch:
+        both ports down but the boot process is alive → patient-wait, not dead),
+      - non-200 + frontend down + NOT boot_alive ⇒ dead (UNCHANGED)."""
+    _guard()
+    # The NEW branch: both ports down + live boot ⇒ patient-wait.
+    assert lazy_core._classify_compile_state(0, False, True) == "compiling"
+    # Both ports down + dead boot ⇒ dead (UNCHANGED).
+    assert lazy_core._classify_compile_state(0, False, False) == "dead"
+    # Prior branches are independent of boot_alive.
+    assert lazy_core._classify_compile_state(200, False, True) == "serving"
+    assert lazy_core._classify_compile_state(200, True, True) == "serving"
+    assert lazy_core._classify_compile_state(200, False, False) == "serving"
+    assert lazy_core._classify_compile_state(0, True, True) == "compiling"
+    assert lazy_core._classify_compile_state(0, True, False) == "compiling"
+    assert lazy_core._classify_compile_state(503, True, False) == "compiling"
+
+
+def test_classify_compile_state_boot_alive_back_compat_default():
+    """The `boot_alive` parameter DEFAULTS to False, so every existing positional
+    caller is byte-identical to the prior three-branch truth table — both-ports-
+    down with no boot_alive arg is still `dead`."""
+    _guard()
+    # No boot_alive arg → byte-identical to the prior fix's truth table.
+    assert lazy_core._classify_compile_state(200, False) == "serving"
+    assert lazy_core._classify_compile_state(200, True) == "serving"
+    assert lazy_core._classify_compile_state(0, True) == "compiling"
+    assert lazy_core._classify_compile_state(0, False) == "dead"
+    assert lazy_core._classify_compile_state(503, True) == "compiling"
+    assert lazy_core._classify_compile_state(503, False) == "dead"
+
+
+def test_ensure_runtime_threads_injected_boot_alive_to_m4():
+    """When a boot_alive callable is injected, ensure_runtime threads it through to
+    the M4 path without crashing and without perturbing the READY verdict for a
+    :3333-serving runtime (mirrors the frontend_probe threading test)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"boot": 0}
+
+        def boot_alive():
+            calls["boot"] += 1
+            return True
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a serving runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            boot_alive=boot_alive,
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is True, result
+        assert _M4_KEYS.issubset(result.keys()), result
+
+
+def test_ensure_runtime_legacy_config_without_boot_key_does_not_crash():
+    """A config WITHOUT the boot-liveness key (a legacy override) must not raise and
+    behaves byte-identically to today — an owned+current+200 runtime is READY (the
+    discriminator degrades to the no-boot-signal path, boot_alive → False)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        legacy_cfg = {  # no boot_liveness key
+            "health_url": "http://localhost:3333/health",
+            "restart_command": "npm run dev:restart",
+            "mcp_tool_name": "render_chart",
+            "native_globs": ["src-tauri", "crates"],
+            "lock_filename": ".runtime.lock.json",
+            "port": 3333,
+        }
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=legacy_cfg,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            # NO boot_alive injected → default binds to lambda: False.
+        )
+        assert result["state"] == "READY", result
+        assert result["terminal_blocker"] is None, result
+
+
+def test_ensure_runtime_boot_alive_default_off_when_config_lacks_key():
+    """With NO boot-liveness config key and NO injected boot_alive, a both-ports-
+    down runtime classifies `dead` ⇒ byte-identical to today's recovery path (the
+    boot-liveness branch is inert unless the signal is configured)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        cfg_no_boot = {**_M4_CONFIG_FRONTEND}  # frontend on, boot signal absent
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=cfg_no_boot,
+            probe=lambda: (0, None),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite down
+            # NO boot_alive → default binds lambda: False → genuinely dead.
+        )
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 5, f"default-off must run today's recovery: {calls}"
+
+
+# ---------------------------------------------------------------------------
 # ensure-runtime-recovery-starves-cold-compile Phase 2 — patient compiling-aware
 # wait. A runtime classified `compiling` (Vite :1420 up, backend :3333 not yet
 # serving) is WAITED on (owned, cold-compile-sized, NEVER kill-restarted) and
@@ -20297,6 +20437,17 @@ _TESTS = _TESTS + [
      test_ensure_runtime_legacy_config_without_frontend_keys_does_not_crash),
     ("test_ensure_runtime_frontend_probe_default_binds_when_config_carries_keys",
      test_ensure_runtime_frontend_probe_default_binds_when_config_carries_keys),
+    # ensure-runtime-starves-pre-vite-sidecar-build Phase 1: boot-liveness signal.
+    ("test_classify_compile_state_boot_alive_extended_truth_table",
+     test_classify_compile_state_boot_alive_extended_truth_table),
+    ("test_classify_compile_state_boot_alive_back_compat_default",
+     test_classify_compile_state_boot_alive_back_compat_default),
+    ("test_ensure_runtime_threads_injected_boot_alive_to_m4",
+     test_ensure_runtime_threads_injected_boot_alive_to_m4),
+    ("test_ensure_runtime_legacy_config_without_boot_key_does_not_crash",
+     test_ensure_runtime_legacy_config_without_boot_key_does_not_crash),
+    ("test_ensure_runtime_boot_alive_default_off_when_config_lacks_key",
+     test_ensure_runtime_boot_alive_default_off_when_config_lacks_key),
     # ensure-runtime-recovery-starves-cold-compile Phase 2: patient compiling wait.
     ("test_cold_compile_timeout_blocker_distinct_from_blocked_blocker",
      test_cold_compile_timeout_blocker_distinct_from_blocked_blocker),

@@ -6360,6 +6360,25 @@ _ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
     # a legacy config override lacking the keys never raises.
     "frontend_health_url": "http://localhost:1420",
     "frontend_port": 1420,
+    # Pre-Vite boot-liveness signal
+    # (ensure-runtime-starves-pre-vite-sidecar-build, Phase 1). The two-port
+    # discriminator above can only tell a still-booting cold runtime from a dead
+    # one by Vite (:1420) being up — but a cold `tauri dev` spends its first
+    # ~1-2 min in `BeforeDevCommand` (`npm run sidecar:build && vite`) with BOTH
+    # ports down while the spawned boot process is alive. During that pre-Vite
+    # window `frontend_up` is False, so the discriminator returned `dead` and
+    # kill-restarted a healthy cold boot into a false BLOCKED. When this key is
+    # truthy, ensure_runtime binds a real boot-liveness source (the liveness of
+    # the `restart()`-spawned boot process, read from the in-process `Popen`
+    # handle the harness already owns — NOT a URL probe, so no `_default_*` URL
+    # helper is needed) and a both-ports-down-but-live-boot observation
+    # classifies `compiling` (patient-wait), not `dead`. Default ABSENT → the
+    # boot-liveness branch is INERT (boot_alive binds `lambda: False`), so every
+    # repo without the key degrades to today's `dead` behavior — read via .get()
+    # everywhere so a legacy override lacking the key never raises (mirror the
+    # `assert_sidecar_connected` / `frontend_health_url` back-compat pattern).
+    # AlgoBooth opts in via its config override; this base default leaves it off.
+    "boot_liveness": False,
 }
 
 
@@ -6429,25 +6448,43 @@ def _default_frontend_probe(frontend_health_url: str) -> bool:
         return False
 
 
-def _classify_compile_state(backend_code: int, frontend_up: bool) -> str:
-    """Map a two-port observation to ``"serving" | "compiling" | "dead"`` (pure).
+def _classify_compile_state(
+    backend_code: int, frontend_up: bool, boot_alive: bool = False
+) -> str:
+    """Map a two-port (+ boot-liveness) observation to
+    ``"serving" | "compiling" | "dead"`` (pure).
 
     The cold-compile discriminator (ensure-runtime-recovery-starves-cold-compile,
-    Phase 1). No I/O — the caller supplies the already-probed backend /health code
-    and the frontend-up boolean:
+    Phase 1) EXTENDED for the pre-Vite window
+    (ensure-runtime-starves-pre-vite-sidecar-build, Phase 1). No I/O — the caller
+    supplies the already-probed backend /health code, the frontend-up boolean,
+    and (optionally) the boot-process-liveness boolean:
 
       - ``backend_code == 200`` ⇒ ``"serving"`` (the backend answers — regardless
-        of the frontend signal; a serving backend is ready by definition).
+        of the frontend OR boot-liveness signal; a serving backend is ready by
+        definition).
       - ``backend_code != 200`` AND ``frontend_up`` ⇒ ``"compiling"`` (Vite is up
         but the backend is not yet serving — the cold Rust compile is still
-        running; be PATIENT, do NOT kill-restart).
-      - ``backend_code != 200`` AND NOT ``frontend_up`` ⇒ ``"dead"`` (nothing is
-        listening — never booted or truly crashed; the bounded crash-recovery
-        loop is correct here).
+        running; be PATIENT, do NOT kill-restart). UNCHANGED by ``boot_alive``.
+      - ``backend_code != 200`` AND NOT ``frontend_up`` AND ``boot_alive`` ⇒
+        ``"compiling"`` (the NEW pre-Vite branch — both ports down, but the
+        orchestrator-spawned boot process is still ALIVE, i.e. the multi-minute
+        ``BeforeDevCommand``/``sidecar:build`` window before Vite binds :1420.
+        This is a cold boot in progress, NOT a crash — patient-wait it on the
+        SAME path as the Vite-up compiling case rather than kill-restarting it.
+        Reuses the ``"compiling"`` label so no new state ripples through the
+        routers — ensure-runtime-starves-pre-vite-sidecar-build Phase 1).
+      - ``backend_code != 200`` AND NOT ``frontend_up`` AND NOT ``boot_alive`` ⇒
+        ``"dead"`` (nothing is listening AND no live boot — never booted or truly
+        crashed and not restarting; the bounded crash-recovery loop is correct
+        here). UNCHANGED — ``boot_alive`` DEFAULTS to ``False`` so every existing
+        positional caller is byte-identical to the prior three-branch table.
     """
     if backend_code == 200:
         return "serving"
     if frontend_up:
+        return "compiling"
+    if boot_alive:
         return "compiling"
     return "dead"
 
@@ -6654,6 +6691,7 @@ def ensure_runtime(
     kill=None,
     sidecar_check=None,
     frontend_probe=None,
+    boot_alive=None,
 ) -> dict:
     """Ensure the dev runtime + MCP server are up, CURRENT, **and verifiably
     owned**; return the M4 liveness/recovery verdict.
@@ -6788,6 +6826,29 @@ def ensure_runtime(
             frontend_probe = lambda: _default_frontend_probe(_frontend_url)
         else:
             frontend_probe = lambda: False
+    if boot_alive is None:
+        # Pre-Vite boot-liveness signal
+        # (ensure-runtime-starves-pre-vite-sidecar-build, Phase 1). When the
+        # config asserts the boot-liveness signal, bind the real source — the
+        # liveness of the `restart()`-spawned boot process. That boot process is
+        # the `Popen` the production `restart()` closure already owns (see the
+        # default `restart` above): in production a boot-liveness read consults
+        # that in-process handle's `.poll()` (None ⇒ still running ⇒ alive), so
+        # NO URL probe / `_default_*` helper is needed — the handle reaches the
+        # classifier in-process via this same `ensure_runtime` call. Tests always
+        # INJECT `boot_alive`, so the production-only branch below is a documented
+        # placeholder that fail-safes toward NOT-booting (lambda: False) until the
+        # CLI-seam handle-threading wires a live handle (Phase 3 / consumer). A
+        # legacy config dict without the key is tolerated via .get(), so an
+        # un-migrated override never raises. Mirrors the frontend_probe binding.
+        if cfg.get("boot_liveness"):
+            # Production source: the in-process boot-process Popen handle's
+            # liveness. With no handle threaded yet (the CLI seam binds it),
+            # fail-safe toward NOT-booting so a misconfig can never falsely
+            # patient-wait a genuinely dead runtime forever.
+            boot_alive = lambda: False
+        else:
+            boot_alive = lambda: False
 
     # ---- M4 mode: Identity engaged (LD3) -------------------------------------
     # Identity is "engaged" iff the caller threads a controller session id OR an
@@ -6825,6 +6886,7 @@ def ensure_runtime(
             tool_name=tool_name,
             sidecar_check=sidecar_check,
             frontend_probe=frontend_probe,
+            boot_alive=boot_alive,
         )
 
     # ---- Legacy mode: pre-M4 boot/stale/ready flow ---------------------------
@@ -6855,7 +6917,7 @@ def ensure_runtime(
             return _route_legacy_non_serving(
                 cfg, code=code, payload=payload, probe=probe, restart=restart,
                 frontend_probe=frontend_probe, sleep=sleep, tool_name=tool_name,
-                sidecar_check=sidecar_check,
+                sidecar_check=sidecar_check, boot_alive=boot_alive,
             )
     elif stale_check():
         # Runtime UP but binary STALE → force a rebuild, then re-probe.
@@ -6869,7 +6931,7 @@ def ensure_runtime(
             return _route_legacy_non_serving(
                 cfg, code=code, payload=payload, probe=probe, restart=restart,
                 frontend_probe=frontend_probe, sleep=sleep, tool_name=tool_name,
-                sidecar_check=sidecar_check,
+                sidecar_check=sidecar_check, boot_alive=boot_alive,
             )
     else:
         # Runtime UP and CURRENT.
@@ -6890,7 +6952,7 @@ def ensure_runtime(
 
 def _route_legacy_non_serving(
     cfg, *, code, payload, probe, restart, frontend_probe, sleep, tool_name,
-    sidecar_check=None,
+    sidecar_check=None, boot_alive=None,
 ):
     """Honest verdict for a legacy-mode runtime still non-serving after a boot /
     rebuild attempt (ensure-runtime-legacy-mode-optimistic-ready-verdict, Phase 1).
@@ -7026,6 +7088,7 @@ def _ensure_runtime_m4(
     tool_name,
     sidecar_check=None,
     frontend_probe=None,
+    boot_alive=None,
 ):
     """The M4 Identity → Staleness → Health classifier + bounded recovery (LD3).
 
@@ -7049,6 +7112,12 @@ def _ensure_runtime_m4(
         # Defensive default for legacy/un-threaded callers (e.g. a test that does
         # not inject one): no frontend signal ⇒ never `compiling` ⇒ today's path.
         frontend_probe = lambda: False
+    if boot_alive is None:
+        # Defensive default (ensure-runtime-starves-pre-vite-sidecar-build): no
+        # boot-liveness signal ⇒ a both-ports-down runtime is never the pre-Vite
+        # `compiling` case ⇒ today's `dead`/recovery path. Default-off byte-
+        # identity preserved for every legacy/un-threaded caller.
+        boot_alive = lambda: False
     code, payload = probe()
     lock = read_lock()
 
