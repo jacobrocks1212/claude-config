@@ -62,8 +62,8 @@ In-file `--test` smoke harness (hermetic temp-dir fixtures, not pytest). The new
 ⚖ policy: targeted-vs-generic parity assertion → targeted (sizing/completeness only — same product behavior; SPEC Open Question marks targeted sufficient and generic as separate larger hardening)
 
 **Deliverables:**
-- [ ] In `lazy_parity_audit.py`: add a check (in the state-script parity audit path, alongside the existing parity assertions) that BOTH `lazy-state.py` and `bug-state.py` assign `state["cycle_prompt_ref"]` in their `--emit-prompt` block — fail (non-zero / reported divergence) if exactly one does. Use the existing audit's reporting/diff convention; do not invent a new failure channel.
-- [ ] Tests: `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` passes AFTER Phase 1 lands (both scripts now surface the field), and the new assertion is exercised. Confirm `lazy_parity_audit.py --repo-root .` (all pairs) stays green.
+- [x] In `lazy_parity_audit.py`: add a check (in the state-script parity audit path, alongside the existing parity assertions) that BOTH `lazy-state.py` and `bug-state.py` assign `state["cycle_prompt_ref"]` in their `--emit-prompt` block — fail (non-zero / reported divergence) if exactly one does. Use the existing audit's reporting/diff convention; do not invent a new failure channel.
+- [x] Tests: `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` passes AFTER Phase 1 lands (both scripts now surface the field), and the new assertion is exercised. Confirm `lazy_parity_audit.py --repo-root .` (all pairs) stays green.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` exits 0 with the new `cycle_prompt_ref` parity assertion present and passing. (Optionally demonstrable: reverting Phase 1's assignment makes the audit fail — proving the assertion is load-bearing, not inert.)
 
@@ -80,3 +80,9 @@ Run the parity audit for the `lazy-bug-batch` pair and for all pairs; both green
 - Last phase. Once both phases land, the bug pipeline dispatches real-skill cycles by reference (49-char token) instead of re-inlining 9.5–12K-char prompts, and the parity gate prevents silent re-drift.
 
 **Completion (gate-owned):** the `__mark_fixed__` gate flips SPEC.md / PHASES.md `**Status:**` to Fixed and writes `FIXED.md` once the validation tail (state-script `--test` + parity audit, in lieu of `/mcp-test` for this no-MCP-surface fix) certifies both phases. This phase authors NO status-flip / receipt / archive checkbox row.
+
+**Implementation Notes (Phase 2 — completed 2026-06-23):**
+- Added `_CYCLE_PROMPT_REF_RE = re.compile(r'state\["cycle_prompt_ref"\]\s*=')` constant alongside existing parity regex declarations (~line 332).
+- Added corresponding check block in `audit_state_script_parity()` after the `unknown-host-capability` check: emits a finding if either script lacks the `state["cycle_prompt_ref"] =` assignment, using the existing `lazy-parity [state-scripts] STATE:` finding format.
+- Assertion is load-bearing: regex returns `None` on text without the assignment (verified in-memory before the fix existed, and confirmed the pre-fix `bug-state.py` would have failed).
+- Gates confirmed: `lazy_parity_audit.py --repo-root . --pair lazy-bug-batch` exit 0, `lazy_parity_audit.py --repo-root .` exit 0, both `--test` suites green.

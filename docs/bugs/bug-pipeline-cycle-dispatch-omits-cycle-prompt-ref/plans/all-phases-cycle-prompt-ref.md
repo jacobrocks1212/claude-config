@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref
-status: In-progress
+status: Complete
 created: 2026-06-23
 complexity: mechanical
 phases: [1, 2]
@@ -93,7 +93,7 @@ All paths verified `exists: yes`. No net-new files. No phantom anchors. No genui
 ## Work Units
 
 - [x] WU-1 — Surface `cycle_prompt_ref` in `bug-state.py` + `--test` fixture (Phase 1)
-- [ ] WU-2 — Targeted `cycle_prompt_ref` surfacing-parity assertion in `lazy_parity_audit.py` (Phase 2)
+- [x] WU-2 — Targeted `cycle_prompt_ref` surfacing-parity assertion in `lazy_parity_audit.py` (Phase 2)
 
 ## Execution Schedule
 

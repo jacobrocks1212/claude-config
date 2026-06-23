@@ -329,6 +329,12 @@ _HOST_CAPABILITY_FAILFAST_RE = re.compile(
     r"format_unknown_host_capability_blocker"
 )
 _HOST_CAPABILITY_BLOCKER_KIND_RE = re.compile(r"unknown-host-capability")
+# bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref Phase 2: the
+# cycle_prompt_ref surfacing assignment is a MIRRORED coupled-pair surface —
+# both scripts must assign state["cycle_prompt_ref"] in their --emit-prompt
+# path so the orchestrator receives the @@lazy-ref dispatch token.  A drop of
+# the assignment from either script is a hard finding here.
+_CYCLE_PROMPT_REF_RE = re.compile(r'state\["cycle_prompt_ref"\]\s*=')
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
@@ -389,6 +395,15 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"so both state scripts fail fast on an unprobeable capability id "
                 f"instead of silently deferring forever "
                 f"(host-capability-declaration-for-gated-features coupled-pair parity)"
+            )
+        if _CYCLE_PROMPT_REF_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must assign "
+                f'state["cycle_prompt_ref"] in its --emit-prompt path so the '
+                f"orchestrator receives the @@lazy-ref dispatch token (49-char "
+                f"reference) instead of re-inlining the full cycle prompt "
+                f"(bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref coupled-pair "
+                f"parity)"
             )
     return findings
 
