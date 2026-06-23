@@ -71,6 +71,15 @@ Read `{cacheDir}/processed-findings.json` into memory. Findings carry a `file` f
 
 Initialize `{cacheDir}/buddy-session.json` (see schema below). If the file already exists (compaction recovery — see below), read it and resume from the first chunk whose `"status"` is not `"done"`.
 
+### Finding ID Convention
+
+Every finding must be referenced by a single canonical ID everywhere it appears — in the orient narration, reconcile list, disposition prompt, and the persisted `finding_ref` field. Use this scheme without exception:
+
+- **Line-bearing findings:** canonical ID is `<file>:<line>` (e.g. `identify-submitter.ts:9`). This is the **leading token** of every `finding_ref` value.
+- **Line-less findings** (e.g. some investigation findings with no specific line): canonical ID is `<file>#<short-slug>` (e.g. `identify-submitter.ts#null-guard`). Use a stable, lowercase-hyphenated slug derived from the finding's subject.
+
+A human-readable descriptor MAY follow in parentheses — e.g. `identify-submitter.ts:9 (reuse vs token.Scope)` — but the **leading `<file>:<line>` or `<file>#<slug>` token is the canonical ID**, not the descriptor. Phase 4's `scripts/disposition-calibration.ts` joins `buddy-session.json` dispositions to `processed-findings.json` by parsing that leading token and matching it (by source + line + basename) against the findings file — so the ID shown in the prompt **must equal the `finding_ref` persisted**. Do not invent ad-hoc IDs (`F0`, `①`, `[F0]`, `Q2`, etc.); these break the calibration join.
+
 ### Per-Chunk Loop
 
 **Stream hygiene:** During the walk, the harness may emit `<task-notification>` lines (Task-tool status updates). Do NOT echo these into the reviewer-facing output — suppress them entirely. Surface only the orient / teach / diagram / disposition content to the reviewer.
@@ -146,6 +155,8 @@ _AI-role framing:_ These are mechanical-triage and cross-file-dependency aids �
 
 Use `AskUserQuestion` to ask the reviewer to disposition every finding — tool-surfaced (Pass 2) AND reviewer-authored Pass-1 observations. Present the severity options clearly:
 
+**Taxonomy invariant:** the prompt MUST present all four values — `Blocking / Important / Suggestion / Dismiss` — in that stable order, on every disposition prompt, for every finding. Never omit `Blocking`, never reorder the four values, never collapse to fewer options, and never substitute the older `Keep / Will-comment / Dismiss / Add-own` vocabulary. This taxonomy must remain stable so that Phase 4 calibration signal is comparable across sessions.
+
 ```
 For each finding, assign a severity:
   Blocking    — critical logic / security / data-corruption / requirement violation
@@ -207,7 +218,7 @@ If all chunks are `"done"`, skip to Phase 2.
 			],
 			"dispositions": [
 				{
-					"finding_ref": "<file:line or id>",
+					"finding_ref": "<file:line or file#slug> — leading token is the canonical ID from the Finding ID Convention above; the calibration join depends on it",
 					"source": "investigation|sweep|reuse|intrafile|reviewer",
 					"severity": "blocking|important|suggestion|dismiss",
 					"note": "<optional comment text>"

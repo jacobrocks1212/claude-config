@@ -233,8 +233,8 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 - [x] **Serialization fix:** JSON-escape all paths written into `buddy-session.json` (the unescaped-Windows-backslash bug that broke resume in 16683). Verify reload survives Windows paths.
 - [x] **Completeness sweep:** before Phase 2 synthesis, assert no finding reaches synthesis undispositioned (dropped-finding re-ask bug, 16683).
 - [x] **Suppress `task-notification` echo** into the user stream.
-- [ ] **Stable finding IDs:** one canonical ID scheme (no `F0`/`①`/`[F0]`/`Q2` drift).
-- [ ] **Canonical disposition taxonomy:** enforce `Blocking / Important / Suggestion / Dismiss`, always all four, stable order (already present at `:145-154` — make it invariant, not drifting across versions).
+- [x] **Stable finding IDs:** one canonical ID scheme (no `F0`/`①`/`[F0]`/`Q2` drift).
+- [x] **Canonical disposition taxonomy:** enforce `Blocking / Important / Suggestion / Dismiss`, always all four, stable order (already present at `:145-154` — make it invariant, not drifting across versions).
 - [ ] **Batch dispositions:** present a step's findings in one multi-disposition prompt by default instead of one-at-a-time.
 - [ ] **Surface confidence pre-disposition:** label each finding `CONFIRMED`/`UNVERIFIED` (from Phase 2's emitted field) before asking for a disposition.
 - [ ] **Early escape hatch:** offer "auto-disposition remaining at recommended severities" early in dismiss-heavy reviews (records explicit dispositions — see Phase 4 coupling note).
@@ -270,6 +270,12 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 - **Stream hygiene:** added a **Stream hygiene** note at the top of `### Per-Chunk Loop` — the buddy must NOT echo `<task-notification>` harness text into the reviewer stream (SPEC friction #6).
 - **Review verdict:** PASS (ground-truth verified: yes — orchestrator independently re-ran `wc -l` (374) + the four grep assertions; placement confirmed: Stream hygiene @76, Serialization @165/@224, Completeness Sweep @232 between Phase 2 @228 and Collect Curated @246).
 - **MCP integration test:** N/A — interactive command-prompt change; the serialization/completeness behavior is checked by a live buddy run (Runtime Verification rows, not `/execute-plan`'s to tick).
+- Files modified: `commands/review-pr-buddy.md`.
+
+**2026-06-22 — Batch 2 (WU-5b): canonical finding IDs + disposition-taxonomy invariant in `commands/review-pr-buddy.md`.**
+- **Finding ID Convention** (`### Finding ID Convention`, inserted before `#### 1. Orient`): one scheme used in orient, reconcile, the disposition prompt, AND the persisted `finding_ref` — line-bearing findings → `<file>:<line>` (the leading token of `finding_ref`); line-less findings → `<file>#<short-slug>`. A human descriptor may follow in parentheses, but the leading token IS the canonical ID. Explicitly names the Phase-4 dependency: `scripts/disposition-calibration.ts` parses that leading token to join dispositions to `processed-findings.json`, so the prompt ID MUST equal the persisted `finding_ref`. Ad-hoc schemes (`F0`/`①`/`[F0]`/`Q2`) forbidden. The `finding_ref` schema field carries a matching reminder. (Note: the `<file>#<slug>` line-less form intentionally won't satisfy the helper's `^(.*?):(\d+)` line join and is skipped as unmatched — line-less findings have no line-bearing processed finding to calibrate against; no fabricated signal.)
+- **Taxonomy invariant** (at the Disposition step #4, just before the severity menu): the prompt MUST present all four values `Blocking / Important / Suggestion / Dismiss` in that stable order, every prompt, every finding — never omit `Blocking`, reorder, collapse, or revert to the old `Keep / Will-comment / Dismiss / Add-own` vocabulary. Keeps the Phase-4 signal comparable across sessions (SPEC friction #2).
+- **Review verdict:** PASS (ground-truth verified: yes — orchestrator re-ran `wc -l` (385) + greps; Finding ID Convention @74-81, invariant @158 immediately preceding the intact four-value menu, `finding_ref` schema reminder @221).
 - Files modified: `commands/review-pr-buddy.md`.
 
 ---
