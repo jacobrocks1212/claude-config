@@ -6838,13 +6838,49 @@ def ensure_runtime(
     if restart is None:
         def restart() -> bool:
             # Fire dev:restart in the background, then poll /health to 200.
+            #
+            # ensure-runtime-cold-boot-starvation-round-3 (the LIVE-confirmed root
+            # cause the two prior unit-test-green fixes never reached): the spawn is
+            # PLATFORM-BLIND. `restart_command` is `npm run dev:restart`, and on
+            # Windows `npm` is `npm.cmd` — a batch shim that Windows `CreateProcess`
+            # will NOT resolve from a bare-token argv (no `.cmd`/PATHEXT lookup
+            # without a shell). So `subprocess.Popen(shlex.split("npm run …"))` with
+            # the default `shell=False` raises `FileNotFoundError` ([WinError 2]) —
+            # caught by the `(OSError, ValueError)` guard below, which returns False
+            # BEFORE the boot is ever spawned, BEFORE `_boot_handle` is stashed, and
+            # BEFORE `write_boot_stamp` runs. The whole boot-liveness / time-window-
+            # grace / patient-wait machinery (rounds 32 + 2) is therefore DEAD on
+            # Windows: no boot ⇒ no stamp ⇒ `boot_alive()` always False ⇒ every
+            # `_recover_runtime` iteration classifies `dead` and "kill-restarts" a
+            # boot that never launched, exhausting the ≤5× cap in ~60-80s → false
+            # `mcp-runtime-unready` BLOCKED. (The manual `npm run dev:restart` works
+            # because the interactive shell DOES resolve `npm.cmd`; the asymmetry is
+            # exactly the shell.) Both prior fixes were unit-green because EVERY test
+            # either injects `restart` or monkeypatches `lazy_core.subprocess` with a
+            # fake whose `.Popen` always succeeds — so the real, platform-blind spawn
+            # was never exercised.
+            #
+            # Fix: on Windows, spawn through the shell (`shell=True` with the command
+            # STRING — a list arg is ignored under `shell=True` on Windows) so the
+            # `.cmd` shim resolves exactly as it does for a manual invocation. On
+            # POSIX keep the safer no-shell shlex-split argv (the command is a repo
+            # config value, and `cmd.exe`/`/bin/sh` quoting differences are avoided).
             try:
-                proc = subprocess.Popen(  # noqa: S602 — repo-config command, not user input
-                    shlex.split(cfg["restart_command"]),
-                    cwd=str(repo_root),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                if os.name == "nt":
+                    proc = subprocess.Popen(  # noqa: S602 — repo-config command, not user input
+                        cfg["restart_command"],
+                        cwd=str(repo_root),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        shell=True,
+                    )
+                else:
+                    proc = subprocess.Popen(  # noqa: S603 — repo-config command, not user input
+                        shlex.split(cfg["restart_command"]),
+                        cwd=str(repo_root),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             except (OSError, ValueError):
                 return False
             # Stash the live boot handle so the boot-liveness signal can read its

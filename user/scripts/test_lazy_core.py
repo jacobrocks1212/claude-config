@@ -20208,6 +20208,112 @@ def test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic():
     )
 
 
+class _WindowsSpawnSemanticsSubprocess:
+    """Module stand-in for `lazy_core.subprocess` that emulates Windows
+    `CreateProcess` resolution (ensure-runtime-cold-boot-starvation-round-3).
+
+    The two prior fixes' tests used `_FakeSubprocess`, whose `.Popen(*a, **kw)`
+    ALWAYS succeeds regardless of how it is called — so they NEVER exercised the
+    real production defect: on Windows `npm` is `npm.cmd`, which `CreateProcess`
+    will NOT resolve from a bare-token argv list (no shell, no PATHEXT lookup), so
+    the platform-blind `subprocess.Popen(shlex.split("npm run dev:restart"))`
+    raised `FileNotFoundError` and the production `restart()` returned False BEFORE
+    spawning anything. This fake reproduces exactly that asymmetry:
+
+      - called with a LIST argv and NOT `shell=True`  → raise `FileNotFoundError`
+        (the [WinError 2] the bare-token `npm` spawn hit in production);
+      - called with `shell=True` and a STRING command → succeed (the shell resolves
+        `npm.cmd` exactly as an interactive `npm run dev:restart` does).
+
+    A test using this fake FAILS against the old platform-blind spawn (restart()
+    returns False ⇒ no stamp ⇒ never `compiling` ⇒ generic BLOCKED) and PASSES only
+    with the Windows-shell spawn fix — closing the false-green gap that let two
+    unit-green fixes ship a live-BLOCKED runtime."""
+
+    DEVNULL = -3
+
+    def __init__(self, handle):
+        self._handle = handle
+        self.spawns = 0
+        self.shell_spawns = 0
+
+    def Popen(self, cmd, *a, **kw):  # noqa: N802 — mirrors subprocess.Popen
+        if kw.get("shell") and isinstance(cmd, str):
+            # Shell resolution path: `npm.cmd` resolves, boot launches.
+            self.spawns += 1
+            self.shell_spawns += 1
+            return self._handle
+        # Bare-token argv with no shell: Windows cannot find `npm` (= `npm.cmd`).
+        raise FileNotFoundError(2, "The system cannot find the file specified")
+
+
+def test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot():
+    """ROUND-3 REGRESSION (ensure-runtime-cold-boot-starvation-round-3): the LIVE-
+    confirmed root cause the two prior unit-green fixes never reached. The
+    production `restart()` closure spawned `npm run dev:restart` with a bare-token
+    argv and `shell=False`, which on Windows raises `FileNotFoundError` (`npm` =
+    `npm.cmd`, unresolvable without a shell) — so restart() returned False BEFORE
+    spawning the boot, BEFORE stashing `_boot_handle`, and BEFORE `write_boot_stamp`.
+    The entire boot-liveness / time-window-grace / patient-wait machinery (rounds 32
+    + 2) was therefore DEAD on Windows: no boot ⇒ no stamp ⇒ `boot_alive()` always
+    False ⇒ a cold boot was misclassified `dead` and "kill-restarted" 5× → false
+    BLOCKED.
+
+    This test exercises the REAL production `restart()` closure (NO injected
+    `restart`) against a subprocess fake that reproduces Windows `CreateProcess`
+    semantics (raise for a no-shell bare-token argv; succeed only for a `shell=True`
+    string). With the fix, the cold boot spawns ONCE via the shell, writes a fresh
+    stamp, classifies `compiling`, patient-waits, and ends READY. Against the OLD
+    platform-blind spawn this FAILS (BLOCKED, zero successful spawns) — the assertion
+    the two prior false-green tests could not make because their fake always spawned.
+    """
+    _guard()
+    live = _FakeBootPopen(exit_code=None)  # boot stays alive once it launches
+    fake_sub = _WindowsSpawnSemanticsSubprocess(live)
+    fake_time = _FakeTime()
+    probe_calls = {"n": 0}
+
+    def probe():
+        # Both ports down until the patient wait has polled a while, then serve.
+        probe_calls["n"] += 1
+        return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
+
+    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
+    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            result = lazy_core.ensure_runtime(
+                Path(td),
+                config=_M4_CONFIG_BOOT,           # boot_liveness: True
+                probe=probe,                       # only the BACKEND probe injected
+                stale_check=lambda: False,
+                read_lock=lambda: _owned_lock(start_time=111.0),
+                live_session_id=_SESSION,          # IDENTITY engaged → M4 path
+                kernel_start_time_fn=lambda pid, **kw: 111.0,
+                sleep=lambda s: None,
+                frontend_probe=lambda: False,      # Vite down (pre-Vite window)
+                # NO restart, NO boot_alive → the REAL production restart() closure
+                # binds and must spawn `npm run dev:restart` through the shell on nt.
+            )
+    finally:
+        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+
+    assert result["state"] == "READY", (
+        "the production restart() must launch the cold boot via the shell so the "
+        f"boot-liveness/patient-wait machinery engages — got {result}"
+    )
+    # The boot was spawned through the shell at least once (the fix path).
+    assert fake_sub.shell_spawns >= 1, (
+        "the Windows production restart() must spawn via shell=True so npm.cmd "
+        f"resolves: shell_spawns={fake_sub.shell_spawns}"
+    )
+    # And it patient-waited rather than 5×-kill-restarting: ONE spawn total.
+    assert fake_sub.spawns == 1, (
+        "a successfully-launched cold boot must spawn ONCE then patient-wait, not "
+        f"re-spawn through the recovery loop: spawns={fake_sub.spawns}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # ensure-runtime-recovery-starves-cold-compile Phase 2 — patient compiling-aware
 # wait. A runtime classified `compiling` (Vite :1420 up, backend :3333 not yet
@@ -21037,6 +21143,10 @@ _TESTS = _TESTS + [
      test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn),
     ("test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic",
      test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic),
+    # ensure-runtime-cold-boot-starvation-round-3: the LIVE-confirmed platform-blind
+    # spawn defect — the real restart() must launch npm via the shell on Windows.
+    ("test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot",
+     test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot),
     # ensure-runtime-recovery-starves-cold-compile Phase 2: patient compiling wait.
     ("test_cold_compile_timeout_blocker_distinct_from_blocked_blocker",
      test_cold_compile_timeout_blocker_distinct_from_blocked_blocker),
