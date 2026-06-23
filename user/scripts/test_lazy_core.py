@@ -9970,6 +9970,137 @@ def test_restore_checkpoint_counters_carries_forward():
             _clear_state_dir()
 
 
+def test_restore_checkpoint_counters_carries_forward_run_identity():
+    """cycle-bracket-break-on-checkpoint-resume (hardening Round 35): a
+    non-operator-authorized resume must RESTORE the run identity (started_at) so a
+    sanctioned same-run pause/resume does NOT change run identity mid-cycle and
+    false-trip detect_cycle_bracket_friction signal (a).
+
+    Covers: (1) carry-forward branch restores the original started_at;
+    (2) detect_cycle_bracket_friction does NOT trip after the restore (the live
+    identity matches a --cycle-begin run_started_at snapshot taken pre-pause);
+    (3) operator-authorized resume does NOT restore identity (genuinely new run);
+    (4) a >24h-stale checkpoint identity is NOT restored (age gate preserved);
+    (5) a missing/unparseable checkpoint identity leaves the minted started_at."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            original_identity = "2026-06-23T03:15:38Z"
+            # --- (1) + (2): carry-forward branch restores identity --------------
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            minted = lazy_core.read_run_marker()["started_at"]
+            assert minted != original_identity, "marker minted a fresh started_at"
+            checkpoint = {
+                "reason": "checkpoint",
+                "next_route": "execute-plan Phase 3",
+                "counters": {"forward_cycles": 7, "meta_cycles": 4, "max_cycles": 25},
+                "run_started_at": original_identity,
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(checkpoint)
+            assert restored is not None
+            assert restored["started_at"] == original_identity, restored
+            on_disk = lazy_core.read_run_marker()
+            assert on_disk["started_at"] == original_identity, on_disk
+
+            # (2) The pre-pause --cycle-begin snapshot now matches the live identity
+            # → the friction detector does NOT false-trip cycle-bracket-break.
+            cycle_marker = {
+                "kind": "cycle",
+                "run_started_at": original_identity,  # snapshotted pre-pause
+                "begin_head_sha": "abc123",
+            }
+            friction = lazy_core.detect_cycle_bracket_friction(
+                cycle_marker,
+                current_run_started_at=on_disk["started_at"],
+                current_head_sha="abc123",
+                sub_skill="mcp-test",
+                commits_since=0,
+            )
+            assert friction is None, ("identity restored → no bracket-break", friction)
+
+            # Negative control: WITHOUT the restore (old behavior, minted identity)
+            # the same pre-pause snapshot DOES trip — proving the fix is load-bearing.
+            should_trip = lazy_core.detect_cycle_bracket_friction(
+                cycle_marker,
+                current_run_started_at=minted,
+                current_head_sha="abc123",
+                sub_skill="mcp-test",
+                commits_since=0,
+            )
+            assert should_trip is not None, should_trip
+            assert should_trip["reason"] == "cycle-bracket-break", should_trip
+        finally:
+            _clear_state_dir()
+
+        # --- (3): operator-authorized resume does NOT restore identity ----------
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            minted = lazy_core.read_run_marker()["started_at"]
+            op_ckpt = {
+                "reason": "checkpoint",
+                "next_route": "x",
+                "counters": {"forward_cycles": 7, "meta_cycles": 4, "max_cycles": 25},
+                "run_started_at": "2026-06-23T03:15:38Z",
+                "operator_authorized": True,
+                "ts": 0,
+            }
+            assert lazy_core.restore_checkpoint_counters(op_ckpt) is None
+            # operator-authorized = fresh run → minted identity is kept untouched.
+            assert lazy_core.read_run_marker()["started_at"] == minted
+        finally:
+            _clear_state_dir()
+
+        # --- (4): a >24h-stale checkpoint identity is NOT restored --------------
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            minted = lazy_core.read_run_marker()["started_at"]
+            stale_ident = "2020-01-01T00:00:00Z"  # decades old → past the age gate
+            stale_ckpt = {
+                "reason": "checkpoint",
+                "next_route": "x",
+                "counters": {"forward_cycles": 1, "meta_cycles": 0, "max_cycles": 25},
+                "run_started_at": stale_ident,
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(stale_ckpt)
+            assert restored is not None
+            # Age gate preserved: the stale identity is REFUSED, minted kept.
+            assert restored["started_at"] == minted, restored
+        finally:
+            _clear_state_dir()
+
+        # --- (5): missing / unparseable identity leaves the minted started_at ---
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            minted = lazy_core.read_run_marker()["started_at"]
+            for bad in (None, "", "not-a-timestamp", 12345):
+                ckpt = {
+                    "reason": "checkpoint",
+                    "next_route": "x",
+                    "counters": {"forward_cycles": 2, "meta_cycles": 0},
+                    "run_started_at": bad,
+                    "ts": 0,
+                }
+                restored = lazy_core.restore_checkpoint_counters(ckpt)
+                assert restored is not None
+                assert restored["started_at"] == minted, (bad, restored)
+        finally:
+            _clear_state_dir()
+
+
 def test_restore_checkpoint_counters_no_checkpoint_is_noop():
     """A genuinely NEW invocation (checkpoint=None) is a no-op — the marker keeps
     its by-design 0/0 start.  Also tolerates malformed/None checkpoints without
@@ -15305,6 +15436,7 @@ _TESTS = [
     ("test_run_end_checkpoint_threads_operator_authorized", test_run_end_checkpoint_threads_operator_authorized),
     # Regression: accidental mid-run counter reset (2026-06-14) — HC8 monotonicity
     ("test_restore_checkpoint_counters_carries_forward", test_restore_checkpoint_counters_carries_forward),
+    ("test_restore_checkpoint_counters_carries_forward_run_identity", test_restore_checkpoint_counters_carries_forward_run_identity),
     ("test_restore_checkpoint_counters_no_checkpoint_is_noop", test_restore_checkpoint_counters_no_checkpoint_is_noop),
     ("test_restore_checkpoint_counters_coerces_garbage_counts", test_restore_checkpoint_counters_coerces_garbage_counts),
     # operator-checkpoint-resume-counter-reset Phase 2: provenance branch
