@@ -238,7 +238,7 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 - [x] **Batch dispositions:** present a step's findings in one multi-disposition prompt by default instead of one-at-a-time.
 - [x] **Surface confidence pre-disposition:** label each finding `CONFIRMED`/`UNVERIFIED` (from Phase 2's emitted field) before asking for a disposition.
 - [x] **Early escape hatch:** offer "auto-disposition remaining at recommended severities" early in dismiss-heavy reviews (records explicit dispositions — see Phase 4 coupling note).
-- [ ] **Already-commented handling:** record findings already commented and skip re-litigating severity; cross-check stale Copilot threads against later SHAs.
+- [x] **Already-commented handling:** record findings already commented and skip re-litigating severity; cross-check stale Copilot threads against later SHAs.
 
 **Minimum Verifiable Behavior:** A buddy session resumes cleanly after writing a Windows path (no JSON parse error on reload); a multi-finding step presents one batched disposition prompt; each finding shows its `CONFIRMED/UNVERIFIED` label; the early escape hatch records explicit dispositions for all remaining findings.
 
@@ -285,6 +285,18 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 - The WU-5b Taxonomy invariant and four-value menu remain intact inside the batched prompt; optional per-finding note and reviewer-Pass-1 handling preserved.
 - **Review verdict:** PASS (ground-truth verified: yes — orchestrator re-ran `wc -l` (398) + greps and read the reworked step @154-183; batching default, confidence labels exact, escape hatch records explicit dispositions, `Taxonomy invariant` still @165).
 - Files modified: `commands/review-pr-buddy.md`.
+
+**2026-06-22 — Batch 4 (WU-5d): already-commented handling + stale-Copilot-thread reconciliation in `commands/review-pr-buddy.md`.**
+- A `**Pre-filter: already-commented and stale Copilot threads**` block was added at the TOP of the Reconcile — Pass 2 step (#3), running BEFORE the grouped finding display so resolved/stale items never reach the disposition prompt.
+- **Already-commented (friction #8):** a finding whose canonical ID matches an existing open PR thread (`pr-context.json`) is recorded directly in `buddy-session.json` with `severity: "already-commented"` + note "already raised on the PR — not re-litigated", surfaced as a one-line informational `↩` note, and NOT routed through the four-value disposition prompt. It counts as fully handled for the WU-5a Completeness Sweep (explicit status, not a gap). (In Phase 4's helper this non-`dismiss` status reads as signal `1.0` — defensible: a finding the reviewer raised on the PR is a true positive; in Phase 2 synthesis it maps to no tier and is excluded from the curated review, which is correct — it's already on the PR.)
+- **Stale Copilot reconciliation:** reads the chronological commit-SHA list from `pr-timeline.json` (head = last entry); a Copilot thread anchored to the head SHA is live, one anchored to any earlier SHA is flagged stale and skipped/down-ranked with a `⚠` log line — not re-surfaced as a live finding.
+- **Review verdict:** PASS (ground-truth verified: yes — orchestrator re-ran `wc -l` (424) + greps and read the block @139-163; both filters precede the grouped display; WU-5a/5b/5c content confirmed intact).
+- Files modified: `commands/review-pr-buddy.md`.
+
+**2026-06-22 — Phase 5 Integration Verification (PASS) + CLAUDE.md review.**
+- **Integration:** the four WUs compose coherently on the single file `review-pr-buddy.md` without conflict — WU-5a's Completeness Sweep is satisfied by WU-5c's escape-hatch dispositions AND WU-5d's already-commented status (both explicit, never silent skips); WU-5b's canonical `<file>:<line>` `finding_ref` token is what WU-5d's already-commented match keys on AND what Phase 4's `disposition-calibration.ts` join parses; WU-5c's confidence surfacing reads the same `CONFIRMED`/`UNVERIFIED` field Phase 2 emits. Net effect: more disposition data survives the walk (batching + escape hatch + serialization-safe resume) and that data stays joinable (stable IDs) — directly feeding Phase 4's signal. The resilience/UX changes preserve, not weaken, the disposition completeness Phase 4 depends on.
+- **CLAUDE.md review:** no change warranted — Phase 5 is buddy-internal UX/resilience hardening; the plugin `CLAUDE.md` buddy paragraph + the closed-loop architecture note added in Phase 4 already capture the externally-relevant behavior. The per-WU mechanics (serialization discipline, ID convention, taxonomy invariant, batching, escape hatch, already-commented/stale-thread filters) are documented in these PHASES.md notes and self-documented in the command prompt itself.
+- **Runtime Verification:** the Phase 5 `**Runtime Verification**` rows (resume after a Windows path; no undispositioned finding reaches synthesis; no `task-notification` leak; batched prompt + confidence labels; escape hatch produces explicit dispositions) remain UNCHECKED — they require a live buddy run and are owned by a buddy/review-run pass, not `/execute-plan`.
 
 ---
 

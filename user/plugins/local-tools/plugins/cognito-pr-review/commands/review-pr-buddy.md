@@ -138,6 +138,32 @@ Use `AskUserQuestion` to collect the reviewer's Pass-1 observations (file, optio
 
 #### 3. Reconcile — Pass 2
 
+**Pre-filter: already-commented and stale Copilot threads**
+
+Before presenting findings, apply two filters using `{cacheDir}/pr-context.json` and `{cacheDir}/pr-timeline.json`:
+
+**Already-commented findings:** Cross-check each finding's canonical ID (`<file>:<line>` or `<file>#<slug>`) against the open PR threads in `pr-context.json`. A finding that corresponds to an existing comment or thread already posted on the PR is classified as **already-commented** and is NOT routed through the disposition prompt. Record it immediately in `buddy-session.json` as:
+
+```json
+{
+  "finding_ref": "<canonical-id>",
+  "source": "<original source>",
+  "severity": "already-commented",
+  "note": "already raised on the PR — not re-litigated"
+}
+```
+
+Surface it to the reviewer as a one-line informational note — e.g. "↩ `identify-submitter.ts:42` — already raised on the PR (not re-litigated)" — grouped at the top of the reconcile output so the reviewer can see coverage without being asked to disposition it again. These entries count as fully handled for the WU-5a Completeness Sweep.
+
+**Stale Copilot-thread reconciliation:** Read the commit SHA list from `pr-timeline.json` (the array of commit SHAs in chronological order, newest last). The **current head SHA** is the last entry. For each Copilot review thread in `pr-context.json` that carries an `originalCommitId` (or equivalent anchor SHA):
+
+- If that anchor SHA equals the **current head SHA** → the thread is **live**: treat it normally.
+- If that anchor SHA is any **earlier SHA** in the timeline → the thread is **stale**: the code it commented on has since changed. Mark it stale and skip/down-rank it — do NOT re-surface it as a live finding in the walk. Log it as stale in the reconcile output: "⚠ Copilot thread on `<file>:<line>` anchored to `<short-SHA>` (outdated — head is `<head-short-SHA>`) — skipped."
+
+Both filters run before the grouped finding display below. Only findings that pass both filters reach the disposition prompt.
+
+---
+
 Reveal the chunk's pre-computed findings from `processed-findings.json` (investigation, sweep, reuse, intrafile) as a reconciliation against the reviewer's Pass-1 take: where they overlap, where the tool flagged something the reviewer didn't catch, and that the tool may have missed domain-intent issues the reviewer caught.
 
 Present findings grouped by source:

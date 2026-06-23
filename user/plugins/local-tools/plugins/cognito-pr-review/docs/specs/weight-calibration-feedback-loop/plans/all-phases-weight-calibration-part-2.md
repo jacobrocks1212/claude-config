@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: weight-calibration-feedback-loop
-status: Ready
+status: Complete
 created: 2026-06-22
 complexity: complex
 phases: [4, 5]
@@ -120,7 +120,7 @@ Read `docs/specs/weight-calibration-feedback-loop/PHASES.md` (full, including Ph
 - [x] WU-5a — review-pr-buddy.md: serialization fix + completeness sweep + suppress task-notification echo
 - [x] WU-5b — review-pr-buddy.md: stable finding IDs + canonical disposition taxonomy invariant
 - [x] WU-5c — review-pr-buddy.md: batch dispositions + surface confidence + early escape hatch
-- [ ] WU-5d — review-pr-buddy.md: already-commented handling + stale-Copilot-thread reconciliation
+- [x] WU-5d — review-pr-buddy.md: already-commented handling + stale-Copilot-thread reconciliation
 
 ---
 
