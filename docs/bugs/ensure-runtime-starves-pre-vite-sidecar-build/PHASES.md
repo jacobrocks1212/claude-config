@@ -1,0 +1,150 @@
+# Implementation Phases — `ensure_runtime` starves the pre-Vite `sidecar:build` window of a cold boot
+
+> Phases for [`SPEC.md`](./SPEC.md)
+
+**Status:** Open
+
+**MCP runtime:** not-required — this is a pure harness-script change to `user/scripts/lazy_core.py` (and a thin confirmation at the `lazy-state.py --ensure-runtime` CLI seam), validated entirely by the in-file `--test` smoke harness + `test_lazy_core.py` via injected probe/restart/frontend_probe/boot-liveness/sleep callables. There is no AlgoBooth app surface, store, audio path, UI, or event reachable from MCP here (the dev runtime is the *subject under test*, not an MCP-testable target). Per `docs/bugs/CLAUDE.md`, harness-script defects have no MCP-reachable surface — the hermetic state-machine smoke tests ARE the runtime validation. The one runtime-coupled assumption (the pre-Vite both-ports-down window) is workstation-deferred to AlgoBooth where a real cold `tauri dev` boot exists; this repo has no `src-tauri/`/`package.json`, so the live spike is STRUCTURALLY SKIPPED here.
+
+## Cross-feature Integration Notes
+
+The bug SPEC's `**Related:**` line is not a machine-parseable `**Depends on:**` block (bug pipeline), so no upstream PHASES.md look-back fires. The fix nonetheless integrates against the **already-shipped, Fixed** sibling bug and two Complete harness features whose contracts are load-bearing here:
+
+- **`docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile` (Fixed 2026-06-21) — the PRIOR FIX this one extends.** That fix introduced `_classify_compile_state(backend_code, frontend_up)`, `_default_frontend_probe`, `_await_compile_serving`, and the `frontend_probe` injection seam. It correctly handles the **Vite-up / backend-compiling** window (`:3333` down, `:1420` up ⇒ `compiling` ⇒ patient-wait). By construction (`frontend_up` is its ONLY "compiling" signal) it does NOT cover the **pre-Vite** window — the `BeforeDevCommand`/`sidecar:build` phase where Vite has not yet bound `:1420`, so BOTH ports are down and `_classify_compile_state` returns `dead`. This fix adds a SECOND "still booting" signal (boot-process liveness) so the pre-Vite window is ALSO classified as booting/compiling and waited on, not kill-restarted. **Every existing invariant of the prior fix must be preserved** (the `compiling`/`dead`/`serving` truth table for an EXISTING `frontend_up` observation is unchanged; the genuine-crash `_recover_runtime` ≤5×backoff loop, HIJACKED never-kill, and the sidecar composition all stay green).
+- **`long-build-and-runtime-ownership` (Complete 2026-06-20) — the LD3 bounded-recovery contract + the detached-spawn primitive `spawn_detached` (`lazy_core.py:7394`).** `restart()` fires `cfg["restart_command"]` (`"npm run dev:restart"`) in the background via `subprocess.Popen` (`:6742`). The boot-process-liveness signal this fix introduces reads the liveness of that spawned boot process; it must compose with — never duplicate — the existing spawn primitive and must NOT change the genuine-crash recovery loop's invariants.
+- **`env-transient-counts-against-validation-retry-budget` (sidecar-pipe readiness, Leg A).** The `sidecar_check` callable threads through `_route_legacy_non_serving` / `_recover_runtime` / `_await_compile_serving`. The new boot-liveness branch MUST compose with the existing sidecar assertion — a booted runtime is READY only when `:3333` `/health` 200 AND (when asserted) the sidecar pipe is connected. This fix adds the liveness signal alongside, never replacing, the existing `:3333`+`:1420`+sidecar gates.
+
+## Validated Assumptions
+
+The SPEC's root cause is CONFIRMED (Theory 1 — Confirmed) from source + two independent runtime observations of the same `BLOCKED` verdict: `_classify_compile_state` returns `dead` for the pre-Vite both-ports-down window, routing a healthy cold boot into the bounded `_recover_runtime` kill-restart loop (each `dev:restart` begins with `kill-dev`, terminating the in-progress boot), exhausting the ≤5 cap and returning a false `mcp-runtime-unready` BLOCKED. The fix surface is code-read-provable (the classifier, the legacy + M4 routers, `restart()`, and the config dict are all read verbatim into the SPEC Affected Area).
+
+The ONE runtime-coupled assumption — that a cold boot spends its first ~1–2 min in `BeforeDevCommand` (`npm run sidecar:build && vite`) with BOTH ports down while the spawned boot process is alive — is the live signal the fix INTRODUCES. The SPEC's manual cold-boot observation (2026-06-22) directly evidences it (`Running BeforeDevCommand (npm run sidecar:build && vite)` → only THEN `VITE … ready` on `:1420`). It is hermetically testable via an injected boot-liveness callable (no real runtime), but the live signal's truth is a workstation-deferred runtime observation on AlgoBooth, NOT a code read — so Phase 2 carries an explicit `- [ ]` runtime-verification row (STRUCTURALLY SKIPPED in this repo; the hermetic injected-probe tests are the in-repo proof).
+
+## The chosen "still booting" signal (SPEC Open Question 1)
+
+⚖ policy: pre-Vite booting signal → boot-process liveness (candidate a). The SPEC enumerates three candidates: (a) process-liveness of the orchestrator-spawned `tauri dev`/`dev:restart` boot process; (b) a single uninterrupted patient-wait after the FIRST `restart()` before ever entering the kill loop; (c) explicit `sidecar:build`-phase detection (marker/log-tailing). **(a) is chosen** — it is the most general and repo-agnostic (any repo whose boot spends time pre-Vite benefits, not just AlgoBooth's `sidecar:build`), it cleanly separates "cold boot in progress" from "crashed and not restarting" (the genuine-crash case the recovery loop must keep) using the spawn handle the harness ALREADY owns (`restart()`'s `Popen`), and it requires no per-repo marker/log convention (c) and no special-casing the first attempt (b). This is the end-state product behavior the SPEC's Proven Findings + Open Questions point at; the alternatives are strictly less general and/or more repo-specific, so this is the most-complete in-cycle path (D7).
+
+---
+
+### Phase 1: Boot-liveness signal + four-state pre-Vite-aware discriminator (config + pure/probe helpers)
+
+**Scope:** Add the net-new boot-process-liveness signal to the ensure-runtime config/injection surface and EXTEND the cold-compile discriminator so a both-ports-down observation with a LIVE boot process classifies as `booting` (patient-wait), not `dead` (kill-restart). This is the cheapest cross-platform "still booting before Vite binds" signal (SPEC Open Question 1, candidate (a)). No control-flow rewiring of the routers yet — this phase delivers the signal + discriminator + their hermetic tests in isolation so Phase 2 consumes them. Default-off is load-bearing: with no boot-liveness signal the discriminator is byte-identical to today (`dead` for both-ports-down).
+
+**Deliverables:**
+- [ ] Add a `boot_liveness_url`/process-handle config seam (or document reuse of the existing spawn handle) to `_ENSURE_RUNTIME_DEFAULT_CONFIG` (`lazy_core.py:6323`) so the boot-liveness signal is PARAMETERIZED and repo-agnostic exactly like the `:1420`/sidecar keys. A legacy config override lacking the key must read via `.get()` and never raise (mirror the `assert_sidecar_connected` / `frontend_health_url` back-compat pattern). Default value MUST yield "no boot-liveness signal" so a repo without it degrades to today's `dead` behavior.
+- [ ] Thread an optional injected `boot_alive` callable (returns bool: the orchestrator-spawned boot process is still alive) through `ensure_runtime(...)`, default-bound from the config like `frontend_probe`/`sidecar_check`. In production this reads the liveness of the `restart()`-spawned boot process (the `Popen` handle the harness already owns at `:6742` / via `spawn_detached`) — REUSE the existing spawn primitive's handle; do NOT invent a parallel spawn/poll scheme. When no signal is configured it binds to `lambda: False` (no live boot known → today's `dead` path).
+- [ ] EXTEND `_classify_compile_state` to be pre-Vite-aware WITHOUT breaking its existing truth table. Either (preferred) add a `boot_alive` parameter with a back-compat default (`False`) so existing callers are byte-identical: `backend_code == 200` ⇒ `serving`; `backend_code != 200 and frontend_up` ⇒ `compiling` (unchanged); `backend_code != 200 and not frontend_up and boot_alive` ⇒ a "still booting" classification routed to the patient-wait (return `"compiling"` to reuse the existing patient-wait path, OR a distinct `"booting"` label that Phase 2 routes identically — choose the option that keeps the prior fix's three-branch truth table byte-identical for `boot_alive=False`); `backend_code != 200 and not frontend_up and not boot_alive` ⇒ `dead` (unchanged). Pure function, no I/O. ⚖ policy: reuse `"compiling"` vs add `"booting"` label → reuse `"compiling"` (scope-class: end-state behavior is the same patient-wait either way; reusing the existing label avoids rippling a new state through `_route_legacy_non_serving`/`_route_non_serving`/tests — re-evaluate in Phase 2 if a distinct timeout message is wanted, mirroring the prior fix's distinct-text decision).
+- [ ] Add `_default_boot_alive(...)` (or equivalent) — a best-effort boot-liveness probe modeled on `_default_frontend_probe` / `_default_sidecar_probe`; never raises (any error → False = treat as not-booting/dead, fail-safe toward the SAFE side). If liveness is read from the in-process `Popen` handle rather than a URL, document why no `_default_*` URL probe is needed and how the handle is threaded.
+- [ ] Tests: `test_lazy_core.py` — `_classify_compile_state` extended truth table (both-ports-down + `boot_alive=True` ⇒ patient-wait classification; both-ports-down + `boot_alive=False` ⇒ `dead`, UNCHANGED; all prior branches byte-identical); the new config key defaults correctly and a legacy config dict without it does not crash `ensure_runtime`; the `boot_alive` injection seam is threaded without crashing.
+
+**Minimum Verifiable Behavior:** `python3 user/scripts/test_lazy_core.py` passes with the extended classifier returning a patient-wait classification for `(backend=0, frontend_up=False, boot_alive=True)` and `dead` for `(0, False, False)`; the prior fix's three-branch truth table is byte-identical for `boot_alive=False`; `python3 user/scripts/lazy-state.py --test` stays green (no behavior change for the default no-boot-liveness path).
+
+**Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
+- [ ] <!-- verification-only --> runtime spike (pre-Vite boot-liveness signal — workstation-eligible): STRUCTURALLY SKIPPED — claude-config has no `src-tauri/` or `package.json`; no cold `tauri dev` boot is possible in this repo. In-repo proof is the hermetic injected-probe unit tests in `test_lazy_core.py` (extended truth table: both-ports-down + live boot ⇒ patient-wait; + dead boot ⇒ `dead`). Live boot-liveness observation during a real `BeforeDevCommand`/`sidecar:build` window is workstation-deferred to AlgoBooth where the app surface exists. On-disk evidence path on skip: `SKIP_MCP_TEST.md` (`granted_by: pipeline-structural`) + gate-owned `VALIDATED.md`.
+
+**MCP Integration Test Assertions:** N/A — no MCP-runtime-observable behavior; this is a pure-helper + config + injection-seam phase whose contract is the hermetic `--test` harness (the dev runtime is the subject under test, not an MCP target).
+
+**Prerequisites:** None (first phase). Consumes the prior-fix symbols (`_classify_compile_state`, `frontend_probe`, `_await_compile_serving`) which already exist on `main`.
+
+**Files likely modified:**
+- `user/scripts/lazy_core.py` — add the boot-liveness config key to `_ENSURE_RUNTIME_DEFAULT_CONFIG` (`:6323`); add `_default_boot_alive` (or document handle-threading) sited next to `_default_frontend_probe`/`_default_sidecar_probe` (`:6379`/`:6403`); extend `_classify_compile_state` (`:6432`) with the back-compat `boot_alive` param; thread `boot_alive` into `ensure_runtime` (`:6730`+) REUSING the `frontend_probe`/`sidecar_check` default-binding pattern.
+- `user/scripts/test_lazy_core.py` — new hermetic tests next to the existing `_classify_compile_state` / `test_ensure_runtime_*frontend*` block.
+
+**Testing Strategy:** Pure-function + injected-probe unit tests, hermetic (no real runtime/network/process). The `_classify_compile_state` extended truth table is exhaustively covered with `boot_alive` both True and False; the back-compat assertions mirror the prior fix's `test_ensure_runtime_legacy_config_without_*_key_does_not_crash`.
+
+**Integration Notes for Next Phase:**
+- The extended `_classify_compile_state` is the discriminator Phase 2 consumes at the `_route_legacy_non_serving` + `_route_non_serving` entry points.
+- The `boot_alive` injection seam exactly mirrors `frontend_probe`/`sidecar_check`; Phase 2 binds it the same way at both router entry points.
+- Default-off semantics are load-bearing: with `boot_alive → False` (no signal), every both-ports-down runtime classifies `dead` ⇒ byte-identical to today's pre-fix behavior. Phase 2's new branch must be reachable ONLY when the boot-liveness signal reports alive.
+
+---
+
+### Phase 2: Route the pre-Vite live-boot window off the crash-recovery loop (both routers)
+
+**Scope:** Rework BOTH non-serving routers — the legacy `_route_legacy_non_serving` (`lazy_core.py:6891`, the path the SPEC's `ownership_verified: false` verdict pins the failure to) AND the M4 `_route_non_serving` mirror (`:7055`) — so a both-ports-down runtime with a LIVE boot process is **patiently waited on** via `_await_compile_serving` instead of being kill-restarted by the ≤5×backoff `_recover_runtime` loop. Reserve the bounded crash-recovery loop strictly for a genuinely `dead` runtime (both ports down AND no live boot → never booted or truly crashed and not restarting). This closes the pre-Vite starvation while preserving the prior fix's Vite-up patient-wait and the genuine-crash recovery — the SPEC's two non-negotiables (Open Questions 2 + 3).
+
+**Deliverables:**
+- [ ] In `_route_legacy_non_serving` (`:6891`), pass the new `boot_alive` signal into the discriminator call (`_classify_compile_state(code, frontend_up, boot_alive)` per Phase 1's extension) so a both-ports-down-but-live-boot observation routes to `_await_compile_serving` (the existing patient, NON-killing wait) rather than `_recover_runtime`. Thread `boot_alive` through the function signature alongside the existing `frontend_probe` param. A genuinely `dead` classification (both down, boot NOT alive) keeps today's `_recover_runtime` behavior UNCHANGED.
+- [ ] Mirror the SAME change in the M4 `_route_non_serving` (`:7055`) so an ownership-mode (identity-bearing) caller gets the identical pre-Vite patient-wait. Thread `boot_alive` through `_ensure_runtime_m4`'s signature alongside `frontend_probe` (mirror the prior fix's threading exactly).
+- [ ] Ensure `_await_compile_serving` correctly handles the pre-Vite case: its mid-wait "went dead" check must treat "boot process died AND both ports still down" as the `_COMPILE_WENT_DEAD` fall-through to bounded `_recover_runtime` (the live-boot signal going false is the pre-Vite analog of the Vite-up case's `frontend_probe()` going false at `:7246`). Reuse the existing cold-compile-sized ceiling (`_COLD_COMPILE_WAIT_MAX_POLLS=90 × _COLD_COMPILE_WAIT_INTERVAL=5s` ≈ 7.5 min) — the pre-Vite `sidecar:build`+compile window fits inside it (the SPEC's manual boot reached `:3333` in ~4 min). Do NOT add a parallel ceiling.
+- [ ] Preserve every existing invariant: the prior fix's Vite-up `compiling` patient-wait is unchanged; HIJACKED still never restarts/kills; the bounded ≤5×backoff loop still applies to the genuine `dead` case; `recover_identity`/`write_lock` lock-rewrite on recovery is unchanged (legacy path keeps its `_noop_write_lock`); the sidecar assertion still composes (a serving-but-pipe-dead runtime is NOT READY). On cold-compile-ceiling exhaustion the verdict is BLOCKED with the existing distinct `_cold_compile_timeout_blocker` text (still `blocker_kind: mcp-runtime-unready` downstream — no new blocker_kind, no routing change).
+- [ ] Tests (hermetic, injected probes — extend the existing `_M4_CONFIG`/`_owned_lock`/`_SESSION` + legacy-path fixtures):
+  - **Legacy path (the SPEC's exact failure):** both ports down + `boot_alive=True` → `_route_legacy_non_serving` patient-waits, `restart` NEVER called, READY once `:3333` answers 200 within the ceiling. THIS is the regression test for the false `BLOCKED`.
+  - both ports down + live boot that then crosses to dead (`boot_alive` goes False, ports still down mid-wait) → falls through to bounded `_recover_runtime`.
+  - both ports down + live boot that never serves within the ceiling → BLOCKED with the distinct cold-compile-timeout text; `restart` STILL never called during the booting wait.
+  - genuine `dead` (both ports down, `boot_alive=False`) → UNCHANGED bounded `_recover_runtime` (the existing `_recovers_within_five` / `_exhausts_to_blocked` behavior preserved by keeping those fixtures green).
+  - M4 mirror: the same both-ports-down + live-boot fixture against the ownership path reaches READY with `restart == 0`.
+  - default-off (no boot-liveness signal, `boot_alive → False`) → byte-identical to today's both-ports-down → recovery path.
+
+**Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/test_lazy_core.py` pass with a new LEGACY-path fixture proving a both-ports-down-but-live-boot runtime reaches READY with `restart` call-count == 0 (the SPEC's starvation root cause is structurally gone: the pre-Vite `sidecar:build` window is waited on, never kill-restarted), AND the genuine-crash fixtures still cap restart at 5; `python3 user/scripts/bug-state.py --test` green.
+
+**Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
+- [ ] <!-- verification-only --> runtime spike (cold boot pre-Vite window no-longer-starved — workstation-eligible): STRUCTURALLY SKIPPED — claude-config has no `src-tauri/` or `package.json`; no cold `tauri dev` boot is possible in this repo. The starvation root cause is structurally gone as proven by the hermetic injected-probe legacy-path test in `test_lazy_core.py` (both-ports-down + live boot reaches READY with `restart` call-count == 0; genuine-crash fixtures still cap restart at 5). Live `--ensure-runtime` verdict observation against a real cold AlgoBooth boot (`--ensure-runtime` returns READY, NOT a false `mcp-runtime-unready` BLOCKED, during the `sidecar:build` window) is workstation-deferred to AlgoBooth. On-disk evidence path on skip: `SKIP_MCP_TEST.md` (`granted_by: pipeline-structural`) + gate-owned `VALIDATED.md`.
+
+**MCP Integration Test Assertions:** N/A — the runtime is the subject under test; the live proof is the `--ensure-runtime` verdict above, not an MCP tool call.
+
+**Prerequisites:**
+- Phase 1: the `boot_alive` signal, the extended `_classify_compile_state`, the config key, and the injection seam must exist (this phase consumes all four at both router entry points).
+
+**Files likely modified:**
+- `user/scripts/lazy_core.py` — rewire `_route_legacy_non_serving` (`:6891`) + `_route_non_serving` (`:7055`) to pass `boot_alive` into `_classify_compile_state`; thread `boot_alive` through `_route_legacy_non_serving`'s + `_ensure_runtime_m4`'s signatures (mirror the `frontend_probe` threading); adjust `_await_compile_serving`'s mid-wait went-dead check (`:7246`) to also fall through when the boot process dies with both ports still down. REUSE the existing `_await_compile_serving` ceiling + sidecar composition — do NOT add a parallel readiness/recovery scheme.
+- `user/scripts/test_lazy_core.py` — extend the `test_ensure_runtime_m4_*` recovery block + the legacy `_route_legacy_non_serving` fixtures with both-ports-down-live-boot cases.
+
+**Testing Strategy:** Hermetic injected-probe fixtures asserting the call-count invariant (`restart == 0` during a live-boot pre-Vite wait) on BOTH the legacy and M4 paths, the bounded-loop preservation for genuine crashes, the went-dead fall-through, and the default-off byte-identical path. No real runtime.
+
+**Integration Notes for Next Phase:**
+- The verdict shape is UNCHANGED (still `{state, ownership_verified, health_code, mcp_tools_present, terminal_blocker, status}`) — a pre-Vite patient-wait READY is indistinguishable in shape from a Vite-up patient-wait READY, so Phase 3's CLI/consumer wiring needs no schema change.
+- `bug-state.py` shares NONE of the CLI seam (ensure-runtime lives only in `lazy-state.py`'s CLI + `lazy_core`'s shared helpers; `bug-state.py` has no `--ensure-runtime` handler), so there is NO coupled-pair CLI mirror owed — only the `lazy_core` helper change is shared, reached via `lazy-state.py` alone (correct divergence, same as the prior fix).
+
+---
+
+### Phase 3: CLI-seam confirmation + consumer/doc alignment + parity + baselines
+
+**Scope:** Confirm the new `boot_alive` signal binds to its production source through the `lazy-state.py --ensure-runtime` handler (thin pass-through — rely on Phase 1's config-driven default binding so the handler needs no new argument, exactly as the prior fix did), align the `lazy-batch` Step 1d.0 consumer prose so the operator understands the pre-Vite patient-wait, add the bidirectional reverse-reference, and confirm `lazy_parity_audit.py` + both byte-pinned `--test` baselines.
+
+**Deliverables:**
+- [ ] In the `lazy-state.py --ensure-runtime` handler, confirm the production boot-liveness binding flows through (rely on Phase 1's config-driven default binding so the handler stays a thin pass-through; document the choice inline). The existing best-effort `live_session_id` threading from the run marker stays UNCHANGED. If the boot-liveness source is the in-process `Popen` handle, document how the handler/`ensure_runtime` obtains it (the `restart()` closure already owns it) so no real handle is needed in `--test`.
+- [ ] Update `user/skills/lazy-batch/SKILL.md` Step 1d.0 routing prose: ADD a note that a cold/first boot is now PATIENTLY WAITED through its PRE-VITE `BeforeDevCommand`/`sidecar:build` window (both ports down + live boot ⇒ booting, not killed) and reaches READY without starvation — extending the existing Vite-up patient-wait note from the prior fix. Keep the existing READY/STALE/HIJACKED/BLOCKED table intact — ADD the note, do not rewrite the table.
+- [ ] Add a BIDIRECTIONAL reverse-reference per the spin-off contract: (1) note in `lazy_core.py`'s ensure-runtime docstring (or an inline comment at the reworked `_route_legacy_non_serving`/`_classify_compile_state` site) that the pre-Vite window is covered by `docs/bugs/ensure-runtime-starves-pre-vite-sidecar-build` (the pre-Vite sibling of `ensure-runtime-recovery-starves-cold-compile`); (2) confirm this PHASES.md's Cross-feature Integration Notes already names the prior-fix origin (it does). Update `user/scripts/CLAUDE.md`'s `--ensure-runtime` doc with the boot-liveness pre-Vite patient-wait dimension.
+- [ ] Confirm `python3 user/scripts/lazy_parity_audit.py` passes (the `--ensure-runtime` CLI is feature-pipeline-only, so NO new `bug-state.py` mirror is owed — confirm the audit does not regress, document the justified divergence).
+- [ ] Re-generate / confirm both byte-pinned `--test` baselines (`tests/baselines/lazy-state-test-baseline.txt`, `tests/baselines/bug-state-test-baseline.txt`) ONLY if `--test` output legitimately changed (via the `_normalize_smoke_output` helper, never by hand — per `user/scripts/CLAUDE.md`); otherwise confirm they are untouched.
+
+**Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test`, `python3 user/scripts/bug-state.py --test`, `python3 user/scripts/test_lazy_core.py`, and `python3 user/scripts/lazy_parity_audit.py` all pass; `python3 ~/.claude/scripts/lint-skills.py` passes against the edited `lazy-batch/SKILL.md`; `python3 ~/.claude/scripts/project-skills.py` re-projects cleanly.
+
+**Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
+- [ ] <!-- verification-only --> reachability smoke (workstation-eligible): STRUCTURALLY SKIPPED — claude-config has no `src-tauri/` or `package.json`; no live `--ensure-runtime` end-to-end call against AlgoBooth is possible in this repo. Handler wiring is hermetically validated by the handler-wiring test in `test_lazy_core.py` (a both-ports-down live-boot runtime reaches READY through the handler binding); live verdict observation is workstation-deferred to AlgoBooth. On-disk evidence path on skip: `SKIP_MCP_TEST.md` (`granted_by: pipeline-structural`) + gate-owned `VALIDATED.md`.
+
+**MCP Integration Test Assertions:** N/A — CLI/doc wiring; the live proof is the `--ensure-runtime` verdict reachability smoke above.
+
+**Prerequisites:**
+- Phase 2: the pre-Vite patient-wait branch on both routers must exist (this phase wires the signal to production + documents it for the consumer).
+
+**Files likely modified:**
+- `user/scripts/lazy-state.py` — `--ensure-runtime` handler, thin pass-through binding confirmation only.
+- `user/skills/lazy-batch/SKILL.md` — Step 1d.0 routing prose, additive note only.
+- `user/scripts/lazy_core.py` — reverse-reference comment at the reworked ensure-runtime site.
+- `user/scripts/CLAUDE.md` — `--ensure-runtime` doc, additive boot-liveness dimension.
+- `user/scripts/lazy_parity_audit.py` — read-only confirmation (no expected change; the CLI is feature-only).
+- `tests/baselines/*.txt` — confirm-only (regenerate only on a legitimate `--test` delta, via `_normalize_smoke_output`, never by hand).
+
+**Testing Strategy:** Full state-machine smoke suite + parity audit + skill lint + projection. The CLI handler change (if any) is covered by extending the existing `test_ensure_runtime_handler_wiring_*` block for the boot-liveness binding.
+
+**Integration Notes for Next Phase:** Terminal phase. On completion, set the top-level PHASES `**Status:**` to `In-progress` (implementation done, validation pending) and let the state machine route to the validation tail; the `__mark_fixed__` gate owns the SPEC/PHASES `Fixed` flip + FIXED.md receipt (gate-owned, never authored here).
+
+**Completion (gate-owned):** the `__mark_fixed__` gate flips SPEC.md / PHASES.md `**Status:**` to `Fixed` and writes the `FIXED.md` receipt once the validation tail certifies this fix's runtime verification (workstation-deferred / structurally-skipped here). This PHASES.md never flips those itself.
+
+---
+
+## Open Questions resolved at planning time
+
+- **SPEC Open Question 1 (which "still booting" signal covers the pre-Vite window):** RESOLVED in-plan (Phase 1) toward **candidate (a) — boot-process liveness** — see "The chosen 'still booting' signal" block above. ⚖ policy: pre-Vite booting signal → boot-process liveness (candidate a). Most general, repo-agnostic, separates cold-boot from genuine-crash using the spawn handle the harness already owns; no per-repo marker/log convention and no first-attempt special-case.
+- **SPEC Open Question 2 (preserve the genuine-crash recovery path):** RESOLVED in-plan (Phase 2). The discriminator separates "cold boot in progress" (both ports down AND `boot_alive` True → patient-wait) from "crashed and not restarting" (both ports down AND `boot_alive` False → bounded `_recover_runtime`). The genuine-crash `_recovers_within_five`/`_exhausts_to_blocked`/HIJACKED-never-kill fixtures stay green (kept as Phase 2 regression assertions).
+- **SPEC Open Question 3 (default-off / repo-agnostic byte-identity):** RESOLVED in-plan (Phases 1–2). A repo with no boot-liveness signal (config key absent / `boot_alive → False`) classifies every both-ports-down runtime as `dead` ⇒ byte-identical to today. The `--test` baselines must not change unless a default-path fixture legitimately changes (Phase 3 confirms).
+- **Distinct vs reused classification label (planning decision):** ⚖ policy: reuse `"compiling"` label vs add `"booting"` → reuse the patient-wait path (Phase 1). End-state behavior is the same patient-wait; reusing avoids rippling a new state through both routers and their fixtures. The cold-compile-timeout BLOCKED text already distinguishes a genuine hang (prior fix's `_cold_compile_timeout_blocker`).
+
+## Implementation Notes
+
+- **Coupling:** `--ensure-runtime` is a feature-pipeline-only CLI seam (`lazy-state.py` + shared `lazy_core` helpers); `bug-state.py` has no `--ensure-runtime` handler. The shared `lazy_core` changes are reached only via `lazy-state.py`. NO coupled-pair mirror is owed for the CLI seam (justified divergence — confirmed against `lazy_parity_audit.py` in Phase 3). Same divergence shape as the prior fix `ensure-runtime-recovery-starves-cold-compile`.
+- **Reverse-reference (spin-off contract, ORIGIN-side):** this fix EXTENDS the Fixed sibling `docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile` (named in Cross-feature Integration Notes above, the origin direction). Phase 3 adds the code-side reverse-reference (the new direction) so the `lazy_core` ensure-runtime site names this bug as the pre-Vite sibling. No NEW bug doc or `--enqueue-adhoc` feature is spun off by this plan (the fix is fully in-scope), so no spin-off PushNotification is owed.
+- **Default-off / repo-agnostic:** every new behavior is gated on the presence of the boot-liveness signal; a repo without it (no config key, `boot_alive → False`) sees byte-identical behavior to today. The prior fix's Vite-up patient-wait is untouched.
+- **Reuse over reinvention:** Phase 1 mirrors the `frontend_probe`/`sidecar_check` injection + back-compat `.get()` pattern; Phase 2 reuses the existing `_await_compile_serving` ceiling + sidecar composition + the `spawn_detached`/`restart()` `Popen` handle the harness already owns. No new readiness/injection/spawn scheme is introduced.
