@@ -73,6 +73,8 @@ Initialize `{cacheDir}/buddy-session.json` (see schema below). If the file alrea
 
 ### Per-Chunk Loop
 
+**Stream hygiene:** During the walk, the harness may emit `<task-notification>` lines (Task-tool status updates). Do NOT echo these into the reviewer-facing output — suppress them entirely. Surface only the orient / teach / diagram / disposition content to the reviewer.
+
 For each chunk, in order, run these six steps:
 
 #### 1. Orient
@@ -160,6 +162,8 @@ Reviewer-authored Pass-1 observations become severity-tagged findings with `sour
 
 Write (or update) `{cacheDir}/buddy-session.json` with this chunk's completed `pass1_observations`, `dispositions`, and status `"done"`. See schema below.
 
+**Serialization requirement:** Serialize the ENTIRE session object using a proper JSON serializer (`JSON.stringify`) — NEVER hand-assemble JSON with raw path strings. Windows cache paths contain backslashes (`C:\Users\…`) which MUST be escaped to `C:\\Users\\…` in JSON; hand-built JSON with raw backslashes produces invalid JSON that fails on resume. **Reload check (hard requirement):** after writing, verify the file round-trips cleanly — `JSON.parse(fs.readFileSync(..., 'utf8'))` must not throw. If it does, re-serialize and rewrite before advancing.
+
 #### 6. Advance
 
 Announce the chunk is complete and move to the next one.
@@ -217,13 +221,27 @@ If all chunks are `"done"`, skip to Phase 2.
 }
 ```
 
-Write this file after every chunk completes. This is the recovery anchor for compaction or session interruption.
+Write this file after every chunk completes — always via `JSON.stringify`, never hand-assembled. Windows paths in `cache_dir`, `finding_ref`, and similar fields MUST be properly escaped (`C:\\Users\\…`). Verify the written file `JSON.parse`s cleanly on every write; rewrite if it does not. This is the recovery anchor for compaction or session interruption.
 
 ---
 
 ## Phase 2 — Human-Curated Synthesis
 
 When all chunks are complete (all `"status": "done"`), update the Task tracker: Phase 1 complete, Phase 2 in-progress.
+
+### Completeness Sweep (pre-synthesis gate)
+
+Before collecting curated content, assert that every finding presented in Phase 1 has a recorded disposition in `buddy-session.json`:
+
+- Every tool finding from `processed-findings.json` for every chunk (investigation, sweep, reuse, intrafile).
+- Every reviewer Pass-1 observation captured in `pass1_observations[]`.
+
+No finding may proceed to synthesis undispositioned. If any are missing a disposition entry in `dispositions[]`:
+
+1. Route them back through the Disposition step (#4) — or the early escape hatch — and capture an explicit severity verdict from the reviewer via `AskUserQuestion`.
+2. Record the explicit disposition in `buddy-session.json` before proceeding.
+
+**Never silently skip or auto-drop an undispositioned finding.** An abandoned finding yields no calibration signal (the signal only comes from an explicit reviewer verdict, by design — do not fabricate one). The only correct resolution is an explicit disposition. This completeness is also what keeps Phase 4's disposition signal meaningful and complete.
 
 ### Collect Curated Content
 

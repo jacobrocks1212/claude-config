@@ -230,9 +230,9 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 **Scope:** Remove the friction that truncates the disposition data Phase 4 depends on, and harden session persistence. All changes are in `commands/review-pr-buddy.md`. Largest phase by volume but lowest architectural risk.
 
 **Deliverables:**
-- [ ] **Serialization fix:** JSON-escape all paths written into `buddy-session.json` (the unescaped-Windows-backslash bug that broke resume in 16683). Verify reload survives Windows paths.
-- [ ] **Completeness sweep:** before Phase 2 synthesis, assert no finding reaches synthesis undispositioned (dropped-finding re-ask bug, 16683).
-- [ ] **Suppress `task-notification` echo** into the user stream.
+- [x] **Serialization fix:** JSON-escape all paths written into `buddy-session.json` (the unescaped-Windows-backslash bug that broke resume in 16683). Verify reload survives Windows paths.
+- [x] **Completeness sweep:** before Phase 2 synthesis, assert no finding reaches synthesis undispositioned (dropped-finding re-ask bug, 16683).
+- [x] **Suppress `task-notification` echo** into the user stream.
 - [ ] **Stable finding IDs:** one canonical ID scheme (no `F0`/`①`/`[F0]`/`Q2` drift).
 - [ ] **Canonical disposition taxonomy:** enforce `Blocking / Important / Suggestion / Dismiss`, always all four, stable order (already present at `:145-154` — make it invariant, not drifting across versions).
 - [ ] **Batch dispositions:** present a step's findings in one multi-disposition prompt by default instead of one-at-a-time.
@@ -261,6 +261,16 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 **Testing Strategy:** Manual buddy run with a Windows-path-bearing cache dir and a dismiss-heavy chunk; verify resume, batching, labels, and escape-hatch disposition completeness. Replay the malformed 16683 session to confirm the serialization fix resolves it.
 
 **Integration Notes for Next Phase:** Final phase. After this, the loop is closed end-to-end: complete disposition data (P5) → silent recalibration (P4) → weights that take effect immediately (P3) → applied to confidence-gated, all-source findings (P1+P2).
+
+#### Implementation Notes
+
+**2026-06-22 — Batch 1 (WU-5a): serialization fix + completeness sweep + stream hygiene in `commands/review-pr-buddy.md`.**
+- **Serialization (16683 resume break):** added a **Serialization requirement** at the Checkpoint step (#5) and at the schema note — the entire session object MUST be written via `JSON.stringify` (never hand-assembled), so Windows backslash paths (`C:\Users\…`) are escaped to `C:\\Users\\…`. Both sites state the hard **reload check**: the written `buddy-session.json` must `JSON.parse` cleanly (rewrite if not). This is the unescaped-backslash bug that broke resume in PR 16683.
+- **Completeness sweep:** new `### Completeness Sweep (pre-synthesis gate)` inserted between the Phase 2 header and `### Collect Curated Content`. Asserts every Phase-1 finding (every `processed-findings.json` tool finding per chunk + every reviewer `pass1_observations[]`) has a recorded disposition before synthesis; routes any missing back through the Disposition step / escape hatch for an EXPLICIT verdict; forbids silent skip / auto-drop (an undispositioned finding yields no calibration signal — never fabricated). Documents the Phase-4 coupling (this completeness is what keeps the disposition signal complete).
+- **Stream hygiene:** added a **Stream hygiene** note at the top of `### Per-Chunk Loop` — the buddy must NOT echo `<task-notification>` harness text into the reviewer stream (SPEC friction #6).
+- **Review verdict:** PASS (ground-truth verified: yes — orchestrator independently re-ran `wc -l` (374) + the four grep assertions; placement confirmed: Stream hygiene @76, Serialization @165/@224, Completeness Sweep @232 between Phase 2 @228 and Collect Curated @246).
+- **MCP integration test:** N/A — interactive command-prompt change; the serialization/completeness behavior is checked by a live buddy run (Runtime Verification rows, not `/execute-plan`'s to tick).
+- Files modified: `commands/review-pr-buddy.md`.
 
 ---
 
