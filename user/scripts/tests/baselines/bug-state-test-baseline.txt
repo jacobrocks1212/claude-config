@@ -59,5 +59,6 @@
   PASS [bug-park-blocked-reenter-under-flag] blocked-bug parked under flag=True, dispatched='workable-bug'
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
+  PASS [cycle-prompt-ref-surfacing] cycle_prompt_ref surfaced with marker / None without
 
 All smoke tests passed.

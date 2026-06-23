@@ -27,10 +27,10 @@ No hard deps on Complete upstream features. The archived feature-pipeline counte
 **Scope:** Mirror the `cycle_prompt_ref` capture-and-surface logic from `lazy-state.py:10036-10050` into `bug-state.py:5807-5812` so the bug pipeline hands the orchestrator a `@@lazy-ref` token to dispatch by reference, exactly as the feature pipeline does. Add a `--test` fixture asserting the field is surfaced under a live marker and `None` without one.
 
 **Deliverables:**
-- [ ] In `bug-state.py` (~5807-5812): capture `_ref_entry = lazy_core.register_emission_if_marked(...)` and set `state["cycle_prompt_ref"]` — the token `f"@@lazy-ref nonce={_ref_entry['nonce']}"` when `_ref_entry is not None`, else `None`; and `None` in the outer `else` branch (no `cycle_prompt`). Match `lazy-state.py:10036-10050` exactly (modulo the bug-pipeline comment that `feature_id` holds the bug id).
-- [ ] Add a `bug-state.py --test` fixture: a live run marker + a real-skill `--emit-prompt` cycle ⇒ the probe carries `cycle_prompt_ref: "@@lazy-ref nonce=…"`; no marker ⇒ `cycle_prompt_ref` is `None` (byte-identical-when-absent preserved — i.e. the field is `None`, registration is a no-op without a marker). Register the fixture in the script's `--test` list block.
-- [ ] Tests: `bug-state.py --test` green (with the new fixture); `lazy-state.py --test` still green (no feature-side change, regression guard).
-- [ ] Regenerate the byte-pinned `bug-state` smoke baseline (`tests/baselines/bug-state-test-baseline.txt`) ONLY by piping live `--test` output through `_normalize_smoke_output` — never by hand. (Only if the new fixture changes pinned output; if the fixture asserts in-Python without touching pinned stdout, no baseline change.)
+- [x] In `bug-state.py` (~5807-5812): capture `_ref_entry = lazy_core.register_emission_if_marked(...)` and set `state["cycle_prompt_ref"]` — the token `f"@@lazy-ref nonce={_ref_entry['nonce']}"` when `_ref_entry is not None`, else `None`; and `None` in the outer `else` branch (no `cycle_prompt`). Match `lazy-state.py:10036-10050` exactly (modulo the bug-pipeline comment that `feature_id` holds the bug id).
+- [x] Add a `bug-state.py --test` fixture: a live run marker + a real-skill `--emit-prompt` cycle ⇒ the probe carries `cycle_prompt_ref: "@@lazy-ref nonce=…"`; no marker ⇒ `cycle_prompt_ref` is `None` (byte-identical-when-absent preserved — i.e. the field is `None`, registration is a no-op without a marker). Register the fixture in the script's `--test` list block.
+- [x] Tests: `bug-state.py --test` green (with the new fixture); `lazy-state.py --test` still green (no feature-side change, regression guard).
+- [x] Regenerate the byte-pinned `bug-state` smoke baseline (`tests/baselines/bug-state-test-baseline.txt`) ONLY by piping live `--test` output through `_normalize_smoke_output` — never by hand. (Only if the new fixture changes pinned output; if the fixture asserts in-Python without touching pinned stdout, no baseline change.)
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/bug-state.py --test` exits 0 with the new fixture asserting `state["cycle_prompt_ref"]` is the `@@lazy-ref` token under a live marker and `None` without one. This is the smallest deterministic proof the surfacing now works — runnable, not "unit tests pass" hand-waving.
 
@@ -46,6 +46,12 @@ In-file `--test` smoke harness (hermetic temp-dir fixtures, not pytest). The new
 **Integration Notes for Next Phase:**
 - The token string form is `@@lazy-ref nonce=<hex>` — Phase 2's parity assertion keys on the presence of the `state["cycle_prompt_ref"] = ` assignment in BOTH scripts, not on the literal token.
 - Do NOT touch `lazy_core.register_emission_if_marked` — it already returns the entry; only the caller-side surfacing was missing.
+
+**Implementation Notes (Phase 1 — completed 2026-06-23):**
+- Fixed `bug-state.py` at the `if cycle_prompt:` block (was ~5807-5812, now ~5803-5826 after edits): added `_ref_entry = lazy_core.register_emission_if_marked(...)` capture, then conditionally assigns `state["cycle_prompt_ref"] = f"@@lazy-ref nonce={_ref_entry['nonce']}"` or `None`. Outer `else` branch also sets `None`. Mirrors `lazy-state.py:10036-10050` exactly.
+- Added `cycle-prompt-ref-surfacing` fixture in `run_smoke_tests()` (subprocess-driven, hermetic `LAZY_STATE_DIR`): (a) live marker → `cycle_prompt_ref` is a `@@lazy-ref nonce=…` token; (b) no marker → `cycle_prompt_ref` is `None`. Uses `_build_bug_fixture(td_path, "mid-fix")` which routes to the `execute-plan` step — a real-skill step that produces a non-null `cycle_prompt`.
+- Baseline regenerated via `_normalize_smoke_output` (never by hand): added line 62 `  PASS [cycle-prompt-ref-surfacing] cycle_prompt_ref surfaced with marker / None without`. Baseline is now 64 lines.
+- Gates confirmed: `bug-state.py --test` green (62 fixtures, all PASS), `lazy-state.py --test` green, `lazy_parity_audit.py --repo-root .` exit 0, `pytest user/scripts/test_lazy_core.py` 800/800 passed.
 
 ---
 

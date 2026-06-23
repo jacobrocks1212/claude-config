@@ -4816,6 +4816,144 @@ def run_smoke_tests() -> int:
             ro_ok = False
         print(f"  {'PASS' if ro_ok else 'FAIL'} [{fix_ro}] reorder tail/head/index/remove/missing/cycle-active/no-op")
 
+        # -------------------------------------------------------------------
+        # Fixture: cycle_prompt_ref surfacing (bug-pipeline-cycle-dispatch-
+        # omits-cycle-prompt-ref Phase 1).
+        #
+        # When a run marker is active and --emit-prompt produces a non-null
+        # cycle_prompt, bug-state.py must capture the register_emission_if_marked
+        # return value and surface state["cycle_prompt_ref"] as a "@@lazy-ref
+        # nonce=<hex>" token — mirroring lazy-state.py exactly.
+        # When no marker is active, cycle_prompt_ref must be None.
+        #
+        # Uses the existing "mid-fix" fixture which routes to execute-plan
+        # (emit_cycle_prompt returns a non-null prompt for that step).
+        # Driven via subprocess so the full CLI path (--emit-prompt flag-gate,
+        # register_emission_if_marked, state["cycle_prompt_ref"] assignment)
+        # runs end-to-end.
+        # -------------------------------------------------------------------
+        fix_cpr = "cycle-prompt-ref-surfacing"
+        cpr_ok = True
+        _cpr_script = str(Path(__file__).resolve())
+        cpr_root = _build_bug_fixture(td_path, "mid-fix")
+
+        # Build a hermetic state dir scoped to this fixture.
+        cpr_state = td_path / "cpr-state"
+        cpr_state.mkdir(parents=True, exist_ok=True)
+
+        def _cpr_env(*, with_marker: bool) -> dict:
+            """Env for cpr subprocess; LAZY_STATE_DIR pinned to the fixture dir."""
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(cpr_state)
+            return e
+
+        # (a) Write a live run marker into the state dir so
+        #     register_emission_if_marked sees an active run.
+        import datetime as _cpr_dt
+        _cpr_marker = {
+            "pipeline": "bug",
+            "cloud": False,
+            "repo_root": str(cpr_root),
+            "session_id": "test-session-cpr",
+            "started_at": _cpr_dt.datetime.now(_cpr_dt.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            ) + "Z",
+            "max_cycles": None,
+            "nonce_seed": None,
+            "forward_cycles": 0,
+            "meta_cycles": 0,
+            "attended": True,
+            "last_advance_consume_count": 0,
+            "last_advance_state_key": None,
+            "per_feature_forward_cycles": {},
+            "per_feature_corrective_cycles": {},
+            "work_branch": "main",
+        }
+        (cpr_state / "lazy-run-marker.json").write_text(
+            json.dumps(_cpr_marker, indent=2) + "\n", encoding="utf-8"
+        )
+
+        # (b) With a live marker: --emit-prompt must surface cycle_prompt_ref
+        #     as a @@lazy-ref token.
+        r_cpr = subprocess.run(
+            [sys.executable, _cpr_script,
+             "--repo-root", str(cpr_root),
+             "--emit-prompt"],
+            capture_output=True, text=True,
+            env=_cpr_env(with_marker=True),
+        )
+        if r_cpr.returncode != 0:
+            failures.append(
+                f"[{fix_cpr}] --emit-prompt with marker must exit 0; "
+                f"got {r_cpr.returncode}: {r_cpr.stderr[:200]!r}"
+            )
+            cpr_ok = False
+        else:
+            try:
+                cpr_state_out = json.loads(r_cpr.stdout)
+                cpr_ref = cpr_state_out.get("cycle_prompt_ref")
+                if not isinstance(cpr_ref, str) or not cpr_ref.startswith(
+                    "@@lazy-ref nonce="
+                ):
+                    failures.append(
+                        f"[{fix_cpr}] cycle_prompt_ref must be a '@@lazy-ref nonce=…' "
+                        f"token when a run marker is active; got {cpr_ref!r}"
+                    )
+                    cpr_ok = False
+            except (json.JSONDecodeError, ValueError) as exc:
+                failures.append(
+                    f"[{fix_cpr}] --emit-prompt stdout is not valid JSON: {exc}; "
+                    f"stdout={r_cpr.stdout[:200]!r}"
+                )
+                cpr_ok = False
+
+        # (c) Without a marker: cycle_prompt_ref must be None (absent marker →
+        #     register_emission_if_marked no-ops → no ref to surface).
+        cpr_state_nomark = td_path / "cpr-state-nomark"
+        cpr_state_nomark.mkdir(parents=True, exist_ok=True)
+
+        def _cpr_env_nomark() -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(cpr_state_nomark)
+            return e
+
+        r_cpr_nm = subprocess.run(
+            [sys.executable, _cpr_script,
+             "--repo-root", str(cpr_root),
+             "--emit-prompt"],
+            capture_output=True, text=True,
+            env=_cpr_env_nomark(),
+        )
+        if r_cpr_nm.returncode != 0:
+            failures.append(
+                f"[{fix_cpr}] --emit-prompt without marker must exit 0; "
+                f"got {r_cpr_nm.returncode}"
+            )
+            cpr_ok = False
+        else:
+            try:
+                cpr_nm_out = json.loads(r_cpr_nm.stdout)
+                cpr_nm_ref = cpr_nm_out.get("cycle_prompt_ref")
+                if cpr_nm_ref is not None:
+                    failures.append(
+                        f"[{fix_cpr}] cycle_prompt_ref must be None (absent) when no "
+                        f"marker is active; got {cpr_nm_ref!r}"
+                    )
+                    cpr_ok = False
+            except (json.JSONDecodeError, ValueError) as exc:
+                failures.append(
+                    f"[{fix_cpr}] --emit-prompt (no marker) stdout is not valid JSON: "
+                    f"{exc}; stdout={r_cpr_nm.stdout[:200]!r}"
+                )
+                cpr_ok = False
+
+        print(
+            f"  {'PASS' if cpr_ok else 'FAIL'} [{fix_cpr}] "
+            f"cycle_prompt_ref surfaced with marker / None without"
+        )
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -5804,12 +5942,25 @@ def main() -> int:
             # emission produced a non-null cycle_prompt, register it so the
             # validate hook can check it.  No marker → no-op (byte-identical).
             # Bug pipeline: feature_id in state holds the bug id (same key name).
+            # F2a (bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref): capture
+            # the returned entry so we can surface the @@lazy-ref token alongside
+            # the prompt; orchestrators may use the shorter token to dispatch
+            # subagents (dispatch-by-reference).  Mirrors lazy-state.py exactly.
             cycle_prompt = state.get("cycle_prompt")
             if cycle_prompt:
-                lazy_core.register_emission_if_marked(
+                _ref_entry = lazy_core.register_emission_if_marked(
                     cycle_prompt, "cycle",
                     item_id=state.get("feature_id"),
                 )
+                if _ref_entry is not None:
+                    # Surface the @@lazy-ref token so the orchestrator can use
+                    # dispatch-by-reference instead of repeating the full text.
+                    state["cycle_prompt_ref"] = f"@@lazy-ref nonce={_ref_entry['nonce']}"
+                else:
+                    # No marker active or registration failed — no ref available.
+                    state["cycle_prompt_ref"] = None
+            else:
+                state["cycle_prompt_ref"] = None
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).
