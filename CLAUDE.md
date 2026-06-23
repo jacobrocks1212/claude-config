@@ -41,6 +41,18 @@ claude-config/
 └── archived/              # Deprecated skills (audit trail)
 ```
 
+### Nested CLAUDE.md docs
+
+Directory-level `CLAUDE.md` files capture what you can't infer from filenames — coupled-pair sync
+rules, fail-OPEN hooks, state-machine contracts, gotchas. Read the one nearest your edit:
+
+- `user/skills/CLAUDE.md` · `user/skills/_components/CLAUDE.md` — frontmatter, injection, coupled pairs, projection workflow
+- `user/scripts/CLAUDE.md` — the lazy/bug state machine + contributor conventions (atomic writes, diagnostics, parity audit, shell dialect)
+- `user/hooks/CLAUDE.md` — fail-OPEN, per-repo keying, deny signatures, unwired hooks
+- `repos/CLAUDE.md` — per-repo `.claude/` anatomy + onboarding
+- `docs/features/CLAUDE.md` · `docs/specs/CLAUDE.md` · `docs/bugs/CLAUDE.md` — pipeline lifecycle & file contracts
+- `user/templates/CLAUDE.md` · `archived/CLAUDE.md` — boilerplate & deprecation trail
+
 ## Symlink System
 
 ### How It Works

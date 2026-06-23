@@ -37,6 +37,52 @@ queue.json + per-item SPEC/PHASES/plans/sentinels
 | `claude-bash-env.sh` | Restores `node`/`cargo` onto PATH for Claude Code's non-login Bash (sourced via `BASH_ENV`). Unrelated to the pipeline. |
 | `lazy-queue-doc.py` | **Pure-read GitHub-mobile queue-status doc generator** (mobile-queue-control). Sibling to `lazy-state.py`; reuses `pipeline_visualizer.probe.probe_state` + `curated_stage` (never re-infers state, never mutates `queue.json`). Renders a per-repo root-level `LAZY_QUEUE.md`: Features/Bugs tables (reorder index, SPEC.md link, curated state, tier/severity), an inline drill-in summary (status · phase N/M · next · one-line exec summary), a "Needs attention" triage section, and a run-active/idle freshness header. **Byte-stable** — embeds no wall-clock, so an unchanged-state regen is byte-identical (freshness is GitHub's native last-commit time). `--repo-root` / `--stdout` / `--link-mode {relative,absolute}`. Orchestrator-invoked at the per-cycle commit (rides the existing commit on `main`); NOT on the state-script compute path. Tests: `test_lazy_queue_doc.py`. |
 
+## Contributor conventions (read before editing the state scripts)
+
+These recur in nearly every cycle — internalize them instead of re-deriving them from the source
+each time (they are the most-re-read facts in this directory):
+
+- **All queue/marker/sentinel writes go through `lazy_core._atomic_write`** — never a bare
+  `open().write()`. Atomicity is the contract; a half-written `queue.json` corrupts the machine.
+- **Diagnostics use `lazy_core._diag(msg)`** (appends to the per-invocation `_DIAGNOSTICS` list,
+  reset once per `compute_state`). That's how the "why this route" breadcrumb reaches the
+  orchestrator — don't `print()`.
+- **Helper placement:** domain-agnostic helpers (sentinel/plan parsing, receipt writers,
+  diagnostics) live in `lazy_core.py` (shared by both state scripts); script-specific logic stays
+  in `lazy-state.py` / `bug-state.py`.
+- **Arg-name divergence:** `lazy-state.py` uses `--feature-id`; `bug-state.py` uses `--bug-id`.
+  Not interchangeable — a justified divergence, not a bug to "fix".
+- **Coupled scripts are parity-gated.** A change to one state script usually must be mirrored to
+  the other; run the parity audit (below) and consult the coupled-pairs table in the root `CLAUDE.md`.
+
+### Adding a test to the in-file `--test` harness
+
+Both `lazy-state.py` and `bug-state.py` carry their own smoke-test harness run with `--test`
+(**not** pytest). To add a fixture: write `def test_<name>():` and register it in the script's
+test-list block so the `--test` runner collects it. Mirror marker/queue setup from a recent
+nearby test rather than inventing scaffolding. `lazy_core.py` is tested separately via
+`test_lazy_core.py` (pytest).
+
+### CLI quick reference — the easy-to-miss ones
+
+```bash
+# Parity audit — REQUIRED before committing a change to either half of a coupled pair.
+python3 user/scripts/lazy_parity_audit.py --repo-root .                      # audit ALL pairs
+python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch
+python3 user/scripts/lazy_parity_audit.py --repo-root . --merged-view
+```
+
+> **Gotcha (40+ misfires in session logs):** `--repo-root` is **required** and there is **no
+> `--report` flag**. `... --report` fails with "unrecognized arguments"; bare `lazy_parity_audit.py`
+> fails with "the following arguments are required: --repo-root".
+
+### Shell dialect — don't mix tools
+
+The **Bash tool is real bash** (`head`, `grep`, `dirname`, `stat`). The **PowerShell tool needs
+cmdlets** (`Get-Content`, `Select-Object`, `Select-String`, `Get-ChildItem`). Crossing them fails:
+`head`/`grep` are "not recognized" in PowerShell; `Select-Object`/`Get-Content` are "command not
+found" in bash.
+
 ## The skill family (thin wrappers)
 
 All wrappers run `lazy-state.py`, dispatch the one named sub-skill (or perform a

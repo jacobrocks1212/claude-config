@@ -31,6 +31,8 @@
     - NEVER use /dev/null - use $null (PowerShell) or NUL (cmd)
     - Wrap PowerShell: powershell.exe -Command "..."
     - Always use absolute Windows paths, quote spaces
+    - Don't mix shells: the Bash tool is real bash (head/grep/dirname); the PowerShell tool needs
+      cmdlets (Get-Content/Select-Object/Select-String). Crossing them fails.
   </windows-platform>
 
   <estimates>
