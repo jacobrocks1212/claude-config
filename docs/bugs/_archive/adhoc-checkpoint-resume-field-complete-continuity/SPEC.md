@@ -2,9 +2,11 @@
 
 > A sanctioned same-run checkpoint resume re-mints ALL run-scoped marker state on the resuming `--run-start`; every continuity field must be carried back individually by `restore_checkpoint_counters`. Each missing field has been patched reactively (whack-a-mole). Durable fix: make resume continuity field-complete BY CONSTRUCTION via an enumerated allow-list of carry vs. reset marker fields.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-23
+**Fixed:** 2026-06-23
+**Fix commit:** 67e48c4
 **Placement:** docs/bugs/adhoc-checkpoint-resume-field-complete-continuity
 **Related:** docs/bugs/single-slot-marker-ownership-race-disarms-owning-run · hardening Round 35 (commit `821628e`) · the 2026-06-14 `operator-checkpoint-resume-counter-reset` round · `refuse_run_start_clobber` (Round 19) · `user/scripts/CLAUDE.md` → "Checkpoint resume is provenance-branched"
 

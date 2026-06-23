@@ -77,7 +77,7 @@ Classifying each run-scoped marker key as CARRY (continuous across a non-operato
 - Phase 2 reads `RUN_CONTINUITY_FIELDS` as the snapshot/restore key set — it must not re-enumerate fields.
 - The completeness assertion is the regression net for the whole bug class; keep it referencing the live marker literal, not a frozen copy.
 
-**Status:** Complete
+**Status:** Fixed
 
 #### Implementation Notes (2026-06-23)
 
@@ -121,7 +121,7 @@ Classifying each run-scoped marker key as CARRY (continuous across a non-operato
 
 **Integration Notes for Next Phase:** none — Phase 2 is terminal. The parity audit + full test sweep is the closeout (run `lazy_parity_audit.py --repo-root .`, `lazy-state.py --test`, `bug-state.py --test`, `pytest test_lazy_core.py` after the change, per `user/scripts/CLAUDE.md` Coupling Rule).
 
-**Status:** Complete (implementation) — validation pending (orchestrator `/mcp-test` tail → `__mark_fixed__`).
+**Status:** Complete
 
 #### Implementation Notes (2026-06-23)
 
