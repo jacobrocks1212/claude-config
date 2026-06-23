@@ -19859,6 +19859,149 @@ def test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery():
 
 
 # ---------------------------------------------------------------------------
+# ensure-runtime-starves-pre-vite-sidecar-build Phase 3 (CLI-seam WIRING — the
+# harden(script) production-binding fix). The prior Phase-2 tests above all
+# INJECT `boot_alive`; these two exercise the PRODUCTION binding that was the
+# dead seam: with `boot_liveness` enabled (the base default) and NO injected
+# `boot_alive`, `ensure_runtime` must derive the signal from the liveness of the
+# `restart()`-spawned `Popen` handle (`.poll()` None ⇒ alive). Driven through the
+# REAL default `restart` closure by swapping `lazy_core.subprocess`/`lazy_core.time`
+# for fakes — the only way to reach the closure-shared boot-handle holder, which is
+# private to `ensure_runtime` (no injection seam, by design).
+# ---------------------------------------------------------------------------
+
+
+class _FakeBootPopen:
+    """Stand-in for the `dev:restart` boot `Popen` handle. `.poll()` returns None
+    while ``_exit_code`` is None (boot still running ⇒ the pre-Vite window), or the
+    exit code once set (boot exited ⇒ crossed to dead)."""
+
+    def __init__(self, exit_code=None):
+        self._exit_code = exit_code
+        self.pid = 4321
+
+    def poll(self):
+        return self._exit_code
+
+
+class _FakeSubprocess:
+    """Module stand-in for `lazy_core.subprocess` — `Popen(...)` returns the given
+    fake handle and records the spawn; carries the DEVNULL sentinel the default
+    `restart` references."""
+
+    DEVNULL = -3
+
+    def __init__(self, handle):
+        self._handle = handle
+        self.spawns = 0
+
+    def Popen(self, *a, **kw):  # noqa: N802 — mirrors subprocess.Popen
+        self.spawns += 1
+        return self._handle
+
+
+class _FakeTime:
+    """Module stand-in for `lazy_core.time` — `sleep` is a no-op so the default
+    `restart`'s ~7.5-min poll loop and the patient wait run instantly; `time()` is
+    a real monotonic-ish counter in case anything reads it."""
+
+    def __init__(self):
+        self._t = 0.0
+
+    def sleep(self, _s):
+        self._t += 1.0
+
+    def time(self):
+        return self._t
+
+
+def test_ensure_runtime_production_boot_alive_live_handle_patient_waits():
+    """PRODUCTION binding, live handle: `boot_liveness` on (base default) + NO
+    injected `boot_alive`/`restart` → the real default `restart` spawns a boot
+    process whose `.poll()` stays None (still booting). With both ports down the
+    derived `boot_alive` reports ALIVE, so the runtime classifies `compiling` and is
+    PATIENTLY WAITED on (the default restart's own poll loop is the only spawn — the
+    patient wait NEVER re-spawns). The wait then ends READY once :3333 answers 200.
+
+    This is the seam the fix wired: before, the production `boot_alive` was a hard
+    `lambda: False`, so this both-ports-down cold boot was misclassified `dead`."""
+    _guard()
+    live = _FakeBootPopen(exit_code=None)  # boot stays alive (poll → None)
+    fake_sub = _FakeSubprocess(live)
+    fake_time = _FakeTime()
+    probe_calls = {"n": 0}
+
+    def probe():
+        # Non-200 until the patient wait has polled a few times, then serve — so the
+        # default restart's internal loop never succeeds (handle stays the signal),
+        # and the patient wait resolves READY once the cold compile "finishes".
+        probe_calls["n"] += 1
+        return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 95 else (0, None)
+
+    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
+    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            result = lazy_core.ensure_runtime(
+                Path(td),
+                config=_M4_CONFIG_BOOT,           # boot_liveness: True
+                probe=probe,                       # only the BACKEND probe is injected
+                stale_check=lambda: False,
+                sleep=lambda s: None,              # patient-wait sleep (hermetic)
+                frontend_probe=lambda: False,      # Vite stays down (pre-Vite window)
+                # NO restart, NO boot_alive → BOTH production defaults bind. This is
+                # the exact production-call shape (lazy-state.py passes neither).
+            )
+    finally:
+        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+
+    assert result["state"] == "READY", result
+    # Exactly ONE boot spawn (the default restart) — the patient wait added none.
+    assert fake_sub.spawns == 1, (
+        f"a live-boot pre-Vite window must spawn once (restart) and then patient-wait "
+        f"with NO re-spawn: {fake_sub.spawns}"
+    )
+
+
+def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
+    """PRODUCTION binding, dead handle: `boot_liveness` on + NO injected
+    `boot_alive`/`restart`, and the spawned boot process has ALREADY EXITED
+    (`.poll()` returns an exit code). With both ports down the derived `boot_alive`
+    reports NOT-booting, so the runtime classifies `dead` and enters the BOUNDED
+    crash-recovery loop — fail-safe preserved (a genuinely dead host is not falsely
+    patient-waited forever). Ends BLOCKED with the GENERIC recovery-exhausted text."""
+    _guard()
+    dead = _FakeBootPopen(exit_code=1)  # boot already exited (poll → 1)
+    fake_sub = _FakeSubprocess(dead)
+    fake_time = _FakeTime()
+
+    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
+    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            result = lazy_core.ensure_runtime(
+                Path(td),
+                config=_M4_CONFIG_BOOT,           # boot_liveness: True
+                probe=lambda: (0, None),           # backend never serves
+                stale_check=lambda: False,
+                sleep=lambda s: None,
+                frontend_probe=lambda: False,      # Vite down
+                # NO restart, NO boot_alive → production defaults bind; the dead
+                # handle makes the derived boot_alive report NOT-booting.
+            )
+    finally:
+        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+
+    assert result["state"] == "BLOCKED", result
+    assert result["terminal_blocker"] == lazy_core._blocked_blocker(
+        lazy_core._RUNTIME_RECOVERY_MAX_ATTEMPTS
+    ), (
+        "a dead boot handle must reach the GENERIC bounded-recovery blocker, NOT the "
+        f"cold-compile patient-wait text: {result['terminal_blocker']}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # ensure-runtime-recovery-starves-cold-compile Phase 2 — patient compiling-aware
 # wait. A runtime classified `compiling` (Vite :1420 up, backend :3333 not yet
 # serving) is WAITED on (owned, cold-compile-sized, NEVER kill-restarted) and
@@ -20670,6 +20813,13 @@ _TESTS = _TESTS + [
      test_ensure_runtime_m4_pre_vite_live_boot_patiently_waits_never_restarts),
     ("test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery",
      test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery),
+    # ensure-runtime-starves-pre-vite-sidecar-build Phase 3: PRODUCTION boot_alive
+    # binding (the harden(script) CLI-seam fix) — default restart Popen handle drives
+    # the derived signal; live ⇒ patient-wait, dead ⇒ bounded recovery.
+    ("test_ensure_runtime_production_boot_alive_live_handle_patient_waits",
+     test_ensure_runtime_production_boot_alive_live_handle_patient_waits),
+    ("test_ensure_runtime_production_boot_alive_dead_handle_recovers",
+     test_ensure_runtime_production_boot_alive_dead_handle_recovers),
     # ensure-runtime-recovery-starves-cold-compile Phase 2: patient compiling wait.
     ("test_cold_compile_timeout_blocker_distinct_from_blocked_blocker",
      test_cold_compile_timeout_blocker_distinct_from_blocked_blocker),

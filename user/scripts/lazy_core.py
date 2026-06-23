@@ -6377,8 +6377,22 @@ _ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
     # repo without the key degrades to today's `dead` behavior — read via .get()
     # everywhere so a legacy override lacking the key never raises (mirror the
     # `assert_sidecar_connected` / `frontend_health_url` back-compat pattern).
-    # AlgoBooth opts in via its config override; this base default leaves it off.
-    "boot_liveness": False,
+    #
+    # ensure-runtime-starves-pre-vite-sidecar-build Phase 3 (CLI-seam wiring):
+    # ENABLED in the base default. The signal is fail-safe BY CONSTRUCTION — the
+    # boot-liveness source is the liveness of the `restart()`-spawned `Popen`
+    # handle THIS harness owns in-process (see `ensure_runtime`). When no boot was
+    # spawned this call (or the spawn failed), `boot_alive()` reports NOT-booting,
+    # so a non-AlgoBooth repo with both ports down still classifies `dead` and
+    # reaches bounded recovery — byte-identical to the inert default. The signal
+    # can only flip a both-ports-down observation to the patient-wait `compiling`
+    # when this harness genuinely has a live boot process running, which is
+    # exactly the cold pre-Vite `BeforeDevCommand`/`sidecar:build` window the M4
+    # classifier was starving. The only production caller
+    # (`lazy-state.py --ensure-runtime`) passes NO config override, so flipping the
+    # base default here is what wires the signal end-to-end — a per-repo override
+    # may still set it `False` to opt OUT.
+    "boot_liveness": True,
 }
 
 
@@ -6789,11 +6803,24 @@ def ensure_runtime(
 
     if probe is None:
         probe = lambda: _default_runtime_probe(health_url)
+    # Pre-Vite boot-liveness holder (ensure-runtime-starves-pre-vite-sidecar-build
+    # Phase 3 — production-seam wiring). The default `restart()` closure below
+    # spawns the `dev:restart` boot process and STASHES the resulting `Popen`
+    # handle here; the default `boot_alive()` (bound further down when
+    # `boot_liveness` is configured) reads it back via `.poll()` — None ⇒ the boot
+    # process is still running ⇒ the cold pre-Vite `BeforeDevCommand`/`sidecar:build`
+    # window is in progress, NOT a dead host. A plain dict (not `nonlocal`) is the
+    # closure-shared holder so BOTH the `restart` and `boot_alive` closures mutate /
+    # read the SAME live handle without rebinding. When `restart` is INJECTED (every
+    # `--test` path), this holder stays empty, so the default `boot_alive` reports
+    # NOT-booting (fail-safe) — and an injected `boot_alive` overrides it entirely,
+    # so the test contract "injected boot_alive still wins" is preserved.
+    _boot_handle: dict[str, Any] = {"proc": None}
     if restart is None:
         def restart() -> bool:
             # Fire dev:restart in the background, then poll /health to 200.
             try:
-                subprocess.Popen(  # noqa: S602 — repo-config command, not user input
+                proc = subprocess.Popen(  # noqa: S602 — repo-config command, not user input
                     shlex.split(cfg["restart_command"]),
                     cwd=str(repo_root),
                     stdout=subprocess.DEVNULL,
@@ -6801,6 +6828,9 @@ def ensure_runtime(
                 )
             except (OSError, ValueError):
                 return False
+            # Stash the live boot handle so the boot-liveness signal can read its
+            # `.poll()` during the pre-Vite window while BOTH ports are still down.
+            _boot_handle["proc"] = proc
             for _ in range(90):  # ~7.5 min ceiling (90 × 5s)
                 code, _payload = probe()
                 if code == 200:
@@ -6858,11 +6888,29 @@ def ensure_runtime(
         # legacy config dict without the key is tolerated via .get(), so an
         # un-migrated override never raises. Mirrors the frontend_probe binding.
         if cfg.get("boot_liveness"):
-            # Production source: the in-process boot-process Popen handle's
-            # liveness. With no handle threaded yet (the CLI seam binds it),
-            # fail-safe toward NOT-booting so a misconfig can never falsely
-            # patient-wait a genuinely dead runtime forever.
-            boot_alive = lambda: False
+            # Production source: the in-process boot-process `Popen` handle's
+            # liveness (ensure-runtime-starves-pre-vite-sidecar-build Phase 3 —
+            # the CLI-seam wiring this branch's placeholder was waiting on). The
+            # default `restart()` closure above stashes the spawned boot handle in
+            # `_boot_handle["proc"]`; a live signal reads it back here:
+            #   - no handle yet (restart not called / spawn failed) ⇒ None ⇒ NOT
+            #     booting (fail-safe — a genuinely dead host still reaches bounded
+            #     recovery, never a forever patient-wait);
+            #   - handle present + `.poll()` is None ⇒ the boot process is STILL
+            #     RUNNING ⇒ the pre-Vite cold window is in progress ⇒ alive
+            #     (`_classify_compile_state` returns `compiling`, patient-wait);
+            #   - handle present + `.poll()` is an exit code ⇒ the boot process
+            #     EXITED ⇒ not alive ⇒ both-ports-down crosses to `dead`.
+            # `.poll()` never raises for a valid handle; a defensive guard keeps a
+            # surprising handle state fail-safe toward NOT-booting.
+            def boot_alive() -> bool:
+                proc = _boot_handle.get("proc")
+                if proc is None:
+                    return False
+                try:
+                    return proc.poll() is None
+                except Exception:  # noqa: BLE001 — any handle error ⇒ NOT booting
+                    return False
         else:
             boot_alive = lambda: False
 

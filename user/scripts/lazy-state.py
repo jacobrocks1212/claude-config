@@ -9197,16 +9197,22 @@ def main() -> int:
         # key off in its own config (then the discriminator degrades to the
         # :3333-only DEAD path, byte-identical to before this fix).
         #
-        # ensure-runtime-starves-pre-vite-sidecar-build (Phase 3): the pre-Vite
-        # boot-liveness signal ALSO needs NO new handler argument — it is wired the
-        # same config-driven way. When a repo sets `boot_liveness: true` in its
-        # config override (AlgoBooth opts in; the base default is OFF so every other
-        # repo is byte-identical), `ensure_runtime` binds the boot-liveness source
-        # internally. The source is the in-process `Popen` handle the production
-        # `restart()` closure already owns (`.poll()` None ⇒ alive) — it lives
+        # ensure-runtime-starves-pre-vite-sidecar-build (Phase 3, CLI-seam WIRED):
+        # the pre-Vite boot-liveness signal ALSO needs NO new handler argument — it
+        # is wired the same config-driven way. `boot_liveness` is now ENABLED in the
+        # base default config (`_ENSURE_RUNTIME_DEFAULT_CONFIG`), so this no-config
+        # production call auto-binds the boot-liveness source inside `ensure_runtime`
+        # (a per-repo override may still set it `False` to opt OUT). The source is
+        # the in-process `Popen` handle the production `restart()` closure spawns and
+        # stashes in a closure-shared holder (`.poll()` None ⇒ the cold pre-Vite
+        # `BeforeDevCommand`/`sidecar:build` window is in progress ⇒ alive). It lives
         # ENTIRELY inside the single `ensure_runtime` call, so the handler needs no
-        # real handle and `--test` stays hermetic (tests inject `boot_alive`). The
-        # existing `live_session_id` threading from the run marker is UNCHANGED.
+        # real handle and `--test` stays hermetic (tests inject `restart`/`boot_alive`
+        # — with no boot spawned the holder is empty and the signal fail-safes to
+        # NOT-booting, so an injected `boot_alive` still wins). The signal is
+        # fail-safe by construction: with no live boot a both-ports-down host still
+        # classifies `dead` and reaches bounded recovery. The existing
+        # `live_session_id` threading from the run marker is UNCHANGED.
         result = lazy_core.ensure_runtime(
             Path(args.repo_root), live_session_id=live_session_id
         )
