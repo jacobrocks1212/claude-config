@@ -119,7 +119,7 @@ Read `docs/specs/weight-calibration-feedback-loop/PHASES.md` (full, including Ph
 - [x] WU-4c — review-pr.md: write pending-calibration marker on completion
 - [x] WU-5a — review-pr-buddy.md: serialization fix + completeness sweep + suppress task-notification echo
 - [x] WU-5b — review-pr-buddy.md: stable finding IDs + canonical disposition taxonomy invariant
-- [ ] WU-5c — review-pr-buddy.md: batch dispositions + surface confidence + early escape hatch
+- [x] WU-5c — review-pr-buddy.md: batch dispositions + surface confidence + early escape hatch
 - [ ] WU-5d — review-pr-buddy.md: already-commented handling + stale-Copilot-thread reconciliation
 
 ---

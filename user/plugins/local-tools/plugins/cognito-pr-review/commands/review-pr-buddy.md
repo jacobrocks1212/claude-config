@@ -153,12 +153,19 @@ _AI-role framing:_ These are mechanical-triage and cross-file-dependency aids �
 
 #### 4. Disposition
 
-Use `AskUserQuestion` to ask the reviewer to disposition every finding — tool-surfaced (Pass 2) AND reviewer-authored Pass-1 observations. Present the severity options clearly:
+**Default — batched multi-disposition prompt:** Use a single `AskUserQuestion` with one question per finding (the multi-question form) to disposition ALL of a chunk's findings in one prompt — tool-surfaced (Pass 2) AND reviewer-authored Pass-1 observations. Do NOT issue 6–16 separate one-at-a-time asks; that is the fallback only when a single finding genuinely needs isolated deliberation (e.g. the reviewer explicitly asks to discuss one finding in depth before continuing). Batching is the default; one-at-a-time is the exception.
+
+For each finding in the batched prompt, display its confidence label inline — read from the `confidence` field in `processed-findings.json` — BEFORE presenting the severity choices:
+- `CONFIRMED` — the pipeline self-verified this finding
+- `UNVERIFIED` — the pipeline could not self-verify this finding
+- If the `confidence` field is absent or null, show `—` (do not guess or invent a label)
+
+Use the exact label strings `CONFIRMED` and `UNVERIFIED` — do not remap, translate, or substitute other wording.
 
 **Taxonomy invariant:** the prompt MUST present all four values — `Blocking / Important / Suggestion / Dismiss` — in that stable order, on every disposition prompt, for every finding. Never omit `Blocking`, never reorder the four values, never collapse to fewer options, and never substitute the older `Keep / Will-comment / Dismiss / Add-own` vocabulary. This taxonomy must remain stable so that Phase 4 calibration signal is comparable across sessions.
 
 ```
-For each finding, assign a severity:
+For each finding [confidence label shown inline], assign a severity:
   Blocking    — critical logic / security / data-corruption / requirement violation
   Important   — architectural degradation, missing edge case, significant perf issue
   Suggestion  — style / nit / optional refactor
@@ -166,6 +173,12 @@ For each finding, assign a severity:
 ```
 
 Any non-dismissed finding may carry an optional free-text comment note. Prompt for it after the severity choice.
+
+**Early escape hatch — dismiss-heavy chunks:** If a chunk is trending dismiss-heavy (the reviewer has dismissed several findings in a row, or explicitly signals they would dismiss or accept all the rest), offer this option early:
+
+> "Want to auto-disposition all remaining findings at their recommended severities? This records an explicit verdict for each one — no findings are silently skipped or dropped."
+
+If the reviewer accepts: iterate over every remaining undispositioned finding, assign its recommended severity (using the tool-supplied severity or, if absent, `dismiss` as the default for flagged-low-priority findings — always use the most specific recommended value available), and write an explicit `dispositions[]` entry for each in `buddy-session.json`. This path is NOT a skip or drop — it produces real, recorded dispositions that Phase 4's calibration and the WU-5a Completeness Sweep can consume. An undispositioned finding yields no calibration signal; the escape hatch converts "I'd dismiss/accept all the rest" into explicit recorded signal. The Completeness Sweep gate (Phase 2) treats escape-hatch-dispositioned findings as fully satisfied — they have explicit verdicts.
 
 Reviewer-authored Pass-1 observations become severity-tagged findings with `source: "reviewer"`. If there are no tool findings and the reviewer recorded no Pass-1 observations, use `AskUserQuestion` to ask whether they want to add an observation before moving on.
 

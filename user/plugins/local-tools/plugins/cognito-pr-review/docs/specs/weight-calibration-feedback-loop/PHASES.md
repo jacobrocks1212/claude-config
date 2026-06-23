@@ -235,9 +235,9 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 - [x] **Suppress `task-notification` echo** into the user stream.
 - [x] **Stable finding IDs:** one canonical ID scheme (no `F0`/`①`/`[F0]`/`Q2` drift).
 - [x] **Canonical disposition taxonomy:** enforce `Blocking / Important / Suggestion / Dismiss`, always all four, stable order (already present at `:145-154` — make it invariant, not drifting across versions).
-- [ ] **Batch dispositions:** present a step's findings in one multi-disposition prompt by default instead of one-at-a-time.
-- [ ] **Surface confidence pre-disposition:** label each finding `CONFIRMED`/`UNVERIFIED` (from Phase 2's emitted field) before asking for a disposition.
-- [ ] **Early escape hatch:** offer "auto-disposition remaining at recommended severities" early in dismiss-heavy reviews (records explicit dispositions — see Phase 4 coupling note).
+- [x] **Batch dispositions:** present a step's findings in one multi-disposition prompt by default instead of one-at-a-time.
+- [x] **Surface confidence pre-disposition:** label each finding `CONFIRMED`/`UNVERIFIED` (from Phase 2's emitted field) before asking for a disposition.
+- [x] **Early escape hatch:** offer "auto-disposition remaining at recommended severities" early in dismiss-heavy reviews (records explicit dispositions — see Phase 4 coupling note).
 - [ ] **Already-commented handling:** record findings already commented and skip re-litigating severity; cross-check stale Copilot threads against later SHAs.
 
 **Minimum Verifiable Behavior:** A buddy session resumes cleanly after writing a Windows path (no JSON parse error on reload); a multi-finding step presents one batched disposition prompt; each finding shows its `CONFIRMED/UNVERIFIED` label; the early escape hatch records explicit dispositions for all remaining findings.
@@ -276,6 +276,14 @@ Each phase below extends/refactors the systems named in the SPEC's Reuse Ledger;
 - **Finding ID Convention** (`### Finding ID Convention`, inserted before `#### 1. Orient`): one scheme used in orient, reconcile, the disposition prompt, AND the persisted `finding_ref` — line-bearing findings → `<file>:<line>` (the leading token of `finding_ref`); line-less findings → `<file>#<short-slug>`. A human descriptor may follow in parentheses, but the leading token IS the canonical ID. Explicitly names the Phase-4 dependency: `scripts/disposition-calibration.ts` parses that leading token to join dispositions to `processed-findings.json`, so the prompt ID MUST equal the persisted `finding_ref`. Ad-hoc schemes (`F0`/`①`/`[F0]`/`Q2`) forbidden. The `finding_ref` schema field carries a matching reminder. (Note: the `<file>#<slug>` line-less form intentionally won't satisfy the helper's `^(.*?):(\d+)` line join and is skipped as unmatched — line-less findings have no line-bearing processed finding to calibrate against; no fabricated signal.)
 - **Taxonomy invariant** (at the Disposition step #4, just before the severity menu): the prompt MUST present all four values `Blocking / Important / Suggestion / Dismiss` in that stable order, every prompt, every finding — never omit `Blocking`, reorder, collapse, or revert to the old `Keep / Will-comment / Dismiss / Add-own` vocabulary. Keeps the Phase-4 signal comparable across sessions (SPEC friction #2).
 - **Review verdict:** PASS (ground-truth verified: yes — orchestrator re-ran `wc -l` (385) + greps; Finding ID Convention @74-81, invariant @158 immediately preceding the intact four-value menu, `finding_ref` schema reminder @221).
+- Files modified: `commands/review-pr-buddy.md`.
+
+**2026-06-22 — Batch 3 (WU-5c): batched dispositions + confidence surfaced pre-disposition + early escape hatch in `commands/review-pr-buddy.md`.**
+- **Batch dispositions (friction #1):** the Disposition step (#4) now defaults to ONE batched `AskUserQuestion` (multi-question form, one question per finding) covering all of a chunk's findings — tool-surfaced and reviewer Pass-1 — replacing the 6–16 one-at-a-time asks that drove mid-walk abandonment. One-at-a-time is the documented fallback for isolated deliberation only.
+- **Confidence pre-disposition (friction #4):** each finding shows its `confidence` label (`CONFIRMED`/`UNVERIFIED`, read from `processed-findings.json`) inline BEFORE the severity choices, using the exact Phase-2 label strings (no remap); absent/null → `—`.
+- **Early escape hatch (friction #5):** for dismiss-heavy chunks, an early "auto-disposition all remaining at recommended severities" offer that **records an explicit `dispositions[]` entry per finding** (tool severity, else `dismiss`) — explicitly NOT a silent skip/drop, so Phase 4 still gets real signal and the WU-5a Completeness Sweep treats those findings as satisfied.
+- The WU-5b Taxonomy invariant and four-value menu remain intact inside the batched prompt; optional per-finding note and reviewer-Pass-1 handling preserved.
+- **Review verdict:** PASS (ground-truth verified: yes — orchestrator re-ran `wc -l` (398) + greps and read the reworked step @154-183; batching default, confidence labels exact, escape hatch records explicit dispositions, `Taxonomy invariant` still @165).
 - Files modified: `commands/review-pr-buddy.md`.
 
 ---
