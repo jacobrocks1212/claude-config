@@ -2,9 +2,11 @@
 
 > `bug-state.py --emit-prompt` registers the cycle prompt in the by-reference registry but never surfaces the `@@lazy-ref` token, so `/lazy-bug` and `/lazy-bug-batch` dispatch every real-skill cycle by value — re-inlining 9.5–12K-char prompts the feature pipeline passes as a 49-char reference.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-23
+**Fixed:** 2026-06-23
+**Fix commit:** 99293d6
 **Placement:** docs/bugs/bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref
 **Related:** `docs/bugs/_archive/byref-dispatch-undercounts-forward-cycles` (the feature-pipeline by-reference counter fix); root `CLAUDE.md` mission ("script-emitted prompts over hand-composed ones"); coupled-pair table (`/lazy-batch` ↔ `/lazy-bug-batch`)
 

@@ -2,12 +2,6 @@
   "_note": "Ordering is hybrid: explicit queue order takes precedence; bug-state.py falls back to severity (P0->P1->P2->Low) then Discovered date for bugs absent from this list. The entries below are STUBS (Status: Investigating) sourced from the /lazy-batch session-log audit 2026-06-19 (AlgoBooth, 19 sessions) \u2014 each routes to /spec-bug for root-cause investigation before /plan-bug. operator-checkpoint-resume-counter-reset is Status: Fixed and intentionally omitted from the queue.",
   "queue": [
     {
-      "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
-      "name": "Bug-pipeline cycle dispatch omits cycle_prompt_ref (every bug cycle goes by value)",
-      "spec_dir": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
-      "severity": "P2"
-    },
-    {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "name": "Checkpoint resume continuity is field-by-field, not field-complete",
       "spec_dir": "adhoc-checkpoint-resume-field-complete-continuity",
