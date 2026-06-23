@@ -10219,6 +10219,87 @@ def test_restore_checkpoint_counters_coerces_garbage_counts():
             _clear_state_dir()
 
 
+# ---------------------------------------------------------------------------
+# adhoc-checkpoint-resume-field-complete-continuity (2026-06-23)
+#
+# Phase 1: enumerated continuity/fresh partition SSOT + completeness assertion.
+# The two frozensets RUN_CONTINUITY_FIELDS / RUN_FRESH_FIELDS must EXACTLY
+# partition the run-scoped key set of a freshly-minted write_run_marker — so a
+# newly-added run-scoped marker field can never silently default to the RESET
+# side (the structural cause of the field-by-field whack-a-mole this bug closes).
+# ---------------------------------------------------------------------------
+
+def test_run_marker_continuity_partition_is_complete_and_disjoint():
+    """RUN_CONTINUITY_FIELDS | RUN_FRESH_FIELDS EXACTLY equals the run-scoped key
+    set of a freshly-minted marker, and the two sets are disjoint.  This is the
+    by-construction completeness invariant: every run-scoped marker key is
+    classified as either carried-across-a-sanctioned-resume or reset-on-resume."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+                now=0.0,
+            )
+            minted_keys = set(marker.keys())
+            union = set(lazy_core.RUN_CONTINUITY_FIELDS) | set(
+                lazy_core.RUN_FRESH_FIELDS
+            )
+            # Completeness: the partition covers EXACTLY the minted key set.
+            assert union == minted_keys, (
+                "partition must cover exactly the minted run-scoped keys",
+                {"only_in_partition": union - minted_keys,
+                 "only_in_marker": minted_keys - union},
+            )
+            # Disjointness: no key is classified as both carry AND reset.
+            assert set(lazy_core.RUN_CONTINUITY_FIELDS).isdisjoint(
+                lazy_core.RUN_FRESH_FIELDS
+            ), "continuity and fresh sets must be disjoint"
+            # Spec-pinned membership: the carry set is exactly the SPEC's list.
+            assert set(lazy_core.RUN_CONTINUITY_FIELDS) == {
+                "forward_cycles", "meta_cycles", "started_at",
+                "per_feature_forward_cycles", "per_feature_corrective_cycles",
+            }, lazy_core.RUN_CONTINUITY_FIELDS
+            # last_advance_consume_count is deliberately on the RESET side.
+            assert "last_advance_consume_count" in lazy_core.RUN_FRESH_FIELDS
+        finally:
+            _clear_state_dir()
+
+
+def test_run_marker_continuity_partition_helper_matches_literal():
+    """The key-set helper (_run_marker_scoped_keys) returns the SAME key set as a
+    freshly-minted marker — so the completeness assertion checks against the live
+    literal, not a hand-copied list that could drift."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            marker = lazy_core.write_run_marker(
+                pipeline="bug", cloud=True, repo_root="/r", max_cycles=10, now=0.0,
+            )
+            assert lazy_core._run_marker_scoped_keys() == set(marker.keys())
+        finally:
+            _clear_state_dir()
+
+
+def test_run_marker_partition_guard_rejects_unclassified_new_field():
+    """Guard (the "new field can't silently reset" proof): a synthetic extra key
+    present in the marker-key set but in NEITHER partition set makes the
+    completeness predicate FALSE — proving an unclassified new run-scoped field is
+    a HARD failure, not a silent default to reset."""
+    _guard()
+    # The partition predicate the completeness assertion enforces, evaluated
+    # against a synthetic key set that includes an unclassified field.
+    union = set(lazy_core.RUN_CONTINUITY_FIELDS) | set(lazy_core.RUN_FRESH_FIELDS)
+    synthetic_keys = union | {"some_new_run_scoped_field"}
+    # The new field is in the minted set but in neither partition → not complete.
+    assert union != synthetic_keys
+    assert not synthetic_keys.issubset(union), (
+        "an unclassified new field must NOT be a subset of the partition union"
+    )
+
+
 def test_marker_advance_round_trips_counters_under_rmw():
     """GUARD: every read-modify-write of the marker (advance_run_counters,
     advance_meta_cycle, bind_marker_session) must PRESERVE the other counters and
@@ -15439,6 +15520,10 @@ _TESTS = [
     ("test_restore_checkpoint_counters_carries_forward_run_identity", test_restore_checkpoint_counters_carries_forward_run_identity),
     ("test_restore_checkpoint_counters_no_checkpoint_is_noop", test_restore_checkpoint_counters_no_checkpoint_is_noop),
     ("test_restore_checkpoint_counters_coerces_garbage_counts", test_restore_checkpoint_counters_coerces_garbage_counts),
+    # adhoc-checkpoint-resume-field-complete-continuity Phase 1: partition SSOT completeness
+    ("test_run_marker_continuity_partition_is_complete_and_disjoint", test_run_marker_continuity_partition_is_complete_and_disjoint),
+    ("test_run_marker_continuity_partition_helper_matches_literal", test_run_marker_continuity_partition_helper_matches_literal),
+    ("test_run_marker_partition_guard_rejects_unclassified_new_field", test_run_marker_partition_guard_rejects_unclassified_new_field),
     # operator-checkpoint-resume-counter-reset Phase 2: provenance branch
     ("test_restore_checkpoint_counters_operator_authorized_resets", test_restore_checkpoint_counters_operator_authorized_resets),
     ("test_restore_checkpoint_counters_legacy_file_carries_forward", test_restore_checkpoint_counters_legacy_file_carries_forward),

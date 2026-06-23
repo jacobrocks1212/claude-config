@@ -6182,6 +6182,76 @@ _LEDGER_HEAD_CHARS: int = 200
 # Staleness threshold: markers older than this (in seconds) are deleted.
 _MARKER_STALE_SECONDS: float = 24 * 3600  # 24 hours
 
+# ---------------------------------------------------------------------------
+# Run-scoped marker field partition SSOT
+# (adhoc-checkpoint-resume-field-complete-continuity, 2026-06-23)
+#
+# A sanctioned same-run checkpoint resume re-mints ALL run-scoped marker state on
+# the resuming --run-start (write_run_marker writes the full literal at :8861).
+# Continuity is then reconstructed AFTER the mint by restore_checkpoint_counters.
+# Previously the reset-vs-carry decision was implicit and split across two
+# functions, so a newly-added run-scoped field defaulted to the RESET side BY
+# CONSTRUCTION and became the next reactive whack-a-mole.
+#
+# These two frozensets are the EXPLICIT, ENUMERATED SSOT that partitions every
+# run-scoped key of the write_run_marker literal (:8861-8907) into:
+#
+#   RUN_CONTINUITY_FIELDS — CARRIED across a sanctioned (non-operator-authorized)
+#     same-run pause/resume.  These are run-scoped accumulators / identity that
+#     the SAME run accrues; resetting any mid-run violates the super-invariant
+#     "run-scoped continuity state survives a same-run pause" (HARD CONSTRAINT 8
+#     for the counters; cycle-bracket continuity for started_at; the per-feature
+#     budget maps are run-scoped accumulators a sanctioned resume must continue).
+#
+#   RUN_FRESH_FIELDS — RESET / re-minted fresh on resume.  last_advance_consume_count
+#     deliberately zeros (the registry is freshly cleared on run-start; carrying a
+#     stale watermark would suppress the first post-resume advance — SPEC Out of
+#     Scope).  The remaining keys are run-INVARIANT identity/config that
+#     write_run_marker re-derives identically anyway (session_id is owner-bound by
+#     the resuming --run-start; work_branch is re-resolved at run-start).
+#
+# COMPLETENESS INVARIANT (the by-construction guarantee, enforced by
+# test_run_marker_continuity_partition_is_complete_and_disjoint):
+#   set(RUN_CONTINUITY_FIELDS) | set(RUN_FRESH_FIELDS) == _run_marker_scoped_keys()
+#   AND the two sets are disjoint.
+# A newly-added run-scoped marker key is then a HARD test failure until it is
+# explicitly placed in ONE set — it can never silently default to reset.
+RUN_CONTINUITY_FIELDS: frozenset = frozenset({
+    "forward_cycles",
+    "meta_cycles",
+    "started_at",
+    "per_feature_forward_cycles",
+    "per_feature_corrective_cycles",
+})
+RUN_FRESH_FIELDS: frozenset = frozenset({
+    "last_advance_consume_count",
+    "pipeline",
+    "cloud",
+    "repo_root",
+    "session_id",
+    "max_cycles",
+    "nonce_seed",
+    "attended",
+    "work_branch",
+})
+
+
+def _run_marker_scoped_keys() -> "set[str]":
+    """Return the ACTUAL run-scoped key set of a freshly-minted marker.
+
+    The completeness assertion (test) checks the RUN_CONTINUITY_FIELDS /
+    RUN_FRESH_FIELDS partition against THIS — the live write_run_marker literal —
+    so the assertion can never drift from a hand-copied list.  Hermetic: mints a
+    throwaway marker into the active state dir with an injected ``now`` and reads
+    its keys (write_run_marker has no side effect beyond the state-dir file, which
+    the test fixture owns and clears).
+    """
+    return set(
+        write_run_marker(
+            pipeline="feature", cloud=False, repo_root="/r", now=0.0,
+        ).keys()
+    )
+
 
 # ---------------------------------------------------------------------------
 # Per-repo state-dir scoping (multi-repo-concurrent-runs)

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-checkpoint-resume-field-complete-continuity
-status: Ready
+status: In-progress
 created: 2026-06-23
 complexity: complex
 phases: [1, 2]
@@ -88,8 +88,8 @@ Phases run strictly in order — P2's snapshot/restore rewrite reads the `RUN_CO
 
 ## Work Units
 
-- [ ] WU-1 — Add RUN_CONTINUITY_FIELDS / RUN_FRESH_FIELDS partition SSOT + key-set helper (Phase 1)
-- [ ] WU-2 — Partition-completeness assertion + "new field can't silently reset" guard test (Phase 1)
+- [x] WU-1 — Add RUN_CONTINUITY_FIELDS / RUN_FRESH_FIELDS partition SSOT + key-set helper (Phase 1)
+- [x] WU-2 — Partition-completeness assertion + "new field can't silently reset" guard test (Phase 1)
 - [ ] WU-3 — Snapshot full continuity block in write_run_checkpoint (Phase 2)
 - [ ] WU-4 — Restore full continuity block as one unit in restore_checkpoint_counters, guards preserved + legacy fallback (Phase 2)
 - [ ] WU-5 — Round-trip + back-compat + guard-preservation tests for the snapshot/restore rewrite (Phase 2)

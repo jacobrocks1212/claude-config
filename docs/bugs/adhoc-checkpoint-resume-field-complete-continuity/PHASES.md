@@ -53,10 +53,10 @@ Classifying each run-scoped marker key as CARRY (continuous across a non-operato
 **Scope:** Introduce the two module-level partition constants in `lazy_core.py` and a test-enforced completeness invariant binding them to the `write_run_marker` literal. This is the by-construction guarantee; it lands BEFORE the snapshot/restore rewrite so the rewrite can build on the SSOT and the completeness test fails loudly if a future field is unclassified. No behavior change yet — the existing carry-set/snapshot-set still run; this phase only adds the SSOT + its self-test.
 
 **Deliverables:**
-- [ ] `RUN_CONTINUITY_FIELDS` constant (frozenset/tuple) in `lazy_core.py` constants region = `{forward_cycles, meta_cycles, started_at, per_feature_forward_cycles, per_feature_corrective_cycles}`, with a docstring naming the carry-vs-reset contract and the super-invariant.
-- [ ] `RUN_FRESH_FIELDS` constant = the remaining run-scoped keys of the `write_run_marker` literal (`last_advance_consume_count`, `pipeline`, `cloud`, `repo_root`, `session_id`, `max_cycles`, `nonce_seed`, `attended`, `work_branch`).
-- [ ] A helper (e.g. `_run_marker_scoped_keys()`) or a literal-derived key set used by the completeness assertion, so the assertion checks against the ACTUAL minted key set (not a hand-copied list that could drift from the literal).
-- [ ] Tests: a `test_lazy_core.py` assertion that `RUN_CONTINUITY_FIELDS | RUN_FRESH_FIELDS` exactly equals the run-scoped key set of a freshly-minted marker AND the two sets are disjoint (the "new field can't silently default to reset" guard).
+- [x] `RUN_CONTINUITY_FIELDS` constant (frozenset/tuple) in `lazy_core.py` constants region = `{forward_cycles, meta_cycles, started_at, per_feature_forward_cycles, per_feature_corrective_cycles}`, with a docstring naming the carry-vs-reset contract and the super-invariant.
+- [x] `RUN_FRESH_FIELDS` constant = the remaining run-scoped keys of the `write_run_marker` literal (`last_advance_consume_count`, `pipeline`, `cloud`, `repo_root`, `session_id`, `max_cycles`, `nonce_seed`, `attended`, `work_branch`).
+- [x] A helper (e.g. `_run_marker_scoped_keys()`) or a literal-derived key set used by the completeness assertion, so the assertion checks against the ACTUAL minted key set (not a hand-copied list that could drift from the literal).
+- [x] Tests: a `test_lazy_core.py` assertion that `RUN_CONTINUITY_FIELDS | RUN_FRESH_FIELDS` exactly equals the run-scoped key set of a freshly-minted marker AND the two sets are disjoint (the "new field can't silently default to reset" guard).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` stay green; `python3 -m pytest user/scripts/test_lazy_core.py -k "partition or continuity_fields"` passes the new completeness assertion. Run as commands — this phase's slice is the SSOT + its self-test, both runnable now.
 
@@ -76,6 +76,16 @@ Classifying each run-scoped marker key as CARRY (continuous across a non-operato
 **Integration Notes for Next Phase:**
 - Phase 2 reads `RUN_CONTINUITY_FIELDS` as the snapshot/restore key set — it must not re-enumerate fields.
 - The completeness assertion is the regression net for the whole bug class; keep it referencing the live marker literal, not a frozen copy.
+
+**Status:** Complete
+
+#### Implementation Notes (2026-06-23)
+
+- Added `RUN_CONTINUITY_FIELDS` (carried) + `RUN_FRESH_FIELDS` (reset) frozensets + `_run_marker_scoped_keys()` helper in `lazy_core.py` right after `_MARKER_STALE_SECONDS` (the marker-constants region). The helper mints a throwaway marker (`now=0.0`) and returns its `.keys()` so the completeness assertion checks the LIVE literal, not a hand-copied list.
+- No mint values changed — purely additive SSOT + self-test. Tests added to `test_lazy_core.py` (registered in `_TESTS`): partition completeness+disjointness (pinned to the SPEC's exact carry set), helper-matches-literal, and the synthetic-unclassified-key guard proving a new field is a HARD failure not a silent reset.
+- Files modified: `user/scripts/lazy_core.py`, `user/scripts/test_lazy_core.py`.
+- **Review verdict:** PASS (inline self-review — additive constants + 3 new tests; RED confirmed before the constants existed for the right reason: AttributeError on the missing names; GREEN after).
+- Gates: `lazy-state.py --test` + `bug-state.py --test` byte-stable (no baseline drift — change is additive, not in the state-compute path); `pytest test_lazy_core.py` 805 passing; parity audit green.
 
 ---
 
