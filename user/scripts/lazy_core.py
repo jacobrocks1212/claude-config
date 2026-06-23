@@ -2327,11 +2327,15 @@ def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
             "validated_commit": validated_commit,
         }
 
-    # validated_commit != HEAD → inspect the diff. Docs-only (*.md) → warn +
-    # exempt-and-tick; any non-.md (source/script/config) path → refuse-and-
-    # revalidate (TOCTOU: the validated code is not the code being promoted).
-    changed = _git_diff_name_only(repo_root, validated_commit, head)
-    if changed is None:
+    # validated_commit != HEAD → classify the drift via the SHARED
+    # commit_drift_verdict helper (the SINGLE home for the docs-only carve-out;
+    # the Step-9 state-script gates + the __write_validated_from_results__ apply
+    # gate route through the same helper). Docs-only (*.md) → warn + exempt-and-
+    # tick; any non-.md (source/script/config) path → refuse-and-revalidate
+    # (TOCTOU: the validated code is not the code being promoted); an
+    # unresolvable diff → refuse conservatively.
+    drift = commit_drift_verdict(repo_root, validated_commit, head)
+    if drift["verdict"] == "unresolvable":
         # Diff unresolvable (e.g. validated_commit not in this repo). Conservative
         # — cannot prove the drift is docs-only, so refuse-and-revalidate.
         return _refuse(
@@ -2340,15 +2344,15 @@ def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
             pass_count=pass_count,
             validated_commit=validated_commit,
         )
-    non_docs = [p for p in changed if not p.lower().endswith(".md")]
-    if non_docs:
+    if drift["verdict"] == "non-docs-drift":
         return _refuse(
             f"validated_commit {validated_commit} != HEAD {head} with "
-            f"source/script/config drift ({', '.join(non_docs[:5])}) — "
+            f"source/script/config drift ({', '.join(drift['non_docs'][:5])}) — "
             "refuse-and-revalidate (TOCTOU)",
             pass_count=pass_count,
             validated_commit=validated_commit,
         )
+    # drift["verdict"] == "docs-only"
     return {
         "verdict": "warn-exempt",
         "reason": f"validated_commit {validated_commit} != HEAD {head} but the "
@@ -2377,6 +2381,65 @@ def _git_diff_name_only(
     except (OSError, subprocess.SubprocessError):
         pass
     return None
+
+
+def commit_drift_verdict(
+    repo_root: Path, validated_commit, head
+) -> dict:
+    """Classify the drift between a recorded ``validated_commit`` and ``head``.
+
+    The SINGLE home for the "stale MCP results" docs-only carve-out. Three call
+    sites route through this helper so they cannot diverge (the divergence that
+    produced the 2026-06-23 Step-9 re-verify DEADLOCK — see hardening-log Round
+    36): (1) ``evaluate_completion_evidence`` (completion-coverage audit), (2)
+    the Step-9 freshness gate in ``lazy-state.py`` / ``bug-state.py``, and (3)
+    the ``__write_validated_from_results__`` apply gate in ``apply_pseudo``.
+
+    WHY a docs-only carve-out is correct (and not a gate-weakening): an
+    ``/mcp-test`` cycle that obeys its turn-end clean-tree contract MUST commit
+    ``MCP_TEST_RESULTS.md`` — and that commit advances HEAD exactly one past the
+    ``validated_commit`` it just recorded. The results file is therefore
+    PERPETUALLY one commit stale, and that one-commit drift is a PURE DOCS-ONLY
+    ``*.md`` delta. Strict ``validated_commit == HEAD`` is structurally
+    unsatisfiable in that bracket → an infinite re-verify loop on EVERY feature/
+    bug. Accepting docs-only drift restores liveness WITHOUT weakening the
+    TOCTOU guard: any non-``.md`` (source / script / config) drift still
+    refuses, because that is genuine "the validated code is not the code being
+    promoted" risk.
+
+    Returns ``{verdict, non_docs, changed}`` where ``verdict`` ∈:
+      - ``"fresh"``         — ``validated_commit`` / ``head`` unresolved (None /
+                              blank) OR equal. The caller's existing
+                              legacy-permissive / equality path applies; this
+                              helper does NOT run ``git diff`` in that case.
+      - ``"docs-only"``     — drift is exclusively ``*.md`` files → safe to
+                              accept-and-validate.
+      - ``"non-docs-drift"``— ≥1 non-``.md`` path changed → refuse-and-revalidate
+                              (TOCTOU). ``non_docs`` lists the offending paths.
+      - ``"unresolvable"``  — the diff could not be computed (non-git root,
+                              unknown commit, git unavailable) → caller refuses
+                              conservatively (cannot prove docs-only).
+
+    Best-effort and side-effect-free, mirroring ``_git_diff_name_only`` /
+    ``_current_head`` subprocess posture.
+    """
+    vc = str(validated_commit).strip() if validated_commit is not None else ""
+    hd = str(head).strip() if head is not None else ""
+    if not vc or not hd or vc == hd:
+        # Unresolved or equal — not a drift this helper classifies. The caller
+        # owns the legacy-permissive (missing field / non-git) + equality paths.
+        return {"verdict": "fresh", "non_docs": [], "changed": []}
+    changed = _git_diff_name_only(repo_root, vc, hd)
+    if changed is None:
+        return {"verdict": "unresolvable", "non_docs": [], "changed": []}
+    non_docs = [p for p in changed if not p.lower().endswith(".md")]
+    if non_docs:
+        return {
+            "verdict": "non-docs-drift",
+            "non_docs": non_docs,
+            "changed": changed,
+        }
+    return {"verdict": "docs-only", "non_docs": [], "changed": changed}
 
 
 # ---------------------------------------------------------------------------
@@ -3434,12 +3497,40 @@ def apply_pseudo(
                     "validated_commit freshness UNVERIFIED"
                 )
             elif str(recorded_commit) != head:
-                return _refused(
-                    f"MCP_TEST_RESULTS.md is stale: validated_commit "
-                    f"{recorded_commit} does not match current HEAD {head} — "
-                    "stale results must not mint a fresh VALIDATED.md; re-run "
-                    "/mcp-test against the current code"
-                )
+                # Drift detected. Route through the SHARED commit_drift_verdict
+                # helper (the same docs-only carve-out evaluate_completion_evidence
+                # uses) so this apply gate cannot diverge from the Step-9 routing.
+                # WHY this is not a gate-weakening: an /mcp-test cycle that obeys
+                # its clean-tree contract MUST commit MCP_TEST_RESULTS.md, and
+                # that commit advances HEAD exactly one past the validated_commit
+                # it recorded — so a PURE DOCS-ONLY (*.md) one-commit drift is
+                # STRUCTURALLY UNAVOIDABLE and strict equality is unsatisfiable
+                # (the 2026-06-23 re-verify DEADLOCK — hardening-log Round 36).
+                # Docs-only drift → accept-and-mint with a warning. Any non-.md
+                # (source/script/config) drift STILL refuses (genuine TOCTOU: the
+                # validated code is not the code being promoted).
+                drift = commit_drift_verdict(repo_root, recorded_commit, head)
+                if drift["verdict"] == "docs-only":
+                    warnings.append(
+                        f"validated_commit {recorded_commit} != HEAD {head} but "
+                        "the drift is docs-only (*.md) — accepting (the "
+                        "MCP_TEST_RESULTS.md commit itself is the expected "
+                        "one-commit docs-only lag; no source/script/config drift)"
+                    )
+                else:
+                    # non-docs-drift OR unresolvable → refuse-and-revalidate.
+                    detail = (
+                        f"source/script/config drift "
+                        f"({', '.join(drift['non_docs'][:5])})"
+                        if drift["verdict"] == "non-docs-drift"
+                        else "the diff could not be resolved"
+                    )
+                    return _refused(
+                        f"MCP_TEST_RESULTS.md is stale: validated_commit "
+                        f"{recorded_commit} does not match current HEAD {head} "
+                        f"with {detail} — stale results must not mint a fresh "
+                        "VALIDATED.md; re-run /mcp-test against the current code"
+                    )
         else:
             warnings.append(
                 "MCP_TEST_RESULTS.md has no validated_commit field (legacy) — "

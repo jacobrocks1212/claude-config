@@ -23549,7 +23549,15 @@ def test_archive_fixed_real_drivers_pass_audit():
     both carry the --archive-fixed chain — the full merged-view audit is clean."""
     _guard()
     import lazy_parity_audit
-    repo_root = _SCRIPTS_DIR.parent.parent  # user/scripts → repo root
+    # Resolve __file__ through the ~/.claude/scripts SYMLINK before walking up to
+    # the repo root. When this module is invoked AS the symlink
+    # (~/.claude/scripts/test_lazy_core.py), a raw `Path(__file__).parent.parent`
+    # resolves to the symlink's PARENT tree (e.g. ~/), not the real claude-config
+    # checkout — so the merged-view audit then can't find the real SKILL.md files
+    # and reports spurious "cannot read" findings. .resolve() follows the symlink
+    # to the on-disk <claude-config>/user/scripts, whose .parent.parent IS the
+    # repo root. (Preexisting symlink-invocation defect — fixed inline.)
+    repo_root = Path(__file__).resolve().parent.parent.parent  # user/scripts → repo root
     findings = lazy_parity_audit.audit_merged_view_dispatch_parity(repo_root)
     assert findings == [], (
         f"the real drivers must pass the merged-view parity audit (incl. "
@@ -23743,6 +23751,140 @@ def test_eval_evidence_neither_present_refuses():
         _cc_seed_and_commit(repo_root)
         v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
         assert v["verdict"] == "refuse", v
+
+
+# ---------------------------------------------------------------------------
+# commit_drift_verdict — the SHARED docs-only carve-out helper (2026-06-23
+# DEADLOCK fix, hardening-log Round 36). The Step-9 state-script gates, the
+# __write_validated_from_results__ apply gate, and evaluate_completion_evidence
+# all route through this ONE helper so they cannot diverge (the divergence that
+# produced the infinite Step-9 re-verify loop). These pin the helper directly.
+# ---------------------------------------------------------------------------
+
+def test_commit_drift_verdict_equal_is_fresh():
+    """validated_commit == head → 'fresh' WITHOUT running git diff."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _cc_seed_and_commit(repo_root)
+        sha = lazy_core._current_head(repo_root)
+        v = lazy_core.commit_drift_verdict(repo_root, sha, sha)
+        assert v["verdict"] == "fresh", v
+
+
+def test_commit_drift_verdict_none_or_blank_is_fresh():
+    """A None / blank validated_commit or head → 'fresh' (legacy-permissive;
+    the caller owns the missing-field / non-git path)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        assert lazy_core.commit_drift_verdict(repo_root, None, "abc")["verdict"] == "fresh"
+        assert lazy_core.commit_drift_verdict(repo_root, "abc", None)["verdict"] == "fresh"
+        assert lazy_core.commit_drift_verdict(repo_root, "", "abc")["verdict"] == "fresh"
+        assert lazy_core.commit_drift_verdict(repo_root, "  ", "abc")["verdict"] == "fresh"
+
+
+def test_commit_drift_verdict_docs_only():
+    """validated_commit (A) != head (B), A→B drift is *.md only → 'docs-only'.
+
+    This is the STRUCTURALLY-UNAVOIDABLE one-commit lag: the /mcp-test cycle
+    commits its own MCP_TEST_RESULTS.md (a *.md), advancing HEAD one past the
+    validated_commit it just recorded. Strict equality would deadlock here."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        first = _cc_seed_and_commit(repo_root)
+        (repo_root / "NOTES.md").write_text("docs change\n", encoding="utf-8")
+        second = _git_fixture_commit(repo_root)
+        assert first != second
+        v = lazy_core.commit_drift_verdict(repo_root, first, second)
+        assert v["verdict"] == "docs-only", v
+        assert v["non_docs"] == [], v
+
+
+def test_commit_drift_verdict_non_docs_drift():
+    """validated_commit (A) != head (B), A→B drift includes a .py → 'non-docs-
+    drift' with the offending path listed (genuine TOCTOU — must re-verify)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        first = _cc_seed_and_commit(repo_root)
+        (repo_root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+        second = _git_fixture_commit(repo_root)
+        assert first != second
+        v = lazy_core.commit_drift_verdict(repo_root, first, second)
+        assert v["verdict"] == "non-docs-drift", v
+        assert any(p.endswith("mod.py") for p in v["non_docs"]), v
+
+
+def test_commit_drift_verdict_unresolvable():
+    """An unknown validated_commit (not in the repo) → 'unresolvable' (the
+    caller refuses conservatively — cannot prove docs-only)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        head = _cc_seed_and_commit(repo_root)
+        v = lazy_core.commit_drift_verdict(repo_root, "0" * 40, head)
+        assert v["verdict"] == "unresolvable", v
+
+
+def test_apply_pseudo_validated_from_results_accepts_docs_only_drift():
+    """2026-06-23 DEADLOCK fix: validated_commit (A) != HEAD (B) but the A→B
+    drift is PURE DOCS-ONLY (*.md) → VALIDATED.md IS minted (with a warning),
+    NOT refused. This is the structurally-unavoidable one-commit lag from the
+    /mcp-test cycle committing its own MCP_TEST_RESULTS.md. RED against pre-fix
+    code (strict validated_commit != HEAD refused → deadlock)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        spec_dir = root / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "SPEC.md").write_text("# placeholder\n", encoding="utf-8")
+        first = _cc_seed_and_commit(root)
+        # Second commit changes ONLY a markdown file → docs-only drift.
+        (root / "NOTES.md").write_text("docs change\n", encoding="utf-8")
+        second = _git_fixture_commit(root)
+        assert first != second
+        _write_mcp_test_results(spec_dir, ["scenario-a"], validated_commit=first)
+        result = lazy_core.apply_pseudo(
+            root, "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, (
+            f"docs-only drift must mint VALIDATED.md (deadlock fix), got {result}"
+        )
+        assert (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md not written for docs-only drift — deadlock not fixed"
+        )
+        warnings = result.get("warnings") or []
+        assert any("docs-only" in w for w in warnings), (
+            f"expected a docs-only acceptance warning, got {result!r}"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_non_docs_drift():
+    """Non-.md (source) drift between validated_commit and HEAD STILL refuses
+    (the TOCTOU guard is preserved — the deadlock fix is docs-only-scoped)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        spec_dir = root / "spec"
+        spec_dir.mkdir()
+        (spec_dir / "SPEC.md").write_text("# placeholder\n", encoding="utf-8")
+        first = _cc_seed_and_commit(root)
+        # Second commit changes a SOURCE file → must refuse-and-revalidate.
+        (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+        second = _git_fixture_commit(root)
+        assert first != second
+        _write_mcp_test_results(spec_dir, ["scenario-a"], validated_commit=first)
+        result = lazy_core.apply_pseudo(
+            root, "__write_validated_from_results__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, (
+            f"source drift must refuse (TOCTOU preserved), got {result}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md minted despite source drift — TOCTOU guard weakened!"
+        )
 
 
 # ===========================================================================
@@ -24128,6 +24270,21 @@ _TESTS = _TESTS + [
      test_eval_evidence_head_drift_source_refuses),
     ("test_eval_evidence_neither_present_refuses",
      test_eval_evidence_neither_present_refuses),
+    # commit_drift_verdict — shared docs-only carve-out (Round 36 deadlock fix).
+    ("test_commit_drift_verdict_equal_is_fresh",
+     test_commit_drift_verdict_equal_is_fresh),
+    ("test_commit_drift_verdict_none_or_blank_is_fresh",
+     test_commit_drift_verdict_none_or_blank_is_fresh),
+    ("test_commit_drift_verdict_docs_only",
+     test_commit_drift_verdict_docs_only),
+    ("test_commit_drift_verdict_non_docs_drift",
+     test_commit_drift_verdict_non_docs_drift),
+    ("test_commit_drift_verdict_unresolvable",
+     test_commit_drift_verdict_unresolvable),
+    ("test_apply_pseudo_validated_from_results_accepts_docs_only_drift",
+     test_apply_pseudo_validated_from_results_accepts_docs_only_drift),
+    ("test_apply_pseudo_validated_from_results_refuses_non_docs_drift",
+     test_apply_pseudo_validated_from_results_refuses_non_docs_drift),
 ]
 
 

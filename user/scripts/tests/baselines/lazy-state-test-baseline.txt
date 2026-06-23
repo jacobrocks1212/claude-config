@@ -58,6 +58,7 @@
   [host-cap-present-reopens] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [host-ungated-baseline] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [stale-mcp-results-reverify] cloud=False skip_nr=False real_device=True: Step 9: stale MCP results — re-verify
+  [docsonly-drift-validate] cloud=False skip_nr=False real_device=True: Step 9b: write validated
   [skip-pipeline-granted-needs-input] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   [skip-operator-granted-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
   [skip-mcp-test-granted-with-class-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
@@ -70,8 +71,7 @@
   [ready-plan-unchecked-in-scope-still-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [finalize-plan-verification-rows-only-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [stale-empty-scope-decomposition-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
-  [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
-{
+  [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked){
   "id": "adhoc-bug-1",
   "spec_dir": "adhoc-bug-1",
   "status": "queued"
@@ -86,6 +86,7 @@
   "spec_dir": "broken-submit-button",
   "status": "queued"
 }
+
   [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
   [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
   PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
@@ -97,7 +98,7 @@
   [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
 {
   "error": "feature_id already queued: adhoc-test",
-  "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
+  "path": "C:\\Users\\Jacob\\AppData\\Local\\Temp\\lazy-state-fixtures-xb_dxxg7\\enqueue-test\\docs\\features\\queue.json"
 }
   [enqueue] enqueue_adhoc prepend + brief + roadmap: ok
   [enqueue-bug] enqueue_adhoc_bug routes to docs/bugs + idempotent: ok

@@ -99,6 +99,7 @@ from lazy_core import (
     repo_has_no_app_surface,
     phases_mcp_runtime_not_required,
     spec_status,
+    commit_drift_verdict,
 )
 
 
@@ -3143,15 +3144,29 @@ def compute_state(
                 if meta.get("result") == "all-passing":
                     # Freshness gate: ensure the results were validated against the
                     # CURRENT HEAD commit, not a stale one. If validated_commit is
-                    # present and doesn't match HEAD, the results are stale and we
-                    # must re-run MCP tests against the current code before writing
-                    # VALIDATED.md. When _current_head returns None (not a git repo)
-                    # or validated_commit is absent (legacy results), skip the check
-                    # and fall through to the existing write-validated path.
+                    # present and doesn't match HEAD, classify the drift via the
+                    # SHARED commit_drift_verdict helper (the SAME docs-only carve-
+                    # out evaluate_completion_evidence + the apply gate use). When
+                    # _current_head returns None (not a git repo) or validated_commit
+                    # is absent (legacy results), the helper returns "fresh" and we
+                    # fall through to the existing write-validated path.
+                    #
+                    # DOCS-ONLY DRIFT carve-out (2026-06-23 DEADLOCK fix —
+                    # hardening-log Round 36): an /mcp-test cycle that obeys its
+                    # clean-tree turn-end contract MUST commit MCP_TEST_RESULTS.md,
+                    # and that commit advances HEAD exactly one past the
+                    # validated_commit it just recorded. The results file is
+                    # therefore PERPETUALLY one commit stale and that drift is a
+                    # PURE DOCS-ONLY (*.md) delta — strict equality is structurally
+                    # unsatisfiable → an infinite re-verify loop on EVERY feature.
+                    # Docs-only drift routes to write-validated; only a non-.md
+                    # (source/script/config) drift OR an unresolvable diff re-
+                    # verifies (genuine TOCTOU).
                     head = _current_head(repo_root)
                     validated_commit = meta.get("validated_commit")
-                    if head and validated_commit and str(validated_commit) != head:
-                        # Stale results validated an older commit — must NOT validate
+                    drift = commit_drift_verdict(repo_root, validated_commit, head)
+                    if drift["verdict"] in ("non-docs-drift", "unresolvable"):
+                        # Stale results validated DIFFERENT CODE — must NOT validate
                         # current code. Re-verify by re-running MCP tests against HEAD.
                         return _state(
                             **common,
@@ -3162,6 +3177,7 @@ def compute_state(
                                 f"validated against a stale commit; see {spec_path_str}/SPEC.md"
                             ),
                         )
+                    # verdict ∈ {"fresh", "docs-only"} → safe to write validated.
                     return _state(
                         **common,
                         current_step="Step 9b: write validated",
@@ -4467,6 +4483,82 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
                     f"stale-mcp-results-reverify git setup failed "
                     f"(cmd={cmd!r}): {result.stderr.strip()}"
                 )
+    elif name == "docsonly-drift-validate":
+        # 2026-06-23 DEADLOCK fix (hardening-log Round 36): on-disk
+        # MCP_TEST_RESULTS.md records validated_commit == sha A, but HEAD has
+        # since advanced to sha B via a PURE DOCS-ONLY (*.md) commit — exactly
+        # the structurally-unavoidable one-commit lag an /mcp-test cycle's OWN
+        # MCP_TEST_RESULTS.md commit produces under the clean-tree turn-end
+        # contract. The A→B drift is docs-only, so Step 9 MUST route to
+        # write-validated (__write_validated_from_results__), NOT re-verify.
+        # RED against pre-fix code (strict validated_commit != HEAD →
+        # infinite re-verify deadlock loop).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-dod", "name": "Feature DOD",
+                 "spec_dir": "feat-dod", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        dod = features / "feat-dod"
+        dod.mkdir()
+        (dod / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (dod / "RESEARCH.md").write_text("# R\n")
+        (dod / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (dod / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            dod / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-dod", date="2026-06-23",
+            rounds=1, retro_plans=["retro-1-feat-dod.md"],
+            mcp_validation_status="pending",
+        )
+        # Commit A: the validated tree. Capture sha A as the validated_commit.
+        for cmd in [
+            ["git", "-C", str(root), "init", "-q"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture A (validated)"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"docsonly-drift-validate git setup A failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+        head_a = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        )
+        if head_a.returncode != 0:
+            raise RuntimeError(
+                f"docsonly-drift-validate rev-parse A failed: {head_a.stderr.strip()}"
+            )
+        sha_a = head_a.stdout.strip()
+        # Commit B: a PURE DOCS-ONLY (*.md) change. HEAD advances to sha B while
+        # validated_commit stays at sha A — drift A→B is docs-only.
+        (dod / "NOTES.md").write_text(
+            "# Notes\n\nA docs-only follow-up commit.\n"
+        )
+        for cmd in [
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "add", "-A"],
+            ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "-m", "fixture B (docs-only *.md)"],
+        ]:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"docsonly-drift-validate git setup B failed "
+                    f"(cmd={cmd!r}): {result.stderr.strip()}"
+                )
+        # MCP_TEST_RESULTS.md records sha A (the validated tree), not HEAD (sha B).
+        _write_yaml_sentinel(
+            dod / "MCP_TEST_RESULTS.md", "mcp-test-results",
+            result="all-passing",
+            validated_commit=sha_a,
+        )
+        # NO VALIDATED.md, NO SKIP_MCP_TEST.md.
     elif name == "skip-pipeline-granted-needs-input":
         # WU-5 Phase-2 contract (RED fixture): SKIP_MCP_TEST.md carrying
         # `granted_by: pipeline` must NOT be accepted as a waiver by the
@@ -5705,6 +5797,18 @@ def run_smoke_tests() -> int:
                 "sub_skill": "mcp-test",
                 "feature_id": "feat-smrr",
                 "current_step": "Step 9: stale MCP results — re-verify",
+            }),
+            # 2026-06-23 DEADLOCK fix (hardening-log Round 36): validated_commit
+            # (sha A) != HEAD (sha B) but the A→B drift is PURE DOCS-ONLY (*.md)
+            # — the structurally-unavoidable one-commit lag from the /mcp-test
+            # cycle committing its own MCP_TEST_RESULTS.md under the clean-tree
+            # turn-end contract. MUST route to Step 9b write-validated, NOT
+            # re-verify. RED against pre-fix code (strict validated_commit !=
+            # HEAD re-verified → infinite deadlock loop on EVERY feature).
+            ("docsonly-drift-validate", False, False, {
+                "sub_skill": "__write_validated_from_results__",
+                "feature_id": "feat-dod",
+                "current_step": "Step 9b: write validated",
             }),
             # WU-5: pipeline-self-granted SKIP_MCP_TEST.md must NOT vacuously
             # validate. When `granted_by: pipeline`, the pipeline is trying to
