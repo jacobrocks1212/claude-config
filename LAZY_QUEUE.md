@@ -3,11 +3,9 @@
 ## Features (0)
 
 
-## Bugs (2)
+## Bugs (1)
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [adhoc-checkpoint-resume-field-complete-continuity](docs/bugs/_archive/adhoc-checkpoint-resume-field-complete-continuity/SPEC.md) | Complete | — |
-| | status: Complete · phase 0/2 · next: done · A sanctioned same-run checkpoint resume re-mints ALL run-scoped marker state on the resuming `--run-start`; every continuity field must be carried back individually by `restore_checkpoint_counters`. | | |
-| 2 | [adhoc-ensure-runtime-test-injects-signal-under-test](docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec | | |
+| 1 | [adhoc-ensure-runtime-test-injects-signal-under-test](docs/bugs/adhoc-ensure-runtime-test-injects-signal-under-test/SPEC.md) | Validate | P1 |
+| | status: Validate · phase 3/3 · next: run mcp-test · The `ensure_runtime` cold-boot/runtime-recovery "production-binding" tests in `test_lazy_core.py` reach green by injecting a hand-set stand-in for the very OS-level signal whose production derivation is under test — so a defect in that derivation ships behind a green test (a recurring false-green; three rounds). | | |
