@@ -61,7 +61,7 @@ Classifying each run-scoped marker key as CARRY (continuous across a non-operato
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` stay green; `python3 -m pytest user/scripts/test_lazy_core.py -k "partition or continuity_fields"` passes the new completeness assertion. Run as commands — this phase's slice is the SSOT + its self-test, both runnable now.
 
 **Runtime Verification** *(checked by integration test — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> The completeness assertion FAILS if a new key is added to the `write_run_marker` literal without being placed in one of the two sets (proven by a test that constructs a marker-key set with an extra synthetic key and asserts the partition check raises/returns False).
+- [x] <!-- verification-only --> The completeness assertion FAILS if a new key is added to the `write_run_marker` literal without being placed in one of the two sets (proven by a test that constructs a marker-key set with an extra synthetic key and asserts the partition check raises/returns False). Evidence: `test_run_marker_partition_guard_rejects_unclassified_new_field` PASSED (810 tests total, 2026-06-23).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable (app/MCP) behavior in this phase; it is a pure-Python SSOT + smoke-test assertion.
 
@@ -103,8 +103,8 @@ Classifying each run-scoped marker key as CARRY (continuous across a non-operato
 **Minimum Verifiable Behavior:** `python3 -m pytest user/scripts/test_lazy_core.py -k "checkpoint or continuity or restore"` passes incl. the new full-set round-trip and back-compat tests; both `--test` baselines stay byte-stable (`lazy-state.py --test`, `bug-state.py --test`). Run as commands.
 
 **Runtime Verification** *(checked by integration test — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> A non-operator-authorized resume carrying non-empty `per_feature_forward_cycles` / `per_feature_corrective_cycles` maps restores those maps verbatim (proves the SPEC's named latent-third-whack-a-mole is closed — the budget-guard maps survive a sanctioned pause).
-- [ ] <!-- verification-only --> A >24h-stale `started_at` in the continuity block is NOT restored (the age gate still wins, marker keeps its minted identity — the Round-35 invariant survives the rewrite).
+- [x] <!-- verification-only --> A non-operator-authorized resume carrying non-empty `per_feature_forward_cycles` / `per_feature_corrective_cycles` maps restores those maps verbatim (proves the SPEC's named latent-third-whack-a-mole is closed — the budget-guard maps survive a sanctioned pause). Evidence: `test_restore_checkpoint_counters_restores_full_continuity_block` PASSED (810 tests total, 2026-06-23).
+- [x] <!-- verification-only --> A >24h-stale `started_at` in the continuity block is NOT restored (the age gate still wins, marker keeps its minted identity — the Round-35 invariant survives the rewrite). Evidence: `test_restore_full_continuity_block_age_gate_preserved` PASSED (810 tests total, 2026-06-23).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable (app/MCP) behavior; deterministic state-script helper validated entirely by the in-file `--test` harness + `test_lazy_core.py`.
 
