@@ -164,7 +164,7 @@ function replaceRuleWeight(text: string, ruleId: string, newWeight: number, newD
 	const lines = text.split("\n");
 	const ruleHeader = `  ${ruleId}:`;
 	let i = 0;
-	while (i < lines.length && lines[i] !== ruleHeader) i++;
+	while (i < lines.length && lines[i].replace(/\r$/, "") !== ruleHeader) i++;
 	if (i >= lines.length) return text;
 
 	i++;
@@ -173,12 +173,13 @@ function replaceRuleWeight(text: string, ruleId: string, newWeight: number, newD
 
 	while (i < lines.length) {
 		const line = lines[i];
-		if (line.length > 0 && !line.startsWith("    ") && !line.startsWith("\t")) break;
-		if (!weightReplaced && /^    weight:/.test(line)) {
-			lines[i] = `    weight: ${newWeight}`;
+		const stripped = line.replace(/\r$/, "");
+		if (stripped.length > 0 && !stripped.startsWith("    ") && !stripped.startsWith("\t")) break;
+		if (!weightReplaced && /^    weight:/.test(stripped)) {
+			lines[i] = line.replace(/(^\s*weight:\s*)[\d.]+/, `$1${newWeight}`);
 			weightReplaced = true;
-		} else if (!dpReplaced && /^    data_points:/.test(line)) {
-			lines[i] = `    data_points: ${newDp}`;
+		} else if (!dpReplaced && /^    data_points:/.test(stripped)) {
+			lines[i] = line.replace(/(^\s*data_points:\s*)[\d]+/, `$1${newDp}`);
 			dpReplaced = true;
 		}
 		if (weightReplaced && dpReplaced) break;

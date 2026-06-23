@@ -294,6 +294,25 @@ EOF
 
 Local Mode (no work item): no-op — skip the sentinel. On write failure: WARN the reviewer and continue — never block on this write.
 
+### Auto-Recalibrate from Dispositions
+
+Silently invoke the shared `disposition-calibration.ts` helper against this session's data. Do NOT ask the user — recalibration runs unconditionally at Phase 2 close (the operator-validated decision: buddy auto-recalibrates inline, unlike `review-pr.md` which only writes a `pending-calibration` marker and defers to `/learn-from-pr`).
+
+```bash
+npx tsx {plugin_root}/scripts/disposition-calibration.ts \
+  --session {cacheDir}/buddy-session.json \
+  --findings {cacheDir}/processed-findings.json \
+  --weights {plugin_root}/knowledge/weights.yaml
+```
+
+This is the **same single implementation** used by `/learn-from-pr` — one helper, not a buddy-specific copy.
+
+Print a summary of the weight deltas reported by the helper: per-rule and per-source old→new values. This summary is the only user-visible output of this step.
+
+If the session has zero usable dispositions, the helper no-ops and leaves `weights.yaml` byte-identical — print "No dispositions recorded — weights unchanged."
+
+Non-fatal: if the helper invocation fails, WARN the reviewer and continue. Never block the session close on calibration.
+
 ### Cleanup and Report
 
 Remove the cache boundary marker:
