@@ -6958,11 +6958,14 @@ def _route_legacy_non_serving(
     rebuild attempt (ensure-runtime-legacy-mode-optimistic-ready-verdict, Phase 1).
 
     Mirrors the M4 path's ``_route_non_serving``: branch the non-200 re-probe on
-    ``_classify_compile_state(code, frontend_up)`` — a ``compiling`` runtime (Vite
-    :1420 up, backend not yet serving) is PATIENTLY WAITED on via
-    ``_await_compile_serving`` (never kill-restarted); a genuinely ``dead`` runtime
-    (frontend also down, the default for a non-:1420 repo) enters the bounded
-    ``_recover_runtime`` crash loop → READY on a healthy re-probe, else BLOCKED.
+    ``_classify_compile_state(code, frontend_up, boot_alive)`` — a ``compiling``
+    runtime (Vite :1420 up, backend not yet serving — OR, per
+    ensure-runtime-starves-pre-vite-sidecar-build Phase 2, BOTH ports down but the
+    boot process still ALIVE: the pre-Vite ``BeforeDevCommand``/``sidecar:build``
+    window) is PATIENTLY WAITED on via ``_await_compile_serving`` (never
+    kill-restarted); a genuinely ``dead`` runtime (frontend also down AND no live
+    boot) enters the bounded ``_recover_runtime`` crash loop → READY on a healthy
+    re-probe, else BLOCKED.
 
     Legacy mode has no ownership identity, so ``ownership_verified=False`` and the
     lock-rewrite is skipped (``recover_identity=None``, ``write_lock`` a no-op).
@@ -6971,22 +6974,28 @@ def _route_legacy_non_serving(
     from whatever payload the recovery machinery resolves, so a non-serving
     runtime with no configured tool name reports ``False`` (not vacuously True).
     """
+    if boot_alive is None:
+        boot_alive = lambda: False
     try:
         frontend_up = bool(frontend_probe())
     except Exception:  # noqa: BLE001 — a probe error is treated as down (dead)
         frontend_up = False
+    try:
+        boot_up = bool(boot_alive())
+    except Exception:  # noqa: BLE001 — a probe error is treated as not-booting
+        boot_up = False
 
     def _noop_write_lock(**_kw):
         # Legacy mode has no ownership lock to rewrite.
         return None
 
-    if _classify_compile_state(code, frontend_up) == "compiling":
+    if _classify_compile_state(code, frontend_up, boot_up) == "compiling":
         verdict = _await_compile_serving(
             cfg, ownership_verified=False, probe=probe,
             frontend_probe=frontend_probe, sleep=sleep, write_lock=_noop_write_lock,
             recover_identity=None, tool_name=tool_name,
             initial_code=code, initial_payload=payload,
-            sidecar_check=sidecar_check,
+            sidecar_check=sidecar_check, boot_alive=boot_alive,
         )
         if verdict is not _COMPILE_WENT_DEAD:
             return verdict
@@ -7122,21 +7131,28 @@ def _ensure_runtime_m4(
     lock = read_lock()
 
     def _route_non_serving(from_state, *, ownership_verified, code, payload):
-        """Branch a non-serving runtime on the two-port classifier: `compiling` →
-        patient wait (never restart); `dead`/default-off → bounded crash recovery.
-        A `compiling → dead` transition during the patient wait routes back here as
+        """Branch a non-serving runtime on the two-port (+ boot-liveness)
+        classifier: `compiling` → patient wait (never restart); `dead`/default-off
+        → bounded crash recovery. A `compiling` here covers BOTH the Vite-up
+        backend-compiling window AND the pre-Vite both-ports-down-but-live-boot
+        window (ensure-runtime-starves-pre-vite-sidecar-build Phase 2). A
+        `compiling → dead` transition during the patient wait routes back here as
         the bounded crash loop."""
         try:
             frontend_up = bool(frontend_probe())
         except Exception:  # noqa: BLE001 — a probe error is treated as down (dead)
             frontend_up = False
-        if _classify_compile_state(code, frontend_up) == "compiling":
+        try:
+            boot_up = bool(boot_alive())
+        except Exception:  # noqa: BLE001 — a probe error is treated as not-booting
+            boot_up = False
+        if _classify_compile_state(code, frontend_up, boot_up) == "compiling":
             verdict = _await_compile_serving(
                 cfg, ownership_verified=ownership_verified, probe=probe,
                 frontend_probe=frontend_probe, sleep=sleep, write_lock=write_lock,
                 recover_identity=recover_identity, tool_name=tool_name,
                 initial_code=code, initial_payload=payload,
-                sidecar_check=sidecar_check,
+                sidecar_check=sidecar_check, boot_alive=boot_alive,
             )
             if verdict is not _COMPILE_WENT_DEAD:
                 return verdict
@@ -7252,13 +7268,17 @@ def _await_compile_serving(
     initial_code,
     initial_payload,
     sidecar_check=None,
+    boot_alive=None,
 ):
     """Patient, NON-killing wait for a `compiling` runtime to reach serving
-    (ensure-runtime-recovery-starves-cold-compile, Phase 2).
+    (ensure-runtime-recovery-starves-cold-compile, Phase 2; pre-Vite extension
+    ensure-runtime-starves-pre-vite-sidecar-build, Phase 2).
 
     A runtime classified ``compiling`` (Vite :1420 up, backend :3333 not yet
-    serving) is the cold Rust compile still running — it must be WAITED on, never
-    kill-restarted (the starvation root cause). This poller:
+    serving — OR both ports down but the boot process still ALIVE: the pre-Vite
+    ``BeforeDevCommand``/``sidecar:build`` window) is the cold boot/compile still
+    in progress — it must be WAITED on, never kill-restarted (the starvation root
+    cause). This poller:
 
       - polls ``probe()`` on the cold-compile-sized ceiling
         (``_COLD_COMPILE_WAIT_MAX_POLLS × _COLD_COMPILE_WAIT_INTERVAL`` ≈ 7.5 min,
@@ -7268,15 +7288,23 @@ def _await_compile_serving(
         ``sidecar_check`` is asserted, the sidecar pipe is connected — REUSING the
         existing recovery sidecar composition; rewriting the ownership lock via
         ``recover_identity``/``write_lock`` exactly like ``_recover_runtime``);
-      - returns the ``_COMPILE_WENT_DEAD`` sentinel if the frontend goes down
-        mid-wait (``compiling → dead``) so the M4 caller falls through to bounded
-        ``_recover_runtime``;
+      - returns the ``_COMPILE_WENT_DEAD`` sentinel if the runtime goes dead
+        mid-wait — the frontend goes down AND the boot process is no longer alive
+        (``compiling → dead``) — so the M4 caller falls through to bounded
+        ``_recover_runtime``. The pre-Vite analog of the Vite-up went-dead check:
+        a live boot crossing to dead (``boot_alive`` going false) with both ports
+        still down is the same fall-through (ensure-runtime-starves-pre-vite-
+        sidecar-build Phase 2);
       - on ceiling exhaustion while STILL compiling, returns a BLOCKED verdict
         whose ``terminal_blocker`` is the DISTINCT ``_cold_compile_timeout_blocker``
         text (still ``blocker_kind: mcp-runtime-unready`` downstream).
 
     ``sleep`` is injected so ``--test`` is hermetic (no real 7.5-min wait).
     """
+    if boot_alive is None:
+        # Defensive default: no boot-liveness signal ⇒ the went-dead check is the
+        # frontend-only check (byte-identical to the Vite-up-only prior behavior).
+        boot_alive = lambda: False
     code, payload = initial_code, initial_payload
     for poll in range(_COLD_COMPILE_WAIT_MAX_POLLS):
         if code == 200:
@@ -7310,9 +7338,21 @@ def _await_compile_serving(
                     health_code=code, payload=payload, tool_name=tool_name,
                 )
         else:
-            # Backend not yet serving — is it still compiling (Vite up) or has it
-            # crossed to dead (Vite down)?
-            if not frontend_probe():
+            # Backend not yet serving — is it still compiling (Vite up OR boot
+            # process alive) or has it crossed to dead (BOTH false)? The pre-Vite
+            # window keeps the runtime `compiling` on the boot-liveness signal even
+            # while Vite is still down (ensure-runtime-starves-pre-vite-sidecar-
+            # build Phase 2). Only when NEITHER signal reports "still alive" does
+            # the runtime cross to dead.
+            try:
+                still_frontend = bool(frontend_probe())
+            except Exception:  # noqa: BLE001 — a probe error ⇒ treat as down
+                still_frontend = False
+            try:
+                still_boot = bool(boot_alive())
+            except Exception:  # noqa: BLE001 — a probe error ⇒ treat as not-booting
+                still_boot = False
+            if not still_frontend and not still_boot:
                 # compiling → dead: abandon the patient wait, route to bounded
                 # crash-recovery (the M4 caller checks the sentinel identity).
                 return _COMPILE_WENT_DEAD

@@ -19686,6 +19686,179 @@ def test_ensure_runtime_boot_alive_default_off_when_config_lacks_key():
 
 
 # ---------------------------------------------------------------------------
+# ensure-runtime-starves-pre-vite-sidecar-build Phase 2 — route the pre-Vite
+# live-boot window off the crash-recovery loop (both routers). A both-ports-down
+# runtime with a LIVE boot process (boot_alive True) is patiently WAITED on via
+# _await_compile_serving (never kill-restarted) on BOTH the legacy and M4 paths;
+# the bounded ≤5×backoff loop is reserved strictly for a genuinely dead runtime
+# (both ports down AND boot NOT alive). All probes injected → hermetic.
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_runtime_legacy_pre_vite_live_boot_patiently_waits_never_restarts():
+    """THE regression test for the SPEC's exact failure. Legacy path (no Identity
+    callables → ownership_verified False), both ports DOWN + boot_alive=True (the
+    pre-Vite BeforeDevCommand/sidecar:build window): _route_legacy_non_serving
+    patient-waits, restart() is NEVER called (call-count == 0), and reaches READY
+    once :3333 answers 200 within the cold-compile ceiling. Before this fix the
+    boot was kill-restarted 5× into a false BLOCKED."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            # First probe (DOWN) → restart() (legacy first-attempt boot) → re-probe
+            # (still DOWN) → _route_legacy_non_serving. Then the patient-wait re-
+            # probes; answer 200 only after a few cold-boot polls.
+            calls["probe"] += 1
+            return (200, {}) if calls["probe"] >= 5 else (0, None)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=probe,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite NOT yet up (pre-Vite window)
+            boot_alive=lambda: True,       # boot process IS alive → patient-wait
+            # NO live_session_id / read_lock → LEGACY mode (the SPEC's failing path).
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is False, result
+        # The legacy first-attempt restart() fires ONCE in ensure_runtime's
+        # down→boot→re-probe arm; the PATIENT WAIT itself must add ZERO restarts.
+        # The starvation bug was the ≤5×backoff loop; here recovery must not run.
+        assert calls["restart"] <= 1, (
+            f"the pre-Vite live boot must be waited, not kill-restarted: {calls}"
+        )
+
+
+def test_ensure_runtime_legacy_pre_vite_boot_dies_falls_through_to_recovery():
+    """Legacy path, both ports down + a live boot that CROSSES to dead mid-wait
+    (boot_alive goes False while ports stay down) → the patient wait abandons and
+    falls through to the bounded _recover_runtime crash loop (restart fired, capped
+    at 5, exhausts to BLOCKED)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0, "boot": 0}
+
+        def boot_alive():
+            # Alive on the first classification (→ compiling/patient-wait), then
+            # DOWN (→ dead) so the wait falls through to recovery.
+            calls["boot"] += 1
+            return calls["boot"] <= 1
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=lambda: (0, None),  # backend never serves
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite stays down
+            boot_alive=boot_alive,
+        )
+        assert result["state"] == "BLOCKED", result
+        # First-attempt boot restart (≤1) + the bounded recovery loop after the
+        # went-dead fall-through → restart fired more than the patient-wait's zero.
+        assert calls["restart"] >= 1, (
+            f"a live-boot→dead transition must fall through to recovery: {calls}"
+        )
+        assert calls["restart"] <= 6, "recovery must stay bounded (≤1 boot + ≤5 loop)"
+
+
+def test_ensure_runtime_legacy_pre_vite_boot_never_serves_blocks_distinct_text():
+    """Legacy path, both ports down + live boot that NEVER serves within the
+    ceiling → BLOCKED with the DISTINCT cold-compile-timeout text, and the patient
+    wait NEVER kill-restarts (only the legacy first-attempt boot, ≤1)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=lambda: (0, None),  # backend never serves
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,
+            boot_alive=lambda: True,  # boot STAYS alive → compiling the whole time
+        )
+        assert result["state"] == "BLOCKED", result
+        assert result["terminal_blocker"] == lazy_core._cold_compile_timeout_blocker(), (
+            result["terminal_blocker"]
+        )
+        # The patient wait must add zero restarts (≤ the single legacy boot attempt).
+        assert calls["restart"] <= 1, (
+            f"the pre-Vite patient wait must not kill-restart: {calls}"
+        )
+
+
+def test_ensure_runtime_m4_pre_vite_live_boot_patiently_waits_never_restarts():
+    """M4 mirror: owned runtime, both ports down + boot_alive=True → the M4
+    _route_non_serving patient-waits via _await_compile_serving, restart() == 0,
+    reaches READY once :3333 answers 200."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0, "probe": 0}
+
+        def probe():
+            calls["probe"] += 1
+            return (200, {"tools": ["render_chart"]}) if calls["probe"] >= 4 else (0, None)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=probe,
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # owned + alive
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite NOT up (pre-Vite)
+            boot_alive=lambda: True,       # boot alive → patient-wait
+        )
+        assert result["state"] == "READY", result
+        assert calls["restart"] == 0, (
+            f"an M4 pre-Vite live boot must NEVER be kill-restarted: {calls}"
+        )
+        assert result["ownership_verified"] is True, result
+
+
+def test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery():
+    """M4, both ports down + boot_alive=False (genuine dead — not a fresh cold
+    boot) → UNCHANGED bounded _recover_runtime (restart fired, capped at 5,
+    GENERIC _blocked_blocker). The genuine-crash path is preserved."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _owned_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG_BOOT,
+            probe=lambda: (0, None),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            sleep=lambda s: None,
+            frontend_probe=lambda: False,  # Vite down
+            boot_alive=lambda: False,      # boot NOT alive → genuinely dead
+        )
+        assert result["state"] == "BLOCKED", result
+        assert calls["restart"] == 5, f"genuine dead must run bounded recovery: {calls}"
+        assert result["terminal_blocker"] == lazy_core._blocked_blocker(5), (
+            "genuine dead must carry the GENERIC blocker, not cold-compile text"
+        )
+
+
+# ---------------------------------------------------------------------------
 # ensure-runtime-recovery-starves-cold-compile Phase 2 — patient compiling-aware
 # wait. A runtime classified `compiling` (Vite :1420 up, backend :3333 not yet
 # serving) is WAITED on (owned, cold-compile-sized, NEVER kill-restarted) and
@@ -20448,6 +20621,18 @@ _TESTS = _TESTS + [
      test_ensure_runtime_legacy_config_without_boot_key_does_not_crash),
     ("test_ensure_runtime_boot_alive_default_off_when_config_lacks_key",
      test_ensure_runtime_boot_alive_default_off_when_config_lacks_key),
+    # ensure-runtime-starves-pre-vite-sidecar-build Phase 2: route pre-Vite live
+    # boot off recovery (both routers).
+    ("test_ensure_runtime_legacy_pre_vite_live_boot_patiently_waits_never_restarts",
+     test_ensure_runtime_legacy_pre_vite_live_boot_patiently_waits_never_restarts),
+    ("test_ensure_runtime_legacy_pre_vite_boot_dies_falls_through_to_recovery",
+     test_ensure_runtime_legacy_pre_vite_boot_dies_falls_through_to_recovery),
+    ("test_ensure_runtime_legacy_pre_vite_boot_never_serves_blocks_distinct_text",
+     test_ensure_runtime_legacy_pre_vite_boot_never_serves_blocks_distinct_text),
+    ("test_ensure_runtime_m4_pre_vite_live_boot_patiently_waits_never_restarts",
+     test_ensure_runtime_m4_pre_vite_live_boot_patiently_waits_never_restarts),
+    ("test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery",
+     test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery),
     # ensure-runtime-recovery-starves-cold-compile Phase 2: patient compiling wait.
     ("test_cold_compile_timeout_blocker_distinct_from_blocked_blocker",
      test_cold_compile_timeout_blocker_distinct_from_blocked_blocker),
