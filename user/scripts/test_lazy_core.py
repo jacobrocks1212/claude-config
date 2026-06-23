@@ -10300,6 +10300,269 @@ def test_run_marker_partition_guard_rejects_unclassified_new_field():
     )
 
 
+# ---------------------------------------------------------------------------
+# adhoc-checkpoint-resume-field-complete-continuity Phase 2:
+# snapshot the FULL continuity block at checkpoint-write + restore it as one
+# unit on resume, preserving every guard + legacy back-compat.
+# ---------------------------------------------------------------------------
+
+def test_write_run_checkpoint_snapshots_full_continuity_block():
+    """write_run_checkpoint captures EVERY RUN_CONTINUITY_FIELDS key present on the
+    live marker into a nested `continuity` block — incl. the two per_feature_* maps
+    with non-empty contents — reading the marker RAW (non-destructive on a stale
+    marker).  Back-compat keys (reason/next_route/counters/operator_authorized/ts)
+    are retained."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Mint a marker (current time → not age-stale), then seed live
+            # continuity state directly on it.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            m = lazy_core.read_run_marker()
+            m["forward_cycles"] = 7
+            m["meta_cycles"] = 4
+            m["per_feature_forward_cycles"] = {"feat-a": 5, "feat-b": 2}
+            m["per_feature_corrective_cycles"] = {"feat-a": 1}
+            mp = Path(td) / "lazy-run-marker.json"
+            mp.write_text(json.dumps(m), encoding="utf-8")
+            seeded_started_at = m["started_at"]
+
+            ckpt = lazy_core.write_run_checkpoint(
+                "execute-plan Phase 3",
+                {"forward_cycles": 7, "meta_cycles": 4, "max_cycles": 25},
+            )
+            cont = ckpt.get("continuity")
+            assert isinstance(cont, dict), ("continuity block must exist", ckpt)
+            assert cont["forward_cycles"] == 7, cont
+            assert cont["meta_cycles"] == 4, cont
+            assert cont["started_at"] == seeded_started_at, cont
+            assert cont["per_feature_forward_cycles"] == {"feat-a": 5, "feat-b": 2}, cont
+            assert cont["per_feature_corrective_cycles"] == {"feat-a": 1}, cont
+            # last_advance_consume_count is a RUN_FRESH_FIELD → NOT in continuity.
+            assert "last_advance_consume_count" not in cont, cont
+            # Back-compat top-level keys retained.
+            for k in ("reason", "next_route", "counters", "operator_authorized", "ts"):
+                assert k in ckpt, (k, ckpt)
+        finally:
+            _clear_state_dir()
+
+
+def test_write_run_checkpoint_raw_read_non_destructive_on_stale_marker():
+    """The continuity snapshot reads the marker RAW (never read_run_marker, whose
+    path-A age gate DELETES a >24h-stale marker) — so a checkpoint-write on a stale
+    marker must NOT delete it."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Mint a marker dated decades ago (well past the 24h age gate).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+                now=0.0,  # 1970 → stale
+            )
+            mp = Path(td) / "lazy-run-marker.json"
+            assert mp.exists()
+            lazy_core.write_run_checkpoint(
+                "x", {"forward_cycles": 1, "meta_cycles": 0}, now=2000.0,
+            )
+            # The stale marker must STILL exist (no destructive read).
+            assert mp.exists(), "checkpoint-write must not delete the stale marker"
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_checkpoint_counters_restores_full_continuity_block():
+    """A non-operator-authorized resume restores the ENTIRE continuity block as one
+    unit onto the freshly-minted marker — closing the latent third whack-a-mole:
+    the two per_feature_* budget maps survive a sanctioned pause verbatim."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            original_identity = "2026-06-23T03:15:38Z"
+            checkpoint = {
+                "reason": "checkpoint",
+                "next_route": "execute-plan Phase 3",
+                "counters": {"forward_cycles": 7, "meta_cycles": 4, "max_cycles": 25},
+                "continuity": {
+                    "forward_cycles": 7,
+                    "meta_cycles": 4,
+                    "started_at": original_identity,
+                    "per_feature_forward_cycles": {"feat-a": 5, "feat-b": 2},
+                    "per_feature_corrective_cycles": {"feat-a": 1},
+                },
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(checkpoint)
+            assert restored is not None
+            assert restored["forward_cycles"] == 7, restored
+            assert restored["meta_cycles"] == 4, restored
+            assert restored["started_at"] == original_identity, restored
+            assert restored["per_feature_forward_cycles"] == {"feat-a": 5, "feat-b": 2}, restored
+            assert restored["per_feature_corrective_cycles"] == {"feat-a": 1}, restored
+            # RUN_FRESH_FIELD stays reset.
+            assert restored["last_advance_consume_count"] == 0, restored
+            # On-disk reflects the restore.
+            on_disk = lazy_core.read_run_marker()
+            assert on_disk["per_feature_forward_cycles"] == {"feat-a": 5, "feat-b": 2}, on_disk
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_full_continuity_block_age_gate_preserved():
+    """A >24h-stale started_at in the continuity block is NOT restored (the Round-35
+    age gate survives the rewrite) — the marker keeps its minted identity, while the
+    OTHER continuity fields (counters, per_feature_* maps) still restore."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            minted = lazy_core.read_run_marker()["started_at"]
+            checkpoint = {
+                "reason": "checkpoint",
+                "next_route": "x",
+                "counters": {"forward_cycles": 3, "meta_cycles": 1},
+                "continuity": {
+                    "forward_cycles": 3,
+                    "meta_cycles": 1,
+                    "started_at": "2020-01-01T00:00:00Z",  # decades stale
+                    "per_feature_forward_cycles": {"feat-a": 9},
+                    "per_feature_corrective_cycles": {},
+                },
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(checkpoint)
+            assert restored is not None
+            # Stale identity REFUSED → minted kept.
+            assert restored["started_at"] == minted, restored
+            # The non-identity continuity fields still restore.
+            assert restored["forward_cycles"] == 3, restored
+            assert restored["per_feature_forward_cycles"] == {"feat-a": 9}, restored
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_full_continuity_block_operator_authorized_no_op():
+    """An operator_authorized continuity checkpoint still returns None (fresh budget
+    + minted identity kept) — the provenance branch is unchanged by the rewrite."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            minted = lazy_core.read_run_marker()["started_at"]
+            checkpoint = {
+                "reason": "checkpoint",
+                "next_route": "x",
+                "counters": {"forward_cycles": 7, "meta_cycles": 4},
+                "continuity": {
+                    "forward_cycles": 7,
+                    "meta_cycles": 4,
+                    "started_at": "2026-06-23T03:15:38Z",
+                    "per_feature_forward_cycles": {"feat-a": 5},
+                    "per_feature_corrective_cycles": {},
+                },
+                "operator_authorized": True,
+                "ts": 0,
+            }
+            assert lazy_core.restore_checkpoint_counters(checkpoint) is None
+            on_disk = lazy_core.read_run_marker()
+            assert on_disk["forward_cycles"] == 0, on_disk
+            assert on_disk["started_at"] == minted, on_disk
+            assert on_disk["per_feature_forward_cycles"] == {}, on_disk
+        finally:
+            _clear_state_dir()
+
+
+def test_restore_legacy_flat_checkpoint_still_restores_identity():
+    """Back-compat: a legacy checkpoint with the flat `run_started_at` + `counters`
+    but NO `continuity` block still restores identity + counters via the legacy
+    path (a pre-fix / mid-flight checkpoint file resumes correctly)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            legacy_identity = "2026-06-23T04:00:00Z"
+            legacy = {
+                "reason": "checkpoint",
+                "next_route": "execute-plan Phase 3",
+                "counters": {"forward_cycles": 6, "meta_cycles": 2, "max_cycles": 25},
+                "run_started_at": legacy_identity,  # flat, no continuity block
+                "ts": 0,
+            }
+            restored = lazy_core.restore_checkpoint_counters(legacy)
+            assert restored is not None, "legacy flat checkpoint must carry forward"
+            assert restored["forward_cycles"] == 6, restored
+            assert restored["meta_cycles"] == 2, restored
+            assert restored["started_at"] == legacy_identity, restored
+            # No continuity block → per_feature_* maps stay the minted {}.
+            assert restored["per_feature_forward_cycles"] == {}, restored
+        finally:
+            _clear_state_dir()
+
+
+def test_checkpoint_full_round_trip_continuity_survives():
+    """End-to-end: write_run_checkpoint → consume_run_checkpoint →
+    restore_checkpoint_counters carries EVERY continuity field (incl. both
+    per_feature_* maps) verbatim across a sanctioned same-run pause."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # First run: mint (current time → within the age gate) + seed live
+            # continuity state.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            m = lazy_core.read_run_marker()
+            seeded_started_at = m["started_at"]
+            m["forward_cycles"] = 8
+            m["meta_cycles"] = 3
+            m["per_feature_forward_cycles"] = {"feat-a": 6, "feat-b": 2}
+            m["per_feature_corrective_cycles"] = {"feat-b": 1}
+            (Path(td) / "lazy-run-marker.json").write_text(
+                json.dumps(m), encoding="utf-8"
+            )
+
+            # Pause: write the checkpoint.
+            lazy_core.write_run_checkpoint(
+                "execute-plan Phase 3",
+                {"forward_cycles": 8, "meta_cycles": 3, "max_cycles": 25},
+            )
+
+            # Resume: a fresh --run-start re-mints the marker (zeros everything),
+            # then consume + restore carries the full continuity block forward.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
+            )
+            consumed = lazy_core.consume_run_checkpoint()
+            assert consumed is not None
+            restored = lazy_core.restore_checkpoint_counters(consumed)
+            assert restored is not None
+            assert restored["forward_cycles"] == 8, restored
+            assert restored["meta_cycles"] == 3, restored
+            assert restored["started_at"] == seeded_started_at, restored
+            assert restored["per_feature_forward_cycles"] == {"feat-a": 6, "feat-b": 2}, restored
+            assert restored["per_feature_corrective_cycles"] == {"feat-b": 1}, restored
+            assert restored["last_advance_consume_count"] == 0, restored
+        finally:
+            _clear_state_dir()
+
+
 def test_marker_advance_round_trips_counters_under_rmw():
     """GUARD: every read-modify-write of the marker (advance_run_counters,
     advance_meta_cycle, bind_marker_session) must PRESERVE the other counters and
@@ -15524,6 +15787,14 @@ _TESTS = [
     ("test_run_marker_continuity_partition_is_complete_and_disjoint", test_run_marker_continuity_partition_is_complete_and_disjoint),
     ("test_run_marker_continuity_partition_helper_matches_literal", test_run_marker_continuity_partition_helper_matches_literal),
     ("test_run_marker_partition_guard_rejects_unclassified_new_field", test_run_marker_partition_guard_rejects_unclassified_new_field),
+    # adhoc-checkpoint-resume-field-complete-continuity Phase 2: full-block snapshot/restore
+    ("test_write_run_checkpoint_snapshots_full_continuity_block", test_write_run_checkpoint_snapshots_full_continuity_block),
+    ("test_write_run_checkpoint_raw_read_non_destructive_on_stale_marker", test_write_run_checkpoint_raw_read_non_destructive_on_stale_marker),
+    ("test_restore_checkpoint_counters_restores_full_continuity_block", test_restore_checkpoint_counters_restores_full_continuity_block),
+    ("test_restore_full_continuity_block_age_gate_preserved", test_restore_full_continuity_block_age_gate_preserved),
+    ("test_restore_full_continuity_block_operator_authorized_no_op", test_restore_full_continuity_block_operator_authorized_no_op),
+    ("test_restore_legacy_flat_checkpoint_still_restores_identity", test_restore_legacy_flat_checkpoint_still_restores_identity),
+    ("test_checkpoint_full_round_trip_continuity_survives", test_checkpoint_full_round_trip_continuity_survives),
     # operator-checkpoint-resume-counter-reset Phase 2: provenance branch
     ("test_restore_checkpoint_counters_operator_authorized_resets", test_restore_checkpoint_counters_operator_authorized_resets),
     ("test_restore_checkpoint_counters_legacy_file_carries_forward", test_restore_checkpoint_counters_legacy_file_carries_forward),

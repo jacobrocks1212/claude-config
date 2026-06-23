@@ -350,6 +350,28 @@ in another repo (it also kills stale-marker contagion across repos).
   file) carries the paused `forward_cycles`/`meta_cycles` forward monotonically (HARD CONSTRAINT 8 —
   an auto-resume cannot silently exceed the authorized `max_cycles`). The branch lives entirely in
   the shared `lazy_core` helper, so `bug-state.py` inherits it.
+  - **Continuity is field-complete BY CONSTRUCTION** (adhoc-checkpoint-resume-field-complete-continuity,
+    2026-06-23). The carry-vs-reset decision is no longer an implicit field-by-field list split
+    across `write_run_checkpoint` (snapshot-set) and `restore_checkpoint_counters` (carry-set) —
+    which made a newly-added run-scoped marker field default to RESET by construction (the
+    whack-a-mole that reactively patched the counters, then `started_at`). Two enumerated frozensets
+    in `lazy_core` are now the SSOT partition of the `write_run_marker` literal's run-scoped keys:
+    **`RUN_CONTINUITY_FIELDS`** = `{forward_cycles, meta_cycles, started_at,
+    per_feature_forward_cycles, per_feature_corrective_cycles}` (CARRIED across a sanctioned
+    same-run pause) and **`RUN_FRESH_FIELDS`** = the rest (`last_advance_consume_count` deliberate
+    reset + run-invariant identity/config re-derived at run-start). `write_run_checkpoint` snapshots
+    the FULL continuity set as one nested `continuity: {field: value}` block (RAW marker read — never
+    `read_run_marker`, whose age gate would delete a stale marker); `restore_checkpoint_counters`
+    re-applies the whole block as one unit in the carry-forward branch, preserving every guard
+    (operator-authorized no-op; `started_at` age gate; the two counters coerced non-negative; the two
+    `per_feature_*` maps applied only when a well-formed dict; `last_advance_consume_count` forced 0).
+    A **legacy fallback** (flat `run_started_at` + `counters`, no `continuity` block) still restores
+    via the original path. A **`--test` completeness assertion**
+    (`test_run_marker_continuity_partition_is_complete_and_disjoint`) pins `RUN_CONTINUITY_FIELDS |
+    RUN_FRESH_FIELDS == _run_marker_scoped_keys()` (the live minted-marker key set) AND disjointness,
+    so a new run-scoped marker key is a HARD test failure until explicitly classified — it can never
+    silently default to reset. Shared `lazy_core`, so `bug-state.py` inherits it (parity-audited, not
+    a script-mirror).
 - **Hooks gate via `--marker-present`.** The three enforcement hooks
   (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, `lazy-cycle-containment.sh`) no longer read
   the base-dir marker file directly. They call `lazy-state.py --marker-present --repo-root <cwd>`

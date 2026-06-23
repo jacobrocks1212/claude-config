@@ -12599,21 +12599,38 @@ def write_run_checkpoint(
     # Read the marker RAW (not via read_run_marker, whose path-A age gate DELETES a
     # >24h-stale marker on read) — a checkpoint-write must NEVER have a destructive
     # side effect on the marker it is snapshotting.
+    # adhoc-checkpoint-resume-field-complete-continuity (2026-06-23): snapshot the
+    # FULL run-scoped continuity set (RUN_CONTINUITY_FIELDS) as ONE nested
+    # `continuity` block — not the ad-hoc started_at-only snapshot that grew
+    # reactively in lockstep with the carry-set. restore_checkpoint_counters
+    # re-applies this whole block as one unit on a sanctioned resume, so a newly-
+    # added continuity field rides through by construction (no third whack-a-mole).
+    # Read the marker RAW (never read_run_marker, whose path-A age gate DELETES a
+    # >24h-stale marker on read) — a checkpoint-write must NEVER have a destructive
+    # side effect on the marker it is snapshotting. The flat run_started_at key is
+    # retained as a mirror for one transition so a restore by an older code path or
+    # a half-flight legacy reader still sees the identity (back-compat belt).
     run_started_at = None
+    continuity: dict = {}
     try:
         _marker_path = claude_state_dir(create=False) / _MARKER_FILENAME
         if _marker_path.exists():
             _live = json.loads(_marker_path.read_text(encoding="utf-8"))
             if isinstance(_live, dict):
                 run_started_at = _live.get("started_at")
+                for _k in RUN_CONTINUITY_FIELDS:
+                    if _k in _live:
+                        continuity[_k] = _live[_k]
     except Exception:  # pragma: no cover - defensive; never block a checkpoint
         run_started_at = None
+        continuity = {}
     checkpoint = {
         "reason": "checkpoint",
         "next_route": next_route,
         "counters": counters,
         "operator_authorized": bool(operator_authorized),
         "run_started_at": run_started_at,
+        "continuity": continuity,
         "ts": now,
     }
     checkpoint_path = claude_state_dir() / _CHECKPOINT_FILENAME
@@ -12746,33 +12763,59 @@ def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
             return 0
         return n if n >= 0 else 0
 
-    marker["forward_cycles"] = _coerce(counters.get("forward_cycles"))
-    marker["meta_cycles"] = _coerce(counters.get("meta_cycles"))
-    # cycle-bracket-break-on-checkpoint-resume (hardening Round 35, 2026-06-23):
-    # restore the RUN IDENTITY in lockstep with the monotonic counters above. A
-    # non-operator-authorized resume is the SAME run continuing, so its started_at
-    # (which write_run_marker just MINTED afresh) must be the pre-pause identity —
-    # otherwise detect_cycle_bracket_friction signal (a) false-trips
-    # cycle-bracket-break on any cycle whose --cycle-begin run_started_at snapshot
-    # predates the pause. Only restore a well-formed, NON-stale-by-age started_at:
-    # if restoring the original would make the marker age-stale (>24h old) we KEEP
-    # the freshly-minted identity so read_run_marker's path-A age gate is not
-    # subverted into auto-resuming a presumed-dead run. A missing/blank/unparseable
-    # checkpoint identity (degraded write, or a pre-fix checkpoint file lacking the
-    # field) leaves the minted identity untouched (fail-safe, no crash).
-    restored_identity = checkpoint.get("run_started_at")
-    if isinstance(restored_identity, str) and restored_identity:
-        try:
-            _ident_dt = datetime.datetime.strptime(
-                restored_identity, "%Y-%m-%dT%H:%M:%SZ"
-            )
-            _ident_epoch = (
-                _ident_dt - datetime.datetime(1970, 1, 1)
-            ).total_seconds()
-            if time.time() - _ident_epoch <= _MARKER_STALE_SECONDS:
-                marker["started_at"] = restored_identity
-        except (ValueError, TypeError):
-            pass  # unparseable identity → keep the freshly-minted started_at
+    def _restore_identity(candidate: object) -> None:
+        # cycle-bracket-break-on-checkpoint-resume (hardening Round 35): restore the
+        # RUN IDENTITY (started_at) in lockstep with the counters. A non-operator-
+        # authorized resume is the SAME run continuing, so started_at (which
+        # write_run_marker just MINTED afresh) must be the pre-pause identity —
+        # otherwise detect_cycle_bracket_friction signal (a) false-trips
+        # cycle-bracket-break. Only restore a well-formed, NON-stale-by-age value:
+        # restoring a >24h-old identity would subvert read_run_marker's age gate
+        # into auto-resuming a presumed-dead run, so KEEP the minted identity then.
+        # A missing/blank/unparseable value leaves the minted started_at untouched.
+        if isinstance(candidate, str) and candidate:
+            try:
+                _ident_dt = datetime.datetime.strptime(
+                    candidate, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                _ident_epoch = (
+                    _ident_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+                if time.time() - _ident_epoch <= _MARKER_STALE_SECONDS:
+                    marker["started_at"] = candidate
+            except (ValueError, TypeError):
+                pass  # unparseable identity → keep the freshly-minted started_at
+
+    # adhoc-checkpoint-resume-field-complete-continuity (2026-06-23): re-apply the
+    # FULL continuity block as one unit when the checkpoint carries one. This
+    # closes the field-by-field whack-a-mole — every RUN_CONTINUITY_FIELDS key
+    # (incl. both per_feature_* budget maps) survives a sanctioned same-run pause
+    # by construction, with the per-field guards preserved:
+    #   - the two counters coerce to a non-negative int (fail-safe);
+    #   - started_at restores only when well-formed AND not >24h stale (age gate);
+    #   - the two per_feature_* maps apply only when a well-formed dict (else the
+    #     minted {} is left);
+    #   - last_advance_consume_count stays FORCED to 0 (a RUN_FRESH_FIELD — the
+    #     registry is freshly cleared, carrying a stale watermark would suppress
+    #     the first post-resume advance; SPEC Out of Scope).
+    continuity = checkpoint.get("continuity")
+    if isinstance(continuity, dict) and continuity:
+        if "forward_cycles" in continuity:
+            marker["forward_cycles"] = _coerce(continuity.get("forward_cycles"))
+        if "meta_cycles" in continuity:
+            marker["meta_cycles"] = _coerce(continuity.get("meta_cycles"))
+        _restore_identity(continuity.get("started_at"))
+        for _map_key in ("per_feature_forward_cycles", "per_feature_corrective_cycles"):
+            _val = continuity.get(_map_key)
+            if isinstance(_val, dict):
+                marker[_map_key] = _val
+    else:
+        # Back-compat: a legacy / pre-fix / mid-flight checkpoint with the flat
+        # `counters` + `run_started_at` fields but NO `continuity` block still
+        # restores identity + counters via the original legacy path.
+        marker["forward_cycles"] = _coerce(counters.get("forward_cycles"))
+        marker["meta_cycles"] = _coerce(counters.get("meta_cycles"))
+        _restore_identity(checkpoint.get("run_started_at"))
     # Registry is freshly cleared on this run-start → the consume watermark must
     # start at 0 so the first real post-resume dispatch advances (see docstring).
     marker["last_advance_consume_count"] = 0
