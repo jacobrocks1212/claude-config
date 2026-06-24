@@ -294,7 +294,7 @@ snapshot — reuse-as-is").
 
 ### Work Units (progress checklist)
 
-- [ ] WU-4 — `build-queue-status.ps1` reader + `/build-queue-status` skill
+- [x] WU-4 — `build-queue-status.ps1` reader + `/build-queue-status` skill
 
 ### WU-4 — Status reader + skill
 

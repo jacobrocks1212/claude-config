@@ -174,9 +174,9 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 **Scope:** A read-only status command that reports the active build, the ordered waiters, and a live load summary. Reader only — the snapshot *write* was delivered in Phase 1.
 
 **Deliverables:**
-- [ ] `user/scripts/build-queue-status.ps1` — reads `active.lock` (active op/worktree/`build_pid`/elapsed/log path + stored start-time `machine-perf` snapshot) and `tickets/*.json` (ordered waiters), and runs a fresh `machine-perf.ps1 -Json` for a one-line live load summary (CPU %, mem used/free).
-- [ ] `repos/cognito-forms/.claude/skills/build-queue-status/SKILL.md` — `/build-queue-status` skill (`model: haiku`, `allowed-tools: ["Bash"]`) that runs the reader and relays output verbatim.
-- [ ] Graceful empty state: with no active build and no waiters, print "queue idle" + the live load line.
+- [x] `user/scripts/build-queue-status.ps1` — reads `active.lock` (active op/worktree/`build_pid`/elapsed/log path + stored start-time `machine-perf` snapshot) and `tickets/*.json` (ordered waiters), and runs a fresh `machine-perf.ps1 -Json` for a one-line live load summary (CPU %, mem used/free).
+- [x] `repos/cognito-forms/.claude/skills/build-queue-status/SKILL.md` — `/build-queue-status` skill (`model: haiku`, `allowed-tools: ["Bash"]`) that runs the reader and relays output verbatim.
+- [x] Graceful empty state: with no active build and no waiters, print "queue idle" + the live load line.
 
 **Minimum Verifiable Behavior:** With a build active (start one via `/msbuild`), run `/build-queue-status` and see the active op, worktree, PID, elapsed, log path, any waiters, and the load line — matching `active.lock` + `tickets/*` on disk.
 
@@ -198,6 +198,16 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 
 **Integration Notes for Next Phase:**
 - This reader is the human-facing surface that also makes Phase 5's crash scenarios observable (e.g. confirming a stale lock has cleared).
+
+**Status:** Code authored + committed + reader self-tested. Awaiting Jacob's Manual Verification (rows above remain unchecked).
+
+#### Implementation Notes (authored — `build-queue-status.ps1` + skill)
+- `build-queue-status.ps1` (139 lines): read-only reader with an optional `[string]$StateRoot` param (defaults to `$HOME/.claude/state/build-queue`) so it is testable against a seeded temp dir without clobbering real queue state. `Set-StrictMode -Version Latest`, `Get-SafeValue` guards on all file I/O + JSON parsing, `@()`-wrapping before counts/iteration (PS 5.1 scalar-unwrap), pure-ASCII, tabs/CRLF, single header doc-comment only.
+- `active.lock`'s `machine_perf` is stored by the producer as an ESCAPED JSON STRING (raw stdout of `machine-perf.ps1 -Json`); `Get-PerfSnapshotLine` detects `-is [string]` and does a second `ConvertFrom-Json`, falling back gracefully to nothing if absent/corrupt.
+- Sections: Active Build (op/worktree/build_pid/elapsed/log + start-time perf line), Waiters (tickets sorted ASC by `[int]seq`, with wait duration), and an ALWAYS-printed fresh live-load line from `machine-perf.ps1 -Json -SampleSeconds 0`. Idle (no `active.lock`, no tickets, or missing state dir) → `queue idle` + live load line, no error.
+- `/build-queue-status` skill: `model: haiku`, `allowed-tools: ["Bash"]`, Cognito-scoped under `repos/cognito-forms/.claude/skills/build-queue-status/`; runs the reader via `powershell.exe -File "$HOME/.claude/scripts/build-queue-status.ps1"` and relays verbatim. Confirmed discoverable.
+- **Self-test (orchestrator-reproduced):** independently seeded a temp `active.lock` (started 4 min ago, escaped `machine_perf`) + two tickets (seq 2, 3) and ran the reader with `-StateRoot` → active build with `elapsed 4m 3s`, start-time perf line (CPU 45%), waiters in seq order, live load line. Idle run against an empty dir → `queue idle` + load line. PowerShell parse check: `parse-OK`.
+- **Review verdict:** PASS (ground-truth verified by orchestrator re-run of parse check + idle + seeded active/waiters render; matches SPEC §"Status view" and §"machine-perf integration"). 2026-06-23.
 
 ---
 
