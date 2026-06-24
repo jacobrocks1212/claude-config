@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(powershell.exe -Command \"Get-ChildItem -Recurse -Name | Where-Object { $_-notmatch ''^\\.git'' }\")"
-    ]
-  }
-}

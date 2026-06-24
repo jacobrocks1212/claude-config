@@ -53,58 +53,9 @@
             Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-D'
             Alias = 'cognito-forms'
         }
-        'algobooth' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\algobooth'
-            DotClaudeFiles = @('settings.local.json')
-            DotClaudeDirs  = @('skill-config', 'skills')
-        }
-        'strudel' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\strudel'
-            DotClaudeFiles = @('settings.local.json')
-            DotClaudeDirs  = @('skills')
-        }
-        'finances' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\finances'
-            DotClaudeFiles = @('CLAUDE.md', 'settings.local.json')
-            DotClaudeDirs  = @('commands')
-        }
-        'zen-mcp-server' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\zen-mcp-server'
-            DotClaudeFiles = @('settings.json')
-            DotClaudeDirs  = @('commands')
-        }
-        'housing-locator' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\housing-locator'
-            DotClaudeDirs  = @('skill-config', 'skills')
-        }
-        'memory' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\memory'
-            DotClaudeFiles = @('settings.local.json')
-        }
         'cognito-docs' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\cognito-docs'
             DotClaudeFiles = @('settings.local.json')
-        }
-        'meeting-documenter' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\meeting-documenter'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'scene-remixer' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\scene-remixer'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'system-design' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\system-design'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'meridian-setup' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\meridian-setup'
-            DotClaudeFiles = @('settings.json')
-        }
-        'story' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\story'
-            DotClaudeFiles = @('settings.local.json')
-            DotClaudeDirs  = @('commands', 'skills')
         }
     }
 }
