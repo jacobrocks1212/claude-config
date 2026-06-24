@@ -276,7 +276,11 @@ function Format-ProcArg {
 	return $Value
 }
 
-$procArgList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Format-ProcArg $Exec))
+$runnerScript = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+$procArgList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Format-ProcArg $runnerScript),
+	'-Exec', (Format-ProcArg $Exec),
+	'-Seq', "$seq",
+	'-StateRoot', (Format-ProcArg $stateRoot))
 foreach ($a in $execArgsArr) { $procArgList += (Format-ProcArg ([string]$a)) }
 $procArgString = $procArgList -join ' '
 
@@ -367,9 +371,25 @@ $resultBody = [ordered]@{
 	exit_code = $exitCode
 	ended_at  = (Get-Date).ToString('o')
 } | ConvertTo-Json -Compress
-[System.IO.File]::WriteAllText((Join-Path $resultsDir "$seq.json"), $resultBody)
+$resultPath = Join-Path $resultsDir "$seq.json"
+$resultTmp  = Join-Path $resultsDir "$seq.tmp"
+Get-SafeValue { [System.IO.File]::WriteAllText($resultTmp, $resultBody) }
+try {
+	[System.IO.File]::Replace($resultTmp, $resultPath, [NullString]::Value)
+} catch {
+	Get-SafeValue { [System.IO.File]::WriteAllText($resultPath, $resultBody) }
+	Get-SafeValue { Remove-Item $resultTmp -Force -ErrorAction SilentlyContinue }
+}
 
-Get-SafeValue { Remove-Item $activeLock -Force -ErrorAction SilentlyContinue }
+Get-SafeValue {
+	if (Test-Path $activeLock) {
+		$d       = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
+		$lockSeq = Get-SafeValue { [int]$d.seq } $null
+		if ($lockSeq -eq $seq) {
+			Remove-Item $activeLock -Force
+		}
+	}
+}
 
 Write-Output "build-queue: build complete (seq=$seq, exit_code=$exitCode)"
 

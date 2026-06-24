@@ -76,10 +76,27 @@ This bug is filed against the completed **build-queue** feature (`docs/specs/bui
 **Scope:** Point the wrapper's detached launch at `build-queue-runner.ps1` (passing `-Exec`, `-Seq`, `-StateRoot`, and the forwarded build args), keep the live-output tail loop unchanged, and demote the wrapper's Step 5 to an idempotent, seq-scoped best-effort fallback. After this phase the orphan path is fixed end-to-end: a killed wrapper no longer strands the result or the lock.
 
 **Deliverables:**
-- [ ] Step 4 launch (`build-queue.ps1:283-288`): `Start-Process … -File <build-queue-runner.ps1>` with an `-ArgumentList` string built by the existing `Format-ProcArg` (271-281), carrying `-Exec (Format-ProcArg $Exec)`, `-Seq $seq`, `-StateRoot (Format-ProcArg $stateRoot)`, then the forwarded `$execArgsArr` verbatim. `$proc` is the runner; `$buildPid = $proc.Id`; `active.lock.build_pid` is the runner PID (stale-reclaim semantics unchanged).
-- [ ] Tail loop (`317-358`) unchanged — wrapper still streams the runner's stdout/err (which carries the filtered script's output) to its own stdout for live feedback.
-- [ ] Step 5 (`360-376`) demoted to **idempotent + seq-scoped best-effort**: result-write uses the same atomic tmp→Replace (matching the runner); `active.lock` removal reads the JSON and removes **only if** `.seq == $seq`. Keep `exit $proc.ExitCode` as the wrapper's exit code when it survives.
-- [ ] Tests: full kill-wrapper-mid-build repro + happy-path/concurrency regression (see Testing Strategy).
+- [x] Step 4 launch (`build-queue.ps1:283-288`): `Start-Process … -File <build-queue-runner.ps1>` with an `-ArgumentList` string built by the existing `Format-ProcArg` (271-281), carrying `-Exec (Format-ProcArg $Exec)`, `-Seq $seq`, `-StateRoot (Format-ProcArg $stateRoot)`, then the forwarded `$execArgsArr` verbatim. `$proc` is the runner; `$buildPid = $proc.Id`; `active.lock.build_pid` is the runner PID (stale-reclaim semantics unchanged).
+- [x] Tail loop (`317-358`) unchanged — wrapper still streams the runner's stdout/err (which carries the filtered script's output) to its own stdout for live feedback.
+- [x] Step 5 (`360-376`) demoted to **idempotent + seq-scoped best-effort**: result-write uses the same atomic tmp→Replace (matching the runner); `active.lock` removal reads the JSON and removes **only if** `.seq == $seq`. Keep `exit $proc.ExitCode` as the wrapper's exit code when it survives.
+- [x] Tests: full kill-wrapper-mid-build repro + happy-path/concurrency regression (see Testing Strategy).
+
+#### Implementation Notes (2026-06-24)
+
+**What was built:** `user/scripts/build-queue.ps1` modified in two places. Step 4 (now lines 279-285): the detached `Start-Process powershell.exe` is retargeted at `build-queue-runner.ps1` (resolved as a sibling via `$PSScriptRoot`), passing `-Exec`/`-Seq`/`-StateRoot` (paths via `Format-ProcArg`) then the forwarded `$execArgsArr`. `$proc` is now the runner; `$buildPid = $proc.Id` and the `active.lock` write block (289-311) are unchanged, so `build_pid` is the runner PID and stale-reclaim semantics are preserved. The tail loop (317-358) is untouched. Step 5 (now 369-392) is demoted: result-write uses the same atomic `<seq>.tmp`→`[System.IO.File]::Replace` (WriteAllText fallback), and `active.lock` removal is seq-scoped (parse `.seq` under `Get-SafeValue`, remove only on `.seq == $seq`), all defensively guarded so a runner that already wrote/released cannot make the wrapper throw. `exit $proc.ExitCode` retained.
+
+**Files:** `user/scripts/build-queue.ps1`.
+
+**Repro evidence (orchestrator-run, isolated temp `$HOME` so the real queue was never touched):**
+- ORPHAN PATH (the fix): wrapper (pid 31312) killed mid-build; the distinct runner (pid 37452) survived, wrote `results/1.json` = `{"seq":1,"exit_code":1,...}`, and released `active.lock` with no wrapper alive. All 6 sub-assertions PASS.
+- HAPPY PATH (regression): wrapper survived stubs exiting 0 and 1 → wrapper exit propagated, exactly one matching `results/<seq>.json` each, `active.lock` released once.
+- CONCURRENCY (regression): two wrappers launched together → both results recorded, final lock released (FIFO/serialization logic in Steps 1-3 untouched).
+- STALE-RECLAIM (regression): killed BOTH wrapper and runner → `active.lock` lingered (dead `build_pid`) → next waiter reclaimed the slot in ~10s and completed exit 0, then released.
+- STATUS REPORTER: `build-queue-status.ps1 -StateRoot <temp>` after the orphan repro rendered `queue idle` (no orphaned seq).
+
+**Pitfalls:** The wrapper writes a *provisional* `active.lock` with `build_pid = $PID` (its own PID, line 209) when claiming the slot, then overwrites it in Step 4 with the runner PID. A repro that reads `active.lock` the instant it appears can catch the provisional value — the orphan repro was hardened to poll until `build_pid` differs from the wrapper PID before capturing the runner PID. No code impact.
+
+**Review verdict:** PASS — ground-truth verified (fresh `git status`/`wc -l`/`git diff`/`grep` matched the subagent's block; 397 lines, runner at 279, Replace at 308+378); full repro gate green. Note: the WU-2 subagent also made an off-scope edit to `user/skills/disk-cleanup/SKILL.md` (unrelated `-Depth` doc fix) — intentionally left uncommitted for Jacob, not part of this fix.
 
 **Minimum Verifiable Behavior:** Launch via the wrapper against a ~30s sleep + `exit 1` stub `-Exec`. Once the build is running, send the wrapper a terminating signal (or let a tight foreground timeout SIGTERM it). Let the runner finish: `results/<seq>.json` appears with `exit_code = 1` and `active.lock` is gone — **with no wrapper alive to have written either**.
 

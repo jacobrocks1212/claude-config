@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-orphaned-result-on-wrapper-kill
-status: Ready
+status: Complete
 created: 2026-06-24
 complexity: complex
 phases: [1, 2]
@@ -111,7 +111,7 @@ re-read this plan first, then load components for the current step.
 ## Work Units
 
 - [x] WU-1 — Create self-releasing `build-queue-runner.ps1`
-- [ ] WU-2 — Wire `build-queue.ps1` to the runner + demote Step 5
+- [x] WU-2 — Wire `build-queue.ps1` to the runner + demote Step 5
 
 ---
 
