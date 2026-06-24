@@ -19767,6 +19767,199 @@ def test_ensure_runtime_m4_ready_does_no_recovery():
 
 
 # ---------------------------------------------------------------------------
+# ensure-runtime-false-hijacked-on-owned-serving-runtime (Phase P1) — the SOFT
+# owned-unverified READY classifier. When ownership cannot be VERIFIED (the lock's
+# controller_session_id diverges from the threaded live_session_id) BUT the live
+# PID is the SAME process this run booted (kernel start_time == recorded lock
+# start_time) AND the runtime is provably serving THIS app's MCP tools (/health
+# 200 + mcp_tools_present), the verdict is a non-terminal READY (`ownership_verified:
+# false`, proceed) instead of terminal HIJACKED. A genuine-foreign case (divergent
+# live start_time, or a dead PID) stays the strict never-SIGKILL HIJACKED/DEAD
+# fail-safe (LD3/LD4). The guard is 200-gated, MCP-gated, and runs AFTER stale_check
+# so a genuinely stale binary is not masked.
+# ---------------------------------------------------------------------------
+
+# A lock whose controller_session_id differs from the threaded live_session_id —
+# the SESSION component of verify_runtime_ownership diverges. The PID/start_time
+# match (or not) is controlled per-test via the injected kernel_start_time_fn.
+_SESSION_OTHER = "session-other-xyz"
+
+
+def _session_divergent_lock(start_time=111.0, pid=4321):
+    """A lock recorded by a DIFFERENT controller session than the live one — so
+    verify_runtime_ownership fails on the session component. Used to isolate the
+    'session diverges, process may or may not match' soft-READY case."""
+    lock = _owned_lock(start_time=start_time, pid=pid)
+    lock["controller_session_id"] = _SESSION_OTHER
+    return lock
+
+
+def test_ensure_runtime_owned_unverified_serving_is_soft_ready():
+    """Session diverges (controller_session_id != live_session_id) but the live PID
+    is the SAME serving process (kernel start_time == recorded start_time), /health
+    200 + MCP tools present, not stale → SOFT owned-unverified READY: state READY,
+    ownership_verified False, terminal_blocker None, mcp_tools_present True. This is
+    the cured false-positive (pre-fix this fixture returns HIJACKED)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _session_divergent_lock(start_time=111.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a soft-READY runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,  # != lock's _SESSION_OTHER → verify False
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # MATCHES recorded
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is False, result
+        assert result["terminal_blocker"] is None, result
+        assert result["mcp_tools_present"] is True, result
+
+
+def test_ensure_runtime_foreign_live_pid_stays_hijacked():
+    """Same session divergence, but the live PID is a DIFFERENT process (kernel
+    start_time != recorded → PID reuse / genuine foreign port-holder). Stays
+    terminal HIJACKED with the _hijacked_blocker text — never SIGKILL (LD3).
+    GREEN both before and after the fix (regression guard)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _session_divergent_lock(start_time=111.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a HIJACKED runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 999.0,  # DIVERGENT → foreign
+        )
+        assert result["state"] == "HIJACKED", result
+        assert result["ownership_verified"] is False, result
+        assert result["terminal_blocker"] == lazy_core._hijacked_blocker(lock), result
+
+
+def test_ensure_runtime_dead_pid_stays_dead():
+    """Session divergence + a dead PID (kernel start_time → None) routes to DEAD
+    recovery (unchanged) — not the soft-READY shortcut, not HIJACKED. With recovery
+    never restoring health it exhausts to BLOCKED (the DEAD path is intact).
+    GREEN both before and after the fix."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _session_divergent_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (0, None),  # nothing answering, never recovers
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: None,  # PID dead → DEAD
+            sleep=lambda s: None,
+            write_lock=lambda **kw: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
+        )
+        # DEAD entered recovery (restart fired — NOT a HIJACKED no-kill halt, NOT
+        # a soft-READY); exhausts to BLOCKED since health never returns.
+        assert calls["restart"] >= 1, "a dead PID must enter the recovery branch"
+        assert result["state"] == "BLOCKED", result
+        assert result["ownership_verified"] is False, result
+
+
+def test_ensure_runtime_owned_unverified_non_200_not_soft_ready():
+    """Session-only-divergent + matching PID but probe is NON-200 (503) → the
+    soft-READY does NOT fire (it is 200-gated). Routes through the non-serving
+    recovery path, never a spurious READY. GREEN both before and after the fix —
+    proves the guard is health-gated."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _session_divergent_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (503, {"tools": ["render_chart"]}),  # NOT serving
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # matching PID
+            sleep=lambda s: None,
+            write_lock=lambda **kw: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
+        )
+        # A non-200 probe with a matching live PID is DEAD (live owned PID, health
+        # refused) → recovery, not a soft-READY shortcut.
+        assert result["state"] != "READY", result
+
+
+def test_ensure_runtime_owned_unverified_no_mcp_tools_not_soft_ready():
+    """Session-only-divergent + matching PID + 200 but the payload is MISSING the
+    asserted MCP tool (mcp_tools_present False) → NOT soft READY. A serving-but-not-
+    our-MCP process is not provably ours, so it falls through to the existing
+    terminal HIJACKED (the guard requires mcp_tools_present)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _session_divergent_lock(start_time=111.0)
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,  # asserts mcp_tool_name "render_chart"
+            probe=lambda: (200, {"tools": ["some_other_tool"]}),  # tool absent
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a HIJACKED runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # matching PID
+        )
+        assert result["state"] == "HIJACKED", result
+        assert result["mcp_tools_present"] is False, result
+
+
+def test_ensure_runtime_owned_unverified_stale_not_masked():
+    """Session-only-divergent + matching PID + 200 + MCP present but stale_check
+    True → the soft-READY must NOT mask a stale binary. The stale path runs first,
+    so the verdict is NOT a bare soft-READY shortcut (it routes through STALE/
+    rebuild). (Open Question 'Boot-stamp interaction'.)"""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        lock = _session_divergent_lock(start_time=111.0)
+        calls = {"restart": 0}
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (200, {"tools": ["render_chart"]}),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: True,  # STALE — must NOT be masked by soft-READY
+            read_lock=lambda: lock,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,  # matching PID
+            sleep=lambda s: None,
+            write_lock=lambda **kw: None,
+            frontend_probe=lambda: False,  # Vite down → genuine rebuild, not compiling
+        )
+        # The stale rebuild ran (restart fired) — the soft-READY shortcut did NOT
+        # short-circuit a genuinely stale binary into a bare READY.
+        assert calls["restart"] >= 1, "a stale binary must route through rebuild"
+
+
+# ---------------------------------------------------------------------------
 # env-transient-counts-against-validation-retry-budget Phase 1 (Leg A) — the
 # sidecar-pipe (`is_connected`) readiness dimension. A runtime that is
 # HTTP-healthy (/health 200) but MCP-functionally dead (a zombie node process
@@ -21593,6 +21786,20 @@ _TESTS = _TESTS + [
      test_ensure_runtime_m4_hijacked_sets_blocker_never_restarts_never_kills),
     ("test_ensure_runtime_m4_ready_does_no_recovery",
      test_ensure_runtime_m4_ready_does_no_recovery),
+    # ensure-runtime-false-hijacked-on-owned-serving-runtime Phase P1:
+    # soft owned-unverified READY classifier + foreign/dead/non-200/no-MCP/stale twins.
+    ("test_ensure_runtime_owned_unverified_serving_is_soft_ready",
+     test_ensure_runtime_owned_unverified_serving_is_soft_ready),
+    ("test_ensure_runtime_foreign_live_pid_stays_hijacked",
+     test_ensure_runtime_foreign_live_pid_stays_hijacked),
+    ("test_ensure_runtime_dead_pid_stays_dead",
+     test_ensure_runtime_dead_pid_stays_dead),
+    ("test_ensure_runtime_owned_unverified_non_200_not_soft_ready",
+     test_ensure_runtime_owned_unverified_non_200_not_soft_ready),
+    ("test_ensure_runtime_owned_unverified_no_mcp_tools_not_soft_ready",
+     test_ensure_runtime_owned_unverified_no_mcp_tools_not_soft_ready),
+    ("test_ensure_runtime_owned_unverified_stale_not_masked",
+     test_ensure_runtime_owned_unverified_stale_not_masked),
     # env-transient-counts-against-validation-retry-budget Phase 1 (Leg A):
     # sidecar-pipe (is_connected) readiness dimension.
     ("test_ensure_runtime_sidecar_disconnected_despite_health_200_routes_to_recovery",
