@@ -88,7 +88,7 @@ This plan references reusable component files by path instead of inlining their 
 ## Work Units
 
 - [x] WU-1 — Failing fixtures: soft-READY + foreign/dead/non-200/no-MCP/stale twins (test_lazy_core.py)
-- [ ] WU-2 — Soft owned-unverified READY guard in `_ensure_runtime_m4` (lazy_core.py)
+- [x] WU-2 — Soft owned-unverified READY guard in `_ensure_runtime_m4` (lazy_core.py)
 - [ ] WU-3 — `/lazy-batch` Step 1d.0 routing prose: proceed on soft-READY, retire workaround
 - [ ] WU-4 — cycle-base-prompt mirror (if it restates the gate) — else record no-op
 - [ ] WU-5 — `user/scripts/CLAUDE.md` `--ensure-runtime` doc sentence + re-project skills

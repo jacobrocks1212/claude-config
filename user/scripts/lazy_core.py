@@ -7530,6 +7530,42 @@ def _ensure_runtime_m4(
             return _route_non_serving(
                 "DEAD", ownership_verified=False, code=code, payload=payload,
             )
+        # ensure-runtime-false-hijacked-on-owned-serving-runtime (P1) — SOFT
+        # owned-unverified READY. `verify_runtime_ownership` is False here, but a
+        # live PID whose kernel start_time MATCHES the recorded lock start_time is
+        # the run's OWN booted process (start_time match defeats PID reuse — a
+        # foreign port-holder via a reused PID reports a divergent start_time). So
+        # if ALL of: (a) the lock PID is that same serving process
+        # (`live_start == lock['start_time']`), (b) /health answers 200, AND
+        # (c) the runtime is provably serving THIS app's MCP tools
+        # (`_mcp_tools_present_honest`, derived the SAME way the verdict builder
+        # does so guard and verdict agree) — then the divergence is bookkeeping-
+        # only (the lock's controller_session_id and the threaded live_session_id
+        # come from different sources; see verify_runtime_ownership). The runtime
+        # is provably alive, ours, and serving, so we proceed with a non-terminal
+        # READY (`ownership_verified: False`) instead of the terminal HIJACKED
+        # fail-safe — and we NEVER SIGKILL (no restart on this path). If any
+        # condition is False we fall through to the unchanged terminal HIJACKED
+        # below. A genuinely STALE binary is NOT masked: stale_check() runs FIRST,
+        # routing a stale-but-owned-unverified-serving runtime through the same
+        # STALE/rebuild path a verified-owned one takes (the soft-READY shortcut
+        # never short-circuits a stale rebuild).
+        is_owned_unverified_serving = (
+            code == 200
+            and _mcp_tools_present_honest(payload, tool_name, code)
+            and live_start == lock.get("start_time")
+        )
+        if is_owned_unverified_serving:
+            if stale_check():
+                # Stale binary on an owned-unverified-but-serving runtime: route
+                # through STALE/rebuild (do NOT mask it with a soft READY).
+                return _route_non_serving(
+                    "STALE", ownership_verified=False, code=code, payload=payload,
+                )
+            return _runtime_verdict(
+                "READY", ownership_verified=False, health_code=code,
+                payload=payload, tool_name=tool_name, terminal_blocker=None,
+            )
         # Live foreign PID — HIJACKED strict fail-safe: set the terminal_blocker
         # and return WITHOUT restart() or any kill of the foreign process (LD3).
         return _runtime_verdict(
