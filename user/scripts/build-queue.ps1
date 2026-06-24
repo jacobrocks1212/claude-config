@@ -248,14 +248,23 @@ while (-not $won) {
 # ---------------------------------------------------------------------------
 # Step 4: Run detached build
 # ---------------------------------------------------------------------------
-$machinePerfJson = Get-SafeValue {
+$machinePerf = Get-SafeValue {
 	$perfScript = Join-Path $HOME '.claude\scripts\machine-perf.ps1'
-	if (Test-Path $perfScript) {
-		& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $perfScript -Json 2>$null
-	} else {
-		'null'
+	if (-not (Test-Path $perfScript)) { return $null }
+	$raw = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $perfScript -Json -SampleSeconds 0 2>$null) -join "`n"
+	if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+	$parsed = $raw | ConvertFrom-Json
+	if ($null -eq $parsed -or $null -eq $parsed.cpu) { return $null }
+	[ordered]@{
+		cpu    = [ordered]@{ load_percent = $parsed.cpu.load_percent }
+		memory = [ordered]@{
+			used_gb      = $parsed.memory.used_gb
+			total_gb     = $parsed.memory.total_gb
+			used_percent = $parsed.memory.used_percent
+			free_gb      = $parsed.memory.free_gb
+		}
 	}
-} 'null'
+} $null
 
 $execArgsArr = @($ExecArgs | Where-Object { $_ -ne $null })
 
@@ -277,8 +286,8 @@ $activeLockBody = [ordered]@{
 	worktree     = $worktree
 	started_at   = (Get-Date).ToString('o')
 	log_path     = $logPath
-	machine_perf = $machinePerfJson
-} | ConvertTo-Json -Compress
+	machine_perf = $machinePerf
+} | ConvertTo-Json -Compress -Depth 5
 $activeLockTmp = Join-Path $stateRoot "active.$seq.tmp"
 [System.IO.File]::WriteAllText($activeLockTmp, $activeLockBody)
 try {
