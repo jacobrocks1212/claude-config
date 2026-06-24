@@ -110,7 +110,7 @@ re-read this plan first, then load components for the current step.
 
 ## Work Units
 
-- [ ] WU-1 — Create self-releasing `build-queue-runner.ps1`
+- [x] WU-1 — Create self-releasing `build-queue-runner.ps1`
 - [ ] WU-2 — Wire `build-queue.ps1` to the runner + demote Step 5
 
 ---

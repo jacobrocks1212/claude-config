@@ -26,13 +26,29 @@ This bug is filed against the completed **build-queue** feature (`docs/specs/bui
 **Scope:** Add a new committed PowerShell script that *is* the detached process. It runs the filtered build/test script, then — on the build's own completion, in the build's own process — records the outcome (`results/<seq>.json`) and releases the slot (`active.lock`), so the result survives the foreground wrapper being killed. This phase delivers and verifies the runner **in isolation**, with no changes to `build-queue.ps1` yet.
 
 **Deliverables:**
-- [ ] New `user/scripts/build-queue-runner.ps1` with params: `-Exec` (abs path to filtered script, mandatory), `-Seq` (int, mandatory), `-StateRoot` (optional `[string]`, default `$HOME/.claude/state/build-queue`), and `[Parameter(ValueFromRemainingArguments=$true)] $ExecArgs` for verbatim build args.
-- [ ] Invoke the filtered script as a **nested child process** via the call operator: `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Exec @ExecArgs`, then capture `$LASTEXITCODE`. (See Integration Notes — calling the filtered `.ps1` directly via `& $Exec` is wrong: its trailing `exit` would terminate the runner before bookkeeping runs. Native `@ExecArgs` splatting handles grandchild quoting, so no manual re-quoting is needed inside the runner.)
-- [ ] Idempotent result write: atomic `results/$Seq.tmp` → `[System.IO.File]::Replace` into `results/<seq>.json` (`{seq, exit_code, ended_at}`), with a `WriteAllText` fallback — reusing the `build-queue.ps1:301-308` pattern. Safe to repeat (same content) so a surviving wrapper writing the same result is harmless.
-- [ ] Seq-scoped lock release: read `active.lock` JSON under `Get-SafeValue`; remove it **only if** its `.seq` equals `-Seq` (never delete a successor's lock). No-op if absent or seq-mismatched.
-- [ ] `exit` with the captured code.
-- [ ] House style: `Set-StrictMode -Version Latest`, `Get-SafeValue` guards on all file I/O + JSON parsing, `@()`-wrapping before any count/iteration (PS 5.1 scalar-unwrap), pure ASCII, tabs + CRLF, single header doc-comment only.
-- [ ] Tests: standalone runner exercise (see Testing Strategy) — no Cognito build needed.
+- [x] New `user/scripts/build-queue-runner.ps1` with params: `-Exec` (abs path to filtered script, mandatory), `-Seq` (int, mandatory), `-StateRoot` (optional `[string]`, default `$HOME/.claude/state/build-queue`), and `[Parameter(ValueFromRemainingArguments=$true)] $ExecArgs` for verbatim build args.
+- [x] Invoke the filtered script as a **nested child process** via the call operator: `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Exec @ExecArgs`, then capture `$LASTEXITCODE`. (See Integration Notes — calling the filtered `.ps1` directly via `& $Exec` is wrong: its trailing `exit` would terminate the runner before bookkeeping runs. Native `@ExecArgs` splatting handles grandchild quoting, so no manual re-quoting is needed inside the runner.)
+- [x] Idempotent result write: atomic `results/$Seq.tmp` → `[System.IO.File]::Replace` into `results/<seq>.json` (`{seq, exit_code, ended_at}`), with a `WriteAllText` fallback — reusing the `build-queue.ps1:301-308` pattern. Safe to repeat (same content) so a surviving wrapper writing the same result is harmless.
+- [x] Seq-scoped lock release: read `active.lock` JSON under `Get-SafeValue`; remove it **only if** its `.seq` equals `-Seq` (never delete a successor's lock). No-op if absent or seq-mismatched.
+- [x] `exit` with the captured code.
+- [x] House style: `Set-StrictMode -Version Latest`, `Get-SafeValue` guards on all file I/O + JSON parsing, `@()`-wrapping before any count/iteration (PS 5.1 scalar-unwrap), pure ASCII, tabs + CRLF, single header doc-comment only.
+- [x] Tests: standalone runner exercise (see Testing Strategy) — no Cognito build needed.
+
+#### Implementation Notes (2026-06-24)
+
+**What was built:** `user/scripts/build-queue-runner.ps1` (77 lines) — the self-releasing detached runner. Runs the filtered script as a nested `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Exec @ExecArgs` grandchild, captures `$LASTEXITCODE` (null-coalesced to 0), idempotently writes `results/<seq>.json` via the atomic `.tmp`→`[System.IO.File]::Replace` pattern (WriteAllText fallback on first write since dest is absent), then seq-scoped-releases `active.lock` (parses `.seq` under `Get-SafeValue`, removes only on `.seq == $Seq`), and `exit $exitCode`. House style matches `build-queue.ps1` (StrictMode, Get-SafeValue guards, tabs+CRLF, ASCII, single header comment).
+
+**Files:** `user/scripts/build-queue-runner.ps1` (net-new).
+
+**Repro evidence (orchestrator-run, real output):**
+- TEST 1 (matching seq 42): runner exit `7`; `results/42.json` = `{"seq":42,"exit_code":7,...}`; `active.lock` removed.
+- TEST 2 (seq-guard, lock seq=99 vs runner seq=42): `active.lock` untouched (still `seq=99`); `42.json` still written; exit `7`.
+- TEST 3 (idempotency): re-run produces stable `seq`+`exit_code`; second write well-formed JSON.
+- Nested-exit invariant proven: the stub's `exit 7` did not abort the runner — bookkeeping ran AND the code propagated.
+
+**Pitfalls:** None in the runner. (Driver-side only: PowerShell mis-parsed literal `(expect N)` hint text in `Write-Host` strings — rewritten with `-f` formatting; no bearing on the runner.)
+
+**Review verdict:** PASS — ground-truth verified (fresh `git status`/`wc -l`/`grep` matched the subagent's block exactly); repro gate green.
 
 **Minimum Verifiable Behavior:** Run the runner directly against a stub `-Exec` (a throwaway script that sleeps ~2s then `exit 1`) with a seeded `-StateRoot` whose `active.lock` carries the matching seq. On completion: `results/<seq>.json` exists with `exit_code = 1`, `active.lock` is gone, and the runner process itself exits `1`.
 
