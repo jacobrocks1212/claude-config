@@ -379,6 +379,15 @@ validated_commit: <git-sha>  # HEAD sha at the time the MCP run completed; consu
 ---
 ```
 
+Optional:
+
+- `carve_outs: [ { assertion, kind, reason, followup_bug? }, ... ]` — assertions deliberately not
+  strictly certified on this host (e.g. an environmental host artifact like WASAPI capture-ring
+  scheduling jitter). Each entry records the carved-out assertion, its `kind` (e.g. `host-artifact`),
+  the `reason`, and an optional non-blocking `followup_bug` id tracking the strict-bar follow-up.
+  When carve-outs let `result: all-passing` despite a non-certifiable assertion, the body MUST
+  document the carve-out + evidence. Absent on runs with no carve-out.
+
 Body keeps the per-scenario pass/fail breakdown.
 
 `validated_commit` is **required going forward** for every new `MCP_TEST_RESULTS.md`: producers (`/mcp-test`, and the inline `/mcp-test` cycle override in `lazy-batch-prompts/cycle-base-prompt.md`) MUST capture `git rev-parse HEAD` when the MCP run completes and write it here. The state scripts' Step-9 sha-freshness gate compares it to the current HEAD; legacy files without the field skip the check (lenient for backward compatibility), but a new results file written without it leaves the freshness gate inert for that feature.

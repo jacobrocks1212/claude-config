@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: ensure-runtime-false-hijacked-on-owned-serving-runtime
-status: Ready
+status: In-progress
 created: 2026-06-24
 phases: [1, 2]
 complexity: complex
