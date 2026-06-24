@@ -208,7 +208,7 @@ hook pattern — wrap (clone)").
 
 ### Work Units (progress checklist)
 
-- [ ] WU-3 — `build-queue-enforce.sh` + register in `settings.json`
+- [x] WU-3 — `build-queue-enforce.sh` + register in `settings.json`
 
 ### WU-3 — Enforcement hook + registration
 

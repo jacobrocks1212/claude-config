@@ -77,6 +77,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/long-build-ownership-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/build-queue-enforce.sh",
+            "timeout": 5
           }
         ]
       },

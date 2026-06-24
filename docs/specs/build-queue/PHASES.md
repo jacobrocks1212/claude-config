@@ -123,12 +123,12 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 **Scope:** A PreToolUse(Bash) hook that denies raw heavy-build invocations in Cognito worktrees and redirects to the matching skill, cloned structurally from `long-build-ownership-guard.sh`. Registered last in the existing `PreToolUse[Bash]` chain.
 
 **Deliverables:**
-- [ ] `user/hooks/build-queue-enforce.sh` — clone of `long-build-ownership-guard.sh` (python-via-`-c`, stdin-JSON, deny-via-JSON, fail-open on any error, best-effort breadcrumb).
-- [ ] **Scope gate:** resolve the git remote from the hook's cwd; proceed only if it matches `cognitoforms/cognito`. Fail-open (allow) if the remote can't be resolved.
-- [ ] **Deny surface (Conservative, SPEC L5):** first real token (after leading `NAME=value` env assignments) is `dotnet build`, `dotnet test`, `nx`/`npx nx` with a `build`/`test`/`run-many` target, or a direct `*-filtered.ps1` invocation (`build|test|client-build|client-test`).
-- [ ] **Never denied:** `dotnet restore`/`--version`/`ef`, `nx lint`/`typecheck`/`format`, the wrapper `build-queue.ps1`, and anything prefixed `BUILD_QUEUE_BYPASS=1`. `msbuild`/`dotnet msbuild`/`npm`/`pnpm` deliberately excluded (zero genuine usage in evidence).
-- [ ] **Redirect message:** names the matched op's skill and shows the equivalent invocation (raw `dotnet test --filter X` → "use `/mstest -Filter X`"); names `BUILD_QUEUE_BYPASS=1` as the override without advertising it prominently.
-- [ ] Register `bash ~/.claude/hooks/build-queue-enforce.sh` as the 5th entry in `user/settings.json` `PreToolUse[Bash]` (after `long-build-ownership-guard.sh`), `timeout: 5`.
+- [x] `user/hooks/build-queue-enforce.sh` — clone of `long-build-ownership-guard.sh` (python-via-`-c`, stdin-JSON, deny-via-JSON, fail-open on any error, best-effort breadcrumb).
+- [x] **Scope gate:** resolve the git remote from the hook's cwd; proceed only if it matches `cognitoforms/cognito`. Fail-open (allow) if the remote can't be resolved.
+- [x] **Deny surface (Conservative, SPEC L5):** first real token (after leading `NAME=value` env assignments) is `dotnet build`, `dotnet test`, `nx`/`npx nx` with a `build`/`test`/`run-many` target, or a direct `*-filtered.ps1` invocation (`build|test|client-build|client-test`).
+- [x] **Never denied:** `dotnet restore`/`--version`/`ef`, `nx lint`/`typecheck`/`format`, the wrapper `build-queue.ps1`, and anything prefixed `BUILD_QUEUE_BYPASS=1`. `msbuild`/`dotnet msbuild`/`npm`/`pnpm` deliberately excluded (zero genuine usage in evidence).
+- [x] **Redirect message:** names the matched op's skill and shows the equivalent invocation (raw `dotnet test --filter X` → "use `/mstest -Filter X`"); names `BUILD_QUEUE_BYPASS=1` as the override without advertising it prominently.
+- [x] Register `bash ~/.claude/hooks/build-queue-enforce.sh` as the 5th entry in `user/settings.json` `PreToolUse[Bash]` (after `long-build-ownership-guard.sh`), `timeout: 5`.
 
 **Minimum Verifiable Behavior:** In a Cognito worktree, a Bash call of `dotnet build Cognito.sln` is denied with a `/msbuild` redirect and does not execute; `BUILD_QUEUE_BYPASS=1 dotnet build Cognito.sln` executes.
 
@@ -154,6 +154,18 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 **Integration Notes for Next Phase:**
 - The `cd`-prefixed-command blind spot (a command that `cd`s into a different repo before building) is shared with the sibling hooks and accepted for v1 — document it in the hook header, don't try to parse `cd` chains.
 - Registering the hook *after* Phases 1–2 are working is deliberate: enabling enforcement before a working queue path exists would block builds with no sanctioned alternative.
+
+**Status:** Code authored + committed + hook self-tested. Awaiting Jacob's Manual Verification (rows above remain unchecked).
+
+#### Implementation Notes (authored — `build-queue-enforce.sh` + registration)
+- Cloned the structure of `long-build-ownership-guard.sh` verbatim: python3/python resolution, `read -r -d '' _BQE_PY <<'PYEOF' … PYEOF` body run via `"$PYTHON" -c`, fail-open on any error, deny-via-JSON (`permissionDecision: deny`), best-effort breadcrumb (`"hook": "build-queue-enforce"`), and the `_ENV_PREFIX` env-prefix regex.
+- Scope gate (L8) resolves `git -C <cwd> config --get remote.origin.url` (payload `cwd` else `os.getcwd()`) and matches substring `cognitoforms/cognito` (case-insensitive); any subprocess failure → fail-open allow. This is proven distinct from the email gate: `dotnet build` in claude-config (remote `jacobrocks1212/claude-config`) ALLOWS.
+- Evaluation order: bypass token (L6) → scope gate (L8) → wrapper-allow → dotnet/nx allow-lists → deny surface (L5) → allow. The wrapper-allow check uses `re.search("build-queue.ps1")` and runs BEFORE the `*-filtered.ps1` closure, so the sanctioned wrapper invocation (which carries a `-Exec ".../build-filtered.ps1"` arg) is never denied.
+- Registered as the **5th** `PreToolUse[Bash]` entry in `user/settings.json` (after `long-build-ownership-guard.sh`), `timeout: 5`; JSON validity confirmed.
+- The `cd`-into-another-repo blind spot is documented in the hook header (shared with sibling hooks; cd chains are not parsed — a deliberate non-goal).
+- **Minor note:** `nx run-many` is denied regardless of target (per L5's `run-many` listing), so `nx run-many --target=lint` is also denied and redirected to `/nxbuild`. Accepted as L5's conservative stance.
+- **Self-test (orchestrator-reproduced, no live build):** independently re-ran 14 crafted PreToolUse payloads through the hook from the orchestrator shell — 6 deny rows (dotnet build/test, nx build/test, build-filtered, client-test-filtered) all DENY; 6 allow rows (non-Cognito remote, BUILD_QUEUE_BYPASS=1, dotnet restore, nx lint, dotnet msbuild, wrapper) all ALLOW; both fail-open rows (malformed JSON, empty stdin) ALLOW with exit 0. `bash -n` clean.
+- **Review verdict:** PASS (ground-truth verified by orchestrator re-run of all deny/allow payloads + syntax/JSON/registration checks). 2026-06-23.
 
 ---
 
