@@ -15,8 +15,9 @@
 # user.email) — Overwatch and mcp/ share the same work email but have DIFFERENT
 # remotes and MUST NOT be gated.
 #
-# DENY SURFACE (conservative): the command's first real token (after optional
-# leading NAME=value env assignments) is one of:
+# DENY SURFACE: a heavy build appears ANYWHERE in the command (not only at the
+# start), so a build chained behind a leading command — `cd "..." && dotnet
+# build ...`, a pipeline, a `;`-chain — is still caught. The denied forms are:
 #   * dotnet build
 #   * dotnet test
 #   * nx / npx nx with a build / test / run-many target
@@ -25,15 +26,24 @@
 #
 # NEVER denied: dotnet restore, dotnet --version, dotnet ef, nx lint/typecheck/
 # format, msbuild, dotnet msbuild, npm, pnpm, the build-queue.ps1 wrapper itself
-# (the sanctioned path), or any command prefixed BUILD_QUEUE_BYPASS=1.
+# (the sanctioned path — allowed even though it carries a *-filtered.ps1 -Exec
+# arg), or any command prefixed BUILD_QUEUE_BYPASS=1.
+#
+# ALLOW-LIST PRECEDENCE (unanchored): because deny is unanchored, a leading safe
+# token can no longer short-circuit the whole command — `dotnet restore && dotnet
+# build` MUST still deny (a real build is present). So the safe dotnet/nx variants
+# are SUPPRESSED per-occurrence (blanked out of a scratch copy of the command)
+# before the unanchored heavy-build scan; if any real heavy build survives the
+# suppression, the command is denied.
 #
 # BYPASS TOKEN (L6): any command with BUILD_QUEUE_BYPASS=1 as a leading env
 # assignment is allowed through immediately (before deny-matching).
 #
-# KNOWN BLIND SPOT (shared with sibling hooks): a command that `cd`s into a
-# different repository before running a build is NOT detected — the hook sees the
-# original cwd from the payload and cannot parse cd-chain redirects. This is a
-# deliberate non-goal; avoid `cd <other-repo> && dotnet build` patterns.
+# CLOSED BLIND SPOT: a `cd <dir> && dotnet build` no longer bypasses the deny
+# matcher (the build verb is detected wherever it sits in the command). The
+# Cognito-worktree SCOPE gate still keys on the payload cwd, so a build that
+# `cd`s OUT of a Cognito worktree into a non-Cognito repo is still governed by
+# the cwd at dispatch time (fail-open outside Cognito worktrees).
 #
 # FAIL-OPEN: any parse/match/subprocess error (malformed JSON, missing python,
 # unexpected payload, git failure) ALLOWS the command — a broken hook must never
@@ -62,8 +72,6 @@ STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
     os.path.expanduser("~"), ".claude", "state"
 )
 
-_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
-
 # Match the bypass token as a leading env assignment.
 _BYPASS_RE = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*BUILD_QUEUE_BYPASS=1(?:\s|$)")
 
@@ -72,24 +80,31 @@ _BYPASS_RE = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*BUILD_QUEUE_BYPA
 # a quoted path as an argument to powershell.exe -File "...path.../build-queue.ps1").
 _WRAPPER_RE = re.compile(r"build-queue\.ps1", re.IGNORECASE)
 
-# Deny patterns (anchored; env-prefix tolerant).
-_DOTNET_BUILD_RE = re.compile(
-    r"^\s*" + _ENV_PREFIX + r"dotnet\s+build(?:\s|$)"
+# Safe dotnet/nx variants that must NEVER count as a heavy build even though
+# they share the "dotnet"/"nx" prefix. These occurrences are blanked out of a
+# scratch copy of the command BEFORE the unanchored heavy-build scan, so a
+# leading `dotnet restore` no longer masks a trailing `dotnet build`.
+_DOTNET_SAFE_RE = re.compile(
+    r"dotnet\s+(?:restore|--version|-v|ef|msbuild)\b", re.IGNORECASE
 )
-_DOTNET_TEST_RE = re.compile(
-    r"^\s*" + _ENV_PREFIX + r"dotnet\s+test(?:\s|$)"
+_NX_SAFE_RE = re.compile(
+    r"(?:npx\s+)?nx\s+(?:lint|typecheck|format)\b", re.IGNORECASE
 )
+
+# Deny patterns (unanchored — a heavy build anywhere in the command). Run against
+# the SUPPRESSED command (safe variants blanked out).
+_DOTNET_BUILD_RE = re.compile(r"dotnet\s+build(?:\s|$)", re.IGNORECASE)
+_DOTNET_TEST_RE = re.compile(r"dotnet\s+test(?:\s|$)", re.IGNORECASE)
 # nx / npx nx with build, test, or run-many target.
 # Matches: nx build X, nx test X, nx run-many --target=build/test,
 #          npx nx build X, npx nx test X, npx nx run-many --target=build/test
 _NX_BUILD_TEST_RE = re.compile(
-    r"^\s*" + _ENV_PREFIX +
     r"(?:npx\s+)?nx\s+"
     r"(?:"
     r"(?:run-many\b.*?--target[= ]\s*(?:build|test)\b)"
     r"|(?:(?:build|test|run-many)\b)"
     r")",
-    re.DOTALL,
+    re.IGNORECASE | re.DOTALL,
 )
 # A *-filtered.ps1 script invoked directly or via powershell.exe.
 _FILTERED_SCRIPT_RE = re.compile(
@@ -97,16 +112,14 @@ _FILTERED_SCRIPT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Allow-list for dotnet sub-commands that must NOT be denied even though they
-# start with "dotnet build" or "dotnet test" (e.g. dotnet msbuild is separate).
-_DOTNET_ALLOW_RE = re.compile(
-    r"^\s*" + _ENV_PREFIX + r"dotnet\s+(?:restore|--version|-v|ef|msbuild)\b"
-)
 
-# Allow-list for nx targets that are safe (lint, typecheck, format).
-_NX_ALLOW_RE = re.compile(
-    r"^\s*" + _ENV_PREFIX + r"(?:npx\s+)?nx\s+(?:lint|typecheck|format)\b"
-)
+def _suppress_safe(command):
+    """Return a scratch copy of *command* with the safe dotnet/nx variant
+    occurrences blanked out, so the unanchored heavy-build scan does not trip on
+    them and a leading safe token cannot mask a trailing real build."""
+    suppressed = _DOTNET_SAFE_RE.sub(" ", command)
+    suppressed = _NX_SAFE_RE.sub(" ", suppressed)
+    return suppressed
 
 
 def _breadcrumb(err):
@@ -265,29 +278,28 @@ def main():
     if not _is_cognito_worktree(cwd):
         _allow()
 
-    # Allow the sanctioned wrapper before the filtered-script closure.
+    # Allow the sanctioned wrapper before the deny surface — it carries a
+    # *-filtered.ps1 path as its -Exec arg, which would otherwise trip the
+    # filtered-script deny.
     if _WRAPPER_RE.search(command):
         _allow()
 
-    # Allow-list: safe dotnet sub-commands.
-    if _DOTNET_ALLOW_RE.match(command):
-        _allow()
-
-    # Allow-list: safe nx targets.
-    if _NX_ALLOW_RE.match(command):
-        _allow()
+    # Suppress the safe dotnet/nx variants per-occurrence, then scan the scratch
+    # copy for any surviving heavy build (unanchored). A leading `dotnet restore`
+    # no longer masks a trailing `dotnet build`.
+    scan = _suppress_safe(command)
 
     # Deny surface.
-    if _DOTNET_BUILD_RE.match(command):
+    if _DOTNET_BUILD_RE.search(scan):
         _deny(_redirect_reason("dotnet-build", command))
 
-    if _DOTNET_TEST_RE.match(command):
+    if _DOTNET_TEST_RE.search(scan):
         _deny(_redirect_reason("dotnet-test", command))
 
-    if _NX_BUILD_TEST_RE.match(command):
+    if _NX_BUILD_TEST_RE.search(scan):
         _deny(_redirect_reason(_classify_nx(command), command))
 
-    if _FILTERED_SCRIPT_RE.search(command):
+    if _FILTERED_SCRIPT_RE.search(scan):
         _deny(_redirect_reason(_classify_filtered_script(command), command))
 
     _allow()

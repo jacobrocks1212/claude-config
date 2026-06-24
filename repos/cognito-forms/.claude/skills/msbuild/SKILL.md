@@ -1,7 +1,7 @@
 ---
 name: msbuild
 description: Build Cognito.sln with filtered output (errors + summary only). Wraps build-filtered.ps1.
-argument-hint: [-Restore] [-Test] [-TestProject "path/to/test.csproj"]
+argument-hint: [-Project "path/to.csproj"] [-Restore] [-Test] [-TestProject "path/to/test.csproj"]
 model: haiku
 allowed-tools: ["Bash"]
 ---
@@ -12,7 +12,8 @@ Build the Cognito solution showing only errors and the build summary.
 
 ## Usage
 
-- `/msbuild` — build solution (no restore)
+- `/msbuild` — build the whole solution (no restore)
+- `/msbuild -Project "Cognito.Core/Cognito.Core.csproj"` — fast single-project filtered build (still serialized through the queue); use this for a quick "did my change compile?" check instead of a full solution build
 - `/msbuild -Restore` — build with NuGet package restore
 - `/msbuild -Test` — build then run tests
 - `/msbuild -Restore -Test` — restore, build, and test
@@ -25,6 +26,7 @@ Build the Cognito solution showing only errors and the build summary.
    ```
 
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:
+   - `-Project "..."` — build a single project (path relative to the repo root, e.g. `Cognito.Core/Cognito.Core.csproj`) instead of the whole `Cognito.sln`. Forward or back slashes both work. Same filtered output, still serialized through the queue.
    - `-Restore` — enable NuGet package restore before building
    - `-Test` — also run tests after building
    - `-TestProject "..."` — custom test project path (default: `Cognito.Forms.UnitTests/Cognito.Forms.UnitTests.csproj`)

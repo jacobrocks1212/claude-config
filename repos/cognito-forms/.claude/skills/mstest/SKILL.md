@@ -8,7 +8,7 @@ allowed-tools: ["Bash"]
 
 # MSTest — Filtered .NET Test Runner
 
-Run backend tests showing only passed/failed test names, error messages, and summary. Runs with `--no-build` — build first with `/msbuild` if needed.
+Run backend tests showing only passed/failed test names, error messages, and summary. Runs with `--no-build` — build first if needed. For a fast targeted compile of just the project under test, run `/msbuild -Project "<relative/path/to.csproj>"` before this (both stay serialized through the build queue).
 
 ## Usage
 

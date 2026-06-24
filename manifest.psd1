@@ -28,7 +28,17 @@
             # .claude/CLAUDE.md and commands/{msbuild,review-pr,work-item}.md are team-owned
             # (git-tracked by the Cognito Forms repo) — do NOT whole-dir/whole-file symlink them.
             # Only personal, git-ignored command files are symlinked individually.
-            DotClaudeFiles = @('settings.json', 'settings.local.json', 'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md')
+            # scripts\*.ps1 below are personal, git-ignored tooling scripts — sourced here so all
+            # worktrees share one copy. create-branch-worktree.ps1 and review-pr.ps1 are team-owned
+            # (git-tracked) and intentionally NOT symlinked.
+            DotClaudeFiles = @(
+                'settings.json', 'settings.local.json',
+                'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md',
+                'scripts\build-filtered.ps1', 'scripts\test-filtered.ps1',
+                'scripts\client-build-filtered.ps1', 'scripts\client-test-filtered.ps1',
+                'scripts\find-dll.ps1', 'scripts\find-large-folders.ps1',
+                'scripts\list-downloads.ps1', 'scripts\quick-scan.ps1', 'scripts\system-stats.ps1'
+            )
             DotClaudeDirs  = @('skill-config', 'skills', 'knowledge')
         }
         'cognito-forms-B' = @{
@@ -85,10 +95,6 @@
         }
         'system-design' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\system-design'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'wiki' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\wiki'
             DotClaudeFiles = @('settings.local.json')
         }
         'meridian-setup' = @{

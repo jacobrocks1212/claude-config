@@ -11,19 +11,22 @@
 # is the long-build analog of the existing lazy-cycle-containment deny-set, and a
 # sibling of block-noncanonical-blocker-write.sh in the fail-OPEN guard family.
 #
-# RULE: deny a Bash command whose FIRST real token (after an optional run of
-# leading `NAME=value` env assignments) is an EXACT long-build binary invocation:
+# RULE: deny a Bash command that contains an EXACT long-build binary invocation
+# ANYWHERE in it (not only at the start), so a build chained behind a leading
+# command — `cd "..." && cargo build --release`, a pipeline, a `;`-chain — is
+# still caught:
 #   * `tauri build`
 #   * `cargo build --release`
 #   * `npm run build`
 # On match → DENY with a corrective reason naming the orchestrator-takeover
 # signature LONG-BUILD-OWNERSHIP-TAKEOVER, so the orchestrator can deterministically
 # recognize the redirect and re-launch the build itself (Bash run_in_background
-# from the main session). The matcher is anchored to exact long-build binary
+# from the main session). The matcher is scoped to exact long-build binary
 # invocations to keep the false-positive rate near zero — it NEVER redirects
 # `ls` / `cat` / `npm run lint` / `cargo check --release` (the fast pre-build
-# check the long-build rule recommends) / `npm run build:docs` / a `tauri build`
-# substring buried inside another command.
+# check the long-build rule recommends) / `npm run build:docs`. It is preceded by
+# a word boundary so a long-build token glued onto a longer word does not match,
+# but it WILL match a real invocation that follows a `cd ... &&`.
 #
 # NOTE on "fail-open block": SPEC §M5 prose says the guard "fail-open blocks
 # (exit 2)". In Claude Code a PreToolUse blocks via the JSON
@@ -74,17 +77,23 @@ STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
     os.path.expanduser("~"), ".claude", "state"
 )
 
-# Anchored matcher: an optional run of leading `NAME=value` env assignments
-# (prefix tolerance), then EXACTLY one of the long-build binary invocations.
-# Anchored at ^ so a long-build token buried inside another command (e.g.
-# `echo tauri build`) does NOT match. `npm run build` is matched as a whole
-# token followed by end-of-string or whitespace, so `npm run build:docs` and
-# `npm run build-foo` do NOT match. `cargo build` REQUIRES `--release` (a plain
-# `cargo build` debug build is fast and not redirected; `cargo check --release`
-# is a different binary verb and never matches).
+# Command-position matcher: a long-build invocation that sits at a COMMAND
+# position — the start of the string (after optional leading `NAME=value` env
+# assignments) OR immediately after a shell command separator (`&&`, `||`, `|`,
+# `;`, `(`, `{`, newline, with optional surrounding env assignments). This catches
+# a build chained behind a leading command (`cd "..." && cargo build --release`,
+# pipelines, `;`-chains) while still NOT matching a long-build token buried inside
+# an argument string (e.g. `echo tauri build` — `build` there follows `echo`, not
+# a command separator). `npm run build` is matched as a whole token followed by
+# end-of-string or whitespace, so `npm run build:docs` / `npm run build-foo` do
+# NOT match. `cargo build` REQUIRES `--release` (a plain `cargo build` debug build
+# is fast and not redirected; `cargo check --release` is a different verb).
 _ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+# A command-start boundary: string start, or a shell separator, then optional
+# whitespace and optional env-assignment prefix.
+_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
 _LONG_BUILD_RE = re.compile(
-    r"^\s*" + _ENV_PREFIX + r"(?:"
+    _CMD_START + r"(?:"
     r"tauri\s+build(?:\s|$)"
     r"|cargo\s+build\s+--release(?:\s|$)"
     r"|npm\s+run\s+build(?:\s|$)"
@@ -136,7 +145,7 @@ def main():
     command = (payload.get("tool_input") or {}).get("command", "")
     if not isinstance(command, str) or not command:
         _allow()
-    if _LONG_BUILD_RE.match(command):
+    if _LONG_BUILD_RE.search(command):
         _deny(
             "LONG BUILD REDIRECTED TO ORCHESTRATOR "
             f"[{TAKEOVER_SIGNATURE}]: a long build "
