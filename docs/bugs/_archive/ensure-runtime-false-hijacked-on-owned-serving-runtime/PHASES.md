@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is a claude-config harness fix (a Python state-script change to `lazy_core.py` + its hermetic in-file `--test`/pytest fixtures + skill prose). It has no AlgoBooth Tauri/MCP app surface to validate via the live dev runtime; the `--ensure-runtime` logic itself is exercised by injected callables under `test_lazy_core.py`, never a real runtime/network. (The live cold-boot smoke noted in `user/scripts/CLAUDE.md` is an operator-manual step on a real AlgoBooth checkout, NOT a claude-config CI gate.)
 

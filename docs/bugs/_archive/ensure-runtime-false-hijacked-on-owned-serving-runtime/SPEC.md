@@ -2,9 +2,11 @@
 
 > `lazy-state.py --ensure-runtime` returns the terminal `HIJACKED` fail-safe for a runtime that is provably this run's own (health 200 + MCP tools present), because the runtime lock's recorded `controller_session_id` and the threaded `live_session_id` come from different sources and diverge. The recorded recovery (`dev:kill` + fresh boot) does not cure it — the next cycle re-stamps a divergent identity and re-reports HIJACKED.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-24
+**Fixed:** 2026-06-24
+**Fix commit:** fa4d185
 **Placement:** docs/bugs/ensure-runtime-false-hijacked-on-owned-serving-runtime
 **Related:** `docs/bugs/_archive/single-slot-marker-ownership-race-disarms-owning-run` (foreign session *stamps* the slot — distinct), `docs/bugs/_archive/ensure-runtime-legacy-mode-optimistic-ready-verdict`, `docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile`, AlgoBooth memory `hijacked-runtime-after-mcp-test-cycle.md`, spun-off `statepush-mirror-readiness-dimension`
 
