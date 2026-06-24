@@ -25,7 +25,7 @@ Build frontend projects in the Nx monorepo showing only errors and build summary
 
 1. Construct the command:
    ```
-   REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$REPO_ROOT/.claude/scripts/client-build-filtered.ps1"
+   REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op nxbuild -Exec "$REPO_ROOT/.claude/scripts/client-build-filtered.ps1"
    ```
 
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:

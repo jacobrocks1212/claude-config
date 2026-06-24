@@ -142,7 +142,7 @@ directly, forwarding their existing arguments unchanged.
 
 ### Work Units (progress checklist)
 
-- [ ] WU-2 — Re-point `/msbuild`, `/mstest`, `/nxbuild`, `/nxtest` to the wrapper
+- [x] WU-2 — Re-point `/msbuild`, `/mstest`, `/nxbuild`, `/nxtest` to the wrapper
 
 ### WU-2 — Re-point the four skills
 

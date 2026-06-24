@@ -83,11 +83,11 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 **Scope:** Re-point the four sanctioned entry-point skills to call the wrapper instead of the filtered script directly, forwarding their existing arguments unchanged. One edit per skill; symlinked, so each propagates to all four worktrees.
 
 **Deliverables:**
-- [ ] `…/skills/msbuild/SKILL.md` — step-1 command calls `build-queue.ps1 -Op msbuild -Exec "$REPO_ROOT/.claude/scripts/build-filtered.ps1"` with `$ARGUMENTS` appended verbatim.
-- [ ] `…/skills/mstest/SKILL.md` — `-Op mstest -Exec "$REPO_ROOT/.claude/scripts/test-filtered.ps1"`.
-- [ ] `…/skills/nxbuild/SKILL.md` — `-Op nxbuild -Exec "$REPO_ROOT/.claude/scripts/client-build-filtered.ps1"`.
-- [ ] `…/skills/nxtest/SKILL.md` — `-Op nxtest -Exec "$REPO_ROOT/.claude/scripts/client-test-filtered.ps1"`.
-- [ ] `$REPO_ROOT=$(git rev-parse --show-toplevel)` is retained in each (the filtered scripts are per-worktree; the wrapper is machine-global at `$HOME/.claude/scripts/`).
+- [x] `…/skills/msbuild/SKILL.md` — step-1 command calls `build-queue.ps1 -Op msbuild -Exec "$REPO_ROOT/.claude/scripts/build-filtered.ps1"` with `$ARGUMENTS` appended verbatim.
+- [x] `…/skills/mstest/SKILL.md` — `-Op mstest -Exec "$REPO_ROOT/.claude/scripts/test-filtered.ps1"`.
+- [x] `…/skills/nxbuild/SKILL.md` — `-Op nxbuild -Exec "$REPO_ROOT/.claude/scripts/client-build-filtered.ps1"`.
+- [x] `…/skills/nxtest/SKILL.md` — `-Op nxtest -Exec "$REPO_ROOT/.claude/scripts/client-test-filtered.ps1"`.
+- [x] `$REPO_ROOT=$(git rev-parse --show-toplevel)` is retained in each (the filtered scripts are per-worktree; the wrapper is machine-global at `$HOME/.claude/scripts/`).
 
 **Minimum Verifiable Behavior:** Invoke `/mstest -Filter "ClassName~SomethingSmall"` in one worktree. It runs through the queue (an `active.lock` appears for the duration) and the filter reaches the underlying `test-filtered.ps1` unchanged (only the filtered class runs).
 
@@ -107,6 +107,14 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 
 **Integration Notes for Next Phase:**
 - After this phase the skills are the *only* sanctioned heavy-build path — which is the precondition for Phase 3's hook to redirect raw invocations to them without redirecting to a path that itself bypasses the queue.
+
+**Status:** Code authored + committed. Awaiting Jacob's Manual Verification (rows above remain unchecked).
+
+#### Implementation Notes (authored — skill re-pointing)
+- All four skills (`msbuild`, `mstest`, `nxbuild`, `nxtest`) had an identical step-1 command shape; each step-1 fenced block now invokes the machine-global wrapper `$HOME/.claude/scripts/build-queue.ps1 -Op <op> -Exec "$REPO_ROOT/.claude/scripts/<filtered>.ps1"`, with the matching `-Op` per skill and `$REPO_ROOT=$(git rev-parse --show-toplevel)` retained.
+- Trailing pass-through (NOT a quoted `-ExecArgs "…"` string) is used: the step-2 `$ARGUMENTS`-appended-verbatim prose was left unchanged, so appended args bind to the wrapper's `[Parameter(ValueFromRemainingArguments=$true)] $ExecArgs` and reach the filtered script byte-identically. The stale SPEC sketch (`-ExecArgs "<$ARGUMENTS verbatim>"`) was deliberately NOT followed — it breaks quoting; the Part 1 frozen contract governs.
+- Single-line change per file (4 files, 4 insertions / 4 deletions). Ground-truth verified by independent re-run of `git diff --stat`, `wc -l`, and `grep` for `build-queue.ps1` / `-Op <op>` in all four files.
+- **Review verdict:** PASS (inline; 4 identical mechanical lines, ground-truth verified against SPEC §"Skill re-pointing" and the Phase 1 CLI contract). 2026-06-23.
 
 ---
 
