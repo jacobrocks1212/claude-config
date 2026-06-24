@@ -32,6 +32,19 @@
           {
             "type": "command",
             "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude\\hooks\\format-frontend.ps1\""
+          },
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude\\hooks\\normalize-crlf.ps1\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -ExecutionPolicy Bypass -File \"C:\\Users\\JacobMadsen\\source\\repos\\Cognito Forms\\.claude\\hooks\\normalize-crlf.ps1\""
           }
         ]
       }

@@ -128,8 +128,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   keep-comments-accurate:
-    weight: 0.775
-    data_points: 1
+    weight: 0.8313
+    data_points: 2
   no-todos-in-code:
     weight: 0.7
     data_points: 0
