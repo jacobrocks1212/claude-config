@@ -268,10 +268,20 @@ $machinePerf = Get-SafeValue {
 
 $execArgsArr = @($ExecArgs | Where-Object { $_ -ne $null })
 
-$procArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Exec) + $execArgsArr
+function Format-ProcArg {
+	param([string]$Value)
+	if ($Value -eq '' -or $Value -match '[\s"]') {
+		return '"' + ($Value -replace '"', '\"') + '"'
+	}
+	return $Value
+}
+
+$procArgList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Format-ProcArg $Exec))
+foreach ($a in $execArgsArr) { $procArgList += (Format-ProcArg ([string]$a)) }
+$procArgString = $procArgList -join ' '
 
 $proc     = Start-Process -FilePath 'powershell.exe' `
-	-ArgumentList $procArgs `
+	-ArgumentList $procArgString `
 	-RedirectStandardOutput $logPath `
 	-RedirectStandardError  $errPath `
 	-WindowStyle Hidden `
