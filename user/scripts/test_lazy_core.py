@@ -9986,7 +9986,19 @@ def test_restore_checkpoint_counters_carries_forward_run_identity():
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
-            original_identity = "2026-06-23T03:15:38Z"
+            # A within-24h identity so the age gate in restore_checkpoint_counters
+            # accepts it as fresh. MUST be computed relative to the live clock —
+            # a hardcoded date silently ages past the 24h gate once wall-clock
+            # advances >24h beyond it, false-failing the positive carry-forward
+            # assertion (observed 2026-06-24: a hardcoded 2026-06-23 fixture went
+            # stale-by-age). Offset 1h into the past keeps it unambiguously inside
+            # the window without being "now" (which the minted identity also is).
+            import datetime as _ident_dt_mod
+            original_identity = (
+                (_ident_dt_mod.datetime.now(_ident_dt_mod.timezone.utc)
+                 - _ident_dt_mod.timedelta(hours=1))
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
             # --- (1) + (2): carry-forward branch restores identity --------------
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
@@ -10385,7 +10397,15 @@ def test_restore_checkpoint_counters_restores_full_continuity_block():
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
             )
-            original_identity = "2026-06-23T03:15:38Z"
+            # Within-24h identity computed off the live clock (see the
+            # carry-forward test for why a hardcoded date silently ages out of
+            # the restore age gate once wall-clock advances >24h past it).
+            import datetime as _ident_dt_mod
+            original_identity = (
+                (_ident_dt_mod.datetime.now(_ident_dt_mod.timezone.utc)
+                 - _ident_dt_mod.timedelta(hours=1))
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
             checkpoint = {
                 "reason": "checkpoint",
                 "next_route": "execute-plan Phase 3",
@@ -10496,7 +10516,14 @@ def test_restore_legacy_flat_checkpoint_still_restores_identity():
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r", max_cycles=25,
             )
-            legacy_identity = "2026-06-23T04:00:00Z"
+            # Within-24h identity off the live clock (a hardcoded date silently
+            # ages out of the restore age gate once wall-clock advances >24h).
+            import datetime as _ident_dt_mod
+            legacy_identity = (
+                (_ident_dt_mod.datetime.now(_ident_dt_mod.timezone.utc)
+                 - _ident_dt_mod.timedelta(hours=1))
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
             legacy = {
                 "reason": "checkpoint",
                 "next_route": "execute-plan Phase 3",
