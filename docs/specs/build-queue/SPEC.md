@@ -153,6 +153,18 @@ See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown (5 phases, refin
 | Skill path runs unimpeded | Invoke `/msbuild` | Build runs through the queue | No deny; `active.lock` created; output streams |
 | Status view reflects queue + load | Run `/build-queue-status` with a build active | Shows active op/worktree/PID/elapsed + waiters + load | Output matches `active.lock` + `tickets/*`; load line from `machine-perf.ps1 -Json` |
 
+### Recovery behavior contract (Phase 5 — pending Jacob's fault-injection sign-off)
+
+The queue's crash-recovery contract, to be confirmed by the Phase 5 fault-injection pass (this is the resilience contract recorded for the record; the rows below are **not yet verified** — they are confirmed only when Jacob signs off "Phase 5 verified", at which point this section is marked verified and the SPEC `**Status:**` flips to Complete):
+
+| Recovery mode | Injection | Expected self-healing |
+|---|---|---|
+| Kill while waiting | Kill a queued client process | Its `tickets/<seq>.json` is reclaimed (PID-death) by a peer's poll; the slot is unaffected; remaining waiters renumber correctly by seq. |
+| Kill while holding | Kill the wrapper client mid-build | The detached build (its own PID in `active.lock`, not the client's) survives, completes, writes `results/<seq>.json`, and releases `active.lock`. |
+| Stale lock reclaim | Kill the detached build's PID directly | The next waiter's poll detects the dead `build_pid`, deletes `active.lock`, and proceeds (after the grace period — `staleThreshold` consecutive stale polls, lowest-seq waiter only). |
+| Corrupt / partial state | Truncate/corrupt `active.lock` / a ticket / `seq.counter` | The wrapper tolerates it (fail-open / self-heal) rather than wedging the queue. |
+| Slow-but-alive never reclaimed | A long-but-alive build holds the slot | The slot is held indefinitely; no max-runtime watchdog reclaims a legitimately-slow build (L7). |
+
 ## Locked Decisions
 
 | ID | Decision |

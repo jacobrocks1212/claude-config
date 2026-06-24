@@ -216,8 +216,8 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 **Scope:** Adversarial failure-injection against the Phase 1 reclaim logic. Phase 1 already proves the happy path; this phase proves the queue self-heals under client death, build death, and corrupt state — the riskiest correctness surface, given the whole point is resilience to the 600s Bash-tool timeout.
 
 **Deliverables:**
-- [ ] Failure-injection verification of all four recovery modes (below). No new production code expected; any defect found here is fixed in `build-queue.ps1` (Phase 1's file) and re-verified.
-- [ ] Document the verified recovery behavior in the SPEC's validation section / a short note, so the resilience contract is recorded.
+- [ ] Failure-injection verification of all four recovery modes (below). No new production code expected; any defect found here is fixed in `build-queue.ps1` (Phase 1's file) and re-verified. *(Jacob-driven — `/execute-plan` cannot kill processes across worktrees; remains unchecked until Jacob signs off.)*
+- [x] Document the verified recovery behavior in the SPEC's validation section / a short note, so the resilience contract is recorded. *(Authored as the "Recovery behavior contract" subsection in SPEC §Validation Criteria, marked pending Jacob's sign-off.)*
 
 **Minimum Verifiable Behavior:** Start a build via the wrapper, kill the **wrapper client** process mid-build, and confirm the detached build runs to completion: `results/<seq>.json` gets an `exit_code`, and `active.lock` is cleared afterward — exactly as if the client had never died.
 
@@ -240,3 +240,12 @@ build-queue.ps1 -Op <msbuild|mstest|nxbuild|nxtest> -Exec <abs path to filtered 
 **Testing Strategy:** Process-level fault injection (`Stop-Process` on the client vs. the detached build PID) plus state-file corruption, each followed by asserting the queue returns to a correct state. This is the dedicated adversarial pass that the happy-path Phase 1 test deliberately does not cover.
 
 **Integration Notes for Next Phase:** None — final phase. On completion, flip the SPEC `**Status:**` to `Complete` by hand (this feature is outside the autonomous pipeline, so there is no gate to do it automatically).
+
+**Status:** Verification phase — pending Jacob's fault-injection. No production code authored (none expected). The resilience-contract note is recorded in SPEC §Validation Criteria. The fault-injection deliverable + Manual Verification rows remain Jacob's gate.
+
+#### Implementation Notes (WU-5 — verification handoff)
+- WU-5 is a manual, multi-process, multi-worktree fault-injection pass. `/execute-plan` cannot kill processes across worktrees and observe self-healing, so the verification itself is Jacob-driven (MANDATORY RULE 5: do not fabricate a pass).
+- Orchestrator's only non-contingent authoring: the "Recovery behavior contract" subsection appended to SPEC §Validation Criteria, documenting all five recovery modes (kill-while-waiting, kill-while-holding, stale-lock reclaim, corrupt/partial state, slow-but-alive-never-reclaimed) and the expected self-healing per L3/L7. It is explicitly marked **not yet verified** — confirmed only on Jacob's "Phase 5 verified".
+- Contingent role (NOT exercised this run): if Jacob's injection surfaces a defect, a Sonnet subagent fixes `build-queue.ps1` (Part 1's file), the orchestrator re-reviews/re-commits, and Jacob re-runs the failing scenario.
+- On Jacob's all-pass, the SPEC `**Status:**` flips Draft → Complete (left as Draft now; that flip is Jacob's gate).
+- **Review verdict:** N/A (no code authored; docs-only note). The fault-injection verdict is owned by Jacob's handoff.
