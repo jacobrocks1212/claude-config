@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: research-prompt-leaks-identity-doc-meta
-status: Ready
+status: In-progress
 created: 2026-06-25
 complexity: complex
 phases: [1]
