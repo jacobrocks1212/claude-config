@@ -1630,6 +1630,28 @@ _VERIFICATION_SECTION_RE = re.compile(
 )
 
 
+# Bold subsection headers that introduce genuine IMPLEMENTATION work (`- [ ]`
+# deliverables), as opposed to verification rows or prose. Entering one ENDS the
+# prior verification subsection's legacy scope: a ``**Deliverables:**`` /
+# ``**Implementation:**`` subsection placed AFTER a ``**Runtime Verification:**``
+# / seam-audit subsection within the same phase must NOT let its implementation
+# rows inherit the verification exemption (the escalation-corrective-phase shape
+# `/add-phase` produces — seam audit first, deliverables second — which otherwise
+# misroutes the feature straight to the MCP gate before the corrective code is
+# written; burned on `adhoc-clap-live-poly-mod-producer-feed` Phase 6, 2026-06-24).
+# DISTINCT from a prose bold like ``**Assessment:**`` / ``**Note:**`` (which must
+# PRESERVE the enclosing verification scope — see
+# test_verification_only_non_verification_bold_not_a_boundary): only a header
+# naming an implementation section ends the scope. A markdown ``#`` heading already
+# resets the scope structurally (the heading branch derives in_verification from
+# _VERIFICATION_SECTION_RE) — this regex closes the same gap for the BOLD-marker
+# subsection form the real AlgoBooth PHASES.md uses.
+_DELIVERABLES_SECTION_RE = re.compile(
+    r"\b(?:deliverable|implementation|work\s*unit|task)\w*\b",
+    re.IGNORECASE,
+)
+
+
 def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     """Return True iff every '- [ ]' line in PHASES.md is runtime-verification-only.
 
@@ -1707,14 +1729,25 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
                     in_superseded_phase = True
                     continue
                 # A bold subsection header enters verification scope via the
-                # marker (text-independent) OR the legacy regex. A non-matching
-                # bold without a marker (e.g. **Assessment:** / **Status:**) is
-                # prose structure, NOT a section boundary — preserve current scope.
+                # marker (text-independent) OR the legacy regex; an
+                # implementation-section header (**Deliverables:** etc.) EXITS it;
+                # any other non-matching bold (e.g. **Assessment:** / **Status:**)
+                # is prose structure, NOT a section boundary — preserve current
+                # scope.
                 if _VERIFICATION_ONLY_MARKER in line:
                     section_has_marker = True
                     current_header_text = bold_text
                 elif _VERIFICATION_SECTION_RE.search(bold_text):
                     in_verification = True
+                    section_has_marker = False
+                    current_header_text = bold_text
+                elif _DELIVERABLES_SECTION_RE.search(bold_text):
+                    # Implementation/deliverables subsection: rows beneath it are
+                    # genuine implementation work. End the prior verification scope
+                    # so they are NOT swept verification-only (the marker-based
+                    # exemptions — per-row marker / section_has_marker — are
+                    # unaffected; a genuinely-marked row beneath still exempts).
+                    in_verification = False
                     section_has_marker = False
                     current_header_text = bold_text
                 # else: do nothing (preserve current scope).

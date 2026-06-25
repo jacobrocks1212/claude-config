@@ -680,6 +680,63 @@ def test_verification_only_real_task_outside_still_false():
     )
 
 
+def test_verification_only_deliverables_after_verification_section_is_false():
+    """Implementation **Deliverables:** AFTER a verification subsection → False.
+
+    The escalation-corrective-phase shape /add-phase produces at retry_count >= 2:
+    a Full-chain Seam Audit / Runtime Verification subsection FIRST, then a
+    **Deliverables:** subsection with genuine implementation rows. Before the
+    _DELIVERABLES_SECTION_RE fix, the non-matching **Deliverables:** bold did NOT
+    reset in_verification, so the Fix rows under it inherited the verification
+    scope and were swept verification-only → True → lazy-state.py misrouted the
+    feature straight to the Step-9 MCP gate before the corrective code was
+    written (burned on adhoc-clap-live-poly-mod-producer-feed Phase 6, 2026-06-24).
+
+    A **Deliverables:** subsection must END the verification scope, so its
+    implementation rows count as remaining work → predicate returns False →
+    route to write-plan/execute-plan.
+    """
+    _guard()
+    text = (
+        "### Phase 6: Corrective\n"
+        "**Full-chain Seam Audit (escalation requirement):**\n"
+        "- [ ] <!-- verification-only --> Seam: reset_state clear probed-OK\n"
+        "**Deliverables:**\n"
+        "- [ ] Fix A (production): add ClapPluginState::clear_poly_mod_diagnostics\n"
+        "- [ ] Fix B (scenario): edit both scenario copies\n"
+        "**MCP Integration Test Assertions:**\n"
+        "- [ ] <!-- verification-only --> a2/a3 PASS — baseline dormant\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is False, (
+        f"expected False (implementation Deliverables after a verification "
+        f"subsection must NOT be swept verification-only), got {result}."
+    )
+
+
+def test_verification_only_deliverables_then_verification_still_true():
+    """**Deliverables:** with ALL rows checked, then a verification subsection
+    with only verification rows → True (no implementation work remains).
+
+    Confirms the _DELIVERABLES_SECTION_RE reset does not over-reach: once the
+    implementation rows are ticked, a following verification subsection's
+    unchecked rows are still correctly exempt.
+    """
+    _guard()
+    text = (
+        "### Phase 6: Corrective\n"
+        "**Deliverables:**\n"
+        "- [x] Fix A (production): implemented\n"
+        "- [x] Fix B (scenario): implemented\n"
+        "**Runtime Verification:**\n"
+        "- [ ] assert mod_engaged true while sounding\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (only verification rows remain unchecked), got {result}."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests: fence-awareness — _unchecked_wus_in_plan_scope
 # ---------------------------------------------------------------------------
@@ -15403,6 +15460,9 @@ _TESTS = [
     ("test_verification_only_bold_marker_format_preserved", test_verification_only_bold_marker_format_preserved),
     ("test_verification_only_heading_form_with_assessment_bold", test_verification_only_heading_form_with_assessment_bold),
     ("test_verification_only_real_task_outside_still_false", test_verification_only_real_task_outside_still_false),
+    # deliverables-after-verification fix: remaining_unchecked_are_verification_only
+    ("test_verification_only_deliverables_after_verification_section_is_false", test_verification_only_deliverables_after_verification_section_is_false),
+    ("test_verification_only_deliverables_then_verification_still_true", test_verification_only_deliverables_then_verification_still_true),
     # fence-awareness: _unchecked_wus_in_plan_scope
     ("test_unchecked_wus_in_scope_skips_fenced", test_unchecked_wus_in_scope_skips_fenced),
     ("test_unchecked_wus_in_scope_real_labels_returned", test_unchecked_wus_in_scope_real_labels_returned),
