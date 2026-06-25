@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: research-prompt-leaks-identity-doc-meta
-status: In-progress
+status: Complete
 created: 2026-06-25
 complexity: complex
 phases: [1]
@@ -88,8 +88,8 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 
 ## Work Units
 
-- [ ] WU-1 — Add the preamble-strip sub-step to `/spec` Phase 2 step 2 (convergence line)
-- [ ] WU-2 — Amend step 4's line-433 whitelist so it no longer exempts the self-describing preamble
+- [x] WU-1 — Add the preamble-strip sub-step to `/spec` Phase 2 step 2 (convergence line)
+- [x] WU-2 — Amend step 4's line-433 whitelist so it no longer exempts the self-describing preamble
 
 ---
 
