@@ -31,8 +31,11 @@
             # scripts\*.ps1 below are personal, git-ignored tooling scripts — sourced here so all
             # worktrees share one copy. create-branch-worktree.ps1 and review-pr.ps1 are team-owned
             # (git-tracked) and intentionally NOT symlinked.
+            # hooks\normalize-crlf.ps1 is likewise personal + git-ignored (.claude/ is gitignored by
+            # the Cognito repo) — versioned here so the EOL hook is reviewable and shared across worktrees.
             DotClaudeFiles = @(
                 'settings.json', 'settings.local.json',
+                'hooks\normalize-crlf.ps1',
                 'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md',
                 'scripts\build-filtered.ps1', 'scripts\test-filtered.ps1',
                 'scripts\client-build-filtered.ps1', 'scripts\client-test-filtered.ps1',
