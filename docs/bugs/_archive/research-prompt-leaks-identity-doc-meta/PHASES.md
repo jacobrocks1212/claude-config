@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — Phase 1 implementation landed (both `/spec` Phase 2 edits + lint/projection green); validation tail (/mcp-test → coverage audit → `__mark_fixed__`) owned by the state machine.
+**Status:** Fixed
 
 **MCP runtime:** not-required — docs/prose harness edit to a single `SKILL.md` (`/spec` Phase 2 steps 2 & 4); no app surface, no Tauri/MCP-reachable behavior. The only validation surface is the rendered prompt text the skill prose produces, verifiable by reading the amended skill prose against the strip contract.
 

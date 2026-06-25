@@ -2,9 +2,11 @@
 
 > `/spec` Phase 2 pastes the identity summary doc *verbatim* into the Gemini research prompt, carrying the doc's own self-describing preamble (artifact-naming H1 + maintainer provenance blockquotes) instead of only the actual product identity.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-25
+**Fixed:** 2026-06-25
+**Fix commit:** 85b9ade
 **Placement:** docs/bugs/research-prompt-leaks-identity-doc-meta
 **Related:** `user/skills/spec/SKILL.md` Phase 2 (identity-prepend resolution, steps 2 & 4); `user/skills/ingest-research/SKILL.md` (downstream consumer of `RESEARCH_PROMPT.md`)
 
