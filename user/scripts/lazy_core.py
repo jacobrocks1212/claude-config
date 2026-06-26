@@ -9674,6 +9674,19 @@ _MULTI_COMMIT_DISPATCH_SKILLS: frozenset[str] = frozenset({
     "write-plan",
     "plan-feature",
     "plan-bug",
+    # Spec authoring dispatch (2026-06-25 recurrence: begin_head_sha=641e96163faa,
+    # sub_skill='spec', budget=1, 2 commits). /spec is multi-phase and a single
+    # dispatched cycle legitimately commits more than once — most acutely a STUB
+    # feature's Phase 1, which (a) locks in the baseline SPEC over the
+    # auto-generated stub, then (b) retires the stub markers and advances to
+    # needs-research (the exact two commits that tripped: `9def1bfab docs(...):
+    # /spec Phase 1 — lock in baseline over auto-generated stub` + `a96d51df4
+    # docs(...): retire stub markers — baseline locked, advance to needs-research`).
+    # /spec-bug is the bug-pipeline investigation analog (evidence-gathering +
+    # investigation-spec commits), added alongside per the Round 31 plan-feature/
+    # plan-bug precedent of covering the bug analog at the same commit.
+    "spec",
+    "spec-bug",
     # Forward-advancing terminal pseudo-skills (receipt+flip + corrective-coverage).
     "__mark_complete__",
     "__mark_fixed__",

@@ -18063,6 +18063,46 @@ def test_detect_friction_planning_cycle_multi_commit_within_budget():
     assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
 
 
+def test_detect_friction_spec_cycle_multi_commit_within_budget():
+    """Hardening 2026-06-25 recurrence (key-detection): the /spec authoring dispatch
+    legitimately commits MORE THAN ONCE — /spec is multi-phase, and a STUB feature's
+    Phase 1 commits the baseline-lock SPEC over the auto-generated stub AND then retires
+    the stub markers / advances to needs-research (two commits in one dispatched cycle:
+    `9def1bfab /spec Phase 1 — lock in baseline over auto-generated stub` + `a96d51df4
+    retire stub markers — baseline locked, advance to needs-research`). With `spec`
+    absent from `_MULTI_COMMIT_DISPATCH_SKILLS` it defaulted to budget 1, so a normal
+    2-commit spec cycle tripped `unexpected-commits` (`begin_head_sha=641e96163faa,
+    sub_skill='spec', budget=1`, HEAD advanced 2 commits). This is the SAME missing-row
+    defect class Round 15 fixed for `execute-plan`, Rounds 16/17 for the pseudo-skills,
+    the `mcp-test` row, and Round 31's planning rows; the spec/spec-bug membership closes
+    it. /spec-bug is the bug-pipeline investigation analog, covered alongside per the
+    Round 31 plan-feature/plan-bug precedent. A genuine runaway (>3) still trips."""
+    _guard()
+    marker = {
+        "feature_id": "key-detection", "nonce": "n",
+        "run_started_at": "2026-06-25T00:00:00Z",
+        "begin_head_sha": "641e96163faa",
+    }
+    for ss in ("spec", "spec-bug"):
+        got = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-25T00:00:00Z",  # identity intact
+            current_head_sha="a96d51df4000",
+            sub_skill=ss,
+            commits_since=2,  # baseline-lock commit + stub-marker-retire commit
+        )
+        assert got is None, (ss, got)
+    # A genuine runaway (>3) on the same sub_skill STILL trips — no gate weakened.
+    runaway = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-25T00:00:00Z",
+        current_head_sha="a96d51df4000",
+        sub_skill="spec",
+        commits_since=7,
+    )
+    assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
+
+
 def test_detect_friction_within_commit_budget_returns_none():
     """WU-2: a single commit (within the conservative budget) and intact identity
     → None."""
@@ -18155,18 +18195,27 @@ def test_multi_commit_dispatch_skills_registry_membership():
     legitimately commits more than once — the real skills plus the forward-advancing
     terminal pseudo-skills. Membership in this set (not a hand-maintained literal
     budget row) is what grants the multi-commit budget. A single-commit-only skill
-    (e.g. spec-bug / spec-phases) is NOT a member."""
+    (e.g. spec-phases) is NOT a member.
+
+    Hardening 2026-06-25 (key-detection recurrence): `spec` and `spec-bug` were ADDED
+    to the registry. The prior WU-1 assertion classified them single-commit, but live
+    evidence proved otherwise — a STUB feature's /spec Phase 1 commits the baseline-lock
+    SPEC over the auto-generated stub AND then retires the stub markers / advances to
+    needs-research in the SAME dispatched cycle (commits `9def1bfab` + `a96d51df4`,
+    95s apart, both Opus-co-authored Phase-1 work). `spec-bug` is the bug-pipeline
+    investigation analog, covered alongside per the Round 31 plan-feature/plan-bug
+    precedent. spec-phases remains single-commit (it commits only PHASES.md)."""
     _guard()
     assert isinstance(lazy_core._MULTI_COMMIT_DISPATCH_SKILLS, frozenset)
     expected = {
         "execute-plan", "retro-feature", "mcp-test",
         "write-plan", "plan-feature", "plan-bug",
+        "spec", "spec-bug",
         "__mark_complete__", "__mark_fixed__",
     }
     assert set(lazy_core._MULTI_COMMIT_DISPATCH_SKILLS) == expected, \
         lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
-    # Single-commit-only dispatch identities are NOT members.
-    assert "spec-bug" not in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
+    # spec-phases remains single-commit-only (commits only PHASES.md) → NOT a member.
     assert "spec-phases" not in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
     # The uniform multi-commit ceiling is a named constant (not a magic literal).
     assert lazy_core._CYCLE_COMMIT_MULTI == 3
@@ -22469,6 +22518,8 @@ _TESTS = _TESTS + [
      test_detect_friction_mcp_test_cycle_multi_commit_within_budget),
     ("test_detect_friction_planning_cycle_multi_commit_within_budget",
      test_detect_friction_planning_cycle_multi_commit_within_budget),
+    ("test_detect_friction_spec_cycle_multi_commit_within_budget",
+     test_detect_friction_spec_cycle_multi_commit_within_budget),
     ("test_detect_friction_meta_cycle_exempt_from_unexpected_commits",
      test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
     ("test_detect_friction_over_budget_commits",
