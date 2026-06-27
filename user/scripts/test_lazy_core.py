@@ -17990,22 +17990,27 @@ def test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget():
 
 
 def test_detect_friction_mcp_test_cycle_multi_commit_within_budget():
-    """Hardening 2026-06-16 recurrence (mcp-audio-quality-observability): the Step-9
-    `/mcp-test` validation cycle legitimately commits MORE THAN ONCE — the engine's
-    audited mechanics-only self-heal (a `heals[]` scenario/tool-methods edit) lands
-    separately from the terminal sentinel + PHASES reconcile. With `mcp-test` absent
-    from the budget table it defaulted to 1, so a normal 2-commit validation cycle
-    re-tripped `unexpected-commits` (`begin_head_sha=a28085bb938e,
-    sub_skill='mcp-test', budget=1`, HEAD advanced 2 commits). This is the same
-    missing-row defect class Round 15 fixed for `execute-plan` and Rounds 16/17 for
-    the pseudo-skills; the `mcp-test: 3` row closes it. A genuine runaway (>3) still
-    trips — no gate weakened."""
+    """Hardening 2026-06-16 recurrence (mcp-audio-quality-observability) + 2026-06-26
+    magnitude recurrence (pattern-abstractions): the Step-9 `/mcp-test` validation
+    cycle legitimately commits MORE THAN ONCE — the engine's audited mechanics-only
+    self-heal (a `heals[]` scenario/tool-methods edit) lands separately from the
+    terminal sentinel + PHASES reconcile. Round 23 added `mcp-test` to the
+    multi-commit set (uniform ceiling 3), closing the MEMBERSHIP gap. But the real
+    worst-case cadence exceeds 3: the `pattern-abstractions` cycle
+    (`begin_head_sha=0dd654ae39ce`, budget=3, HEAD advanced 4) committed FOUR
+    legitimate mcp-test-owned units — self-heal (`4b9b3ddaa`) + a 2-part PHASES
+    reconcile (`0db5974e4` sub-phase RV ticks, `7b119b512` top-level Complete) +
+    an engine-VALIDATED.md schema correction (`d744204da`). The
+    `_MULTI_COMMIT_CEILING_OVERRIDE["mcp-test"] = 4` row closes that MAGNITUDE gap
+    while leaving every OTHER multi-commit skill at the uniform ceiling of 3. A
+    genuine mcp-test runaway (>4) still trips — no gate weakened."""
     _guard()
     marker = {
         "feature_id": "mcp-audio-quality-observability", "nonce": "n",
         "run_started_at": "2026-06-16T00:00:00Z",
         "begin_head_sha": "a28085bb938e",
     }
+    # Round-23 2-commit cadence (self-heal + sentinel/PHASES-reconcile) — still clean.
     got = lazy_core.detect_cycle_bracket_friction(
         marker,
         current_run_started_at="2026-06-16T00:00:00Z",  # identity intact
@@ -18014,7 +18019,22 @@ def test_detect_friction_mcp_test_cycle_multi_commit_within_budget():
         commits_since=2,  # self-heal commit + sentinel/PHASES-reconcile commit
     )
     assert got is None, got
-    # A genuine runaway (>3) on the same sub_skill STILL trips — no gate weakened.
+    # 2026-06-26 pattern-abstractions 4-commit cadence (self-heal + 2-part PHASES
+    # reconcile + VALIDATED.md correction) — within the per-skill ceiling of 4, clean.
+    pa_marker = {
+        "feature_id": "pattern-abstractions", "nonce": "n",
+        "run_started_at": "2026-06-26T00:00:00Z",
+        "begin_head_sha": "0dd654ae39ce",
+    }
+    pa_got = lazy_core.detect_cycle_bracket_friction(
+        pa_marker,
+        current_run_started_at="2026-06-26T00:00:00Z",  # identity intact
+        current_head_sha="d744204da000",
+        sub_skill="mcp-test",
+        commits_since=4,
+    )
+    assert pa_got is None, pa_got
+    # A genuine runaway (>4) on the same sub_skill STILL trips — no gate weakened.
     runaway = lazy_core.detect_cycle_bracket_friction(
         marker,
         current_run_started_at="2026-06-16T00:00:00Z",
@@ -18023,6 +18043,20 @@ def test_detect_friction_mcp_test_cycle_multi_commit_within_budget():
         commits_since=7,
     )
     assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
+    # The per-skill override is mcp-test-ONLY: another multi-commit member (spec)
+    # at 4 commits STILL trips against the uniform ceiling of 3 — the override does
+    # not leak the higher ceiling to other skills.
+    other_skill_4 = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-16T00:00:00Z",
+        current_head_sha="730a4df88d17",
+        sub_skill="spec",
+        commits_since=4,
+    )
+    assert (
+        other_skill_4 is not None
+        and other_skill_4["reason"] == "unexpected-commits"
+    ), other_skill_4
 
 
 def test_detect_friction_planning_cycle_multi_commit_within_budget():
@@ -18228,7 +18262,10 @@ def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
     membership, not from a hand-maintained literal table. This proves the
     missing-row defect CLASS is closed: registry membership ⇒ multi-commit budget,
     no manual budget-row append; and a skill ABSENT from the registry still defaults
-    to 1 so genuine runaways still trip."""
+    to 1 so genuine runaways still trip. A member MAY declare a higher worst-case
+    ceiling in `_MULTI_COMMIT_CEILING_OVERRIDE` (the MAGNITUDE dimension — e.g.
+    mcp-test=4); the class-closure loop below uses each skill's EFFECTIVE ceiling so
+    the override is exercised, not bypassed."""
     _guard()
     marker = {
         "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-22T00:00:00Z",
@@ -18256,10 +18293,15 @@ def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
 
     # (3) Class-closure: membership in the registry — not a literal-table row — is
     # what grants the multi-commit budget. Every registered name is budgeted
-    # multi-commit; one commit past the ceiling trips.
+    # multi-commit up to its EFFECTIVE ceiling (the per-skill override when one is
+    # declared, else the uniform `_CYCLE_COMMIT_MULTI`); one commit past that
+    # effective ceiling trips.
     for ss in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS:
-        assert _friction(ss, lazy_core._CYCLE_COMMIT_MULTI) is None, ss
-        over = _friction(ss, lazy_core._CYCLE_COMMIT_MULTI + 1)
+        ceiling = lazy_core._MULTI_COMMIT_CEILING_OVERRIDE.get(
+            ss, lazy_core._CYCLE_COMMIT_MULTI
+        )
+        assert _friction(ss, ceiling) is None, (ss, ceiling)
+        over = _friction(ss, ceiling + 1)
         assert over is not None and over["reason"] == "unexpected-commits", (ss, over)
 
 

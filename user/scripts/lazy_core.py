@@ -9629,6 +9629,48 @@ _CYCLE_COMMIT_BUDGET_DEFAULT = 1
 _CYCLE_COMMIT_MULTI = 3
 
 # ---------------------------------------------------------------------------
+# Per-skill ceiling OVERRIDE (commit-budget MAGNITUDE, not membership).
+#
+# `_MULTI_COMMIT_DISPATCH_SKILLS` above answers WHICH skills are multi-commit
+# (the membership SSOT). This map answers HOW MANY commits a specific skill's
+# WORST-CASE cadence legitimately makes, for the cases where the uniform
+# `_CYCLE_COMMIT_MULTI` ceiling of 3 is too low for a skill's own documented
+# cadence. A skill ABSENT from this map keeps the uniform ceiling — so this is
+# additive and never lowers any skill's budget.
+#
+# `mcp-test` (4): the Step-9 /mcp-test validation cycle's documented worst-case
+# cadence exceeds the original Round-23 "self-heal + sentinel/PHASES-reconcile"
+# 2-commit estimate. A real cycle (2026-06-26 `pattern-abstractions`,
+# begin_head_sha=0dd654ae39ce, budget=3, HEAD advanced 4 commits) committed FOUR
+# legitimate, non-overlapping mcp-test-owned units, ALL within the mcp-test SKILL
+# Step 3.4/Step 5 reconcile surface:
+#   1. `4b9b3ddaa` self-heal (scenario `unlock_master_editor` fix + verdict/artifact)
+#      + Phase-5 Runtime-Verification tick;
+#   2. `0db5974e4` PHASES reconcile — tick Phase 1-4 RVs covered by the Phase-5 run;
+#   3. `7b119b512` PHASES top-level Complete;
+#   4. `d744204da` correct the engine-written VALIDATED.md schema.
+# The PHASES reconcile (Step 5.2) legitimately fans out into sub-phase RV ticks +
+# the top-level Complete flip (two commits), and the engine-written sentinel may
+# need a schema correction — so the honest worst case is self-heal + 2-part
+# reconcile + sentinel correction = 4. Budget 3 was exactly one short. Raising the
+# SHARED `_CYCLE_COMMIT_MULTI` to 4 would loosen the runaway ceiling for `spec`,
+# `write-plan`, `plan-feature`, etc. — a per-skill override keeps everyone else at
+# 3 (no gate weakening) and gives only `mcp-test` its honest ceiling. The runaway
+# ceiling for `mcp-test` itself is unchanged in KIND — a cycle beyond its declared
+# cadence (>4) STILL trips `unexpected-commits`.
+#
+# NOTE — distinct from the `adhoc-derive-multi-commit-budget-from-dispatch-sites`
+# spin-off (harden Round 38): that bug targets MEMBERSHIP derivation (which skills
+# are multi-commit) and explicitly scopes OUT "any change to the friction-detection
+# thresholds or the runaway ceiling". This map is the orthogonal MAGNITUDE
+# dimension (how many commits a member legitimately makes) — see the over-fit
+# spin-off for the magnitude class below.
+# ---------------------------------------------------------------------------
+_MULTI_COMMIT_CEILING_OVERRIDE: dict[str, int] = {
+    "mcp-test": 4,
+}
+
+# ---------------------------------------------------------------------------
 # SSOT: the multi-commit dispatch-skill registry.
 #
 # `_MULTI_COMMIT_DISPATCH_SKILLS` names EVERY dispatch identity whose cycle
@@ -9877,12 +9919,17 @@ def detect_cycle_bracket_friction(
             budget = budget_override
         else:
             # Branch (3): DERIVE the budget from the `_MULTI_COMMIT_DISPATCH_SKILLS`
-            # registry SSOT — membership ⇒ the uniform multi-commit ceiling, else
-            # the single-commit default. No hand-maintained literal table to keep
-            # in sync (closes the recurring missing-row defect class).
+            # registry SSOT — membership ⇒ the multi-commit ceiling, else the
+            # single-commit default. No hand-maintained literal table to keep in
+            # sync (closes the recurring missing-row defect class). A member's
+            # ceiling is the uniform `_CYCLE_COMMIT_MULTI` UNLESS it declares a
+            # higher worst-case cadence in `_MULTI_COMMIT_CEILING_OVERRIDE` (the
+            # MAGNITUDE dimension — e.g. mcp-test's self-heal + 2-part reconcile +
+            # sentinel correction = 4); a non-member always gets the default.
+            ss = sub_skill or ""
             budget = (
-                _CYCLE_COMMIT_MULTI
-                if (sub_skill or "") in _MULTI_COMMIT_DISPATCH_SKILLS
+                _MULTI_COMMIT_CEILING_OVERRIDE.get(ss, _CYCLE_COMMIT_MULTI)
+                if ss in _MULTI_COMMIT_DISPATCH_SKILLS
                 else _CYCLE_COMMIT_BUDGET_DEFAULT
             )
         if commits_since > budget:
