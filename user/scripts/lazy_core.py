@@ -11363,6 +11363,15 @@ _HOST_CAPABILITY_REGISTRY: dict[str, object] = {
     "zimtohrli-toolchain": None,
     # A GPU device.
     "gpu": None,
+    # A motorized/MCU MIDI control surface (physical fader travel, MCU Device
+    # Query handshake byte observation). The device axis ($ALGOBOOTH_REAL_AUDIO_
+    # DEVICE) is AUDIO-only and cannot express this — a host with real audio but
+    # no MIDI surface MUST defer (not re-open) MIDI-hardware scenarios. Added for
+    # motorized-fader-sync, whose 2 hardware RV rows looped on the audio-axis
+    # device re-open (Round 40). The fix: features needing MIDI hardware declare
+    # `requires_host: midi-controller` + DEFERRED_REQUIRES_HOST.md, so a non-MIDI
+    # host defers cleanly (host-capability-saturated) instead of looping.
+    "midi-controller": None,
 }
 
 # Module-load assertion: every registered id is shape-valid (a typo in the
@@ -11502,6 +11511,13 @@ _HOST_CAPABILITY_PROBE_CONFIG: dict[str, dict] = {
     # (nvidia-smi exits 0 iff an NVIDIA GPU + driver are present). A host without
     # the binary reports absent — never a which()/exists() false positive.
     "gpu": {"kind": "binary", "argv": ["nvidia-smi", "-L"]},
+    # A motorized/MCU MIDI control surface, probed via an explicit env var
+    # (mirrors the real-audio-device env probe). A host with a motorized fader
+    # connected sets ALGOBOOTH_REAL_MIDI_DEVICE=1; absent ⇒ defer. An env probe
+    # (not live MIDI-port enumeration) is the conservative v1 — a virtual/aggregate
+    # MIDI port would false-positive "real hardware present" for the servo-travel
+    # assertion, exactly the false-certify the device axis guards against.
+    "midi-controller": {"kind": "env", "var": "ALGOBOOTH_REAL_MIDI_DEVICE"},
 }
 
 

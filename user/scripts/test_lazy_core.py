@@ -15224,6 +15224,35 @@ def test_host_capability_registry_keys_shape_valid():
         assert seed in reg, f"seed capability {seed!r} missing from registry"
 
 
+def test_host_capability_midi_controller_registered_and_env_probed():
+    """midi-controller is a registered host capability probed via the
+    ALGOBOOTH_REAL_MIDI_DEVICE env var (Round 40). The audio-axis device re-open
+    ($ALGOBOOTH_REAL_AUDIO_DEVICE) cannot express a MIDI-hardware-only deferral,
+    so a host with real audio but no motorized fader looped on the device re-open;
+    this capability lets such a feature defer cleanly via requires_host."""
+    _guard()
+    # Registered in the closed vocabulary + shape-valid.
+    assert "midi-controller" in lazy_core._HOST_CAPABILITY_REGISTRY
+    assert lazy_core._HOST_CAPABILITY_ID_RE.match("midi-controller")
+    # Bound to an env probe on ALGOBOOTH_REAL_MIDI_DEVICE (mirrors real-audio-device).
+    cfg = lazy_core._HOST_CAPABILITY_PROBE_CONFIG.get("midi-controller")
+    assert cfg == {"kind": "env", "var": "ALGOBOOTH_REAL_MIDI_DEVICE"}
+    # Present iff the bound probe returns truthy (injected, hermetic).
+    present = lazy_core.host_present_capabilities(
+        probes={"midi-controller": (lambda: True)}, cache=False
+    )
+    assert "midi-controller" in present
+    absent = lazy_core.host_present_capabilities(
+        probes={"midi-controller": (lambda: False)}, cache=False
+    )
+    assert "midi-controller" not in absent
+    # A feature declaring `requires_host: midi-controller` parses cleanly and is
+    # NOT an unknown-capability typo (fail-fast must accept it).
+    spec = "---\nrequires_host: midi-controller\n---\n# x\n"
+    assert lazy_core.parse_requires_host(spec, None) == {"midi-controller"}
+    assert lazy_core.unknown_capability_ids({"midi-controller"}) == set()
+
+
 def test_parse_requires_host_from_spec_frontmatter_only():
     """A list value in the SPEC frontmatter parses to the capability set."""
     _guard()
@@ -27285,6 +27314,10 @@ _TESTS = _TESTS + [
      test_deferred_requires_host_is_fail_closed_evidence_sentinel),
     ("test_utc_now_iso_format_z_suffix",
      test_utc_now_iso_format_z_suffix),
+    # Round 40 — MIDI-controller host capability (audio-axis device re-open could
+    # not express a MIDI-hardware-only deferral).
+    ("test_host_capability_midi_controller_registered_and_env_probed",
+     test_host_capability_midi_controller_registered_and_env_probed),
 ]
 
 
