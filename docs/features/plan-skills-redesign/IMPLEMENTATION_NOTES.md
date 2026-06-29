@@ -134,3 +134,26 @@ Swept all notes-mining phrasings across `user/skills/` with: `grep -rni "Impleme
 - `docs/features/plan-skills-redesign/PHASES.md` — Phase 5 deliverables checked off, Status → Complete
 - `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-1, WU-2 ticked
 - `docs/features/plan-skills-redesign/IMPLEMENTATION_NOTES.md` — Phase 5 notes (this block)
+
+## Phase 6 — Lighten the ground-truth gate (D5)
+
+#### Implementation Notes (Phase 6 — Batch 2, WU-3)
+**Completed:** 2026-06-29
+**Review verdict:** PASS (self-review; no nested-subagent dispatch in this harness — orchestrator is the writer, ground-truth = orchestrator VERIFY-anchor greps).
+**Work completed:**
+- Made the cheap integrity checks + assertion-vs-intent read the **default** per-WU gate; full-suite test re-run is now **conditional** (only on integrity mismatch). This closes the D5 "0/16 catch rate" cost.
+- `execution-contract.md`: replaced the Phase-2-anticipated `### Per-WU verification gate` placeholder with the real rules — `#### Default per WU` (cheap integrity checks + the MANDATORY assertion-vs-intent read) and `#### Conditional full-suite re-run` (only on integrity mismatch). Explicitly states the assertion-vs-intent read stays MANDATORY (the only mechanism that caught the one real corpus defect) and that the per-batch Step B.4 gate and propagation-triggered full suites are unaffected (this governs per-WU granularity only).
+- `subagent-review.md` Step 1.5: added the "Gate cost (D5)" framing pointing to the contract as policy home; restructured the per-report checklist so item 1 runs cheap integrity commands by default (with an explicit "do NOT re-run the test suite by default" line), item 3 makes the assertion-vs-intent read MANDATORY-always, and item 4 gates the full-suite re-run to integrity mismatch only. Renumbered the list cleanly to 1–6 (the pre-existing list had a 3/4 numbering quirk, now fixed).
+
+**Integration notes:**
+- Assertion-vs-intent read is non-negotiable and preserved verbatim in BOTH the contract default and the existing Step 2 TDD-discipline section — the escalation guard ("cannot encode the cheap default without dropping the assertion read") is satisfied: it was kept, not dropped.
+- Policy home is the contract; `subagent-review.md` carries the mechanics and references it (D2 single-sourcing upheld).
+
+**Pitfalls & guidance:**
+- A linter re-applied the edit mid-stream and left a duplicate `4.`/misordered list; corrected to 1–6 with the conditional re-run as item 4, "already complete" sanity check as item 5, mismatch enumeration as item 6.
+
+**Files modified (Batch 2):**
+- `user/skills/_components/execution-contract.md` — `### Per-WU verification gate` D5 rules
+- `user/skills/_components/subagent-review.md` — Step 1.5 cheap-default + conditional test re-run
+- `docs/features/plan-skills-redesign/PHASES.md` — WU-3 deliverable checked off
+- `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-3 ticked

@@ -115,7 +115,7 @@ Phases 5 and 6 are independent of each other (both depend only on Phase 2). Exec
 
 - [x] WU-1 — (P5) Encode same-message disjoint batching + background builds + constraint guard
 - [x] WU-2 — (P5) Ensure `write-plan-cognito` authors disjoint-WU batches the executor can exploit
-- [ ] WU-3 — (P6) Default per-WU cheap integrity checks + assertion-vs-intent read; tests only on mismatch
+- [x] WU-3 — (P6) Default per-WU cheap integrity checks + assertion-vs-intent read; tests only on mismatch
 - [ ] WU-4 — (P6) 529 inline-fallback; keep review hybrid/scope-gated
 - [ ] WU-5 — (P6) Final non-regression gate: run `/write-plan` + `/write-plan-cognito` end-to-end; capture evidence
 

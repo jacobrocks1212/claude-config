@@ -179,7 +179,20 @@ A backgrounded build's output must **never** be consumed by a dependent agent be
 
 ### Per-WU verification gate
 
-> **Anticipated home for the D5 per-work-unit gate rules (added in a later phase of plan-skills-redesign).** Until those rules land, the baseline is the per-batch Quality Gates step (Step B.4) plus the per-WU plan checkbox discipline in the Completion section. The per-WU gate granularity — exactly which gate must pass before a single WU's checkbox may be ticked — will be specified here.
+The per-WU ground-truth gate (`subagent-review.md` Step 1.5) historically re-ran the **full test suite** for every work unit — a 0/16 defect-catch rate across the mined corpus, pure cost. The default is now **cheap**; the full-suite re-run is **conditional**.
+
+#### Default per WU — cheap integrity checks + the assertion-vs-intent read (MANDATORY)
+
+For each work unit, the per-WU verification is:
+
+1. **Cheap integrity checks** — `git status --short`, `wc -l <file>` for every file the subagent listed, and `grep -n '<symbol>' <file>` for every new symbol. Re-run from the orchestrator's shell and diff against the subagent's `GROUND-TRUTH OUTPUT` block. These are seconds-cheap and catch a falsified file/LOC/symbol report.
+2. **The assertion-vs-intent read** — read each test's assertion against the behavior its name/description claims (a green `..._ReturnsTrue` test that actually asserts `False`/`Unknown` is defective). **This stays MANDATORY** — it is the *only* mechanism that caught the single real defect in the corpus, and ground-truth diffing cannot catch it (the test genuinely passes). Never drop it to make the gate cheaper.
+
+These two together are the default gate. **Do NOT re-run the test suite by default.**
+
+#### Conditional full-suite re-run — only on integrity mismatch
+
+Re-run the test suite for a work unit **only when a cheap integrity check disagrees** with the subagent's report — a `wc -l`/`grep -n`/`git status` mismatch, a missing `GROUND-TRUTH OUTPUT` block, or an "already complete" claim contradicted by `git log`. A clean integrity check + a clean assertion-vs-intent read is sufficient to tick the WU checkbox. (The per-batch Quality Gates step — Step B.4 — still runs the project's gate at batch granularity, and the full suite still runs whenever a batch trips a propagation trigger; this section governs the *per-WU* granularity only.)
 
 ### Propagation Awareness Note
 

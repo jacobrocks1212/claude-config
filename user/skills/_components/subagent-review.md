@@ -36,24 +36,28 @@ If neither message appears in your output, you have violated the protocol. Go ba
 
 For every subagent report in this batch, locate the fenced `GROUND-TRUTH OUTPUT` block at the end of the report. If a subagent did not produce one, the verdict is automatically `NEEDS-REWORK` for that work unit — request the missing block and re-review when it arrives. Do NOT attempt to reconstruct it yourself.
 
+**Gate cost (D5 — cheap by default, tests only on mismatch).** The default per-WU gate is the **cheap integrity checks + the assertion-vs-intent read** — NOT a full-suite re-run. Re-running the whole test suite per WU caught 0 defects in 16 batches; it is conditional now. The policy home is the contract's **Per-WU verification gate** section (`~/.claude/skills/_components/execution-contract.md`); the mechanics are below.
+
 For each subagent report that DID produce a block:
 
-1. **Re-run every command in the block yourself**, fresh, from the orchestrator's shell — do not trust the pasted output. Specifically:
+1. **Re-run the cheap integrity commands yourself** (default — always), fresh, from the orchestrator's shell — do not trust the pasted output. Specifically:
    - `git status --short`
    - `wc -l <file>` for every file the subagent listed
    - `grep -n '<symbol>' <file>` for every new symbol the subagent listed
-   - The same test runner one-liner
+   - **Do NOT re-run the test suite at this step by default** — that is conditional (item 4 below).
 2. **Diff your output against the subagent's pasted block.** Compare line by line.
-3. **Any mismatch is a falsified report.** Mismatches include:
-   - Off-by-one (or larger) LOC counts in `wc -l`
-   - Missing grep matches (subagent claimed `grep -n` returned a hit; your fresh run returns nothing or a different line number)
-   - Test counts that don't match (passed/failed/ignored differ from the subagent's paste)
-   - `git status --short` entries that don't match (extra files, missing files, different status flags)
-4. **"Already complete" sanity check.** If the subagent claimed any deliverable was "already complete before my work" or "done in a prior session," run:
+3. **Read each test's assertion against its name/intent (MANDATORY — always, even when integrity checks are clean).** This is the assertion-vs-intent read: a green test whose assertion contradicts the behavior its name claims (e.g. a `..._ReturnsTrue` test that asserts `False`/`Unknown`) is **defective** → `NEEDS-REWORK`. Ground-truth diffing cannot catch this because the test genuinely passes — so this read is the load-bearing default check, not a fallback. It is the only mechanism that caught the single real defect in the corpus; never skip it.
+4. **Conditional full-suite re-run — only on integrity mismatch.** If (and only if) a cheap integrity check in item 1/2 disagrees with the subagent's report — a `wc -l`/`grep -n`/`git status` mismatch, a missing block, or an "already complete" claim contradicted by `git log` — re-run the same test runner one-liner the subagent used and diff its PASS/FAIL counts. A clean integrity diff + a clean assertion-vs-intent read needs no test re-run.
+5. **"Already complete" sanity check.** If the subagent claimed any deliverable was "already complete before my work" or "done in a prior session," run:
    ```
    git log -1 --format='%H %cI %s' -- <file>
    ```
    for each file involved. If the most recent commit is from the current session (e.g., within the last hour, or after the session start timestamp), the "already complete" claim is almost certainly the subagent misreading its own diff. Treat the claim as falsified and the verdict as `NEEDS-REWORK`.
+6. **Any mismatch is a falsified report.** Mismatches include:
+   - Off-by-one (or larger) LOC counts in `wc -l`
+   - Missing grep matches (subagent claimed `grep -n` returned a hit; your fresh run returns nothing or a different line number)
+   - Test counts that don't match (passed/failed/ignored differ from the subagent's paste)
+   - `git status --short` entries that don't match (extra files, missing files, different status flags)
 
 Record the gate outcome explicitly. One of:
 

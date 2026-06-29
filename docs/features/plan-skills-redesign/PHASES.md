@@ -243,7 +243,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 **Prerequisites.** Phase 2 (gate policy lives in `execution-contract.md` / `subagent-review.md`).
 
 **Deliverables.**
-- [ ] Default per-WU verification: `git status` / `wc -l` / `grep -n` integrity checks + the assertion-vs-intent read. Re-run tests **only on integrity mismatch**.
+- [x] Default per-WU verification: `git status` / `wc -l` / `grep -n` integrity checks + the assertion-vs-intent read. Re-run tests **only on integrity mismatch**.
 - [ ] 529 inline-fallback: after 1–2 failed review-subagent dispatch attempts (API 529), fall back to inline review immediately (fixes the ~16-min retry burn).
 - [ ] Keep the review mechanism hybrid/scope-gated (small batches inline, larger via review subagent at the orchestrator's model).
 - [ ] **Final non-regression gate (owns SPEC "Healthy parts not regressed", §Validation):** run `/write-plan` (and `/write-plan-cognito`) end-to-end and confirm the healthy parts all still fire — partitioning, pre-draft `[VERIFY:]` anchor gates, dirty-tree handling, pre-dispatch drift reconciliation, Tasks recovery anchor, typegen seam, right-sized builds. Capture the pre-draft gate output + a generated plan as evidence.
