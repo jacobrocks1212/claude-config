@@ -2,7 +2,7 @@
 
 > Decomposition of `SPEC.md` (Plan-Skills Redesign). Six phases, ordered by dependency. Each is independently testable; phases 3→4 and the D2-dependent phases (5, 6) carry explicit prerequisites. This is harness-internals work in `claude-config/` — no Cognito product code, no `/msbuild`/`/mstest`. Verification is Python unit tests (`pytest user/scripts/test_*.py`), the projection/lint scripts, and `setup.ps1 check`.
 
-**Status:** Phases 1–4 Complete (all deliverables landed; Phases 5–6 pending)
+**Status:** Complete — all 6 phases landed (D1–D5). Final non-regression gate confirms healthy parts not regressed.
 **Spec:** `./SPEC.md`
 **Last updated:** 2026-06-29
 
@@ -238,6 +238,8 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 ## Phase 6 — Lighten the ground-truth gate (D5)
 
+**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 6)
+
 **Goal.** Stop re-running the full suite per WU (0/16 catch rate); make the cheap integrity + assertion read the default.
 
 **Prerequisites.** Phase 2 (gate policy lives in `execution-contract.md` / `subagent-review.md`).
@@ -246,7 +248,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 - [x] Default per-WU verification: `git status` / `wc -l` / `grep -n` integrity checks + the assertion-vs-intent read. Re-run tests **only on integrity mismatch**.
 - [x] 529 inline-fallback: after 1–2 failed review-subagent dispatch attempts (API 529), fall back to inline review immediately (fixes the ~16-min retry burn).
 - [x] Keep the review mechanism hybrid/scope-gated (small batches inline, larger via review subagent at the orchestrator's model).
-- [ ] **Final non-regression gate (owns SPEC "Healthy parts not regressed", §Validation):** run `/write-plan` (and `/write-plan-cognito`) end-to-end and confirm the healthy parts all still fire — partitioning, pre-draft `[VERIFY:]` anchor gates, dirty-tree handling, pre-dispatch drift reconciliation, Tasks recovery anchor, typegen seam, right-sized builds. Capture the pre-draft gate output + a generated plan as evidence.
+- [x] **Final non-regression gate (owns SPEC "Healthy parts not regressed", §Validation):** run `/write-plan` (and `/write-plan-cognito`) end-to-end and confirm the healthy parts all still fire — partitioning, pre-draft `[VERIFY:]` anchor gates, dirty-tree handling, pre-dispatch drift reconciliation, Tasks recovery anchor, typegen seam, right-sized builds. Capture the pre-draft gate output + a generated plan as evidence. (Evidence: post-redesign skill-body audit — see IMPLEMENTATION_NOTES § Phase 6 Batch 4.)
 
 **Testing strategy.** Per-WU verification transcript shows cheap checks + assertion read, no full-suite run unless an integrity check disagrees. Simulate a review-subagent 529 → falls back to inline within 1–2 strikes, no multi-minute retry loop. The final non-regression gate (above) exercises the §Validation "Healthy parts not regressed" row directly — no prior phase owned it, so it lands here as the terminal check.
 

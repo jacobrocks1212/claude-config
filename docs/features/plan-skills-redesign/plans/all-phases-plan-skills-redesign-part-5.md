@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: plan-skills-redesign
-status: Ready
+status: Complete
 created: 2026-06-29
 complexity: complex
 phases: [5, 6]
@@ -117,7 +117,7 @@ Phases 5 and 6 are independent of each other (both depend only on Phase 2). Exec
 - [x] WU-2 — (P5) Ensure `write-plan-cognito` authors disjoint-WU batches the executor can exploit
 - [x] WU-3 — (P6) Default per-WU cheap integrity checks + assertion-vs-intent read; tests only on mismatch
 - [x] WU-4 — (P6) 529 inline-fallback; keep review hybrid/scope-gated
-- [ ] WU-5 — (P6) Final non-regression gate: run `/write-plan` + `/write-plan-cognito` end-to-end; capture evidence
+- [x] WU-5 — (P6) Final non-regression gate: run `/write-plan` + `/write-plan-cognito` end-to-end; capture evidence
 
 ---
 

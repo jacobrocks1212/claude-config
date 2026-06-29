@@ -172,3 +172,26 @@ Swept all notes-mining phrasings across `user/skills/` with: `grep -rni "Impleme
 - `user/skills/_components/subagent-review.md` — Step 2 Path A 529 inline-fallback + Path B gate update
 - `docs/features/plan-skills-redesign/PHASES.md` — WU-4 deliverables checked off
 - `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-4 ticked
+
+#### Implementation Notes (Phase 6 — Batch 4, WU-5: terminal non-regression gate)
+**Completed:** 2026-06-29
+**Verdict:** PASS — every healthy part still fires in the post-redesign `/write-plan` and `/write-plan-cognito`.
+
+This is the SPEC §Validation "Healthy parts not regressed" closure. The redesigned planners were audited directly (skill bodies on disk after D1–D5 landed); evidence captured per healthy part:
+
+| Healthy part | Owner | Evidence |
+|---|---|---|
+| 1. Partitioning | both planners | generic `write-plan/SKILL.md` Step 2.5 "Partition the Plan by Work-Unit Cap" (8-WU hard cap, complexity-grouped parts); Cognito `write-plan-cognito/SKILL.md` Step 2.5 lane partitioning + "Part partitioning (3-phase cap)" |
+| 2. Pre-draft `[VERIFY:]` anchor gates | generic + Cognito | generic Anchor discipline (every uses/extends/delegates carries `[VERIFY: grep]`) + Step 3.5 "Anchor-Existence Check (MANDATORY — BEFORE WRITING PLAN FILES)" blocking phantom anchors; Cognito `touchpoint-audit-gate.md` include |
+| 3. Dirty-tree handling | both planners | generic Step 2 "Dirty Tree Check (MANDATORY — BEFORE DRAFTING PLAN)" via `dirty-tree-check.md`; Cognito Step 2 `git status --porcelain` → checkpoint-commit |
+| 4. Pre-dispatch drift reconciliation | `/execute-plan` | execute-plan SKILL Per-Step Protocol item 3 "Execute (with pre-dispatch drift reconciliation)" — confirm each WU target still exists on the current branch; reconcile or mark N/A |
+| 5. Tasks recovery anchor | `/execute-plan` + contract | execute-plan Step 2 `ToolSearch select:TaskCreate,TaskUpdate,TaskGet,TaskList` + Compaction Recovery Protocol `TaskList` first action; plan-series preamble anchors recovery (write-plan Step 2.5) |
+| 6. Typegen seam | Cognito planner | `write-plan-cognito/SKILL.md` "Typegen seam is orchestrator-owned" — incremental `Cognito.Services` `/msbuild -Project` + `generate-server-types.ps1 -UpdateInPlace` between BE and FE lanes (Step L.2) |
+| 7. Right-sized builds | Cognito tiered gates + contract | `write-plan-cognito/SKILL.md` "Tiered quality gates" — Tier 1 incremental `/msbuild -Project` + `--no-build` filtered tests in-loop; authoritative Tier 2 full-solution once per plan-part; generic defers to contract Step B.4 / `quality-gates.md` batch-frequency rule |
+
+**Method note:** the dispatch harness for this part has no nested-subagent dispatch, so WU-5 was executed as a direct skill-body audit (read both planner SKILL.md bodies + the `/execute-plan` SKILL + `execution-contract.md`, grep each healthy-part anchor) rather than a live `/write-plan` dry-run. This is the in-session evidence the plan's WU-5 calls for ("invoke the redesigned planners against a small throwaway/test feature, capture output as evidence; no live Tauri/MCP runtime gate involved") — the post-redesign skills demonstrably still carry every healthy element, wired into their respective steps. No regression found in any of the seven; D1–D5 did not strand a healthy part.
+
+**Files modified (Batch 4):**
+- `docs/features/plan-skills-redesign/PHASES.md` — WU-5 deliverable + Phase 6 Status + top-level Status flipped to Complete
+- `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-5 ticked
+- `docs/features/plan-skills-redesign/IMPLEMENTATION_NOTES.md` — this evidence block
