@@ -101,3 +101,36 @@ Swept all notes-mining phrasings across `user/skills/` with: `grep -rni "Impleme
 - `user/skills/_components/post-compact-reread.md`
 - `docs/features/plan-skills-redesign/PHASES.md` — Phase 4 deliverables checked off, Status → Complete
 - `docs/features/plan-skills-redesign/IMPLEMENTATION_NOTES.md` — Phase 4 notes appended
+
+## Phase 5 — Executor parallelism + background builds (D4)
+
+#### Implementation Notes (Phase 5)
+**Completed:** 2026-06-29
+**Review verdict:** PASS (self-review; this harness has no nested-subagent dispatch, so the orchestrator is the writer and ground-truth is the orchestrator's own VERIFY-anchor grep re-runs, not a falsifiable subagent report).
+**Work completed:**
+- Same-message file-disjoint batching (D4): added the `#### Same-message file-disjoint batching (MANDATORY)` subsection to the contract's `### Parallelism & background builds` section (the Phase-2-anticipated placeholder — extended, not restructured). Rule: provably file-disjoint WUs (plan batch table marks parallel AND no shared `Files to create/modify`) dispatch as multiple `Agent` blocks in ONE assistant message; seam classification gates what is disjoint; disjointness is a plan-author claim the executor exploits, never one it manufactures.
+- Background builds (D4): `#### Background builds (MANDATORY)` subsection — long/Tier-2/typegen builds run `run_in_background: true`, next independent agent dispatched while the build runs, poll `$HOME/.claude/state/build-queue/results/<seq>.json` `exit_code`. Builds stay a serial spine; only agent think/edit/test-author time overlaps; target ~1.5–2× wall-clock per phase, not unbounded fan-out.
+- Constraint guard (D4): `#### Constraint guard (MANDATORY)` — a backgrounded build's output is never consumed by a dependent agent before completion, enforced by the existing disjoint-file + seam-classification rules (no new queue machinery); a dependent (Sequenced) agent blocks on the build `exit_code` first.
+- `subagent-launch.md` (launch-mechanics twin): added a `### Same-Message Disjoint Batching (MANDATORY)` block before the existing Build Concurrency rule, a sentence tying Build Concurrency to the file-overlap rule, and a `### Background Builds` block. All three point to the contract section as the single-source policy home — launch component carries mechanics, contract carries policy (no duplication, preserves D2 single-sourcing).
+- WU-2 (`write-plan-cognito`): made disjointness machine-evident without changing lane semantics. Extended the `Parallel` seam-classification bullet, added a "Make disjointness machine-evident" paragraph (each Parallel-batch lane lists exact files; no two share a file; neither owns `server-types/**`), and reshaped the batch-structure template — `Parallel?` is now documented as the executor's same-message-dispatch signal and a new `Files (disjoint?)` column makes non-overlap machine-checkable.
+
+**OQ4 — long-build signature set (RESOLVED against the queue skills `/msbuild` `/nxbuild` `/mstest` `/nxtest`):**
+- **Background (Tier-2 / typegen / long):** full-solution `/msbuild` (no `-Project` — also the authoritative server-typegen trigger), `/msbuild -Test`, the typegen step's `Cognito.Services` build, `/nxbuild -All`, and any fan-out Nx library build (model.js → vuemodel → element-ui chain). Source of truth: msbuild/nxbuild SKILL.md step 4 ("if the build is expected to exceed 10 minutes, run with `run_in_background: true`").
+- **Do NOT background (fast, in-loop):** single-project `/msbuild -Project "<csproj>"`, targeted single-project `/nxbuild -Project`, and `--no-build` filtered tests (`/mstest -Filter …`, `/nxtest … -NoCoverage`).
+
+**Integration notes:**
+- Policy home is the contract; `subagent-launch.md` and `write-plan-cognito` reference it rather than re-stating it — editing one rule (the contract section) changes behavior everywhere (D2 invariant upheld).
+- The `Files (disjoint?)` batch-table column is additive — it does not alter the Cognito lane decomposition, only surfaces the disjointness proof the file-overlap rule already guaranteed so the WU-1 executor check can fire.
+
+**Pitfalls & guidance:**
+- The two contract placeholder sections from Phase 2 ("Parallelism & background builds" and "Per-WU verification gate") were extended in place — the blockquoted "Anticipated home …" preamble was replaced by the real rules, keeping the section heading and the trailing baseline bullets. Do NOT restructure the contract around these.
+
+**Quality gates:** (recorded in the Phase 5 batch commit; see gate run below)
+
+**Files modified:**
+- `user/skills/_components/execution-contract.md` — D4 rules added to `### Parallelism & background builds`
+- `user/skills/_components/subagent-launch.md` — same-message batching + background-build launch mechanics
+- `repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md` — machine-evident disjointness + batch-table alignment
+- `docs/features/plan-skills-redesign/PHASES.md` — Phase 5 deliverables checked off, Status → Complete
+- `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-1, WU-2 ticked
+- `docs/features/plan-skills-redesign/IMPLEMENTATION_NOTES.md` — Phase 5 notes (this block)

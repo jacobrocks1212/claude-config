@@ -132,9 +132,11 @@ A **lane** is a coarse, cohesive slice of one phase executed by a single Sonnet 
 Classify each phase **at plan time**:
 
 - **Sequenced** — the phase's backend deliverables touch any generated-contract source: classes with `[ExportToTypeScript]`, anything under `Cognito.Core/Model/` or `Cognito.Core/DataTransfer/`, or other types the frontend consumes via `libs/types/server-types/`. Execution order: backend lane → orchestrator typegen step → frontend lane.
-- **Parallel** — no generated-contract impact. Backend and frontend lanes dispatch concurrently in one message.
+- **Parallel** — no generated-contract impact. Backend and frontend lanes dispatch concurrently **in one assistant message** (the harness's only real-parallelism path; see the executor contract's **Parallelism & background builds** section). For the executor to exploit this, a `Parallel` batch must be machine-evidently file-disjoint — see the batch-structure rule in Step 3.
 
 When unsure, classify Sequenced — a wrong Parallel costs rework; a wrong Sequenced costs only wall-clock.
+
+**Make disjointness machine-evident (so the D4 executor can same-message-batch).** The generated executor reads the contract's same-message file-disjoint batching rule: it dispatches a batch's lanes in ONE message ONLY when the plan proves they are file-disjoint. So every `Parallel`-seam batch you author MUST make that proof checkable without re-deriving it: each lane in the batch lists its exact `Files to create/modify`, and no two same-batch lanes share a file. Backend and frontend lanes are disjoint by construction (the file-overlap rule), and neither owns `Cognito.Web.Client/libs/types/server-types/**` (orchestrator-owned) — so a `Parallel` BE+FE batch is provably disjoint as long as both lanes' file lists are present and non-overlapping. Do not change lane semantics for this — just ensure the file lists are explicit enough that the executor's disjointness check passes. `Sequenced` batches stay one-lane-per-batch (the typegen seam separates them), so no same-message claim applies.
 
 ### Part partitioning (replaces the 8-WU cap)
 
@@ -255,11 +257,13 @@ The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic
 >
 > #### Batch structure
 >
-> | Batch | Lanes | Parallel? | Notes |
-> |-------|-------|-----------|-------|
-> | 1 | P[N]-BE [+ P[N]-FE if Parallel seam] | [Yes/Solo] | |
-> | [seam] | — typegen seam step — | — | Sequenced phases only |
-> | 2 | P[N]-FE | Solo | Sequenced phases only |
+> The `Parallel?` column is the executor's same-message-dispatch signal: `Yes` means the executor SHOULD emit this batch's lane agents as multiple `Agent` blocks in ONE message (it is provably file-disjoint); `Solo` means one lane. The `Files (disjoint?)` column makes the disjointness machine-checkable — list each same-batch lane's file set and assert non-overlap, so the executor's file-disjoint check passes without re-deriving it.
+>
+> | Batch | Lanes | Parallel? | Files (disjoint?) | Notes |
+> |-------|-------|-----------|-------------------|-------|
+> | 1 | P[N]-BE [+ P[N]-FE if Parallel seam] | [Yes if Parallel seam / Solo] | BE: [files]; FE: [files] — no shared file | |
+> | [seam] | — typegen seam step — | — | — | Sequenced phases only |
+> | 2 | P[N]-FE | Solo | FE: [files] | Sequenced phases only |
 
 **Lane Execution Protocol (Cognito override — write this entire section into the plan; the lane steps L.0–L.7, typegen seam, and tiered gates replace the contract's generic per-batch steps):**
 

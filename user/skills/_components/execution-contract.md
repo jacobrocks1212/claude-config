@@ -154,11 +154,28 @@ If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 
 ### Parallelism & background builds
 
-> **Anticipated home for the D4 parallelism / background-build rules (added in a later phase of plan-skills-redesign).** Until those rules land, the baseline parallelism policy is:
->
-> - Cross-feature phases may run in parallel only when dependencies are satisfied and no file conflicts exist (MANDATORY RULE 10).
-> - Within a phase, batches are sequential; work units within a batch run in parallel only when the plan's batch table marks them file-disjoint.
-> - Background-build and long-gate orchestration guidance will be specified here.
+The harness runs `Agent` dispatches concurrently **only when they appear in a single assistant message**. Successive single-agent dispatches across separate turns are serial (the 15–20-min-gap failure mode). This is the only real-parallelism path; the rules below exploit it without unbounded fan-out.
+
+#### Same-message file-disjoint batching (MANDATORY)
+
+- **When a batch's work units are provably file-disjoint, dispatch them as multiple `Agent` blocks in ONE assistant message** — not one per turn. "Provably disjoint" means the plan's batch table marks the work units parallel AND no two of them list any shared file in their `Files to create/modify`. The existing file-overlap rule (work units in the same batch must not share files) already guarantees disjoint-WU safety; you do not add a new check — you act on the disjointness the plan already encoded.
+- **Seam classification gates what is disjoint.** A plan may mark a batch `Sequenced` (e.g. backend → typegen → frontend) precisely because its lanes are *not* independent; never collapse a Sequenced batch into one message. Only `Parallel`-classified / file-disjoint batches are dispatched together.
+- **If the plan's batch table does not assert disjointness, do not infer it** — dispatch sequentially. Disjointness is a plan-author claim you exploit, not one you manufacture at execution time.
+
+#### Background builds (MANDATORY)
+
+- **Long / Tier-2 / typegen builds run `run_in_background: true`** from the orchestrator session; while the build runs, dispatch the next independent agent (or the next disjoint batch) rather than blocking the turn on the build. Poll the build's result afterward (for the queue skills: read `$HOME/.claude/state/build-queue/results/<seq>.json` and check the `exit_code` field; `seq` is printed in the `build-queue: enqueued as seq=N` line).
+- **The long-build signature set (settles OQ4 against the queue skills `/msbuild` `/nxbuild` `/mstest` `/nxtest`):**
+  - **Background these (Tier-2 / typegen / long):** full-solution `/msbuild` (no `-Project` — this is also the authoritative server-typegen trigger), `/msbuild -Test`, the typegen step's `Cognito.Services` build, `/nxbuild -All`, and any Nx library build that fans out through the model.js → vuemodel → element-ui dependency chain. These are exactly the builds the `/msbuild` and `/nxbuild` skills themselves flag with "if the build is expected to exceed 10 minutes, run with `run_in_background: true`."
+  - **Do NOT background these (fast, in-loop):** single-project `/msbuild -Project "<csproj>"`, targeted `/nxbuild -Project "<one project>"`, and `--no-build` filtered tests (`/mstest -Filter …`, `/nxtest … -NoCoverage`). They return in seconds-to-a-minute; backgrounding them just adds polling overhead.
+- **Builds remain a serial spine through the queue.** Backgrounding does not parallelize builds against each other — the build-queue still serializes them machine-wide. What overlaps is *agent think/edit/test-author time* with the build's wall-clock. The aim is **~1.5–2× wall-clock per phase, not unbounded fan-out** — do not dispatch more concurrent agents than the disjoint-file set supports.
+
+#### Constraint guard (MANDATORY)
+
+A backgrounded build's output must **never** be consumed by a dependent agent before that build completes. This is enforced by the **disjoint-file + seam-classification rules already in force** — not by new queue machinery: an agent dispatched alongside a backgrounded build must be file-disjoint from (and seam-independent of) whatever that build verifies. If the next unit of work depends on the build's output (e.g. a frontend lane consuming freshly regenerated types), it is Sequenced by definition — block on the build's `exit_code` and review its output before dispatching that dependent agent.
+
+- Cross-feature phases may run in parallel only when dependencies are satisfied and no file conflicts exist (MANDATORY RULE 10).
+- Within a phase, batches are sequential; work units within a batch run in parallel (same-message) only when the plan's batch table marks them file-disjoint per the rules above.
 
 ### Per-WU verification gate
 

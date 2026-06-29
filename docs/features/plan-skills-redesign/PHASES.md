@@ -222,11 +222,13 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Prerequisites.** Phase 2 (the rules live in `execution-contract.md`).
 
+**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 5)
+
 **Deliverables.**
-- [ ] Encode same-message file-disjoint batching in `execution-contract.md` / `subagent-launch.md`: provably disjoint WUs dispatched as multiple `Agent` blocks in one assistant message.
-- [ ] Encode background builds: long / Tier-2 / typegen builds run `run_in_background: true`; next independent agent dispatched while the build runs (settle OQ4 — which builds count as Tier-2/typegen — against the queue skills).
-- [ ] Constraint guard: a backgrounded build's output must not be consumed by a dependent agent before completion — enforced by disjoint-file + seam-classification rules, not new queue machinery.
-- [ ] Ensure `/write-plan-cognito` authors disjoint-WU batches the executor can exploit (seam classification gates what is parallelizable).
+- [x] Encode same-message file-disjoint batching in `execution-contract.md` / `subagent-launch.md`: provably disjoint WUs dispatched as multiple `Agent` blocks in one assistant message.
+- [x] Encode background builds: long / Tier-2 / typegen builds run `run_in_background: true`; next independent agent dispatched while the build runs (settle OQ4 — which builds count as Tier-2/typegen — against the queue skills).
+- [x] Constraint guard: a backgrounded build's output must not be consumed by a dependent agent before completion — enforced by disjoint-file + seam-classification rules, not new queue machinery.
+- [x] Ensure `/write-plan-cognito` authors disjoint-WU batches the executor can exploit (seam classification gates what is parallelizable).
 
 **Testing strategy.** Run a phase with ≥2 file-disjoint WUs → transcript shows multiple `Agent` blocks in ONE message; wall-clock < serial sum. Run a phase triggering a Tier-2/typegen build → build dispatched `run_in_background`, next independent agent dispatched before it completes.
 

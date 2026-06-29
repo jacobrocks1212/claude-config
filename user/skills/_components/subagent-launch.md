@@ -16,13 +16,21 @@ This addresses an observed failure mode where subagents pushed off-protocol comm
 
 ---
 
+### Same-Message Disjoint Batching (MANDATORY)
+
+The harness runs `Agent` dispatches concurrently **only when they appear in a single assistant message** — successive single-agent dispatches across separate turns run serially (the 15–20-min-gap failure mode). So when a batch's work units are **provably file-disjoint** (the plan's batch table marks them parallel AND no two list a shared file in their `Files to create/modify`), emit their `Agent` blocks in **ONE assistant message**, not one per turn. The file-overlap rule below already guarantees disjoint-WU safety — you act on the disjointness the plan encoded; you do not manufacture it. If the plan's batch table does not assert disjointness (or marks the batch `Sequenced`), dispatch sequentially. This is the launch-mechanics view of the contract's **Parallelism & background builds** policy (`~/.claude/skills/_components/execution-contract.md`) — that section is the policy home; follow it.
+
 ### Build Concurrency — Serialize Slow Backend Builds (MANDATORY)
 
 Subagents each run their own build to verify their work. When multiple agents in a batch build the **same slow, shared-output backend** concurrently (e.g. C#/.NET writing to a shared `bin\Debug`), they contend for CPU — slowing the whole machine — and for the output DLLs, producing spurious lock failures (MSB3027/MSB3021 "used by another process") that masquerade as logic regressions.
 
-**Rule:** if two or more work units in this batch modify the same heavyweight compiled backend (C#/.NET in particular), dispatch those agents **sequentially (one at a time), not in parallel** — wait for each to finish before launching the next. This applies to BOTH Phase A and Phase B below. Work units that touch only fast, independently-built targets (e.g. separate frontend packages, or a frontend WU running alongside a backend WU) may still run in parallel — the constraint is specifically "don't run two concurrent builds against the same slow shared backend output."
+**Rule:** if two or more work units in this batch modify the same heavyweight compiled backend (C#/.NET in particular), dispatch those agents **sequentially (one at a time), not in parallel** — wait for each to finish before launching the next. This applies to BOTH Phase A and Phase B below. Work units that touch only fast, independently-built targets (e.g. separate frontend packages, or a frontend WU running alongside a backend WU) may still run in parallel — the constraint is specifically "don't run two concurrent builds against the same slow shared backend output." This is the per-WU twin of the file-overlap rule: same-message batching applies to file-disjoint WUs that do not also collide on the same slow shared backend output.
 
 When in doubt for C# batches, serialize. The wall-clock cost of sequential backend builds is far lower than the cost of lock-contention reruns plus the machine slowdown.
+
+### Background Builds — Overlap the Build Spine (MANDATORY)
+
+Long / Tier-2 / typegen builds run with `run_in_background: true` from the orchestrator session; while the build runs, dispatch the next **independent** agent (or next disjoint batch) instead of blocking the turn on the build. Background the heavy builds — full-solution `/msbuild` (no `-Project`, also the server-typegen trigger), `/msbuild -Test`, the typegen `Cognito.Services` build, `/nxbuild -All`, and fan-out Nx library builds; do NOT background the fast in-loop ones (`/msbuild -Project`, single-project `/nxbuild`, `--no-build` filtered `/mstest`/`/nxtest`). **Constraint guard:** an agent dispatched alongside a backgrounded build MUST be file-disjoint from and seam-independent of whatever that build verifies — a dependent (Sequenced) agent waits on the build's `exit_code` first. Full policy + the OQ4 signature set live in the contract's **Parallelism & background builds** section (`~/.claude/skills/_components/execution-contract.md`).
 
 ---
 
