@@ -28,11 +28,11 @@
 **Minimum Verifiable Behavior:** running `/cognito-pr-review:spot-check <small PR id>` produces `PR-{id}-spot-{YYYY-MM-DD-HHMM}.md` in the resolved cog-docs item dir, and a clean small PR completes with **zero** subagent dispatches.
 
 **Runtime Verification** *(checked by a real command run — NOT by an implementation agent):*
-- [ ] <!-- verification-only --> `/cognito-pr-review:spot-check <small PR>` writes a `PR-{id}-spot-{datetime}.md` artifact in the cog-docs item dir, in synthesizer-v2 format, with a header stating the reviewed scope.
+- [x] <!-- verification-only --> `/cognito-pr-review:spot-check <small PR>` writes a `PR-{id}-spot-{datetime}.md` artifact in the cog-docs item dir, in synthesizer-v2 format, with a header stating the reviewed scope.
 - [ ] <!-- verification-only --> A clean small PR completes with zero `investigation` dispatches; a PR with a subtle correctness change escalates exactly one `investigation` agent and folds its finding into the artifact.
 - [ ] <!-- verification-only --> `/cognito-pr-review:spot-check <id> last-commit` reviews only the latest commit's files; `since-review` resolves changes since the reviewer's last review (or falls back to `last-commit`, stated in the header).
 - [ ] <!-- verification-only --> Local mode (`/cognito-pr-review:spot-check` with uncommitted changes) writes to `.claude.local/reviews/`.
-- [ ] <!-- verification-only --> No `az`/ADO-MCP call occurs; no `REVIEWED.md` or `pending-calibration.json` is written; `knowledge/weights.yaml` is unchanged after a run.
+- [x] <!-- verification-only --> No `az`/ADO-MCP call occurs; no `REVIEWED.md` or `pending-calibration.json` is written; `knowledge/weights.yaml` is unchanged after a run.
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable runtime surface (plugin command authoring).
 
@@ -86,8 +86,8 @@
 **Minimum Verifiable Behavior:** after reload, `/cognito-pr-review:spot-check` is listed as an available command and the README/CLAUDE.md examples match the command's actual argument-hint.
 
 **Runtime Verification** *(checked by inspection / plugin reload):*
-- [ ] <!-- verification-only --> The plugin loads and `/cognito-pr-review:spot-check` appears in the command list.
-- [ ] <!-- verification-only --> README usage examples and the `CLAUDE.md` row match the Phase 1 `argument-hint` (no drift).
+- [x] <!-- verification-only --> The plugin loads and `/cognito-pr-review:spot-check` appears in the command list.
+- [x] <!-- verification-only --> README usage examples and the `CLAUDE.md` row match the Phase 1 `argument-hint` (no drift).
 
 **MCP Integration Test Assertions:** N/A — docs/metadata only.
 
