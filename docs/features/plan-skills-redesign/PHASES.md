@@ -122,7 +122,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 **Prerequisites.** Phase 1 (hard — the rename must precede: this phase edits `write-plan-cognito/SKILL.md`, which does not exist until Phase 1 renames it).
 
 **Deliverables.**
-- [ ] Author `user/skills/_components/execution-contract.md` extracting: EXECUTION MODEL, COMPONENT LOADING PROTOCOL, MANDATORY RULES, Execution Protocol / Phase-Selection Loop / per-batch steps, Blocking Issue Protocol, Completion, Work Log (sourced from generic `write-plan` L252–554).
+- [x] Author `user/skills/_components/execution-contract.md` extracting: EXECUTION MODEL, COMPONENT LOADING PROTOCOL, MANDATORY RULES, Execution Protocol / Phase-Selection Loop / per-batch steps, Blocking Issue Protocol, Completion, Work Log (sourced from generic `write-plan` L252–554).
 - [ ] Refactor generic `execute-plan/SKILL.md` to reference + read `execution-contract.md` (cacheable).
 - [ ] Refactor generic `write-plan/SKILL.md` to stop emitting the boilerplate sections; emit a one-line pointer to the component instead.
 - [ ] Apply the same pointer change to `write-plan-cognito/SKILL.md`.
@@ -131,6 +131,18 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 **Testing strategy.** Generate a plan via the redesigned `/write-plan` → assert it contains the pointer and **no** EXECUTION MODEL / MANDATORY RULES blocks; measure line-count delta vs an old plan (target ~32–44% smaller). Edit one rule in `execution-contract.md` and confirm a subsequent `/execute-plan` run reflects it with no plan regeneration.
 
 **Integration notes.** `execution-contract.md` becomes the home for the D4 (parallelism) and D5 (gate) rules added in phases 5–6 — author its structure with those sections anticipated.
+
+#### Implementation Notes (Phase 2 — Batch 1: WU-1)
+**Completed:** 2026-06-29
+**Review verdict:** PASS
+
+**Work completed:**
+- WU-1: Authored net-new `user/skills/_components/execution-contract.md` (249 lines), the single canonical home for the execution policy that `/write-plan` previously re-emitted verbatim into every generated plan. Extracted, in order, from generic `write-plan/SKILL.md` L252–554: EXECUTION MODEL table + HARD CONSTRAINT + dispatch pattern; COMPONENT LOADING PROTOCOL; Component Reference Card (with a note that a plan MAY override rows for non-default repos); MANDATORY RULES (1–12); Execution Protocol (Phase Selection Loop, Step 0, per-batch Steps B.0–B.6, Propagation Awareness, Post-Phase Steps); Blocking Issue Protocol; Completion; Work Log.
+- **Anticipated D4/D5 homes:** added two clearly-labeled placeholder sections — "Parallelism & background builds" (D4, Phase 5) and "Per-WU verification gate" (D5, Phase 6) — each carrying the current baseline policy and a note that the later phase extends rather than restructures it. This satisfies the integration note above.
+- **Round-trip proof:** the component is a clean leaf (no `!cat` of its own). Verified by a throwaway probe skill that `!cat`-included it: `project-skills.py` projected it (component count 92→93, errors: none) and the projected output contained the contract sections with zero unresolved `!cat`. Probe removed; projection restored to baseline (84 skills / 92 components / no errors).
+
+**Files modified:**
+- `user/skills/_components/execution-contract.md` — created (net-new)
 
 ---
 
