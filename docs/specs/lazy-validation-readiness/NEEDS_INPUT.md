@@ -95,3 +95,32 @@ target-repo work (AlgoBooth `scripts/mcp-test/`), since the durable fix needs
 engine support harden-harness cannot author. The skill-prose half can land in a
 follow-up `/harden-harness` round once the reset sequence is specified; this
 NEEDS_INPUT defers the placement choice to the operator.
+
+## Recurrence update — 2026-06-29 (Round 41)
+
+Decision 1 (heterogeneous device-axis) **recurred** and is now past the ≥2
+over-fit threshold. During a `/lazy-batch` run on the Windows workstation, TWO
+more features looped on the Step-9 audio-axis device re-open because their
+deferred scenarios need a **non-audio host capability**, not a real audio device:
+
+- **d5-ableton-link** — 5 multi-peer Link scenarios need a **2nd Ableton Link
+  peer** on the LAN (`peerCount:0`, no `mock_peers` tool). `step_repeat_count`
+  hit the ≥3 tripwire.
+- **non-windows-audio-hardening** — validation needs a **Linux/macOS host**
+  (`cfg(unix)` code, un-runnable on Windows).
+
+**Round-41 mechanical prevention landed** (commits `abeb1a1`, `b4d01fd`):
+registered `link-multi-peer` + `non-windows-host` capability ids, and added the
+DEVICE-vs-HOST-CAPABILITY distinguisher to the mcp-test SKILL + cycle-base-prompt
+so cycles route capability gaps to the host axis (`requires_host:` →
+`host-capability-saturated`) instead of writing `DEFERRED_REQUIRES_DEVICE`.
+
+**Still operator-owned (this Decision):** the prevention relies on cycles
+*following* the new guidance. The defense-in-depth structural options from
+Decision 1 remain open — (a) make the device-axis re-open **capability-aware**
+(only re-open scenarios that actually need a real audio device), and/or (b)
+**unify** the device axis into the host-capability axis (`real-audio-device` is
+already a registry capability — the device axis is its redundant special-case).
+Either makes a mis-classified `DEFERRED_REQUIRES_DEVICE` self-announce or be
+impossible, rather than depending on guidance adherence. The recurrence is the
+evidence that prevention-by-prose alone is insufficient long-term.
