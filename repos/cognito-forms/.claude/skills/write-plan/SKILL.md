@@ -13,8 +13,8 @@ Repo-scoped variant of `/write-plan` tuned for this repo's cost profile: slow ba
 
 - **Lane partitioning, not per-deliverable work units.** A phase's work is split into at most a few coarse lanes (default: one backend lane + one frontend lane), each executed by a single Sonnet agent. This minimizes build/test cycles — the dominant cost in this repo.
 - **TDD is inline in the lane briefing** — one agent writes failing tests, captures RED output, implements, captures GREEN output. No separate test-agent/impl-agent pipeline.
-- **Tiered quality gates:** Tier 1 (incremental project build + `--no-build` filtered tests) in-loop; the authoritative Tier 2 full `/msbuild` runs **once per plan-part** (plus on escalation triggers) — never per batch.
-- **Typegen seam is orchestrator-owned:** when a phase changes server-side types, the orchestrator runs an incremental `Cognito.Services` build + `generate-server-types.ps1 -UpdateInPlace` between the backend and frontend lanes. No full solution build is needed for type regeneration.
+- **Tiered quality gates:** Tier 1 (incremental project build via `/msbuild -Project` + `--no-build` filtered tests via `/mstest`/`/nxtest`) in-loop; the authoritative Tier 2 full-solution `/msbuild` runs **once per plan-part** (plus on escalation triggers) — never per batch. Every build/test routes through the queue skills (`/msbuild` `/mstest` `/nxbuild` `/nxtest`) — never raw `dotnet`/`npx nx`.
+- **Typegen seam is orchestrator-owned:** when a phase changes server-side types, the orchestrator runs an incremental `Cognito.Services` build (`/msbuild -Project`) + `generate-server-types.ps1 -UpdateInPlace` between the backend and frontend lanes. No full solution build is needed for type regeneration.
 - **No MCP integration test step** — this repo has no testable MCP surface.
 - **No auto-commits or pushes** — repo policy (`.claude/skill-config/commit-policy.md`) is that all git operations are manual.
 
@@ -168,8 +168,8 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > | Role | What it does | Allowed tools |
 > |------|-------------|---------------|
-> | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch lane agents, run the typegen seam step, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates/typegen only), `TaskCreate`/`TaskUpdate` |
-> | **Sonnet lane agent** | Write ALL source and test code for ONE lane — tests first (RED), then implementation (GREEN) | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
+> | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch lane agents, run the typegen seam step, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates/typegen only), `Skill` (build/test gates — `/msbuild` `/mstest` `/nxbuild` `/nxtest`), `TaskCreate`/`TaskUpdate` |
+> | **Sonnet lane agent** | Write ALL source and test code for ONE lane — tests first (RED), then implementation (GREEN) | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob`, `Skill` (for `/msbuild`, `/mstest`, `/nxtest` — the only sanctioned build/test path) |
 >
 > **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.cs`, `.ts`, `.vue`, `.js`, `.tsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, the plan file's frontmatter, `work-log.jsonl`. The ONLY source-adjacent artifact you regenerate directly is `Cognito.Web.Client/libs/types/server-types/**` — via the typegen script, never by hand.
 >
@@ -218,12 +218,12 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 > 1. ALL source and test code is written by Sonnet lane agents via the `Agent` tool. The orchestrator never edits source/test files. The ONLY exception: trivial PASS-WITH-FIXES items (a few lines).
 > 2. All lane-agent edits happen in the current worktree — NEVER create worktrees for agents.
 > 3. Every lane with testable behavior follows inline TDD — the lane agent writes failing tests first and pastes RED then GREEN ground-truth output.
-> 4. Lane agents use Tier 1 verification commands only (incremental project build, `--no-build` filtered tests). Nobody runs a full `Cognito.sln` build except the orchestrator at part-end Tier 2 (or on an escalation trigger).
+> 4. Lane agents use Tier 1 verification commands only, routed through the queue skills: `/msbuild -Project "<csproj>"` for an incremental project build and `/mstest -Filter "ClassName~…"` / `/nxtest -Project … -Pattern … -NoCoverage` for filtered tests. Never raw `dotnet`/`npx nx`. Nobody runs a full-solution `/msbuild` (no `-Project`) except the orchestrator at part-end Tier 2 (or on an escalation trigger).
 > 5. Sequenced phases: the frontend lane is NOT dispatched until the typegen seam step completes and the server-types diff is reviewed.
 > 6. Every lane's output is reviewed (ground-truth re-run included) before PHASES.md is updated or the next batch launches.
 > 7. PHASES.md is updated after EACH batch completes (not deferred).
 > 8. NO git commits or pushes at any point — repo policy. All git operations are manual (see commit-policy component).
-> 9. The part-end Tier 2 gate (full `/msbuild` + filtered tests for all touched areas) is MANDATORY and 100%-pass before this plan part is reported complete.
+> 9. The part-end Tier 2 gate (full-solution `/msbuild` (no `-Project`) + filtered `/mstest`/`/nxtest` for all touched areas) is MANDATORY and 100%-pass before this plan part is reported complete.
 > 10. This plan is self-contained — follow it exactly without relying on external context.
 > 11. Before each step, `Read` the component files listed for that step from disk.
 
@@ -247,7 +247,7 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > #### Work Units (Lanes)
 >
-> For each lane: **Lane ID** (e.g. P2-BE), **Side** (backend/frontend), **Scope** (the PHASES.md checkbox items it covers, copied verbatim), **TDD** (yes/no), **Files to create/modify** (exact paths), **Test files** (exact paths), **Test expectations** (what tests assert), **Implementation goal**, **Spec requirements** (quoted/referenced), **Tier 1 verification commands** (the exact filtered build/test commands for this lane), **Batch** (1, 2, ...).
+> For each lane: **Lane ID** (e.g. P2-BE), **Side** (backend/frontend), **Scope** (the PHASES.md checkbox items it covers, copied verbatim), **TDD** (yes/no), **Files to create/modify** (exact paths), **Test files** (exact paths), **Test expectations** (what tests assert), **Implementation goal**, **Spec requirements** (quoted/referenced), **Tier 1 verification commands** (the exact queue-routed skill commands for this lane — `/mstest -Filter "ClassName~…"` for backend tests, `/nxtest -Project … -Pattern … -NoCoverage` for frontend tests, `/msbuild -Project "…"` for an incremental build; never raw `dotnet`/`npx nx`), **Batch** (1, 2, ...).
 >
 > #### Batch structure
 >
@@ -296,8 +296,8 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > After the backend lane passes review (Step L.3 runs for the backend lane FIRST in sequenced phases):
 >
-> 1. Incremental build of the Services chain (NOT the full solution):
->    `dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Services\Cognito.Services.csproj" -c Debug --no-restore -v minimal --nologo`
+> 1. Incremental build of the Services chain (NOT the full solution), queue-serialized + filtered:
+>    `/msbuild -Project "Cognito.Services/Cognito.Services.csproj"`
 > 2. Regenerate types in place:
 >    `powershell.exe -Command "cd 'C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client\libs\types\typegen'; ./generate-server-types.ps1 -UpdateInPlace"`
 > 3. Review the diff: `git status --short -- "Cognito.Web.Client/libs/types/server-types/"` then `git diff -- "Cognito.Web.Client/libs/types/server-types/"`. Confirm the type changes match the backend lane's contract changes — nothing missing, nothing unexpected. Unexpected diffs = treat as a backend-lane review finding (NEEDS-REWORK the backend lane).
@@ -309,7 +309,7 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > Read `~/.claude/skills/_components/subagent-review.md` and follow its complete protocol (including the Ground-Truth Verification Gate), plus `~/.claude/skills/_components/mount-site-verification.md` for new files.
 >
-> **Cognito gate-cost rules for the ground-truth re-run:** re-run the lane's test command exactly as pasted — it is already `--no-build` and filtered, so it is cheap. NEVER trigger a build as part of ground-truth verification. For inline-TDD lanes, the TDD-discipline checks read the lane agent's OWN pasted RED output as the red-state evidence — verify the failures were for the right reason (behavioral, not compile/setup errors) and that the GREEN run passes the same filter.
+> **Cognito gate-cost rules for the ground-truth re-run:** re-run the EQUIVALENT queue-routed test command the lane used — `/mstest -Filter "ClassName~<same filter>"` for backend, or `/nxtest -Project <same project> -Pattern <same pattern> -NoCoverage` for frontend. The falsified-report check compares PASS/FAIL outcome, not byte-identical output, so the equivalent skill command is sufficient. `/mstest` is already `--no-build` and filtered, so it is cheap. NEVER trigger a build (no full-solution `/msbuild`, no `/msbuild -Project`) as part of ground-truth verification. For inline-TDD lanes, the TDD-discipline checks read the lane agent's OWN pasted RED output as the red-state evidence — verify the failures were for the right reason (behavioral, not compile/setup errors) and that the GREEN run passes the same filter.
 >
 > #### Step L.4: Update PHASES.md (MANDATORY)
 >
@@ -330,7 +330,7 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 > ### Part Completion (after ALL phases in this plan part)
 >
 > 1. **Tier 2 authoritative gate (MANDATORY, 100% pass):**
->    - C# changes: `/msbuild` (full `Cognito.sln` — also regenerates server types authoritatively) → `/mstest` filtered to ALL test classes touched by this part (never unfiltered).
+>    - C# changes: `/msbuild` (full-solution, no `-Project` — also regenerates server types authoritatively) → `/mstest` filtered to ALL test classes touched by this part (never unfiltered).
 >    - Frontend changes: `/nxbuild` (touched projects) → `/nxtest` (touched projects).
 >    - Mixed: C# pair then frontend pair.
 >    - After the full build, check `git status --short -- "Cognito.Web.Client/libs/types/server-types/"` — any NEW diff means the typegen seam missed something; reconcile before proceeding.

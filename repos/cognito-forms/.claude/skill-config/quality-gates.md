@@ -6,27 +6,29 @@ The Cognito backend build is slow, and a full `Cognito.sln` build (`/msbuild`) a
 
 Build only the affected project, incrementally, then run filtered tests against the already-built output:
 
+All build/test runs route through the queue skills (`/msbuild` `/mstest` `/nxbuild` `/nxtest`) — they serialize machine-globally and emit filtered output. Never run raw `dotnet`/`npx nx`.
+
 - **C# (backend unit tests):**
-  - Build (incremental, no restore, test project only — NOT the solution):
-    `dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" -c Debug --no-restore -v minimal --nologo`
+  - Build (incremental, single project — NOT the full solution):
+    `/msbuild -Project "Cognito.UnitTests/Cognito.UnitTests.csproj"`
   - Test (no rebuild, always filtered to the batch's class/area):
-    `dotnet test "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" -c Debug --no-build -v minimal --nologo --filter "FullyQualifiedName~<ClassUnderTest>"`
-  - Do **not** build `Cognito.sln` and do **not** run `/msbuild` in Tier 1. `--no-restore` is safe after the first build of the session; if a brand-new package reference was added, drop `--no-restore` for that one build only.
-- **Frontend:** targeted project test only — `/nxtest -Project "<project>" -Pattern "<path>" -NoCoverage` (or `npx nx test <project> -- --testPathPattern="<pattern>" --no-coverage`). Do **not** run `/nxbuild` in Tier 1 unless the batch changed generated/shared types.
+    `/mstest -Filter "ClassName~<ClassUnderTest>"`
+  - Do **not** run a full-solution `/msbuild` (no `-Project`) in Tier 1. The `-Project` form is the sanctioned incremental build path.
+- **Frontend:** targeted project test only — `/nxtest -Project "<project>" -Pattern "<path>" -NoCoverage`. Do **not** run `/nxbuild` in Tier 1 unless the batch changed generated/shared types.
 
-**Orchestrator re-runs in Tier 1 are limited to the review protocol's ground-truth verification** — re-running the agent's pasted, filtered `--no-build` test command once per work unit/lane to detect falsified reports. That re-run is cheap and required. What is forbidden in Tier 1: rebuilding, running broader filters than the agent used, or running additional independent test passes "to be sure". The authoritative orchestrator gate happens once, at Tier 2.
+**Orchestrator re-runs in Tier 1 are limited to the review protocol's ground-truth verification** — re-running the equivalent filtered `/mstest -Filter …` (or `/nxtest`) once per work unit/lane to detect falsified reports (PASS/FAIL comparison, not byte-identical output). `/mstest` is already `--no-build`, so the re-run is cheap and required. What is forbidden in Tier 1: rebuilding, running broader filters than the agent used, or running additional independent test passes "to be sure". The authoritative orchestrator gate happens once, at Tier 2.
 
-When you compose implementation/test agent prompts, give them the **Tier 1 commands above** as their verification command (targeted `.csproj` + `--no-build` test) — not `/msbuild` or a full `Cognito.sln` build.
+When you compose implementation/test agent prompts, give them the **Tier 1 skill commands above** as their verification commands (`/msbuild -Project "…"` + `/mstest -Filter …` / `/nxtest …`) — never raw `dotnet`/`npx nx` and never a full-solution `/msbuild`.
 
 #### Server-type regeneration does NOT require a full build
 
 `generate-server-types.ps1` reflects over already-built DLLs in `Cognito.Services/bin` — it compiles nothing itself. To regenerate types mid-plan after backend contract changes:
 
-1. `dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Services\Cognito.Services.csproj" -c Debug --no-restore -v minimal --nologo` (incremental — transitively rebuilds Core/Cognito only as needed)
+1. `/msbuild -Project "Cognito.Services/Cognito.Services.csproj"` (incremental — transitively rebuilds Core/Cognito only as needed; queue-serialized + filtered)
 2. `powershell.exe -Command "cd 'C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client\libs\types\typegen'; ./generate-server-types.ps1 -UpdateInPlace"`
 3. Review `git diff -- "Cognito.Web.Client/libs/types/server-types/"` against the backend contract changes.
 
-Do NOT run `/msbuild` just to regenerate types.
+Use the single-project `/msbuild -Project "…"` form, NOT a full-solution `/msbuild` — a full build is wasted work for type regeneration.
 
 #### Tier 2 — Authoritative gate (plan-part completion — MANDATORY, 100% pass, no exceptions)
 

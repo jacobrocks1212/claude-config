@@ -1,2 +1,0 @@
-# Capability namespaces for component filtering
-# One namespace per line — matches _components/{namespace}/ subdirectories

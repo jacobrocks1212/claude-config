@@ -24,8 +24,9 @@ Scripts use absolute paths in every example below so you never need to `cd` firs
 
 1. **Drive summary + top folders across C:\**
    ```powershell
-   powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\disk-cleanup\Scan-Disk.ps1" -Root 'C:/' -Depth 2 -MinSizeMB 500
+   powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\disk-cleanup\Scan-Disk.ps1" -Root 'C:/' -MinSizeMB 500
    ```
+   `Scan-Disk.ps1` has no `-Depth` parameter. Its knobs are `-Root`, `-TopFolders` (default 40), `-TopFiles` (default 30), `-MinSizeMB` (default 250), `-DrillIntoTop` (default 10), `-DrillMinSizeMB` (default 50), `-CsvOut`, `-ReportPath`. A single run already produces the top-level folder list, the top files, a drill-in of the top `-DrillIntoTop` folders, and a `Known disk hogs` section — so this one command covers most of the survey.
    Produces `C:\temp\scan-<root>.txt`. Look for:
    - `pagefile.sys` / `hiberfil.sys` (see Phase 4)
    - `C:\temp` (almost always disposable)

@@ -702,7 +702,7 @@ def _fmt_local(ts: str, tz: datetime.tzinfo | None = None) -> str:
     local = dt.astimezone(tz)
     hour12 = local.hour % 12 or 12
     ampm = "AM" if local.hour < 12 else "PM"
-    return f"{local.strftime('%d/%m')} at {hour12}:{local.strftime('%M')} {ampm}"
+    return f"{local.strftime('%m/%d')} at {hour12}:{local.strftime('%M')} {ampm}"
 
 
 def order_board(wis: list[dict], board_columns: list[str]) -> "OrderedDict[str, list]":

@@ -57,20 +57,18 @@
 
 # Build & Test Workflow
 
-All projects use SDK-style .csproj. `dotnet build` and `dotnet test` are the primary commands.
+**The build/test skills are the ONLY sanctioned way to build or test in this repo: `/msbuild`, `/mstest`, `/nxbuild`, `/nxtest`.** They route every build/test through the machine-global build queue, which serializes runs across worktrees/sessions and emits filtered output. Raw `dotnet build` / `dotnet test` / `npx nx test` run off-queue: they are blocked by a PreToolUse hook in Cognito worktrees, reintroduce the cross-worktree DLL-copy-lock contention (MSB3027/MSB3021) the queue exists to prevent, and dump unfiltered output into context. Do NOT invoke raw `dotnet`/`npx nx` to build or test — always use a skill. The raw command shapes shown below are reference only (the skills wrap them).
 
 ## Building
-```bash
-dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.sln" -verbosity:minimal
-```
-- **Prefer `/msbuild` skill** — runs filtered build showing only errors + summary
-- `dotnet build` restores by default; pass `--no-restore` to skip
+- **`/msbuild`** — full-solution filtered build (also regenerates server types). The authoritative build.
+- **`/msbuild -Project "<relative/path/to.csproj>"`** — fast single-project incremental build (path relative to repo root, e.g. `Cognito.UnitTests/Cognito.UnitTests.csproj`). The sanctioned targeted-compile path; use it in-loop instead of a full-solution build.
+- Underlying command (reference): `dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.sln" -verbosity:minimal`.
 
 ## Running Tests
+Use the **`/mstest` skill** — filtered test output (passed/failed tests, errors, summary), routed through the queue. Underlying command (reference only — do not run directly):
 ```bash
 dotnet test "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" --filter "ClassName~MyTestClass" --verbosity minimal
 ```
-- **Prefer `/mstest` skill** — runs filtered test output showing only passed/failed tests, errors, and summary
 - Default project: `Cognito.UnitTests` — **all** service/unit tests live here (including `EntryIndexServiceTests`, `PersonSubmissionIndexingTests`, `ShouldInvalidateIndexTests`, etc.)
 - `Cognito.Forms.UnitTests` is the **Selenium/browser integration** test project — only use `-TestDll "Cognito.Forms.UnitTests"` for browser-based tests
 - Filter syntax: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
@@ -79,6 +77,7 @@ dotnet test "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\C
 - **When removing/renaming a serialized or persisted property, the snapshot tests are the authority — not grep.** Snapshot/golden keys are transformed from the C# name (e.g. `Enabled` → `PeopleFormSettings_Enabled` in the schema snapshot, `Settings_PeopleForm_Enabled` in the OpenAPI snapshot). A grep for the source symbol will miss re-keyed fixtures. After the change, run the snapshot suite (`SchemaGeneratorTests`, `JsonUtility*SerializationTests`, etc.) and let failures enumerate every fixture that needs updating.
 
 ## Running Frontend Tests
+Use the **`/nxtest` skill** (queue-routed, filtered). Underlying command (reference only — do not run directly):
 ```bash
 cd "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client" && npx nx test <project> -- --testPathPattern="<pattern>" --no-coverage
 ```
@@ -94,9 +93,9 @@ For build verification in plans, use the `/msbuild` skill which runs the filtere
 /msbuild
 ```
 
-This runs `build-filtered.ps1` which shows only errors + summary (prevents context bloat).
+This runs `build-filtered.ps1` which shows only errors + summary (prevents context bloat). Pass `-Project "<csproj>"` for a fast single-project incremental build instead of the full solution.
 
-If running `dotnet build` directly, output may be verbose — prefer the skill for cleaner results.
+Do not run `dotnet build` directly — it bypasses the queue and is blocked by a hook in Cognito worktrees.
 
 ## Test Verification
 
@@ -107,7 +106,7 @@ For running backend tests, use the `/mstest` skill which runs the filtered test 
 
 This runs `test-filtered.ps1` which shows only passed/failed tests, errors, and summary (prevents context bloat).
 
-If running `dotnet test` directly, output may be verbose — prefer the skill for cleaner results.
+Do not run `dotnet test` directly — it bypasses the queue and is blocked by a hook in Cognito worktrees.
 
 ## Frontend Build Verification
 

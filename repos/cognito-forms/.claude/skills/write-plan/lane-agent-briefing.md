@@ -28,24 +28,26 @@ Work test-first within your lane:
 
 If your lane has deliverables with no testable behavior (pure config, scaffolding), implement them directly and say so in the report.
 
-## Verification Commands (Tier 1 — use these EXACTLY; never run a full solution build)
+## Verification Commands (Tier 1 — use these EXACTLY)
+
+All build/test runs MUST go through the queue-routed skills (`Skill` tool). They serialize machine-globally against other worktrees/sessions and emit filtered output. NEVER run raw `dotnet`/`npx nx` and NEVER run a full-solution `/msbuild` (no `-Project`).
 
 **Backend lane:**
 
-```powershell
-# Build (incremental, test project only — transitively builds what changed):
-dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" -c Debug --no-restore -v minimal --nologo
+```
+# Build (incremental, test project only — queue-serialized + filtered):
+/msbuild -Project "Cognito.UnitTests/Cognito.UnitTests.csproj"
 # Test (no rebuild, filtered to your lane's test classes):
-dotnet test "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" -c Debug --no-build -v minimal --nologo --filter "FullyQualifiedName~<YourTestClass>"
+/mstest -Filter "ClassName~<YourTestClass>"
 ```
 
-- Do NOT build `Cognito.sln`. Do NOT run unfiltered test projects. `--no-restore` is safe unless you added a brand-new package reference (then drop it for that one build).
-- If `bin\Debug\*.dll` is locked (MSB3027/MSB3021), a stale `testhost` holds it: `Get-Process testhost,dotnet -ErrorAction SilentlyContinue | Stop-Process` and rebuild.
+- `/mstest` is already `--no-build` + filtered. Do NOT pass `-Project` for the full solution and do NOT run unfiltered test projects.
+- DLL-lock contention (MSB3027/MSB3021) is handled by the queue — do not kill processes or work around it yourself; just rerun the skill.
 
 **Frontend lane:**
 
-```bash
-cd "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client" && npx nx test <nx-project> -- --testPathPattern="<pattern>" --no-coverage
+```
+/nxtest -Project <nx-project> -Pattern "<pattern>" -NoCoverage
 ```
 
 ## Hard Boundaries
@@ -53,7 +55,7 @@ cd "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client" && npx n
 - Touch ONLY files inside your lane scope. If correctness genuinely requires touching a file outside it, STOP work on that deliverable and report the conflict instead of editing.
 - Do NOT run `generate-server-types.ps1` or edit anything under `Cognito.Web.Client/libs/types/server-types/` — type regeneration is the orchestrator's job.
 - Do NOT commit, push, or run git mutations of any kind.
-- Do NOT run `/msbuild`, full `Cognito.sln` builds, or unfiltered test runs.
+- Build and test ONLY through the queue-routed skills (`/msbuild -Project …`, `/mstest -Filter …`, `/nxtest …`). Never run raw `dotnet`/`npx nx`, never a full-solution `/msbuild` (no `-Project`), and never an unfiltered test run.
 
 ## Report Format (MANDATORY)
 
@@ -65,6 +67,6 @@ End your report with:
    - `git status --short`
    - `wc -l <file>` for every file you created or modified
    - `grep -n '<symbol>' <file>` for every new public symbol you added
-   - your Tier 1 test command and its full pass/fail summary
+   - your Tier 1 test skill command (`/mstest -Filter …` or `/nxtest -Project … -Pattern … -NoCoverage`) and its full pass/fail summary
 
-The orchestrator independently re-runs every command in this block. Any mismatch between your paste and the fresh re-run is treated as a falsified report and the lane is reworked — paste real output only.
+The orchestrator independently re-runs the equivalent skill command. Any PASS/FAIL mismatch between your paste and the fresh re-run is treated as a falsified report and the lane is reworked — paste real output only.

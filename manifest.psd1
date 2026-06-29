@@ -28,7 +28,20 @@
             # .claude/CLAUDE.md and commands/{msbuild,review-pr,work-item}.md are team-owned
             # (git-tracked by the Cognito Forms repo) — do NOT whole-dir/whole-file symlink them.
             # Only personal, git-ignored command files are symlinked individually.
-            DotClaudeFiles = @('settings.json', 'settings.local.json', 'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md')
+            # scripts\*.ps1 below are personal, git-ignored tooling scripts — sourced here so all
+            # worktrees share one copy. create-branch-worktree.ps1 and review-pr.ps1 are team-owned
+            # (git-tracked) and intentionally NOT symlinked.
+            # hooks\normalize-crlf.ps1 is likewise personal + git-ignored (.claude/ is gitignored by
+            # the Cognito repo) — versioned here so the EOL hook is reviewable and shared across worktrees.
+            DotClaudeFiles = @(
+                'settings.json', 'settings.local.json',
+                'hooks\normalize-crlf.ps1',
+                'commands\spec.md', 'commands\format-csharp.md', 'commands\process-build-session.md',
+                'scripts\build-filtered.ps1', 'scripts\test-filtered.ps1',
+                'scripts\client-build-filtered.ps1', 'scripts\client-test-filtered.ps1',
+                'scripts\find-dll.ps1', 'scripts\find-large-folders.ps1',
+                'scripts\list-downloads.ps1', 'scripts\quick-scan.ps1', 'scripts\system-stats.ps1'
+            )
             DotClaudeDirs  = @('skill-config', 'skills', 'knowledge')
         }
         'cognito-forms-B' = @{
@@ -43,62 +56,9 @@
             Path  = 'C:\Users\JacobMadsen\source\repos\Cognito Forms-D'
             Alias = 'cognito-forms'
         }
-        'algobooth' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\algobooth'
-            DotClaudeFiles = @('settings.local.json')
-            DotClaudeDirs  = @('skill-config', 'skills')
-        }
-        'strudel' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\strudel'
-            DotClaudeFiles = @('settings.local.json')
-            DotClaudeDirs  = @('skills')
-        }
-        'finances' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\finances'
-            DotClaudeFiles = @('CLAUDE.md', 'settings.local.json')
-            DotClaudeDirs  = @('commands')
-        }
-        'zen-mcp-server' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\zen-mcp-server'
-            DotClaudeFiles = @('settings.json')
-            DotClaudeDirs  = @('commands')
-        }
-        'housing-locator' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\housing-locator'
-            DotClaudeDirs  = @('skill-config', 'skills')
-        }
-        'memory' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\memory'
-            DotClaudeFiles = @('settings.local.json')
-        }
         'cognito-docs' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\cognito-docs'
             DotClaudeFiles = @('settings.local.json')
-        }
-        'meeting-documenter' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\meeting-documenter'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'scene-remixer' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\scene-remixer'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'system-design' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\system-design'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'wiki' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\wiki'
-            DotClaudeFiles = @('settings.local.json')
-        }
-        'meridian-setup' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\meridian-setup'
-            DotClaudeFiles = @('settings.json')
-        }
-        'story' = @{
-            Path           = 'C:\Users\JacobMadsen\source\repos\story'
-            DotClaudeFiles = @('settings.local.json')
-            DotClaudeDirs  = @('commands', 'skills')
         }
     }
 }

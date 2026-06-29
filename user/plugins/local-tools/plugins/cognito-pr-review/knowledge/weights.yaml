@@ -14,8 +14,8 @@ category_multipliers:
   template_binding: 0.7
 
 source_weights:
-  investigation: 0.9
-  intrafile: 0.7
+  investigation: 0.7563
+  intrafile: 0.5454
   reuse: 0.7
 
 rule_weights:
@@ -128,8 +128,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   keep-comments-accurate:
-    weight: 0.775
-    data_points: 1
+    weight: 0.8313
+    data_points: 2
   no-todos-in-code:
     weight: 0.7
     data_points: 0
@@ -303,8 +303,8 @@ rule_weights:
 
   # testing rules
   verify-assertions-match-behavior:
-    weight: 0.7
-    data_points: 0
+    weight: 0.525
+    data_points: 1
   consistent-assertion-style:
     weight: 0.7
     data_points: 0
@@ -333,8 +333,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   fluff-test-mock-only:
-    weight: 0.7
-    data_points: 0
+    weight: 0.525
+    data_points: 1
   fluff-test-tautological:
     weight: 0.7
     data_points: 0

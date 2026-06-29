@@ -77,6 +77,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/long-build-ownership-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/build-queue-enforce.sh",
+            "timeout": 5
           }
         ]
       },
@@ -138,11 +143,11 @@
     "slack@claude-plugins-official": false,
     "csharp-lsp@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true,
-    "cognito-pr-review@local-tools": true,
     "work-logging-plugin@local-tools": true,
     "context7-plugin@context7-marketplace": true,
     "warp@claude-code-warp": true,
-    "notion@claude-plugins-official": true
+    "notion@claude-plugins-official": true,
+    "cognito-pr-review@local-tools": true
   },
   "extraKnownMarketplaces": {
     "local-tools": {
@@ -168,6 +173,7 @@
   "effortLevel": "high",
   "showClearContextOnPlanAccept": true,
   "autoUpdatesChannel": "latest",
+  "tui": "default",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",

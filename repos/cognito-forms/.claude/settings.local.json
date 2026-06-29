@@ -153,7 +153,11 @@
       "Bash(mkdir -p ~/.claude)",
       "Bash(printf '%s\\\\n' '{\"timestamp\":\"2026-04-28T20:00:00Z\",\"skill\":\"add-phase\",\"project\":\"Cognito Forms\",\"branch\":\"p/entry-changes-section-handling\",\"commit\":\"6b6bafdf8f5\",\"title\":\"Add Phase 11: Shared replay helper + diagnostic logging\",\"summary\":\"Added Phase 11 to PHASES.md based on findings from three parallel code review agents \\(reuse, quality, efficiency\\). Two actionable items: extract shared replay preamble from ReplayEntryStateBefore/GetEntryChangeAt, and add Trace logging to empty catch in ApplyPatch.\",\"files_modified\":[\".claude.local/knowledge/features/audit-log-patch-sections/PHASES.md\"],\"phases_md\":\".claude.local/knowledge/features/audit-log-patch-sections/PHASES.md\",\"spec_md\":\".claude.local/knowledge/features/audit-log-patch-sections/SPEC.md\",\"superseded_phases\":[]}')"
     ],
-    "deny": [],
+    "deny": [
+      "mcp__ado__pipelines_update_build_stage",
+      "mcp__ado__pipelines_run_pipeline",
+      "mcp__ado__pipelines_create_pipeline"
+    ],
     "ask": []
   },
   "enableAllProjectMcpServers": true,

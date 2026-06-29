@@ -25,7 +25,7 @@ Run frontend tests in the Nx monorepo showing only PASS/FAIL results, error deta
 
 1. Construct the command:
    ```
-   REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$REPO_ROOT/.claude/scripts/client-test-filtered.ps1"
+   REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op nxtest -Exec "$REPO_ROOT/.claude/scripts/client-test-filtered.ps1"
    ```
 
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:
@@ -34,4 +34,6 @@ Run frontend tests in the Nx monorepo showing only PASS/FAIL results, error deta
    - `-Filter "..."` — testNamePattern (filter by test name)
    - `-NoCoverage` — skip coverage collection
 
-3. Run the command using Bash. Do not interpret or reformat the output.
+3. Run the command using Bash with `timeout: 600000` (10 min). A test run can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast runs because Bash returns as soon as the command exits. Do not interpret or reformat the output.
+
+4. If the run is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead, then poll its log and read `$HOME/.claude/state/build-queue/results/<seq>.json` (the `exit_code` field) for the outcome — the `seq` is printed in the `build-queue: enqueued as seq=N` line.

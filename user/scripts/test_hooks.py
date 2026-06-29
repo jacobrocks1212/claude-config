@@ -4777,6 +4777,268 @@ def test_longbuild_guard_registered_in_settings():
     )
 
 
+# ===========================================================================
+# build-queue-enforce-cd-prefix-bypass — build-queue-enforce.sh unanchored deny
+#
+# The deny matchers were anchored to the START of the command, so a heavy build
+# chained behind a leading command (`cd "..." && dotnet build ...`) bypassed the
+# gate entirely. These tests pin the unanchored behavior: a real heavy build
+# anywhere in the command DENIES (cd-prefix, pipeline, compound), while the
+# sanctioned build-queue.ps1 wrapper, safe dotnet sub-commands, bare restore,
+# and the BUILD_QUEUE_BYPASS=1 escape hatch stay ALLOWED.
+#
+# The scope gate (_is_cognito_worktree) shells out to `git config --get
+# remote.origin.url`, so these tests build a throwaway git repo with a
+# cognitoforms/cognito remote and fire the hook with cwd pointed at it.
+# ===========================================================================
+
+_BQE_HOOK_SH = _HOOKS_DIR / "build-queue-enforce.sh"
+
+
+def _init_cognito_worktree(parent: Path) -> Path:
+    """Create a temp git repo whose origin remote matches cognitoforms/cognito,
+    so build-queue-enforce.sh's scope gate treats it as a Cognito worktree."""
+    repo = parent / "cognito-worktree"
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", "t@t.t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    _git(["remote", "add", "origin", "https://github.com/cognitoforms/cognito.git"], repo)
+    return repo
+
+
+def _bqe_payload(command: str, cwd: str) -> str:
+    """PreToolUse Bash JSON for build-queue-enforce.sh, fired from *cwd*."""
+    return json.dumps({
+        "session_id": str(uuid.uuid4()),
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    })
+
+
+def test_bqe_denies_cd_prefixed_dotnet_build():
+    """`cd "<cognito-worktree>" && dotnet build ...` → deny (cd-prefix bypass closed)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (f'cd "{repo}" && dotnet build "./Cognito.Core/Cognito.Core.csproj" '
+               f'-c Debug -v minimal --nologo')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"hook must exit 0 (deny is JSON); got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed dotnet build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_cd_prefixed_dotnet_test():
+    """`cd "..." && dotnet test ... --filter ...` → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (f'cd "{repo}" && dotnet test ./Cognito.UnitTests/Cognito.UnitTests.csproj '
+               f'--filter "ClassName~Foo"')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed dotnet test must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_dotnet_build_in_pipeline():
+    """`dotnet build ... 2>&1 | tail -20` → deny (pipeline form)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = f'cd "{repo}" && dotnet build "./Cognito.Core/Cognito.Core.csproj" 2>&1 | tail -20'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"piped dotnet build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_restore_then_build_compound():
+    """`dotnet restore && dotnet build` → deny (a real build is present even
+    though a safe sub-command leads)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "dotnet restore && dotnet build ./Cognito.sln -c Debug"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"compound restore && build must deny (build present); stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_bare_restore():
+    """`dotnet restore` alone (no build) → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload("dotnet restore ./Cognito.sln", str(repo)),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"bare dotnet restore must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_build_queue_wrapper_with_filtered_exec():
+    """The sanctioned wrapper carrying a *-filtered.ps1 -Exec arg → allow (a
+    naive unanchored *-filtered.ps1 deny would wrongly block the one sanctioned
+    path)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (f'REPO_ROOT="{repo}" && powershell.exe -ExecutionPolicy Bypass -File '
+               f'"$HOME/.claude/scripts/build-queue.ps1" -Op mstest '
+               f'-Exec "$REPO_ROOT/.claude/scripts/test-filtered.ps1" -Filter "ClassName~Foo"')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"build-queue.ps1 wrapper (even carrying a -Exec filtered script) must "
+            f"allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_bypass_token_with_cd_prefixed_build():
+    """`BUILD_QUEUE_BYPASS=1 dotnet build ...` → allow (escape hatch)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("BUILD_QUEUE_BYPASS=1 dotnet build ./Cognito.sln", str(repo)),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"BUILD_QUEUE_BYPASS=1 must allow even a real build; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_cd_prefixed_filtered_script():
+    """A raw `cd "..." && powershell ... build-filtered.ps1` → deny (filtered
+    script invoked directly, not through the wrapper)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (f'cd "{repo}" && powershell.exe -ExecutionPolicy Bypass -File '
+               f'"$HOME/.claude/scripts/build-filtered.ps1"')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"raw filtered-script invocation must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_cd_prefixed_nx_build():
+    """`cd "..." && npx nx build cognito-spa` → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = f'cd "{repo}" && npx nx build cognito-spa'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed nx build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_outside_cognito_worktree():
+    """A cd-prefixed dotnet build fired from a NON-Cognito repo → allow (scope
+    gate intact: fail-open outside Cognito worktrees)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "main")  # no cognitoforms/cognito remote
+        cmd = f'cd "{repo}" && dotnet build ./Foo.sln -c Debug'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"non-Cognito worktree must allow (scope gate); stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_fail_open_malformed_json():
+    """Malformed payload → fail-open allow (exit 0, no deny)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(_BQE_HOOK_SH, "{ not valid json", _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"malformed payload must fail-open (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"malformed payload must NOT deny (fail-open); stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_cd_prefixed_cargo_build_release():
+    """`cd "..." && cargo build --release` → deny (cd-prefix bypass closed for
+    the long-build set too)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('cd "/some/app" && cargo build --release'), state_dir
+        )
+        assert result.returncode == 0, f"guard must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed cargo build --release must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_cd_prefixed_tauri_build():
+    """`cd "..." && tauri build` → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('cd "/some/app" && tauri build'), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed tauri build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_cd_prefixed_npm_run_build():
+    """`cd "..." && npm run build` → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('cd "/some/app" && npm run build'), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed npm run build must deny; stdout={result.stdout!r}"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -4978,6 +5240,38 @@ _TESTS = [
      test_straybranch_non_write_tool_allows),
     ("test_straybranch_registered_in_settings",
      test_straybranch_registered_in_settings),
+    # build-queue-enforce-cd-prefix-bypass — unanchored deny in
+    # build-queue-enforce.sh: a heavy build anywhere in the command denies
+    # (cd-prefix / pipeline / compound), while the wrapper, safe sub-commands,
+    # bare restore, BUILD_QUEUE_BYPASS=1, and non-Cognito worktrees stay allowed.
+    ("test_bqe_denies_cd_prefixed_dotnet_build",
+     test_bqe_denies_cd_prefixed_dotnet_build),
+    ("test_bqe_denies_cd_prefixed_dotnet_test",
+     test_bqe_denies_cd_prefixed_dotnet_test),
+    ("test_bqe_denies_dotnet_build_in_pipeline",
+     test_bqe_denies_dotnet_build_in_pipeline),
+    ("test_bqe_denies_restore_then_build_compound",
+     test_bqe_denies_restore_then_build_compound),
+    ("test_bqe_allows_bare_restore", test_bqe_allows_bare_restore),
+    ("test_bqe_allows_build_queue_wrapper_with_filtered_exec",
+     test_bqe_allows_build_queue_wrapper_with_filtered_exec),
+    ("test_bqe_allows_bypass_token_with_cd_prefixed_build",
+     test_bqe_allows_bypass_token_with_cd_prefixed_build),
+    ("test_bqe_denies_cd_prefixed_filtered_script",
+     test_bqe_denies_cd_prefixed_filtered_script),
+    ("test_bqe_denies_cd_prefixed_nx_build",
+     test_bqe_denies_cd_prefixed_nx_build),
+    ("test_bqe_allows_outside_cognito_worktree",
+     test_bqe_allows_outside_cognito_worktree),
+    ("test_bqe_fail_open_malformed_json", test_bqe_fail_open_malformed_json),
+    # build-queue-enforce-cd-prefix-bypass — same cd-prefix fix in
+    # long-build-ownership-guard.sh for its long-build set.
+    ("test_longbuild_guard_denies_cd_prefixed_cargo_build_release",
+     test_longbuild_guard_denies_cd_prefixed_cargo_build_release),
+    ("test_longbuild_guard_denies_cd_prefixed_tauri_build",
+     test_longbuild_guard_denies_cd_prefixed_tauri_build),
+    ("test_longbuild_guard_denies_cd_prefixed_npm_run_build",
+     test_longbuild_guard_denies_cd_prefixed_npm_run_build),
 ]
 
 
