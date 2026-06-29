@@ -97,6 +97,7 @@ from lazy_core import (
     has_completion_receipt,
     skip_waiver_refusal,
     repo_has_no_app_surface,
+    repo_uses_cognito_planner,
     phases_mcp_runtime_not_required,
     spec_status,
     commit_drift_verdict,
@@ -2866,10 +2867,21 @@ def compute_state(
         if cloud_bypass or workstation_bypass:
             pass
         elif not plans:
+            # Planner-name resolution (D1): the Cognito Forms repo ships a
+            # repo-scoped lane planner installed as `write-plan-cognito`; emit
+            # that name there so the advertised planner is the one that runs.
+            # Every other repo keeps the generic `write-plan`. The executor
+            # stage (Step 7b below) is unaffected — it always dispatches the
+            # single generic `/execute-plan` (there is no execute-plan-cognito).
+            planner = (
+                "write-plan-cognito"
+                if repo_uses_cognito_planner(repo_root)
+                else "write-plan"
+            )
             return _state(
                 **common,
                 current_step="Step 7a: write plan",
-                sub_skill="write-plan",
+                sub_skill=planner,
                 sub_skill_args=f"{spec_path_str}/PHASES.md",
             )
         else:

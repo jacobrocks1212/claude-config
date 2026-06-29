@@ -66,13 +66,17 @@ Inspect `<plans-dir>` for existing implementation plans (files matching `all-pha
 
 **If a plan already exists** AND `<phases-md>` still has unchecked deliverables, nothing to do here — return success with a "plan already exists" note. The next `/lazy` cycle will execute it.
 
-**Otherwise** (no plan, or all existing plans correspond to fully-checked phases): invoke `/write-plan`:
+**Otherwise** (no plan, or all existing plans correspond to fully-checked phases): invoke the planner. **Resolve the planner name by repo (D1 — deterministic planner resolution):** in a Cognito Forms repo — detected by the presence of the repo-scoped lane planner at `.claude/skills/write-plan-cognito/` — dispatch `/write-plan-cognito` (the lane variant: backend/frontend lanes, tiered gates, typegen seam). In every other repo, dispatch the generic `/write-plan`.
 
 ```
+# Cognito Forms repo (.claude/skills/write-plan-cognito/ present):
+Skill({ skill: "write-plan-cognito", args: "<phases-md>" })
+
+# every other repo:
 Skill({ skill: "write-plan", args: "<phases-md>" })
 ```
 
-`/write-plan` may produce a single file or multiple `-part-K` files per the 8-WU partition cap (partitioning lives in `/write-plan` Step 2.5). Either way, the script-following orchestrator picks up `plans/<plan>.md` (or `plans/<plan>-part-1.md`) on its next state-machine cycle.
+The chosen planner may produce a single file or multiple `-part-K` files per its partition cap (partitioning lives in the planner's Step 2.5). Either way, the script-following orchestrator picks up `plans/<plan>.md` (or `plans/<plan>-part-1.md`) on its next state-machine cycle.
 
 After `/write-plan` returns:
 

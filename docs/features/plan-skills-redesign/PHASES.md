@@ -2,7 +2,7 @@
 
 > Decomposition of `SPEC.md` (Plan-Skills Redesign). Six phases, ordered by dependency. Each is independently testable; phases 3→4 and the D2-dependent phases (5, 6) carry explicit prerequisites. This is harness-internals work in `claude-config/` — no Cognito product code, no `/msbuild`/`/mstest`. Verification is Python unit tests (`pytest user/scripts/test_*.py`), the projection/lint scripts, and `setup.ps1 check`.
 
-**Status:** Not started
+**Status:** Phase 1 in progress (Batch 1 complete)
 **Spec:** `./SPEC.md`
 **Last updated:** 2026-06-29
 
@@ -51,11 +51,11 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 **Prerequisites.** None — independent, lowest risk; do first.
 
 **Deliverables.**
-- [ ] Rename `repos/cognito-forms/.claude/skills/write-plan/` → `write-plan-cognito/` and set frontmatter `name: write-plan-cognito`.
-- [ ] Update the `lane-agent-briefing.md` self-reference path in the renamed SKILL.md (`.claude/skills/write-plan/` → `.claude/skills/write-plan-cognito/`).
-- [ ] Run `setup.ps1 check` (and `repair` if needed) to confirm the directory symlink re-resolves.
-- [ ] **Discovery (gates the edit below):** pin the exact `lazy-state.py` branch that emits the planner `sub_skill` string, and the dispatch sites in `/lazy` Step 6 and `plan-feature`. The Explore sweep confirmed the file emits a `sub_skill` but did not pin the deciding line/branch — this discovery closes that gap before any edit.
-- [ ] Edit the pinned dispatch site(s) so Cognito repos emit `write-plan-cognito`; confirm `/lazy` Step 7 still targets generic `/execute-plan`.
+- [x] Rename `repos/cognito-forms/.claude/skills/write-plan/` → `write-plan-cognito/` and set frontmatter `name: write-plan-cognito`.
+- [x] Update the `lane-agent-briefing.md` self-reference path in the renamed SKILL.md (`.claude/skills/write-plan/` → `.claude/skills/write-plan-cognito/`).
+- [x] Run `setup.ps1 check` (and `repair` if needed) to confirm the directory symlink re-resolves.
+- [x] **Discovery (gates the edit below):** pin the exact `lazy-state.py` branch that emits the planner `sub_skill` string, and the dispatch sites in `/lazy` Step 6 and `plan-feature`. The Explore sweep confirmed the file emits a `sub_skill` but did not pin the deciding line/branch — this discovery closes that gap before any edit.
+- [x] Edit the pinned dispatch site(s) so Cognito repos emit `write-plan-cognito`; confirm `/lazy` Step 7 still targets generic `/execute-plan`.
 - [ ] Discovery: confirm whether any catalog/menu advertises the bare `write-plan` name; if found, update to `write-plan-cognito`; if not, record that discovery is symlink-based (no catalog edit needed). *(Touchpoint sweep already found the skill-catalog has no `write-plan` ref — bounded.)*
 - [ ] Strip personal-project residue (Tauri, MCP-validation, `/lazy-batch` Step 9) from the Cognito planner.
 - [ ] Add a projection/lint assertion that `/write-plan-cognito` exists and resolves (no same-name collision remains).
@@ -64,6 +64,32 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 **Testing strategy.** `setup.ps1 check` green; `python project-skills.py` projects `write-plan-cognito` with no broken `!cat`; `lint-skills.py` green; manual: in a Cognito worktree (fresh session) `/write-plan-cognito` resolves to the lane variant and `/write-plan` to the generic — both invocable, neither shadowed. **Dispatch assertion (not just resolution):** a Cognito-repo pipeline dispatch *emits* `write-plan-cognito` (verified in a run transcript), proving the routing edit fires — resolution alone does not prove the pipeline selects the renamed name.
 
 **Integration notes.** The rename is mechanical at the directory level (symlink is transparent). The *behavioral* risk is the dispatch-site routing: if `lazy-state.py`/`plan-feature` keep emitting bare `write-plan` for Cognito, the pipeline silently runs the generic planner again. That selection site is the load-bearing edit — verify it explicitly.
+
+#### Implementation Notes (Phase 1 — Batch 1: WU-1 + WU-2)
+**Completed:** 2026-06-29
+**Review verdict:** PASS
+
+**Work completed:**
+- WU-1 (rename): `git mv` of `repos/cognito-forms/.claude/skills/write-plan/` → `write-plan-cognito/` (history-preserving — `R` status). Frontmatter `name:` set to `write-plan-cognito`. Both internal self-ref paths (`.claude/skills/write-plan/lane-agent-briefing.md` at SKILL.md L194 + L289) rewritten to `write-plan-cognito/`. `manifest.psd1` NOT edited — `DotClaudeDirs` symlinks `.claude/skills` at the directory level (L45), so the subdir rename is transparent. The renamed skill now registers as a distinct skill (`write-plan-cognito` appears in the catalog alongside generic `write-plan` — no collision).
+- WU-2 (dispatch routing): **Pinned dispatch branch — `lazy-state.py` "Step 7a: write plan" branch (the `elif not plans:` block, was L2868–2874, the sole direct `sub_skill="write-plan"` planner emission).** Edited it to emit `write-plan-cognito` when `repo_uses_cognito_planner(repo_root)` is True, else generic `write-plan`. Added helper `repo_uses_cognito_planner(repo_root)` to `lazy_core.py` (returns True iff `repo_root/.claude/skills/write-plan-cognito/` is a dir) — the rename-aligned, deterministic discriminator. Wired the import into `lazy-state.py`. Confirmed Step 7b executor emission (`sub_skill="execute-plan"`, L2999) stays generic — no `execute-plan-cognito`. `plan-feature/SKILL.md` Step 2 planner dispatch updated to resolve `write-plan-cognito` vs `write-plan` by the same `.claude/skills/write-plan-cognito/` presence test. `lazy/SKILL.md` needs NO routing edit: it is dispatch glue that emits whatever `sub_skill` the script returns — its only `write-plan` mentions are a sentinel-table audit row (L248) and the execute-plan consistency guard (L224), neither a dispatch directive.
+- Tests: 3 `repo_uses_cognito_planner` cases added to `test_lazy_core.py` (present→True, generic-only→False, no-skills-dir→False) + registry entries. All pass.
+
+**Integration notes (for next implementer / Phase 2):**
+- The Cognito-context discriminator is `lazy_core.repo_uses_cognito_planner(repo_root)` — reuse it, do NOT hardcode worktree names or use `repo_has_no_app_surface` (the latter is a "no-MCP-surface" check; both Cognito and AlgoBooth roots lack a top-level `package.json`, so it does NOT distinguish Cognito).
+- Phase 2 edits `write-plan-cognito/SKILL.md` (the renamed file) — it now lives at `repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md`.
+
+**Pitfalls & guidance:**
+- Run gates with `pwsh` (PowerShell 7), not `powershell.exe` (5.1) — `setup.ps1` uses `Import-PowerShellDataFile`, absent in the 5.1 Git-Bash invocation context.
+- `setup.ps1 check` reports 5 pre-existing broken items (`normalize-crlf.ps1` REAL/MISSING across worktrees) unrelated to this work; all `skills` symlinks report OK.
+- `test_lazy_core.py` has 4 pre-existing failures on a clean baseline (missing sibling `algobooth` repo for the merged-view parity audit + Windows CRLF/permission snapshot drift in `test_lazy_state_test_output_matches_baseline` / `test_bug_state_test_output_matches_baseline` / `test_archive_fixed_*`). Verified identical via `git stash`; this work introduced zero regressions. The `lazy-state.py --test` smoke snapshot is unaffected by the routing edit (the Cognito Step-7a path is not in the smoke fixtures).
+
+**Files modified:**
+- `repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md` — renamed (from `write-plan/`); `name:` + 2 self-ref paths
+- `repos/cognito-forms/.claude/skills/write-plan-cognito/lane-agent-briefing.md` — renamed (content unchanged)
+- `user/scripts/lazy_core.py` — new `repo_uses_cognito_planner()` helper
+- `user/scripts/lazy-state.py` — import + Step-7a planner-name branch
+- `user/skills/plan-feature/SKILL.md` — Step 2 planner dispatch resolves by repo
+- `user/scripts/test_lazy_core.py` — 3 new helper tests + registry entries
 
 ---
 

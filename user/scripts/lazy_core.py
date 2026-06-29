@@ -413,6 +413,24 @@ def repo_has_no_app_surface(repo_root: Path) -> bool:
     return True
 
 
+def repo_uses_cognito_planner(repo_root: Path) -> bool:
+    """True iff ``repo_root`` ships the repo-scoped ``write-plan-cognito`` planner.
+
+    The Cognito Forms repo installs a repo-scoped lane planner at
+    ``.claude/skills/write-plan-cognito/`` (the renamed-from-``write-plan``
+    variant). Its presence is the deterministic signal that pipeline dispatch
+    should emit ``write-plan-cognito`` for this repo rather than the generic
+    ``write-plan``. Keying off the installed skill — not a hardcoded repo name
+    or worktree path — keeps the discriminator aligned with the rename and
+    survives additional worktrees. Conservative: an unreadable repo root or a
+    missing skill dir → False, so non-Cognito repos keep the generic planner.
+    """
+    try:
+        return (repo_root / ".claude" / "skills" / "write-plan-cognito").is_dir()
+    except OSError:
+        return False
+
+
 def phases_mcp_runtime_not_required(spec_path: Path) -> bool:
     """True iff ``spec_path/PHASES.md`` declares ``**MCP runtime:** not-required``.
 

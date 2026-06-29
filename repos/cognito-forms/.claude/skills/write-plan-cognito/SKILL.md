@@ -1,7 +1,7 @@
 ---
 description: Generate a lane-based implementation plan for ALL phases across 1+ PHASES.md files — Cognito Forms variant (backend/frontend lanes, tiered gates, typegen seam)
 argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...]
-name: write-plan
+name: write-plan-cognito
 plan-mode: never
 ---
 
@@ -191,7 +191,7 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 > |------|-----------|------|
 > | Step 0 | Task Tracking | `~/.claude/skills/_components/task-tracking.md` |
 > | Step L.0 | Source Re-read | `~/.claude/skills/_components/source-reread.md` |
-> | Step L.1 | Lane Agent Briefing | `.claude/skills/write-plan/lane-agent-briefing.md` (repo-relative) |
+> | Step L.1 | Lane Agent Briefing | `.claude/skills/write-plan-cognito/lane-agent-briefing.md` (repo-relative) |
 > | Step L.3 | Lane Review | `~/.claude/skills/_components/subagent-review.md` |
 > | Step L.3 | Mount-Site Verification | `~/.claude/skills/_components/mount-site-verification.md` |
 > | Step L.4 | PHASES.md Update | `~/.claude/skills/_components/phases-update.md` |
@@ -286,7 +286,7 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > **PRE-FLIGHT:** confirm you will use `Agent` with `model: "sonnet"` for ALL code changes and will NOT edit source/test files yourself.
 >
-> Read `.claude/skills/write-plan/lane-agent-briefing.md`. For each lane in this batch, compose an Agent prompt containing: (1) the lane definition from this plan (scope, files, test expectations, implementation goal, spec requirements, Tier 1 commands), (2) the relevant SPEC.md excerpts, (3) prior Implementation Notes that affect this lane, (4) the lane-agent briefing verbatim.
+> Read `.claude/skills/write-plan-cognito/lane-agent-briefing.md`. For each lane in this batch, compose an Agent prompt containing: (1) the lane definition from this plan (scope, files, test expectations, implementation goal, spec requirements, Tier 1 commands), (2) the relevant SPEC.md excerpts, (3) prior Implementation Notes that affect this lane, (4) the lane-agent briefing verbatim.
 >
 > Parallel-seam phases: dispatch the backend and frontend lane agents in a SINGLE message. Sequenced phases: dispatch only the backend lane now.
 >

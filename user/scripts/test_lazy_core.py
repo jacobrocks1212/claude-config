@@ -332,6 +332,33 @@ def test_phases_show_impl_planned_no_evidence_false():
     assert lazy_core.phases_show_implementation(text) is False
 
 
+def test_repo_uses_cognito_planner_present_true():
+    """A repo with `.claude/skills/write-plan-cognito/` → True (emit the Cognito planner)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        skill_dir = Path(td) / ".claude" / "skills" / "write-plan-cognito"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# Cognito planner\n", encoding="utf-8")
+        assert lazy_core.repo_uses_cognito_planner(Path(td)) is True
+
+
+def test_repo_uses_cognito_planner_absent_false():
+    """A repo with only the generic `write-plan` skill → False (keep generic planner)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        skill_dir = Path(td) / ".claude" / "skills" / "write-plan"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# Generic planner\n", encoding="utf-8")
+        assert lazy_core.repo_uses_cognito_planner(Path(td)) is False
+
+
+def test_repo_uses_cognito_planner_no_skills_dir_false():
+    """A repo with no `.claude/skills/` at all → False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        assert lazy_core.repo_uses_cognito_planner(Path(td)) is False
+
+
 def test_phases_show_impl_fenced_checkbox_does_not_count_false():
     """(g) The only '- [x]' is inside a fenced block → False (fence-awareness)."""
     _guard()
@@ -15436,6 +15463,10 @@ _TESTS = [
     ("test_phases_show_impl_implementation_notes_true", test_phases_show_impl_implementation_notes_true),
     ("test_phases_show_impl_planned_no_evidence_false", test_phases_show_impl_planned_no_evidence_false),
     ("test_phases_show_impl_fenced_checkbox_does_not_count_false", test_phases_show_impl_fenced_checkbox_does_not_count_false),
+    # repo_uses_cognito_planner — planner-name resolution (D1)
+    ("test_repo_uses_cognito_planner_present_true", test_repo_uses_cognito_planner_present_true),
+    ("test_repo_uses_cognito_planner_absent_false", test_repo_uses_cognito_planner_absent_false),
+    ("test_repo_uses_cognito_planner_no_skills_dir_false", test_repo_uses_cognito_planner_no_skills_dir_false),
     # remaining_unchecked_are_verification_only
     ("test_ruvonly_no_unchecked", test_ruvonly_no_unchecked),
     ("test_ruvonly_all_under_heading", test_ruvonly_all_under_heading),
