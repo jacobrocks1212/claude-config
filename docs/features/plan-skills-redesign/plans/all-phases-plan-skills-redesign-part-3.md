@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: plan-skills-redesign
-status: Ready
+status: Complete
 created: 2026-06-29
 complexity: complex
 phases: [3]
