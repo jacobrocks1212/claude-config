@@ -77,9 +77,9 @@
 **Scope:** Surface the new command in the plugin's docs and metadata so it is discoverable and loads correctly. Separate phase from Phase 1 purely to keep one writer per file (different files than `spot-check.md`).
 
 **Deliverables:**
-- [ ] `README.md`: add a `spot-check` usage block (mirroring the SPEC examples) and a short architecture note distinguishing it from `review-pr` / `review-pr-buddy` (lighter, inline-first, scope-targetable, standalone).
-- [ ] `CLAUDE.md`: add a Key Commands table row for `/cognito-pr-review:spot-check [PR#] [scope]` with a one-line purpose.
-- [ ] `.claude-plugin/plugin.json`: bump `version` `2.7.0` → `2.8.0` and extend the `description` to mention the lightweight spot-check command.
+- [x] `README.md`: add a `spot-check` usage block (mirroring the SPEC examples) and a short architecture note distinguishing it from `review-pr` / `review-pr-buddy` (lighter, inline-first, scope-targetable, standalone).
+- [x] `CLAUDE.md`: add a Key Commands table row for `/cognito-pr-review:spot-check [PR#] [scope]` with a one-line purpose.
+- [x] `.claude-plugin/plugin.json`: bump `version` `2.7.0` → `2.8.0` and extend the `description` to mention the lightweight spot-check command.
 
 **Reuse:** none beyond editing existing docs/metadata (no ledger capability touched).
 
@@ -104,6 +104,23 @@
 **Integration Notes for Next Phase:** N/A — final phase.
 
 **Completion (gate-owned):** flipping the SPEC `**Status:**` to Complete is not a checkbox here; it is recorded when both phases' runtime verification passes.
+
+#### Implementation Notes
+
+**Date:** 2026-06-29
+**Status:** Implementation complete (runtime-verification rows remain unchecked — a real plugin reload + command list observation owns those).
+
+**Work completed:** All three Phase 2 deliverables landed. `README.md` received a new `### Spot-Check (Lightweight / Scope-Targeted)` section inserted between `### Buddy Review` and `### Learn from PRs / Calibrate`, containing all 7 verbatim example invocations from SPEC and a 4-trait distinguishing description (lighter / inline-first / scope-targetable / standalone). `CLAUDE.md` Key Commands table received a new row for `/cognito-pr-review:spot-check [PR#] [scope]` immediately after the `review-pr-buddy` row. `.claude-plugin/plugin.json` was bumped from `2.7.0` → `2.8.0` and the description was extended with a spot-check clause; JSON validity confirmed via `python -m json.tool`.
+
+**Final state:** `version: 2.8.0`; README examples and CLAUDE.md row match the Phase 1 `argument-hint` verbatim (`[PR_ID | local] [scope: last-commit|since-review|<sha>..<sha>|<glob>|<free-text>]`); no drift detected across all three surfaces.
+
+**Deviation:** Recursive Agent dispatch was DENIED in the execution environment (single-cycle subagent constraint). Per the plan's invocation note and user prompt ("fall back to authoring the files directly yourself"), the orchestrator authored all three files directly. The Step B.2 review gate was run inline.
+
+**Quality gates:** JSON valid (python -m json.tool passes); version 2.8.0 confirmed (grep hit at line 3); no-drift confirmed (7 README spot-check lines + 1 CLAUDE.md row, all matching canonical argument-hint).
+
+#### Review Notes
+
+**Review verdict:** PASS (2026-06-29). Inline review (recursive dispatcher denied). README block: 7 verbatim example lines, correct heading placement, distinguishing prose covers all 4 required traits. CLAUDE.md row: correct format, correct placement, command notation matches canonical argument-hint. plugin.json: valid JSON, version 2.8.0, description extended, no other field altered. No-drift confirmed across all three surfaces against Phase 1 canonical strings.
 
 ---
 

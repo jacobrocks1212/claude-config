@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: spot-check
-status: Ready
+status: Complete
 created: 2026-06-29
 complexity: mechanical
 phases: [2]
@@ -107,9 +107,9 @@ Before executing each step, `Read` the component files listed for that step from
 
 ## Work Units
 
-- [ ] WU-1 — README.md: add spot-check usage block + architecture note
-- [ ] WU-2 — CLAUDE.md: add Key Commands table row
-- [ ] WU-3 — plugin.json: version bump 2.7.0 → 2.8.0 + description extension
+- [x] WU-1 — README.md: add spot-check usage block + architecture note
+- [x] WU-2 — CLAUDE.md: add Key Commands table row
+- [x] WU-3 — plugin.json: version bump 2.7.0 → 2.8.0 + description extension
 
 ---
 
@@ -124,7 +124,7 @@ Before executing each step, `Read` the component files listed for that step from
 ### WU-1 — README.md: spot-check usage block + architecture note
 
 **Scope (PHASES.md Phase 2 deliverable):**
-- [ ] `README.md`: add a `spot-check` usage block (mirroring the SPEC examples) and a short architecture note distinguishing it from `review-pr` / `review-pr-buddy` (lighter, inline-first, scope-targetable, standalone).
+- [x] `README.md`: add a `spot-check` usage block (mirroring the SPEC examples) and a short architecture note distinguishing it from `review-pr` / `review-pr-buddy` (lighter, inline-first, scope-targetable, standalone).
 
 **TDD:** no.
 **Files to create/modify:** `C:/Users/JacobMadsen/source/repos/claude-config/user/plugins/local-tools/plugins/cognito-pr-review/README.md` — edit (exists).
@@ -135,7 +135,7 @@ Before executing each step, `Read` the component files listed for that step from
 ### WU-2 — CLAUDE.md: Key Commands table row
 
 **Scope (PHASES.md Phase 2 deliverable):**
-- [ ] `CLAUDE.md`: add a Key Commands table row for `/cognito-pr-review:spot-check [PR#] [scope]` with a one-line purpose.
+- [x] `CLAUDE.md`: add a Key Commands table row for `/cognito-pr-review:spot-check [PR#] [scope]` with a one-line purpose.
 
 **TDD:** no.
 **Files to create/modify:** `C:/Users/JacobMadsen/source/repos/claude-config/user/plugins/local-tools/plugins/cognito-pr-review/CLAUDE.md` — edit (exists). *(Orchestrator-editable; a direct one-line edit is acceptable, or delegate.)*
@@ -146,7 +146,7 @@ Before executing each step, `Read` the component files listed for that step from
 ### WU-3 — plugin.json: version bump + description extension
 
 **Scope (PHASES.md Phase 2 deliverable):**
-- [ ] `.claude-plugin/plugin.json`: bump `version` `2.7.0` → `2.8.0` and extend the `description` to mention the lightweight spot-check command.
+- [x] `.claude-plugin/plugin.json`: bump `version` `2.7.0` → `2.8.0` and extend the `description` to mention the lightweight spot-check command.
 
 **TDD:** no.
 **Files to create/modify:** `C:/Users/JacobMadsen/source/repos/claude-config/user/plugins/local-tools/plugins/cognito-pr-review/.claude-plugin/plugin.json` — edit (exists).

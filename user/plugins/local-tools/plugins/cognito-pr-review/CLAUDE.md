@@ -16,6 +16,7 @@ Claude Code plugin for reviewing Cognito Forms PRs using a hierarchical investig
 |---------|---------|
 | `/cognito-pr-review:review-pr [PR#]` | Full v2 review pipeline |
 | `/cognito-pr-review:review-pr-buddy [PR#]` | Interactive senior-architect pair-review (walks the PR chunk-by-chunk over the same pipeline) |
+| `/cognito-pr-review:spot-check [PR#] [scope]` | Fast, inline-first spot-check of a small/scoped PR; ≤1 investigation agent; standalone (no ADO/calibration/sentinels) |
 | `/cognito-pr-review:learn-from-pr PR#` | Extract rules + EMA calibration |
 | `/cognito-pr-review:calibrate` | Bulk weight calibration |
 | `/cognito-pr-review:weights` | View/adjust rule weights |

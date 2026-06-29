@@ -97,6 +97,20 @@ An interactive senior-architect pair-review. Arguments mirror `review-pr` (`[PR_
 
 **Phase 2 — Curated synthesis:** Writes the final `PR-{id}.md` in synthesizer-v2 format containing only non-dismissed findings and your own observations, annotated with their severities. The autonomous synthesizer agent is not invoked — the interactive session is the synthesis.
 
+### Spot-Check (Lightweight / Scope-Targeted)
+
+```
+/cognito-pr-review:spot-check 17890                     # whole small PR, fresh-eyes spot check
+/cognito-pr-review:spot-check 17890 since-review        # only the author's latest attempt at my feedback
+/cognito-pr-review:spot-check 17890 last-commit         # only the most recent commit
+/cognito-pr-review:spot-check 17890 "the validation changes"   # natural-language slice of a larger PR
+/cognito-pr-review:spot-check 17890 Cognito.Core/**     # only files under Cognito.Core
+/cognito-pr-review:spot-check                           # local uncommitted changes
+/cognito-pr-review:spot-check local last-commit         # local, just the last commit
+```
+
+A lighter, inline-first alternative to `review-pr` and `review-pr-buddy` for the common case: a small PR (<5 files) that almost always comes back clean, or a narrow slice of a larger PR. It dispatches zero subagents on a clean PR — one `investigation` agent at most when a change warrants a deeper look — so it is significantly faster than the full pipeline. It is scope-targetable: aim it at a subset of a PR via `last-commit`, `since-review`, a commit range, a file glob, or a natural-language description. Standalone by design: no Azure DevOps MCP, no calibration loop, no stage sentinels, no journey file, no sweep pass.
+
 ### Learn from PRs / Calibrate
 
 ```
