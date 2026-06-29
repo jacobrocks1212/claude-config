@@ -170,9 +170,15 @@ Mode: fully autonomous (no approval gates)
 
 **PHASES.md is your persistent memory.** After context compaction, PHASES.md is the only record of what was completed. If you skip the update, the next recovery cycle will re-execute already-completed work or lose integration notes. Treat PHASES.md updates with the same gravity as committing code.
 
+### Execution Contract (single source — READ THIS FIRST)
+
+The autonomous-execution policy — EXECUTION MODEL, COMPONENT LOADING PROTOCOL, Component Reference Card, MANDATORY RULES, the full Execution Protocol (Phase-Selection Loop + per-batch Steps B.0–B.6 + Post-Phase Steps), Blocking Issue Protocol, and Completion report — is **single-sourced** in `~/.claude/skills/_components/execution-contract.md`. Generated plans no longer inline these sections; they carry a one-line pointer to that file. **`Read` `~/.claude/skills/_components/execution-contract.md` now and treat it as your operating contract for this run** (it is cacheable — read it once per run, not per batch).
+
+The contract is the canonical policy; the sections below in THIS skill are the **executor-specific** logic the contract does not cover and that you layer on top of it: the plan-status protocol (Step 1a.5), the part-integrity / cloud-saturation gates (Steps 1a.6/1a.6a), the Ground-Truth Verification Gate, compaction recovery, PHASES.md slice handling, the per-WU checkbox discipline, and the atomic gate+commit. Where the plan's own per-phase steps or a repo's `.claude/skill-config/` override a contract default (e.g. Python/projection gates instead of `/msbuild`/`/mstest`), follow the plan/repo; otherwise the contract governs.
+
 ### Execution Model Enforcement
 
-If the plan specifies an EXECUTION MODEL with orchestrator/subagent roles:
+Per the EXECUTION MODEL in the contract you just read:
 - **You are the orchestrator.** Your job is to read the plan, compose `Agent` tool calls, dispatch Sonnet subagents, review their output, run quality gates, and update tracking docs.
 - **You MUST NOT call `Edit` or `Write` on source or test files.** If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP. Compose an `Agent({ model: "sonnet", prompt: "..." })` tool call instead.
 - **Self-check before every action:** "Am I about to edit a source/test file directly?" If yes, compose an Agent call instead.

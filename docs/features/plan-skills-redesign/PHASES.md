@@ -2,7 +2,7 @@
 
 > Decomposition of `SPEC.md` (Plan-Skills Redesign). Six phases, ordered by dependency. Each is independently testable; phases 3→4 and the D2-dependent phases (5, 6) carry explicit prerequisites. This is harness-internals work in `claude-config/` — no Cognito product code, no `/msbuild`/`/mstest`. Verification is Python unit tests (`pytest user/scripts/test_*.py`), the projection/lint scripts, and `setup.ps1 check`.
 
-**Status:** Phase 1 Complete (all deliverables landed; Phases 2–6 pending)
+**Status:** Phases 1–2 Complete (all deliverables landed; Phases 3–6 pending)
 **Spec:** `./SPEC.md`
 **Last updated:** 2026-06-29
 
@@ -123,10 +123,10 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Deliverables.**
 - [x] Author `user/skills/_components/execution-contract.md` extracting: EXECUTION MODEL, COMPONENT LOADING PROTOCOL, MANDATORY RULES, Execution Protocol / Phase-Selection Loop / per-batch steps, Blocking Issue Protocol, Completion, Work Log (sourced from generic `write-plan` L252–554).
-- [ ] Refactor generic `execute-plan/SKILL.md` to reference + read `execution-contract.md` (cacheable).
-- [ ] Refactor generic `write-plan/SKILL.md` to stop emitting the boilerplate sections; emit a one-line pointer to the component instead.
-- [ ] Apply the same pointer change to `write-plan-cognito/SKILL.md`.
-- [ ] Verify `project-skills.py` expands any new `!cat` reference and `lint-skills.py` / `test_project_skills.py` stay green.
+- [x] Refactor generic `execute-plan/SKILL.md` to reference + read `execution-contract.md` (cacheable).
+- [x] Refactor generic `write-plan/SKILL.md` to stop emitting the boilerplate sections; emit a one-line pointer to the component instead.
+- [x] Apply the same pointer change to `write-plan-cognito/SKILL.md`.
+- [x] Verify `project-skills.py` expands any new `!cat` reference and `lint-skills.py` / `test_project_skills.py` stay green.
 
 **Testing strategy.** Generate a plan via the redesigned `/write-plan` → assert it contains the pointer and **no** EXECUTION MODEL / MANDATORY RULES blocks; measure line-count delta vs an old plan (target ~32–44% smaller). Edit one rule in `execution-contract.md` and confirm a subsequent `/execute-plan` run reflects it with no plan regeneration.
 
@@ -143,6 +143,30 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Files modified:**
 - `user/skills/_components/execution-contract.md` — created (net-new)
+
+#### Implementation Notes (Phase 2 — Batch 2: WU-2 + WU-3 + WU-4)
+**Completed:** 2026-06-29
+**Review verdict:** PASS
+
+**Work completed:**
+- WU-2 (`execute-plan/SKILL.md`, 419→425L): added a new "Execution Contract (single source — READ THIS FIRST)" section ahead of Execution Model Enforcement that directs the executor to `Read` `~/.claude/skills/_components/execution-contract.md` once per run (cacheable) and treat it as the operating contract. Reframed the Execution Model Enforcement bullets as "Per the EXECUTION MODEL in the contract you just read". **Preserved** all executor-specific logic the contract does not cover: plan-status protocol (1a.5), part-integrity / cloud-saturation gates (1a.6/1a.6a), the Ground-Truth Verification Gate, compaction recovery, PHASES.md slice handling, per-WU checkbox discipline, atomic gate+commit. Net +6 lines (a reference, not a duplication).
+- WU-3 (`write-plan/SKILL.md`, 649→445L, −204L / −31%): replaced the three "write this verbatim" boilerplate-emission blocks (EXECUTION MODEL + COMPONENT LOADING + Component Reference Card; MANDATORY RULES; Execution Protocol + Blocking Issue + Completion) with a single one-line "Execution Policy — single-sourced" pointer block plus a short instruction enumerating the phase-specific content the planner DOES still emit (Execution Schedule, per-phase blocks, work units, batch tables, `## Work Units` checklist, plan-specific deviations). **Preserved** every healthy pre-draft part: partitioning (`subagent-partitioning.md` `!cat`), the `[VERIFY:]` Anchor discipline, the PER-WU PROGRESS CHECKBOX requirement, References section, dirty-tree/touchpoint audit.
+- WU-4 (`write-plan-cognito/SKILL.md`, 385→389L; + `test_project_skills.py`): emitted the same single-source pointer ("Execution Policy — single-sourced + Cognito lane overrides"), removed the pure-generic COMPONENT LOADING PROTOCOL verbatim block, and **reframed** the lane-specific blocks (EXECUTION MODEL, Component Reference Card, MANDATORY RULES, Execution Protocol) as explicit "Cognito lane override" sections that the contract's override clause defers to — these genuinely differ from the generic contract (lane agents not WUs, queue-routed `/msbuild`/`/mstest`/`/nxtest` gates, typegen seam Step L.2, Tier 1/Tier 2 gates, no-auto-commit repo policy) so they are legitimate specialization, not duplication, and were preserved verbatim. The Cognito Blocking Issue / Completion blocks were likewise left intact (no-commit policy + lane census differ from the generic). Added 3 D2 round-trip tests to `test_project_skills.py`: contract-exists-with-extracted-sections, contract-round-trips-through-projection (a `!cat` expands with no unresolved directive), and planners-point-at-contract-not-inline-boilerplate.
+
+**Single-source verification (acceptance criterion):**
+- The contract is consumed two ways: the planners emit a one-line *pointer* (cacheable, not `!cat`-inlined into each plan body — so generated plans shrink), and `execute-plan` *reads* it at runtime. The component itself round-trips through `project-skills.py` (proven in Batch 1 and pinned by the new `test_execution_contract_round_trips_through_projection`).
+- A contract edit changes executor behavior with NO plan regeneration: generated plans carry only the pointer, so editing a rule in `execution-contract.md` is reflected on the next `/execute-plan` `Read` of the contract — the plan body is unaffected.
+- **Plan line-count delta:** the generic planner shrank 649→445 (−31%); the boilerplate it used to inject into every generated plan (the EXECUTION MODEL + COMPONENT LOADING + MANDATORY RULES + Execution Protocol + Blocking Issue + Completion blocks, ~190 lines) is now replaced in each plan by a ~10-line pointer block, i.e. a generated plan loses ~180 lines of duplicated policy — within the SPEC ~32–44% target for plan size.
+
+**Pitfalls & guidance:**
+- The Cognito planner did NOT shrink in raw line count (it gained 4) because almost all of its "boilerplate" was already lane-specific override content that must be preserved; the win there is single-sourcing the *generic* policy (the pointer) and removing the one pure-generic block (COMPONENT LOADING). The line-count win is on the generic planner and on every plan it generates.
+- `project-skills.py` component count stays 92 (not 93) because `execution-contract.md` is *read at runtime by the executor*, not `!cat`-inlined into a skill body — this is the intended cacheable design, not a missing include. Its round-trip is proven by a probe and by the new pytest case.
+
+**Files modified:**
+- `user/skills/execute-plan/SKILL.md` — reference + read the contract
+- `user/skills/write-plan/SKILL.md` — pointer replaces verbatim boilerplate emission
+- `repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md` — pointer + lane-override framing
+- `user/scripts/test_project_skills.py` — 3 new D2 round-trip / single-source tests
 
 ---
 

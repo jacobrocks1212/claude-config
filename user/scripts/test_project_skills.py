@@ -897,3 +897,91 @@ def test_planner_resolution_real_tree_is_clean():
     assert issues == [], (
         f"real-tree planner-resolution invariants violated: {issues}"
     )
+
+
+# ---------------------------------------------------------------------------
+# D2 — single-source execution policy (plan-skills-redesign Phase 2)
+# ---------------------------------------------------------------------------
+#
+# SPEC §D2 + Validation rows "Plans carry no duplicated policy" and
+# "Single-source policy". The execution policy is extracted into one component,
+# _components/execution-contract.md; the planners emit a one-line pointer to it
+# instead of the verbatim boilerplate. These tests pin:
+#   (a) the component exists and round-trips through project-skills.py
+#       (a !`cat` of it expands with no unresolved directive left behind);
+#   (b) the planners reference the contract and no longer instruct emitting the
+#       verbatim EXECUTION MODEL / MANDATORY RULES boilerplate into a plan.
+
+_EXECUTION_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[1] / "skills" / "_components"
+    / "execution-contract.md"
+)
+_WRITE_PLAN_PATH = (
+    Path(__file__).resolve().parents[1] / "skills" / "write-plan" / "SKILL.md"
+)
+_WRITE_PLAN_COGNITO_PATH = (
+    Path(__file__).resolve().parents[2] / "repos" / "cognito-forms"
+    / ".claude" / "skills" / "write-plan-cognito" / "SKILL.md"
+)
+
+
+def test_execution_contract_exists_and_carries_extracted_sections():
+    """The single-source execution-contract component exists and holds the
+    extracted execution-policy sections (SPEC §D2)."""
+    assert _EXECUTION_CONTRACT_PATH.is_file(), (
+        "execution-contract.md component is missing"
+    )
+    text = _EXECUTION_CONTRACT_PATH.read_text(encoding="utf-8")
+    for marker in (
+        "EXECUTION MODEL",
+        "COMPONENT LOADING PROTOCOL",
+        "MANDATORY RULES",
+        "Phase Selection Loop",
+        "Blocking Issue Protocol",
+        "## Completion",
+    ):
+        assert marker in text, (
+            f"execution-contract.md missing extracted section {marker!r}"
+        )
+
+
+def test_execution_contract_round_trips_through_projection(tmp_path, ps):
+    """A !`cat` of the real execution-contract.md expands via project-skills.py
+    with no unresolved directive (the round-trip the lint/gate depends on)."""
+    skills_dir = tmp_path / "skills"
+    components_dir = skills_dir / "_components"
+    components_dir.mkdir(parents=True)
+    # Copy the real component into a synthetic _components dir so resolve_cat_line
+    # finds it by name, exercising the same simple-form expansion projection uses.
+    (components_dir / "execution-contract.md").write_text(
+        _EXECUTION_CONTRACT_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    line = "!`cat ~/.claude/skills/_components/execution-contract.md`"
+    result = ps.resolve_cat_line(
+        line, skills_dir=skills_dir, project_dir=tmp_path
+    )
+    assert "EXECUTION MODEL" in result, "contract did not expand on !`cat`"
+    assert "!`cat" not in result, (
+        "unresolved !`cat` directive left after expansion"
+    )
+
+
+def test_planners_point_at_contract_not_inline_boilerplate():
+    """Both planners reference execution-contract.md and no longer instruct
+    emitting the verbatim EXECUTION MODEL / MANDATORY RULES boilerplate verbatim
+    (SPEC §D2 'Plans carry no duplicated policy')."""
+    for path in (_WRITE_PLAN_PATH, _WRITE_PLAN_COGNITO_PATH):
+        text = path.read_text(encoding="utf-8")
+        assert "execution-contract.md" in text, (
+            f"{path.name} does not reference the single-source "
+            f"execution-contract.md"
+        )
+        # The generic planner must no longer carry the "write this verbatim"
+        # boilerplate-emission instruction for the execution-policy sections.
+        # (The Cognito planner retains lane-specific override blocks framed as
+        # overrides, so this strict check targets the generic planner only.)
+    generic = _WRITE_PLAN_PATH.read_text(encoding="utf-8")
+    assert "(write this verbatim)" not in generic, (
+        "generic write-plan still instructs emitting verbatim policy "
+        "boilerplate into the plan"
+    )

@@ -160,9 +160,17 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 > **Total phases in this part:** X
 > **Plan version:** cognito-lanes-v1 (reference-based — components loaded from disk per step)
 
-**Execution model section (write verbatim):**
+**Execution-policy pointer (write this verbatim — single-source the generic policy):**
 
-> ## EXECUTION MODEL — READ THIS FIRST
+The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic MANDATORY RULES, the generic Phase-Selection Loop, Blocking Issue Protocol, and Completion report) is **single-sourced** in `~/.claude/skills/_components/execution-contract.md`. Emit this pointer block, then emit ONLY the Cognito lane-specific overrides below it — do NOT re-emit the generic sections the contract already carries:
+
+> ## Execution Policy — single-sourced + Cognito lane overrides
+>
+> This plan's baseline autonomous-execution policy lives in **`~/.claude/skills/_components/execution-contract.md`**. The executing session MUST `Read` it before executing any batch and follow it as the operating contract. The Cognito-lane sections written below this pointer (lane-based EXECUTION MODEL, the lane Component Reference Card, the lane MANDATORY RULES, the lane Execution Protocol with the typegen seam and tiered queue-routed gates, and the no-auto-commit repo policy) **override the contract's generic defaults** wherever they differ — they are not duplication, they are the Cognito-lane specialization. Where neither this plan nor the repo's `.claude/skill-config/` overrides a contract rule, the contract governs.
+
+**Lane EXECUTION MODEL (Cognito override — write verbatim):**
+
+> ## EXECUTION MODEL — READ THIS FIRST (Cognito lane override)
 >
 > This plan uses an **orchestrator + Sonnet lane-agent** architecture:
 >
@@ -177,15 +185,11 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > **Dispatch-census note (overrides generic executor expectations):** This plan uses inline-TDD lane agents. ONE lane agent serves as BOTH the test agent and the implementation agent for its lane — its briefing mandates failing-tests-first with pasted RED and GREEN output. For any dispatch census, count each lane agent as one test-agent AND one impl-agent. A batch with ≥ 1 lane-agent dispatch satisfies the per-batch dispatch contract; do NOT dispatch separate test/impl agents.
 
-**Component loading protocol (write verbatim):**
+(The COMPONENT LOADING PROTOCOL is part of the single-sourced `execution-contract.md` pointed to above — do NOT re-emit it. The Cognito Component Reference Card below OVERRIDES the contract's default card, because this lane uses lane-specific steps L.0–L.7, repo-relative components, and queue-routed gates.)
 
-> ## COMPONENT LOADING PROTOCOL
->
-> This plan references reusable component files by path instead of inlining their content. **Before executing each step**, `Read` the component files listed for that step from disk. Do NOT proceed from memory. After context compaction, re-read this plan file first, then load components for your current step.
+**Lane Component Reference Card (Cognito override — write verbatim):**
 
-**Component reference card (write verbatim):**
-
-> ## Component Reference Card
+> ## Component Reference Card (Cognito lane override)
 >
 > | Step | Component | Path |
 > |------|-----------|------|
@@ -211,9 +215,9 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 >
 > (If none: `(none — this plan has no completed hard upstream dependencies)`.)
 
-**Mandatory rules section (write verbatim):**
+**Lane MANDATORY RULES (Cognito override — write verbatim; these replace the contract's generic rules for this lane plan):**
 
-> ## MANDATORY RULES — DO NOT SKIP ANY STEP
+> ## MANDATORY RULES — DO NOT SKIP ANY STEP (Cognito lane override)
 >
 > 1. ALL source and test code is written by Sonnet lane agents via the `Agent` tool. The orchestrator never edits source/test files. The ONLY exception: trivial PASS-WITH-FIXES items (a few lines).
 > 2. All lane-agent edits happen in the current worktree — NEVER create worktrees for agents.
@@ -257,9 +261,9 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 > | [seam] | — typegen seam step — | — | Sequenced phases only |
 > | 2 | P[N]-FE | Solo | Sequenced phases only |
 
-**Execution Protocol — write this entire section into the plan:**
+**Lane Execution Protocol (Cognito override — write this entire section into the plan; the lane steps L.0–L.7, typegen seam, and tiered gates replace the contract's generic per-batch steps):**
 
-> ## Execution Protocol
+> ## Execution Protocol (Cognito lane override)
 >
 > ### Phase Selection Loop
 >

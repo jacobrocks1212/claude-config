@@ -117,9 +117,9 @@ Before executing each step, `Read` the component files listed for that step from
 ## Work Units
 
 - [x] WU-1 — Author `_components/execution-contract.md` (extract execution policy)
-- [ ] WU-2 — Refactor generic `execute-plan/SKILL.md` to reference + read the contract
-- [ ] WU-3 — Refactor generic `write-plan/SKILL.md` to emit a one-line pointer (stop emitting boilerplate)
-- [ ] WU-4 — Apply the pointer change to `write-plan-cognito/SKILL.md`; verify projection/lint round-trip
+- [x] WU-2 — Refactor generic `execute-plan/SKILL.md` to reference + read the contract
+- [x] WU-3 — Refactor generic `write-plan/SKILL.md` to emit a one-line pointer (stop emitting boilerplate)
+- [x] WU-4 — Apply the pointer change to `write-plan-cognito/SKILL.md`; verify projection/lint round-trip
 
 ---
 
