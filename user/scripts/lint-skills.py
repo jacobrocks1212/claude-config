@@ -189,6 +189,116 @@ def lint_capabilities(
     return issues
 
 
+def _skill_dirs_under(skills_root: Path) -> set:
+    """Return the set of skill subdirectory names under a `.../skills` dir.
+
+    A skill subdirectory is any immediate child dir (excluding `_components`)
+    that contains a `SKILL.md`. Missing/unreadable roots yield an empty set.
+    """
+    names = set()
+    if not skills_root.exists():
+        return names
+    try:
+        children = list(skills_root.iterdir())
+    except OSError:
+        return names
+    for child in children:
+        if not child.is_dir() or child.name == "_components":
+            continue
+        if (child / "SKILL.md").exists():
+            names.add(child.name)
+    return names
+
+
+def lint_planner_resolution(repos_dir: Path, user_skills_dir: Path) -> list[dict]:
+    """Enforce the D1 deterministic-planner-resolution invariants.
+
+    Positive: a skill named `write-plan-cognito` must resolve under some
+    `repos/*/.claude/skills/` directory (the renamed Cognito lane planner), and
+    its name must NOT collide with a same-named user-level skill (there must be
+    no `write-plan-cognito` under the user skills dir — distinct names are the
+    whole point of the rename).
+
+    Negative ("One generic executor, no Cognito fork"): NO skill or directory
+    named `execute-plan-cognito` may exist anywhere under `repos/*/.claude/skills/`
+    or the user skills dir — execution always runs the single generic
+    `/execute-plan`.
+    """
+    issues: list[dict] = []
+
+    user_names = _skill_dirs_under(user_skills_dir)
+
+    repo_skill_roots: list[Path] = []
+    if repos_dir.exists():
+        try:
+            for repo in sorted(repos_dir.iterdir()):
+                if not repo.is_dir():
+                    continue
+                root = repo / ".claude" / "skills"
+                if root.exists():
+                    repo_skill_roots.append(root)
+        except OSError:
+            pass
+
+    repo_names: set = set()
+    for root in repo_skill_roots:
+        repo_names |= _skill_dirs_under(root)
+
+    # Positive: write-plan-cognito resolves under a repo skills dir.
+    if "write-plan-cognito" not in repo_names:
+        issues.append({
+            "file": str(repos_dir),
+            "line": 0,
+            "kind": "planner-resolution",
+            "detail": (
+                "Cognito planner not found: no `write-plan-cognito` skill resolves "
+                "under any repos/*/.claude/skills/ (D1 rename must be present)"
+            ),
+            "text": "",
+        })
+
+    # Positive: no same-name collision against a user-level skill.
+    if "write-plan-cognito" in user_names:
+        issues.append({
+            "file": str(user_skills_dir / "write-plan-cognito"),
+            "line": 0,
+            "kind": "planner-collision",
+            "detail": (
+                "`write-plan-cognito` exists at the user level — it must be "
+                "repo-scoped only, or it shadows the Cognito lane planner"
+            ),
+            "text": "",
+        })
+
+    # Negative: no execute-plan-cognito anywhere.
+    for root in repo_skill_roots:
+        offender = root / "execute-plan-cognito"
+        if offender.exists():
+            issues.append({
+                "file": str(offender),
+                "line": 0,
+                "kind": "executor-fork",
+                "detail": (
+                    "`execute-plan-cognito` exists — there must be exactly one "
+                    "generic /execute-plan executor (no Cognito fork)"
+                ),
+                "text": "",
+            })
+    if "execute-plan-cognito" in user_names:
+        issues.append({
+            "file": str(user_skills_dir / "execute-plan-cognito"),
+            "line": 0,
+            "kind": "executor-fork",
+            "detail": (
+                "`execute-plan-cognito` exists at the user level — there must be "
+                "exactly one generic /execute-plan executor (no Cognito fork)"
+            ),
+            "text": "",
+        })
+
+    return issues
+
+
 def lint_all(skills_dir: Path) -> list[dict]:
     """Lint every SKILL.md under skills_dir (excluding _components/)."""
     all_issues = []
@@ -274,6 +384,18 @@ def main() -> None:
     else:
         _print_issues(issues, skills_dir)
         print(f"\n{len(issues)} issue(s) found.")
+        exit_code = 1
+
+    # D1 deterministic-planner-resolution invariants (always run):
+    # `write-plan-cognito` resolves repo-scoped with no user-level collision,
+    # and no `execute-plan-cognito` fork exists anywhere.
+    repos_dir = args.repos_dir.expanduser().resolve()
+    planner_issues = lint_planner_resolution(repos_dir, skills_dir)
+    if not planner_issues:
+        print("OK — planner resolution: write-plan-cognito resolves; no execute-plan-cognito fork.")
+    else:
+        _print_issues(planner_issues, repos_dir)
+        print(f"\n{len(planner_issues)} planner-resolution issue(s) found.")
         exit_code = 1
 
     # Projected output lint

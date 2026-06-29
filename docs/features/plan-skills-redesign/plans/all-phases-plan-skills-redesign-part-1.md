@@ -122,8 +122,8 @@ This part covers exactly one phase. Execute its batches in order.
 
 - [x] WU-1 — Rename Cognito planner dir + frontmatter + briefing self-ref + symlink re-check
 - [x] WU-2 — Pin & edit pipeline dispatch sites to emit `write-plan-cognito` for Cognito
-- [ ] WU-3 — Strip personal-project residue from the Cognito planner
-- [ ] WU-4 — Projection/lint assertions: `write-plan-cognito` resolves; no `execute-plan-cognito`; catalog audit
+- [x] WU-3 — Strip personal-project residue from the Cognito planner
+- [x] WU-4 — Projection/lint assertions: `write-plan-cognito` resolves; no `execute-plan-cognito`; catalog audit
 
 ---
 

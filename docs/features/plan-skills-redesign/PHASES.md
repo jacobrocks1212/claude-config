@@ -2,7 +2,7 @@
 
 > Decomposition of `SPEC.md` (Plan-Skills Redesign). Six phases, ordered by dependency. Each is independently testable; phases 3→4 and the D2-dependent phases (5, 6) carry explicit prerequisites. This is harness-internals work in `claude-config/` — no Cognito product code, no `/msbuild`/`/mstest`. Verification is Python unit tests (`pytest user/scripts/test_*.py`), the projection/lint scripts, and `setup.ps1 check`.
 
-**Status:** Phase 1 in progress (Batch 1 complete)
+**Status:** Phase 1 Complete (all deliverables landed; Phases 2–6 pending)
 **Spec:** `./SPEC.md`
 **Last updated:** 2026-06-29
 
@@ -56,10 +56,10 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 - [x] Run `setup.ps1 check` (and `repair` if needed) to confirm the directory symlink re-resolves.
 - [x] **Discovery (gates the edit below):** pin the exact `lazy-state.py` branch that emits the planner `sub_skill` string, and the dispatch sites in `/lazy` Step 6 and `plan-feature`. The Explore sweep confirmed the file emits a `sub_skill` but did not pin the deciding line/branch — this discovery closes that gap before any edit.
 - [x] Edit the pinned dispatch site(s) so Cognito repos emit `write-plan-cognito`; confirm `/lazy` Step 7 still targets generic `/execute-plan`.
-- [ ] Discovery: confirm whether any catalog/menu advertises the bare `write-plan` name; if found, update to `write-plan-cognito`; if not, record that discovery is symlink-based (no catalog edit needed). *(Touchpoint sweep already found the skill-catalog has no `write-plan` ref — bounded.)*
-- [ ] Strip personal-project residue (Tauri, MCP-validation, `/lazy-batch` Step 9) from the Cognito planner.
-- [ ] Add a projection/lint assertion that `/write-plan-cognito` exists and resolves (no same-name collision remains).
-- [ ] Add a lint/skills-dir assertion that **no `execute-plan-cognito` exists** (closes the SPEC "One generic executor, no Cognito fork" criterion — the negative invariant from the locked decision).
+- [x] Discovery: confirm whether any catalog/menu advertises the bare `write-plan` name; if found, update to `write-plan-cognito`; if not, record that discovery is symlink-based (no catalog edit needed). *(Touchpoint sweep already found the skill-catalog has no `write-plan` ref — bounded.)*
+- [x] Strip personal-project residue (Tauri, MCP-validation, `/lazy-batch` Step 9) from the Cognito planner.
+- [x] Add a projection/lint assertion that `/write-plan-cognito` exists and resolves (no same-name collision remains).
+- [x] Add a lint/skills-dir assertion that **no `execute-plan-cognito` exists** (closes the SPEC "One generic executor, no Cognito fork" criterion — the negative invariant from the locked decision).
 
 **Testing strategy.** `setup.ps1 check` green; `python project-skills.py` projects `write-plan-cognito` with no broken `!cat`; `lint-skills.py` green; manual: in a Cognito worktree (fresh session) `/write-plan-cognito` resolves to the lane variant and `/write-plan` to the generic — both invocable, neither shadowed. **Dispatch assertion (not just resolution):** a Cognito-repo pipeline dispatch *emits* `write-plan-cognito` (verified in a run transcript), proving the routing edit fires — resolution alone does not prove the pipeline selects the renamed name.
 
@@ -90,6 +90,28 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 - `user/scripts/lazy-state.py` — import + Step-7a planner-name branch
 - `user/skills/plan-feature/SKILL.md` — Step 2 planner dispatch resolves by repo
 - `user/scripts/test_lazy_core.py` — 3 new helper tests + registry entries
+
+#### Implementation Notes (Phase 1 — Batch 2: WU-3 + WU-4)
+**Completed:** 2026-06-29
+**Review verdict:** PASS
+
+**Work completed:**
+- WU-3 (strip personal residue): **No edit required — verified clean.** A broad sweep of `write-plan-cognito/SKILL.md` (385L) found ZERO Tauri / cargo / clippy / rust / MCP-validation / `VALIDATED.md` / real-device / `/lazy-batch` Step-9 references. The only two "MCP" mentions (L10, L18) are deliberate Cognito-context *affirmations* that the repo has no MCP surface — correct lane behavior to preserve, the opposite of residue. The file was already authored clean for the Cognito profile; the deliverable is satisfied by verification.
+- WU-4 (lint assertions + catalog audit): Added `lint_planner_resolution(repos_dir, user_skills_dir)` + `_skill_dirs_under()` helper to `lint-skills.py`, wired into `main()` to run on every default lint invocation (exit 1 on violation). It enforces: (positive) `write-plan-cognito` resolves under some `repos/*/.claude/skills/` with NO same-name user-level collision; (negative) NO `execute-plan-cognito` exists under any `repos/*/.claude/skills/` or `user/skills/`. Added 6 pytest cases to `test_project_skills.py` (clean tree, missing-planner, user-collision, repo executor-fork, user executor-fork, and a real-tree-is-clean assertion). **Catalog audit:** `repos/cognito-forms/.claude/skill-config/skill-catalog.md` has NO `write-plan` reference — discovery is symlink-based, so no catalog edit was needed (confirms the touchpoint sweep).
+
+**Integration notes (for next implementer):**
+- The new lint gate is part of the standard `lint-skills.py` run — it prints `OK — planner resolution: write-plan-cognito resolves; no execute-plan-cognito fork.` when clean. Phases 2+ that add an `execute-plan-cognito` (they should not) will trip this gate.
+
+**Pitfalls & guidance:**
+- `lint_planner_resolution`'s `repos_dir` default at CLI is `~/source/repos` (live worktrees); the pytest real-tree test scopes it to `claude-config/repos/` (source tree) — both satisfy the invariant since the rename landed in the source and the symlink makes it visible in the worktrees.
+
+**Files modified (Batch 2):**
+- `user/scripts/lint-skills.py` — `lint_planner_resolution()` + `_skill_dirs_under()` + `main()` wiring
+- `user/scripts/test_project_skills.py` — 6 new planner-resolution tests
+- (WU-3: no file edit — verified-clean)
+
+**Post-phase CLAUDE.md / consumer review (additional dispatch site found):**
+- `repos/cognito-forms/.claude/skills/resolve-review/SKILL.md` — a Cognito-repo-scoped skill that dispatches the planner via its `/add-phase` → planner bridge (Step 7). Updated its 5 planner refs from `/write-plan` to `/write-plan-cognito` so the Cognito review-remediation pipeline gets lane partitioning (it only ever runs in the Cognito repo). This site was NOT in the touchpoint audit's enumerated dispatch sites but falls under WU-2's intent. Left untouched: illustrative `write-plan` *example* references in `log/SKILL.md` (work-log `--skill` example) and `CLAUDE.local.md` (work-logging param examples) — these are not planner-dispatch directives.
 
 ---
 

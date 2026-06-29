@@ -779,3 +779,121 @@ def test_plan_feature_requires_decision_classification_ledger():
     # It must be framed as a requirement, and reference the /spec --batch shape.
     assert "MANDATORY" in text or "MUST" in text or "require" in text.lower()
     assert "/spec --batch" in text or "spec --batch" in text
+
+
+# ---------------------------------------------------------------------------
+# D1 — deterministic planner resolution (plan-skills-redesign Phase 1)
+# ---------------------------------------------------------------------------
+#
+# SPEC §D1 + Validation rows "Advertised planner is the one that runs" (both
+# /write-plan and /write-plan-cognito invocable, no shadowing) and "One generic
+# executor, no Cognito fork" (no /execute-plan-cognito exists). The lint adds a
+# planner-resolution gate; these tests pin its positive + negative invariants
+# against synthetic trees AND assert the real claude-config tree satisfies them.
+
+def _load_lint_skills():
+    """Import lint-skills.py from the same scripts dir (hyphen-safe)."""
+    spec = importlib.util.spec_from_file_location(
+        "lint_skills",
+        Path(__file__).parent / "lint-skills.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _make_skill(skills_root: Path, name: str) -> None:
+    d = skills_root / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(f"---\nname: {name}\n---\n# {name}\n", encoding="utf-8")
+
+
+def test_planner_resolution_clean_when_cognito_planner_present(tmp_path):
+    """write-plan-cognito under a repo + no fork + no user collision → no issues."""
+    lint = _load_lint_skills()
+    user_skills = tmp_path / "user" / "skills"
+    _make_skill(user_skills, "write-plan")
+    _make_skill(user_skills, "execute-plan")
+
+    repos = tmp_path / "repos"
+    repo_skills = repos / "Cognito Forms" / ".claude" / "skills"
+    _make_skill(repo_skills, "write-plan-cognito")
+
+    issues = lint.lint_planner_resolution(repos, user_skills)
+    assert issues == [], f"expected no planner-resolution issues, got {issues}"
+
+
+def test_planner_resolution_flags_missing_cognito_planner(tmp_path):
+    """No write-plan-cognito anywhere → a planner-resolution issue is raised."""
+    lint = _load_lint_skills()
+    user_skills = tmp_path / "user" / "skills"
+    _make_skill(user_skills, "write-plan")
+
+    repos = tmp_path / "repos"
+    repo_skills = repos / "Cognito Forms" / ".claude" / "skills"
+    _make_skill(repo_skills, "some-other-skill")
+
+    issues = lint.lint_planner_resolution(repos, user_skills)
+    kinds = {i["kind"] for i in issues}
+    assert "planner-resolution" in kinds, f"expected planner-resolution issue, got {issues}"
+
+
+def test_planner_resolution_flags_user_level_collision(tmp_path):
+    """A user-level write-plan-cognito (same-name shadow) → planner-collision issue."""
+    lint = _load_lint_skills()
+    user_skills = tmp_path / "user" / "skills"
+    _make_skill(user_skills, "write-plan-cognito")
+
+    repos = tmp_path / "repos"
+    repo_skills = repos / "Cognito Forms" / ".claude" / "skills"
+    _make_skill(repo_skills, "write-plan-cognito")
+
+    issues = lint.lint_planner_resolution(repos, user_skills)
+    kinds = {i["kind"] for i in issues}
+    assert "planner-collision" in kinds, f"expected planner-collision issue, got {issues}"
+
+
+def test_planner_resolution_flags_execute_plan_cognito_fork_repo(tmp_path):
+    """An execute-plan-cognito under a repo skills dir → executor-fork issue."""
+    lint = _load_lint_skills()
+    user_skills = tmp_path / "user" / "skills"
+    _make_skill(user_skills, "write-plan")
+
+    repos = tmp_path / "repos"
+    repo_skills = repos / "Cognito Forms" / ".claude" / "skills"
+    _make_skill(repo_skills, "write-plan-cognito")
+    _make_skill(repo_skills, "execute-plan-cognito")
+
+    issues = lint.lint_planner_resolution(repos, user_skills)
+    kinds = {i["kind"] for i in issues}
+    assert "executor-fork" in kinds, f"expected executor-fork issue, got {issues}"
+
+
+def test_planner_resolution_flags_execute_plan_cognito_fork_user(tmp_path):
+    """An execute-plan-cognito at the user level → executor-fork issue."""
+    lint = _load_lint_skills()
+    user_skills = tmp_path / "user" / "skills"
+    _make_skill(user_skills, "write-plan")
+    _make_skill(user_skills, "execute-plan-cognito")
+
+    repos = tmp_path / "repos"
+    repo_skills = repos / "Cognito Forms" / ".claude" / "skills"
+    _make_skill(repo_skills, "write-plan-cognito")
+
+    issues = lint.lint_planner_resolution(repos, user_skills)
+    kinds = {i["kind"] for i in issues}
+    assert "executor-fork" in kinds, f"expected executor-fork issue, got {issues}"
+
+
+def test_planner_resolution_real_tree_is_clean():
+    """The real claude-config tree must satisfy the D1 invariants: write-plan-cognito
+    resolves repo-scoped, no user-level collision, and no execute-plan-cognito fork."""
+    lint = _load_lint_skills()
+    repo_root = Path(__file__).resolve().parents[2]
+    user_skills = repo_root / "user" / "skills"
+    repos = repo_root / "repos"
+
+    issues = lint.lint_planner_resolution(repos, user_skills)
+    assert issues == [], (
+        f"real-tree planner-resolution invariants violated: {issues}"
+    )

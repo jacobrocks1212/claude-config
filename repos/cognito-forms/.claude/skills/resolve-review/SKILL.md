@@ -6,13 +6,13 @@ argument-hint: [review-path | PR-NNNNN | NNNNN]
 
 # Resolve Review
 
-Turn a completed Cognito PR review into actionable remediation work. This skill reads a review (and its always-present `-journey.md` companion), independently validates the high-severity findings with Sonnet subagents, asks you how to resolve each actionable item, then bridges your choices into the planning pipeline: `/add-phase` appends a remediation phase to the feature's `PHASES.md`, and `/write-plan` emits the implementation plan.
+Turn a completed Cognito PR review into actionable remediation work. This skill reads a review (and its always-present `-journey.md` companion), independently validates the high-severity findings with Sonnet subagents, asks you how to resolve each actionable item, then bridges your choices into the planning pipeline: `/add-phase` appends a remediation phase to the feature's `PHASES.md`, and `/write-plan-cognito` emits the implementation plan.
 
 **Scope:** Cognito Forms repo. Reviews live in `.claude.local/reviews/`; feature docs live in the sibling `../cog-docs/docs/features/` repo.
 
-**Flow:** Resolve review → classify findings → validate flagged findings (Sonnet) → present actionable items + gather resolution choices → infer+confirm feature dir → `/add-phase --batch` → `/write-plan` → report.
+**Flow:** Resolve review → classify findings → validate flagged findings (Sonnet) → present actionable items + gather resolution choices → infer+confirm feature dir → `/add-phase --batch` → `/write-plan-cognito` → report.
 
-This skill is interactive and read-only with respect to source code — it never edits `.cs`/`.ts`/`.vue` files. Its only writes are delegated to `/add-phase` (PHASES.md) and `/write-plan` (plan file).
+This skill is interactive and read-only with respect to source code — it never edits `.cs`/`.ts`/`.vue` files. Its only writes are delegated to `/add-phase` (PHASES.md) and `/write-plan-cognito` (plan file).
 
 ---
 
@@ -100,7 +100,7 @@ The remediation phase attaches to a feature doc directory under `../cog-docs/doc
 
    Also scan each candidate's `overview.md` / `requirements.md` / `progress.md` / `PHASES.md` for distinctive title tokens and the branch name. Rank by match strength (work item > branch > title tokens).
 2. **Confirm with the user** (`AskUserQuestion`): present the best match and ask to confirm or pick another. If no confident match exists, fall back to a picker listing the feature dirs.
-3. **Verify the dir has a `PHASES.md`** — the `/add-phase` → `/write-plan` bridge requires one. If it's missing, ask the user which `PHASES.md` to target (or whether the feature predates phased planning, in which case point `/write-plan` at the correct existing one).
+3. **Verify the dir has a `PHASES.md`** — the `/add-phase` → `/write-plan-cognito` bridge requires one. If it's missing, ask the user which `PHASES.md` to target (or whether the feature predates phased planning, in which case point `/write-plan-cognito` at the correct existing one).
 
 ---
 
@@ -122,15 +122,15 @@ Invoke via the `Skill` tool:
 
 ---
 
-## Step 7: Write the Plan (`/write-plan`)
+## Step 7: Write the Plan (`/write-plan-cognito`)
 
-Invoke `/write-plan` on the same feature `PHASES.md` to generate the implementation plan covering the new remediation phase (and any other open phases):
+Invoke `/write-plan-cognito` (the Cognito Forms lane planner) on the same feature `PHASES.md` to generate the implementation plan covering the new remediation phase (and any other open phases):
 
 ```
-/write-plan <abs-path-to-feature-PHASES.md>
+/write-plan-cognito <abs-path-to-feature-PHASES.md>
 ```
 
-`/write-plan` partitions, drafts, and writes the plan file(s) into the feature's `plans/` directory and reports the path(s) and the `/execute-plan` command(s). Surface those to the user verbatim.
+`/write-plan-cognito` partitions into backend/frontend lanes, drafts, and writes the plan file(s) into the feature's `plans/` directory and reports the path(s) and the `/execute-plan` command(s). Surface those to the user verbatim.
 
 ---
 
