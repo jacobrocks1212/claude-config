@@ -157,3 +157,18 @@ Swept all notes-mining phrasings across `user/skills/` with: `grep -rni "Impleme
 - `user/skills/_components/subagent-review.md` — Step 1.5 cheap-default + conditional test re-run
 - `docs/features/plan-skills-redesign/PHASES.md` — WU-3 deliverable checked off
 - `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-3 ticked
+
+#### Implementation Notes (Phase 6 — Batch 3, WU-4)
+**Completed:** 2026-06-29
+**Review verdict:** PASS (self-review).
+**Work completed:**
+- Added the 529 inline-fallback fast-path to `subagent-review.md` Step 2 Path A: if dispatching the review subagent hits API 529 (overloaded) once or twice, abandon the subagent path and fall back to inline review (Path B) immediately — no multi-minute retry loop (fixes the ~16-min burn). Path B's gate condition updated to name the 529-fallback case.
+- Explicitly preserved the healthy hybrid/scope-gating: small batches inline, larger via a review subagent at the orchestrator's model. The substantive review is unchanged — only the retry-on-529 behavior changed. Non-529 failures (crash, malformed output) still follow normal recovery, not the fast-path.
+
+**Integration notes:**
+- The inline fallback reuses the identical context + instructions + structured report format; only the separate review context window is lost on fallback, not the review's substance.
+
+**Files modified (Batch 3):**
+- `user/skills/_components/subagent-review.md` — Step 2 Path A 529 inline-fallback + Path B gate update
+- `docs/features/plan-skills-redesign/PHASES.md` — WU-4 deliverables checked off
+- `docs/features/plan-skills-redesign/plans/all-phases-plan-skills-redesign-part-5.md` — WU-4 ticked

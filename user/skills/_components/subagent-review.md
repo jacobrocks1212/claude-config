@@ -75,7 +75,9 @@ Record the gate outcome explicitly. One of:
 
 Dispatch a single review agent using the **same model as the orchestrating session** (do NOT hardcode a model — inherit whatever model is running). The review agent's prompt must include the context and instructions defined below.
 
-**Path B — Inline review** (≤ 2 files AND ≤ 150 lines):
+> **529 inline-fallback (D5 — MANDATORY).** The dispatch is hybrid/scope-gated by design (large batches go to a review subagent; small batches are reviewed inline), and that scope-gating is healthy — keep it. But the review-subagent dispatch must NOT be retried for minutes on transient API-overload errors: **if dispatching the review agent hits API 529 (overloaded) once or twice, abandon the subagent path immediately and fall back to Path B (inline review) for this batch.** Do not loop on 529 — the ~16-min retry burn it caused is exactly what this fast-path removes. The inline review applies the identical context and instructions below and produces the identical structured report; the only thing lost on fallback is the separate review context window, not the substance of the review. (Other failure classes — a genuine review-agent crash or malformed output, not 529 — follow the normal recovery, not this fast-path.)
+
+**Path B — Inline review** (≤ 2 files AND ≤ 150 lines, OR a >2-strike-equivalent 529 fallback from Path A):
 
 Read the same context listed below and apply the same review instructions yourself. Produce the same structured output format.
 

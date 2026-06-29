@@ -244,8 +244,8 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Deliverables.**
 - [x] Default per-WU verification: `git status` / `wc -l` / `grep -n` integrity checks + the assertion-vs-intent read. Re-run tests **only on integrity mismatch**.
-- [ ] 529 inline-fallback: after 1–2 failed review-subagent dispatch attempts (API 529), fall back to inline review immediately (fixes the ~16-min retry burn).
-- [ ] Keep the review mechanism hybrid/scope-gated (small batches inline, larger via review subagent at the orchestrator's model).
+- [x] 529 inline-fallback: after 1–2 failed review-subagent dispatch attempts (API 529), fall back to inline review immediately (fixes the ~16-min retry burn).
+- [x] Keep the review mechanism hybrid/scope-gated (small batches inline, larger via review subagent at the orchestrator's model).
 - [ ] **Final non-regression gate (owns SPEC "Healthy parts not regressed", §Validation):** run `/write-plan` (and `/write-plan-cognito`) end-to-end and confirm the healthy parts all still fire — partitioning, pre-draft `[VERIFY:]` anchor gates, dirty-tree handling, pre-dispatch drift reconciliation, Tasks recovery anchor, typegen seam, right-sized builds. Capture the pre-draft gate output + a generated plan as evidence.
 
 **Testing strategy.** Per-WU verification transcript shows cheap checks + assertion read, no full-suite run unless an integrity check disagrees. Simulate a review-subagent 529 → falls back to inline within 1–2 strikes, no multi-minute retry loop. The final non-regression gate (above) exercises the §Validation "Healthy parts not regressed" row directly — no prior phase owned it, so it lands here as the terminal check.
