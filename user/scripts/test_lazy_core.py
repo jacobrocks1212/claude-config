@@ -20,6 +20,7 @@ import difflib
 import inspect
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -15253,6 +15254,63 @@ def test_host_capability_midi_controller_registered_and_env_probed():
     assert lazy_core.unknown_capability_ids({"midi-controller"}) == set()
 
 
+def test_host_capability_link_peer_and_non_windows_registered_and_probed():
+    """link-multi-peer + non-windows-host are registered host capabilities
+    (device-vs-host mis-classification, Round 41, 2026-06-29).
+
+    d5-ableton-link's multi-peer scenarios (peerCount:0, need a 2nd LAN peer) and
+    non-windows-audio-hardening's cfg(unix) code (need a Linux/macOS host) were
+    being mis-routed to DEFERRED_REQUIRES_DEVICE, which re-opens and loops on a
+    real-audio-device host. They are HOST-capability gaps, not device gaps. This
+    pins: (a) both ids are in the closed registry; (b) parse_requires_host accepts
+    them (no unknown-capability fail-fast); (c) the non-windows-host platform probe
+    resolves present on a non-Windows system_fn and absent on a Windows one (the OS
+    is deterministically detectable); (d) link-multi-peer resolves absent — it has
+    NO probe config (a solo host can't self-detect a 2nd peer) so it binds the
+    constant-False placeholder (fail-safe absent until a peer probe is configured).
+    """
+    _guard()
+    # (a) Both registered in the closed vocabulary + shape-valid.
+    assert "link-multi-peer" in lazy_core._HOST_CAPABILITY_REGISTRY
+    assert "non-windows-host" in lazy_core._HOST_CAPABILITY_REGISTRY
+    assert lazy_core._HOST_CAPABILITY_ID_RE.match("link-multi-peer")
+    assert lazy_core._HOST_CAPABILITY_ID_RE.match("non-windows-host")
+
+    # (b) parse_requires_host accepts both; neither is an unknown-capability typo.
+    spec = "---\nrequires_host: [link-multi-peer, non-windows-host]\n---\n# x\n"
+    assert lazy_core.parse_requires_host(spec, None) == {
+        "link-multi-peer",
+        "non-windows-host",
+    }
+    assert lazy_core.unknown_capability_ids(
+        {"link-multi-peer", "non-windows-host"}
+    ) == set()
+
+    # (c) The non-windows-host probe is a real platform probe: present on a
+    # non-Windows OS, absent on Windows (inject system_fn — hermetic).
+    cfg = lazy_core._HOST_CAPABILITY_PROBE_CONFIG.get("non-windows-host")
+    assert cfg == {"kind": "platform", "predicate": "non-windows"}
+    assert lazy_core.probe_platform_capability(
+        "non-windows", system_fn=lambda: "Linux"
+    ) is True
+    assert lazy_core.probe_platform_capability(
+        "non-windows", system_fn=lambda: "Darwin"
+    ) is True
+    assert lazy_core.probe_platform_capability(
+        "non-windows", system_fn=lambda: "Windows"
+    ) is False
+
+    # (d) link-multi-peer has NO probe config → constant-False placeholder bound by
+    # _default_host_probes → never present until a peer probe is configured.
+    assert "link-multi-peer" not in lazy_core._HOST_CAPABILITY_PROBE_CONFIG
+    default_probes = lazy_core._default_host_probes()
+    assert default_probes["link-multi-peer"]() is False
+    # And the non-windows-host default probe reflects the REAL host OS (Windows here
+    # → absent; non-Windows CI → present) — assert it tracks platform.system().
+    expected_non_windows = platform.system().strip().lower() != "windows"
+    assert default_probes["non-windows-host"]() is expected_non_windows
+
+
 def test_parse_requires_host_from_spec_frontmatter_only():
     """A list value in the SPEC frontmatter parses to the capability set."""
     _guard()
@@ -27318,6 +27376,11 @@ _TESTS = _TESTS + [
     # not express a MIDI-hardware-only deferral).
     ("test_host_capability_midi_controller_registered_and_env_probed",
      test_host_capability_midi_controller_registered_and_env_probed),
+    # Round 41 — link-multi-peer + non-windows-host capabilities (device-vs-host
+    # mis-classification: peer/OS gaps were mis-routed to DEFERRED_REQUIRES_DEVICE
+    # and looped on a real-device host). non-windows-host adds the "platform" probe.
+    ("test_host_capability_link_peer_and_non_windows_registered_and_probed",
+     test_host_capability_link_peer_and_non_windows_registered_and_probed),
 ]
 
 

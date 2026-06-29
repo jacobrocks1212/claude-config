@@ -57,6 +57,7 @@ import datetime
 import hashlib
 import json
 import os
+import platform
 import re
 import shlex
 import subprocess
@@ -6968,6 +6969,49 @@ def probe_env_capability(var_name, *, environ=None) -> bool:
     return str(val).strip().lower() not in _FALSY_ENV_VALUES
 
 
+# Predicate vocabulary for the "platform" probe kind (host-capability OS axis).
+# A predicate name maps to a pure function of the host OS name (platform.system()
+# returns "Windows"/"Linux"/"Darwin"). Closed set — an unknown predicate yields a
+# constant-False probe (fail-safe absent, never a crash), mirroring the registry's
+# missing-config fallback.
+_PLATFORM_PREDICATES: dict[str, object] = {
+    # The OS is anything OTHER than Windows (Linux or macOS). Backs the
+    # non-windows-host capability: cfg(unix) code is un-runnable on Windows, so a
+    # Windows host reports the capability ABSENT and defers (host-capability-
+    # saturated) instead of looping a real-device re-open.
+    "non-windows": (lambda system_name: system_name.strip().lower() != "windows"),
+}
+
+
+def probe_platform_capability(predicate, *, system_fn=platform.system) -> bool:
+    """Return True iff the host OS satisfies ``predicate`` — the OS/platform
+    capability probe (device-vs-host mis-classification, Round 41, 2026-06-29).
+
+    The OS is DETERMINISTICALLY detectable (unlike a network peer), so this is a
+    real probe, not a constant-False placeholder. ``predicate`` is a key into the
+    closed ``_PLATFORM_PREDICATES`` map; each value is a pure function of the OS
+    name string returned by ``system_fn`` ("Windows"/"Linux"/"Darwin"). An unknown
+    predicate (or any evaluation error) reports ``False`` — an unrecognized OS
+    constraint is an absent capability, never a propagated exception.
+
+    Args:
+        predicate: a key into ``_PLATFORM_PREDICATES`` (e.g. ``"non-windows"``).
+        system_fn: injectable OS-name source (``--test`` / unit tests pass a stub
+            returning ``"Windows"`` / ``"Linux"``). ``platform.system`` ⇒ the real
+            host OS.
+
+    Returns:
+        ``True`` iff the host OS satisfies the named predicate, else ``False``.
+    """
+    fn = _PLATFORM_PREDICATES.get(predicate)
+    if fn is None:
+        return False
+    try:
+        return bool(fn(system_fn()))
+    except Exception:  # noqa: BLE001 — any probe failure ⇒ absent
+        return False
+
+
 def ensure_runtime(
     repo_root: Path,
     *,
@@ -11372,6 +11416,25 @@ _HOST_CAPABILITY_REGISTRY: dict[str, object] = {
     # `requires_host: midi-controller` + DEFERRED_REQUIRES_HOST.md, so a non-MIDI
     # host defers cleanly (host-capability-saturated) instead of looping.
     "midi-controller": None,
+    # A 2nd Ableton Link peer reachable on the LAN (device-vs-host mis-
+    # classification, Round 41, 2026-06-29). d5-ableton-link's multi-peer
+    # scenarios (peerCount:0 on a solo host) were written DEFERRED_REQUIRES_DEVICE
+    # by the cycle and looped: a real-audio-device host re-opens them (Step 9) but
+    # cannot certify them (no 2nd peer), tripping the step-repeat tripwire. The
+    # unmet prerequisite is a HOST capability (a peer), not an audio device. No
+    # automated probe exists — a solo host cannot self-detect a 2nd peer — so this
+    # id intentionally has NO _HOST_CAPABILITY_PROBE_CONFIG entry and binds to the
+    # constant-False placeholder (fail-safe absent: it re-opens only when a future
+    # mock_peers / peer probe is configured).
+    "link-multi-peer": None,
+    # A Linux or macOS host (device-vs-host mis-classification, Round 41,
+    # 2026-06-29). non-windows-audio-hardening's cfg(unix) code is un-runnable on
+    # Windows; the cycle wrote DEFERRED_REQUIRES_DEVICE and looped (a real-audio-
+    # device WINDOWS host re-opens but can never run cfg(unix) code). The unmet
+    # prerequisite is the OS, not an audio device. Unlike link-multi-peer, the OS
+    # IS deterministically detectable — this id DOES have a probe (kind "platform",
+    # predicate "non-windows") so a non-Windows host reports it present and certifies.
+    "non-windows-host": None,
 }
 
 # Module-load assertion: every registered id is shape-valid (a typo in the
@@ -11518,6 +11581,12 @@ _HOST_CAPABILITY_PROBE_CONFIG: dict[str, dict] = {
     # MIDI port would false-positive "real hardware present" for the servo-travel
     # assertion, exactly the false-certify the device axis guards against.
     "midi-controller": {"kind": "env", "var": "ALGOBOOTH_REAL_MIDI_DEVICE"},
+    # A Linux or macOS host. The OS is deterministically detectable, so this binds
+    # a real "platform" probe (predicate "non-windows" → platform.system() != Windows).
+    # A Windows host reports absent and defers cfg(unix)-only scenarios cleanly.
+    # (link-multi-peer is deliberately ABSENT from this config — no self-probe for a
+    # 2nd network peer — so it binds to the constant-False placeholder below.)
+    "non-windows-host": {"kind": "platform", "predicate": "non-windows"},
 }
 
 
@@ -11543,6 +11612,9 @@ def _default_host_probes() -> dict:
         elif cfg.get("kind") == "binary":
             argv = cfg["argv"]
             probes[cap_id] = (lambda a=argv: probe_binary_capability(a))
+        elif cfg.get("kind") == "platform":
+            predicate = cfg["predicate"]
+            probes[cap_id] = (lambda p=predicate: probe_platform_capability(p))
         else:
             probes[cap_id] = (lambda: False)
     return probes
