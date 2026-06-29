@@ -13,7 +13,7 @@ Context compaction evicts plan details from your working memory. After compactio
    - The **Execution Schedule** (which phase/batch is next)
    - The **current phase's Per-Phase Plan** (work units, batch overview, file paths)
    - Any **Mandatory Rules** or **Execution Model** constraints
-3. Cross-reference with PHASES.md Implementation Notes (which may have been updated since the plan was written — notes take priority over the plan where they diverge)
+3. Cross-reference with Implementation Notes (apply sibling-then-embedded: check `IMPLEMENTATION_NOTES.md` sibling of PHASES.md first; fall back to embedded notes in PHASES.md — notes take priority over the plan where they diverge)
 
 ### Automatic safety net
 

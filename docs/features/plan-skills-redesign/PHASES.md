@@ -2,7 +2,7 @@
 
 > Decomposition of `SPEC.md` (Plan-Skills Redesign). Six phases, ordered by dependency. Each is independently testable; phases 3→4 and the D2-dependent phases (5, 6) carry explicit prerequisites. This is harness-internals work in `claude-config/` — no Cognito product code, no `/msbuild`/`/mstest`. Verification is Python unit tests (`pytest user/scripts/test_*.py`), the projection/lint scripts, and `setup.ps1 check`.
 
-**Status:** Phases 1–2 Complete (all deliverables landed; Phases 3–6 pending)
+**Status:** Phases 1–4 Complete (all deliverables landed; Phases 5–6 pending)
 **Spec:** `./SPEC.md`
 **Last updated:** 2026-06-29
 
@@ -199,14 +199,16 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Prerequisites.** Phase 3 (writer flipped + tolerant-read pattern established).
 
+**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 4)
+
 **Deliverables.**
-- [ ] `source-reread.md` component: sibling-then-embedded read of prior Implementation Notes.
-- [ ] `add-phase`: mine notes from sibling, fall back to embedded.
-- [ ] `lazy`: research-gate predicate checks sibling-then-embedded.
-- [ ] `lazy-batch`: ledger/notes scope reads sibling-then-embedded.
-- [ ] `realign-spec`: upstream-drift read of Implementation Notes from sibling-then-embedded.
-- [ ] `implement-phase` and `implement-phase-batch`: prior-phase Implementation Notes from sibling-then-embedded.
-- [ ] `spec-phases-batch` and `spec-phases` Step 1.5 (upstream look-back): sibling-then-embedded.
+- [x] `source-reread.md` component: sibling-then-embedded read of prior Implementation Notes.
+- [x] `add-phase`: mine notes from sibling, fall back to embedded.
+- [x] `lazy`: research-gate predicate checks sibling-then-embedded.
+- [x] `lazy-batch`: ledger/notes scope reads sibling-then-embedded.
+- [x] `realign-spec`: upstream-drift read of Implementation Notes from sibling-then-embedded.
+- [x] `implement-phase` and `implement-phase-batch`: prior-phase Implementation Notes from sibling-then-embedded.
+- [x] `spec-phases-batch` and `spec-phases` Step 1.5 (upstream look-back): sibling-then-embedded.
 
 **Testing strategy.** For a representative trio (`add-phase`, `realign-spec`, `implement-phase`), run against a feature with sibling notes → assert the relocated notes are surfaced; run against a legacy feature with embedded notes → assert fallback works. Re-project + lint after edits.
 

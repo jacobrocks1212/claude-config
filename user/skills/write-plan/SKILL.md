@@ -73,7 +73,7 @@ Plan-file frontmatter under a halt: set `status: Draft` (not `Ready`) on any par
 ### 1b. Read Everything
 
 For **each** PHASES.md:
-1. Read the PHASES.md file **in full** — including all previously completed phases and their Implementation Notes
+1. Read the PHASES.md file **in full** — including all previously completed phases. For Implementation Notes, apply the sibling-then-embedded read order: check for a sibling `IMPLEMENTATION_NOTES.md` first; fall back to embedded notes in PHASES.md. See `~/.claude/skills/_components/implementation-notes-read-order.md`.
 2. Read the sibling SPEC.md in the same directory — source of truth for correctness
 3. Note the feature name (directory name, e.g. `foundation`, `auth-bootstrap`)
 

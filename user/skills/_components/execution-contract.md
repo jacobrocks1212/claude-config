@@ -77,7 +77,7 @@ Repeat until all phases in the Execution Schedule are complete or a blocking iss
 
 1. **Select ready phase(s):** Identify phase(s) whose entry criteria are satisfied (prerequisite phases complete — all deliverables checked off in their PHASES.md). If multiple phases from different features are ready and marked parallel-eligible in the schedule, execute them concurrently. If no phases are ready, jump to Blocking Issue Protocol.
 2. **Announce:** Print "Implementing [feature] Phase N: [title]".
-3. **Review prior context:** Re-read all previously completed phases' Implementation Notes in this feature's PHASES.md. These contain imports, patterns, gotchas, and actual file paths that may differ from the original plan. They take priority over the plan where they diverge.
+3. **Review prior context:** Re-read all previously completed phases' Implementation Notes. Apply the sibling-then-embedded read order: check `IMPLEMENTATION_NOTES.md` (sibling to PHASES.md) first; fall back to embedded notes in PHASES.md for in-flight features predating the D3 writer flip. These contain imports, patterns, gotchas, and actual file paths that may differ from the original plan. They take priority over the plan where they diverge.
 4. **Execute all batches** per the Per-Batch Steps below.
 5. **Run Post-Phase Steps** below.
 6. **Report:** Print "[feature] Phase N: [title] — committed as [hash]".

@@ -65,7 +65,7 @@ Read in this order:
 1. `<feature-dir>/SPEC.md` — full content.
 2. `<phases-md>` — full content if it exists; otherwise note "PHASES.md not yet authored — only SPEC-level drift will be assessed."
 3. For each upstream in the filtered hard-dep list:
-   - `<upstream-dir>/PHASES.md` — full content. This is the authoritative record of decisions made during implementation. Read every Implementation Notes block; that's where the drift signal lives.
+   - `<upstream-dir>/PHASES.md` — full content. This is the authoritative record of decisions made during implementation. Read every Implementation Notes block; that's where the drift signal lives. Apply the sibling-then-embedded read order: check `<upstream-dir>/IMPLEMENTATION_NOTES.md` first (if it exists and has content headings), fall back to embedded `## Implementation Notes` blocks in PHASES.md. See `~/.claude/skills/_components/implementation-notes-read-order.md`.
    - `<upstream-dir>/SPEC.md` — for cross-referencing original intent vs. realized state.
    - `<upstream-dir>/plans/*.md` — read selectively. Glob the directory and read any plan file whose title or first heading mentions a topic that the downstream SPEC's `Technical Design`, `User Experience`, or hard-dep reason touches. Skip retro plans unless their filename suggests they captured a relevant architectural fix.
 

@@ -16,7 +16,7 @@ The phase-boundary marker for slicing PHASES.md is a **level-2-or-3 Markdown hea
 - WU-2 (slice reads — `source-reread.md` + `execute-plan/SKILL.md`): added a discrete `### PHASES.md slice read` subsection to `source-reread.md` and a `### PHASES.md slice handling` subsection to `execute-plan/SKILL.md`. Both narrow the startup / per-batch / compaction-recovery PHASES.md read to (a) the current-phase slice (offset/limit anchored on the OQ2 marker) plus (b) a compact completed-phases index (heading + `**Status:**` lines), never the whole file. The slice-read edit is authored additively (a new subsection, not a rewrite of the existing "prior Implementation Notes in PHASES.md" item) so Phase 4's sibling-then-embedded notes-read edit merges into the same `source-reread.md` without clobbering — item 2 of the re-read list is intentionally left for Phase 4 to flip to sibling-then-embedded.
 - WU-3 (harness reader — `lazy_core.py::phases_show_implementation()` + tests, TDD): extended the predicate with an optional `phases_path: Path | None = None` parameter (backward-compatible — text-only legacy callers unaffected). When `phases_path` is supplied it checks a sibling `IMPLEMENTATION_NOTES.md` FIRST (via new `_sibling_impl_notes_present()` helper + `_SIBLING_IMPL_NOTES_HEADING_RE` matching `^#{2,4}\s+Implementation Notes\b`), then falls back to the embedded `## Implementation Notes` heading in PHASES.md. The sole production caller (`lazy-state.py:2732`) now passes `phases_path=phases_file`. Wrote 4 new tests RED-first (sibling-only→True, embedded-with-path→True, neither→False, empty-scaffold-sibling→False) — all pass; the legacy embedded text-only case stays green.
 
-**Integration notes (for Phase 4):**
+**Integration notes (for Phase 5):**
 - The sibling-then-embedded read order is now established in `phases_show_implementation()`. Phase 4 propagates the SAME idiom to the generic consumer skills (`add-phase`, `lazy`, `lazy-batch`, `realign-spec`, `implement-phase`, `implement-phase-batch`, `spec-phases-batch`, `/spec-phases` Step 1.5) AND to `source-reread.md` item 2 (the "prior Implementation Notes" read), which Phase 3 deliberately left embedded-only.
 - `source-reread.md` now has TWO concerns: the Phase-3 slice-read subsection and (incoming Phase 4) the sibling-then-embedded notes read. Merge — do not clobber the slice-read subsection.
 - The sibling-evidence signal requires an actual `Implementation Notes` heading block (`#{2,4}`) in the sibling — a bare title/preamble scaffold does NOT count as evidence (prevents a placeholder file from falsely suppressing research).
@@ -34,3 +34,70 @@ The phase-boundary marker for slicing PHASES.md is a **level-2-or-3 Markdown hea
 - `user/scripts/lazy_core.py` — `phases_show_implementation()` gains optional `phases_path`; new `_sibling_impl_notes_present()` + `_SIBLING_IMPL_NOTES_HEADING_RE`; sibling-then-embedded order
 - `user/scripts/lazy-state.py` — Step-5 research-gate caller passes `phases_path=phases_file`
 - `user/scripts/test_lazy_core.py` — 4 new sibling-then-embedded tests + `_TESTS` registry entries
+
+---
+
+## Phase 4 — Propagate the D3 split across generic consumers (D3 blast radius)
+
+#### Implementation Notes (Phase 4 — Batch 1: WU-1 + Batch 2: WU-2 + WU-3)
+**Completed:** 2026-06-29
+**Review verdict:** PASS
+
+**Bounding sweep result (VERIFIED):**
+Swept all notes-mining phrasings across `user/skills/` with: `grep -rni "Implementation Notes|notes block|mine.*notes|prior.*notes|IMPLEMENTATION_NOTES"`. Found the planned 8-consumer set (`add-phase`, `lazy`, `lazy-batch`, `realign-spec`, `implement-phase`, `implement-phase-batch`, `spec-phases-batch`, `spec-phases`) PLUS 7 additional consumers not in the original planned set: `lazy-batch-retro`, `retro`, `fix`, `fix-mobile`, `write-plan`, `_components/execution-contract.md`, `_components/post-compact-reread.md`. All 15 were updated. `lazy-batch/SKILL.md` had no notes-reading site (only a spin-off authoring reference in `_components/lazy-batch-prompts/cycle-base-prompt.md` line 127 — authoring, not reading — confirmed correct to skip). The sweep is verified complete.
+
+**WU-1 (shared snippet + source-reread.md merge):**
+- Created `user/skills/_components/implementation-notes-read-order.md` (16 lines) — canonical single-sourced sibling-then-embedded rule: sibling-first with evidence threshold (`#{2,4}` heading in sibling), embedded fallback, explanation of why sibling-first (D3 writer flip), practical read steps. Makes `!cat`-includable for consumer reference.
+- Updated `user/skills/_components/source-reread.md` — item 2 updated to reference sibling-then-embedded; new `### Prior Implementation Notes read (sibling-then-embedded)` subsection added. Phase 3's `### PHASES.md slice read` subsection (lines 9-16) is intact and unchanged — confirmed merge, not clobber.
+
+**WU-2 (consumer group A):**
+- `add-phase/SKILL.md` — Step 2 item 1 + Step 3b mine-notes section updated.
+- `lazy/SKILL.md` — Research-gate predicate description updated to reflect `phases_show_implementation()` sibling-then-embedded behavior (matching Phase 3's `lazy_core.py` change).
+- `lazy-batch/SKILL.md` — No notes-reading site; no edit needed. `cycle-base-prompt.md` reference (line 127) is an authoring spin-off reference, not a read. Confirmed correct.
+
+**WU-3 (consumer group B + extra consumers):**
+- `realign-spec/SKILL.md` — upstream PHASES.md read (Step 2 item 3) updated.
+- `implement-phase/SKILL.md` — two sites updated (Step 1b + Step 3 Step 4a).
+- `implement-phase-batch/SKILL.md` — two sites updated (Step 1b + Phase Selection Loop Step 3).
+- `spec-phases/SKILL.md` — Step 1.5 upstream PHASES.md read updated.
+- `spec-phases-batch/SKILL.md` — subagent prompt template note added for Complete upstream reads.
+- `write-plan/SKILL.md` — Step 1b read updated (extra consumer, added per bounding sweep).
+- `fix/SKILL.md` — Step 3b read updated (extra consumer).
+- `fix-mobile/SKILL.md` — Step 3b read updated (extra consumer).
+- `_components/execution-contract.md` — Phase Selection Loop Step 3 updated (extra consumer).
+- `lazy-batch-retro/SKILL.md` — Step 2d artifact read + R-EP-5 rule updated (extra consumer).
+- `retro/SKILL.md` — Subagent A prompt + Subagent G compliance check updated (extra consumer).
+- `_components/post-compact-reread.md` — item 3 updated (extra consumer).
+
+**Consistency check:** every updated site uses the same sibling-then-embedded idiom with sibling-first, evidence-threshold (content headings required), embedded fallback, and a cross-reference to `implementation-notes-read-order.md`. No `-cognito` variants created. All edits are GENERIC.
+
+**Quality gates:**
+- `project-skills.py`: 84 skills / 92 components / 0 errors — PASS. New snippet counted as component 92.
+- `lint-skills.py`: no broken !cat patterns, planner resolution clean — PASS.
+- `setup.ps1 check`: 89 OK / 5 broken (same pre-existing `normalize-crlf.ps1` symlinks as baseline) — no regressions.
+- `pytest test_project_skills.py`: 36/36 passed — PASS.
+
+**Pitfalls & guidance:**
+- `lazy-batch/SKILL.md` has no notes-reading site — the `cycle-base-prompt.md` line 127 reference is about AUTHORING a reverse spin-off reference INTO notes (D7 policy), not reading notes. Correct to leave `lazy-batch/SKILL.md` unedited.
+- `execution-contract.md` line 100 says "PHASES.md (current phase + prior Implementation Notes)" — this is a brief summary of what `source-reread.md` covers and delegates to it; the component is now updated so the brief summary is accurate-enough. Left as-is intentionally.
+- Integration notes for Phase 5: no structural changes needed for Phase 5 (executor parallelism + background builds). The sibling-then-embedded idiom is fully propagated.
+
+**Files modified:**
+- `user/skills/_components/implementation-notes-read-order.md` — CREATED (new shared canonical snippet)
+- `user/skills/_components/source-reread.md` — item 2 updated + `### Prior Implementation Notes read` subsection added
+- `user/skills/add-phase/SKILL.md`
+- `user/skills/lazy/SKILL.md`
+- `user/skills/realign-spec/SKILL.md`
+- `user/skills/implement-phase/SKILL.md`
+- `user/skills/implement-phase-batch/SKILL.md`
+- `user/skills/spec-phases/SKILL.md`
+- `user/skills/spec-phases-batch/SKILL.md`
+- `user/skills/write-plan/SKILL.md`
+- `user/skills/fix/SKILL.md`
+- `user/skills/fix-mobile/SKILL.md`
+- `user/skills/_components/execution-contract.md`
+- `user/skills/lazy-batch-retro/SKILL.md`
+- `user/skills/retro/SKILL.md`
+- `user/skills/_components/post-compact-reread.md`
+- `docs/features/plan-skills-redesign/PHASES.md` — Phase 4 deliverables checked off, Status → Complete
+- `docs/features/plan-skills-redesign/IMPLEMENTATION_NOTES.md` — Phase 4 notes appended

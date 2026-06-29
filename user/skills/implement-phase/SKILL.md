@@ -44,7 +44,7 @@ Update each task to `in_progress` when starting it, `completed` when done. After
 
 ### 1b. Read PHASES.md and SPEC.md
 
-- Read the PHASES.md file **in full** — including all previously completed phases and their Implementation Notes
+- Read the PHASES.md file **in full** — including all previously completed phases. For Implementation Notes, apply the sibling-then-embedded read order: check for a sibling `IMPLEMENTATION_NOTES.md` first; fall back to embedded notes in PHASES.md. See `~/.claude/skills/_components/implementation-notes-read-order.md`.
 - Read the SPEC.md in the same directory (sibling file) — this is the source of truth for correctness
 - If SPEC.md doesn't exist, **AskUserQuestion** to confirm proceeding without a spec
 
@@ -73,7 +73,7 @@ Update each task to `in_progress` when starting it, `completed` when done. After
 
 ### 4a. Analyze the Phase
 
-**First, review all previously completed phases** — especially their **Implementation Notes** sections. These contain:
+**First, review all previously completed phases** — especially their **Implementation Notes** sections (found via sibling-then-embedded read order: `IMPLEMENTATION_NOTES.md` sibling if present and has content, otherwise embedded in PHASES.md). These contain:
 - Integration notes for subsequent phases (imports, patterns established, gotchas)
 - Pitfalls and guidance (wrong assumptions, workarounds applied)
 - Actual files modified (may differ from original plan)

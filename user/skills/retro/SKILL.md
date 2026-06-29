@@ -150,7 +150,7 @@ Launch parallel research subagents to collect evidence across multiple dimension
 
 ### Subagent A: Implementation Notes Analyzer
 
-**Prompt:** Read the PHASES.md implementation notes for all completed phases. Extract:
+**Prompt:** Read the Implementation Notes for all completed phases. Apply the sibling-then-embedded read order: check for a sibling `IMPLEMENTATION_NOTES.md` first (if it exists and has content headings); fall back to embedded `## Implementation Notes` blocks in PHASES.md. Extract:
 - Problems encountered (bugs, blockers, rework)
 - Deviations from the original plan
 - Scope changes (additions, removals, deferrals)
@@ -228,8 +228,8 @@ Extract from matched sessions:
 
 **Prompt:** Verify that all skills invoked during this feature's implementation followed their mandatory requirements. The full text of each skill is provided below for reference — use these as the authoritative checklist. Check each of the following:
 
-**1. PHASES.md Implementation Notes:**
-- For each completed phase, verify an `## Implementation Notes` block exists with:
+**1. Implementation Notes (sibling-then-embedded):**
+- For each completed phase, verify Implementation Notes exist. Apply sibling-then-embedded: check `IMPLEMENTATION_NOTES.md` sibling first; fall back to embedded `## Implementation Notes` blocks in PHASES.md. Notes must include:
   - Date
   - Work completed summary
   - Files modified

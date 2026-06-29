@@ -199,6 +199,7 @@ The plan must follow this structure exactly:
   Additionally, each individual phase within a speculative PHASES.md must note in its **Prerequisites** section which specific upstream phases it depends on and that those phases' actual Implementation Notes don't exist yet.
 - The exact output file path where the subagent must write the PHASES.md
 - Instruction to read the SPEC.md from disk (provide the path) rather than relying on the prompt summary, for full fidelity
+- If any hard-dep upstream is Complete, instruct the subagent to read its Implementation Notes using the sibling-then-embedded read order: check `<upstream-dir>/IMPLEMENTATION_NOTES.md` first (if present and has content headings), fall back to embedded notes in PHASES.md. See `~/.claude/skills/_components/implementation-notes-read-order.md`.
 
 [Repeat for each spec]
 

@@ -118,7 +118,7 @@ Procedure:
 1. Parse the SPEC's `**Depends on:**` block. Filter to `kind == hard`.
 2. For each hard dep, resolve the upstream directory using the resolution protocol.
 3. Apply the completion check. For each upstream where the check passes, read:
-   - `<upstream-dir>/PHASES.md` in full, paying particular attention to Implementation Notes blocks — they document what actually shipped vs. what was originally planned.
+   - `<upstream-dir>/PHASES.md` in full. For Implementation Notes, apply the sibling-then-embedded read order: check `<upstream-dir>/IMPLEMENTATION_NOTES.md` first (if it exists and has content headings — see `~/.claude/skills/_components/implementation-notes-read-order.md`), fall back to embedded `## Implementation Notes` blocks in PHASES.md. These notes document what actually shipped vs. what was originally planned.
    - Skip non-Complete upstreams; there's nothing settled to integrate against.
 4. From each upstream PHASES.md, extract any decisions, contracts, file paths, or invariants that the current spec's phases will need to consume. Hold these in working memory for Step 2 (phase boundary analysis) and Step 5 (PHASES.md drafting).
 5. If a hard dep's upstream is Complete but has no PHASES.md (older feature, never decomposed), note this — surface it as a quality issue in the final PHASES.md's `## Cross-feature Integration Notes` section.

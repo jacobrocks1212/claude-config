@@ -105,7 +105,7 @@ Record the chosen category (and a one-sentence justification) — it drives the 
 
 ### 3b. Read PHASES.md and SPEC.md (if resolved)
 
-- Read PHASES.md in full, including prior phase Implementation Notes
+- Read PHASES.md in full. For Implementation Notes, apply the sibling-then-embedded read order: check for a sibling `IMPLEMENTATION_NOTES.md` first; fall back to embedded notes in PHASES.md. See `~/.claude/skills/_components/implementation-notes-read-order.md`.
 - Read sibling SPEC.md — the correctness source of truth
 - Identify which phase(s) introduced the buggy behavior — the fix's Implementation Notes will be appended there
 

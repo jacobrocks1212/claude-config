@@ -60,7 +60,7 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
 
 ## Step 2: Read Full Context
 
-1. **Read the PHASES.md in full** — every phase, including all Implementation Notes blocks. Do not skim or summarize.
+1. **Read the PHASES.md in full** — every phase. For prior Implementation Notes, apply the sibling-then-embedded read order: check for a sibling `IMPLEMENTATION_NOTES.md` (in the same directory as PHASES.md) first; fall back to embedded `## Implementation Notes` blocks in PHASES.md if the sibling is absent or a bare placeholder. See `~/.claude/skills/_components/implementation-notes-read-order.md` for the canonical rule.
 2. **Read the sibling SPEC.md** (same directory) — source of truth for feature requirements.
 3. **Read project CLAUDE.md** (if it exists at the project root) — for conventions and patterns.
 
@@ -154,7 +154,7 @@ For each existing phase, record:
 
 ### 3b. Mine Implementation Notes
 
-Implementation Notes contain ground truth about what was _actually_ built (vs. what was planned). Before drafting the new phase:
+Implementation Notes contain ground truth about what was _actually_ built (vs. what was planned). Find them using the sibling-then-embedded read order: check `IMPLEMENTATION_NOTES.md` (sibling to PHASES.md) first; fall back to embedded blocks in PHASES.md if the sibling is absent. Before drafting the new phase:
 
 - Identify **patterns established** — imports, APIs, conventions the new phase should follow
 - Identify **pitfalls documented** — things to avoid or work around

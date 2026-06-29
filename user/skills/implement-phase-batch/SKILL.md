@@ -70,7 +70,7 @@ Update each task to `in_progress` when starting it, `completed` when done. After
 ### 1b. Read Everything
 
 For **each** PHASES.md:
-1. Read the PHASES.md file **in full** — including all previously completed phases and their Implementation Notes
+1. Read the PHASES.md file **in full** — including all previously completed phases. For Implementation Notes, apply the sibling-then-embedded read order: check for a sibling `IMPLEMENTATION_NOTES.md` first; fall back to embedded notes in PHASES.md. See `~/.claude/skills/_components/implementation-notes-read-order.md`.
 2. Read the sibling SPEC.md in the same directory — source of truth for correctness
 3. Note the feature name (directory name, e.g. `foundation`, `auth-bootstrap`)
 
@@ -242,7 +242,7 @@ Include a batch overview table per phase:
 >
 > 1. **Select ready phase(s):** Identify phase(s) whose entry criteria are satisfied (prerequisite phases complete — all deliverables checked off in their PHASES.md). If multiple phases from different features are ready and marked parallel-eligible in the schedule, execute them concurrently. If no phases are ready, jump to Blocking Issue Protocol.
 > 2. **Announce:** Print "Implementing [feature] Phase N: [title]"
-> 3. **Review prior context:** Re-read all previously completed phases' Implementation Notes in this feature's PHASES.md. These contain imports, patterns, gotchas, and actual file paths that may differ from the original plan. They take priority over the plan where they diverge.
+> 3. **Review prior context:** Re-read all previously completed phases' Implementation Notes. Apply the sibling-then-embedded read order: check `IMPLEMENTATION_NOTES.md` (sibling to PHASES.md) first; fall back to embedded notes in PHASES.md for in-flight features predating the D3 writer flip. These contain imports, patterns, gotchas, and actual file paths that may differ from the original plan. They take priority over the plan where they diverge.
 > 4. **Execute all batches** per the Per-Batch Steps below.
 > 5. **Run Post-Phase Steps** below.
 > 6. **Report:** Print "[feature] Phase N: [title] — committed as [hash]"

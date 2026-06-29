@@ -3,7 +3,7 @@
 Before launching any subagent in this batch, the orchestrating agent must re-read from disk:
 
 1. **The current phase's section in PHASES.md** (deliverables, prerequisites, testing strategy, integration notes) — the file may have been updated by prior batches in this same phase. **Read only the current-phase SLICE, not the whole file** — see "PHASES.md slice read" below.
-2. **All prior phases' Implementation Notes** in the same PHASES.md (patterns, imports, gotchas, actual file paths that may differ from the plan)
+2. **All prior phases' Implementation Notes** — read from the sibling `IMPLEMENTATION_NOTES.md` when present (sibling-then-embedded order; see "Prior Implementation Notes read" below), falling back to embedded notes in PHASES.md for in-flight features predating the D3 writer flip. These contain patterns, imports, gotchas, and actual file paths that may differ from the plan.
 3. **The relevant sections of SPEC.md** that this phase implements (as listed in the per-phase plan's "SPEC.md references" field)
 
 ### PHASES.md slice read (read the current-phase slice + a compact index — never the whole file)
@@ -18,5 +18,15 @@ PHASES.md no longer carries the (monotonically growing) Implementation Notes —
 This re-read is required because the context window may have been compacted since the plan was drafted. The orchestrating agent must have fresh, accurate content before composing subagent prompts.
 
 **Do NOT rely on cached/remembered content — read the files.**
+
+### Prior Implementation Notes read (sibling-then-embedded)
+
+Prior-phase Implementation Notes live in the sibling `IMPLEMENTATION_NOTES.md` (since the D3 writer flip in plan-skills-redesign Phase 3); PHASES.md is now a thin checklist. Apply the canonical sibling-then-embedded read order for item 2 above:
+
+- **Sibling-first.** Look for `<dir-of-PHASES.md>/IMPLEMENTATION_NOTES.md`. If it exists and contains at least one heading block matching `^#{2,4}\s+(Implementation Notes|Phase\s+\S)`, read prior-phase notes sections from it.
+- **Embedded fallback.** If the sibling is absent or a bare placeholder (preamble only, no notes content), read `## Implementation Notes` blocks from PHASES.md itself. These carry valid notes for features whose notes predate the flip.
+- **A bare scaffold does not count as evidence.** A sibling file with only a title/preamble and no content headings falls through to the embedded fallback — do not treat a placeholder as presence.
+
+See `~/.claude/skills/_components/implementation-notes-read-order.md` for the full canonical rule (used by all consumer skills).
 
 4. **The plan file** (if this is an `/implement-phase-batch` execution) — re-read the current phase's section from the plan file at `~/.claude-personal/plans/`. After compaction, your awareness of the plan's execution model, mandatory rules, and batch structure may be stale. If you cannot recall which batch you're on or what the plan's constraints are, re-read the full plan header + current phase section.
