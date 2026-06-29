@@ -227,7 +227,13 @@ Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
     VALIDATED.md (full pass, UNLESS you edited production code this cycle) /
     MCP_TEST_RESULTS.md (partial or production-edited) /
     DEFERRED_REQUIRES_DEVICE.md (per Step 4.5) / SKIP_MCP_TEST.md (per the
-    mcp-testing SPEC) / BLOCKED.md naming a CONCRETE blocker.
+    mcp-testing SPEC) / BLOCKED.md naming a CONCRETE blocker. A scenario whose
+    real unmet prerequisite is a HOST CAPABILITY this machine lacks (a 2nd network
+    peer / a different OS / an external binary), NOT an audio device, is NOT a
+    device deferral — declare `requires_host: <id>` (SPEC frontmatter / queue.json)
+    so the state machine defers it to a capability-host (host-capability-saturated)
+    instead of DEFERRED_REQUIRES_DEVICE, which re-opens and LOOPS on a real-device
+    host (litmus: would a real audio device on THIS machine certify it? no → host).
   - VALIDATION-BLOCKED IS FOR CODE/ENGINE FAILURES ONLY: a `BLOCKED.md` with
     `blocker_kind: mcp-validation` certifies that the CODE under test failed (the
     engine ran and assertions did not pass). A RUNTIME-READINESS condition — the

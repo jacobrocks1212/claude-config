@@ -124,8 +124,8 @@ these for real"*).
 
 Records that a feature's runtime validation requires one or more **named host
 capabilities** (from the closed `lazy_core._HOST_CAPABILITY_REGISTRY` vocabulary
-— e.g. `zimtohrli-toolchain`, `real-audio-device`, `gpu`) that are **absent on
-THIS host**, so the feature is **deferred to a capability-bearing host, NOT
+— e.g. `zimtohrli-toolchain`, `real-audio-device`, `gpu`, `midi-controller`,
+`link-multi-peer`, `non-windows-host`) that are **absent on THIS host**, so the feature is **deferred to a capability-bearing host, NOT
 skipped**. Written by `lazy-state.py` (`compute_state` queue selection) when, for
 a feature past implementation, `missing = requires_host − host.present` is
 non-empty. It is the **host-axis generalization of `DEFERRED_REQUIRES_DEVICE.md`**
