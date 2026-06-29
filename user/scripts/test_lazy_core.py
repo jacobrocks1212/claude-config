@@ -373,6 +373,98 @@ def test_phases_show_impl_fenced_checkbox_does_not_count_false():
     assert lazy_core.phases_show_implementation(text) is False
 
 
+def test_phases_show_impl_sibling_notes_only_true():
+    """(h) Notes live in a sibling IMPLEMENTATION_NOTES.md, NONE embedded in PHASES.md,
+    and PHASES.md itself shows no other evidence (all Planned, zero checked) → True.
+
+    The sibling-then-embedded read: a relocated-notes feature must NOT read as
+    'not yet implemented' just because PHASES.md is now a thin checklist.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        phases_path = Path(td) / "PHASES.md"
+        text = (
+            "### Phase 1: Alpha\n"
+            "**Status:** Planned\n"
+            "- [ ] pending one\n"
+        )
+        phases_path.write_text(text, encoding="utf-8")
+        (Path(td) / "IMPLEMENTATION_NOTES.md").write_text(
+            "# Feature — Implementation Notes\n"
+            "## Phase 1 — Alpha\n"
+            "#### Implementation Notes (Phase 1)\n"
+            "**Completed:** 2026-06-29\n"
+            "Did some work here.\n",
+            encoding="utf-8",
+        )
+        assert (
+            lazy_core.phases_show_implementation(text, phases_path=phases_path) is True
+        )
+
+
+def test_phases_show_impl_embedded_notes_still_true_with_path():
+    """(i) Legacy embedded '## Implementation Notes' in PHASES.md (no sibling file),
+    path supplied → still True (embedded fallback preserved)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        phases_path = Path(td) / "PHASES.md"
+        text = (
+            "### Phase 1: Alpha\n"
+            "**Status:** Planned\n"
+            "- [ ] pending\n"
+            "## Implementation Notes\n"
+            "Did some work here.\n"
+        )
+        phases_path.write_text(text, encoding="utf-8")
+        # No sibling IMPLEMENTATION_NOTES.md exists.
+        assert (
+            lazy_core.phases_show_implementation(text, phases_path=phases_path) is True
+        )
+
+
+def test_phases_show_impl_no_sibling_no_embedded_false():
+    """(j) Neither a sibling IMPLEMENTATION_NOTES.md nor an embedded heading, and
+    PHASES.md shows no other evidence → False (negative case, path supplied)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        phases_path = Path(td) / "PHASES.md"
+        text = (
+            "### Phase 1: Alpha\n"
+            "**Status:** Planned\n"
+            "- [ ] pending one\n"
+            "### Phase 2: Beta\n"
+            "**Status:** Planned\n"
+            "- [ ] pending two\n"
+        )
+        phases_path.write_text(text, encoding="utf-8")
+        assert (
+            lazy_core.phases_show_implementation(text, phases_path=phases_path) is False
+        )
+
+
+def test_phases_show_impl_empty_sibling_does_not_falsely_pass_false():
+    """(k) A sibling IMPLEMENTATION_NOTES.md that holds only a title/preamble (no
+    per-phase notes block) does NOT count as evidence → False. A bare scaffold file
+    must not falsely suppress research."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        phases_path = Path(td) / "PHASES.md"
+        text = (
+            "### Phase 1: Alpha\n"
+            "**Status:** Planned\n"
+            "- [ ] pending one\n"
+        )
+        phases_path.write_text(text, encoding="utf-8")
+        (Path(td) / "IMPLEMENTATION_NOTES.md").write_text(
+            "# Feature — Implementation Notes\n"
+            "> Per-phase notes relocated out of PHASES.md.\n",
+            encoding="utf-8",
+        )
+        assert (
+            lazy_core.phases_show_implementation(text, phases_path=phases_path) is False
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tests: remaining_unchecked_are_verification_only
 # ---------------------------------------------------------------------------
@@ -17552,6 +17644,19 @@ _TESTS = _TESTS + [
      test_detect_noncanonical_blocker_lowercase_variant),
     ("test_detect_noncanonical_blocker_empty_and_missing_dir",
      test_detect_noncanonical_blocker_empty_and_missing_dir),
+]
+
+
+# phases_show_implementation — sibling-then-embedded notes read (D3, Phase 3)
+_TESTS = _TESTS + [
+    ("test_phases_show_impl_sibling_notes_only_true",
+     test_phases_show_impl_sibling_notes_only_true),
+    ("test_phases_show_impl_embedded_notes_still_true_with_path",
+     test_phases_show_impl_embedded_notes_still_true_with_path),
+    ("test_phases_show_impl_no_sibling_no_embedded_false",
+     test_phases_show_impl_no_sibling_no_embedded_false),
+    ("test_phases_show_impl_empty_sibling_does_not_falsely_pass_false",
+     test_phases_show_impl_empty_sibling_does_not_falsely_pass_false),
 ]
 
 

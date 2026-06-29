@@ -176,16 +176,20 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Prerequisites.** None; establishes the tolerant-read pattern that Phase 4 propagates.
 
+**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 3)
+
 **Deliverables.**
-- [ ] Flip `_components/phases-update.md` to append per-batch Implementation Notes to a sibling `IMPLEMENTATION_NOTES.md` (one file, per-phase sections — OQ3 default), not PHASES.md.
-- [ ] Implement current-phase-slice + completed-phases-index reads in `execute-plan` / `source-reread.md` (offset/limit on a stable phase-boundary marker — settle OQ2 marker format here).
-- [ ] Keep `/spec-phases` emitting the thin-checklist PHASES.md shape (verify it does not embed notes at authoring time).
-- [ ] Update `lazy_core.py::phases_show_implementation()` to check sibling `IMPLEMENTATION_NOTES.md` first, then fall back to the embedded `## Implementation Notes` heading.
-- [ ] Extend `test_lazy_core.py`: add a sibling-file case (notes in `IMPLEMENTATION_NOTES.md`, none embedded → returns True) and keep the legacy embedded case green.
+- [x] Flip `_components/phases-update.md` to append per-batch Implementation Notes to a sibling `IMPLEMENTATION_NOTES.md` (one file, per-phase sections — OQ3 default), not PHASES.md.
+- [x] Implement current-phase-slice + completed-phases-index reads in `execute-plan` / `source-reread.md` (offset/limit on a stable phase-boundary marker — settle OQ2 marker format here).
+- [x] Keep `/spec-phases` emitting the thin-checklist PHASES.md shape (verify it does not embed notes at authoring time).
+- [x] Update `lazy_core.py::phases_show_implementation()` to check sibling `IMPLEMENTATION_NOTES.md` first, then fall back to the embedded `## Implementation Notes` heading.
+- [x] Extend `test_lazy_core.py`: add a sibling-file case (notes in `IMPLEMENTATION_NOTES.md`, none embedded → returns True) and keep the legacy embedded case green.
 
 **Testing strategy.** `pytest user/scripts/test_lazy_core.py -k phases_show_impl -v` green for both shapes. Confirm `remaining_unchecked_are_verification_only()` and `verify_ledger_gate()` behavior is unchanged (they never parse Notes internals). Run `/execute-plan` across ≥2 batches → notes land in the sibling; PHASES.md size stays flat. **Read-narrowing assertion (SPEC validation row):** confirm startup / `source-reread` reads *only* the current-phase slice + completed-phases index — assert via the read calls in a transcript (offset/limit bounded, not a whole-file read), not just that PHASES.md is small. Record the chosen OQ2 phase-boundary marker format as an explicit deliverable output (a one-line note in this phase's eventual Implementation Notes), so downstream slice-readers key off a documented marker.
 
 **Integration notes.** `phases_show_implementation()` is the critical blocker: if it only greps PHASES.md, a relocated-notes feature reads as "not implemented" and `lazy-state.py` re-routes it to the research step (wasted Gemini spend, wrong state). The sibling-then-embedded fallback is what keeps in-flight features (embedded notes) resolving — no flag-day. **`source-reread.md` is edited again in Phase 4** (sibling-then-embedded notes read). Phase 3 adds the *slice-read* responsibility to the same file; the two edits target different concerns and must be **merged**, not sequentially clobbered — Phase 4 must build on Phase 3's version of `source-reread.md`.
+
+> **Implementation Notes relocated:** per the D3 writer flip landed in this very phase (WU-1), this phase's Implementation Notes live in the sibling `IMPLEMENTATION_NOTES.md` (§ Phase 3), not embedded here. This is the dogfooding the SPEC's Cross-feature Integration Notes anticipated.
 
 ---
 

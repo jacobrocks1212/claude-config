@@ -2729,7 +2729,9 @@ def compute_state(
     skip_research_for_phases = False
     if not research.exists() and not research_summary.exists() and phases_file.exists():
         phases_text_cached = phases_file.read_text(encoding="utf-8")
-        if lazy_core.phases_show_implementation(phases_text_cached):
+        if lazy_core.phases_show_implementation(
+            phases_text_cached, phases_path=phases_file
+        ):
             skip_research_for_phases = True
             _diag(
                 "Step 5 research gate skipped: PHASES.md present with "

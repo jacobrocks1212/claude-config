@@ -176,6 +176,15 @@ The autonomous-execution policy — EXECUTION MODEL, COMPONENT LOADING PROTOCOL,
 
 The contract is the canonical policy; the sections below in THIS skill are the **executor-specific** logic the contract does not cover and that you layer on top of it: the plan-status protocol (Step 1a.5), the part-integrity / cloud-saturation gates (Steps 1a.6/1a.6a), the Ground-Truth Verification Gate, compaction recovery, PHASES.md slice handling, the per-WU checkbox discipline, and the atomic gate+commit. Where the plan's own per-phase steps or a repo's `.claude/skill-config/` override a contract default (e.g. Python/projection gates instead of `/msbuild`/`/mstest`), follow the plan/repo; otherwise the contract governs.
 
+### PHASES.md slice handling (startup + per-batch + recovery — read the current-phase slice, never the whole file)
+
+PHASES.md is your persistent memory, but it grows one phase section per phase and no longer carries the Implementation Notes (those relocated to a sibling `IMPLEMENTATION_NOTES.md`). Re-reading it in full at startup, at every batch boundary, and on every compaction recovery is the documented ~116K-plateau cost. So narrow every PHASES.md read:
+
+- **At startup, per `source-reread` (Step B.0), and on compaction recovery, read ONLY:** (a) the **current-phase slice** of PHASES.md, plus (b) a **compact completed-phases index** (the heading + `**Status:**` lines for prior phases). Do NOT read the whole accumulating file, and do NOT pull prior phases' bodies by default.
+- **Phase-boundary marker (settled — OQ2):** phase sections are delimited by a level-2-or-3 heading whose text begins with `Phase` + an identifier — `^#{2,3}\s+Phase\s+<id>` (e.g. `## Phase 3 — …`). This is the same `_PHASE_HEADING_RE` the harness `lazy_core.parse_phases()` uses; reuse it as the slice anchor rather than inventing a new delimiter.
+- **How:** run `grep -n '^#\{2,3\} Phase' PHASES.md` first to get phase-heading line numbers, then `Read` the current phase with `offset`/`limit` bounded by its heading and the next phase's heading (or EOF). `grep -n '^#\{2,3\} Phase\|^\*\*Status:\*\*' PHASES.md` yields the compact completed-phases index in one pass.
+- Prior-phase Implementation Notes (the "review prior context" step) come from the sibling `IMPLEMENTATION_NOTES.md`, not from PHASES.md — read them there on demand. See `~/.claude/skills/_components/source-reread.md` for the read order.
+
 ### Execution Model Enforcement
 
 Per the EXECUTION MODEL in the contract you just read:

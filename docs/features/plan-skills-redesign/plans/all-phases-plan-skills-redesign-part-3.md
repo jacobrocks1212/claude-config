@@ -110,9 +110,9 @@ Before each step, `Read` the listed components from disk. After compaction, re-r
 
 ## Work Units
 
-- [ ] WU-1 — Flip `_components/phases-update.md` writer → sibling `IMPLEMENTATION_NOTES.md`
-- [ ] WU-2 — Current-phase-slice + completed-phases-index reads in `execute-plan` + `source-reread.md` (settle OQ2 marker)
-- [ ] WU-3 — `lazy_core.py::phases_show_implementation()` sibling-then-embedded + `test_lazy_core.py` coverage; verify `/spec-phases` stays thin
+- [x] WU-1 — Flip `_components/phases-update.md` writer → sibling `IMPLEMENTATION_NOTES.md`
+- [x] WU-2 — Current-phase-slice + completed-phases-index reads in `execute-plan` + `source-reread.md` (settle OQ2 marker)
+- [x] WU-3 — `lazy_core.py::phases_show_implementation()` sibling-then-embedded + `test_lazy_core.py` coverage; verify `/spec-phases` stays thin
 
 ---
 

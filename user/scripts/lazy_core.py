@@ -1956,8 +1956,41 @@ def parse_phases(phases_text: str) -> list[dict]:
 # line start (re.M); a fenced occurrence is a non-issue for this signal.
 _IMPL_NOTES_HEADING_RE = re.compile(r"^#{2,3}\s+Implementation Notes\b", re.MULTILINE)
 
+# Sibling IMPLEMENTATION_NOTES.md evidence signal. After the D3 writer flip,
+# /execute-plan appends per-batch notes blocks (headed ``#### Implementation
+# Notes (Phase N)``) to a sibling IMPLEMENTATION_NOTES.md instead of embedding
+# them in PHASES.md. The block heading can be authored at any level (## / ### /
+# ####), so this matches 2–4 leading hashes — broader than the embedded-PHASES
+# regex above. A bare scaffold sibling (title + preamble only, no notes block)
+# does NOT match, so it cannot falsely suppress research.
+_SIBLING_IMPL_NOTES_HEADING_RE = re.compile(
+    r"^#{2,4}\s+Implementation Notes\b", re.MULTILINE
+)
 
-def phases_show_implementation(phases_text: str) -> bool:
+
+def _sibling_impl_notes_present(phases_path: Path) -> bool:
+    """Return True iff a sibling ``IMPLEMENTATION_NOTES.md`` next to ``phases_path``
+    exists and carries at least one Implementation Notes block.
+
+    Sibling = same directory as the PHASES.md being checked (the D3 writer
+    resolves the sibling that way). Presence of a notes block (``#### / ### / ##
+    Implementation Notes``) is the relocated equivalent of the legacy embedded
+    heading; a bare title/preamble-only scaffold returns False. Read errors and
+    a missing file return False (degrade to the embedded fallback).
+    """
+    sibling = phases_path.parent / "IMPLEMENTATION_NOTES.md"
+    try:
+        if not sibling.is_file():
+            return False
+        text = sibling.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(_SIBLING_IMPL_NOTES_HEADING_RE.search(text))
+
+
+def phases_show_implementation(
+    phases_text: str, phases_path: Path | None = None
+) -> bool:
     """Return True iff a PHASES.md shows implementation EVIDENCE.
 
     The reusable primitive the Step-5 research-gate guard consults
@@ -1972,20 +2005,31 @@ def phases_show_implementation(phases_text: str) -> bool:
       return ``False`` unconditionally. A stub is treated exactly like "no
       PHASES.md" so a placeholder file does NOT suppress legitimate research
       (SPEC Open-Q1 / D2).
-    - Otherwise return ``True`` when ANY of these three signals holds:
+    - Otherwise return ``True`` when ANY of these signals holds:
         1. a parsed phase's ``status`` is ``Complete`` or ``In-progress``
            (case-insensitive compare on the stripped value), OR
         2. ``count_deliverables(phases_text)[1] >= 1`` — at least one checked
            ``- [x]`` deliverable (fence-awareness inherited from
            ``count_deliverables``: a checkbox inside a ``` fence does not
            count), OR
-        3. an ``## Implementation Notes`` (or ``###``) heading is present at a
-           line start.
+        3. **(sibling-then-embedded, D3)** when ``phases_path`` is supplied, a
+           sibling ``IMPLEMENTATION_NOTES.md`` next to it carries an
+           Implementation Notes block (the relocated-notes shape) — checked
+           FIRST; OR
+        4. an embedded ``## Implementation Notes`` (or ``###``) heading is
+           present at a line start in PHASES.md (legacy in-flight features).
       Else ``False``.
 
-    Side-effect-free: a pure read. It emits NO ``_diag`` — the diagnostic is
-    the caller's responsibility (the Step-5 guard in ``lazy-state.py`` emits
-    the D3 ``_diag`` line), keeping this predicate reusable elsewhere.
+    The sibling check (3) and the embedded fallback (4) make the predicate
+    tolerant of the D3 split: a relocated-notes feature whose PHASES.md is now a
+    thin checklist still reads as "implemented" and is NOT re-routed to research.
+    When ``phases_path`` is ``None`` (legacy callers passing only text), only the
+    embedded heading is consulted — behavior is unchanged for those callers.
+
+    Side-effect-free apart from the optional sibling read. It emits NO ``_diag``
+    — the diagnostic is the caller's responsibility (the Step-5 guard in
+    ``lazy-state.py`` emits the D3 ``_diag`` line), keeping this predicate
+    reusable elsewhere.
     """
     phases = parse_phases(phases_text)
     if not phases:
@@ -1996,6 +2040,10 @@ def phases_show_implementation(phases_text: str) -> bool:
         if (ph.get("status") or "").strip().lower() in {"complete", "in-progress"}:
             return True
     if count_deliverables(phases_text)[1] >= 1:
+        return True
+    # Sibling-then-embedded: prefer the relocated IMPLEMENTATION_NOTES.md, then
+    # fall back to the embedded heading for legacy in-flight features.
+    if phases_path is not None and _sibling_impl_notes_present(phases_path):
         return True
     if _IMPL_NOTES_HEADING_RE.search(phases_text):
         return True
