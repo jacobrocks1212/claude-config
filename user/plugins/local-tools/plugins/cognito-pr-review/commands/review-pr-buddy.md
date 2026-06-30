@@ -295,22 +295,30 @@ No finding may proceed to synthesis undispositioned. If any are missing a dispos
 
 ### Collect Curated Content
 
-From `buddy-session.json`:
+From `buddy-session.json`, collect every non-dismissed finding (Blocking / Important / Suggestion). Dismissed findings (`severity: "dismiss"`) are EXCLUDED from the final review.
 
-Map severity dispositions to synthesizer-v2 output sections:
+Map each kept finding to its synthesizer-v2 source section by `source`:
 
-- **Blocking** (`severity: "blocking"`) — include in `## Critical Findings` (for `source:"investigation"` findings) or `### Important` subsections (for `source:"sweep"`, `source:"reuse"`, `source:"intrafile"` findings)
-- **Important** (`severity: "important"`) — include in the appropriate `### Important` subsections
-- **Suggestion** (`severity: "suggestion"`) — include in the existing `### Minor` (nit) subsections — never introduce a new suggestion-level heading; map these into the Minor tier only
-- **Dismiss** (`severity: "dismiss"`) — EXCLUDED from the final review
+- `source:"investigation"` → `## Critical Findings`
+- `source:"sweep"` → `## Rule-Based Findings`
+- `source:"reuse"` → `## Reuse & Duplication`
+- `source:"intrafile"` → `## Intra-File Consistency`
+- `source:"reviewer"` (reviewer-authored Pass-1 observations) → the section matching the observation's nature, else `## Critical Findings`
 
-Reviewer-authored findings (`source: "reviewer"`) from `pass1_observations[]` are included per their severity disposition. A non-dismissed finding's optional `note` is carried as its comment text.
+The disposition severity (Blocking / Important / Suggestion) is carried in the **Standardized Issue Block**'s inline `**Severity:**` field — there is no separate `### Important`/`### Minor` sub-bucketing (the synthesizer-v2 format is uniform per Phase 1). Within each section, findings keep their pre-computed `tier → severity → effective_weight` order; do not re-sort.
 
-Do NOT invoke the `synthesizer-v2` agent. The interactive session IS the synthesis step. You (the orchestrating agent) write the review directly from the curated content above.
+**Author a Proposed fix and a Proposed PR comment for every kept finding.** This is net-new buddy-authored inline synthesis — NOT an agent invocation (see the note below):
+
+- **Proposed fix** — a concrete before→after snippet/diff when the fix is small/local and you have the code in hand; precise prose resolution steps (what to change, where, and why) otherwise. The buddy MAY ground the snippet from the **local codebase on `main`** (the investigation-style carve-out — same access used in the Phase-1 walk's "Open a local file" interruption): it may use a fresher/richer snippet than the cache-only synthesizer-v2 path, **including for `sweep` findings** (which carry no `evidence.snippet`). State the read explicitly: "Reading from the local codebase on `main` for context — not the PR branch state." The block **FORMAT** stays identical to synthesizer-v2's; only snippet richness may differ — this is the documented cache-only-vs-local asymmetry (synthesizer-v2 is cache-only and must source snippets from `evidence.snippet` alone).
+- **Proposed PR comment** — a ready-to-paste draft: terse, reviewer-voiced, references `file:line`. If the kept finding carries a reviewer `note`, fold it into / seed the draft comment (the `note` is the reviewer's own intended comment text). Never auto-posted (per `user/CLAUDE.local.md`).
+
+Reviewer-authored findings (`source: "reviewer"`) from `pass1_observations[]` are included per their severity disposition and also get a Proposed fix + Proposed PR comment (their optional `note` seeds the draft comment).
+
+Do NOT invoke the `synthesizer-v2` agent. The interactive session IS the synthesis step — the fix/comment authoring above is buddy-authored inline synthesis, not an agent call. You (the orchestrating agent) write the review directly from the curated content above.
 
 ### Review Document Format
 
-Produce the review document following the exact synthesizer-v2 output format defined in `agents/synthesizer-v2.md` — same header, same section names. The `## Reuse & Duplication` section uses that exact name and lists kept `source:"reuse"` findings. The `## Intra-File Consistency` section uses that exact name and lists kept `source:"intrafile"` findings. Omit sections that have no content (e.g. omit `## Re-Review Status` for initial reviews, omit `## Reuse & Duplication` if no reuse findings were kept, omit `## Intra-File Consistency` if no intra-file findings were kept).
+Produce the review document following the exact synthesizer-v2 output format defined in `agents/synthesizer-v2.md` — same header, same section names, and the **Standardized Issue Block** that `synthesizer-v2.md` defines for every kept finding. Each kept finding, in every section, renders in that standardized block — `### {Issue title}` followed by `**Severity:** / **Source:** / **Location:** / **Confidence:**`, then `**What:**`, `**Proposed fix:**`, and `**Proposed PR comment:**` — NOT the old heterogeneous per-source shapes (no `File/Severity/Evidence/Suggestion` investigation subsection, no one-line `- {title} [{file}:{line}]` sweep/reuse/intrafile bullets, no `### Important`/`### Minor` sub-bucketing). The `## Reuse & Duplication` section uses that exact name and lists kept `source:"reuse"` findings. The `## Intra-File Consistency` section uses that exact name and lists kept `source:"intrafile"` findings. Findings keep their pre-computed `tier → severity → effective_weight` order within each section (do not re-sort). Omit sections that have no content (e.g. omit `## Re-Review Status` for initial reviews, omit `## Reuse & Duplication` if no reuse findings were kept, omit `## Intra-File Consistency` if no intra-file findings were kept).
 
 Header:
 
@@ -398,6 +406,8 @@ Report to the reviewer:
 - Journey file path
 - Finding counts: blocking / important / suggestion / dismissed (including reviewer-authored)
 - REVIEWED.md status (written / skipped / failed)
+
+**In-chat standardized digest (rendered alongside the above — not instead of it).** After reporting the paths, counts, and status, render every kept finding in chat using the same **Standardized Issue Block** emitted in `PR-{id}.md` — `### {Issue title}` + `**Severity:** / **Source:** / **Location:** / **Confidence:**`, then `**What:**`, `**Proposed fix:**`, and `**Proposed PR comment:**`. Order the digest **most-important-first** (the same pre-computed `tier → severity → effective_weight` order — do not re-sort). Dismissed findings are excluded. This gives the reviewer the full proposed fix and the ready-to-paste draft PR comment for every kept issue at session close, mirroring the persisted artifact; the paths, counts, and REVIEWED.md status above remain present.
 
 ---
 

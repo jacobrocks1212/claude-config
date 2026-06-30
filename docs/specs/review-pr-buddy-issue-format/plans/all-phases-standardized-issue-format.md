@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: review-pr-buddy-issue-format
-status: Ready
+status: Complete
 created: 2026-06-30
 complexity: complex
 phases: [1, 2]
@@ -68,7 +68,7 @@ The two phases are **file-disjoint** (`synthesizer-v2.md` vs. `review-pr-buddy.m
 ## Work Units
 
 - [x] WU-1 — Standardized issue block in synthesizer-v2.md (format SSOT)
-- [ ] WU-2 — Apply format in review-pr-buddy.md (artifact + in-chat digest)
+- [x] WU-2 — Apply format in review-pr-buddy.md (artifact + in-chat digest)
 
 ---
 
