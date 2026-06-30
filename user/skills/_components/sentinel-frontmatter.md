@@ -178,9 +178,14 @@ kind: validated
 feature_id: <id>
 date: <YYYY-MM-DD>
 mcp_scenarios: [<scenario-name>, ...]
-result: all-passing
+result: all-passing  # one of: all-passing | validated-modulo-observation-gaps
 ---
 ```
+
+`result` is `all-passing` for a normal full-pass certification, or
+`validated-modulo-observation-gaps` for a **scoped-validated** receipt minted via
+the Gap-1 observation-gap disposition (see the `observation_gap_exemptions:`
+optional field below).
 
 Optional:
 - `validated_commit: <git-sha>` — HEAD sha at the time the MCP validation run
@@ -188,6 +193,17 @@ Optional:
   `/mcp-test` orchestrator override mandates capturing it so the certification is
   matched to the exact code it ran against. Optional for back-compat with
   pre-anchor `VALIDATED.md` files.
+- `observation_gap_exemptions: [ { surface, spec_class }, ... ]` — present **only**
+  on a **scoped-validated** receipt (the Gap-1 observation-gap disposition). When
+  a `VALIDATED.md` is minted from a `result: partial` `MCP_TEST_RESULTS.md` whose
+  every MCP-driveable assertion passed but whose remaining surfaces are documented
+  observation gaps, the gate carries those exemptions **forward** onto the receipt
+  and sets `result: validated-modulo-observation-gaps` (NOT `all-passing`) so the
+  scoped nature of the validation is auditable — a scoped receipt must never
+  impersonate a clean all-passing certification that hides the untestable
+  surfaces. Each entry's `spec_class` is the untestable-class provenance string
+  (mirroring the `SKIP_MCP_TEST.md` `spec_class` discipline below). Absent on a
+  normal `result: all-passing` receipt.
 
 Body keeps the human-readable summary of which scenarios ran.
 
@@ -387,6 +403,21 @@ Optional:
   the `reason`, and an optional non-blocking `followup_bug` id tracking the strict-bar follow-up.
   When carve-outs let `result: all-passing` despite a non-certifiable assertion, the body MUST
   document the carve-out + evidence. Absent on runs with no carve-out.
+- `observation_gap_exemptions: [ { surface, spec_class }, ... ]` — the **scoped-validated
+  disposition** (Gap-1: `harness-mcp-observation-gap-disposition-and-hijacked-runtime`). Distinct
+  from `carve_outs` (a host-artifact softening of an otherwise-`all-passing` run): an
+  observation-gap exemption documents a control surface that has **no MCP control-API tool** to drive
+  it end-to-end and is SPEC-locked to the unit/WDIO test tier per `docs/features/mcp-testing/SPEC.md`.
+  A run whose every MCP-DRIVEABLE assertion passed (`pass_count == total_count` over the MCP scope)
+  but whose remainder is fully covered by these exemptions honestly carries `result: partial`, and the
+  `__write_validated_from_results__` gate (and the `evaluate_completion_evidence` completion gate)
+  **promote it to `VALIDATED.md`** ONLY when every entry's `spec_class` provenance is present and
+  non-empty (the citation distinguishes a verified untestable-class assessment from a convenience
+  skip — mirrors the `SKIP_MCP_TEST.md` `spec_class` discipline). A `partial` with any genuine
+  MCP-scope failure (`pass_count < total_count`), with no exemptions, or with a provenance-less
+  exemption **still refuses** — the genuine-failure refusal is never relaxed. The minted receipt
+  carries the exemptions forward and records `result: validated-modulo-observation-gaps` so the scope
+  is auditable. Absent on a full-pass run.
 
 Body keeps the per-scenario pass/fail breakdown.
 

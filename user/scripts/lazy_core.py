@@ -2376,11 +2376,38 @@ def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
             "(no 'kind: mcp-test-results') — forged-attestation risk"
         )
 
-    # --- Both present. Require a genuinely-passing run.
-    if results_meta.get("result") != "all-passing":
+    # --- Both present. Require a genuinely-passing run — OR a scoped-validated
+    # observation-gap disposition (Gap 1 coupling,
+    # harness-mcp-observation-gap-disposition-and-hijacked-runtime, Phase 1). This
+    # MUST mirror the __write_validated_from_results__ apply gate's promotion rule
+    # exactly: a `result: partial` is accepted ONLY when its
+    # `observation_gap_exemptions` block is populated and EVERY entry carries a
+    # non-empty `spec_class` provenance (the citation that distinguishes a verified
+    # untestable-class assessment from a convenience skip) AND the MCP-driveable
+    # scope is fully passing (the pass==total cross-check below). Without this
+    # parallel acceptance the scoped VALIDATED.md minted by the apply gate would
+    # still be re-refused here, perpetuating the deadlock one layer deeper at the
+    # completion-integrity gate. A genuine MCP-scope failure (pass < total) or a
+    # provenance-less exemption falls through to the unchanged refusal.
+    _result_literal = results_meta.get("result")
+    _exemptions = results_meta.get("observation_gap_exemptions")
+    _observation_gap_ok = (
+        _result_literal == "partial"
+        and isinstance(_exemptions, list)
+        and len(_exemptions) > 0
+        and all(
+            isinstance(e, dict)
+            and isinstance(e.get("spec_class"), str)
+            and e.get("spec_class", "").strip() != ""
+            for e in _exemptions
+        )
+    )
+    if _result_literal != "all-passing" and not _observation_gap_ok:
         return _refuse(
             f"MCP_TEST_RESULTS.md result is "
-            f"{results_meta.get('result')!r} — expected 'all-passing'"
+            f"{results_meta.get('result')!r} — expected 'all-passing' "
+            "(or a scoped observation-gap partial whose every exemption carries "
+            "a spec_class provenance and whose MCP scope fully passes)"
         )
     pass_count = _coerce_evidence_count(results_meta.get("pass_count"))
     total_count = _coerce_evidence_count(results_meta.get("total_count"))
@@ -3539,13 +3566,65 @@ def apply_pseudo(
         # can't guess-loop. (Real results files use "all-passing" / "partial";
         # one legacy file carries "pass" — deliberately NOT accepted, the
         # schema's passing literal is "all-passing".)
+        #
+        # Gap-1 observation-gap scoped-validated disposition
+        # (harness-mcp-observation-gap-disposition-and-hijacked-runtime, Phase 1):
+        # a SECOND accepted route, strictly ADDITIVE to the all-passing path. A
+        # feature whose every MCP-DRIVEABLE assertion passed but whose remaining
+        # surfaces are SPEC-locked observation gaps (no MCP control-API tool exists
+        # to drive them end-to-end; locked to the unit/WDIO test tier per
+        # docs/features/mcp-testing/SPEC.md) honestly carries `result: partial`.
+        # The pre-fix binary all-passing/refuse gate looped /mcp-test forever for
+        # that shape (the only escape was an operator hand-editing the literal — a
+        # manual bypass, not a sanctioned disposition). This is SPEC-CONSISTENT:
+        # building MCP UI drivers for these surfaces would contradict
+        # mcp-testing/SPEC.md's locked unit/WDIO test-tier decision, so "accept the
+        # documented observation-gap exemption" is the correct disposition, not a
+        # missing test.
+        #
+        # The promotion is gated NARROWLY — a `result: partial` promotes ONLY when
+        # BOTH hold: (a) every entry in `observation_gap_exemptions` carries a
+        # non-empty `spec_class` provenance string referencing the untestable class
+        # (mirroring the SKIP_MCP_TEST.md `spec_class`-required discipline — the
+        # citation is what distinguishes a verified assessment from a convenience
+        # skip), AND (b) the MCP-driveable scope is fully passing
+        # (pass_count == total_count, enforced by the count cross-check below). A
+        # `partial` with NO exemptions, with a provenance-less exemption, or with a
+        # genuine MCP-scope failure (pass_count < total_count) falls through to the
+        # EXISTING refusal — the genuine-failure refusal is NOT relaxed.
         result_literal = results_meta.get("result")
-        if result_literal != "all-passing":
+        observation_gap_exemptions = results_meta.get("observation_gap_exemptions")
+        observation_gap_promotion = False
+        if result_literal == "partial":
+            # Validate the exemptions block. It must be a non-empty list whose
+            # every entry is a mapping carrying a non-empty `spec_class` provenance
+            # string. Anything else → not a sanctioned observation-gap disposition,
+            # fall through to the refusal (do NOT silently promote).
+            exemptions_valid = (
+                isinstance(observation_gap_exemptions, list)
+                and len(observation_gap_exemptions) > 0
+                and all(
+                    isinstance(e, dict)
+                    and isinstance(e.get("spec_class"), str)
+                    and e.get("spec_class", "").strip() != ""
+                    for e in observation_gap_exemptions
+                )
+            )
+            if exemptions_valid:
+                # The MCP-driveable scope must still be fully passing — that is the
+                # count cross-check below (pass_count == total_count). We mark the
+                # promotion candidate here; the count gate is the second half of
+                # the AND and refuses a genuine MCP-scope failure on its own.
+                observation_gap_promotion = True
+        if result_literal != "all-passing" and not observation_gap_promotion:
             return _refused(
                 f"MCP_TEST_RESULTS.md result is {result_literal!r} — expected "
                 "'all-passing' (the canonical passing literal); a non-passing "
                 "run must not mint VALIDATED.md. Re-run /mcp-test until all "
-                "scenarios pass, or route the failure (BLOCKED/add-phase)."
+                "scenarios pass, or route the failure (BLOCKED/add-phase). "
+                "(An observation-gap promotion requires a populated "
+                "observation_gap_exemptions list whose every entry carries a "
+                "spec_class provenance AND a fully-passing MCP-driveable scope.)"
             )
 
         # Count cross-check: the literal alone is not trusted — pass_count must
@@ -3653,21 +3732,58 @@ def apply_pseudo(
             f"validated_commit: {recorded_commit}\n"
             if recorded_commit is not None else ""
         )
+        # Gap-1: carry the observation-gap exemptions forward onto the receipt so
+        # the SCOPED nature of the validation is auditable — a scoped-validated
+        # VALIDATED.md must NOT impersonate a clean all-passing certification that
+        # hides the untestable surfaces. The receipt's `result:` records
+        # `validated-modulo-observation-gaps` (vs `all-passing`) and embeds the
+        # exemptions block (round-tripped through yaml.safe_dump so spec_class
+        # strings containing ':' / ',' quote correctly and parse_sentinel reads
+        # them back unchanged).
+        if observation_gap_promotion:
+            exemptions_block = yaml.safe_dump(
+                observation_gap_exemptions, default_flow_style=False
+            ).strip()
+            # Indent the multi-line block under the `observation_gap_exemptions:`
+            # key so it is valid YAML frontmatter.
+            exemptions_indented = "\n".join(
+                "  " + ln if ln else ln for ln in exemptions_block.splitlines()
+            )
+            result_field = "validated-modulo-observation-gaps"
+            exemptions_line = f"observation_gap_exemptions:\n{exemptions_indented}\n"
+            body_note = (
+                "Derived from MCP_TEST_RESULTS.md by the "
+                "__write_validated_from_results__ gate (apply_pseudo): "
+                "SCOPED-validated — every MCP-driveable assertion passed "
+                f"({pass_count}/{total_count}), and the remaining surfaces are "
+                f"documented observation-gap exemptions "
+                f"({len(observation_gap_exemptions)}) verified against "
+                "docs/features/mcp-testing/SPEC.md's unit/WDIO test tier. Building "
+                "MCP UI drivers for these surfaces would contradict that "
+                "SPEC-locked decision, so this is the SPEC-consistent disposition.\n"
+            )
+        else:
+            result_field = "all-passing"
+            exemptions_line = ""
+            body_note = (
+                "Derived from MCP_TEST_RESULTS.md by the "
+                "__write_validated_from_results__ gate (apply_pseudo): result "
+                f"all-passing, {pass_count}/{total_count} scenarios passing.\n"
+            )
         content = (
             "---\n"
             "kind: validated\n"
             f"feature_id: {feature_id}\n"
             f"date: {date}\n"
             f"mcp_scenarios: {scenarios_inline}\n"
-            "result: all-passing\n"
+            f"result: {result_field}\n"
+            f"{exemptions_line}"
             f"{commit_line}"
             "---\n"
             "\n"
             "# Validated\n"
             "\n"
-            "Derived from MCP_TEST_RESULTS.md by the "
-            "__write_validated_from_results__ gate (apply_pseudo): result "
-            f"all-passing, {pass_count}/{total_count} scenarios passing.\n"
+            f"{body_note}"
         )
         _atomic_write(validated_path, content)
         result = _ok(["VALIDATED.md"])

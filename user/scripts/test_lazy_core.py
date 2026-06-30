@@ -4010,6 +4010,197 @@ def test_apply_pseudo_validated_from_results_refuses_non_passing_result():
         )
 
 
+# ---- Gap 1: observation-gap scoped-validated disposition --------------------
+# (harness-mcp-observation-gap-disposition-and-hijacked-runtime, Phase 1)
+# A run whose every MCP-driveable assertion passed but whose remaining surfaces
+# are SPEC-locked observation gaps (no MCP control-API tool exists to drive them;
+# locked to the unit/WDIO tier per docs/features/mcp-testing/SPEC.md) honestly
+# carries `result: partial`. The binary all-passing/refuse gate looped mcp-test
+# forever. The scoped-validated disposition promotes such a `partial` to
+# VALIDATED.md ONLY when every non-driveable assertion maps to a documented
+# `observation_gap_exemptions` entry (each carrying a `spec_class` provenance,
+# mirroring the SKIP_MCP_TEST.md spec_class discipline) AND the MCP-driveable
+# scope is fully passing — while a genuinely-failing `partial` still refuses.
+
+
+def _write_mcp_test_results_with_exemptions(
+    spec_dir: Path,
+    scenarios: list,
+    *,
+    exemptions: list,
+    result: str = "partial",
+    pass_count="auto",
+    total_count="auto",
+) -> Path:
+    """Write an MCP_TEST_RESULTS.md carrying an `observation_gap_exemptions:`
+    block (a list of {surface, spec_class} mappings) for the Gap-1 disposition
+    tests. Kept local to the Gap-1 group so the canonical `_write_mcp_test_results`
+    happy/refusal helper stays byte-stable for the existing suite.
+    """
+    p = spec_dir / "MCP_TEST_RESULTS.md"
+    if pass_count == "auto":
+        pass_count = len(scenarios)
+    if total_count == "auto":
+        total_count = len(scenarios)
+    scenarios_yaml = "".join(f"  - {s}\n" for s in scenarios)
+    exemptions_yaml = "".join(
+        f"  - surface: {e['surface']}\n    spec_class: {e['spec_class']}\n"
+        for e in exemptions
+    )
+    body = (
+        "---\n"
+        "kind: mcp-test-results\n"
+        "feature_id: test-feature\n"
+        f"scenarios:\n{scenarios_yaml}"
+        "date: 2026-06-30\n"
+        f"result: {result}\n"
+        f"pass_count: {pass_count}\n"
+        f"total_count: {total_count}\n"
+        f"observation_gap_exemptions:\n{exemptions_yaml}"
+        "---\n"
+        "\n"
+        "# MCP Test Results\n"
+    )
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_apply_pseudo_validated_from_results_promotes_documented_observation_gap():
+    """A `result: partial` results file whose MCP-driveable scope is fully passing
+    (pass_count == total_count) AND whose remainder is fully covered by documented
+    `observation_gap_exemptions` (each with a `spec_class` provenance) PROMOTES to
+    VALIDATED.md. The minted receipt carries the exemptions forward so the scoped
+    nature of the validation is auditable (it must NOT masquerade as a clean
+    all-passing receipt that hides the scope). RED before WU-3: the current gate
+    refuses any `result != "all-passing"`.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_mcp_test_results_with_exemptions(
+            spec_dir,
+            ["scenario-a", "scenario-b"],
+            exemptions=[
+                {
+                    "surface": "armStore drive-through (Ctrl+Shift+Enter handler)",
+                    "spec_class": "observation-gap — no MCP tool; unit/WDIO tier "
+                    "per docs/features/mcp-testing/SPEC.md",
+                },
+            ],
+            result="partial",
+            pass_count=2,
+            total_count=2,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-30"
+        )
+        assert result["ok"] is True, (
+            f"expected ok=True (observation-gap promotion), got {result}"
+        )
+        validated_path = spec_dir / "VALIDATED.md"
+        assert validated_path.exists(), (
+            "VALIDATED.md was not minted for a documented-observation-gap partial"
+        )
+        parsed = lazy_core.parse_sentinel(validated_path)
+        assert parsed is not None and parsed.get("kind") == "validated", (
+            f"expected kind='validated', got {parsed!r}"
+        )
+        # The scope must be carried forward — the receipt is auditable, NOT a
+        # silent clean-all-passing impersonation.
+        exemptions = parsed.get("observation_gap_exemptions")
+        assert isinstance(exemptions, list) and len(exemptions) == 1, (
+            f"VALIDATED.md must carry the observation_gap_exemptions block "
+            f"forward; got {exemptions!r}"
+        )
+        assert "spec_class" in exemptions[0], (
+            f"each carried exemption must keep its spec_class provenance; "
+            f"got {exemptions[0]!r}"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_partial_with_non_exempt_failure():
+    """REGRESSION GUARD: a `result: partial` whose remainder is NOT fully covered
+    by documented `observation_gap_exemptions` (here a genuine MCP-driveable
+    failure: pass_count < total_count with no exemption justifying it) STILL
+    refuses — the observation-gap path must NOT weaken the genuine-failure refusal.
+    Zero writes.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        # 1 of 2 MCP-driveable scenarios genuinely FAILED (pass < total) — this is
+        # NOT an observation gap, so the single exemption does not cover it.
+        _write_mcp_test_results_with_exemptions(
+            spec_dir,
+            ["scenario-a", "scenario-b"],
+            exemptions=[
+                {
+                    "surface": "per-block visual state",
+                    "spec_class": "observation-gap — unit/WDIO tier per "
+                    "docs/features/mcp-testing/SPEC.md",
+                },
+            ],
+            result="partial",
+            pass_count=1,
+            total_count=2,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-30"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False — a genuine MCP-scope failure must still refuse, "
+            f"got {result}"
+        )
+        assert result["refused"] is not None, (
+            f"expected a non-None refusal, got {result!r}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md minted despite a non-exempt MCP-scope failure — the "
+            "genuine-failure refusal was weakened!"
+        )
+
+
+def test_apply_pseudo_validated_from_results_refuses_partial_exemptions_without_provenance():
+    """A `result: partial` whose MCP scope passes but whose
+    `observation_gap_exemptions` entries lack the required `spec_class` provenance
+    STILL refuses — the exemption must be provenance-backed (mirrors the
+    SKIP_MCP_TEST.md `spec_class`-required discipline), not a bare convenience tag.
+    Zero writes.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        p = spec_dir / "MCP_TEST_RESULTS.md"
+        # Exemption with NO spec_class provenance.
+        p.write_text(
+            "---\n"
+            "kind: mcp-test-results\n"
+            "feature_id: test-feature\n"
+            "scenarios:\n  - scenario-a\n"
+            "date: 2026-06-30\n"
+            "result: partial\n"
+            "pass_count: 1\n"
+            "total_count: 1\n"
+            "observation_gap_exemptions:\n"
+            "  - surface: save-as-scene\n"
+            "---\n\n# MCP Test Results\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__write_validated_from_results__", spec_dir, date="2026-06-30"
+        )
+        assert result["ok"] is False, (
+            f"expected ok=False — an exemption without spec_class provenance must "
+            f"refuse, got {result}"
+        )
+        assert not (spec_dir / "VALIDATED.md").exists(), (
+            "VALIDATED.md minted from a provenance-less exemption — unsafe!"
+        )
+
+
 def test_apply_pseudo_validated_from_results_refuses_missing_result_field():
     """No ``result:`` field at all → refused (a results file that doesn't
     declare its outcome cannot prove a passing run); message names the
@@ -25151,6 +25342,93 @@ def test_eval_evidence_zero_test_refuses():
         assert v["verdict"] == "refuse", v
 
 
+def test_eval_evidence_observation_gap_partial_promotes():
+    """Gap 1 coupling: VALIDATED.md + a `result: partial` MCP_TEST_RESULTS.md whose
+    MCP-driveable scope is fully passing (pass==total>0) AND whose remainder is
+    fully covered by provenance-backed `observation_gap_exemptions` →
+    exempt-and-tick (NOT refuse). Without this the scoped VALIDATED.md minted by
+    __write_validated_from_results__ would still be re-refused at the completion
+    gate, perpetuating the deadlock one layer deeper.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results_with_exemptions(
+            spec_dir, ["s1", "s2"],
+            exemptions=[{
+                "surface": "armStore drive-through",
+                "spec_class": "observation-gap — unit/WDIO tier per "
+                "docs/features/mcp-testing/SPEC.md",
+            }],
+            result="partial", pass_count=2, total_count=2,
+        )
+        head = _cc_seed_and_commit(repo_root)
+        # Re-stamp with HEAD + exemptions so freshness passes.
+        p = spec_dir / "MCP_TEST_RESULTS.md"
+        p.write_text(
+            p.read_text(encoding="utf-8").replace(
+                "result: partial\n",
+                f"validated_commit: \"{head}\"\nresult: partial\n",
+            ),
+            encoding="utf-8",
+        )
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] in {"exempt-and-tick", "warn-exempt"}, v
+        assert v["pass_count"] == 2, v
+
+
+def test_eval_evidence_observation_gap_partial_with_failure_refuses():
+    """REGRESSION GUARD for the completion gate: a `result: partial` whose
+    pass_count < total_count (a genuine MCP-scope failure, NOT an observation gap)
+    STILL refuses even when an exemptions block is present — the genuine-failure
+    refusal is not weakened by the observation-gap coupling.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results_with_exemptions(
+            spec_dir, ["s1", "s2"],
+            exemptions=[{
+                "surface": "per-block visual state",
+                "spec_class": "observation-gap — unit/WDIO tier per "
+                "docs/features/mcp-testing/SPEC.md",
+            }],
+            result="partial", pass_count=1, total_count=2,  # genuine failure
+        )
+        _cc_seed_and_commit(repo_root)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
+def test_eval_evidence_observation_gap_partial_no_provenance_refuses():
+    """A `result: partial` whose exemptions lack `spec_class` provenance STILL
+    refuses at the completion gate (provenance-required, mirroring the apply gate).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        (spec_dir / "MCP_TEST_RESULTS.md").write_text(
+            "---\nkind: mcp-test-results\nfeature_id: cc-feature\n"
+            "scenarios:\n  - s1\ndate: 2026-06-30\nresult: partial\n"
+            "pass_count: 1\ntotal_count: 1\n"
+            "observation_gap_exemptions:\n  - surface: save-as-scene\n"
+            "---\n\n# MCP Test Results\n",
+            encoding="utf-8",
+        )
+        _cc_seed_and_commit(repo_root)
+        v = lazy_core.evaluate_completion_evidence(spec_dir, repo_root)
+        assert v["verdict"] == "refuse", v
+
+
 def test_eval_evidence_head_drift_docs_only_warn_exempt():
     """validated_commit != HEAD, drift is *.md only → warn-exempt."""
     _guard()
@@ -27555,6 +27833,28 @@ _TESTS = _TESTS + [
     # and looped on a real-device host). non-windows-host adds the "platform" probe.
     ("test_host_capability_link_peer_and_non_windows_registered_and_probed",
      test_host_capability_link_peer_and_non_windows_registered_and_probed),
+]
+
+
+# harness-mcp-observation-gap-disposition-and-hijacked-runtime — Gap 1
+# (observation-gap scoped-validated disposition: __write_validated_from_results__
+# apply gate + evaluate_completion_evidence completion gate) and Gap 2 (M4
+# ensure_runtime soft owned-unverified-serving READY on the lock-is-None branch).
+_TESTS = _TESTS + [
+    # Gap 1 — apply gate (__write_validated_from_results__).
+    ("test_apply_pseudo_validated_from_results_promotes_documented_observation_gap",
+     test_apply_pseudo_validated_from_results_promotes_documented_observation_gap),
+    ("test_apply_pseudo_validated_from_results_refuses_partial_with_non_exempt_failure",
+     test_apply_pseudo_validated_from_results_refuses_partial_with_non_exempt_failure),
+    ("test_apply_pseudo_validated_from_results_refuses_partial_exemptions_without_provenance",
+     test_apply_pseudo_validated_from_results_refuses_partial_exemptions_without_provenance),
+    # Gap 1 — completion gate (evaluate_completion_evidence) coupling.
+    ("test_eval_evidence_observation_gap_partial_promotes",
+     test_eval_evidence_observation_gap_partial_promotes),
+    ("test_eval_evidence_observation_gap_partial_with_failure_refuses",
+     test_eval_evidence_observation_gap_partial_with_failure_refuses),
+    ("test_eval_evidence_observation_gap_partial_no_provenance_refuses",
+     test_eval_evidence_observation_gap_partial_no_provenance_refuses),
 ]
 
 
