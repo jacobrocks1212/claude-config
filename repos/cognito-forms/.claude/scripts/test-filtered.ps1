@@ -19,6 +19,8 @@ Write-Host "Running tests$(if ($Filter) { " (filter: $Filter)" })..." -Foregroun
 
 $inFailBlock = $false
 $failBlockLines = 0
+$resultLineCount = 0
+$summarySeen = $false
 
 # Stream output line by line using pipeline instead of buffering
 $dotnetArgs = @("test", $testProjectPath, "--no-build", "--verbosity", "normal")
@@ -34,12 +36,14 @@ if ($Filter) {
     if ($line -match '^\s+Passed\s+\S') {
         Write-Host $line -ForegroundColor Green
         $inFailBlock = $false
+        $resultLineCount++
     }
     # Failed test - start capturing block
     elseif ($line -match '^\s+Failed\s+\S') {
         Write-Host $line -ForegroundColor Red
         $inFailBlock = $true
         $failBlockLines = 0
+        $resultLineCount++
     }
     # Inside a fail block - show error details (limit lines)
     elseif ($inFailBlock -and $failBlockLines -lt 6) {
@@ -55,6 +59,7 @@ if ($Filter) {
     # Summary lines
     elseif ($line -match 'Test Run (Passed|Failed)|^Total tests:|^\s+Passed\s*:|^\s+Failed\s*:') {
         $inFailBlock = $false
+        $summarySeen = $true
         if ($line -match 'Failed') {
             Write-Host $line -ForegroundColor Red
         } else {
@@ -62,3 +67,13 @@ if ($Filter) {
         }
     }
 }
+
+$dotnetExit = $LASTEXITCODE
+
+# Distinguished exit for a zero-output run
+if ($resultLineCount -eq 0 -and -not $summarySeen) {
+    Write-Host "WARN: No test results captured (zero tests matched filter or summary not parsed)" -ForegroundColor Yellow
+    exit 3
+}
+
+exit $dotnetExit

@@ -81,8 +81,8 @@ Sequential, single-WU batches.
 
 ## Work Units
 
-- [ ] WU-1 — `test-filtered.ps1` zero-output guard + distinguished `exit 3`
-- [ ] WU-2 — Runner: classify `result_fidelity` into `hygiene`
+- [x] WU-1 — `test-filtered.ps1` zero-output guard + distinguished `exit 3`
+- [x] WU-2 — Runner: classify `result_fidelity` into `hygiene`
 - [ ] WU-3 — `build-queue-status.ps1` surfaces the `hygiene` line
 - [ ] WU-4 — Doc: result schema + trim cognito manual-recovery block
 
@@ -97,10 +97,10 @@ Sequential, single-WU batches.
 #### WU-1 — `test-filtered.ps1` zero-output guard + distinguished `exit 3`
 
 - **Scope (PHASES P4 deliverable 2; deliverable 3 conditional-only per the spike note above):**
-  - [ ] Track a `$resultLineCount` (incremented on each Passed/Failed test line matched) and a `$summarySeen` boolean (set when a summary line matches) inside the streaming `ForEach-Object` pipeline.
-  - [ ] After the pipeline, capture `$dotnetExit = $LASTEXITCODE`.
-  - [ ] If `$resultLineCount -eq 0 -and -not $summarySeen` ⇒ emit an explicit `⚠ No test results captured (zero tests matched filter or summary not parsed)` line and `exit 3` (the distinguished no-output code). Otherwise `exit $dotnetExit` (preserve the real verdict — a genuine all-pass still exits 0, a genuine failure still propagates its non-zero code).
-  - [ ] **(Conditional, only if the operator has already recorded the spike finding as "unparsed-summary" in the bug dir):** widen the `:56` summary regex to also match the format the spike observed. If the spike is unrecorded or proved a filter-construction bug, SKIP this sub-item — the defensive guard ships alone and the conditional fix is an operator follow-up.
+  - [x] Track a `$resultLineCount` (incremented on each Passed/Failed test line matched) and a `$summarySeen` boolean (set when a summary line matches) inside the streaming `ForEach-Object` pipeline.
+  - [x] After the pipeline, capture `$dotnetExit = $LASTEXITCODE`.
+  - [x] If `$resultLineCount -eq 0 -and -not $summarySeen` ⇒ emit an explicit `⚠ No test results captured (zero tests matched filter or summary not parsed)` line and `exit 3` (the distinguished no-output code). Otherwise `exit $dotnetExit` (preserve the real verdict — a genuine all-pass still exits 0, a genuine failure still propagates its non-zero code).
+  - [~] **SKIPPED (no spike recorded):** **(Conditional, only if the operator has already recorded the spike finding as "unparsed-summary" in the bug dir):** widen the `:56` summary regex to also match the format the spike observed. If the spike is unrecorded or proved a filter-construction bug, SKIP this sub-item — the defensive guard ships alone and the conditional fix is an operator follow-up. *(Bug dir contains no spike recording at execution time → defensive guard shipped alone; conditional fix remains an operator follow-up carried by the PHASES Phase-4 Runtime Verification rows.)*
 - **TDD:** no via automated harness (the script streams real `dotnet test` output; claude-config has no runtime to drive it). The counter logic is **observable** via the warning line and exit code during the PHASES Runtime Verification manual runs. Parse gate is the mechanical check.
 - **Files to create/modify:**
   - `repos/cognito-forms/.claude/scripts/test-filtered.ps1` — add the counters, the post-pipeline exit capture, and the zero-output guard.
@@ -113,7 +113,7 @@ Sequential, single-WU batches.
 #### WU-2 — Runner: classify `result_fidelity` into `hygiene`
 
 - **Scope (PHASES P4 deliverable 4):**
-  - [ ] In `build-queue-runner.ps1`, classify a `result_fidelity` value and record it into the result body's `hygiene` sub-object: a **test op** (`mstest`/`nxtest`) whose awaited build child exited **3** (the distinguished no-output code from WU-1) ⇒ `result_fidelity: "no-output"`; a normal test pass ⇒ `"verified"`; a **non-test op** (`msbuild`/`nxbuild`) ⇒ `"n/a"`.
+  - [x] In `build-queue-runner.ps1`, classify a `result_fidelity` value and record it into the result body's `hygiene` sub-object: a **test op** (`mstest`/`nxtest`) whose awaited build child exited **3** (the distinguished no-output code from WU-1) ⇒ `result_fidelity: "no-output"`; a normal test pass ⇒ `"verified"`; a **non-test op** (`msbuild`/`nxbuild`) ⇒ `"n/a"`.
 - **TDD:** no (depends on the awaited exit code; observable via `results/<seq>.json`). Parse gate is the mechanical check.
 - **Files to create/modify:**
   - `user/scripts/build-queue-runner.ps1` — add `result_fidelity` to the `hygiene` sub-object based on the exit code + op.

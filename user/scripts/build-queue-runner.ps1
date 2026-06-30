@@ -86,6 +86,14 @@ try {
 	}
 }
 
+$resultFidelity = Get-SafeValue {
+	$execLeaf = Split-Path -Leaf $Exec
+	$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
+	if (-not $isTestOp) { 'n/a' }
+	elseif ($exitCode -eq 3) { 'no-output' }
+	else { 'verified' }
+} 'n/a'
+
 $resultsDir = Join-Path $StateRoot 'results'
 Get-SafeValue {
 	if (-not (Test-Path $resultsDir)) {
@@ -102,6 +110,7 @@ $resultBody = [ordered]@{
 	hygiene   = [ordered]@{
 		vbcscompiler_recycled = $vbcscompilerRecycled
 		quarantined_artifacts = $quarantinedArtifacts
+		result_fidelity       = $resultFidelity
 	}
 } | ConvertTo-Json -Compress -Depth 5
 
