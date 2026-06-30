@@ -10009,6 +10009,58 @@ def head_sha_snapshot(repo_root: Path | None = None) -> str | None:
     return None
 
 
+def _count_authored_commits_since(
+    repo_root: Path, begin_head_sha: str | None
+) -> int | None:
+    """Count AUTHORED commits HEAD advanced since ``begin_head_sha``, EXCLUDING
+    merge commits (hardening Round 42, 2026-06-29).
+
+    The ``unexpected-commits`` budget is a model of *authored work-unit commits*:
+    the budget side (``_execute_plan_commit_budget``) derives the ceiling from the
+    plan part's per-WU checkbox / phase count, i.e. the units of work the cycle is
+    expected to author. The count side MUST measure the same thing — authored
+    commits — or the comparison is apples-to-oranges. A bare
+    ``git rev-list --count <begin>..HEAD`` ALSO counts merge commits, which are
+    branch-integration artifacts, not authored work units: a sibling PR merged into
+    ``main`` during the cycle window (or any out-of-band merge) inflates the count by
+    ≥1 with ZERO corresponding work, false-positiving an otherwise-clean cycle as a
+    runaway.
+
+    Concrete recurrence (Round 42, AlgoBooth ``algorithmic-fill-buffer``, Step 7a
+    execute-plan): the dispatched part-3 plan declared 5 WUs (budget = 5 + slack 2 =
+    7), and the cycle authored exactly 5 WU commits — but ``begin..HEAD`` also spanned
+    a merge commit (``d7b867a81`` — PR #107 pre-release-roadmap branch integration)
+    plus 2 unrelated ``docs:`` roadmap/queue commits that landed on ``main`` during
+    the window, so the bare count was 8 > 7 and tripped ``unexpected-commits``.
+    ``--no-merges`` brings the count to exactly 7 (≤ budget) — the merge commit was
+    the load-bearing overflow.
+
+    ``--no-merges`` is the structural fix (a merge commit is NEVER an authored
+    work unit, for ANY sub_skill). It is deliberately NARROW: the two unrelated
+    non-merge ``docs:`` commits are still counted — filtering those would require
+    per-cycle path scoping and risk masking a real runaway (false negative). Excluding
+    only merges removes a category error without lowering the runaway ceiling: a
+    genuine runaway authoring commits beyond budget STILL trips.
+
+    Returns the merge-excluded count, or ``None`` on a degraded git read / no
+    begin sha (caller disables signal (b) on None — never a false positive,
+    never a crash). Mirrors the pre-existing best-effort contract of the inline
+    count it replaces.
+    """
+    if not begin_head_sha:
+        return None
+    try:
+        count_proc = _git(
+            repo_root, "rev-list", "--count", "--no-merges",
+            f"{begin_head_sha}..HEAD",
+        )
+        if count_proc.returncode != 0:
+            return None
+        return int((count_proc.stdout or "").strip() or "0")
+    except Exception:  # noqa: BLE001  (incl. ValueError from int())
+        return None
+
+
 def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     """--cycle-end I/O wiring (hardening-blind-to-process-friction Phase 2 / D1).
 
@@ -10018,8 +10070,12 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
          marker → None no-op (the bracket was never armed or already cleared);
       2. resolves the CURRENT run identity (``read_run_marker().started_at``,
          None when no run marker is live) and the CURRENT HEAD sha;
-      3. computes how many commits HEAD advanced since the snapshotted
-         ``begin_head_sha`` (``git rev-list --count <begin>..HEAD``);
+      3. computes how many AUTHORED (merge-excluded) commits HEAD advanced since
+         the snapshotted ``begin_head_sha``
+         (``git rev-list --count --no-merges <begin>..HEAD`` via
+         ``_count_authored_commits_since`` — Round 42: a merge commit is a
+         branch-integration artifact, not authored work, so it must not count
+         toward the per-cycle commit budget);
       4. calls the pure detect_cycle_bracket_friction(...);
       5. on a non-None descriptor, appends a kind: process-friction entry to the
          deny ledger via append_friction_ledger_entry(...).
@@ -10049,19 +10105,15 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     current_run_started_at = (live_run or {}).get("started_at")
 
     # (2/3) current HEAD + commits-since-begin — best-effort git reads.
+    # commits_since EXCLUDES merge commits (Round 42): the budget side models
+    # authored work-unit commits, so the count side must too — a merge commit (e.g. a
+    # sibling PR integrated into main during the cycle window) is a branch-integration
+    # artifact with no authored work and must not count toward the runaway budget.
+    # _count_authored_commits_since carries the full provenance + best-effort contract.
     root = (repo_root or Path.cwd())
-    commits_since: int | None = None
     begin_head_sha = marker.get("begin_head_sha")
     current_head_sha = head_sha_snapshot(root)
-    if begin_head_sha:
-        try:
-            count_proc = _git(
-                root, "rev-list", "--count", f"{begin_head_sha}..HEAD"
-            )
-            if count_proc.returncode == 0:
-                commits_since = int((count_proc.stdout or "").strip() or "0")
-        except Exception:  # noqa: BLE001  (incl. ValueError from int())
-            commits_since = None
+    commits_since: int | None = _count_authored_commits_since(root, begin_head_sha)
 
     # (4) recover the dispatched sub_skill from the marker (--cycle-begin persists
     # it) so the unexpected-commits detector selects the CORRECT per-sub_skill

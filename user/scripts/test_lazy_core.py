@@ -18224,6 +18224,89 @@ def test_detect_friction_spec_cycle_multi_commit_within_budget():
     assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
 
 
+def test_count_authored_commits_since_excludes_merge_commits():
+    """Hardening Round 42 (2026-06-29 recurrence, AlgoBooth algorithmic-fill-buffer,
+    Step 7a execute-plan): `_count_authored_commits_since` counts authored commits but
+    EXCLUDES merge commits, so a sibling PR merged into main during the cycle window
+    does NOT inflate the unexpected-commits count past the per-WU budget.
+
+    Live recurrence: the part-3 plan declared 5 WUs (budget 5 + slack 2 = 7) and the
+    cycle authored exactly 5 WU commits, but begin..HEAD ALSO spanned a merge commit
+    (PR #107 d7b867a81 pre-release-roadmap integration), so the bare
+    `rev-list --count begin..HEAD` returned 8 > 7 and false-tripped unexpected-commits.
+    `--no-merges` brings the count to the 5 authored commits (the merge was the
+    load-bearing overflow). A merge commit is NEVER an authored work unit, for any
+    sub_skill — so excluding it is structural, not a phrase/threshold weakening.
+
+    Fixture: build a real repo, branch, author commits on each side, then `git merge
+    --no-ff` to force a real merge commit on the main line. begin = the pre-merge HEAD
+    on main. Assert the helper counts only authored commits (merge excluded) and that a
+    bare count would have over-counted by exactly the one merge commit."""
+    _guard()
+
+    def _run(cmd, cwd):
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        if r.returncode != 0:
+            raise RuntimeError(f"git fixture failed (cmd={cmd!r}): {r.stderr.strip()}")
+        return r
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        _run(["git", "init", "-q", str(root)], cwd=None)
+        _run(["git", "config", "user.email", "t@t.local"], cwd=str(root))
+        _run(["git", "config", "user.name", "T"], cwd=str(root))
+        _run(["git", "config", "commit.gpgsign", "false"], cwd=str(root))
+
+        def _commit(msg, fname):
+            (root / fname).write_text(msg + "\n", encoding="utf-8")
+            _run(["git", "add", fname], cwd=str(root))
+            _run(["git", "commit", "-q", "-m", msg], cwd=str(root))
+
+        _commit("init", "README.md")
+        branch = _run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(root)
+        ).stdout.strip() or "main"
+
+        # The --cycle-begin snapshot point.
+        begin_sha = _run(["git", "rev-parse", "HEAD"], cwd=str(root)).stdout.strip()
+
+        # 5 authored WU commits on the main line (mirrors the 5-WU part-3 cadence).
+        for i in range(1, 6):
+            _commit(f"feat: P5 WU-{i}", f"wu{i}.txt")
+
+        # A sibling branch with its own commit, merged back with --no-ff so a REAL
+        # merge commit lands on main (mirrors PR #107 integration mid-cycle).
+        _run(["git", "checkout", "-q", "-b", "sibling", begin_sha], cwd=str(root))
+        _commit("docs: pre-release roadmap (off-plan)", "roadmap.md")
+        _run(["git", "checkout", "-q", branch], cwd=str(root))
+        _run(
+            ["git", "merge", "--no-ff", "-q", "-m", "Merge pull request #107", "sibling"],
+            cwd=str(root),
+        )
+
+        # Bare count (the OLD behavior) includes the merge commit + the sibling's
+        # authored commit → over-counts.
+        bare = int(_run(
+            ["git", "rev-list", "--count", f"{begin_sha}..HEAD"], cwd=str(root)
+        ).stdout.strip())
+        authored = lazy_core._count_authored_commits_since(root, begin_sha)
+
+        # The merge commit is excluded; the sibling's authored commit is NOT (the fix
+        # is deliberately narrow — only merges are excluded). bare counts the merge,
+        # authored does not, so authored == bare - 1 (exactly the one merge commit).
+        assert authored == bare - 1, (authored, bare)
+        # And the merge-excluded count of the 5 main-line WU commits + 1 sibling
+        # authored commit is 6 — under a 7 budget — whereas the bare count of 7
+        # (6 authored + 1 merge) plus any further merge would breach it. The merge
+        # exclusion is what keeps the honest cadence under budget.
+        assert authored == 6, authored
+        assert bare == 7, bare
+
+    # Degraded inputs: no begin sha → None (signal disabled, never a false positive).
+    assert lazy_core._count_authored_commits_since(Path(td), None) is None
+
+
 def test_detect_friction_within_commit_budget_returns_none():
     """WU-2: a single commit (within the conservative budget) and intact identity
     → None."""
@@ -22649,6 +22732,8 @@ _TESTS = _TESTS + [
      test_detect_friction_planning_cycle_multi_commit_within_budget),
     ("test_detect_friction_spec_cycle_multi_commit_within_budget",
      test_detect_friction_spec_cycle_multi_commit_within_budget),
+    ("test_count_authored_commits_since_excludes_merge_commits",
+     test_count_authored_commits_since_excludes_merge_commits),
     ("test_detect_friction_meta_cycle_exempt_from_unexpected_commits",
      test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
     ("test_detect_friction_over_budget_commits",
