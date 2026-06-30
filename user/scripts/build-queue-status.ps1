@@ -135,5 +135,49 @@ if (-not $hasActive -and -not $hasWaiters) {
 	Write-Output 'queue idle'
 }
 
+$hygieneSeq = $null
+if ($hasActive -and $null -ne $lockData) {
+	$hygieneSeq = Get-SafeValue { $lockData.seq }
+}
+if ($null -eq $hygieneSeq) {
+	$resultsDir = Join-Path $StateRoot 'results'
+	if (Test-Path $resultsDir) {
+		$resultFiles = @(Get-ChildItem -Path $resultsDir -Filter '*.json' -ErrorAction SilentlyContinue)
+		$bestSeq = $null
+		foreach ($rf in $resultFiles) {
+			$seqVal = Get-SafeValue { [int]([System.IO.Path]::GetFileNameWithoutExtension($rf.Name)) }
+			if ($null -ne $seqVal -and ($null -eq $bestSeq -or $seqVal -gt $bestSeq)) {
+				$bestSeq = $seqVal
+			}
+		}
+		$hygieneSeq = $bestSeq
+	}
+}
+
+if ($null -ne $hygieneSeq) {
+	$resultPath = Join-Path $StateRoot ("results\{0}.json" -f $hygieneSeq)
+	$resultData = Get-SafeValue {
+		if (Test-Path $resultPath) {
+			$raw = [System.IO.File]::ReadAllText($resultPath)
+			$raw | ConvertFrom-Json
+		}
+	}
+	$hygiene = Get-SafeValue { $resultData.hygiene }
+	if ($null -eq $hygiene) {
+		Write-Output 'hygiene: (not recorded)'
+	} else {
+		$recycled = Get-SafeValue { $hygiene.vbcscompiler_recycled }
+		$quarantinedCount = @(Get-SafeValue { $hygiene.quarantined_artifacts } $null).Count
+		$fidelity = Get-SafeValue { $hygiene.result_fidelity }
+		$fidelityStr = if ($null -ne $fidelity -and $fidelity -ne '') { $fidelity } else { 'n/a' }
+		$line = "hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3}" -f $hygieneSeq, $recycled, $quarantinedCount, $fidelityStr
+		if ($fidelityStr -eq 'no-output') {
+			Write-Host ($line + '  [UNVERIFIED - no test output captured]') -ForegroundColor Yellow
+		} else {
+			Write-Output $line
+		}
+	}
+}
+
 Write-Output ''
 Write-Output (Get-LiveLoadLine)

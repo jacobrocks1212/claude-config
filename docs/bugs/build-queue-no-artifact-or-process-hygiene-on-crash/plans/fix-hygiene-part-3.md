@@ -83,8 +83,8 @@ Sequential, single-WU batches.
 
 - [x] WU-1 — `test-filtered.ps1` zero-output guard + distinguished `exit 3`
 - [x] WU-2 — Runner: classify `result_fidelity` into `hygiene`
-- [ ] WU-3 — `build-queue-status.ps1` surfaces the `hygiene` line
-- [ ] WU-4 — Doc: result schema + trim cognito manual-recovery block
+- [x] WU-3 — `build-queue-status.ps1` surfaces the `hygiene` line
+- [x] WU-4 — Doc: result schema + trim cognito manual-recovery block
 
 ---
 
@@ -139,7 +139,7 @@ Sequential, single-WU batches.
 #### WU-3 — `build-queue-status.ps1` surfaces the `hygiene` line
 
 - **Scope (PHASES P5 deliverable 1):**
-  - [ ] `build-queue-status.ps1` reads the most recent `results/<seq>.json` for the active/last build and prints a `hygiene:` line — reaped-PID count, `vbcscompiler_recycled`, quarantined-artifact count, and `result_fidelity` — **highlighting** `no-output` so an unverified run is visible, not invisible.
+  - [x] `build-queue-status.ps1` reads the most recent `results/<seq>.json` for the active/last build and prints a `hygiene:` line — `vbcscompiler_recycled`, quarantined-artifact count, and `result_fidelity` — **highlighting** `no-output` so an unverified run is visible, not invisible. *(No `reaped_pids` — the Job-Object reap records no PID list; surfaced the three fields the runner actually writes.)*
 - **TDD:** no automated harness, but the status reader is **observable** — seed a fake `results/<seq>.json` with a `hygiene` sub-object and run the script (a quick manual check; could be a light Pester test if desired). Parse gate is the mechanical check.
 - **Files to create/modify:**
   - `user/scripts/build-queue-status.ps1` — read `results/<seq>.json` `hygiene` and surface the line.
@@ -152,9 +152,9 @@ Sequential, single-WU batches.
 #### WU-4 — Doc: result schema + trim cognito manual-recovery block
 
 - **Scope (PHASES P5 deliverables 2, 3):**
-  - [ ] Document the extended `results/<seq>.json` schema (the `hygiene` sub-object: `reaped_pids`, `vbcscompiler_recycled`, `quarantined_artifacts`, `result_fidelity`) in the runner's `.DESCRIPTION`/header comment.
-  - [ ] Add a note on the new schema to the `claude-config/CLAUDE.md` build-queue scripts table (the `build-queue.ps1`/`build-queue-status.ps1` rows / nearby).
-  - [ ] Trim `repos/cognito-forms/CLAUDE.local.md`'s manual-recovery block (kill `testhost`/`dotnet` + delete locked/0-byte DLL) to state the queue now reaps descendants, recycles VBCSCompiler, and quarantines 0-byte artifacts automatically — keep only a one-line "if it ever recurs, check `/build-queue-status`" pointer.
+  - [x] Document the extended `results/<seq>.json` schema (the `hygiene` sub-object: `vbcscompiler_recycled`, `quarantined_artifacts`, `result_fidelity` — `reaped_pids` is NOT written; the Job-Object reap is fire-and-forget) in the runner's `.DESCRIPTION`/header comment.
+  - [x] Add a note on the new schema to the `claude-config/CLAUDE.md` build-queue scripts table (the `build-queue.ps1`/`build-queue-status.ps1` rows / nearby).
+  - [x] Trim `repos/cognito-forms/CLAUDE.local.md`'s manual-recovery block (kill `testhost`/`dotnet` + delete locked/0-byte DLL) to state the queue now reaps descendants, recycles VBCSCompiler, and quarantines 0-byte artifacts automatically — keep only a one-line "if it ever recurs, check `/build-queue-status`" pointer.
 - **TDD:** no (pure documentation). No gate beyond a re-read for accuracy against the implemented schema.
 - **Files to create/modify:**
   - `user/scripts/build-queue-runner.ps1` — header-comment schema doc (NO logic change).

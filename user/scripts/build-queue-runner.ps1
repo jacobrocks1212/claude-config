@@ -13,6 +13,18 @@
     -Seq        Queue sequence number allocated by the wrapper.
     -StateRoot  State directory (defaults to the same root as build-queue.ps1).
     Remaining   Verbatim args forwarded to the filtered script.
+
+  results/<seq>.json schema
+    {
+      seq: <int>, exit_code: <int>, ended_at: "<ISO-8601>",
+      hygiene: {
+        vbcscompiler_recycled: <bool>,   # whether VBCSCompiler was recycled after the build
+        quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
+        result_fidelity: "verified" | "no-output" | "n/a"  # "no-output" = test op produced zero results; "verified" = test op had real output; "n/a" = build op
+      }
+    }
+    Job-Object reap of build descendants happens unconditionally but records no PID list
+    (fire-and-forget) — there is no reaped-PID field.
 #>
 [CmdletBinding()]
 param(

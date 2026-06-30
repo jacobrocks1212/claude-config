@@ -175,7 +175,9 @@ When adding to a coupled pair, also update each file's State Machine Summary / o
 | `fix-line-endings.ps1` | CRLF/LF normalization script (NOT wired as a hook in `user/settings.json` — see Hooks table note) |
 | `run-eslint.ps1` | Auto-lint TypeScript/Vue on save (PostToolUse hook) |
 | `build-queue.ps1` | **Machine-global FIFO build serializer for Cognito Forms.** Heavy Cognito builds route through this wrapper via the four skills (`/msbuild`, `/mstest`, `/nxbuild`, `/nxtest`), so only ONE build runs at a time across all worktrees (state under `~/.claude/state/build-queue/`). `-Op <op> -Exec <filtered-script> [pass-through args]`; runs the filtered script in a detached PowerShell (survives a Bash-tool timeout). Raw `dotnet build`/`dotnet test`/`nx build|test|run-many`/direct `*-filtered.ps1` in a Cognito worktree are hook-denied (see `build-queue-enforce.sh`); `BUILD_QUEUE_BYPASS=1 <cmd>` is the deliberate one-off override. |
-| `build-queue-status.ps1` | Read-only status view for the build queue (active build, ordered waiters, live machine load). Surfaced by the `/build-queue-status` skill (`repos/cognito-forms/.claude/skills/`). |
+| `build-queue-status.ps1` | Read-only status view for the build queue (active build, ordered waiters, live machine load). Surfaced by the `/build-queue-status` skill (`repos/cognito-forms/.claude/skills/`). Also surfaces each build's `hygiene` outcome (`vbcscompiler_recycled`, `quarantined_artifacts`, `result_fidelity`, recorded on `results/<seq>.json` by `build-queue-runner.ps1`). |
+
+Each build now auto-reaps leftover build descendants (Job Object), recycles VBCSCompiler, and quarantines 0-byte/truncated-PE DLLs between runs — `build-queue-status.ps1` surfaces the per-build `hygiene` outcome (`vbcscompiler_recycled`, `quarantined_artifacts`, `result_fidelity`).
 
 ### Lint Commands
 
