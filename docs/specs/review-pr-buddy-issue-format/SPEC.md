@@ -1,13 +1,13 @@
-# Standardized Post-Disposition Issue Format (Proposed Fix + Proposed PR Comment) — Investigation/Design Spec
+# Standardized Issue Format — Pre- and Post-Disposition (Proposed Fix + Proposed PR Comment) — Investigation/Design Spec
 
-> After disposition, `review-pr-buddy` (and the shared `synthesizer-v2` agent) must present every kept issue in one standardized format that pairs each issue with a **proposed fix** and a **draft PR comment**, ordered most-important-first — so the reviewer knows how to actually resolve each issue.
+> `review-pr-buddy` (and the shared `synthesizer-v2` agent) must present every issue in one standardized format that pairs each issue with a **proposed fix** and a **draft PR comment** — so the reviewer knows how to actually resolve each issue. This applies **both** post-disposition (kept findings in `PR-{id}.md` + the in-chat close digest, ordered most-important-first) **and** pre-disposition (the Phase-1 Reconcile/Pass-2 reveal in the interactive walk, so the reviewer sees the fix + draft comment at the moment they disposition each finding).
 
 **Status:** Concluded
 **Severity:** P2 (workflow friction; no incorrect output)
 **Discovered:** 2026-06-30
 **Placement:** `docs/specs/review-pr-buddy-issue-format/` (harness feature work)
 **Related:** `docs/specs/review-pr-buddy/SPEC.md` (the original buddy feature), `user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr-buddy.md`, `agents/synthesizer-v2.md`
-**Phases:** [`PHASES.md`](./PHASES.md) — 2-phase decomposition (synthesizer-v2 format SSOT → buddy artifact + in-chat digest)
+**Phases:** [`PHASES.md`](./PHASES.md) — 3-phase decomposition (synthesizer-v2 format SSOT → buddy artifact + in-chat digest → buddy pre-disposition Reconcile/Pass-2 reveal)
 
 <!-- This is a feature enhancement with a fully-known design (no root-cause mystery to investigate),
      captured via /spec-bug. Status is Concluded: the four scoping decisions are locked (see
@@ -24,6 +24,7 @@
 3. **[VERIFIED]** The standardized format must apply to **both** the in-chat digest surfaced at session close **and** the persisted curated review artifact (`PR-{id}.md`).
 4. **[VERIFIED]** Most-important issues must still be presented first; the new fix/comment sections are added per-issue without disturbing the existing importance ordering.
 5. **[VERIFIED]** The change should apply to **both** `review-pr-buddy` Phase 2 **and** the shared `synthesizer-v2` agent (so autonomous `/review-pr` output is consistent).
+6. **[VERIFIED 2026-06-30, follow-up]** The same standardized block must also be used for the **pre-disposition** reveal in the Phase-1 interactive walk (Reconcile / Pass 2) — so the reviewer sees the proposed fix and the draft PR comment for each finding *at the moment they disposition it*, not only afterward. (Buddy-only: the autonomous `/review-pr` / `synthesizer-v2` path has no disposition stage, so it is unaffected by this follow-up.)
 
 ## Reproduction Steps
 
@@ -70,6 +71,7 @@
 | D2 | **Form of the proposed fix** | **Snippet where cheap, prose otherwise** — concrete before→after code snippet/diff when the fix is small/local and the code is in hand; precise prose resolution steps (what to change, where, why) when the fix is broad or spans files. |
 | D3 | **Output surface** | **Both** — the persisted `PR-{id}.md` artifact AND a new in-chat digest rendered at buddy session close. One standardized format, two surfaces. |
 | D4 | **Apply to** | **Buddy Phase 2 + the shared `synthesizer-v2` agent** — so autonomous `/review-pr` emits the same standardized blocks. The format is defined once in `synthesizer-v2.md` and consumed by buddy by reference (preserving the existing single-source-of-format coupling). |
+| D5 | **Pre-disposition presentation** (follow-up, 2026-06-30) | **Apply the standardized block to the Phase-1 Reconcile (Pass 2) reveal too.** Each revealed pre-computed finding renders in the standardized block — `**Severity:**` shows the **recommended/tool-computed** severity (tier/verdict-derived, distinct from the not-yet-made disposition), plus **What / Proposed fix / Proposed PR comment** — *before* the disposition prompt. The disposition prompt's four-value taxonomy (`Blocking / Important / Suggestion / Dismiss`, fixed order) and the inline `CONFIRMED`/`UNVERIFIED`/`—` confidence label are **unchanged**. Buddy-only — `synthesizer-v2` (autonomous, no disposition stage) is not touched. Pass-1 anti-anchoring is preserved (findings are still NOT shown in Pass 1). |
 
 ## Proposed Standardized Issue Block (design target)
 
@@ -92,6 +94,7 @@ Notes for planning:
 
 | Component | Files | Impact |
 |-----------|-------|--------|
+| Buddy Phase 1 pre-disposition reveal (D5) | `commands/review-pr-buddy.md` ("Reconcile — Pass 2", ≈L139–178) | NEW: reveal each pre-computed finding in the standardized block (recommended/tool severity + What + Proposed fix + Proposed PR comment) before the disposition prompt, so the reviewer sees the fix/draft-comment at disposition time. Disposition-prompt taxonomy + confidence label unchanged; Pass-1 anti-anchoring preserved. Buddy authors fix/comment for every revealed finding (incl. ones later dismissed). |
 | Buddy Phase 2 synthesis | `commands/review-pr-buddy.md` ("Collect Curated Content", "Review Document Format") | Generate proposed-fix + draft-comment per kept finding; emit standardized block in `PR-{id}.md`. Buddy may use local-`main` access to ground snippets. |
 | Buddy in-chat close | `commands/review-pr-buddy.md` ("Cleanup and Report") | NEW: render the standardized digest in chat (currently counts/paths only), most-important-first. |
 | Shared synthesis format | `agents/synthesizer-v2.md` ("Output Format", "Narrative Guidelines", "Section Omission Rules", "Ordering") | Redefine per-finding rendering to the standardized block; source the concrete snippet from cached `evidence.snippet` only (cache-only constraint). |

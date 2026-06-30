@@ -166,14 +166,31 @@ Both filters run before the grouped finding display below. Only findings that pa
 
 Reveal the chunk's pre-computed findings from `processed-findings.json` (investigation, sweep, reuse, intrafile) as a reconciliation against the reviewer's Pass-1 take: where they overlap, where the tool flagged something the reviewer didn't catch, and that the tool may have missed domain-intent issues the reviewer caught.
 
-Present findings grouped by source:
+Present each finding that passes both pre-filters in the **Standardized Issue Block** — the same shape `synthesizer-v2.md` defines (`## Standardized Issue Block`) and Phase 2 emits post-disposition. The block is the reveal display; the Step-4 disposition prompt below is unchanged.
+
+```
+### {Issue title}
+**Severity:** {recommended — see below}   **Source:** {investigation | sweep | reuse | intrafile}   **Location:** {file}:{line}   **Confidence:** {CONFIRMED | UNVERIFIED | —}
+**What:** {1–2 line statement of the issue and why it matters}
+**Proposed fix:** {concrete before→after snippet when cheap & available; precise prose otherwise — sweep is always prose}
+**Proposed PR comment:** {ready-to-paste draft, terse, reviewer-voiced, references file:line; never auto-posted}
+```
+
+Keep findings **grouped by source** under their section headings, and keep the pre-computed `tier → severity → effective_weight` order within each group — **do not re-sort**:
 
 - **Investigation findings** (`source:"investigation"`) — bugs, edge cases, correctness issues
 - **Sweep rule hits** (`source:"sweep"`) — pattern violations, rule matches
 - **Reuse & duplication flags** (`source:"reuse"`) — verdict (e.g. `refactor`, `extend`, `wrap`, `acceptable-new`), existing-system candidate, suggested action
 - **Intra-file reuse & consistency** (`source:"intrafile"`) — verdict (`refactor`/`reuse` for in-file duplication, `inconsistent` for surrounding-code divergence), in-file `file:line`/symbol candidate, suggested action
 
-Highlight blocking and important findings. Do not bury them in a flat list. If no pre-computed findings exist, state: "No pre-computed findings for this group."
+Highlight blocking and important findings. Do not bury them in a flat list. If no pre-computed findings exist (after the pre-filters), state: "No pre-computed findings for this group."
+
+**Pre-disposition `**Severity:**` semantics (explicit).** Here, the block's `**Severity:**` field carries the pipeline's **recommended / tool-computed** severity — read from the `processed-findings.json` `tier`, or for reuse/intrafile from the verdict→severity mapping (`refactor`/`reuse` → important, `extend`/`wrap` → nit/suggestion, `inconsistent` → nit/suggestion). This is a **recommendation only — NOT the reviewer's disposition**, which is captured by the Step-4 prompt that immediately follows (the reviewer may override it). Note that **post-disposition** (Phase 2's `PR-{id}.md` and in-chat digest) the same `**Severity:**` field carries the reviewer's *chosen* severity — so the pre- and post-disposition surfaces use one field with two clearly-scoped meanings and do not read as contradictory. `**Confidence:**` carries the existing `CONFIRMED` / `UNVERIFIED` / `—` label, identical to the Step-4 inline label.
+
+**Author the Proposed fix + Proposed PR comment at reveal time, for every revealed finding** — including findings the reviewer may subsequently dismiss. This authoring moves earlier than Phase 2 (it used to happen in Phase 2's "Collect Curated Content"); Phase 2 **reuses** what was authored here for the kept findings — do NOT re-author from scratch there.
+
+- **Proposed fix** — a concrete before→after snippet/diff when the fix is small/local and you have the code in hand; precise prose resolution steps otherwise. The buddy MAY ground the snippet from the **local codebase on `main`** (the investigation-style carve-out — the same access used in the Phase-1 walk's "Open a local file" interruption): it may use a fresher/richer snippet than the cache-only synthesizer-v2 path, **including for `sweep` findings** (which carry no `evidence.snippet`). State the read explicitly: "Reading from the local codebase on `main` for context — not the PR branch state." The block **FORMAT** stays identical to synthesizer-v2's; only snippet richness may differ — the documented cache-only-vs-local asymmetry (synthesizer-v2 is cache-only and must source snippets from `evidence.snippet` alone).
+- **Proposed PR comment** — a ready-to-paste draft: terse, reviewer-voiced, references `file:line`; never auto-posted (per `user/CLAUDE.local.md`). If a Pass-1 reviewer observation / `note` exists for the finding, it seeds the draft comment.
 
 _AI-role framing:_ These are mechanical-triage and cross-file-dependency aids — not the arbiter of business-logic correctness. The reviewer's Pass-1 observations take precedence on domain intent.
 
@@ -307,7 +324,7 @@ Map each kept finding to its synthesizer-v2 source section by `source`:
 
 The disposition severity (Blocking / Important / Suggestion) is carried in the **Standardized Issue Block**'s inline `**Severity:**` field — there is no separate `### Important`/`### Minor` sub-bucketing (the synthesizer-v2 format is uniform per Phase 1). Within each section, findings keep their pre-computed `tier → severity → effective_weight` order; do not re-sort.
 
-**Author a Proposed fix and a Proposed PR comment for every kept finding.** This is net-new buddy-authored inline synthesis — NOT an agent invocation (see the note below):
+**Reuse the Proposed fix and Proposed PR comment authored at reveal time.** These were already authored per finding during Phase 1's "Reconcile — Pass 2" reveal (for every revealed finding, kept or not) — reuse them here for the kept findings; do NOT re-author from scratch. If a kept finding somehow lacks one (e.g. an escape-hatch auto-disposition), author it now using the same rules. This is net-new buddy-authored inline synthesis — NOT an agent invocation (see the note below):
 
 - **Proposed fix** — a concrete before→after snippet/diff when the fix is small/local and you have the code in hand; precise prose resolution steps (what to change, where, and why) otherwise. The buddy MAY ground the snippet from the **local codebase on `main`** (the investigation-style carve-out — same access used in the Phase-1 walk's "Open a local file" interruption): it may use a fresher/richer snippet than the cache-only synthesizer-v2 path, **including for `sweep` findings** (which carry no `evidence.snippet`). State the read explicitly: "Reading from the local codebase on `main` for context — not the PR branch state." The block **FORMAT** stays identical to synthesizer-v2's; only snippet richness may differ — this is the documented cache-only-vs-local asymmetry (synthesizer-v2 is cache-only and must source snippets from `evidence.snippet` alone).
 - **Proposed PR comment** — a ready-to-paste draft: terse, reviewer-voiced, references `file:line`. If the kept finding carries a reviewer `note`, fold it into / seed the draft comment (the `note` is the reviewer's own intended comment text). Never auto-posted (per `user/CLAUDE.local.md`).

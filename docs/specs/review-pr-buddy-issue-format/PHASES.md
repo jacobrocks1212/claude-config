@@ -116,6 +116,64 @@ The following were confirmed by read-only Explore audits of the actual codebase.
 
 ---
 
+### Phase 3: Apply the standardized block to the buddy's pre-disposition reveal (Phase-1 Reconcile / Pass 2) — D5
+
+**Status:** Complete
+**Phase kind:** design
+
+**Scope:** Update `review-pr-buddy.md`'s Phase-1 interactive walk so that the **Reconcile — Pass 2** step (≈L139–178) reveals each pre-computed finding in the **Standardized Issue Block** defined in Phase 1 (`synthesizer-v2.md`) — `### {Issue title}` + `**Severity:** / **Source:** / **Location:** / **Confidence:**`, then `**What:**`, `**Proposed fix:**`, and `**Proposed PR comment:**` — *before* the disposition prompt, so the reviewer sees the proposed fix and the ready-to-paste draft PR comment at the moment they disposition each finding (D5). Pre-disposition, the block's `**Severity:**` carries the **recommended/tool-computed** severity (tier/verdict-derived, distinct from the not-yet-made reviewer disposition); `**Confidence:**` carries the existing `CONFIRMED`/`UNVERIFIED`/`—` label. This is **buddy-only** — the autonomous `/review-pr` / `synthesizer-v2` path has no disposition stage and is NOT touched. The change is to the pre-disposition *display*; it does not alter the Step-4 disposition prompt, the finding-ID convention, or the pre-filters.
+
+**Deliverables:**
+- [x] "Reconcile — Pass 2" (≈L167–178) updated: replace the terse grouped-by-source bullet reveal with the Standardized Issue Block for each finding that passes the pre-filters. The block is the same shape Phase 1 defined and Phase 2 emits — only the **Severity** semantics differ pre-disposition (recommended/tool-computed, not the reviewer's verdict). Findings remain **grouped by source** under their section headings (Investigation / Sweep / Reuse & duplication / Intra-file) and keep their pre-computed `tier → severity → effective_weight` order; do not re-sort.
+- [x] Pre-disposition fix/comment authoring stated: the buddy authors a **Proposed fix** (snippet-when-cheap using its local-`main` read access, else prose — same cache-only-vs-local asymmetry note as Phase 2; sweep findings have no `evidence.snippet`) and a **Proposed PR comment** (terse, reviewer-voiced, references `file:line`) for **every revealed finding** — including ones the reviewer may subsequently dismiss. (Authoring moves earlier than Phase 2's post-disposition pass; Phase 2's collect/emit logic for kept findings is unchanged and reuses what was already authored.)
+- [x] **Severity field semantics for pre-disposition** documented explicitly: `**Severity:**` = the pipeline's recommended/computed severity (from `processed-findings.json` tier / reuse-intrafile verdict→severity), clearly the *recommendation* — NOT the reviewer's disposition (which is captured by the Step-4 prompt that follows). Post-disposition (Phase 2) the same field carries the reviewer's chosen severity. State this distinction so the two surfaces don't read as contradictory.
+- [x] **Disposition prompt (Step 4) left unchanged:** the four-value taxonomy (`Blocking / Important / Suggestion / Dismiss`, fixed order, every prompt) and the inline confidence-label rule are preserved verbatim. The standardized block is the *display preceding* the prompt; it must not leak into or alter the `AskUserQuestion` options.
+- [x] **Pass-1 anti-anchoring preserved:** findings are still NOT shown in the Independent Read (Pass 1); the block reveal stays in Pass 2 only. The existing _AI-role framing_ notes (reviewer is sole arbiter; tool is a facilitation/triage aid) are preserved.
+- [x] **Pre-filters preserved:** the already-commented and stale-Copilot-thread pre-filters (≈L141–163) still run *before* the block reveal and still surface their one-line informational notes (NOT full blocks). Only findings that pass both filters render as standardized blocks.
+- [x] Finding ID Convention (≈L74–81) left unaltered: the block's `**Location:**` uses the canonical `<file>:<line>` / `<file>#<slug>` ID (equal to the `finding_ref`); the calibration join is unaffected (additive display change only).
+
+**Minimum Verifiable Behavior:** Opening `review-pr-buddy.md` shows the "Reconcile — Pass 2" step revealing each pre-computed finding (post-pre-filter) in the Standardized Issue Block — grouped by source, pre-computed order preserved — with a recommended/tool-computed `**Severity:**`, the existing confidence label, `**What:**`, `**Proposed fix:**`, and `**Proposed PR comment:**`. The Step-4 disposition prompt's four-value taxonomy and confidence-label rule, the Pass-1 anti-anchoring, the two pre-filters, and the Finding ID Convention are all unchanged.
+
+**Runtime Verification** *(checked by inspection / dry-run — NOT by an implementation agent):*
+- [ ] <!-- verification-only --> "Reconcile — Pass 2" renders the Standardized Issue Block per finding (not the old one-line `- {title} [{file}:{line}] (weight: …)` bullets), grouped by source, order preserved.
+- [ ] <!-- verification-only --> The pre-disposition `**Severity:**` is documented as the recommended/tool-computed value, explicitly distinct from the reviewer's disposition.
+- [ ] <!-- verification-only --> The Step-4 disposition prompt still presents exactly `Blocking / Important / Suggestion / Dismiss` (fixed order) with the inline `CONFIRMED`/`UNVERIFIED`/`—` confidence label — byte-unchanged from pre-edit.
+- [ ] <!-- verification-only --> Pass 1 (Independent Read) still shows NO tool findings; the AI-role framing notes are intact.
+- [ ] <!-- verification-only --> The already-commented and stale-Copilot pre-filters still run before the reveal and still emit one-line notes (not blocks).
+- [ ] <!-- verification-only --> "Finding ID Convention" (≈L74–81) is byte-identical to its pre-edit state.
+
+**MCP Integration Test Assertions:** N/A — no runtime-observable behavior; skill/command-prose defining interactive presentation format.
+
+**Prerequisites:**
+- Phase 1: the Standardized Issue Block format is defined in `synthesizer-v2.md` (Phase 3 references it by the same name, exactly as Phase 2 does). Complete.
+- Phase 2: the buddy already consumes the block for the post-disposition artifact + digest; Phase 3 moves the per-finding fix/comment authoring earlier (to Pass 2) and reuses it at Phase 2. Complete.
+
+**Files likely modified:**
+- `user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr-buddy.md` — update "Reconcile — Pass 2" to reveal the Standardized Issue Block per finding (recommended severity + What + Proposed fix + Proposed PR comment); note that fix/comment are now authored at reveal time and reused by Phase 2; leave the Step-4 disposition prompt, Pass-1 anti-anchoring, the two pre-filters, and the Finding ID Convention unaltered.
+
+**Testing Strategy:** Manual inspection of the edited "Reconcile — Pass 2" against the deliverables. Diff Step-4 (Disposition) and "Finding ID Convention" against pre-edit state to confirm they are byte-unchanged. Optional: dry-run a buddy walk on a small fixture; confirm Pass 2 prints standardized blocks (recommended severity) and the disposition prompt is still the four-value taxonomy.
+
+**Integration Notes for Next Phase:** No further phases. After Phase 3, the standardized block is live on all three buddy surfaces (pre-disposition reveal, post-disposition `PR-{id}.md`, in-chat close digest); the autonomous path stays bound to `synthesizer-v2.md` (unchanged by this phase). Format changes continue to flow from `synthesizer-v2.md` (SSOT) into `review-pr-buddy.md` by reference.
+
+**Context from prior phases:**
+- Phase 1 removed the `### Important`/`### Minor` severity sub-bucketing; uniformity is via the block's inline `**Severity:**`. Pre-disposition this field is the *recommended* severity — author the reveal so it's clearly a recommendation, not a verdict.
+- Phase 2 established the local-`main` snippet-grounding allowance and the cache-only-vs-local asymmetry note; Phase 3 reuses that exact framing for the pre-disposition fix authoring (do not re-derive a different rule).
+- The Step-4 disposition prompt's taxonomy is a hard calibration invariant (Phase 4 calibration comparability) — it must not be perturbed by the display change.
+
+#### Implementation Notes — Phase 3 (2026-06-30)
+
+**Status:** Complete. **Review verdict:** PASS (implemented via dispatched subagent — markdown/command prose; orchestrator independently verified the `git diff` scope + all five HARD invariants before committing).
+
+**Work completed:** Two edits to `review-pr-buddy.md`. (1) `#### 3. Reconcile — Pass 2` — replaced the terse grouped-by-source one-line descriptor reveal with the **Standardized Issue Block** (shape copied verbatim from `synthesizer-v2.md`'s `## Standardized Issue Block`); findings stay grouped by source under the four existing headings with the pre-computed `tier → severity → effective_weight` order preserved (explicit "do not re-sort"); added an explicit **pre-disposition `**Severity:**` semantics** paragraph (recommended/tool-computed from `tier` or the reuse/intrafile verdict→severity map; a recommendation, NOT the reviewer's disposition; the same field carries the chosen severity post-disposition); added reveal-time authoring of **Proposed fix + Proposed PR comment for every revealed finding** (incl. ones later dismissed), reusing Phase 2's local-`main` snippet-grounding carve-out + cache-only-vs-local asymmetry framing (sweep always prose, explicit read statement, terse/reviewer-voiced/`file:line`/never-auto-posted comment, Pass-1 `note` seeding). (2) Phase 2 "Collect Curated Content" (one line) — changed "Author …" to "**Reuse** the Proposed fix and Proposed PR comment authored at reveal time … do NOT re-author from scratch," with an escape-hatch fallback to author if a kept finding somehow lacks one.
+
+**Invariants verified intact (orchestrator-confirmed via `git diff`):** (1) Step-4 disposition prompt — four-value taxonomy `Blocking / Important / Suggestion / Dismiss` + inline `CONFIRMED`/`UNVERIFIED`/`—` label byte-unchanged (no hunk in that range); (2) Pass-1 anti-anchoring + AI-role framing intact (no hunk in `#### 2`); (3) both pre-filters + the "Both filters run before the grouped finding display" sentence intact (no hunk in L141–163); (4) "Finding ID Convention" (L74–81) byte-identical (no hunk); (5) `synthesizer-v2.md` untouched (diff --stat = one file). `git diff --stat`: 1 file changed, 20 insertions(+), 3 deletions(-).
+
+**Decisions:** The reuse/intrafile verdict→severity mapping for the recommended-severity explanation was sourced from the plugin `CLAUDE.md` (`refactor`/`reuse` → important, `extend`/`wrap`/`inconsistent` → nit/suggestion) and rendered in the buddy's four-value vocabulary. The Phase-2 forward-reference was kept to a single edited sentence + a one-clause escape-hatch fallback (minimal, per "one writer / minimal cross-section churn").
+
+**Files modified:** `user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr-buddy.md`. Plugin version bumped `2.8.0 → 2.9.0` (`.claude-plugin/plugin.json`).
+
+---
+
 ## Review Notes
 
 **Authoring review verdict:** PASS (2026-06-30). PHASES.md ground-truth verified (91 lines, git status matched the drafting agent's block, no "already complete" claims). Content honors all four locked SPEC decisions (D1 all sources, D2 snippet-where-cheap-else-prose, D3 both surfaces, D4 buddy + synthesizer-v2); uses verified touchpoint paths; documents the sequential Phase 1→2 dependency, the cache-only vs. local-`main` snippet asymmetry, the do-not-re-sort ordering rule, and the calibration-ID preservation guard. No gate-owned checkbox rows; verification-only markers present on all Runtime Verification rows.
