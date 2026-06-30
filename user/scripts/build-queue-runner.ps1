@@ -24,6 +24,8 @@ param(
 
 	[string]$StateRoot = (Join-Path $HOME '.claude\state\build-queue'),
 
+	[string]$Worktree,
+
 	[Parameter(ValueFromRemainingArguments=$true)]
 	$ExecArgs
 )
@@ -36,9 +38,45 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Exec @ExecArgs
-$exitCode = $LASTEXITCODE
-if ($null -eq $exitCode) { $exitCode = 0 }
+Get-SafeValue {
+	. (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1')
+}
+
+function Format-ProcArg {
+	param([string]$Value)
+	if ($Value -eq '' -or $Value -match '[\s"]') {
+		return '"' + ($Value -replace '"', '\"') + '"'
+	}
+	return $Value
+}
+
+$job = [IntPtr]::Zero
+trap {
+	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
+	continue
+}
+
+try {
+	$procArgList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Format-ProcArg $Exec))
+	foreach ($a in $ExecArgs) {
+		$procArgList += (Format-ProcArg ([string]$a))
+	}
+	$procArgString = $procArgList -join ' '
+
+	$proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $procArgString -NoNewWindow -PassThru
+	$null = $proc.Handle
+
+	$job = New-BuildJobObject
+	if ($job -ne [IntPtr]::Zero) {
+		$null = Add-ProcessToBuildJob -JobHandle $job -ProcessHandle $proc.Handle
+	}
+
+	$proc.WaitForExit()
+	$exitCode = $proc.ExitCode
+	if ($null -eq $exitCode) { $exitCode = 0 }
+} finally {
+	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
+}
 
 $resultsDir = Join-Path $StateRoot 'results'
 Get-SafeValue {
