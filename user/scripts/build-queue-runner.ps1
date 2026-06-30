@@ -51,6 +51,7 @@ function Format-ProcArg {
 }
 
 $job = [IntPtr]::Zero
+$vbcscompilerRecycled = $false
 trap {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	continue
@@ -76,6 +77,7 @@ try {
 	if ($null -eq $exitCode) { $exitCode = 0 }
 } finally {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
+	$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer } $false
 }
 
 $resultsDir = Join-Path $StateRoot 'results'
@@ -91,7 +93,10 @@ $resultBody = [ordered]@{
 	seq       = $Seq
 	exit_code = $exitCode
 	ended_at  = (Get-Date).ToString('o')
-} | ConvertTo-Json -Compress
+	hygiene   = [ordered]@{
+		vbcscompiler_recycled = $vbcscompilerRecycled
+	}
+} | ConvertTo-Json -Compress -Depth 5
 
 [System.IO.File]::WriteAllText($resultTmp, $resultBody)
 try {

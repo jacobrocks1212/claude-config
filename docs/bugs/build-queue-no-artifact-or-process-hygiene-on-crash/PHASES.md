@@ -65,10 +65,10 @@ All paths verified `exists: yes` except `build-queue-hygiene.ps1` (stamped **net
 **Scope:** After each queued build completes or aborts, shut down the machine-global `VBCSCompiler` server (Locked Decision 1) so the next build cold-starts a fresh compiler server instead of reusing a half-dead node (the cross-worktree `MSB4166` vector). Owned by the runner's `finally` bracket (build lifetime), with a wrapper backstop on the abort/timeout path. Safe because the queue serializes — no concurrent build's server is ever killed.
 
 **Deliverables:**
-- [ ] `Reset-CompilerServer` in `build-queue-hygiene.ps1`: prefer `dotnet build-server shutdown` (graceful, official); fall back to `Get-Process VBCSCompiler -ErrorAction SilentlyContinue | Stop-Process -Force`. Fail-open.
-- [ ] Wired into the runner's `finally` bracket (fires after the job reap, on every exit path).
-- [ ] Wrapper backstop: `build-queue.ps1` calls `Reset-CompilerServer` on the abort/timeout path (where the detached runner may have been torn down before its `finally` ran).
-- [ ] Result body records `vbcscompiler_recycled: true|false` (consumed by Phase 5).
+- [x] `Reset-CompilerServer` in `build-queue-hygiene.ps1`: prefer `dotnet build-server shutdown` (graceful, official); fall back to `Get-Process VBCSCompiler -ErrorAction SilentlyContinue | Stop-Process -Force`. Fail-open.
+- [x] Wired into the runner's `finally` bracket (fires after the job reap, on every exit path).
+- [x] Wrapper backstop: `build-queue.ps1` calls `Reset-CompilerServer` on the abort/timeout path (where the detached runner may have been torn down before its `finally` ran).
+- [x] Result body records `vbcscompiler_recycled: true|false` (consumed by Phase 5).
 
 **Minimum Verifiable Behavior:** After a queued build finishes, `Get-Process VBCSCompiler` returns nothing; the next queued build runs cleanly (no `MSB4166` "child node exited prematurely" from a reused dead node).
 

@@ -77,8 +77,8 @@ All WUs are **sequential, single-WU batches** — Phases 1–4 across the whole 
 
 - [x] WU-1 — Hygiene module + Job-Object reap helpers
 - [x] WU-2 — Runner: bracket build + `finally` reap + `-Worktree` stub
-- [ ] WU-3 — `Reset-CompilerServer` + runner `finally` wiring + `vbcscompiler_recycled` field
-- [ ] WU-4 — Wrapper backstop recycle on release path
+- [x] WU-3 — `Reset-CompilerServer` + runner `finally` wiring + `vbcscompiler_recycled` field
+- [x] WU-4 — Wrapper backstop recycle on release path
 
 ---
 
@@ -141,9 +141,9 @@ All WUs are **sequential, single-WU batches** — Phases 1–4 across the whole 
 #### WU-3 — `Reset-CompilerServer` + runner `finally` wiring + `vbcscompiler_recycled` field
 
 - **Scope (PHASES P2 deliverables 1, 2, 4):**
-  - [ ] Add `Reset-CompilerServer` to `build-queue-hygiene.ps1`: prefer `dotnet build-server shutdown` (graceful, official); on failure/absence fall back to `Get-Process VBCSCompiler -ErrorAction SilentlyContinue | Stop-Process -Force`. Fail-open (returns `$true`/`$false` recycled flag; never throws).
-  - [ ] Wire it into the runner's `finally` bracket (from WU-2) so it fires AFTER the job reap, on every exit path.
-  - [ ] Extend the runner's result body (`:52-56`) with a `hygiene` sub-object carrying `vbcscompiler_recycled: true|false`.
+  - [x] Add `Reset-CompilerServer` to `build-queue-hygiene.ps1`: prefer `dotnet build-server shutdown` (graceful, official); on failure/absence fall back to `Get-Process VBCSCompiler -ErrorAction SilentlyContinue | Stop-Process -Force`. Fail-open (returns `$true`/`$false` recycled flag; never throws).
+  - [x] Wire it into the runner's `finally` bracket (from WU-2) so it fires AFTER the job reap, on every exit path.
+  - [x] Extend the runner's result body (`:52-56`) with a `hygiene` sub-object carrying `vbcscompiler_recycled: true|false`.
 - **TDD:** no for the recycle itself (machine-global process; PHASES Runtime Verification). The result-body shape change is observable via `results/<seq>.json` (manual). Parse gate is the mechanical check.
 - **Files to create/modify:**
   - `user/scripts/build-queue-hygiene.ps1` — add `Reset-CompilerServer`.
@@ -157,7 +157,7 @@ All WUs are **sequential, single-WU batches** — Phases 1–4 across the whole 
 #### WU-4 — Wrapper backstop recycle on release path
 
 - **Scope (PHASES P2 deliverable 3):**
-  - [ ] `build-queue.ps1` calls `Reset-CompilerServer` (dot-sourcing `build-queue-hygiene.ps1`) on the wrapper's release path — where the detached runner may have been torn down before its `finally` ran (e.g. wrapper abort/timeout). This is the backstop for the case the runner's own `finally` did not fire.
+  - [x] `build-queue.ps1` calls `Reset-CompilerServer` (dot-sourcing `build-queue-hygiene.ps1`) on the wrapper's release path — where the detached runner may have been torn down before its `finally` ran (e.g. wrapper abort/timeout). This is the backstop for the case the runner's own `finally` did not fire.
 - **TDD:** no (process-level backstop; manual runtime). Parse gate is the mechanical check.
 - **Files to create/modify:**
   - `user/scripts/build-queue.ps1` — dot-source the hygiene module; call `Reset-CompilerServer` on the Step-5 release path.

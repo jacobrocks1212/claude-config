@@ -7,12 +7,13 @@
   runner can scope and reap exactly one build's descendant process tree.
 
   This is the shared home for build-queue hygiene helpers. Later work units
-  add more functions here (VBCSCompiler recycle, artifact sweep, result
-  fidelity, etc.) — this revision adds only the Job-Object surface:
+  add more functions here (artifact sweep, result fidelity, etc.) — this
+  revision adds the Job-Object surface plus the VBCSCompiler recycle:
 
     New-BuildJobObject     - create a kill-on-close Job Object
     Add-ProcessToBuildJob  - assign a process to a Job Object
     Stop-BuildJobTree      - terminate the Job Object (and all members)
+    Reset-CompilerServer   - force-recycle VBCSCompiler after a queued build
 
 .NOTES
   HARD REQUIREMENT — FAIL OPEN. None of these functions may throw in a way
@@ -253,6 +254,68 @@ function Stop-BuildJobTree {
 		Get-SafeValue { [void][BuildQueueHygiene.NativeMethods]::CloseHandle($JobHandle) }
 
 		$terminated
+	} $false
+
+	if ($result -ne $true) {
+		return $false
+	}
+
+	return $true
+}
+
+function Reset-CompilerServer {
+	<#
+	.SYNOPSIS
+	  Force-recycles the machine-global VBCSCompiler compiler-server process
+	  after a queued build, so the NEXT build cold-starts a fresh server
+	  instead of inheriting a half-dead one that poisons it with MSB4166
+	  ("child node exited prematurely").
+
+	.DESCRIPTION
+	  Primary path: ask the .NET SDK to shut its build servers down
+	  gracefully (`dotnet build-server shutdown`). If that does not succeed
+	  (missing `dotnet`, non-zero exit, or a thrown error), falls back to a
+	  direct process-name-targeted stop of VBCSCompiler.
+
+	  This name-targeted fallback is the ONE sanctioned name-targeted kill in
+	  this module (Locked Decision 1 in
+	  docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash). It is
+	  safe ONLY because the build queue serializes builds machine-wide — by
+	  the time a build finishes, no other queued build's compiler server can
+	  be mid-use, so recycling it never tears down a concurrent build. This
+	  is a narrow, deliberate exception to Locked Decision 2's no-global-
+	  process-kill rule (see New-BuildJobObject/Stop-BuildJobTree above),
+	  and it must stay scoped to this one compiler-server process. It must
+	  NEVER be widened to the build-tree process family (the SDK CLI host,
+	  the test host, or the MSBuild host process) — those remain reaped
+	  exclusively via Job-Object membership per Locked Decision 2, never by
+	  matching their process name.
+
+	.OUTPUTS
+	  [bool] $true if a recycle action was taken/succeeded, $false otherwise
+	  (fail-open — never throws).
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param()
+
+	$result = Get-SafeValue {
+		$gracefulOk = Get-SafeValue {
+			$null = & dotnet build-server shutdown 2>&1
+			$LASTEXITCODE -eq 0
+		} $false
+
+		if ($gracefulOk -eq $true) {
+			return $true
+		}
+
+		$fallbackOk = Get-SafeValue {
+			Get-Process -Name 'VBCSCompiler' -ErrorAction SilentlyContinue |
+				Stop-Process -Force -ErrorAction SilentlyContinue
+			$true
+		} $false
+
+		$fallbackOk
 	} $false
 
 	if ($result -ne $true) {

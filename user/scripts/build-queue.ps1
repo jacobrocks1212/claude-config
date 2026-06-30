@@ -44,6 +44,10 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
+Get-SafeValue {
+	. (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1')
+}
+
 function Test-PidAlive {
 	param([int]$ProcId)
 	if ($ProcId -le 0) { return $false }
@@ -390,6 +394,8 @@ Get-SafeValue {
 		}
 	}
 }
+
+Get-SafeValue { Reset-CompilerServer }
 
 Write-Output "build-queue: build complete (seq=$seq, exit_code=$exitCode)"
 
