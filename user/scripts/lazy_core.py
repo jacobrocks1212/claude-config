@@ -7760,10 +7760,74 @@ def _ensure_runtime_m4(
 
     # ---- Phase 1: Identity ---------------------------------------------------
     if not isinstance(lock, dict):
-        # No recorded ownership. A /health that answers is an unverified foreign
-        # port-holder (health=200 is NOT proof of ownership — LD1) ⇒ HIJACKED
-        # (strict fail-safe: never kill it); nothing answering ⇒ DEAD (recover).
+        # No recorded ownership. A /health that answers is, by default, an
+        # unverified foreign port-holder (health=200 is NOT proof of ownership —
+        # LD1) ⇒ HIJACKED (strict fail-safe: never kill it); nothing answering ⇒
+        # DEAD (recover).
+        #
+        # Gap-2 soft owned-unverified-serving READY on the lock-is-None (and
+        # lock-diverged) branch (harness-mcp-observation-gap-disposition-and-
+        # hijacked-runtime, Phase 2). The post-mcp-test HIJACKED case falls HERE:
+        # an /mcp-test cycle does its OWN dev:restart / engine boot inside the
+        # cycle subagent, which overwrites or invalidates `.runtime.lock.json`'s
+        # ownership record (the lock no longer matches the live kernel/session, or
+        # is absent), so read_lock() returns None on the orchestrator's next
+        # --ensure-runtime probe. Pre-fix this returned terminal HIJACKED even
+        # though the serving runtime is PROVABLY this app's (its MCP tools are
+        # present in `payload`), forcing a dev:kill + cold reboot every cycle
+        # (which re-introduces cold-boot flake). The lock divergence is
+        # bookkeeping-only here, NOT a foreign takeover.
+        #
+        # `_mcp_tools_present_honest(payload, tool_name, code)` is the honest
+        # "serving MY app" signal — the SAME signal the lock-present soft-READY
+        # path at the `owned == False` branch below consults (see the
+        # is_owned_unverified_serving rationale further down). When it confirms
+        # THIS app's tool surface at health 200, re-adopt ownership by rewriting
+        # the lock for the live serving process and return a non-terminal soft
+        # READY (ownership_verified False) instead of the terminal HIJACKED
+        # fail-safe. A genuinely foreign port-holder serving a DIFFERENT app's tool
+        # surface FAILS `_mcp_tools_present_honest` and stays terminal HIJACKED —
+        # so the LD3 strict fail-safe (never SIGKILL / never re-adopt a foreign
+        # process) is preserved. A stale-but-serving runtime is NOT masked: route
+        # it through STALE/rebuild FIRST (mirrors the owned-unverified ordering so
+        # the soft-READY shortcut never short-circuits a stale rebuild).
+        if code == 200 and _mcp_tools_present_honest(payload, tool_name, code):
+            if stale_check():
+                # Stale binary on a lock-diverged-but-serving-our-tools runtime:
+                # route through STALE/rebuild (do NOT mask with a soft READY).
+                return _route_non_serving(
+                    "STALE", ownership_verified=False, code=code, payload=payload,
+                )
+            # Re-adopt ownership: rewrite `.runtime.lock.json` for the live serving
+            # process (best-effort, mirroring the existing recover_identity →
+            # write_lock pattern used on the post-recovery READY path) so the NEXT
+            # cycle verifies against the now-recorded ownership instead of
+            # re-deriving lock-is-None.
+            if recover_identity is not None:
+                try:
+                    ident = recover_identity()
+                except Exception:  # noqa: BLE001 — identity discovery is best-effort
+                    ident = None
+                if isinstance(ident, dict):
+                    try:
+                        write_lock(
+                            pid=ident.get("pid"),
+                            start_time=ident.get("start_time"),
+                            port=cfg.get("port"),
+                            artifact_hash=ident.get("artifact_hash"),
+                            controller_session_id=ident.get("controller_session_id"),
+                        )
+                    except Exception:  # noqa: BLE001 — a lock-write error never
+                        # downgrades a provably-ours serving runtime to HIJACKED.
+                        pass
+            return _runtime_verdict(
+                "READY", ownership_verified=False, health_code=code,
+                payload=payload, tool_name=tool_name, terminal_blocker=None,
+            )
         if code == 200:
+            # Health answers but the tool surface is NOT ours (or the honest signal
+            # reports not-serving) — an unverified foreign port-holder. HIJACKED
+            # strict fail-safe: never kill, never re-adopt (LD3).
             return _runtime_verdict(
                 "HIJACKED", ownership_verified=False, health_code=code,
                 payload=payload, tool_name=tool_name,

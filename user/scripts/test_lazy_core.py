@@ -20257,14 +20257,26 @@ def test_ensure_runtime_m4_dead_when_owned_pid_alive_but_health_refused_routes_t
 
 
 def test_ensure_runtime_m4_no_lock_plus_health_answers_is_hijacked():
-    """No `.runtime.lock.json` recorded but /health answers 200 → an unverified
-    foreign port-holder → HIJACKED (health=200 is NOT proof of ownership, LD1)."""
+    """No `.runtime.lock.json` recorded but /health answers 200 serving a FOREIGN
+    tool surface → an unverified foreign port-holder → HIJACKED (health=200 is NOT
+    proof of ownership, LD1).
+
+    NOTE (Gap-2, harness-mcp-observation-gap-disposition-and-hijacked-runtime):
+    the payload here serves a DIFFERENT app's tool (`some_other_app_tool`), NOT
+    `_M4_CONFIG`'s asserted `render_chart`. A no-lock runtime serving OUR OWN tools
+    is now the soft owned-unverified-serving READY case (the post-mcp-test lock
+    divergence — covered by
+    `test_ensure_runtime_lock_none_serving_our_tools_is_soft_ready`); only a
+    GENUINELY foreign tool surface stays HIJACKED. This fixture was updated from
+    `render_chart` to a foreign tool so it still exercises the LD3 foreign-holder
+    fail-safe it is named for, rather than the now-soft-READY post-mcp-test case.
+    """
     _guard()
     with tempfile.TemporaryDirectory() as td:
         result = lazy_core.ensure_runtime(
             Path(td),
             config=_M4_CONFIG,
-            probe=lambda: (200, {"tools": ["render_chart"]}),
+            probe=lambda: (200, {"tools": ["some_other_app_tool"]}),  # FOREIGN
             restart=lambda: True,
             stale_check=lambda: False,
             read_lock=lambda: None,  # no recorded ownership
@@ -20690,6 +20702,124 @@ def test_ensure_runtime_owned_unverified_stale_not_masked():
         # The stale rebuild ran (restart fired) — the soft-READY shortcut did NOT
         # short-circuit a genuinely stale binary into a bare READY.
         assert calls["restart"] >= 1, "a stale binary must route through rebuild"
+
+
+# ---- Gap 2: soft owned-unverified-serving READY on the lock-is-None branch ---
+# (harness-mcp-observation-gap-disposition-and-hijacked-runtime, Phase 2)
+# After an /mcp-test cycle the cycle's own dev:restart/engine boot overwrites or
+# invalidates .runtime.lock.json, so read_lock() returns None on the next
+# --ensure-runtime probe. With code == 200 the M4 classifier's lock-is-None branch
+# returned terminal HIJACKED unconditionally — forcing the orchestrator to
+# dev:kill + cold-reboot its OWN serving dev runtime every cycle. The fix extends
+# the existing soft owned-unverified-serving recognition (which previously fired
+# only on the lock-present session-divergent path) to the lock-is-None branch:
+# when health is 200 AND _mcp_tools_present_honest confirms the runtime is serving
+# THIS app's MCP tools, re-adopt ownership (rewrite the lock) and return a soft
+# READY (ownership_verified False). A genuinely foreign tool surface still fails
+# _mcp_tools_present_honest and stays terminal HIJACKED (LD3 fail-safe preserved).
+
+
+def test_ensure_runtime_lock_none_serving_our_tools_is_soft_ready():
+    """lock is None (post-mcp-test divergence) + code 200 + payload serving THIS
+    app's MCP tool (_mcp_tools_present_honest True) → SOFT owned-unverified READY:
+    state READY, ownership_verified False, no HIJACKED terminal_blocker, AND the
+    lock is re-adopted (write_lock invoked). RED before WU-5: the lock-is-None +
+    200 branch returns terminal HIJACKED unconditionally."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"write_lock": 0}
+
+        def write_lock(**kw):
+            calls["write_lock"] += 1
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,  # asserts mcp_tool_name "render_chart"
+            probe=lambda: (200, {"tools": ["render_chart"]}),  # OUR tool present
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a soft-READY runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: None,  # post-mcp-test lock divergence / absence
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            write_lock=write_lock,
+            recover_identity=lambda: {
+                "pid": 5000, "start_time": 111.0, "artifact_hash": "deadbeef",
+                "controller_session_id": _SESSION,
+            },
+        )
+        assert result["state"] == "READY", result
+        assert result["ownership_verified"] is False, result
+        assert result["terminal_blocker"] is None, result
+        assert result["mcp_tools_present"] is True, result
+        assert calls["write_lock"] >= 1, (
+            "the serving-our-tools runtime must be re-adopted (write_lock called)"
+        )
+
+
+def test_ensure_runtime_lock_none_foreign_surface_stays_hijacked():
+    """REGRESSION GUARD (LD3 fail-safe): lock is None + code 200 but the payload
+    serves a DIFFERENT app's tool surface (_mcp_tools_present_honest False) → stays
+    terminal HIJACKED (ownership_verified False, non-None terminal_blocker), AND
+    write_lock is NOT called (never re-adopt a foreign process). GREEN both before
+    and after the fix."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"write_lock": 0}
+
+        def write_lock(**kw):
+            calls["write_lock"] += 1
+
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,  # asserts mcp_tool_name "render_chart"
+            probe=lambda: (200, {"tools": ["some_other_app_tool"]}),  # foreign
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT run for a HIJACKED runtime")
+            ),
+            stale_check=lambda: False,
+            read_lock=lambda: None,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: 111.0,
+            write_lock=write_lock,
+            recover_identity=lambda: {"pid": 5000, "start_time": 111.0},
+        )
+        assert result["state"] == "HIJACKED", result
+        assert result["ownership_verified"] is False, result
+        assert result["terminal_blocker"] is not None, result
+        assert result["mcp_tools_present"] is False, result
+        assert calls["write_lock"] == 0, (
+            "a foreign tool surface must NEVER be re-adopted (LD3 fail-safe)"
+        )
+
+
+def test_ensure_runtime_lock_none_non200_stays_dead():
+    """lock is None + code != 200 (nothing serving) → DEAD (recovery), unchanged.
+    The soft-READY is 200-gated, so a non-200 never re-adopts. GREEN both before
+    and after the fix."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        calls = {"restart": 0, "write_lock": 0}
+        result = lazy_core.ensure_runtime(
+            Path(td),
+            config=_M4_CONFIG,
+            probe=lambda: (0, None),  # nothing answering
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            stale_check=lambda: False,
+            read_lock=lambda: None,
+            live_session_id=_SESSION,
+            kernel_start_time_fn=lambda pid, **kw: None,
+            sleep=lambda s: None,
+            write_lock=lambda **kw: calls.__setitem__("write_lock", calls["write_lock"] + 1),
+            recover_identity=lambda: None,
+            frontend_probe=lambda: False,  # Vite down → genuinely dead (not compiling)
+        )
+        # No lock + nothing serving classifies DEAD → recovery (restart fired),
+        # exhausts to BLOCKED since health never returns. NOT a soft-READY.
+        assert calls["restart"] >= 1, "no-lock + down must enter recovery (DEAD)"
+        assert result["state"] == "BLOCKED", result
+        assert result["ownership_verified"] is False, result
 
 
 # ---------------------------------------------------------------------------
@@ -27855,6 +27985,13 @@ _TESTS = _TESTS + [
      test_eval_evidence_observation_gap_partial_with_failure_refuses),
     ("test_eval_evidence_observation_gap_partial_no_provenance_refuses",
      test_eval_evidence_observation_gap_partial_no_provenance_refuses),
+    # Gap 2 — M4 ensure_runtime soft owned-unverified-serving READY on lock-None.
+    ("test_ensure_runtime_lock_none_serving_our_tools_is_soft_ready",
+     test_ensure_runtime_lock_none_serving_our_tools_is_soft_ready),
+    ("test_ensure_runtime_lock_none_foreign_surface_stays_hijacked",
+     test_ensure_runtime_lock_none_foreign_surface_stays_hijacked),
+    ("test_ensure_runtime_lock_none_non200_stays_dead",
+     test_ensure_runtime_lock_none_non200_stays_dead),
 ]
 
 
