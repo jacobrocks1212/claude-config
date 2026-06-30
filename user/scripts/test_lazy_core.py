@@ -14579,14 +14579,19 @@ _HARDEN_SKILL_PATH = (
 
 
 def test_hardening_dispatch_class_present():
-    """Phase 4 contract: DISPATCH_CLASSES is a 7-tuple with 'hardening' as the
-    last entry; DISPATCH_MODELS['hardening'] == 'opus'; calling
+    """Phase 4 contract: 'hardening' is present in DISPATCH_CLASSES as the LAST
+    entry; DISPATCH_MODELS['hardening'] == 'opus'; calling
     emit_dispatch_prompt('hardening', ...) does NOT raise ValueError.
 
+    The tuple length grew from 7 (Phase 4) to 9 when harden Round 44 (2026-06-29)
+    appended 'corrective-coverage' + 'ingest-research' BEFORE 'hardening' (so the
+    last-entry invariant is preserved). The exact count is asserted to catch an
+    accidental class drop; bump it deliberately when adding a class.
+
     RED reasons:
-      - DISPATCH_CLASSES is a 6-tuple (Phase 3) → set-mismatch AssertionError.
       - DISPATCH_MODELS['hardening'] absent → KeyError.
       - emit_dispatch_prompt('hardening') raises ValueError → AssertionError.
+      - 'hardening' is no longer the last entry → AssertionError.
     """
     _guard()
 
@@ -14606,8 +14611,9 @@ def test_hardening_dispatch_class_present():
     assert isinstance(classes, tuple), (
         f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
     )
-    assert len(classes) == 7, (
-        f"DISPATCH_CLASSES must have 7 entries after Phase 4 adds 'hardening'; "
+    assert len(classes) == 9, (
+        f"DISPATCH_CLASSES must have 9 entries (7 Phase-4 + Round-44 "
+        f"'corrective-coverage' + 'ingest-research'); "
         f"got {len(classes)}: {classes}"
     )
 

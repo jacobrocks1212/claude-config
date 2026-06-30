@@ -5979,6 +5979,8 @@ DISPATCH_CLASSES: tuple[str, ...] = (
     "recovery",
     "coherence-recovery",
     "needs-runtime-redispatch",
+    "corrective-coverage",  # harden Round 44 — Gate-1 MCP-coverage authoring cycle
+    "ingest-research",      # harden Round 44 — pre-loop / in-session staged-research ingest
     "hardening",          # Phase 4 — harness-hardening stage (always Opus)
 )
 
@@ -5992,6 +5994,8 @@ DISPATCH_MODELS: dict[str, str] = {
     "recovery":                "sonnet",
     "coherence-recovery":      "sonnet",
     "needs-runtime-redispatch": "opus",
+    "corrective-coverage":     "opus",   # harden Round 44 — classify + author + run coverage = Opus
+    "ingest-research":         "sonnet", # harden Round 44 — bounded mechanical ingest = Sonnet
     "hardening":               "opus",   # Phase 4 — root-cause + mechanical fixes = Opus
 }
 
