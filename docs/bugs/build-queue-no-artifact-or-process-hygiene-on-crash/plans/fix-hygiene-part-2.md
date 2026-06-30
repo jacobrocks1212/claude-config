@@ -74,9 +74,9 @@ Sequential, single-WU batches (all serialize on the runner's `finally` + result 
 
 ## Work Units
 
-- [ ] WU-1 — `Remove-PoisonedArtifacts` sweep + Pester unit test
-- [ ] WU-2 — Runner: call sweep in `finally` on non-zero/abort + `quarantined_artifacts`
-- [ ] WU-3 — Wrapper passes `-Worktree $worktree` to runner launch
+- [x] WU-1 — `Remove-PoisonedArtifacts` sweep + Pester unit test
+- [x] WU-2 — Runner: call sweep in `finally` on non-zero/abort + `quarantined_artifacts`
+- [x] WU-3 — Wrapper passes `-Worktree $worktree` to runner launch
 
 ---
 
@@ -89,9 +89,9 @@ Sequential, single-WU batches (all serialize on the runner's `finally` + result 
 #### WU-1 — `Remove-PoisonedArtifacts` sweep + Pester unit test
 
 - **Scope (PHASES P3 deliverables 1, 5):**
-  - [ ] Add `Remove-PoisonedArtifacts -WorktreeRoot <path>` to `build-queue-hygiene.ps1`: enumerate `*.dll` under `bin/` **and** `obj/` (recursively); delete any that are **0-byte** OR fail a cheap PE-validity probe; return the list of quarantined absolute paths. Fail-open per-file (a delete failure on one file logs and continues; never aborts the sweep).
-  - [ ] **Resolve SPEC Open Question 2 (PE-validity check):** use a **two-tier cheap probe** — (a) 0-byte ⇒ poisoned; (b) nonzero-but-truncated ⇒ read the first 2 bytes and require the `MZ` DOS-header magic (`0x4D 0x5A`); a `*.dll` lacking `MZ` is not a valid PE image (covers the `CS0009 "PE image doesn't contain managed metadata"` truncation). Do NOT attempt full PE/CLI-header parsing — the `MZ`-magic + 0-byte pair is the agreed cheap check.
-  - [ ] Pester smoke (`build-queue-hygiene.Tests.ps1`) against a temp dir seeded with: a 0-byte DLL, a truncated DLL (a few bytes, no `MZ`), and a valid DLL (starts with `MZ`, nonzero) — assert ONLY the first two are removed and the valid one survives.
+  - [x] Add `Remove-PoisonedArtifacts -WorktreeRoot <path>` to `build-queue-hygiene.ps1`: enumerate `*.dll` under `bin/` **and** `obj/` (recursively); delete any that are **0-byte** OR fail a cheap PE-validity probe; return the list of quarantined absolute paths. Fail-open per-file (a delete failure on one file logs and continues; never aborts the sweep).
+  - [x] **Resolve SPEC Open Question 2 (PE-validity check):** use a **two-tier cheap probe** — (a) 0-byte ⇒ poisoned; (b) nonzero-but-truncated ⇒ read the first 2 bytes and require the `MZ` DOS-header magic (`0x4D 0x5A`); a `*.dll` lacking `MZ` is not a valid PE image (covers the `CS0009 "PE image doesn't contain managed metadata"` truncation). Do NOT attempt full PE/CLI-header parsing — the `MZ`-magic + 0-byte pair is the agreed cheap check.
+  - [x] Pester smoke (`build-queue-hygiene.Tests.ps1`) against a temp dir seeded with: a 0-byte DLL, a truncated DLL (a few bytes, no `MZ`), and a valid DLL (starts with `MZ`, nonzero) — assert ONLY the first two are removed and the valid one survives.
 - **TDD:** **yes** — pure file-I/O; the temp-dir Pester test drives the function directly. Write the test first (RED), then the function (GREEN).
 - **Files to create/modify:**
   - `user/scripts/build-queue-hygiene.ps1` — add `Remove-PoisonedArtifacts`.
@@ -109,8 +109,8 @@ Sequential, single-WU batches (all serialize on the runner's `finally` + result 
 #### WU-2 — Runner: call sweep in `finally` on non-zero/abort + `quarantined_artifacts`
 
 - **Scope (PHASES P3 deliverables 2, 4):**
-  - [ ] In the runner's existing `finally` bracket (Part 1), call `Remove-PoisonedArtifacts -WorktreeRoot $Worktree` **ONLY** when the build exit was non-zero OR the runner was aborted (a clean exit-0 leaves artifacts untouched). The sweep runs after the Job reap and the recycle, using the `-Worktree` value threaded from the wrapper (WU-3).
-  - [ ] Extend the result body's `hygiene` sub-object with `quarantined_artifacts: [<paths>]` (the list returned by the sweep; empty array on a clean exit / no poison).
+  - [x] In the runner's existing `finally` bracket (Part 1), call `Remove-PoisonedArtifacts -WorktreeRoot $Worktree` **ONLY** when the build exit was non-zero OR the runner was aborted (a clean exit-0 leaves artifacts untouched). The sweep runs after the Job reap and the recycle, using the `-Worktree` value threaded from the wrapper (WU-3).
+  - [x] Extend the result body's `hygiene` sub-object with `quarantined_artifacts: [<paths>]` (the list returned by the sweep; empty array on a clean exit / no poison).
 - **TDD:** no (the runner wiring is process-orchestration; the sweep logic itself is unit-tested in WU-1). Parse gate + manual runtime (PHASES Runtime Verification).
 - **Files to create/modify:**
   - `user/scripts/build-queue-runner.ps1` — conditional sweep call in `finally`; add `quarantined_artifacts` to the `hygiene` sub-object.
@@ -123,7 +123,7 @@ Sequential, single-WU batches (all serialize on the runner's `finally` + result 
 #### WU-3 — Wrapper passes `-Worktree $worktree` to runner launch
 
 - **Scope (PHASES P3 deliverable 3):**
-  - [ ] `build-queue.ps1` passes `-Worktree $worktree` (already computed at `:72-75`) into the detached runner invocation (the `$procArgList` built at `:280-285`), so the runner's sweep (WU-2) knows which worktree to clean.
+  - [x] `build-queue.ps1` passes `-Worktree $worktree` (already computed at `:72-75`) into the detached runner invocation (the `$procArgList` built at `:280-285`), so the runner's sweep (WU-2) knows which worktree to clean.
 - **TDD:** no (argument threading; manual runtime). Parse gate is the mechanical check.
 - **Files to create/modify:**
   - `user/scripts/build-queue.ps1` — add `-Worktree`, `(Format-ProcArg $worktree)` to the runner arg list.

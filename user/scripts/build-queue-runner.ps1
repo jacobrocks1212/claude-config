@@ -52,6 +52,7 @@ function Format-ProcArg {
 
 $job = [IntPtr]::Zero
 $vbcscompilerRecycled = $false
+$quarantinedArtifacts = @()
 trap {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	continue
@@ -78,6 +79,11 @@ try {
 } finally {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer } $false
+
+	$buildFailed = Get-SafeValue { ($null -eq $exitCode) -or ($exitCode -ne 0) } $true
+	if ($buildFailed -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
+		$quarantinedArtifacts = Get-SafeValue { @(Remove-PoisonedArtifacts -WorktreeRoot $Worktree) } @()
+	}
 }
 
 $resultsDir = Join-Path $StateRoot 'results'
@@ -95,6 +101,7 @@ $resultBody = [ordered]@{
 	ended_at  = (Get-Date).ToString('o')
 	hygiene   = [ordered]@{
 		vbcscompiler_recycled = $vbcscompilerRecycled
+		quarantined_artifacts = $quarantinedArtifacts
 	}
 } | ConvertTo-Json -Compress -Depth 5
 

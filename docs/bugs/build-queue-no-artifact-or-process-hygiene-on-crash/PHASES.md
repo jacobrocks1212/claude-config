@@ -97,11 +97,11 @@ All paths verified `exists: yes` except `build-queue-hygiene.ps1` (stamped **net
 **Scope:** On a non-zero or aborted build exit, sweep the worktree's `bin/` **and `obj/`** trees for 0-byte and truncated (invalid-PE) `*.dll` and delete them, so MSBuild's timestamp-based incremental up-to-date check cannot treat a poisoned artifact as current (Locked Decision 3). The `obj/` coverage is load-bearing — the second screenshot's recovery deleted the 0-byte DLL from both `bin\Debug\…\Cognito.dll` and `obj\Debug\…\Cognito.dll`.
 
 **Deliverables:**
-- [ ] `Remove-PoisonedArtifacts -WorktreeRoot <path>` in `build-queue-hygiene.ps1`: enumerate `*.dll` under `bin/` and `obj/`; delete any that are 0-byte OR fail a cheap PE-validity probe (size below a small threshold AND/OR missing the `MZ`/PE header magic bytes — final check decided by the plan per SPEC Open Question 2). Returns the list of quarantined paths. Fail-open per-file.
-- [ ] Runner passes its `-Worktree` (threaded from the wrapper) to the sweep; sweep runs in the `finally` ONLY on non-zero/aborted exit (a clean exit leaves artifacts untouched).
-- [ ] `build-queue.ps1` passes `-Worktree $worktree` (already computed at `:72-75`) to the runner invocation (`:280-285`).
-- [ ] Result body records `quarantined_artifacts: [<paths>]` (consumed by Phase 5).
-- [ ] Pester smoke for `Remove-PoisonedArtifacts` against a temp dir seeded with a 0-byte DLL, a truncated DLL, and a valid DLL (asserts only the first two are removed) — this function is pure file-I/O and IS unit-testable in isolation.
+- [x] `Remove-PoisonedArtifacts -WorktreeRoot <path>` in `build-queue-hygiene.ps1`: enumerate `*.dll` under `bin/` and `obj/`; delete any that are 0-byte OR fail a cheap PE-validity probe (size below a small threshold AND/OR missing the `MZ`/PE header magic bytes — final check decided by the plan per SPEC Open Question 2). Returns the list of quarantined paths. Fail-open per-file.
+- [x] Runner passes its `-Worktree` (threaded from the wrapper) to the sweep; sweep runs in the `finally` ONLY on non-zero/aborted exit (a clean exit leaves artifacts untouched).
+- [x] `build-queue.ps1` passes `-Worktree $worktree` (already computed at `:72-75`) to the runner invocation (`:280-285`).
+- [x] Result body records `quarantined_artifacts: [<paths>]` (consumed by Phase 5).
+- [x] Pester smoke for `Remove-PoisonedArtifacts` against a temp dir seeded with a 0-byte DLL, a truncated DLL, and a valid DLL (asserts only the first two are removed) — this function is pure file-I/O and IS unit-testable in isolation.
 
 **Minimum Verifiable Behavior:** Seed a worktree's `bin/`+`obj/` with a 0-byte `Cognito.dll`, run a failing queued build; afterward the 0-byte DLLs are gone and the next build recompiles cleanly (no `CS0009`/`CS0234`).
 

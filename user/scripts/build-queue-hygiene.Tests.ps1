@@ -79,3 +79,63 @@ Describe 'Reset-CompilerServer' {
 		($result -eq $true -or $result -eq $false) | Should -Be $true
 	}
 }
+
+Describe 'Remove-PoisonedArtifacts' {
+	BeforeAll {
+		$script:TestWorktree = Join-Path $env:TEMP ("rpa-pester-" + [guid]::NewGuid().ToString('N'))
+
+		$script:BinDir = Join-Path $script:TestWorktree 'bin\Debug'
+		$script:ObjDir = Join-Path $script:TestWorktree 'obj\Debug'
+		New-Item -ItemType Directory -Path $script:BinDir -Force | Out-Null
+		New-Item -ItemType Directory -Path $script:ObjDir -Force | Out-Null
+
+		$script:XDllPath = Join-Path $script:BinDir 'x.dll'
+		$script:YDllPath = Join-Path $script:ObjDir 'y.dll'
+		$script:GoodDllPath = Join-Path $script:BinDir 'good.dll'
+
+		# x.dll - 0 bytes (bin/)
+		[System.IO.File]::WriteAllBytes($script:XDllPath, [byte[]]@())
+
+		# y.dll - 3 bytes, no MZ magic (obj/)
+		[System.IO.File]::WriteAllBytes($script:YDllPath, [byte[]](0x00, 0x01, 0x02))
+
+		# good.dll - starts with MZ (0x4D 0x5A), 64 bytes total, nonzero (bin/)
+		$goodBytes = New-Object byte[] 64
+		$goodBytes[0] = 0x4D
+		$goodBytes[1] = 0x5A
+		[System.IO.File]::WriteAllBytes($script:GoodDllPath, $goodBytes)
+	}
+
+	AfterAll {
+		Remove-Item -Path $script:TestWorktree -Recurse -Force -ErrorAction SilentlyContinue
+	}
+
+	It 'does not throw' {
+		{ Remove-PoisonedArtifacts -WorktreeRoot $script:TestWorktree } | Should -Not -Throw
+	}
+
+	It 'deletes the 0-byte DLL under bin/' {
+		Remove-PoisonedArtifacts -WorktreeRoot $script:TestWorktree | Out-Null
+		Test-Path $script:XDllPath | Should -Be $false
+	}
+
+	It 'deletes the truncated/invalid-PE DLL under obj/' {
+		Test-Path $script:YDllPath | Should -Be $false
+	}
+
+	It 'leaves the valid-PE DLL in place' {
+		Test-Path $script:GoodDllPath | Should -Be $true
+	}
+
+	It 'returns exactly the two quarantined paths' {
+		# Re-seed (prior Its already deleted x/y) for an isolated return-value assertion.
+		[System.IO.File]::WriteAllBytes($script:XDllPath, [byte[]]@())
+		[System.IO.File]::WriteAllBytes($script:YDllPath, [byte[]](0x00, 0x01, 0x02))
+
+		$result = @(Remove-PoisonedArtifacts -WorktreeRoot $script:TestWorktree)
+
+		$result.Count | Should -Be 2
+		$result | Should -Contain $script:XDllPath
+		$result | Should -Contain $script:YDllPath
+	}
+}

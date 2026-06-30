@@ -284,7 +284,8 @@ $runnerScript = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
 $procArgList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Format-ProcArg $runnerScript),
 	'-Exec', (Format-ProcArg $Exec),
 	'-Seq', "$seq",
-	'-StateRoot', (Format-ProcArg $stateRoot))
+	'-StateRoot', (Format-ProcArg $stateRoot),
+	'-Worktree', (Format-ProcArg $worktree))
 foreach ($a in $execArgsArr) { $procArgList += (Format-ProcArg ([string]$a)) }
 $procArgString = $procArgList -join ' '
 

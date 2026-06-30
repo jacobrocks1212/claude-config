@@ -7,13 +7,15 @@
   runner can scope and reap exactly one build's descendant process tree.
 
   This is the shared home for build-queue hygiene helpers. Later work units
-  add more functions here (artifact sweep, result fidelity, etc.) — this
-  revision adds the Job-Object surface plus the VBCSCompiler recycle:
+  add more functions here (result fidelity, etc.) — this revision adds the
+  Job-Object surface, the VBCSCompiler recycle, and the poisoned-artifact
+  sweep:
 
-    New-BuildJobObject     - create a kill-on-close Job Object
-    Add-ProcessToBuildJob  - assign a process to a Job Object
-    Stop-BuildJobTree      - terminate the Job Object (and all members)
-    Reset-CompilerServer   - force-recycle VBCSCompiler after a queued build
+    New-BuildJobObject       - create a kill-on-close Job Object
+    Add-ProcessToBuildJob    - assign a process to a Job Object
+    Stop-BuildJobTree        - terminate the Job Object (and all members)
+    Reset-CompilerServer     - force-recycle VBCSCompiler after a queued build
+    Remove-PoisonedArtifacts - sweep bin/ + obj/ for 0-byte/truncated *.dll
 
 .NOTES
   HARD REQUIREMENT — FAIL OPEN. None of these functions may throw in a way
@@ -323,4 +325,113 @@ function Reset-CompilerServer {
 	}
 
 	return $true
+}
+
+function Remove-PoisonedArtifacts {
+	<#
+	.SYNOPSIS
+	  Targeted sweep that quarantines (deletes) 0-byte / truncated-PE *.dll
+	  artifacts left behind by a crashed build, under BOTH bin/ and obj/.
+
+	.DESCRIPTION
+	  Locked Decision 3 (docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash):
+	  a crashed build can leave a 0-byte or truncated *.dll in the worktree's
+	  bin/ and obj/ trees. MSBuild's timestamp-based incremental up-to-date
+	  check then treats the poisoned artifact as current, causing CS0009 /
+	  CS0234 on the next build. This is a TARGETED sweep, not a blanket
+	  force-clean — it only removes *.dll files that are provably poisoned.
+
+	  A *.dll is classified poisoned when EITHER:
+	    (a) it is 0 bytes, OR
+	    (b) it is nonzero length but its first 2 bytes are not the 'MZ'
+	        (0x4D 0x5A) DOS-header magic — i.e. not a valid PE image. This
+	        cheap 2-byte probe (NOT a full PE/CLI-header parse) is the
+	        agreed-upon check resolving SPEC Open Question 2.
+
+	  Both bin/ and obj/ are swept recursively under $WorktreeRoot; a root
+	  that does not exist (e.g. a fresh worktree with no obj/ yet) is
+	  skipped rather than treated as an error.
+
+	  Per-file fail-open: a delete failure (locked/read-only file) logs a
+	  Write-Warning and the sweep continues — it never aborts or throws.
+
+	.PARAMETER WorktreeRoot
+	  Root directory of the worktree to sweep (bin/ and obj/ are resolved
+	  underneath it).
+
+	.OUTPUTS
+	  [string[]] absolute paths of the *.dll files that were successfully
+	  deleted (quarantined). Empty array when nothing was poisoned or
+	  neither root exists.
+	#>
+	[CmdletBinding()]
+	[OutputType([string[]])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$WorktreeRoot
+	)
+
+	$quarantined = New-Object System.Collections.Generic.List[string]
+
+	$roots = @(
+		(Join-Path $WorktreeRoot 'bin'),
+		(Join-Path $WorktreeRoot 'obj')
+	)
+
+	foreach ($root in $roots) {
+		if (-not (Test-Path -LiteralPath $root)) {
+			continue
+		}
+
+		$dlls = Get-SafeValue { Get-ChildItem -LiteralPath $root -Filter '*.dll' -Recurse -File -ErrorAction Stop } @()
+		if ($null -eq $dlls) {
+			$dlls = @()
+		}
+
+		foreach ($dll in @($dlls)) {
+			$fullPath = $dll.FullName
+			$isPoisoned = $false
+
+			$length = Get-SafeValue { $dll.Length } $null
+			if ($null -eq $length) {
+				continue
+			}
+
+			if ($length -eq 0) {
+				$isPoisoned = $true
+			} else {
+				$hasMzMagic = Get-SafeValue {
+					$stream = [System.IO.File]::OpenRead($fullPath)
+					try {
+						$header = New-Object byte[] 2
+						$bytesRead = $stream.Read($header, 0, 2)
+						($bytesRead -eq 2 -and $header[0] -eq 0x4D -and $header[1] -eq 0x5A)
+					} finally {
+						$stream.Dispose()
+					}
+				} $false
+
+				if ($hasMzMagic -ne $true) {
+					$isPoisoned = $true
+				}
+			}
+
+			if (-not $isPoisoned) {
+				continue
+			}
+
+			$deleted = Get-SafeValue {
+				Remove-Item -LiteralPath $fullPath -Force -ErrorAction Stop
+				$true
+			} $false
+
+			if ($deleted -eq $true) {
+				$quarantined.Add($fullPath)
+			} else {
+				Write-Warning "Remove-PoisonedArtifacts: failed to delete poisoned artifact '$fullPath'; continuing sweep (fail-open)."
+			}
+		}
+	}
+
+	return [string[]]$quarantined.ToArray()
 }
