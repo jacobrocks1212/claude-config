@@ -18042,6 +18042,85 @@ def test_detect_friction_over_budget_commits():
     assert "5" in got.get("detail", ""), got
 
 
+def test_detect_friction_branch_divergence():
+    """Harden Round 43 (2026-06-29): a cycle that ends on a branch OTHER than the
+    run's work_branch self-announces as kind: process-friction reason
+    branch-divergence. Motivating incident: an mcp-test cycle created
+    fix/fill-capture-ordering-mcp-visibility, committed there, and reported success
+    WITHOUT the R10-mandated STOP; the divergence was caught only by manual
+    orchestrator ff-merge reconciliation. The signal makes it routed, not silent."""
+    _guard()
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-29T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    # (1) wrong branch → trips with reason branch-divergence; detail names both branches.
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-29T00:00:00Z",  # identity intact
+        current_head_sha="bbbb2222",
+        sub_skill="mcp-test",
+        commits_since=1,  # within budget — divergence is the ONLY signal
+        current_branch="fix/fill-capture-ordering-mcp-visibility",
+        expected_work_branch="main",
+    )
+    assert got is not None and got["reason"] == "branch-divergence", got
+    assert "fix/fill-capture-ordering-mcp-visibility" in got.get("detail", ""), got
+    assert "main" in got.get("detail", ""), got
+
+    # (2) on the work branch → no false positive.
+    assert lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-06-29T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill="mcp-test",
+        commits_since=1,
+        current_branch="main",
+        expected_work_branch="main",
+    ) is None
+
+    # (3) degraded inputs (detached HEAD / unknown / legacy marker w/o work_branch)
+    #     → signal disabled, never a false positive.
+    for cb, ewb in (("HEAD", "main"), (None, "main"), ("feat-x", None), (None, None)):
+        assert lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-29T00:00:00Z",
+            current_head_sha="bbbb2222",
+            sub_skill="mcp-test",
+            commits_since=1,
+            current_branch=cb,
+            expected_work_branch=ewb,
+        ) is None, (cb, ewb)
+
+    # (4) a META cycle on a wrong branch STILL trips — branch-divergence is NOT
+    #     meta-exempt (a wrong branch is always integrity-breaking; the meta
+    #     exemption only covers the unbounded-commits signal).
+    meta_marker = {**marker, "kind": "meta"}
+    meta_div = lazy_core.detect_cycle_bracket_friction(
+        meta_marker,
+        current_run_started_at="2026-06-29T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill=None,
+        commits_since=9,  # would be exempt for unexpected-commits, irrelevant here
+        current_branch="stray-meta-branch",
+        expected_work_branch="main",
+    )
+    assert meta_div is not None and meta_div["reason"] == "branch-divergence", meta_div
+
+
+def test_current_branch_snapshot_degrades_to_none():
+    """current_branch_snapshot returns None (not the prompt-token fallback string
+    "the current branch") on a non-git / degraded read, so the friction equality
+    comparison never false-trips. Symbol-presence + non-crash contract."""
+    _guard()
+    assert hasattr(lazy_core, "current_branch_snapshot")
+    import tempfile, pathlib
+    # A fresh empty temp dir is not a git tree → None (never raises, never a branch).
+    with tempfile.TemporaryDirectory() as d:
+        got = lazy_core.current_branch_snapshot(pathlib.Path(d))
+    assert got is None, got
+
+
 def test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget():
     """Hardening 2026-06-16 recurrence: a `__mark_complete__` completion / meta cycle
     legitimately commits MORE THAN ONCE (the `--apply-pseudo` receipt+flip plus the
@@ -22738,6 +22817,10 @@ _TESTS = _TESTS + [
      test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
     ("test_detect_friction_over_budget_commits",
      test_detect_friction_over_budget_commits),
+    ("test_detect_friction_branch_divergence",
+     test_detect_friction_branch_divergence),
+    ("test_current_branch_snapshot_degrades_to_none",
+     test_current_branch_snapshot_degrades_to_none),
     ("test_detect_friction_torn_bracket_run_identity_changed",
      test_detect_friction_torn_bracket_run_identity_changed),
     ("test_detect_friction_torn_bracket_run_marker_now_absent",

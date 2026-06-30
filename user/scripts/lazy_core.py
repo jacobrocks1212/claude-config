@@ -9851,6 +9851,8 @@ def detect_cycle_bracket_friction(
     *,
     commits_since: int | None = None,
     budget_override: int | None = None,
+    current_branch: str | None = None,
+    expected_work_branch: str | None = None,
     now: float | None = None,
 ) -> dict | None:
     """Detect process-friction at --cycle-end: a torn cycle bracket or unexpected
@@ -9929,6 +9931,40 @@ def detect_cycle_bracket_friction(
                 "sub_skill": sub_skill,
             }
 
+    # --- Signal (a.5): branch-divergence (harden Round 43, 2026-06-29) -------
+    # A cycle that ends on a branch OTHER than the run's work_branch strands every
+    # commit/sentinel it wrote where the state scripts (which read the work_branch)
+    # cannot see them. The cycle-base-prompt R10 hard-contract already forbids
+    # `git checkout -b` / `git switch -c` / `git branch <new>` mid-cycle, but that
+    # rule relies on SUBAGENT COMPLIANCE — and a real mcp-test cycle violated it
+    # (created fix/<...>, committed the fix there, and reported success WITHOUT the
+    # mandated STOP), so the divergence was caught only by manual orchestrator
+    # reconciliation (ff-merge to work branch + branch delete). This signal makes the
+    # violation SELF-ANNOUNCING (a kind: process-friction ledger entry → pending
+    # hardening), exactly like unexpected-commits — turning a silent, manually-caught
+    # integrity break into a routed one. It applies to ALL cycles (meta INCLUDED — a
+    # wrong branch is always integrity-breaking), so it is checked BEFORE the
+    # meta-cycle exemption below. Degrades to off when either branch is unknown
+    # (legacy run marker without work_branch, a detached HEAD reading "HEAD", or a
+    # degraded git read) → never a false positive.
+    if (
+        current_branch
+        and current_branch != "HEAD"
+        and expected_work_branch
+        and current_branch != expected_work_branch
+    ):
+        return {
+            "reason": "branch-divergence",
+            "detail": (
+                f"cycle ended on branch {current_branch!r} but the run's "
+                f"work_branch is {expected_work_branch!r} — commits/sentinels this "
+                f"cycle wrote are stranded off the work branch (R10 work-branch-only "
+                f"hard-contract violated; reconcile by ff-merging onto "
+                f"{expected_work_branch!r} and deleting the stray branch)"
+            ),
+            "sub_skill": sub_skill,
+        }
+
     # --- Signal (b): unexpected-commits -------------------------------------
     # Requires a known begin HEAD snapshot AND a known commit count.
     #
@@ -10004,6 +10040,30 @@ def head_sha_snapshot(repo_root: Path | None = None) -> str | None:
         proc = _git(root, "rev-parse", "HEAD")
         if proc.returncode == 0:
             return (proc.stdout or "").strip() or None
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def current_branch_snapshot(repo_root: Path | None = None) -> str | None:
+    """Best-effort ``git rev-parse --abbrev-ref HEAD`` against repo_root (cwd default).
+
+    Returns the current branch NAME, or None when not a git tree / git fails / the
+    output is empty / HEAD is detached (the literal ``"HEAD"``). Callers treat None
+    as a degraded snapshot (the branch-divergence signal disables — never a false
+    positive). Distinct from ``_emit_work_branch`` (the prompt-token resolver), which
+    returns the human fallback string ``"the current branch"`` on failure — a value
+    that would FALSE-trip an equality comparison; the friction detector needs a clean
+    None instead, so it uses this helper. Used by --cycle-end to resolve the live
+    branch for the branch-divergence signal (harden Round 43).
+    """
+    root = repo_root or Path.cwd()
+    try:
+        proc = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if proc.returncode == 0:
+            branch = (proc.stdout or "").strip()
+            if branch and branch != "HEAD":
+                return branch
     except Exception:  # noqa: BLE001
         pass
     return None
@@ -10139,6 +10199,13 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     # per-sub_skill table (never a false NEGATIVE, never a crash).
     budget_override = _execute_plan_commit_budget(marker_sub_skill, marker.get("sub_skill_args"))
 
+    # (4b) branch-divergence inputs (harden Round 43): the live branch at --cycle-end
+    # vs the run's work_branch. Both best-effort — a None on either degrades the
+    # signal to off (never a false positive). expected_work_branch comes from the
+    # LIVE run marker (read in step 2); a legacy run marker without the field → None.
+    current_branch = current_branch_snapshot(root)
+    expected_work_branch = (live_run or {}).get("work_branch")
+
     descriptor = detect_cycle_bracket_friction(
         marker,
         current_run_started_at=current_run_started_at,
@@ -10146,6 +10213,8 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
         sub_skill=marker_sub_skill,
         commits_since=commits_since,
         budget_override=budget_override,
+        current_branch=current_branch,
+        expected_work_branch=expected_work_branch,
     )
 
     # (5) log the friction as hardening debt (fail-open).
