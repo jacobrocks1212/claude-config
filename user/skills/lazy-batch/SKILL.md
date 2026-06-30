@@ -205,6 +205,8 @@ Before entering the main loop, check whether the user staged Gemini research upl
 
 2. If staged `.txt` files exist, dispatch `/ingest-research` as cycle 1 (counts against `max_cycles`):
 
+   **Marker-aware dispatch (harden Round 44).** Step 0.5 normally runs BEFORE Step 0.55 writes the run marker, so the hand-composed prompt below is allowed (no guard active). But if a run marker is ALREADY present when you reach an ingest dispatch — the Step 5 in-session resume protocol (research arrives mid-run), or any ordering where `--run-start` ran first — the validate-deny guard will DENY the hand-composed prompt. In that case do NOT tear down the run marker; emit the ingest via the registry instead: `python3 ~/.claude/scripts/lazy-state.py --emit-dispatch ingest-research --context item_name=… --context spec_path=… --context staged_files=… --context item_id=… --context cwd=…` and dispatch its `dispatch_prompt` VERBATIM (bracket it `--kind real --sub-skill ingest-research` like any cycle). The hand-composed form below remains correct for the un-marked pre-loop case.
+
    ```
    Agent({
      description: "lazy-batch pre-loop ingest-research dispatch",
