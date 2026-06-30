@@ -66,6 +66,42 @@ You will receive paths to the following files:
 5. **Strengths section:** identify what's well-done
 6. **Verify requirements coverage:** cross-reference journey objectives against triage classification (were relevant files reviewed?), findings (do any block objectives?), and test presence (are objectives tested?). Report coverage status per objective.
 
+## Standardized Issue Block
+
+Every kept finding — regardless of source (`investigation` / `sweep` / `reuse` / `intrafile` / `reviewer`) — renders in this single canonical shape. It **supersedes** the older heterogeneous per-source shapes (investigation's `**File:** / **Severity:** / **Evidence:** / **Suggestion:**` subsection and the sweep/reuse/intrafile one-line bullets). The per-finding rendering is now uniform across all four `## ` source sections; only the four section groupings and their omission rules remain (see `## Section Omission Rules`), and the existing tier→severity→weight order is preserved (see `## Ordering`).
+
+```
+### {Issue title}
+**Severity:** {Blocking | Important | Suggestion}   **Source:** {investigation | sweep | reuse | intrafile | reviewer}   **Location:** {file}:{line}   **Confidence:** {CONFIRMED | UNVERIFIED | —}
+**What:** {1–2 line statement of the issue and why it matters}
+**Proposed fix:** {concrete before→after snippet/diff when cheap AND a snippet is available; precise prose resolution steps otherwise}
+**Proposed PR comment:** {ready-to-paste draft comment text — reviewer-voiced, references file:line; the reviewer posts it manually (never auto-posted)}
+```
+
+### Field sourcing (per source)
+
+| Field | `investigation` | `sweep` | `reuse` / `intrafile` |
+|-------|-----------------|---------|-----------------------|
+| **Severity** | `severity` | `severity` (tier) | `severity` (from the verdict→severity mapping) |
+| **Source** | `investigation` | `sweep` | `reuse` / `intrafile` |
+| **Location** | `file`:`line` | `file`:`line` | `file`:`line` |
+| **Confidence** | `confidence` (`CONFIRMED`/`UNVERIFIED`; absent/null → `—`) | `confidence` | `confidence` |
+| **What** | `hypothesis` (+ `evidence`) | `description` | `hypothesis` or `description` (+ `verdict` / `candidate`) |
+| **Proposed fix** | `suggestion` + `evidence.snippet` when available | `description` + `suggestion` (**prose only** — sweep carries no `evidence.snippet`) | `suggestion` + `candidate` / suggested action (+ `evidence.snippet` when available) |
+| **Proposed PR comment** | net-new generated text seeded from the fix + `evidence.reference` | net-new generated text seeded from the fix | net-new generated text seeded from the fix + candidate reference |
+
+The **Proposed PR comment** is entirely **net-new generated text** for every source — no finding carries an existing comment/draft field.
+
+### Fix-form rule
+
+- Emit a **concrete before→after snippet/diff** when the fix is small/local AND `evidence.snippet` is available for that finding.
+- Emit **precise prose resolution steps** (what to change, where, and why) otherwise.
+- **`sweep` findings are always prose.** Under the cache-only constraint (see `## Cache Boundary`) sweep has no `evidence.snippet`; never attempt a live local read to manufacture one.
+
+### Comment-style rule
+
+The **Proposed PR comment** is terse, reviewer-voiced, and references `file:line` directly — it is what the reviewer pastes on the PR, distinct from **What** (the internal explanation). If a kept finding carries a reviewer `note`, fold it into / seed the Proposed PR comment (the note is the reviewer's own intended comment text). Drafts are **never auto-posted** — they are for manual paste only (per `user/CLAUDE.local.md`).
+
 ## Output Format
 
 Produce markdown following this EXACT structure:
@@ -90,52 +126,52 @@ Produce markdown following this EXACT structure:
 {Repeat for each objective from the journey file. Status values: **Covered** = relevant files reviewed, no blocking findings, tests present. **Partial** = some files reviewed or minor gaps. **Gap** = relevant files not reviewed, blocking findings exist, or no tests.}
 
 ## Critical Findings
-{Investigation agent findings — deep, evidence-based, verified. These come from critical triage areas. Each gets its own subsection.}
+{Investigation agent findings — deep, evidence-based, verified. These come from critical triage areas. Render each kept investigation finding using the Standardized Issue Block (defined above). What ← hypothesis (+ evidence); Proposed fix ← suggestion + evidence.snippet when available.}
 
-### {Finding title}
-**File:** {path}:{line}
-**Severity:** {blocking|important}
-**Evidence:** {evidence from investigation — specific code snippets and references}
-**Suggestion:** {specific, grounded recommendation}
+### {Issue title}
+**Severity:** {Blocking | Important | Suggestion}   **Source:** investigation   **Location:** {file}:{line}   **Confidence:** {CONFIRMED | UNVERIFIED | —}
+**What:** {1–2 line statement of the issue and why it matters — from hypothesis/evidence}
+**Proposed fix:** {concrete before→after snippet/diff when cheap & evidence.snippet available; precise prose resolution steps otherwise}
+**Proposed PR comment:** {ready-to-paste draft, reviewer-voiced, references file:line — net-new generated text; never auto-posted}
 {If re-review and lifespan exists: **Lifespan:** Raised in {n} of {m} iterations}
 
-{Repeat for each investigation finding, ordered by severity then effective_weight}
+{Repeat the block for each kept investigation finding, preserving the existing order — do not re-sort}
 
 ## Rule-Based Findings
-{Sweep agent findings — pattern-matching against the rule corpus. Split into Important and Minor subsections.}
+{Sweep agent findings — pattern-matching against the rule corpus. Render each kept sweep finding using the Standardized Issue Block (defined above). What ← description; Proposed fix ← description + suggestion (PROSE ONLY — sweep carries no evidence.snippet, so never emit a code snippet and never attempt a local read). Findings are already ordered by tier→severity→weight; do not re-sort and do not re-bucket into Important/Minor — the inline **Severity:** field carries the tier.}
 
-### Important
-{Findings with severity blocking or important}
-- {title/description} [{file}:{line}] (weight: {effective_weight})
-{If lifespan: — *Raised in {n} of {m} iterations*}
+### {Issue title}
+**Severity:** {Blocking | Important | Suggestion}   **Source:** sweep   **Location:** {file}:{line}   **Confidence:** {CONFIRMED | UNVERIFIED | —}
+**What:** {1–2 line statement of the rule violation and why it matters — from description}
+**Proposed fix:** {precise prose resolution steps — what to change, where, and why (sweep is always prose; no snippet)}
+**Proposed PR comment:** {ready-to-paste draft, reviewer-voiced, references file:line — net-new generated text; never auto-posted}
+{If lifespan exists: **Lifespan:** Raised in {n} of {m} iterations}
 
-### Minor
-{Findings with severity nit}
-- {title/description} [{file}:{line}] (weight: {effective_weight})
+{Repeat the block for each kept sweep finding, preserving the existing order}
 
 ## Reuse & Duplication
-{Findings with source "reuse" — opportunities to reuse, extend, refactor, or wrap existing system artifacts rather than duplicating. Omit this section entirely if there are no reuse-sourced findings.}
+{Findings with source "reuse" — opportunities to reuse, extend, refactor, or wrap existing system artifacts rather than duplicating. Omit this section entirely if there are no reuse-sourced findings. Render each kept reuse finding using the Standardized Issue Block (defined above). What ← hypothesis/description (+ verdict + candidate); Proposed fix ← suggestion + candidate/suggested action (+ evidence.snippet when available). Do not re-sort; the inline **Severity:** field carries the tier.}
 
-### Important
-{Reuse findings with severity blocking or important}
-- **{verdict}** — [{file}:{line}] → candidate: `{candidate}` — {suggested action}
-{If blast_radius exists: — *Refactor surface: {blast_radius}*}
+### {Issue title}
+**Severity:** {Blocking | Important | Suggestion}   **Source:** reuse   **Location:** {file}:{line}   **Confidence:** {CONFIRMED | UNVERIFIED | —}
+**What:** {1–2 line statement — what existing artifact this duplicates and why reuse matters (verdict: {verdict}, candidate: `{candidate}`)}
+**Proposed fix:** {concrete before→after snippet/diff when cheap & evidence.snippet available; precise prose steps otherwise — reuse/extend/refactor/wrap the candidate}
+**Proposed PR comment:** {ready-to-paste draft, reviewer-voiced, references file:line — net-new generated text; never auto-posted}
+{If blast_radius exists: **Refactor surface:** {blast_radius}}
 
-### Minor
-{Reuse findings with severity nit}
-- **{verdict}** — [{file}:{line}] → candidate: `{candidate}` — {suggested action}
+{Repeat the block for each kept reuse finding, preserving the existing order}
 
 ## Intra-File Consistency
-{Findings with source "intrafile" — in-file duplication (the change reimplements something already present elsewhere in the same file) and surrounding-code consistency divergences. Omit this section entirely if there are no intrafile-sourced findings.}
+{Findings with source "intrafile" — in-file duplication (the change reimplements something already present elsewhere in the same file) and surrounding-code consistency divergences. Omit this section entirely if there are no intrafile-sourced findings. Render each kept intrafile finding using the Standardized Issue Block (defined above). What ← hypothesis/description (+ verdict + in-file candidate); Proposed fix ← suggestion + candidate/suggested action (+ evidence.snippet when available). Do not re-sort; the inline **Severity:** field carries the tier.}
 
-### Important
-{Intra-file findings with severity blocking or important}
-- **{verdict}** — [{file}:{line}] → in-file candidate: `{candidate}` — {suggested action}
-{If blast_radius exists: — *Refactor surface: {blast_radius}*}
+### {Issue title}
+**Severity:** {Blocking | Important | Suggestion}   **Source:** intrafile   **Location:** {file}:{line}   **Confidence:** {CONFIRMED | UNVERIFIED | —}
+**What:** {1–2 line statement — what in-file code this duplicates or diverges from and why it matters (verdict: {verdict}, in-file candidate: `{candidate}`)}
+**Proposed fix:** {concrete before→after snippet/diff when cheap & evidence.snippet available; precise prose steps otherwise — reuse the in-file candidate / align with the surrounding convention}
+**Proposed PR comment:** {ready-to-paste draft, reviewer-voiced, references file:line — net-new generated text; never auto-posted}
+{If blast_radius exists: **Refactor surface:** {blast_radius}}
 
-### Minor
-{Intra-file findings with severity nit}
-- **{verdict}** — [{file}:{line}] → in-file candidate: `{candidate}` — {suggested action}
+{Repeat the block for each kept intrafile finding, preserving the existing order}
 
 ## Re-Review Status
 {ONLY include this section if review type is Re-review}
@@ -183,7 +219,7 @@ You may only Read files from:
 - The journey file path
 - Plugin knowledge directory (if needed for rule descriptions)
 
-Do NOT read from the local codebase.
+Do NOT read from the local codebase. Consequently, every **Proposed fix** code snippet in the Standardized Issue Block must come exclusively from the already-cached `evidence.snippet` in `processed-findings.json` — never from a fresh local read. Findings with no `evidence.snippet` (notably all `sweep` findings) get a **prose** Proposed fix; do not manufacture a snippet.
 
 ## Important Notes
 
