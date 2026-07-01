@@ -21,10 +21,16 @@
         vbcscompiler_recycled: <bool>,   # whether VBCSCompiler was recycled after the build
         quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
         result_fidelity: "verified" | "no-output" | "n/a"  # "no-output" = test op produced zero results; "verified" = test op had real output; "n/a" = build op
+        build_fidelity: "log-failure-override" | "verified" | "n/a"  # "log-failure-override" = a build op exited 0 but its captured log matched a known MSBuild failure signature (Test-BuildLogFailure), so the exit code/buildFailed were overridden to failure BEFORE the quarantine gate; "verified" = build op needed no override; "n/a" = non-build op (e.g. test)
       }
     }
     Job-Object reap of build descendants happens unconditionally but records no PID list
     (fire-and-forget) — there is no reaped-PID field.
+
+    Build-op stdout/stderr are redirected to logs/<seq>.build.log / <seq>.build.err.log
+    (sibling of results/) so Test-BuildLogFailure has a log to scan for a bogus-exit-0
+    failure signature (e.g. copy-lock retries that MSBuild reports as errors but the
+    outer process still exits success).
 #>
 [CmdletBinding()]
 param(
@@ -65,6 +71,10 @@ function Format-ProcArg {
 $job = [IntPtr]::Zero
 $vbcscompilerRecycled = $false
 $quarantinedArtifacts = @()
+$execLeaf = Get-SafeValue { Split-Path -Leaf $Exec } ''
+$isBuildOp = $execLeaf -match 'build-filtered\.ps1$'
+$buildLogPath = $null
+$buildFidelity = 'n/a'
 trap {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	continue
@@ -77,7 +87,25 @@ try {
 	}
 	$procArgString = $procArgList -join ' '
 
-	$proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $procArgString -NoNewWindow -PassThru
+	$startProcParams = @{
+		FilePath     = 'powershell.exe'
+		ArgumentList = $procArgString
+		NoNewWindow  = $true
+		PassThru     = $true
+	}
+	if ($isBuildOp) {
+		Get-SafeValue {
+			$logsDir = Join-Path $StateRoot 'logs'
+			if (-not (Test-Path $logsDir)) {
+				$null = New-Item -ItemType Directory -Path $logsDir -Force
+			}
+			$buildLogPath = Join-Path $logsDir "$Seq.build.log"
+			$startProcParams['RedirectStandardOutput'] = $buildLogPath
+			$startProcParams['RedirectStandardError']  = (Join-Path $logsDir "$Seq.build.err.log")
+		}
+	}
+
+	$proc = Start-Process @startProcParams
 	$null = $proc.Handle
 
 	$job = New-BuildJobObject
@@ -88,6 +116,24 @@ try {
 	$proc.WaitForExit()
 	$exitCode = $proc.ExitCode
 	if ($null -eq $exitCode) { $exitCode = 0 }
+
+	if ($isBuildOp) {
+		$logFailure = Get-SafeValue {
+			if ([string]::IsNullOrWhiteSpace($buildLogPath) -or -not (Test-Path $buildLogPath)) {
+				return @{ failed = $false; signature = $null }
+			}
+			$logText = [System.IO.File]::ReadAllText($buildLogPath)
+			Test-BuildLogFailure -Log $logText
+		} @{ failed = $false; signature = $null }
+
+		if ($logFailure.failed -and $exitCode -eq 0) {
+			$exitCode = 1
+			$buildFailed = $true
+			$buildFidelity = 'log-failure-override'
+		} else {
+			$buildFidelity = 'verified'
+		}
+	}
 } finally {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer } $false
@@ -99,7 +145,6 @@ try {
 }
 
 $resultFidelity = Get-SafeValue {
-	$execLeaf = Split-Path -Leaf $Exec
 	$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
 	if (-not $isTestOp) { 'n/a' }
 	elseif ($exitCode -eq 3) { 'no-output' }
@@ -123,6 +168,7 @@ $resultBody = [ordered]@{
 		vbcscompiler_recycled = $vbcscompilerRecycled
 		quarantined_artifacts = $quarantinedArtifacts
 		result_fidelity       = $resultFidelity
+		build_fidelity        = $buildFidelity
 	}
 } | ConvertTo-Json -Compress -Depth 5
 

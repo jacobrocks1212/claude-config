@@ -28,6 +28,11 @@ if (-not $Restore) {
 $hasOutput = $false
 $pattern = '(error\s+(CS|MSB|NU|BC)\d+|Build (FAILED|SUCCEEDED)|^\s*\d+\s+Error|failed\s*$|---->)'
 
+# Tracks whether the streamed log itself asserts failure, independent of dotnet's
+# exit code. Under MSB3027/MSB3021 (DLL copy-lock) dotnet can print "Build FAILED"
+# yet still exit 0 - $LASTEXITCODE alone is not trustworthy in that case.
+$buildLogFailure = $false
+
 # Stream build output line by line
 & dotnet @buildArgs 2>&1 | ForEach-Object {
     $line = $_.ToString()
@@ -41,11 +46,31 @@ $pattern = '(error\s+(CS|MSB|NU|BC)\d+|Build (FAILED|SUCCEEDED)|^\s*\d+\s+Error|
             Write-Host $line
         }
     }
+
+    if ($line -match 'Build FAILED' -or $line -match 'error MSB3027' -or $line -match 'error MSB3021') {
+        $buildLogFailure = $true
+    } elseif ($line -match '^\s*(\d+)\s+Error') {
+        if ([int]$matches[1] -gt 0) {
+            $buildLogFailure = $true
+        }
+    }
 }
 
 if (-not $hasOutput) {
     # No errors or summary found - likely successful
     Write-Host "Build SUCCEEDED (0 Errors)" -ForegroundColor Green
+}
+
+# dotnet's own exit code, captured immediately after the stream completes.
+$buildExit = $LASTEXITCODE
+
+# The build is a failure if the log itself asserted failure OR dotnet exited
+# nonzero. Prefer dotnet's nonzero code when present; otherwise fall back to 1
+# so a log-detected failure never masquerades as exit 0.
+if ($buildLogFailure -or $buildExit -ne 0) {
+    $effectiveExit = if ($buildExit -ne 0) { $buildExit } else { 1 }
+} else {
+    $effectiveExit = 0
 }
 
 # Run tests if requested
@@ -92,4 +117,14 @@ if ($Test) {
             }
         }
     }
+
+    # Combine severities: a nonzero test exit must still surface even if the
+    # build itself succeeded, and a build failure must not be masked by a
+    # passing test run.
+    $testExit = $LASTEXITCODE
+    if ($testExit -ne 0) {
+        $effectiveExit = $testExit
+    }
 }
+
+exit $effectiveExit

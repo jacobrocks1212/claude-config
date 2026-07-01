@@ -16,6 +16,8 @@
     Stop-BuildJobTree        - terminate the Job Object (and all members)
     Reset-CompilerServer     - force-recycle VBCSCompiler after a queued build
     Remove-PoisonedArtifacts - sweep bin/ + obj/ for 0-byte/truncated *.dll
+    Test-BuildLogFailure     - pure scan of a captured build log for known
+                               MSBuild failure signatures (bogus exit 0 guard)
 
 .NOTES
   HARD REQUIREMENT — FAIL OPEN. None of these functions may throw in a way
@@ -434,4 +436,84 @@ function Remove-PoisonedArtifacts {
 	}
 
 	return [string[]]$quarantined.ToArray()
+}
+
+function Test-BuildLogFailure {
+	<#
+	.SYNOPSIS
+	  Pure scan of a captured build log for known MSBuild failure signatures —
+	  the testable half of overriding a bogus exit 0 from a queued build.
+
+	.DESCRIPTION
+	  A queued build can exit 0 while the captured console output actually
+	  shows a failure (e.g. seq-346: VBCSCompiler-poisoned copy retries that
+	  MSBuild reports as errors but the outer process still exits success).
+	  This function scans the log text for that failure shape so a caller can
+	  override a bogus success exit code with the real verdict.
+
+	  Signature set (checked in this order; the FIRST match wins and is
+	  reported as $result.signature):
+	    - literal 'Build FAILED'
+	    - literal 'error MSB3027'
+	    - literal 'error MSB3021'
+	    - a '<N> Error(s)' line where N > 0
+
+	  Pure function: no file I/O, no process calls, no side effects. The
+	  entire body is wrapped in Get-SafeValue so a malformed/unexpected input
+	  fails OPEN to a non-failure result rather than throwing.
+
+	.PARAMETER Log
+	  The captured build log, either as a single [string] (may contain
+	  embedded newlines) or a [string[]] of lines. $null / empty / a
+	  non-string value are all tolerated and fail open to non-failure.
+
+	.OUTPUTS
+	  A hashtable @{ failed = [bool]; signature = [string] or $null }.
+	#>
+	[CmdletBinding()]
+	[OutputType([hashtable])]
+	param(
+		$Log
+	)
+
+	$benignResult = [ordered]@{ failed = $false; signature = $null }
+
+	return Get-SafeValue {
+		if ($null -eq $Log) {
+			return [ordered]@{ failed = $false; signature = $null }
+		}
+
+		if ($Log -is [string]) {
+			$lines = $Log -split "`r`n|`n|`r"
+		} elseif ($Log -is [array]) {
+			$lines = @($Log) | ForEach-Object { [string]$_ }
+		} else {
+			# Non-string, non-array input (e.g. an int) — fail open.
+			return [ordered]@{ failed = $false; signature = $null }
+		}
+
+		$errorCountPattern = '(\d+)\s+Error\(s\)'
+
+		foreach ($line in $lines) {
+			if ($null -eq $line) { continue }
+
+			if ($line -match 'Build FAILED') {
+				return [ordered]@{ failed = $true; signature = 'Build FAILED' }
+			}
+			if ($line -match 'error MSB3027') {
+				return [ordered]@{ failed = $true; signature = 'error MSB3027' }
+			}
+			if ($line -match 'error MSB3021') {
+				return [ordered]@{ failed = $true; signature = 'error MSB3021' }
+			}
+			if ($line -match $errorCountPattern) {
+				$count = [int]$Matches[1]
+				if ($count -gt 0) {
+					return [ordered]@{ failed = $true; signature = $Matches[0] }
+				}
+			}
+		}
+
+		return [ordered]@{ failed = $false; signature = $null }
+	} $benignResult
 }

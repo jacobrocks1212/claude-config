@@ -139,3 +139,62 @@ Describe 'Remove-PoisonedArtifacts' {
 		$result | Should -Contain $script:YDllPath
 	}
 }
+
+Describe 'Test-BuildLogFailure' {
+	It 'does not throw for a real failure-shaped log' {
+		{ Test-BuildLogFailure -Log "Build FAILED.`r`nerror MSB3027: Could not copy.`r`n2 Error(s)" } | Should -Not -Throw
+	}
+
+	It 'detects the seq-346 failure shape (Build FAILED + error MSB3027 + 2 Error(s))' {
+		$log = "Build FAILED.`r`nerror MSB3027: Could not copy `"x.dll`" to `"y.dll`". Exceeded retry count.`r`n2 Error(s)"
+		$result = Test-BuildLogFailure -Log $log
+		$result.failed | Should -Be $true
+		$result.signature | Should -Be 'Build FAILED'
+	}
+
+	It 'detects error MSB3021 as a failure signature when it is the first match' {
+		$log = "Some preamble line`r`nerror MSB3021: Unable to copy file.`r`n1 Error(s)"
+		$result = Test-BuildLogFailure -Log $log
+		$result.failed | Should -Be $true
+		$result.signature | Should -Be 'error MSB3021'
+	}
+
+	It 'detects a nonzero Error(s) count line as a failure signature' {
+		$log = "Some preamble line`r`n3 Error(s)"
+		$result = Test-BuildLogFailure -Log $log
+		$result.failed | Should -Be $true
+		$result.signature | Should -Match 'Error\(s\)'
+	}
+
+	It 'returns a non-failure result for a clean successful build log' {
+		$log = "Build succeeded.`r`n0 Warning(s)`r`n0 Error(s)"
+		$result = Test-BuildLogFailure -Log $log
+		$result.failed | Should -Be $false
+		$result.signature | Should -Be $null
+	}
+
+	It 'accepts a [string[]] log (array of lines) equivalently' {
+		$lines = @('Build FAILED.', 'error MSB3027: Could not copy.', '2 Error(s)')
+		$result = Test-BuildLogFailure -Log $lines
+		$result.failed | Should -Be $true
+		$result.signature | Should -Be 'Build FAILED'
+	}
+
+	It 'does not throw and fails open (non-failure) for $null input' {
+		{ Test-BuildLogFailure -Log $null } | Should -Not -Throw
+		$result = Test-BuildLogFailure -Log $null
+		$result.failed | Should -Be $false
+	}
+
+	It 'does not throw and fails open (non-failure) for an empty string input' {
+		{ Test-BuildLogFailure -Log '' } | Should -Not -Throw
+		$result = Test-BuildLogFailure -Log ''
+		$result.failed | Should -Be $false
+	}
+
+	It 'does not throw and fails open (non-failure) for a non-string bad input' {
+		{ Test-BuildLogFailure -Log 12345 } | Should -Not -Throw
+		$result = Test-BuildLogFailure -Log 12345
+		$result.failed | Should -Be $false
+	}
+}
