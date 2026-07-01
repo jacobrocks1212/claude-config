@@ -14,9 +14,9 @@ category_multipliers:
   template_binding: 0.7
 
 source_weights:
-  investigation: 0.7563
-  intrafile: 0.5454
-  reuse: 0.7
+  investigation: 0.6604
+  intrafile: 0.4505
+  reuse: 0.3938
 
 rule_weights:
 
@@ -40,8 +40,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   defensive-null-checks:
-    weight: 0.7
-    data_points: 0
+    weight: 0.525
+    data_points: 1
   cache-service-instances:
     weight: 0.775
     data_points: 1
@@ -131,8 +131,8 @@ rule_weights:
     weight: 0.8313
     data_points: 2
   no-todos-in-code:
-    weight: 0.7
-    data_points: 0
+    weight: 0.775
+    data_points: 1
   no-commented-code:
     weight: 0.7
     data_points: 0
@@ -205,8 +205,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   dialog-dismissal-consistency:
-    weight: 0.7
-    data_points: 0
+    weight: 0.525
+    data_points: 1
   loading-state-finally:
     weight: 0.7
     data_points: 0
@@ -229,8 +229,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   prefer-vue-testing-library:
-    weight: 0.7
-    data_points: 0
+    weight: 0.525
+    data_points: 1
   use-typed-emits:
     weight: 0.7
     data_points: 0
@@ -357,8 +357,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   no-dom-coupled-assertions:
-    weight: 0.775
-    data_points: 1
+    weight: 0.8735
+    data_points: 3
   test-nested-field-paths:
     weight: 0.7
     data_points: 0
