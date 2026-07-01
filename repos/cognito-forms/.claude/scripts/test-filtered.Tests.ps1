@@ -95,3 +95,64 @@ Describe "Test-StaleTestDll" {
         { Test-StaleTestDll -DllPath $dllPath -ProjectDir $projectDir } | Should -Not -Throw
     }
 }
+
+Describe "Resolve-TestDllPath" {
+    BeforeAll {
+        $script:TestRoot = Join-Path $env:TEMP "resolve-test-dll-$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Path $script:TestRoot -Force | Out-Null
+    }
+
+    AfterAll {
+        Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It "resolves a bin\Debug\<name>.dll layout to that path" {
+        $projectDir = Join-Path $script:TestRoot "debug-layout"
+        $debugDir = Join-Path (Join-Path $projectDir "bin") "Debug"
+        New-Item -ItemType Directory -Path $debugDir -Force | Out-Null
+        $expectedPath = Join-Path $debugDir "Foo.dll"
+        Set-Content -Path $expectedPath -Value "binary"
+
+        $result = Resolve-TestDllPath -ProjectDir $projectDir -TestDll "Foo"
+        $result | Should -Be $expectedPath
+    }
+
+    It "resolves a bin\<name>.dll layout with no Debug subdirectory to the bin copy" {
+        $projectDir = Join-Path $script:TestRoot "bin-only-layout"
+        $binDir = Join-Path $projectDir "bin"
+        New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+        $expectedPath = Join-Path $binDir "Foo.dll"
+        Set-Content -Path $expectedPath -Value "binary"
+
+        $result = Resolve-TestDllPath -ProjectDir $projectDir -TestDll "Foo"
+        $result | Should -Be $expectedPath
+    }
+
+    It "resolves multiple copies to the shallowest bin copy even when a deeper copy is newer" {
+        $projectDir = Join-Path $script:TestRoot "multi-copy-layout"
+        $binDir = Join-Path $projectDir "bin"
+        $autoTestDir = Join-Path $binDir "AutoTest"
+        New-Item -ItemType Directory -Path $autoTestDir -Force | Out-Null
+
+        $shallowPath = Join-Path $binDir "Foo.dll"
+        Set-Content -Path $shallowPath -Value "binary"
+
+        Start-Sleep -Milliseconds 50
+        $deepPath = Join-Path $autoTestDir "Foo.dll"
+        Set-Content -Path $deepPath -Value "binary"
+
+        $result = Resolve-TestDllPath -ProjectDir $projectDir -TestDll "Foo"
+        $result | Should -Be $shallowPath
+    }
+
+    It "returns the conventional bin\Debug path without throwing when the DLL has not been built" {
+        $projectDir = Join-Path $script:TestRoot "not-built-layout"
+        New-Item -ItemType Directory -Path $projectDir -Force | Out-Null
+        $expectedPath = Join-Path (Join-Path (Join-Path $projectDir "bin") "Debug") "Foo.dll"
+
+        $result = Resolve-TestDllPath -ProjectDir $projectDir -TestDll "Foo"
+        $result | Should -Be $expectedPath
+
+        { Resolve-TestDllPath -ProjectDir $projectDir -TestDll "Foo" } | Should -Not -Throw
+    }
+}

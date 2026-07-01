@@ -81,6 +81,31 @@ function Test-StaleTestDll([string]$DllPath, [string]$ProjectDir) {
     }
 }
 
+function Resolve-TestDllPath([string]$ProjectDir, [string]$TestDll) {
+    $binDir = Join-Path $ProjectDir 'bin'
+    $fallback = Join-Path (Join-Path $binDir 'Debug') "$TestDll.dll"
+
+    try {
+        if (-not (Test-Path $binDir)) {
+            return $fallback
+        }
+
+        $matches = Get-ChildItem -Path $binDir -Recurse -Filter "$TestDll.dll" -File -ErrorAction SilentlyContinue
+        if (-not $matches) {
+            return $fallback
+        }
+
+        $best = $matches | Sort-Object `
+            @{ Expression = { ($_.FullName.Substring($binDir.Length).Trim('\').Split('\')).Count } }, `
+            @{ Expression = 'LastWriteTime'; Descending = $true } |
+            Select-Object -First 1
+
+        return $best.FullName
+    } catch {
+        return $fallback
+    }
+}
+
 function Invoke-Main {
     $projectRoot = (git rev-parse --show-toplevel 2>$null) -replace '/', '\'
     if (-not $projectRoot) {
@@ -89,8 +114,8 @@ function Invoke-Main {
     }
     $testProjectPath = "$projectRoot\$TestDll\$TestDll.csproj"
 
-    $testDllPath = "$projectRoot\$TestDll\bin\Debug\$TestDll.dll"
     $testDllProjectDir = "$projectRoot\$TestDll"
+    $testDllPath = Resolve-TestDllPath -ProjectDir $testDllProjectDir -TestDll $TestDll
     if (Test-StaleTestDll -DllPath $testDllPath -ProjectDir $testDllProjectDir) {
         Write-Host "WARN: $testDllPath is stale or missing relative to source changes. Run /msbuild first to rebuild before trusting test results." -ForegroundColor Yellow
         exit 4
