@@ -9968,6 +9968,41 @@ _MULTI_COMMIT_DISPATCH_SKILLS: frozenset[str] = frozenset({
 # constant cushion above the phase count before a cycle is deemed a runaway.
 _EXECUTE_PLAN_PHASE_BUDGET_SLACK = 2
 
+# Deterministic BOOKEND-cadence commits that EVERY /execute-plan cycle makes but
+# the per-WU-checkbox / phase `scale_count` structurally OMITS (hardening Round 46,
+# 2026-06-30). The execute-plan SKILL commits a plan STATUS FLIP at BOTH ends of a
+# cycle — `chore(<id>): mark plan In-progress` at the start (SKILL Step 4e / :296)
+# and `chore/docs(<id>): mark plan part N Complete` + PHASES/spin-off reconcile at
+# the end (SKILL Step 4f / :105, :310) — plus an occasional in-cycle `revert(...)`
+# self-correction. None of these are per-WU work units, so `scale_count` (= max of
+# phase count and per-WU checkbox count) never counts them; the Round-20 SLACK of 2
+# was sized for the WITHIN-phase test+impl split, NOT the two out-of-band bookend
+# commits. When a plan's authored WU commits land close to its declared WU count
+# AND a bookend/revert is present, the bookends push the AUTHORED (merge-excluded,
+# Round 42) count past `scale_count + slack`, false-positiving a clean cycle as a
+# runaway.
+#
+# Concrete recurrence (Round 46, AlgoBooth bug `audio-engine-clippy-warnings-fail-
+# rust-gate`, Step 7a execute-plan, begin_head_sha=e01a97dd6685): the plan declares
+# `phases: [1]` and 4 per-WU checkboxes → `scale_count = max(1, 4) = 4`, budget
+# `4 + slack 2 = 6`. The cycle authored 7 non-merge commits — begin-chore
+# `ba6049ce5 mark plan In-progress`, WU commits `5f90e4e80`/`0b1477faa`/`daef5aadd`
+# (WU-1/2/3+4) + `20870de77` (feature-gated lint fix), an in-cycle
+# `0325bb91d revert(...): un-commit accidentally-regenerated golden JSONs`, and the
+# end reconcile `88ca68794 docs(...): reconcile — plan Complete, SPEC In-progress,
+# spin-offs`. All 7 are legitimate; NONE are merges (`git rev-list --count
+# --no-merges` = 7, so Round 42's merge exclusion does not help). The overflow is
+# exactly the two structural bookends (In-progress flip + Complete reconcile) the
+# WU budget never modeled — 7 = 4 WU-ish + 1 extra fix + 1 revert + ... but the
+# load-bearing 2 that push it over `scale_count(4)+slack(2)=6` are the bookends.
+#
+# Budgeting the two deterministic bookends explicitly closes this: budget becomes
+# `scale_count + slack + bookend`. This is a budget-DENOMINATOR structural fix (the
+# same class as the Round-20 slack), narrowly scoped to execute-plan — it does NOT
+# touch the friction threshold or the runaway ceiling for any other skill, and a
+# genuine runaway (authored commits beyond WUs + slack + the 2 bookends) STILL trips.
+_EXECUTE_PLAN_BOOKEND_COMMITS = 2
+
 
 def _execute_plan_commit_budget(
     sub_skill: str | None, sub_skill_args: str | None
@@ -10024,7 +10059,11 @@ def _execute_plan_commit_budget(
     scale_count = max(len(phase_set), unchecked_wus + checked_wus)
     if scale_count <= 0:
         return None
-    return scale_count + _EXECUTE_PLAN_PHASE_BUDGET_SLACK
+    # scale_count models per-WU authored commits; slack covers the within-phase
+    # test+impl split; bookend covers the two deterministic out-of-band status-flip
+    # commits (In-progress at start, Complete-reconcile at end) that EVERY cycle
+    # makes but scale_count never counts (Round 46). A genuine runaway still trips.
+    return scale_count + _EXECUTE_PLAN_PHASE_BUDGET_SLACK + _EXECUTE_PLAN_BOOKEND_COMMITS
 
 
 def detect_cycle_bracket_friction(

@@ -10032,9 +10032,14 @@ def test_execute_plan_commit_budget_scales_with_phase_count():
             "phases: [1, 2, 3, 4, 5, 6]\n---\n\nbody\n",
             encoding="utf-8",
         )
-        # scaled budget = 6 phases + slack.
+        # scaled budget = 6 phases + slack + bookend (Round 46: the two
+        # deterministic In-progress/Complete status-flip commits every cycle makes).
         budget = lazy_core._execute_plan_commit_budget("execute-plan", str(plan))
-        assert budget == 6 + lazy_core._EXECUTE_PLAN_PHASE_BUDGET_SLACK, budget
+        assert budget == (
+            6
+            + lazy_core._EXECUTE_PLAN_PHASE_BUDGET_SLACK
+            + lazy_core._EXECUTE_PLAN_BOOKEND_COMMITS
+        ), budget
 
         # trailing flags on the args are tolerated (only the leading token is path).
         assert lazy_core._execute_plan_commit_budget(
@@ -10051,8 +10056,8 @@ def test_execute_plan_commit_budget_scales_with_phase_count():
         nophases.write_text("---\nkind: implementation-plan\n---\nbody\n", encoding="utf-8")
         assert lazy_core._execute_plan_commit_budget("execute-plan", str(nophases)) is None
 
-        # detector honors the override: 6 commits on a 6-phase plan does NOT trip
-        # (budget 8) but a runaway of 9 commits DOES.
+        # detector honors the override: `budget` commits (6 phases + slack +
+        # bookend) does NOT trip, but a runaway of budget+1 commits DOES.
         marker = {
             "run_started_at": "2026-06-16T13:31:00Z",
             "begin_head_sha": "d" * 40,
@@ -10061,12 +10066,12 @@ def test_execute_plan_commit_budget_scales_with_phase_count():
         assert lazy_core.detect_cycle_bracket_friction(
             marker, current_run_started_at="2026-06-16T13:31:00Z",
             current_head_sha="e" * 40, sub_skill="execute-plan",
-            commits_since=6, budget_override=budget,
+            commits_since=budget, budget_override=budget,
         ) is None
         runaway = lazy_core.detect_cycle_bracket_friction(
             marker, current_run_started_at="2026-06-16T13:31:00Z",
             current_head_sha="e" * 40, sub_skill="execute-plan",
-            commits_since=9, budget_override=budget,
+            commits_since=budget + 1, budget_override=budget,
         )
         assert runaway is not None and runaway["reason"] == "unexpected-commits"
 
@@ -10088,6 +10093,7 @@ def test_execute_plan_commit_budget_scales_with_wu_count():
     unexpected-commits. The fix scales by max(phase_count, wu_count) + slack."""
     _guard()
     slack = lazy_core._EXECUTE_PLAN_PHASE_BUDGET_SLACK
+    bookend = lazy_core._EXECUTE_PLAN_BOOKEND_COMMITS
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
 
@@ -10103,9 +10109,9 @@ def test_execute_plan_commit_budget_scales_with_wu_count():
             "- [ ] WU-5 — fifth\n",
             encoding="utf-8",
         )
-        # budget scales by WU count (5), NOT phase count (2): 5 + slack.
+        # budget scales by WU count (5), NOT phase count (2): 5 + slack + bookend.
         budget = lazy_core._execute_plan_commit_budget("execute-plan", str(wu_dense))
-        assert budget == 5 + slack, budget
+        assert budget == 5 + slack + bookend, budget
         # 5 commits (one per WU) now sits WITHIN budget — no false positive.
         marker = {
             "run_started_at": "2026-06-16T13:31:00Z",
@@ -10117,11 +10123,11 @@ def test_execute_plan_commit_budget_scales_with_wu_count():
             current_head_sha="b" * 40, sub_skill="execute-plan",
             commits_since=5, budget_override=budget,
         ) is None
-        # a genuine runaway (beyond the declared work + slack) still trips.
+        # a genuine runaway (beyond the declared work + slack + bookend) still trips.
         runaway = lazy_core.detect_cycle_bracket_friction(
             marker, current_run_started_at="2026-06-16T13:31:00Z",
             current_head_sha="b" * 40, sub_skill="execute-plan",
-            commits_since=5 + slack + 1, budget_override=budget,
+            commits_since=5 + slack + bookend + 1, budget_override=budget,
         )
         assert runaway is not None and runaway["reason"] == "unexpected-commits"
 
@@ -10134,7 +10140,7 @@ def test_execute_plan_commit_budget_scales_with_wu_count():
         )
         assert lazy_core._execute_plan_commit_budget(
             "execute-plan", str(phase_heavy)
-        ) == 4 + slack
+        ) == 4 + slack + bookend
 
         # a legacy plan with WU checkboxes but NO phases: field now budgets by WUs
         # (previously returned None → fell back to the fixed table of 3).
@@ -10146,12 +10152,83 @@ def test_execute_plan_commit_budget_scales_with_wu_count():
         )
         assert lazy_core._execute_plan_commit_budget(
             "execute-plan", str(no_phases_wus)
-        ) == 3 + slack
+        ) == 3 + slack + bookend
 
         # neither phases: nor WU checkboxes → None (fixed-table fallback preserved).
         empty = root / "empty.md"
         empty.write_text("---\nkind: implementation-plan\n---\nprose only\n", encoding="utf-8")
         assert lazy_core._execute_plan_commit_budget("execute-plan", str(empty)) is None
+
+
+def test_execute_plan_commit_budget_absorbs_bookend_status_flips():
+    """Hardening Round 46 (2026-06-30 recurrence, AlgoBooth bug
+    audio-engine-clippy-warnings-fail-rust-gate, Step 7a execute-plan): the budget
+    must absorb the TWO deterministic bookend status-flip commits every /execute-plan
+    cycle makes (`chore(<id>): mark plan In-progress` at the start + `docs/chore(<id>):
+    reconcile — mark plan Complete` at the end), which the per-WU / phase scale_count
+    structurally omits.
+
+    Live recurrence (git-confirmed): the plan declared `phases: [1]` + 4 per-WU
+    checkboxes → scale_count = max(1, 4) = 4. The cycle authored 7 NON-MERGE commits
+    (begin-chore In-progress flip, WU-1/2/3+4, an extra feature-gating lint fix, an
+    in-cycle `revert(...)` self-correction, and the end Complete-reconcile). NONE were
+    merges (so Round 42's --no-merges exclusion does not help). With the pre-Round-46
+    budget of scale_count(4) + slack(2) = 6, the AUTHORED count of 7 tripped
+    unexpected-commits (7 > 6, `budget=6` verbatim in the deny detail). The two
+    bookend commits are the load-bearing overflow. Round 46 budgets them explicitly:
+    scale_count + slack + bookend = 4 + 2 + 2 = 8, so the clean 7-commit cycle no
+    longer false-positives, while a genuine runaway (>8) STILL trips."""
+    _guard()
+    slack = lazy_core._EXECUTE_PLAN_PHASE_BUDGET_SLACK
+    bookend = lazy_core._EXECUTE_PLAN_BOOKEND_COMMITS
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # Exact live fixture: phases: [1] + 4 WU checkboxes (all checked, as at
+        # --cycle-end) → scale_count = max(1, 4) = 4.
+        plan = root / "all-phases-audio-engine-clippy-sweep.md"
+        plan.write_text(
+            "---\nkind: implementation-plan\nstatus: in-progress\n"
+            "phases: [1]\n---\n\n"
+            "- [x] WU-1 — auto-fixable + single-finding lints\n"
+            "- [x] WU-2 — needless_range_loop sweep\n"
+            "- [x] WU-3 — manual_clamp + golden-sensitive float lints\n"
+            "- [x] WU-4 — wildcard_enum_match_arm + error-size, final gate sweep\n",
+            encoding="utf-8",
+        )
+        budget = lazy_core._execute_plan_commit_budget("execute-plan", str(plan))
+        # scale_count(4) + slack + bookend == 4 + 2 + 2 == 8 (was 6 pre-Round-46).
+        assert budget == 4 + slack + bookend, budget
+        assert budget == 8, budget
+
+        marker = {
+            "run_started_at": "2026-06-30T18:00:00Z",
+            "begin_head_sha": "e01a97dd6685" + "0" * 28,
+            "kind": "real",
+        }
+        # The live 7-authored-commit cadence (begin-chore + WUs + extra fix + revert
+        # + end reconcile) now sits WITHIN budget — no false positive.
+        assert lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-30T18:00:00Z",
+            current_head_sha="f" * 40, sub_skill="execute-plan",
+            commits_since=7, budget_override=budget,
+        ) is None
+        # Control: with the PRE-Round-46 budget (scale_count + slack = 6), the same
+        # 7-commit cycle false-positived — proving the bookend term is load-bearing.
+        pre_r46 = 4 + slack
+        false_pos = lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-30T18:00:00Z",
+            current_head_sha="f" * 40, sub_skill="execute-plan",
+            commits_since=7, budget_override=pre_r46,
+        )
+        assert false_pos is not None and false_pos["reason"] == "unexpected-commits"
+        # A genuine runaway (beyond WUs + slack + the 2 bookends) STILL trips — the
+        # runaway ceiling is unchanged in KIND (no gate weakened).
+        runaway = lazy_core.detect_cycle_bracket_friction(
+            marker, current_run_started_at="2026-06-30T18:00:00Z",
+            current_head_sha="f" * 40, sub_skill="execute-plan",
+            commits_since=budget + 1, budget_override=budget,
+        )
+        assert runaway is not None and runaway["reason"] == "unexpected-commits"
 
 
 def test_checkpoint_round_trip():
@@ -23168,6 +23245,8 @@ _TESTS = _TESTS + [
      test_execute_plan_commit_budget_scales_with_phase_count),
     ("test_execute_plan_commit_budget_scales_with_wu_count",
      test_execute_plan_commit_budget_scales_with_wu_count),
+    ("test_execute_plan_commit_budget_absorbs_bookend_status_flips",
+     test_execute_plan_commit_budget_absorbs_bookend_status_flips),
     ("test_f1_repeat_count_debounce_holds_no_consume_between",
      test_f1_repeat_count_debounce_holds_no_consume_between),
     ("test_f1_repeat_count_debounce_increments_with_consume_between",
