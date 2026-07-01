@@ -66,9 +66,9 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 
 ## Work Units
 
-- [ ] WU-8 — build-queue-status.ps1 render `build_fidelity` + `lockers_reaped`
-- [ ] WU-9 — msbuild/SKILL.md copy-lock recognition/recovery prose
-- [ ] WU-10 — mstest/SKILL.md `--no-build` stale-DLL recovery prose
+- [x] WU-8 — build-queue-status.ps1 render `build_fidelity` + `lockers_reaped`
+- [x] WU-9 — msbuild/SKILL.md copy-lock recognition/recovery prose
+- [x] WU-10 — mstest/SKILL.md `--no-build` stale-DLL recovery prose
 
 ---
 
@@ -81,7 +81,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-8 — build-queue-status.ps1 render `build_fidelity` + `lockers_reaped`
 
 - **Scope (PHASES deliverables):**
-  - [ ] `build-queue-status.ps1`: extend the hygiene render to print `build_fidelity` (flag `log-failure-override` prominently) and `lockers_reaped` (count/PIDs).
+  - [x] `build-queue-status.ps1`: extend the hygiene render to print `build_fidelity` (flag `log-failure-override` prominently) and `lockers_reaped` (count/PIDs).
 - **TDD:** no (display edit — verified by running the script against a synthetic results JSON per the gate above). Mechanical: extends an existing render loop; no logic/design.
 - **Files to create/modify:** `user/scripts/build-queue-status.ps1` [VERIFY: `grep -n "hygiene\|result_fidelity\|fidelityStr" "C:/Users/JacobMadsen/source/repos/claude-config/user/scripts/build-queue-status.ps1"` → hygiene read L165-172, `$line` build L173, `no-output` highlight L174-175]
 - **Implementation goal:** In the existing hygiene render block (L157-180), after reading `$fidelity`/`$recycled`/`$quarantinedCount`, ALSO read `$buildFidelity = Get-SafeValue { $hygiene.build_fidelity }` and `$lockersReaped = @(Get-SafeValue { $hygiene.lockers_reaped } $null)`. Extend the `$line` string (currently `"hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3}"` at L173) to append `| build_fidelity={buildFidelity} | lockers_reaped={count}`. Mirror the existing `no-output` `Write-Host … -ForegroundColor Yellow` highlight pattern (L174-175): when `$buildFidelity -eq 'log-failure-override'`, print the line in a prominent color (Yellow/Red) with a `[BUILD LIED — copy-lock override fired]` tag so it stands out; otherwise `Write-Output` normally. Reuse `Get-SafeValue` for every field read (legacy results files without the new fields must render `n/a`/`0`, never throw).
@@ -91,7 +91,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-9 — msbuild/SKILL.md copy-lock recognition/recovery prose
 
 - **Scope (PHASES deliverables):**
-  - [ ] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md`: concise prose — what a `build_fidelity: log-failure-override` result means, the MSB3027/copy-lock signature, and the recovery (locker reaped automatically; if it recurs, check `/build-queue-status`), pointing at repo `CLAUDE.local.md` for depth.
+  - [x] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md`: concise prose — what a `build_fidelity: log-failure-override` result means, the MSB3027/copy-lock signature, and the recovery (locker reaped automatically; if it recurs, check `/build-queue-status`), pointing at repo `CLAUDE.local.md` for depth.
 - **TDD:** no (docs). Mechanical: pure prose about behavior Parts 1–2 already shipped.
 - **Files to create/modify:** `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` [VERIFY: `ls "C:/Users/JacobMadsen/source/repos/claude-config/repos/cognito-forms/.claude/skills/msbuild/SKILL.md"`]
 - **Implementation goal:** Add a short "Recognizing a copy-lock false-success" subsection (a few lines — this is a thin execution wrapper, keep it concise). Cover: (1) the MSB3027/MSB3021 "Build FAILED but exit 0" copy-lock signature; (2) that the queue now overrides the bogus exit and records `build_fidelity: log-failure-override` in `/build-queue-status` hygiene; (3) that a leftover-locker (`testhost`/`dotnet`) is now reaped automatically before the copy — if a copy-lock recurs, check `/build-queue-status` for the per-build hygiene outcome before manually killing anything. Point at the repo `CLAUDE.local.md` Build & Test Workflow section for depth (it already documents the MSB3027/quarantine story). Do NOT restructure the existing wrapper prose; append the subsection.
@@ -101,7 +101,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-10 — mstest/SKILL.md `--no-build` stale-DLL recovery prose
 
 - **Scope (PHASES deliverables):**
-  - [ ] `repos/cognito-forms/.claude/skills/mstest/SKILL.md`: prose on the `--no-build` stale-DLL trap, the new staleness warning, and "rebuild before trusting a red" guidance.
+  - [x] `repos/cognito-forms/.claude/skills/mstest/SKILL.md`: prose on the `--no-build` stale-DLL trap, the new staleness warning, and "rebuild before trusting a red" guidance.
 - **TDD:** no (docs). Mechanical.
 - **Files to create/modify:** `repos/cognito-forms/.claude/skills/mstest/SKILL.md` [VERIFY: `grep -n "no-build" "C:/Users/JacobMadsen/source/repos/claude-config/repos/cognito-forms/.claude/skills/mstest/SKILL.md"` → `--no-build` noted ~L11]
 - **Implementation goal:** Add a short "Stale-DLL trap (`--no-build`)" subsection. Cover: (1) `/mstest` runs `--no-build`, so it tests whatever `bin/Debug` DLL exists — which may be STALE if the last build lost the copy race (MSB3027); (2) `test-filtered.ps1` now emits a staleness WARN (and a distinct exit code — reference the exit code WU-7 shipped) when the target test DLL predates its source or the last build's `build_fidelity` was a failure/override; (3) recovery: **rebuild with `/msbuild` before trusting a red** — a failing test against a stale DLL is not a real failure. Keep it concise (thin wrapper). Do NOT restructure existing prose; append the subsection.

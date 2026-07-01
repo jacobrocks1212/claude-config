@@ -144,9 +144,9 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Scope:** Surface the new hygiene fields in the status view and give the agent fast recognition/recovery prose in the two skills. Low-risk display/docs layer — the thinnest layer, per the SPEC's answer to "should we update the skills?"
 
 **Deliverables:**
-- [ ] `build-queue-status.ps1`: extend the hygiene render (L138–180) to print `build_fidelity` (flag `log-failure-override` prominently) and `lockers_reaped` (count/PIDs).
-- [ ] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md`: concise prose — what a `build_fidelity: log-failure-override` result means, the MSB3027/copy-lock signature, and the recovery (locker reaped automatically; if it recurs, check `/build-queue-status`), pointing at repo `CLAUDE.local.md` for depth.
-- [ ] `repos/cognito-forms/.claude/skills/mstest/SKILL.md`: prose on the `--no-build` stale-DLL trap, the new staleness warning, and "rebuild before trusting a red" guidance.
+- [x] `build-queue-status.ps1`: extend the hygiene render (L138–180) to print `build_fidelity` (flag `log-failure-override` prominently) and `lockers_reaped` (count/PIDs).
+- [x] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md`: concise prose — what a `build_fidelity: log-failure-override` result means, the MSB3027/copy-lock signature, and the recovery (locker reaped automatically; if it recurs, check `/build-queue-status`), pointing at repo `CLAUDE.local.md` for depth.
+- [x] `repos/cognito-forms/.claude/skills/mstest/SKILL.md`: prose on the `--no-build` stale-DLL trap, the new staleness warning, and "rebuild before trusting a red" guidance.
 
 **Minimum Verifiable Behavior:** `build-queue-status.ps1` on a results file carrying the new fields prints them (including the `log-failure-override` highlight); the two SKILL.md files render the new guidance.
 
@@ -160,6 +160,12 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Testing Strategy:** run `build-queue-status.ps1` against a synthetic results JSON carrying the new fields; visual confirmation of prose.
 
 **Integration Notes for Next Phase:** terminal phase. After this, `__mark_fixed__` gate-flips the SPEC to Fixed and writes `FIXED.md`.
+
+**Implementation Notes (2026-07-01):**
+- **Work completed (WU-8/WU-9/WU-10, all deliverables):** `build-queue-status.ps1` (191L) hygiene render extended to read `hygiene.build_fidelity` + `hygiene.lockers_reaped` via the existing `Get-SafeValue` fail-open pattern (normalize missing/legacy → `n/a`/`0`), append both to the summary line, and add a `Write-Host -ForegroundColor Red` branch — ordered BEFORE the existing yellow `no-output` branch — that fires on `build_fidelity=log-failure-override` tagging `[BUILD LIED - copy-lock override fired]`. `msbuild/SKILL.md` (42L) + `mstest/SKILL.md` (45L) each gained one appended concise subsection (frontmatter/Usage/Instructions untouched): msbuild `## Recognizing a copy-lock false-success` (MSB3027/MSB3021 exit-0 signature → queue override → `build_fidelity: log-failure-override` in `/build-queue-status`; auto-reap self-heal + check-status-before-manual-kill; `CLAUDE.local.md` pointer); mstest `## Stale-DLL trap (--no-build)` (`--no-build` tests stale bits → `test-filtered.ps1` WARN + distinct `exit 4` when DLL missing/older-than-source/`build_fidelity: log-failure-override`; naming exit 1/3; rebuild-with-`/msbuild`-before-trusting-a-red recovery).
+- **StrictMode pitfall (WU-8, caught + fixed in-gate):** `@(if (...) {} else {})` collapses to `$null` under `Set-StrictMode`, and `@($varHoldingNull)` yields `Count=1` not `0` — so the naive form mis-rendered `lockers_reaped` on legacy results files. Final form `$lockersReaped = @(if ($null -ne $lockersReapedRaw) { $lockersReapedRaw })` is verified correct for both populated and absent cases.
+- **Files modified:** `user/scripts/build-queue-status.ps1` (191L), `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` (42L), `repos/cognito-forms/.claude/skills/mstest/SKILL.md` (45L). All three file-disjoint — dispatched as one same-message Sonnet batch.
+- **Gate:** independent status-render gate against a synthetic `results/<seq>.json` → `log-failure-override` renders Red with the `[BUILD LIED]` tag + `lockers_reaped=2 (40380,40381)`; legacy file (no new fields) renders `build_fidelity=n/a | lockers_reaped=0` without throwing. `project-skills.py` → exit 0, `lint-skills.py` → exit 0. (Both `/msbuild` + `/mstest` are repo-scoped skills, so they have no `skills-projected/` copy by design — the projector only expands the 85 user-level skills; edits verified through the source + symlink chain. NOTE: `python` on this host is a Microsoft Store app-execution-alias stub — use `py` to invoke the projector/lint.)
 
 ---
 

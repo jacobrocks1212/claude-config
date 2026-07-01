@@ -170,8 +170,16 @@ if ($null -ne $hygieneSeq) {
 		$quarantinedCount = @(Get-SafeValue { $hygiene.quarantined_artifacts } $null).Count
 		$fidelity = Get-SafeValue { $hygiene.result_fidelity }
 		$fidelityStr = if ($null -ne $fidelity -and $fidelity -ne '') { $fidelity } else { 'n/a' }
-		$line = "hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3}" -f $hygieneSeq, $recycled, $quarantinedCount, $fidelityStr
-		if ($fidelityStr -eq 'no-output') {
+		$buildFidelity = Get-SafeValue { $hygiene.build_fidelity }
+		$buildFidelityStr = if ($null -ne $buildFidelity -and $buildFidelity -ne '') { $buildFidelity } else { 'n/a' }
+		$lockersReapedRaw = Get-SafeValue { $hygiene.lockers_reaped } $null
+		$lockersReaped = @(if ($null -ne $lockersReapedRaw) { $lockersReapedRaw })
+		$lockersReapedCount = $lockersReaped.Count
+		$lockersReapedStr = if ($lockersReapedCount -gt 0) { "{0} ({1})" -f $lockersReapedCount, ($lockersReaped -join ',') } else { '0' }
+		$line = "hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3} | build_fidelity={4} | lockers_reaped={5}" -f $hygieneSeq, $recycled, $quarantinedCount, $fidelityStr, $buildFidelityStr, $lockersReapedStr
+		if ($buildFidelityStr -eq 'log-failure-override') {
+			Write-Host ($line + '  [BUILD LIED - copy-lock override fired]') -ForegroundColor Red
+		} elseif ($fidelityStr -eq 'no-output') {
 			Write-Host ($line + '  [UNVERIFIED - no test output captured]') -ForegroundColor Yellow
 		} else {
 			Write-Output $line

@@ -37,3 +37,9 @@ MSTest filter expressions: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
 3. Run the command using Bash with `timeout: 600000` (10 min). A test run can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast runs because Bash returns as soon as the command exits. Do not interpret or reformat the output.
 
 4. If the run is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead, then poll its log and read `$HOME/.claude/state/build-queue/results/<seq>.json` (the `exit_code` field) for the outcome — the `seq` is printed in the `build-queue: enqueued as seq=N` line.
+
+## Stale-DLL trap (--no-build)
+
+Because this skill runs `--no-build`, a red result can be bogus if the DLL under test is stale — e.g. the last build silently lost a DLL copy race (MSB3027 copy-lock). `test-filtered.ps1` now guards against this: it emits a staleness WARN and exits **`4`** when the target test DLL is missing, predates its source (`.cs`/`.csproj`) files, or the last build's hygiene recorded `build_fidelity: log-failure-override`. (Other distinct exit codes: `1` = not in a git repo, `3` = zero test output captured.)
+
+**On the staleness WARN / exit 4: rebuild with `/msbuild` before trusting a red.** A failing test against a stale DLL is not a real failure — rebuild, then re-run `/mstest`.
