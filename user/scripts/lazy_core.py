@@ -1697,9 +1697,16 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     regex-matched header returns False (caller keeps write-plan / execute-plan).
     Returns False if no unchecked rows are present.
 
+    Returns True when the ONLY remaining unchecked rows are all exempt — whether
+    verification-only OR inside a Superseded phase (or a mix). This is the
+    Step-7 bypass signal: no genuine implementation work remains, so fall through
+    to the Step-9 MCP gate instead of looping on write-plan.
+
     Superseded phases: a ``### Phase N:`` (or ``## Phase N:``) heading enters a
     new phase and resets tracking. The first ``**Status:** Superseded`` bold-status
-    line seen inside that phase marks the entire phase exempt.
+    line seen inside that phase marks the entire phase exempt; its unchecked rows
+    count toward the True return (bypass-eligible) — they are descoped to a
+    successor feature, never remaining implementation work.
     """
     in_verification = False        # legacy: enclosing header matched the regex
     section_has_marker = False     # marker present on the enclosing header line
@@ -1707,6 +1714,17 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     warned_headers: set[str] = set()  # de-dupe diagnostics per header text
     in_superseded_phase = False
     saw_unchecked = False
+    # Superseded-phase unchecked rows are exempt (deliverables descoped to a
+    # successor feature) and MUST count toward the "all remaining unchecked are
+    # exempt → True" return exactly like verification-only rows. They are
+    # `continue`d before ``saw_unchecked`` is set, so without a separate flag a
+    # feature whose ONLY remaining unchecked rows all sit inside a Superseded
+    # phase returns ``saw_unchecked=False`` — the Step-7 workstation bypass never
+    # fires and the state machine loops on write-plan forever against an
+    # already-implemented + MCP-validated feature (split-editor Phase 6,
+    # 2026-07-01; the __mark_complete__ gate itself already exempts Superseded,
+    # so the bypass was the sole hold-out).
+    saw_superseded_unchecked = False
     in_fence = False
     for line in phases_text.splitlines():
         stripped = line.strip()
@@ -1774,8 +1792,10 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
         if re.match(r"^-\s*\[\s*\]", stripped):
             # Unchecked boxes inside a Superseded phase are out of scope —
             # deliverables moved to a successor feature; do not treat as remaining
-            # implementation work.
+            # implementation work. Record that we saw one so an all-Superseded
+            # remainder still returns True (bypass-eligible) at the end.
             if in_superseded_phase:
+                saw_superseded_unchecked = True
                 continue
             saw_unchecked = True
             row_has_marker = _VERIFICATION_ONLY_MARKER in line
@@ -1801,7 +1821,12 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
                 continue
             # Neither marker nor regex-matched header → genuine implementation row.
             return False
-    return saw_unchecked
+    # True iff there were remaining unchecked rows AND every one was exempt —
+    # verification-only (saw_unchecked, all reached a `continue`) OR inside a
+    # Superseded phase (saw_superseded_unchecked). A genuine implementation row
+    # would have returned False above. Genuinely-zero-unchecked returns False
+    # (both flags stay False) — unchanged.
+    return saw_unchecked or saw_superseded_unchecked
 
 
 # A phase heading in PHASES.md: ``## Phase ...`` or ``### Phase ...`` (two or

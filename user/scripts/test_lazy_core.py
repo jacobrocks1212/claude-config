@@ -618,6 +618,67 @@ def test_ruvonly_seam_audit_heading_variants():
         assert result is True, f"expected True for header {header!r}, got {result}"
 
 
+def test_ruvonly_all_remaining_unchecked_in_superseded_phase():
+    """When EVERY remaining unchecked row sits inside a Superseded phase, the
+    detector returns True (bypass-eligible) — the rows are descoped to a
+    successor feature, never remaining implementation work.
+
+    Regression for the split-editor Phase 6 no-progress loop (2026-07-01): every
+    implementation plan part was Complete and MCP validation had already written
+    VALIDATED.md, but Phase 6 (cross-panel drag) was Superseded — its scope moved
+    to the follow-up feature `split-editor-cross-panel-drag` — leaving 6 unchecked
+    `- [ ]` deliverables under `**Status:** Superseded`. Before the fix those rows
+    were `continue`d WITHOUT setting saw_unchecked, so the function returned
+    saw_unchecked=False; the Step-7 workstation bypass never fired and lazy-state
+    looped on write-plan against an already-implemented + validated feature (the
+    __mark_complete__ gate itself already exempts Superseded, so the bypass was
+    the sole hold-out). Superseded phases are a permanent PHASES.md convention
+    (descope-to-successor), so this recurs on every such feature.
+    """
+    _guard()
+    text = (
+        "### Phase 5: Active-panel routing\n"
+        "**Status:** Complete\n"
+        "- [x] Implementation complete\n"
+        "### Phase 6: Cross-Panel Block Movement\n"
+        "**Status:** Superseded\n"
+        "> Descoped 2026-07-01 — scope moved to `split-editor-cross-panel-drag`.\n"
+        "**Deliverables:**\n"
+        "- [ ] Lift drag state to layout scope\n"
+        "- [ ] Drop indicators\n"
+        "- [ ] Reassignment transaction\n"
+        "### Phase 7: Scroll sync\n"
+        "**Status:** Complete\n"
+        "- [x] Implementation complete\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (all remaining unchecked rows are in a Superseded phase), "
+        f"got {result}."
+    )
+
+
+def test_ruvonly_superseded_unchecked_plus_genuine_impl_still_false():
+    """A Superseded-phase unchecked row does NOT mask a genuine implementation
+    row in a non-Superseded phase — real remaining work still returns False so
+    the bypass does not fire and write-plan/execute-plan is kept."""
+    _guard()
+    text = (
+        "### Phase 1: Real work\n"
+        "**Status:** In-progress\n"
+        "**Deliverables:**\n"
+        "- [ ] build the actual feature\n"
+        "### Phase 6: Descoped\n"
+        "**Status:** Superseded\n"
+        "- [ ] descoped deliverable\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is False, (
+        f"expected False (genuine impl row outside the Superseded phase remains), "
+        f"got {result}."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests: fence-awareness — count_deliverables
 # ---------------------------------------------------------------------------
@@ -15934,6 +15995,8 @@ _TESTS = [
     ("test_ruvonly_reachability_smoke_heading", test_ruvonly_reachability_smoke_heading),
     ("test_ruvonly_full_chain_seam_audit_bold_subsection", test_ruvonly_full_chain_seam_audit_bold_subsection),
     ("test_ruvonly_seam_audit_heading_variants", test_ruvonly_seam_audit_heading_variants),
+    ("test_ruvonly_all_remaining_unchecked_in_superseded_phase", test_ruvonly_all_remaining_unchecked_in_superseded_phase),
+    ("test_ruvonly_superseded_unchecked_plus_genuine_impl_still_false", test_ruvonly_superseded_unchecked_plus_genuine_impl_still_false),
     # fence-awareness: count_deliverables
     ("test_count_deliverables_skips_fenced_checkboxes", test_count_deliverables_skips_fenced_checkboxes),
     ("test_count_deliverables_multiple_fences", test_count_deliverables_multiple_fences),
