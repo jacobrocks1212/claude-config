@@ -22,6 +22,7 @@
         quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
         result_fidelity: "verified" | "no-output" | "n/a"  # "no-output" = test op produced zero results; "verified" = test op had real output; "n/a" = build op
         build_fidelity: "log-failure-override" | "verified" | "n/a"  # "log-failure-override" = a build op exited 0 but its captured log matched a known MSBuild failure signature (Test-BuildLogFailure), so the exit code/buildFailed were overridden to failure BEFORE the quarantine gate; "verified" = build op needed no override; "n/a" = non-build op (e.g. test)
+        lockers_reaped: [<pid>]          # PIDs of in-worktree processes reaped (Stop-DllLockers) BEFORE a build op started, to clear a leftover DLL lock ahead of the copy step (empty on a clean run / test op / no worktree / fail-open)
       }
     }
     Job-Object reap of build descendants happens unconditionally but records no PID list
@@ -71,6 +72,7 @@ function Format-ProcArg {
 $job = [IntPtr]::Zero
 $vbcscompilerRecycled = $false
 $quarantinedArtifacts = @()
+$lockersReaped = @()
 $execLeaf = Get-SafeValue { Split-Path -Leaf $Exec } ''
 $isBuildOp = $execLeaf -match 'build-filtered\.ps1$'
 $buildLogPath = $null
@@ -103,6 +105,13 @@ try {
 			$startProcParams['RedirectStandardOutput'] = $buildLogPath
 			$startProcParams['RedirectStandardError']  = (Join-Path $logsDir "$Seq.build.err.log")
 		}
+	}
+
+	# Reap any lingering in-worktree DLL lockers BEFORE the build starts, so a leftover
+	# locker from a prior run is gone by the time MSBuild reaches the copy step. Build
+	# ops only (never test ops); no-op when there is no worktree to scope the reap to.
+	if ($isBuildOp -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
+		$lockersReaped = Get-SafeValue { @(Stop-DllLockers -WorktreeRoot $Worktree) } @()
 	}
 
 	$proc = Start-Process @startProcParams
@@ -169,6 +178,7 @@ $resultBody = [ordered]@{
 		quarantined_artifacts = $quarantinedArtifacts
 		result_fidelity       = $resultFidelity
 		build_fidelity        = $buildFidelity
+		lockers_reaped        = $lockersReaped
 	}
 } | ConvertTo-Json -Compress -Depth 5
 

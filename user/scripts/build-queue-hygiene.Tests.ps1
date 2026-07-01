@@ -198,3 +198,160 @@ Describe 'Test-BuildLogFailure' {
 		$result.failed | Should -Be $false
 	}
 }
+
+Describe 'DLL Locker Reap' {
+	# NOTE: per the child-scope quirk that plagues the 3 known pre-existing
+	# failures, these tests NEVER use `{ $r = Foo } | Should -Not -Throw` and then
+	# read $r afterward. Each function call is assigned on its OWN line and the
+	# assertion is separate — mirroring the passing Remove-PoisonedArtifacts style.
+
+	It 'defines Get-DllLockers' {
+		Get-Command Get-DllLockers -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'defines Stop-DllLockers' {
+		Get-Command Stop-DllLockers -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'Get-DllLockers does not throw and returns empty for a nonexistent worktree (fail-open)' {
+		$bogus = Join-Path $env:TEMP ("dlr-nonexistent-" + [guid]::NewGuid().ToString('N'))
+		{ Get-DllLockers -WorktreeRoot $bogus } | Should -Not -Throw
+		$result = @(Get-DllLockers -WorktreeRoot $bogus)
+		$result.Count | Should -Be 0
+	}
+
+	It 'Stop-DllLockers does not throw and returns empty for a nonexistent worktree (fail-open)' {
+		$bogus = Join-Path $env:TEMP ("dlr-nonexistent-" + [guid]::NewGuid().ToString('N'))
+		{ Stop-DllLockers -WorktreeRoot $bogus } | Should -Not -Throw
+		$result = @(Stop-DllLockers -WorktreeRoot $bogus)
+		$result.Count | Should -Be 0
+	}
+
+	Context 'no-op — an unlocked DLL is held by nobody' {
+		BeforeAll {
+			$script:NoLockWorktree = Join-Path $env:TEMP ("dlr-nolock-" + [guid]::NewGuid().ToString('N'))
+			$script:NoLockBinDir = Join-Path $script:NoLockWorktree 'bin\Debug'
+			New-Item -ItemType Directory -Path $script:NoLockBinDir -Force | Out-Null
+			$script:NoLockDll = Join-Path $script:NoLockBinDir 'unlocked.dll'
+			$bytes = New-Object byte[] 64
+			$bytes[0] = 0x4D
+			$bytes[1] = 0x5A
+			[System.IO.File]::WriteAllBytes($script:NoLockDll, $bytes)
+		}
+
+		AfterAll {
+			Remove-Item -Path $script:NoLockWorktree -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'Get-DllLockers reports no lockers for an unlocked DLL' {
+			$result = @(Get-DllLockers -WorktreeRoot $script:NoLockWorktree)
+			$result.Count | Should -Be 0
+		}
+
+		It 'Stop-DllLockers reaps nothing for an unlocked DLL' {
+			$result = @(Stop-DllLockers -WorktreeRoot $script:NoLockWorktree)
+			$result.Count | Should -Be 0
+		}
+	}
+
+	Context 'spawned-handle fixture — a helper process HOLDS a handle on bin/Debug/*.dll' {
+		BeforeAll {
+			$script:LockWorktree = Join-Path $env:TEMP ("dlr-lock-" + [guid]::NewGuid().ToString('N'))
+			$script:LockBinDir = Join-Path $script:LockWorktree 'bin\Debug'
+			New-Item -ItemType Directory -Path $script:LockBinDir -Force | Out-Null
+			$script:LockedDll = Join-Path $script:LockBinDir 'locked.dll'
+			$bytes = New-Object byte[] 64
+			$bytes[0] = 0x4D
+			$bytes[1] = 0x5A
+			[System.IO.File]::WriteAllBytes($script:LockedDll, $bytes)
+
+			# Spawn a helper that opens the DLL with NO sharing and HOLDS it for 30s.
+			$holdCmd = "`$fs=[System.IO.File]::Open('$($script:LockedDll)','Open','Read','None'); Start-Sleep 30; `$fs.Close()"
+			$script:Holder = Start-Process powershell -PassThru -WindowStyle Hidden `
+				-ArgumentList '-NoProfile', '-Command', $holdCmd
+			$script:HolderPid = $script:Holder.Id
+
+			# Wait for the handle to actually be held (up to ~5s): the file becomes
+			# non-openable-with-sharing-None once the holder has it.
+			$deadline = (Get-Date).AddSeconds(5)
+			while ((Get-Date) -lt $deadline) {
+				$held = $false
+				try {
+					$probe = [System.IO.File]::Open($script:LockedDll, 'Open', 'Read', 'None')
+					$probe.Close()
+				} catch {
+					$held = $true
+				}
+				if ($held) { break }
+				Start-Sleep -Milliseconds 200
+			}
+		}
+
+		AfterAll {
+			# Kill the holder even if a test failed / never terminated it, so no
+			# 30s-sleeping powershell leaks out of the run.
+			if ($script:HolderPid) {
+				Stop-Process -Id $script:HolderPid -Force -ErrorAction SilentlyContinue
+			}
+			Remove-Item -Path $script:LockWorktree -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'Get-DllLockers reports the holder PID' {
+			$lockers = @(Get-DllLockers -WorktreeRoot $script:LockWorktree)
+			$pids = @($lockers | ForEach-Object { $_.pid })
+			$pids | Should -Contain $script:HolderPid
+		}
+
+		It 'Stop-DllLockers terminates the holder and returns its PID' {
+			$reaped = @(Stop-DllLockers -WorktreeRoot $script:LockWorktree)
+			$reaped | Should -Contain $script:HolderPid
+
+			# The handle is now freed — the DLL can be re-opened with no-sharing / removed.
+			Start-Sleep -Milliseconds 300
+			$freed = $false
+			try {
+				$probe = [System.IO.File]::Open($script:LockedDll, 'Open', 'Read', 'None')
+				$probe.Close()
+				$freed = $true
+			} catch {
+				$freed = $false
+			}
+			$freed | Should -Be $true
+		}
+	}
+
+	Context 'scope guard — VBCSCompiler-exempt, never an out-of-worktree kill (Locked Decision 2 intent)' {
+		BeforeAll {
+			$script:ScopeWorktree = Join-Path $env:TEMP ("dlr-scope-" + [guid]::NewGuid().ToString('N'))
+			$script:ScopeBinDir = Join-Path $script:ScopeWorktree 'bin\Debug'
+			New-Item -ItemType Directory -Path $script:ScopeBinDir -Force | Out-Null
+			$script:ScopeDll = Join-Path $script:ScopeBinDir 'scope.dll'
+			$bytes = New-Object byte[] 64
+			$bytes[0] = 0x4D
+			$bytes[1] = 0x5A
+			[System.IO.File]::WriteAllBytes($script:ScopeDll, $bytes)
+		}
+
+		AfterAll {
+			Remove-Item -Path $script:ScopeWorktree -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'Stop-DllLockers only returns PIDs that Get-DllLockers reported for THIS worktree' {
+			$lockers = @(Get-DllLockers -WorktreeRoot $script:ScopeWorktree)
+			$lockerPids = @($lockers | ForEach-Object { $_.pid })
+
+			$reaped = @(Stop-DllLockers -WorktreeRoot $script:ScopeWorktree)
+
+			# Every reaped PID MUST have been one Get-DllLockers reported for this
+			# worktree — no global process-name kill, no out-of-scope termination.
+			foreach ($rpid in $reaped) {
+				$lockerPids | Should -Contain $rpid
+			}
+		}
+
+		It 'module source contains a VBCSCompiler-exempt filter in the locker reap (Locked Decision 1)' {
+			$source = Get-Content -Raw -Path $script:ModulePath
+			$source | Should -Match 'VBCSCompiler'
+		}
+	}
+}

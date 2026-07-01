@@ -73,10 +73,10 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Scope:** Kill the leftover `testhost`/`dotnet` process holding a handle on the worktree's `bin/Debug` DLLs *before* the build's copy step, so the copy succeeds instead of failing MSB3027. Scoped to the worktree's own artifacts — never a global process kill (honors the hygiene work's Locked Decision 1).
 
 **Deliverables:**
-- [ ] `build-queue-hygiene.ps1`: new `Get-DllLockers -WorktreeRoot` (~L330) — enumerate processes holding handles on `bin/Debug/**/*.dll` under the worktree. Prefer the Windows **Restart Manager** API (`RmStartSession`/`RmRegisterResources`/`RmGetList`) via `Add-Type` P/Invoke (reuse the existing native-methods pattern); return a typed locker list. Fail-open via `Get-SafeValue`.
-- [ ] `build-queue-hygiene.ps1`: new `Stop-DllLockers` — terminate only the lockers `Get-DllLockers` returned that are within/for this worktree; never touch VBCSCompiler or out-of-worktree processes. Return the reaped PIDs.
-- [ ] `build-queue-runner.ps1`: call the reap before `New-BuildJobObject` (L83); record `lockers_reaped` (PID list / count) in the hygiene block.
-- [ ] Tests: `build-queue-hygiene.Tests.ps1` — `Describe 'DLL Locker Reap'`: fail-open on a bad/absent worktree, no-op when nothing is locked, and (fixture) a spawned process holding a temp-file handle is identified by `Get-DllLockers` and freed by `Stop-DllLockers`.
+- [x] `build-queue-hygiene.ps1`: new `Get-DllLockers -WorktreeRoot` (~L513) — enumerate processes holding handles on `bin/Debug/**/*.dll` under the worktree. Prefer the Windows **Restart Manager** API (`RmStartSession`/`RmRegisterResources`/`RmGetList`) via `Add-Type` P/Invoke (reuse the existing native-methods pattern); return a typed locker list. Fail-open via `Get-SafeValue`.
+- [x] `build-queue-hygiene.ps1`: new `Stop-DllLockers` (~L658) — terminate only the lockers `Get-DllLockers` returned that are within/for this worktree; never touch VBCSCompiler or out-of-worktree processes. Return the reaped PIDs.
+- [x] `build-queue-runner.ps1`: call the reap before the build child launches (`Start-Process`, guarded on `$isBuildOp` + non-empty `$Worktree`); record `lockers_reaped` (PID list) in the hygiene block.
+- [x] Tests: `build-queue-hygiene.Tests.ps1` — `Describe 'DLL Locker Reap'`: fail-open on a bad/absent worktree, no-op when nothing is locked, and (fixture) a spawned process holding a temp-file handle is identified by `Get-DllLockers` and freed by `Stop-DllLockers`.
 
 **Minimum Verifiable Behavior:** the new `Describe 'DLL Locker Reap'` Pester block passes, including the spawned-process fixture where `Stop-DllLockers` frees a held handle.
 
@@ -96,6 +96,12 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 
 **Integration Notes for Next Phase:** `lockers_reaped` joins the hygiene block for Phase 4 surfacing. Highest-risk phase — if Restart Manager P/Invoke proves flaky, the scoped `Get-Process testhost,dotnet` + worktree-path filter is the documented fallback (still never global).
 
+**Implementation Notes (2026-07-01):**
+- **Work completed (WU-4/WU-5, all deliverables):** `build-queue-hygiene.ps1` gained `Get-DllLockers -WorktreeRoot` (~L513) and `Stop-DllLockers -WorktreeRoot` (~L658). `Get-DllLockers` enumerates `bin/Debug/**/*.dll` under the worktree and resolves lockers via the **Windows Restart Manager** (`RmStartSession`→`RmRegisterResources`→`RmGetList` two-call size-then-fill), extending the existing `BuildQueueHygiene.NativeMethods` `Add-Type` block (one class, no duplicate P/Invoke). `Stop-DllLockers` reaps only the reported in-worktree lockers, EXEMPTs VBCSCompiler by name (Locked Decision 1), never a global/out-of-worktree kill (Locked Decision 2), returns the reaped `[int[]]`. Both bodies wrapped `Get-SafeValue { … } @()` (fail-open to empty). **Shipped path: Restart Manager** — the spawned-handle fixture worked reliably, so the documented `Get-Process testhost,dotnet` fallback was NOT needed.
+- **Runner wiring (WU-5):** `build-queue-runner.ps1` (204L) reaps before the build child launches — `if ($isBuildOp -and -not [string]::IsNullOrWhiteSpace($Worktree)) { $lockersReaped = Get-SafeValue { @(Stop-DllLockers -WorktreeRoot $Worktree) } @() }` at L113-115, placed after the log-redirect block and BEFORE `$proc = Start-Process` (L117) so the leftover lock is cleared before MSBuild's copy step. `lockers_reaped` added to the hygiene `[ordered]@{}` block + documented in the results-schema doc-comment.
+- **Files modified:** `user/scripts/build-queue-hygiene.ps1` (803L), `user/scripts/build-queue-hygiene.Tests.ps1` (357L, +9 `DLL Locker Reap` tests incl. spawned-handle fixture), `user/scripts/build-queue-runner.ps1` (204L).
+- **Gate:** `Invoke-Pester build-queue-hygiene.Tests.ps1` → 32 passed / 3 failed / 35 total. The 3 failures are the SAME pre-existing Job-Object sandbox quirks carried from Phase 1 (`Add-ProcessToBuildJob`/`Stop-BuildJobTree` zero-handle, `returns a [bool]`) — zero new failures (delta = exactly the +9 new passing + the WU-3 field). PARSE OK.
+
 ---
 
 ### Phase 3: Test honesty — a passing run certifies green
@@ -103,10 +109,10 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Scope:** Fix `test-filtered.ps1` so a genuinely-passing modern `dotnet test` run is recognized (real pass/fail count, no spurious exit-3), and refuse/warn when `/mstest --no-build` would run a stale `bin/Debug` DLL.
 
 **Deliverables:**
-- [ ] `test-filtered.ps1`: extend the L60 summary regex to also match modern output — `Passed!  - Failed: X, Passed: Y, Skipped: Z, Total: N` and the `Failed! - ...` variant — so `summarySeen` sets and `resultLineCount` reflects the real counts. Preserve the exit-3 contract (fires ONLY on genuine zero-output).
-- [ ] `test-filtered.ps1`: emit a parsed pass/fail/total line to the filtered output so `/mstest` surfaces a real count.
-- [ ] `test-filtered.ps1`: staleness guard near the `--no-build` args (L55) — before running, if the target `bin/Debug` test DLL is older than its source project (or the worktree's last recorded build `build_fidelity` was a failure/override), emit a clear WARN (and a distinct exit code, or a refuse-with-guidance) telling the agent to rebuild rather than silently testing stale bits.
-- [ ] Tests: a Pester block (in `build-queue-hygiene.Tests.ps1` or a new `test-filtered.Tests.ps1`) feeding representative modern + legacy `dotnet test` output lines and asserting `summarySeen`/count/exit behavior, plus a stale-DLL fixture triggering the guard.
+- [x] `test-filtered.ps1`: extend the summary regex to also match modern output — `Passed!  - Failed: X, Passed: Y, Skipped: Z, Total: N` and the `Failed! - ...` variant — so `summarySeen` sets and `resultLineCount` reflects the real counts (via pure `Test-SummaryLine` helper). Preserve the exit-3 contract (fires ONLY on genuine zero-output).
+- [x] `test-filtered.ps1`: emit a parsed pass/fail/total line to the filtered output so `/mstest` surfaces a real count.
+- [x] `test-filtered.ps1`: staleness guard (pure `Test-StaleTestDll`, wired into `Invoke-Main` before `dotnet test`) — if the target `bin/Debug` test DLL is missing/older than its source project (or the newest build result's `build_fidelity == 'log-failure-override'`), emit a clear WARN naming the DLL and `exit 4` (distinct from `1`/`3`), telling the agent to `/msbuild` first rather than silently testing stale bits. Fail-open (any read error → treat as stale).
+- [x] Tests: `test-filtered.Tests.ps1` — `Describe 'Test-SummaryLine'` (6 tests: modern + legacy output parse, `summarySeen`/count/exit behavior) and `Describe 'Test-StaleTestDll'` (4 tests: fresh→false, source-newer→true, missing→true, no-throw). 10/10 green.
 
 **Minimum Verifiable Behavior:** the regex/summary Pester block passes for modern output (exit 0, `summarySeen` true, correct counts) and for empty output (exit 3); the staleness fixture triggers the guard.
 
@@ -124,6 +130,12 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Testing Strategy:** Pester over captured output-line fixtures (both formats) for the parse; a mtime-fixture for the guard. Real-output confirmation via the spike row.
 
 **Integration Notes for Next Phase:** `/mstest` now yields a trustworthy pass count and a stale-DLL warning — Phase 4's skill prose references both signals.
+
+**Implementation Notes (2026-07-01):**
+- **Work completed (WU-6/WU-7, all deliverables):** `test-filtered.ps1` (171L) refactored so the summary parse is a pure `Test-SummaryLine([string]$line)` helper (returns `@{isSummary; passed; failed; total}`) — widened to match modern `Passed!  - Failed:X, Passed:Y, Skipped:Z, Total:N[, Duration…]` (and the `Failed! - …` variant) via a dedicated capturing regex, falling through to the unchanged legacy alternation. On a modern hit it emits `Results: Passed=X Failed=Y Total=Z`. Added pure `Test-StaleTestDll($DllPath, $ProjectDir)` (WU-7) → stale (`$true`) if the DLL is missing, older than the newest `.cs`/`.csproj` under the project dir, or the newest `results/<seq>.json` carries `hygiene.build_fidelity == 'log-failure-override'`; every read fail-open (defaults to stale on error).
+- **Dot-source seam:** the whole main body is now `function Invoke-Main`, invoked only via `if ($MyInvocation.InvocationName -ne '.') { Invoke-Main }` at the bottom — so `test-filtered.Tests.ps1` dot-sources the helpers WITHOUT spawning `dotnet` (confirmed: GREEN runs emit no "Running tests…"/dotnet output). The staleness guard is wired into `Invoke-Main` before `& dotnet @dotnetArgs`: on stale → WARN naming the DLL + `/msbuild` guidance + `exit 4` (distinct from `1`=no-repo / `3`=no-output). `--no-build` preserved; exit-3 contract byte-identical.
+- **Files modified:** `repos/cognito-forms/.claude/scripts/test-filtered.ps1` (171L), `repos/cognito-forms/.claude/scripts/test-filtered.Tests.ps1` (97L, net-new — `Describe 'Test-SummaryLine'` 6 tests + `Describe 'Test-StaleTestDll'` 4 tests).
+- **Gate:** `Invoke-Pester test-filtered.Tests.ps1` → 10 passed / 0 failed / 10 total. PARSE OK both files. (File-disjoint from the hygiene suite — this repo is claude-config; edits are against the symlink source under `repos/cognito-forms/.claude/scripts/`, never the live worktree.)
 
 ---
 

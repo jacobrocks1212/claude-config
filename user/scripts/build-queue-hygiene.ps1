@@ -89,10 +89,55 @@ namespace BuildQueueHygiene
         public UIntPtr PeakJobMemoryUsed;
     }
 
+    // --- Restart Manager (rstrtmgr.dll) surface: enumerate the processes that
+    //     hold a handle on a worktree's bin/Debug/**/*.dll BEFORE the copy step,
+    //     the root cause of intermittent MSB3027 copy-lock failures. ---
+
+    public enum RM_APP_TYPE
+    {
+        RmUnknownApp = 0,
+        RmMainWindow = 1,
+        RmOtherWindow = 2,
+        RmService = 3,
+        RmExplorer = 4,
+        RmConsole = 5,
+        RmCritical = 1000
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RM_UNIQUE_PROCESS
+    {
+        public int dwProcessId;
+        public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct RM_PROCESS_INFO
+    {
+        public RM_UNIQUE_PROCESS Process;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string strAppName;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+        public string strServiceShortName;
+
+        public RM_APP_TYPE ApplicationType;
+        public uint AppStatus;
+        public uint TSSessionId;
+
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool bRestartable;
+    }
+
     public static class NativeMethods
     {
         public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
         public const int JobObjectExtendedLimitInformation = 9;
+
+        public const int RM_SESSION_KEY_LEN = 16;      // sizeof(GUID)
+        public const int CCH_RM_SESSION_KEY = 32;      // RM_SESSION_KEY_LEN * 2
+        public const int ERROR_MORE_DATA = 234;
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern IntPtr CreateJobObjectW(IntPtr lpJobAttributes, string lpName);
@@ -112,6 +157,33 @@ namespace BuildQueueHygiene
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+        public static extern int RmStartSession(
+            out uint pSessionHandle,
+            int dwSessionFlags,
+            string strSessionKey);
+
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+        public static extern int RmRegisterResources(
+            uint pSessionHandle,
+            uint nFiles,
+            string[] rgsFilenames,
+            uint nApplications,
+            IntPtr rgApplications,
+            uint nServices,
+            string[] rgsServiceNames);
+
+        [DllImport("rstrtmgr.dll")]
+        public static extern int RmGetList(
+            uint dwSessionHandle,
+            out uint pnProcInfoNeeded,
+            ref uint pnProcInfo,
+            [In, Out] RM_PROCESS_INFO[] rgAffectedApps,
+            ref uint lpdwRebootReasons);
+
+        [DllImport("rstrtmgr.dll")]
+        public static extern int RmEndSession(uint pSessionHandle);
     }
 }
 '@ -ErrorAction Stop
@@ -436,6 +508,218 @@ function Remove-PoisonedArtifacts {
 	}
 
 	return [string[]]$quarantined.ToArray()
+}
+
+function Get-DllLockers {
+	<#
+	.SYNOPSIS
+	  Enumerate the processes holding an open handle on any of the worktree's
+	  bin/Debug/**/*.dll artifacts, via the Windows Restart Manager API.
+
+	.DESCRIPTION
+	  The intermittent MSB3027 copy-lock failures at the START of a build are
+	  caused by a leftover process (a hung testhost/dotnet from a prior run, an
+	  editor, a file indexer) still holding a handle on an output DLL, so the
+	  next build's copy-to-output step cannot overwrite it. This function names
+	  those lockers so the caller (Stop-DllLockers) can reap the in-worktree ones
+	  BEFORE the copy step runs.
+
+	  It uses the Restart Manager (rstrtmgr.dll): RmStartSession →
+	  RmRegisterResources(the dll paths) → RmGetList (called twice — once to size
+	  pnProcInfoNeeded, then to fill the RM_PROCESS_INFO[] buffer) →
+	  RmEndSession. Each affected RM_PROCESS_INFO is mapped to a locker record.
+
+	  Only DLLs under <WorktreeRoot>/**/bin/Debug are considered — mirroring how
+	  Remove-PoisonedArtifacts scopes its sweep under the worktree. A worktree
+	  with no such DLLs (fresh checkout) yields an empty list.
+
+	  The ENTIRE body is wrapped in Get-SafeValue so ANY Restart-Manager /
+	  P/Invoke error fails OPEN to an empty list — a build must proceed even if
+	  locker enumeration is impossible (non-Windows host, missing rstrtmgr.dll,
+	  access denied). Enumeration failing OPEN can only miss a reap, never abort
+	  a build.
+
+	.PARAMETER WorktreeRoot
+	  Root directory of the worktree; bin/Debug DLLs are resolved underneath it.
+
+	.OUTPUTS
+	  An array of locker records @( @{ pid = [int]; name = [string];
+	  path = [string] } ). Empty array when there are no DLLs, no lockers, or on
+	  any failure (fail-open).
+	#>
+	[CmdletBinding()]
+	[OutputType([object[]])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$WorktreeRoot
+	)
+
+	$result = Get-SafeValue {
+		if (-not ([System.Management.Automation.PSTypeName]'BuildQueueHygiene.NativeMethods').Type) {
+			throw 'BuildQueueHygiene.NativeMethods type unavailable (non-Windows host or Add-Type failure).'
+		}
+
+		if (-not (Test-Path -LiteralPath $WorktreeRoot)) {
+			return @()
+		}
+
+		# Collect every bin/Debug/**/*.dll under the worktree. A build DLL lives
+		# beneath a 'bin\Debug' path segment; scope to that (mirrors the copy step).
+		$binRoot = Join-Path $WorktreeRoot 'bin'
+		if (-not (Test-Path -LiteralPath $binRoot)) {
+			return @()
+		}
+
+		$dllFiles = Get-SafeValue {
+			Get-ChildItem -LiteralPath $binRoot -Filter '*.dll' -Recurse -File -ErrorAction Stop |
+				Where-Object { $_.FullName -match '[\\/]bin[\\/]Debug[\\/]' }
+		} @()
+		if ($null -eq $dllFiles) { $dllFiles = @() }
+
+		$dllPaths = @(@($dllFiles) | ForEach-Object { $_.FullName })
+		if ($dllPaths.Count -eq 0) {
+			return @()
+		}
+
+		$sessionHandle = [uint32]0
+		$sessionKey = ([guid]::NewGuid().ToString('N'))  # 32-char hex, CCH_RM_SESSION_KEY
+
+		$startRc = [BuildQueueHygiene.NativeMethods]::RmStartSession([ref]$sessionHandle, 0, $sessionKey)
+		if ($startRc -ne 0) {
+			throw "RmStartSession failed (rc=$startRc)."
+		}
+
+		try {
+			$regRc = [BuildQueueHygiene.NativeMethods]::RmRegisterResources(
+				$sessionHandle,
+				[uint32]$dllPaths.Count,
+				[string[]]$dllPaths,
+				[uint32]0, [IntPtr]::Zero,
+				[uint32]0, $null)
+			if ($regRc -ne 0) {
+				throw "RmRegisterResources failed (rc=$regRc)."
+			}
+
+			$procInfoNeeded = [uint32]0
+			$procInfo = [uint32]0
+			$rebootReasons = [uint32]0
+
+			# First call: size the buffer (pnProcInfo = 0 → RmGetList reports needed).
+			$sizeRc = [BuildQueueHygiene.NativeMethods]::RmGetList(
+				$sessionHandle,
+				[ref]$procInfoNeeded,
+				[ref]$procInfo,
+				$null,
+				[ref]$rebootReasons)
+
+			# rc 0 with 0 needed → no lockers. ERROR_MORE_DATA → allocate & refill.
+			if ($sizeRc -eq 0 -and $procInfoNeeded -eq 0) {
+				return @()
+			}
+			if ($sizeRc -ne [BuildQueueHygiene.NativeMethods]::ERROR_MORE_DATA -and $sizeRc -ne 0) {
+				throw "RmGetList (sizing) failed (rc=$sizeRc)."
+			}
+			if ($procInfoNeeded -eq 0) {
+				return @()
+			}
+
+			$affected = New-Object BuildQueueHygiene.RM_PROCESS_INFO[] $procInfoNeeded
+			$procInfo = [uint32]$procInfoNeeded
+
+			$fillRc = [BuildQueueHygiene.NativeMethods]::RmGetList(
+				$sessionHandle,
+				[ref]$procInfoNeeded,
+				[ref]$procInfo,
+				$affected,
+				[ref]$rebootReasons)
+			if ($fillRc -ne 0) {
+				throw "RmGetList (fill) failed (rc=$fillRc)."
+			}
+
+			$lockers = New-Object System.Collections.Generic.List[object]
+			for ($i = 0; $i -lt $procInfo; $i++) {
+				$info = $affected[$i]
+				$lockers.Add([ordered]@{
+					pid  = [int]$info.Process.dwProcessId
+					name = [string]$info.strAppName
+					path = [string]$WorktreeRoot
+				})
+			}
+			return @($lockers.ToArray())
+		} finally {
+			[void](Get-SafeValue { [BuildQueueHygiene.NativeMethods]::RmEndSession($sessionHandle) })
+		}
+	} @()
+
+	if ($null -eq $result) { $result = @() }
+	return @($result)
+}
+
+function Stop-DllLockers {
+	<#
+	.SYNOPSIS
+	  Terminate the in-worktree processes that Get-DllLockers reports as holding
+	  a handle on the worktree's bin/Debug/**/*.dll, clearing the copy-lock BEFORE
+	  the build's copy step. EXCLUDES the VBCSCompiler shared server by name.
+
+	.DESCRIPTION
+	  Kills ONLY the lockers Get-DllLockers returned for THIS worktree — it never
+	  performs a global process-name kill and never touches an out-of-worktree
+	  process (Locked Decision 2: build-tree processes are reaped by membership,
+	  not by a name glob, so a sibling worktree's live build is never torn down).
+
+	  VBCSCompiler (the Roslyn shared compiler server) is EXEMPT by name
+	  (case-insensitive) — Locked Decision 1: it is recycled via the sanctioned
+	  Reset-CompilerServer path, never reaped here.
+
+	  Each Stop-Process is wrapped in Get-SafeValue so a per-process failure
+	  (already exited, access denied) is swallowed and the reap continues.
+
+	.PARAMETER WorktreeRoot
+	  Root directory of the worktree whose lockers should be reaped.
+
+	.OUTPUTS
+	  An [int[]] of the PIDs that were reaped. Empty array when there were no
+	  lockers, all lockers were VBCSCompiler, or on any failure (fail-open).
+	#>
+	[CmdletBinding()]
+	[OutputType([int[]])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$WorktreeRoot
+	)
+
+	$result = Get-SafeValue {
+		$lockers = @(Get-DllLockers -WorktreeRoot $WorktreeRoot)
+		if ($lockers.Count -eq 0) {
+			return @()
+		}
+
+		$reaped = New-Object System.Collections.Generic.List[int]
+		foreach ($locker in $lockers) {
+			$lockerPid = [int]$locker.pid
+			$lockerName = [string]$locker.name
+
+			# Locked Decision 1: never reap the shared VBCSCompiler server here.
+			if ($lockerName -and $lockerName -match '(?i)VBCSCompiler') {
+				continue
+			}
+
+			$killed = Get-SafeValue {
+				Stop-Process -Id $lockerPid -Force -ErrorAction Stop
+				$true
+			} $false
+
+			if ($killed -eq $true) {
+				$reaped.Add($lockerPid)
+			}
+		}
+
+		return @($reaped.ToArray())
+	} @()
+
+	if ($null -eq $result) { $result = @() }
+	return [int[]]@($result)
 }
 
 function Test-BuildLogFailure {
