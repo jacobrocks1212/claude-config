@@ -258,6 +258,81 @@ function Invoke-Check([array]$Mappings) {
         }
     }
 
+    # Warn-only passes for the Cognito Forms worktrees: team-owned-doc drift
+    # detection + unregistered-subdir backfill guard. Both are advisories only —
+    # they NEVER mutate anything and NEVER touch $broken, so the exit code stays
+    # purely symlink-state driven. Every worktree path is Test-Path-guarded so an
+    # absent worktree (e.g. -A) or a read error no-ops instead of throwing.
+    try {
+        $dcManifest = Import-PowerShellDataFile (Join-Path $script:RepoRoot 'manifest.psd1')
+        $cfMain = $dcManifest.Repos['cognito-forms']
+        if ($cfMain -and $cfMain.Path) {
+            $mainWt = $cfMain.Path
+
+            # Non-main worktrees = every Repos entry aliased to cognito-forms (-B/-C/-D).
+            $otherWts = [System.Collections.ArrayList]::new()
+            foreach ($rn in $dcManifest.Repos.Keys) {
+                $r = $dcManifest.Repos[$rn]
+                if ($r.Alias -eq 'cognito-forms' -and $r.Path) { [void]$otherWts.Add($r.Path) }
+            }
+
+            # --- Pass 1: team-owned-doc drift detector (DRIFT / BEHIND) ---
+            # Canonical reference = the MAIN worktree working copy. A doc absent on
+            # a stale branch reads as BEHIND (branch predates the file), never DRIFT.
+            # Warn-only: git-tracked content is never copied/symlinked/mutated.
+            if (Test-Path $mainWt) {
+                $teamDocs = @('AGENTS.md', 'CLAUDE.md', 'Cognito.Web.Client\AGENTS.md')
+                foreach ($doc in $teamDocs) {
+                    $mainDoc = Join-Path $mainWt $doc
+                    if (-not (Test-Path $mainDoc)) { continue }   # no reference copy -> nothing to compare
+                    $mainContent = Get-Content $mainDoc -Raw -ErrorAction SilentlyContinue
+                    foreach ($wt in $otherWts) {
+                        if (-not (Test-Path $wt)) { continue }     # absent worktree (e.g. -A) -> no-op
+                        $wtName = Split-Path $wt -Leaf
+                        $wtDoc  = Join-Path $wt $doc
+                        if (-not (Test-Path $wtDoc)) {
+                            Write-Host "  BEHIND   $wtName | $doc (branch predates this file)" -ForegroundColor Yellow
+                        } else {
+                            $wtContent = Get-Content $wtDoc -Raw -ErrorAction SilentlyContinue
+                            if ($wtContent -ne $mainContent) {
+                                Write-Host "  DRIFT    $wtName | $doc" -ForegroundColor Yellow
+                            }
+                        }
+                    }
+                }
+            }
+
+            # --- Pass 2: unregistered-subdir backfill guard (UNREGISTERED) ---
+            # Any personal */CLAUDE.local.md in main that is NOT in the manifest
+            # RootFiles is re-introduced drift (authored directly in a worktree,
+            # never registered). node_modules/.git/.claude are pruned during the
+            # walk (perf + they are never personal subdir docs).
+            if (Test-Path $mainWt) {
+                $registered = @($cfMain.RootFiles)
+                $stack = [System.Collections.Generic.Stack[string]]::new()
+                $stack.Push($mainWt)
+                while ($stack.Count -gt 0) {
+                    $dir  = $stack.Pop()
+                    $leaf = Split-Path $dir -Leaf
+                    if ($leaf -eq 'node_modules' -or $leaf -eq '.git' -or $leaf -eq '.claude') { continue }
+                    try {
+                        foreach ($sub in [IO.Directory]::GetDirectories($dir)) { $stack.Push($sub) }
+                        foreach ($file in [IO.Directory]::GetFiles($dir, 'CLAUDE.local.md')) {
+                            $rel = $file.Substring($mainWt.Length).TrimStart('\')
+                            if ($rel -eq 'CLAUDE.local.md') { continue }   # root doc, registered separately
+                            if ($registered -notcontains $rel) {
+                                Write-Host "  UNREGISTERED $rel (author it in manifest RootFiles)" -ForegroundColor Yellow
+                            }
+                        }
+                    } catch { }
+                }
+            }
+        }
+    } catch {
+        $dErr = $_.Exception.Message
+        Write-Host "  WARN     worktree doc-drift check skipped ($dErr)" -ForegroundColor Yellow
+    }
+
     return ($broken -eq 0)
 }
 

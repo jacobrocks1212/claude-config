@@ -73,18 +73,18 @@
 **Scope:** Add two warn-only passes to `setup.ps1`'s `Invoke-Check`, modeled on the existing warn-only hook-registration advisory block (setup.ps1:215-259). Neither pass mutates anything or changes the exit code (`$broken` unchanged).
 
 **Deliverables:**
-- [ ] Team-owned-doc drift pass: for each worktree, compare its tracked `AGENTS.md`, `CLAUDE.md`, `Cognito.Web.Client\AGENTS.md` against the MAIN worktree working copy. Emit `DRIFT` when content differs; emit `BEHIND` (separate advisory) when the file is absent because the branch is stale. Warn-only — never copy/symlink/mutate git-tracked content.
-- [ ] Unregistered-subdir backfill guard: scan the main worktree for `*/CLAUDE.local.md` files not present in the manifest RootFiles; emit `UNREGISTERED` for each (re-drift prevention).
-- [ ] Guard against absent worktrees (`-A` and any future missing path): passes must no-op via `Test-Path` rather than erroring.
-- [ ] Tests: `.\setup.ps1 check` exercises both passes; exit code / `$broken` count unchanged from before.
+- [x] Team-owned-doc drift pass: for each worktree, compare its tracked `AGENTS.md`, `CLAUDE.md`, `Cognito.Web.Client\AGENTS.md` against the MAIN worktree working copy. Emit `DRIFT` when content differs; emit `BEHIND` (separate advisory) when the file is absent because the branch is stale. Warn-only — never copy/symlink/mutate git-tracked content.
+- [x] Unregistered-subdir backfill guard: scan the main worktree for `*/CLAUDE.local.md` files not present in the manifest RootFiles; emit `UNREGISTERED` for each (re-drift prevention).
+- [x] Guard against absent worktrees (`-A` and any future missing path): passes must no-op via `Test-Path` rather than erroring.
+- [x] Tests: `.\setup.ps1 check` exercises both passes; exit code / `$broken` count unchanged from before.
 
 **Minimum Verifiable Behavior:** running `.\setup.ps1 check` prints `BEHIND` advisories for -D's three missing team-owned docs (stale branch inno/documents-and-signing), prints ZERO `UNREGISTERED` rows (all 11 subdir docs registered in Phase 2), prints no `DRIFT` for worktrees whose team docs match main, and the final `Check: N OK, M broken, K absent` broken count is identical to a pre-Phase-3 run (warn-only).
 
 **Runtime Verification**
-- [ ] <!-- verification-only --> `setup.ps1 check` emits `BEHIND` for AGENTS.md / CLAUDE.md / Cognito.Web.Client\AGENTS.md in -D (branch predates their addition); does NOT emit `DRIFT` for those (absence ≠ content drift).
-- [ ] <!-- verification-only --> `setup.ps1 check` emits zero `UNREGISTERED` rows after Phase 2 (all subdir docs registered).
-- [ ] <!-- verification-only --> the `Check:` summary `broken` count is unchanged vs a pre-Phase-3 run — the passes are warn-only and do not affect exit code.
-- [ ] <!-- verification-only --> passes no-op cleanly when a worktree directory is absent (no exception thrown).
+- [x] <!-- verification-only --> `setup.ps1 check` emits `BEHIND` for AGENTS.md / CLAUDE.md / Cognito.Web.Client\AGENTS.md in -D (branch predates their addition); does NOT emit `DRIFT` for those (absence ≠ content drift).
+- [x] <!-- verification-only --> `setup.ps1 check` emits zero `UNREGISTERED` rows after Phase 2 (all subdir docs registered).
+- [x] <!-- verification-only --> the `Check:` summary `broken` count is unchanged vs a pre-Phase-3 run — the passes are warn-only and do not affect exit code.
+- [x] <!-- verification-only --> passes no-op cleanly when a worktree directory is absent (no exception thrown).
 
 **MCP Integration Test Assertions:** N/A — PowerShell tooling; verification is `setup.ps1 check` console output + exit code.
 
@@ -95,6 +95,16 @@
 **Testing Strategy:** run `setup.ps1 check` before and after; assert new advisory lines appear and the numeric broken/exit result is unchanged. -D is the natural BEHIND fixture; no git-tracked content is mutated to test DRIFT.
 
 **Integration Notes for Next Phase:** none (terminal phase).
+
+#### Implementation Notes — Phase 3 (2026-07-02)
+
+**Work completed:** Added two warn-only advisory passes to `Invoke-Check` in `setup.ps1` (75 insertions), inserted after the existing hook-registration advisory block and before `return ($broken -eq 0)`, wrapped in a single try/catch that emits `WARN ... worktree doc-drift check skipped` on any failure. Re-imports `manifest.psd1`; main worktree = `Repos['cognito-forms'].Path`; other worktrees = every `Repos` entry with `.Alias -eq 'cognito-forms'` (-B/-C/-D). **Pass 1 (DRIFT/BEHIND):** for `AGENTS.md`, `CLAUDE.md`, `Cognito.Web.Client\AGENTS.md`, reads the MAIN copy as canonical reference, Test-Path-guards each worktree root (absent → no-op, covers -A), emits `BEHIND` on absent doc and `DRIFT` on `Get-Content -Raw` inequality. **Pass 2 (UNREGISTERED):** manual stack walk of main pruning `node_modules`/`.git`/`.claude` directories (perf — avoids traversing node_modules), flags any `CLAUDE.local.md` whose worktree-relative subpath is not in `RootFiles` (root doc skipped). Neither pass touches `$broken`.
+
+**Runtime evidence:** `setup.ps1 check -Target Repos` → BEHIND=3 (-D × 3 team docs), DRIFT=0 (-B/-C match main), UNREGISTERED=0 (all 12 main docs = root + 11 registered subdir), `Check: 123 OK, 2 broken, 0 absent` (broken identical to the pre-Phase-3 run), no exception thrown (`doc-drift check skipped` count = 0), `$LASTEXITCODE` unset exactly as at baseline (the script returns a boolean and never calls `exit`; exit behavior unchanged).
+
+**Pitfall:** must run under `pwsh` (PowerShell 7), NOT `powershell.exe` (5.1) — see the Phase 2 note (PSModulePath pollution hides `Import-PowerShellDataFile`; 5.1's `New-Item -ItemType SymbolicLink` can't create symlinks unprivileged). Do NOT use inline `if(){}else{}` expressions in string concatenation in 5.1; the code uses full if/else statement blocks.
+
+**Review verdict:** PASS — ground truth verified via orchestrator's own `setup.ps1 check` (advisory counts + unchanged broken/exit); zero subagents dispatched (single-file `.ps1` batch, plan authorizes direct editing, TDD=no, no test harness).
 
 ---
 
