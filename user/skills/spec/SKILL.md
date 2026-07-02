@@ -383,12 +383,14 @@ After the decomposition, proceed with iterative brainstorming below.
 **Goal:** Draft a comprehensive research prompt for Gemini Deep Research to validate ideas, explore prior art, and surface pitfalls.
 
 1. Create the feature directory: `{spec-dir}/{feature-slug}/`
-2. **Resolve the project identity prepend (`IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars).** The prepend gives Gemini baseline product context. It must be small — a full identity doc can be tens of KB and would blow the textarea cap and waste tokens if pasted verbatim. Probe relative to the **project root** (the working directory `/spec` was invoked from, NOT the claude-config repo), in this priority order:
+2. **Resolve the project identity prepend (`IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars).** The prepend gives Gemini baseline product context. It must be small — a full identity doc can be tens of KB and would blow the textarea cap and waste tokens if pasted verbatim. Probe relative to the **project root** (the working directory `/spec` was invoked from, NOT the claude-config repo), in this priority order.
 
-   1. **`docs/product/PRODUCT_IDENTITY_SUMMARY.md`** — the dedicated, pre-sized "ready-to-go" Gemini prepend. **If it exists, read it and use it verbatim.** This is the fast path: no condensing, no token burn. Done.
-   2. **`docs/product/PRODUCT_IDENTITY.md`** — the full identity doc, used only if the summary above does not exist:
+   **Probe base directory (`{identity-dir}`).** Default: **`docs/product/`** under the project root — the paths in the sub-steps below are relative to it. **Cognito Forms exception:** in the Cognito Forms repo (identify it by a `Cognito.sln` **and** an `AGENTS.md` titled "Cognito Forms Agent Guide" at the project root) the root's `docs` is a gitignored *pointer file*, not a directory, so `docs/product/` cannot resolve there. Cognito Forms keeps its identity docs in the sibling **`../cog-docs/docs/product/`** directory — use that as `{identity-dir}` (so the probes become `../cog-docs/docs/product/PRODUCT_IDENTITY_SUMMARY.md`, etc.). Every other project uses `docs/product/`. Everything else in this step — priority order, budget, self-heal, and the preamble strip — applies identically to the resolved `{identity-dir}`.
+
+   1. **`{identity-dir}/PRODUCT_IDENTITY_SUMMARY.md`** — the dedicated, pre-sized "ready-to-go" Gemini prepend. **If it exists, read it and use it verbatim.** This is the fast path: no condensing, no token burn. Done.
+   2. **`{identity-dir}/PRODUCT_IDENTITY.md`** — the full identity doc, used only if the summary above does not exist:
       - **If it is ≤ `IDENTITY_PREPEND_CHAR_BUDGET`**, use it verbatim.
-      - **If it is over budget**, do NOT silently truncate and do NOT re-condense from scratch every run. Instead **self-heal once**: condense it to a ~1-page summary at or under the budget (if the doc contains a section explicitly labelled as a paste-ready / "Gemini-Ready" / TL;DR summary, base the condensation on that section rather than re-summarizing the whole doc), **write that condensation to `docs/product/PRODUCT_IDENTITY_SUMMARY.md`**, then use it as the prepend. Every later `/spec` run finds the summary in step 1 and skips condensing entirely. Note in the Phase 2 summary (step 7) that a summary file was generated.
+      - **If it is over budget**, do NOT silently truncate and do NOT re-condense from scratch every run. Instead **self-heal once**: condense it to a ~1-page summary at or under the budget (if the doc contains a section explicitly labelled as a paste-ready / "Gemini-Ready" / TL;DR summary, base the condensation on that section rather than re-summarizing the whole doc), **write that condensation to `{identity-dir}/PRODUCT_IDENTITY_SUMMARY.md`**, then use it as the prepend. Every later `/spec` run finds the summary in step 1 and skips condensing entirely. Note in the Phase 2 summary (step 7) that a summary file was generated.
    3. **Neither file exists** — skip the prepend silently. No warning, no error. Not every project has an identity doc, and the prompt is still valid without one.
 
    Whichever file is used, treat its contents as the identity prepend below.
@@ -459,7 +461,7 @@ After the decomposition, proceed with iterative brainstorming below.
 
 7. **Phase 2 summary to chat.** Report:
    - The file path written.
-   - Which identity prepend was applied and its source path — `PRODUCT_IDENTITY_SUMMARY.md` (fast path), the full `PRODUCT_IDENTITY.md` (under budget), or skipped (neither file present). If the full doc was over budget and you self-healed, state explicitly that you generated `docs/product/PRODUCT_IDENTITY_SUMMARY.md` so future runs are ready-to-go.
+   - Which identity prepend was applied and its source path — `PRODUCT_IDENTITY_SUMMARY.md` (fast path), the full `PRODUCT_IDENTITY.md` (under budget), or skipped (neither file present). If the full doc was over budget and you self-healed, state explicitly that you generated `{identity-dir}/PRODUCT_IDENTITY_SUMMARY.md` so future runs are ready-to-go.
    - The actual character count and whether it's under / over the 24,000 cap. If over, state explicitly that the operator may need to trim before pasting into Gemini Deep Research, and suggest which sections (Context / Research Areas / Specific Questions) are most condensable.
    - Confirmation that the full prompt was echoed to chat in a quadruple-backtick fenced code block (per step 6) for direct copy-paste.
 
