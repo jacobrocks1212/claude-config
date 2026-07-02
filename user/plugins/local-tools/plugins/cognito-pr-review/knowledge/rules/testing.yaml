@@ -56,8 +56,14 @@ rules:
   - id: no-public-for-tests
     severity: important
     description: >
-      If a method is only called from tests, don't make it public.
-      Consider test-specific alternatives or internal access.
+      If a method is only called from tests, don't make it public. When the
+      assembly already exposes internals to the test project (an existing
+      InternalsVisibleTo grant), use internal access instead. Do not add a new
+      InternalsVisibleTo grant to justify internal access — see
+      no-internals-visible-to-for-tests, which governs that case.
+    rationale: >
+      This rule assumes test access to internals already exists; it is not
+      license to introduce InternalsVisibleTo as a workaround.
 
   - id: validate-ai-generated-content
     severity: important
@@ -348,4 +354,30 @@ rules:
       public void Eval_ReturnsExpected(string input, bool? expected)
       {
           Assert.AreEqual<bool?>(expected, Run(input));
+      }
+
+  - id: no-internals-visible-to-for-tests
+    severity: important
+    description: >
+      Don't add InternalsVisibleTo solely to let a test project reach internal
+      members. Prefer testing through the public surface. If a specific member
+      genuinely must be reachable, widen just that member to public rather than
+      granting the whole assembly's internals to the test project.
+    rationale: >
+      Assembly-wide InternalsVisibleTo is a permanent, unscoped grant for a
+      single test's convenience; a scoped public member is easier to reason
+      about and reverse.
+    anti_pattern: |
+      <!-- Cognito.csproj -->
+      <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+          <_Parameter1>Cognito.UnitTests</_Parameter1>
+        </AssemblyAttribute>
+      </ItemGroup>
+    correct_pattern: |
+      // Promote the one method the test needs instead of granting
+      // assembly-wide internals visibility.
+      public static class FieldPathResolver
+      {
+          public static string ResolveLeafName(string fieldPath) { ... }
       }

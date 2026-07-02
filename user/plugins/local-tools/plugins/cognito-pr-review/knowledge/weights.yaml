@@ -14,8 +14,8 @@ category_multipliers:
   template_binding: 0.7
 
 source_weights:
-  investigation: 0.6604
-  intrafile: 0.4505
+  investigation: 0.7548
+  intrafile: 0.6356
   reuse: 0.3938
 
 rule_weights:
@@ -119,6 +119,9 @@ rule_weights:
   qualify-generic-type-names:
     weight: 0.7
     data_points: 0
+  no-single-implementer-phase-boundary-seam:
+    weight: 0.7
+    data_points: 0
 
   # code-consistency rules
   extract-magic-strings:
@@ -182,8 +185,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   reuse-dto-type-overlap:
-    weight: 0.7
-    data_points: 0
+    weight: 0.775
+    data_points: 1
   reuse-endpoint-duplication:
     weight: 0.7
     data_points: 0
@@ -229,8 +232,8 @@ rule_weights:
     weight: 0.7
     data_points: 0
   prefer-vue-testing-library:
-    weight: 0.525
-    data_points: 1
+    weight: 0.6438
+    data_points: 2
   use-typed-emits:
     weight: 0.7
     data_points: 0
@@ -357,11 +360,14 @@ rule_weights:
     weight: 0.7
     data_points: 0
   no-dom-coupled-assertions:
-    weight: 0.8735
-    data_points: 3
+    weight: 0.9466
+    data_points: 6
   test-nested-field-paths:
     weight: 0.7
     data_points: 0
   consolidate-parameterized-tests:
+    weight: 0.7
+    data_points: 0
+  no-internals-visible-to-for-tests:
     weight: 0.7
     data_points: 0

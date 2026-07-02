@@ -594,3 +594,55 @@ rules:
       good:
         - WorkflowActionViability
         - PaymentRetryMode
+
+  - id: no-single-implementer-phase-boundary-seam
+    severity: important
+    description: >
+      Don't introduce an interface indirection that only exists to bridge a
+      migration or feature phase when it has a single real implementation, a
+      dead fallback implementation, and a DI-registration workaround to
+      exclude that fallback. If an existing service interface already covers
+      the need, depend on it directly. Phase-boundary seams like this tend to
+      outlive the phase they were built for and leave permanent complexity
+      behind.
+    rationale: >
+      A single-implementer interface plus a dead fallback plus a DI exclusion
+      is three units of indirection standing in for one direct dependency —
+      and none of it is exercised once the phase it was built for ends.
+    anti_pattern: |
+      public interface IEventSink
+      {
+          Task SendAsync(NotificationEvent evt);
+      }
+
+      public class EmailSink : IEventSink
+      {
+          readonly IEmailService emailService;
+          public EmailSink(IEmailService emailService) => this.emailService = emailService;
+          public Task SendAsync(NotificationEvent evt) => emailService.SendAsync(evt.ToEmail());
+      }
+
+      // Dead fallback kept "just in case" — never wired up on any real path.
+      public class TraceOnlyEventSink : IEventSink
+      {
+          public Task SendAsync(NotificationEvent evt)
+          {
+              Trace.WriteLine($"Event: {evt}");
+              return Task.CompletedTask;
+          }
+      }
+
+      // DI registration must exclude the dead fallback to avoid ambiguity.
+      services.Scan(scan => scan.FromAssemblyOf<EmailSink>()
+          .AddClasses(c => c.AssignableTo<IEventSink>().Except<TraceOnlyEventSink>())
+          .AsImplementedInterfaces());
+    correct_pattern: |
+      public class NotificationService
+      {
+          readonly IEmailService emailService;
+          public NotificationService(IEmailService emailService) => this.emailService = emailService;
+          public Task SendAsync(NotificationEvent evt) => emailService.SendAsync(evt.ToEmail());
+      }
+
+      // Tests mock IEmailService directly — no seam, no dead fallback,
+      // no DI exclusion workaround.
