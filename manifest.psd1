@@ -24,7 +24,23 @@
     Repos = @{
         'cognito-forms' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\Cognito Forms'
-            RootFiles      = @('CLAUDE.local.md', 'worktree-wizard.ps1', 'Cognito.Core\CLAUDE.local.md')
+            RootFiles      = @(
+                'CLAUDE.local.md', 'worktree-wizard.ps1',
+                # Personal subdir CLAUDE.local.md docs — claude-config-owned, symlinked into every
+                # worktree (main + aliased B/C/D). Nested subpaths resolve via the Join-Path mapping
+                # loop + parent-dir creation in setup.ps1; no setup.ps1 change needed.
+                'Cognito.Core\CLAUDE.local.md',
+                'Cognito\CLAUDE.local.md',
+                'Cognito.Services\CLAUDE.local.md',
+                'Cognito.QueueJob\CLAUDE.local.md',
+                'Cognito.UnitTests\CLAUDE.local.md',
+                'Cognito.Web.Client\CLAUDE.local.md',
+                'Cognito.Web.Client\apps\spa\CLAUDE.local.md',
+                'Cognito.Web.Client\apps\client\CLAUDE.local.md',
+                'Cognito.Web.Client\libs\model.js\CLAUDE.local.md',
+                'Cognito.Web.Client\libs\types\CLAUDE.local.md',
+                'Cognito.Web.Client\libs\vuemodel\CLAUDE.local.md'
+            )
             # .claude/CLAUDE.md and commands/{msbuild,review-pr,work-item}.md are team-owned
             # (git-tracked by the Cognito Forms repo) — do NOT whole-dir/whole-file symlink them.
             # Only personal, git-ignored command files are symlinked individually.

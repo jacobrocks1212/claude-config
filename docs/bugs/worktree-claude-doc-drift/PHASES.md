@@ -37,16 +37,16 @@
 **Scope:** Apply the Phase-1-validated mechanism to the other 10 subdir CLAUDE.local.md docs.
 
 **Deliverables:**
-- [ ] Append the remaining 10 nested subpaths to `RootFiles` in manifest.psd1.
-- [ ] Delete all remaining `-B`/`-C` stopgap copies of those 10 docs.
-- [ ] Run `.\setup.ps1 bootstrap -Target Repos`; `git add` (`-f` if Phase 1 showed it necessary) the 10 relocated sources in claude-config.
-- [ ] Tests: `.\setup.ps1 check` shows OK for all 11 subdir mappings across all present worktrees.
+- [x] Append the remaining 10 nested subpaths to `RootFiles` in manifest.psd1.
+- [x] Delete all remaining `-B`/`-C` stopgap copies of those 10 docs.
+- [x] Run `.\setup.ps1 bootstrap -Target Repos`; `git add` (`-f` if Phase 1 showed it necessary) the 10 relocated sources in claude-config.
+- [x] Tests: `.\setup.ps1 check` shows OK for all 11 subdir mappings across all present worktrees.
 
 **Minimum Verifiable Behavior:** `.\setup.ps1 check` prints `OK` for all 11 subdir `CLAUDE.local.md` mappings in every present worktree (main/-B/-C/-D); no `WARN`/`REAL`/`MISSING` rows for any subdir doc; -D now carries all 11 as symlinks.
 
 **Runtime Verification**
-- [ ] <!-- verification-only --> `setup.ps1 check` reports OK for all 11 subdir mappings × all present worktrees; zero WARN/REAL/MISSING rows for subdir docs.
-- [ ] <!-- verification-only --> -D worktree gains working symlinks for docs it previously lacked entirely.
+- [x] <!-- verification-only --> `setup.ps1 check` reports OK for all 11 subdir mappings × all present worktrees; zero WARN/REAL/MISSING rows for subdir docs.
+- [x] <!-- verification-only --> -D worktree gains working symlinks for docs it previously lacked entirely.
 
 **MCP Integration Test Assertions:** N/A — same class as Phase 1 (filesystem/symlink tooling).
 
@@ -57,6 +57,14 @@
 **Testing Strategy:** `setup.ps1 check` full pass; spot-check content integrity on 2-3 relocated docs.
 
 **Integration Notes for Next Phase:** after this phase the manifest RootFiles is the complete registry of subdir docs — Phase 3's UNREGISTERED backfill guard should now find ZERO unregistered subdir docs (any hit is a real new-drift signal, not a false positive).
+
+#### Implementation Notes — Phase 2 (2026-07-02)
+
+**Work completed:** Appended the 10 remaining subdir subpaths to `RootFiles` (now 13 entries: root + worktree-wizard + 11 subdir docs). Deleted 20 stopgap copies (10 in -B, 10 in -C). Bootstrapped: 10 docs MOVEd from main into `claude-config/repos/cognito-forms/**`, recovery-LINKed across -B/-C/-D. Staged all 10 relocated sources with `git add` (no `-f` needed — confirms Part 1's trackability finding). Closing `setup.ps1 check -Target Repos` = **123 OK, 2 broken, 0 absent**; the 2 broken are the pre-existing unrelated REAL files (`cognito-docs\settings.local.json`, `cognito-forms\normalize-crlf.ps1`) — identical to baseline, no increase. All 11 subdir mappings OK × 4 present worktrees; zero subdir WARN/REAL/MISSING/WRONG. Content integrity verified: moved files' on-disk byte sizes match the audit table exactly (Cognito.Services=7744, Cognito=3533, model.js=3083).
+
+**Pitfall / environment gotcha (carry into Phase 3):** `powershell.exe` (Windows PowerShell 5.1) on this machine **cannot** run `setup.ps1` — two blockers: (1) polluted `PSModulePath` (PS7 paths prepended) shadows the 5.1 built-in `Microsoft.PowerShell.Utility`, so `Import-PowerShellDataFile` is undiscoverable; and (2) 5.1's `New-Item -ItemType SymbolicLink` does NOT pass the `ALLOW_UNPRIVILEGED_CREATE` flag, so symlink creation fails "Administrator privilege required" even with Developer Mode ON + non-elevated. **Fix: run setup.ps1 under `pwsh` (PowerShell 7.5.5, installed)** — it passes the unprivileged flag (Dev Mode makes symlink creation work non-elevated) and has `Import-PowerShellDataFile` natively. The aborted 5.1 bootstrap left `Cognito\CLAUDE.local.md` half-moved (MOVE succeeded, symlink failed); the pwsh re-run's recovery-LINK path cleanly reconciled it (repo present + live absent → LINK).
+
+**Review verdict:** PASS — ground truth verified via orchestrator's own `setup.ps1 check` + byte-size spot-check; zero subagents dispatched (config/filesystem batch, no forbidden-extension source files, TDD=no per plan).
 
 ---
 

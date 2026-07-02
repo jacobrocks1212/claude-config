@@ -158,7 +158,7 @@ The **10 remaining subdir docs** (Phase 1 already handled `Cognito.Core`). All v
 
 ## Work Units
 
-- [ ] WU-1 — Bulk-register, relocate, and validate the 10 remaining subdir docs (Phase 2)
+- [x] WU-1 — Bulk-register, relocate, and validate the 10 remaining subdir docs (Phase 2)
 - [ ] WU-2 — Add two warn-only advisory passes to `Invoke-Check` (Phase 3)
 
 | Batch | Work Units | Parallel? | File Conflicts? |
