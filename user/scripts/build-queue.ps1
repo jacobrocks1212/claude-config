@@ -159,12 +159,17 @@ function Get-LiveTicketSeqs {
 	return $seqs
 }
 
-function Get-ActiveLockStatus {
+function Get-ActiveLockStatusOnce {
 	if (-not (Test-Path $activeLock)) { return 'absent' }
-	$data = Get-SafeValue {
-		$txt = [System.IO.File]::ReadAllText($activeLock)
-		$txt | ConvertFrom-Json
+	$txt = Get-SafeValue { [System.IO.File]::ReadAllText($activeLock) } $null
+	if ($null -eq $txt) { return 'unknown' }
+
+	if (Get-Command Get-ActiveLockStatusFromText -ErrorAction SilentlyContinue) {
+		return Get-ActiveLockStatusFromText -Text $txt -IsPidAlive { param($p) Test-PidAlive $p }
 	}
+
+	# Fallback (hygiene module absent): inline classification, current behavior.
+	$data = Get-SafeValue { $txt | ConvertFrom-Json } $null
 	if ($null -eq $data) { return 'unknown' }
 	$buildPid = Get-SafeValue {
 		$v = $data | Select-Object -ExpandProperty build_pid -ErrorAction SilentlyContinue
@@ -175,26 +180,58 @@ function Get-ActiveLockStatus {
 	return 'dead'
 }
 
+function Get-ActiveLockStatus {
+	# Bounded re-read: a mid-write/transient partial read can classify 'unknown'
+	# even though the lock is genuinely alive/dead — retry up to 3 total attempts
+	# so a transient read resolves to the real status before falling back to
+	# 'unknown' for good.
+	$maxAttempts = 3
+	$lastStatus = 'unknown'
+	for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+		$lastStatus = Get-ActiveLockStatusOnce
+		if ($lastStatus -ne 'unknown') { return $lastStatus }
+		if ($attempt -lt $maxAttempts) { Start-Sleep -Milliseconds 50 }
+	}
+	return $lastStatus
+}
+
 $logPath = Join-Path $logsDir "$seq.log"
 $errPath = Join-Path $logsDir "$seq.err.log"
 
 $won = $false
-$staleTicks = 0
 $staleThreshold = 3
+$recentStatuses = New-Object System.Collections.Generic.List[string]
+# Legacy fallback counter (used only when Test-ShouldReclaimLock is unavailable):
+# increments ONLY on a confirmed 'dead' observation, resets on anything else.
+$consecutiveDeadFallback = 0
 while (-not $won) {
 	$liveSeqs    = @(Get-LiveTicketSeqs)
 	$lowestSeq   = if ($liveSeqs.Count -gt 0) { (@($liveSeqs | Sort-Object))[0] } else { $seq }
 	$status      = Get-ActiveLockStatus
 
-	if ($status -eq 'alive' -or $status -eq 'absent') {
-		$staleTicks = 0
+	$recentStatuses.Add($status)
+	while ($recentStatuses.Count -gt $staleThreshold) {
+		$recentStatuses.RemoveAt(0)
+	}
+
+	$isLowestSeq = ($lowestSeq -eq $seq)
+	$shouldReclaim = $false
+	if (Get-Command Test-ShouldReclaimLock -ErrorAction SilentlyContinue) {
+		$shouldReclaim = Test-ShouldReclaimLock -Observations @($recentStatuses.ToArray()) -StaleThreshold $staleThreshold -IsLowestSeq $isLowestSeq
 	} else {
-		$staleTicks++
-		if ($staleTicks -ge $staleThreshold -and $lowestSeq -eq $seq) {
-			Get-SafeValue { Remove-Item $activeLock -Force -ErrorAction SilentlyContinue }
-			$status = 'absent'
-			$staleTicks = 0
+		if ($status -eq 'dead') {
+			$consecutiveDeadFallback++
+		} else {
+			$consecutiveDeadFallback = 0
 		}
+		$shouldReclaim = ($consecutiveDeadFallback -ge $staleThreshold -and $isLowestSeq)
+	}
+
+	if ($shouldReclaim) {
+		Get-SafeValue { Remove-Item $activeLock -Force -ErrorAction SilentlyContinue }
+		$status = 'absent'
+		$recentStatuses.Clear()
+		$consecutiveDeadFallback = 0
 	}
 
 	if ($status -eq 'absent' -and $lowestSeq -eq $seq) {
@@ -216,11 +253,25 @@ while (-not $won) {
 				log_path     = $logPath
 				machine_perf = $null
 			} | ConvertTo-Json -Compress
-			$provisionalBytes = [System.Text.Encoding]::UTF8.GetBytes($provisionalBody)
-			$lockFileStream.Write($provisionalBytes, 0, $provisionalBytes.Length)
-			$lockFileStream.Flush()
-			$lockFileStream.Dispose()
-			$lockFileStream = $null
+
+			if (Get-Command Set-LockFileAtomic -ErrorAction SilentlyContinue) {
+				# The exclusive CreateNew open above is the race arbiter (only
+				# one waiter can win it) - dispose it BEFORE writing the body
+				# so the body write itself can go through the atomic
+				# temp-then-move path.
+				$lockFileStream.Dispose()
+				$lockFileStream = $null
+				$null = Set-LockFileAtomic -Path $activeLock -Body $provisionalBody
+			} else {
+				# Fallback (hygiene module absent): current raw write behavior,
+				# writing directly into the still-open claim handle.
+				$provisionalBytes = [System.Text.Encoding]::UTF8.GetBytes($provisionalBody)
+				$lockFileStream.Write($provisionalBytes, 0, $provisionalBytes.Length)
+				$lockFileStream.Flush()
+				$lockFileStream.Dispose()
+				$lockFileStream = $null
+			}
+
 			Get-SafeValue { Remove-Item $ticketPath -Force -ErrorAction SilentlyContinue }
 		} catch {
 			if ($null -ne $lockFileStream) {
@@ -388,8 +439,19 @@ try {
 
 Get-SafeValue {
 	if (Test-Path $activeLock) {
-		$d       = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
-		$lockSeq = Get-SafeValue { [int]$d.seq } $null
+		# Bounded re-read: a transient partial/locked read of active.lock should
+		# not leave a stale lock behind - retry up to 3 total attempts (50ms
+		# apart) so a transient read resolves to the real .seq before giving up.
+		$lockSeq = $null
+		$maxAttempts = 3
+		for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+			$lockSeq = Get-SafeValue {
+				$d = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
+				[int]$d.seq
+			} $null
+			if ($null -ne $lockSeq) { break }
+			if ($attempt -lt $maxAttempts) { Start-Sleep -Milliseconds 50 }
+		}
 		if ($lockSeq -eq $seq) {
 			Remove-Item $activeLock -Force
 		}

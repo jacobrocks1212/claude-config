@@ -355,3 +355,110 @@ Describe 'DLL Locker Reap' {
 		}
 	}
 }
+
+Describe 'Set-LockFileAtomic' {
+	# NOTE: per the child-scope quirk documented above (and the DLL Locker Reap block's
+	# NOTE), every call is assigned on its OWN line with the assertion on the NEXT line --
+	# never `{ $result = Foo } | Should -Not -Throw` followed by reading $result.
+
+	BeforeAll {
+		$script:LockDestPath = Join-Path $env:TEMP ("slfa-pester-" + [guid]::NewGuid().ToString('N') + '.json')
+		$script:LockTempPath = "$($script:LockDestPath).tmp"
+	}
+
+	AfterAll {
+		Remove-Item -Path $script:LockDestPath -Force -ErrorAction SilentlyContinue
+		Remove-Item -Path $script:LockTempPath -Force -ErrorAction SilentlyContinue
+	}
+
+	It 'defines Set-LockFileAtomic' {
+		Get-Command Set-LockFileAtomic -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'writes the lock body atomically (temp-then-move) and returns $true' {
+		$body = '{"seq":5,"build_pid":1234,"op":"msbuild"}'
+		$result = Set-LockFileAtomic -Path $script:LockDestPath -Body $body
+		$result | Should -Be $true
+	}
+
+	It 'round-trips the lock body at the destination with no truncation' {
+		$lockJson = [System.IO.File]::ReadAllText($script:LockDestPath) | ConvertFrom-Json
+		$lockJson.seq | Should -Be 5
+		$lockJson.build_pid | Should -Be 1234
+		$lockJson.op | Should -Be 'msbuild'
+	}
+
+	It 'leaves no temp file behind after a successful move' {
+		# Pre-seed a dummy temp file so this assertion is only satisfied when
+		# Set-LockFileAtomic actually ran and cleaned it up as part of the
+		# move -- otherwise it would vacuously pass just because nothing
+		# ever created $script:LockTempPath.
+		Set-Content -Path $script:LockTempPath -Value 'placeholder' -Force
+		Set-LockFileAtomic -Path $script:LockDestPath -Body '{"seq":9,"build_pid":42,"op":"nxbuild"}' | Out-Null
+		Test-Path $script:LockTempPath | Should -Be $false
+	}
+}
+
+Describe 'Get-ActiveLockStatusFromText' {
+	It 'defines Get-ActiveLockStatusFromText' {
+		Get-Command Get-ActiveLockStatusFromText -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'returns "alive" for valid JSON with a build_pid when the probe returns $true' {
+		$text = '{"seq":5,"build_pid":1234,"op":"msbuild"}'
+		$result = Get-ActiveLockStatusFromText -Text $text -IsPidAlive { param($p) $true }
+		$result | Should -Be 'alive'
+	}
+
+	It 'returns "dead" for valid JSON with a build_pid when the probe returns $false' {
+		$text = '{"seq":5,"build_pid":1234,"op":"msbuild"}'
+		$result = Get-ActiveLockStatusFromText -Text $text -IsPidAlive { param($p) $false }
+		$result | Should -Be 'dead'
+	}
+
+	It 'returns "unknown" for an empty/whitespace lock text' {
+		$result = Get-ActiveLockStatusFromText -Text '' -IsPidAlive { param($p) $true }
+		$result | Should -Be 'unknown'
+	}
+
+	It 'returns "unknown" for garbage/truncated non-JSON text' {
+		$result = Get-ActiveLockStatusFromText -Text '{ this is not json' -IsPidAlive { param($p) $true }
+		$result | Should -Be 'unknown'
+	}
+
+	It 'returns "unknown" when the JSON object is missing a build_pid field' {
+		$result = Get-ActiveLockStatusFromText -Text '{"seq":5}' -IsPidAlive { param($p) $true }
+		$result | Should -Be 'unknown'
+	}
+}
+
+Describe 'Test-ShouldReclaimLock' {
+	It 'defines Test-ShouldReclaimLock' {
+		Get-Command Test-ShouldReclaimLock -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'reclaims when the observation run is all-dead at exactly the threshold and IsLowestSeq is $true' {
+		$result = Test-ShouldReclaimLock -Observations @('dead', 'dead', 'dead') -StaleThreshold 3 -IsLowestSeq $true
+		$result | Should -Be $true
+	}
+
+	It 'does not reclaim when every observation is "unknown" (all-unknown never reclaims)' {
+		$result = Test-ShouldReclaimLock -Observations @('unknown', 'unknown', 'unknown', 'unknown') -StaleThreshold 3 -IsLowestSeq $true
+		$result | Should -Be $false
+	}
+
+	It 'does not reclaim when an "unknown" observation resets the consecutive-dead run below threshold' {
+		$result = Test-ShouldReclaimLock -Observations @('dead', 'unknown', 'dead', 'dead') -StaleThreshold 3 -IsLowestSeq $true
+		$result | Should -Be $false
+	}
+
+	It 'does not reclaim when IsLowestSeq is $false even with enough consecutive dead observations' {
+		$result = Test-ShouldReclaimLock -Observations @('dead', 'dead', 'dead') -StaleThreshold 3 -IsLowestSeq $false
+		$result | Should -Be $false
+	}
+
+	It 'reclaims when the trailing consecutive-dead run meets a lower threshold' {
+		$result = Test-ShouldReclaimLock -Observations @('alive', 'dead', 'dead') -StaleThreshold 2 -IsLowestSeq $true
+		$result | Should -Be $true
+	}
+}

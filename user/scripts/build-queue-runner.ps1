@@ -193,8 +193,19 @@ try {
 $activeLock = Join-Path $StateRoot 'active.lock'
 Get-SafeValue {
 	if (Test-Path $activeLock) {
-		$data    = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
-		$lockSeq = Get-SafeValue { [int]$data.seq } $null
+		# Bounded re-read: a transient partial/locked read of active.lock should
+		# not leave a stale lock behind - retry up to 3 total attempts (50ms
+		# apart) so a transient read resolves to the real .seq before giving up.
+		$lockSeq = $null
+		$maxAttempts = 3
+		for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+			$lockSeq = Get-SafeValue {
+				$data = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
+				[int]$data.seq
+			} $null
+			if ($null -ne $lockSeq) { break }
+			if ($attempt -lt $maxAttempts) { Start-Sleep -Milliseconds 50 }
+		}
 		if ($lockSeq -eq $Seq) {
 			Remove-Item $activeLock -Force
 		}

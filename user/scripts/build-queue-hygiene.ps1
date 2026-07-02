@@ -510,6 +510,219 @@ function Remove-PoisonedArtifacts {
 	return [string[]]$quarantined.ToArray()
 }
 
+function Set-LockFileAtomic {
+	<#
+	.SYNOPSIS
+	  Atomically writes a lock-file body to disk via a temp-then-move sequence,
+	  mirroring the atomic final-write idiom at build-queue.ps1:310-317.
+
+	.DESCRIPTION
+	  Writes $Body to $TempPath, then moves it into place at $Path using
+	  [System.IO.File]::Replace when $Path already exists (atomic swap-in) or
+	  [System.IO.File]::Move when it does not (no destination to replace). On
+	  ANY Replace/Move error, falls back to a direct
+	  [System.IO.File]::WriteAllText($Path, $Body) and cleans up the temp file.
+
+	.PARAMETER Path
+	  Destination lock-file path.
+
+	.PARAMETER Body
+	  Lock-file text content to write.
+
+	.PARAMETER TempPath
+	  Temp file path to stage the write. Defaults to "$Path.tmp".
+
+	.OUTPUTS
+	  [bool] $true on success (by any path), $false fail-open on total failure.
+	  Never throws.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$Path,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Body,
+
+		[string]$TempPath
+	)
+
+	if ([string]::IsNullOrWhiteSpace($TempPath)) {
+		$TempPath = "$Path.tmp"
+	}
+
+	Get-SafeValue {
+		[System.IO.File]::WriteAllText($TempPath, $Body)
+
+		Get-SafeValue {
+			if (Test-Path -LiteralPath $Path) {
+				[System.IO.File]::Replace($TempPath, $Path, [NullString]::Value)
+			} else {
+				[System.IO.File]::Move($TempPath, $Path)
+			}
+		} $null
+	} $null
+
+	# Determine success: either the Replace/Move above succeeded (Path now has
+	# the body and TempPath is gone), or we need the WriteAllText fallback.
+	$movedOk = Get-SafeValue { (Test-Path -LiteralPath $Path) -and -not (Test-Path -LiteralPath $TempPath) } $false
+
+	if ($movedOk -eq $true) {
+		return $true
+	}
+
+	# Fallback: direct write to destination, then clean up any leftover temp file.
+	$fallbackOk = Get-SafeValue {
+		[System.IO.File]::WriteAllText($Path, $Body)
+		$true
+	} $false
+
+	Get-SafeValue { if (Test-Path -LiteralPath $TempPath) { Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue } }
+
+	if ($fallbackOk -ne $true) {
+		return $false
+	}
+
+	return $true
+}
+
+function Get-ActiveLockStatusFromText {
+	<#
+	.SYNOPSIS
+	  Pure classification of build-queue active.lock TEXT into 'alive' | 'dead' |
+	  'unknown'. File-absence ('absent') is the CALLER's responsibility, not this
+	  function's — it only ever sees text that was already read from disk.
+
+	.DESCRIPTION
+	  Parses $Text as JSON. Unparseable / empty / whitespace-only / valid-JSON-
+	  but-missing-build_pid all classify 'unknown'. A well-formed integer
+	  build_pid is probed via $IsPidAlive: probe $true -> 'alive', probe $false
+	  -> 'dead'. If invoking the probe itself throws, this fails safe to 'alive'
+	  (matches Test-PidAlive's "fail safe to alive" bias in build-queue.ps1:51-62)
+	  — better to over-wait than to wrongly reclaim a live holder's lock.
+
+	.PARAMETER Text
+	  Raw text read from active.lock (may be malformed/truncated).
+
+	.PARAMETER IsPidAlive
+	  Scriptblock taking one int param, returning $true/$false for pid liveness.
+
+	.OUTPUTS
+	  [string] one of 'alive' | 'dead' | 'unknown'. Never throws.
+	#>
+	[CmdletBinding()]
+	[OutputType([string])]
+	param(
+		[AllowEmptyString()]
+		[string]$Text,
+
+		[Parameter(Mandatory = $true)]
+		[scriptblock]$IsPidAlive
+	)
+
+	$result = Get-SafeValue {
+		if ([string]::IsNullOrWhiteSpace($Text)) {
+			return 'unknown'
+		}
+
+		$data = Get-SafeValue { $Text | ConvertFrom-Json } $null
+		if ($null -eq $data) {
+			return 'unknown'
+		}
+
+		$buildPid = Get-SafeValue {
+			$v = $data | Select-Object -ExpandProperty build_pid -ErrorAction SilentlyContinue
+			if ($null -ne $v) { [int]$v } else { $null }
+		} $null
+
+		if ($null -eq $buildPid) {
+			return 'unknown'
+		}
+
+		$isAlive = Get-SafeValue { & $IsPidAlive $buildPid } $null
+		if ($null -eq $isAlive) {
+			# The probe threw (Get-SafeValue swallowed it) - fail safe to alive.
+			return 'alive'
+		}
+
+		if ($isAlive -eq $true) { return 'alive' }
+		return 'dead'
+	} 'unknown'
+
+	if ([string]::IsNullOrWhiteSpace($result)) {
+		return 'unknown'
+	}
+
+	return $result
+}
+
+function Test-ShouldReclaimLock {
+	<#
+	.SYNOPSIS
+	  Decides whether the build-queue should reclaim (delete) a stale active.lock,
+	  based on a bounded observation history and lowest-seq gating.
+
+	.DESCRIPTION
+	  Returns $true iff $IsLowestSeq is $true AND $Observations contains at least
+	  $StaleThreshold CONSECUTIVE 'dead' entries (checked at the trailing end of
+	  the sequence — i.e. the most recent run of consecutive 'dead' observations
+	  must meet or exceed the threshold). Any non-'dead' entry ('unknown',
+	  'alive', 'absent') resets the consecutive-dead run to zero.
+
+	.PARAMETER Observations
+	  Ordered array of prior Get-ActiveLockStatus(FromText) results (oldest first).
+
+	.PARAMETER StaleThreshold
+	  Minimum consecutive 'dead' observations required to reclaim.
+
+	.PARAMETER IsLowestSeq
+	  Whether the calling waiter holds the lowest live seq (only the lowest-seq
+	  waiter is allowed to reclaim).
+
+	.OUTPUTS
+	  [bool]. Fails open to $false on bad/malformed input. Never throws.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[string[]]$Observations,
+
+		[int]$StaleThreshold,
+
+		[bool]$IsLowestSeq
+	)
+
+	$result = Get-SafeValue {
+		if ($IsLowestSeq -ne $true) {
+			return $false
+		}
+		if ($StaleThreshold -le 0) {
+			return $false
+		}
+		if ($null -eq $Observations -or @($Observations).Count -eq 0) {
+			return $false
+		}
+
+		$consecutiveDead = 0
+		foreach ($obs in @($Observations)) {
+			if ($obs -eq 'dead') {
+				$consecutiveDead++
+			} else {
+				$consecutiveDead = 0
+			}
+		}
+
+		return ($consecutiveDead -ge $StaleThreshold)
+	} $false
+
+	if ($result -ne $true) {
+		return $false
+	}
+
+	return $true
+}
+
 function Get-DllLockers {
 	<#
 	.SYNOPSIS
