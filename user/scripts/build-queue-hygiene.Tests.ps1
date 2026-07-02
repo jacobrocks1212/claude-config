@@ -462,3 +462,129 @@ Describe 'Test-ShouldReclaimLock' {
 		$result | Should -Be $true
 	}
 }
+
+Describe 'Get-BuildQueueOccupancy' {
+	# NOTE: per the child-scope quirk documented above (DLL Locker Reap / Set-LockFileAtomic
+	# blocks' NOTEs), every call is assigned on its OWN line with the assertion on the NEXT
+	# line -- never `{ $result = Foo } | Should -Not -Throw` followed by reading $result.
+	#
+	# $PID (this process) is used as a guaranteed-ALIVE pid; 999999999 as a guaranteed-DEAD pid.
+
+	It 'defines Get-BuildQueueOccupancy' {
+		Get-Command Get-BuildQueueOccupancy -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	Context 'count 0 -- only self / empty' {
+		BeforeAll {
+			$script:OccEmptyRoot = Join-Path $env:TEMP ("occ-empty-" + [guid]::NewGuid().ToString('N'))
+			$script:OccEmptyTicketsDir = Join-Path $script:OccEmptyRoot 'tickets'
+			New-Item -ItemType Directory -Path $script:OccEmptyTicketsDir -Force | Out-Null
+		}
+
+		AfterAll {
+			Remove-Item -Path $script:OccEmptyRoot -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'returns 0 for an empty tickets dir and no active.lock' {
+			$result = Get-BuildQueueOccupancy -StateRoot $script:OccEmptyRoot -SelfSeq 1
+			$result | Should -Be 0
+		}
+
+		It 'returns 0 for a lone self ticket (self excluded)' {
+			$selfTicketPath = Join-Path $script:OccEmptyTicketsDir '1.json'
+			[System.IO.File]::WriteAllText($selfTicketPath, (@{ seq = 1; pid = $PID } | ConvertTo-Json -Compress))
+
+			$result = Get-BuildQueueOccupancy -StateRoot $script:OccEmptyRoot -SelfSeq 1
+			$result | Should -Be 0
+		}
+	}
+
+	Context 'count 1 -- one OTHER live seq holds the lock' {
+		BeforeAll {
+			$script:OccOneRoot = Join-Path $env:TEMP ("occ-one-" + [guid]::NewGuid().ToString('N'))
+			New-Item -ItemType Directory -Path (Join-Path $script:OccOneRoot 'tickets') -Force | Out-Null
+			$script:OccOneLock = Join-Path $script:OccOneRoot 'active.lock'
+			[System.IO.File]::WriteAllText($script:OccOneLock, (@{ seq = 2; build_pid = $PID } | ConvertTo-Json -Compress))
+		}
+
+		AfterAll {
+			Remove-Item -Path $script:OccOneRoot -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'returns 1' {
+			$result = Get-BuildQueueOccupancy -StateRoot $script:OccOneRoot -SelfSeq 1
+			$result | Should -Be 1
+		}
+	}
+
+	Context 'count 2 -- two OTHER live seqs (active.lock + a ticket)' {
+		BeforeAll {
+			$script:OccTwoRoot = Join-Path $env:TEMP ("occ-two-" + [guid]::NewGuid().ToString('N'))
+			$script:OccTwoTicketsDir = Join-Path $script:OccTwoRoot 'tickets'
+			New-Item -ItemType Directory -Path $script:OccTwoTicketsDir -Force | Out-Null
+
+			$script:OccTwoLock = Join-Path $script:OccTwoRoot 'active.lock'
+			[System.IO.File]::WriteAllText($script:OccTwoLock, (@{ seq = 2; build_pid = $PID } | ConvertTo-Json -Compress))
+
+			$otherTicketPath = Join-Path $script:OccTwoTicketsDir '3.json'
+			[System.IO.File]::WriteAllText($otherTicketPath, (@{ seq = 3; pid = $PID } | ConvertTo-Json -Compress))
+		}
+
+		AfterAll {
+			Remove-Item -Path $script:OccTwoRoot -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'returns 2' {
+			$result = Get-BuildQueueOccupancy -StateRoot $script:OccTwoRoot -SelfSeq 1
+			$result | Should -Be 2
+		}
+	}
+
+	Context 'dead-pid does NOT count' {
+		BeforeAll {
+			$script:OccDeadRoot = Join-Path $env:TEMP ("occ-dead-" + [guid]::NewGuid().ToString('N'))
+			New-Item -ItemType Directory -Path (Join-Path $script:OccDeadRoot 'tickets') -Force | Out-Null
+			$script:OccDeadLock = Join-Path $script:OccDeadRoot 'active.lock'
+			[System.IO.File]::WriteAllText($script:OccDeadLock, (@{ seq = 2; build_pid = 999999999 } | ConvertTo-Json -Compress))
+		}
+
+		AfterAll {
+			Remove-Item -Path $script:OccDeadRoot -Recurse -Force -ErrorAction SilentlyContinue
+		}
+
+		It 'returns 0' {
+			$result = Get-BuildQueueOccupancy -StateRoot $script:OccDeadRoot -SelfSeq 1
+			$result | Should -Be 0
+		}
+	}
+
+	Context 'fail-open -- absent state dir' {
+		It 'does not throw and returns 0' {
+			$bogusRoot = Join-Path $env:TEMP ("occ-bogus-" + [guid]::NewGuid().ToString('N'))
+			{ Get-BuildQueueOccupancy -StateRoot $bogusRoot -SelfSeq 1 } | Should -Not -Throw
+
+			$result = Get-BuildQueueOccupancy -StateRoot $bogusRoot -SelfSeq 1
+			$result | Should -Be 0
+		}
+	}
+}
+
+Describe 'Reset-CompilerServer occupancy gate (-OtherBuildActive)' {
+	# NOTE: same child-scope discipline as above -- assign on its own line, assert on the next.
+
+	It 'skips the recycle and returns $false when -OtherBuildActive $true (concurrency gate)' {
+		{ Reset-CompilerServer -OtherBuildActive $true } | Should -Not -Throw
+
+		$result = Reset-CompilerServer -OtherBuildActive $true
+		$result | Should -Be $false
+	}
+
+	It 'does not throw when -OtherBuildActive $false (sole -- performs the normal recycle path)' {
+		{ Reset-CompilerServer -OtherBuildActive $false } | Should -Not -Throw
+	}
+
+	It 'returns a [bool] on the normal (non-gated) path when -OtherBuildActive $false' {
+		$result = Reset-CompilerServer -OtherBuildActive $false
+		($result -eq $true -or $result -eq $false) | Should -Be $true
+	}
+}

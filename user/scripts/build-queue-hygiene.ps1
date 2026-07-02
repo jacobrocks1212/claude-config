@@ -339,6 +339,141 @@ function Stop-BuildJobTree {
 	return $true
 }
 
+function Get-BuildQueueOccupancy {
+	<#
+	.SYNOPSIS
+	  Counts the OTHER live (non-self) queue seqs currently occupying the
+	  machine-global build queue, so a caller can gate a machine-wide action
+	  (the VBCSCompiler recycle) on whether it would be safe.
+
+	.DESCRIPTION
+	  Self-contained — does NOT depend on build-queue.ps1 (no dot-sourcing,
+	  no shared helper reuse) so this module stays independently loadable.
+
+	  Reads every ticket under `<StateRoot>/tickets/*.json` (each expected
+	  to carry `{seq, pid}`) and the single `<StateRoot>/active.lock` (if
+	  present, expected to carry `{seq, build_pid}`). A seq is counted iff
+	  it is a valid integer, it is NOT $SelfSeq, and its pid is ALIVE. The
+	  same OTHER seq can legitimately appear in both a ticket AND
+	  active.lock (a build holds its ticket while it also holds the active
+	  lock) — such a seq is counted ONCE (union by seq, not by occurrence).
+
+	  Pid liveness is checked inline via
+	  [System.Diagnostics.Process]::GetProcessById — this module
+	  deliberately does NOT depend on build-queue.ps1's Test-PidAlive. A pid
+	  <= 0 is treated as dead. A GetProcessById call that throws
+	  [System.ArgumentException] means no such process exists → dead. Any
+	  OTHER exception (e.g. access denied) fails SAFE to alive — matching
+	  the existing Test-PidAlive / Get-ActiveLockStatusFromText "fail safe
+	  to alive" bias elsewhere in this module.
+
+	  FAIL-OPEN TOWARD RECYCLE: the entire read is wrapped so that ANY
+	  failure (absent/unreadable StateRoot, an unreadable/malformed
+	  individual ticket, a malformed active.lock) yields a LOW count. An
+	  unreadable individual ticket is skipped (not counted) rather than
+	  aborting the whole scan. This bias is deliberate — a failed occupancy
+	  read must fall back to the EXISTING (pre-gate) recycle behavior
+	  (count 0 -> `Reset-CompilerServer -OtherBuildActive $false` -> normal
+	  recycle), never silently keep a poisoned compiler server alive by
+	  spuriously reporting a high occupancy.
+
+	.PARAMETER StateRoot
+	  Root directory of the build-queue state (contains `tickets/` and
+	  `active.lock`).
+
+	.PARAMETER SelfSeq
+	  The calling build's own queue seq, excluded from the count.
+
+	.OUTPUTS
+	  [int] count of OTHER live seqs. Never throws; never negative.
+	#>
+	[CmdletBinding()]
+	[OutputType([int])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[Parameter(Mandatory = $true)]
+		[int]$SelfSeq
+	)
+
+	$isPidAlive = {
+		param([long]$TargetPid)
+
+		if ($TargetPid -le 0) {
+			return $false
+		}
+
+		try {
+			[void][System.Diagnostics.Process]::GetProcessById([int]$TargetPid)
+			return $true
+		} catch [System.ArgumentException] {
+			return $false
+		} catch {
+			# Any other failure (e.g. access denied) fails SAFE to alive.
+			return $true
+		}
+	}
+
+	$count = Get-SafeValue {
+		$liveOtherSeqs = New-Object 'System.Collections.Generic.HashSet[int]'
+
+		$ticketsDir = Join-Path $StateRoot 'tickets'
+		if (Test-Path -LiteralPath $ticketsDir) {
+			$ticketFiles = Get-SafeValue { Get-ChildItem -LiteralPath $ticketsDir -Filter '*.json' -File -ErrorAction Stop } @()
+			if ($null -eq $ticketFiles) { $ticketFiles = @() }
+
+			foreach ($ticketFile in @($ticketFiles)) {
+				$parsed = Get-SafeValue {
+					$text = [System.IO.File]::ReadAllText($ticketFile.FullName)
+					$text | ConvertFrom-Json
+				} $null
+				if ($null -eq $parsed) { continue }
+
+				$seq = Get-SafeValue { [int]$parsed.seq } $null
+				if ($null -eq $seq -or $seq -eq $SelfSeq) { continue }
+
+				$ticketPid = Get-SafeValue { [long]$parsed.pid } $null
+				if ($null -eq $ticketPid) { continue }
+
+				$alive = Get-SafeValue { & $isPidAlive $ticketPid } $false
+				if ($alive -eq $true) {
+					[void]$liveOtherSeqs.Add($seq)
+				}
+			}
+		}
+
+		$lockPath = Join-Path $StateRoot 'active.lock'
+		if (Test-Path -LiteralPath $lockPath) {
+			$lockParsed = Get-SafeValue {
+				$text = [System.IO.File]::ReadAllText($lockPath)
+				$text | ConvertFrom-Json
+			} $null
+
+			if ($null -ne $lockParsed) {
+				$lockSeq = Get-SafeValue { [int]$lockParsed.seq } $null
+				if ($null -ne $lockSeq -and $lockSeq -ne $SelfSeq) {
+					$lockPid = Get-SafeValue { [long]$lockParsed.build_pid } $null
+					if ($null -ne $lockPid) {
+						$lockAlive = Get-SafeValue { & $isPidAlive $lockPid } $false
+						if ($lockAlive -eq $true) {
+							[void]$liveOtherSeqs.Add($lockSeq)
+						}
+					}
+				}
+			}
+		}
+
+		$liveOtherSeqs.Count
+	} 0
+
+	if ($null -eq $count) {
+		return 0
+	}
+
+	return [int]$count
+}
+
 function Reset-CompilerServer {
 	<#
 	.SYNOPSIS
@@ -355,25 +490,62 @@ function Reset-CompilerServer {
 
 	  This name-targeted fallback is the ONE sanctioned name-targeted kill in
 	  this module (Locked Decision 1 in
-	  docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash). It is
-	  safe ONLY because the build queue serializes builds machine-wide — by
-	  the time a build finishes, no other queued build's compiler server can
-	  be mid-use, so recycling it never tears down a concurrent build. This
-	  is a narrow, deliberate exception to Locked Decision 2's no-global-
-	  process-kill rule (see New-BuildJobObject/Stop-BuildJobTree above),
-	  and it must stay scoped to this one compiler-server process. It must
-	  NEVER be widened to the build-tree process family (the SDK CLI host,
-	  the test host, or the MSBuild host process) — those remain reaped
-	  exclusively via Job-Object membership per Locked Decision 2, never by
-	  matching their process name.
+	  docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash). It is a
+	  narrow, deliberate exception to Locked Decision 2's no-global-process-
+	  kill rule (see New-BuildJobObject/Stop-BuildJobTree above), and it must
+	  stay scoped to this one compiler-server process. It must NEVER be
+	  widened to the build-tree process family (the SDK CLI host, the test
+	  host, or the MSBuild host process) — those remain reaped exclusively
+	  via Job-Object membership per Locked Decision 2, never by matching
+	  their process name.
+
+	  OCCUPANCY-GATED (this is no longer safe by blanket machine-wide
+	  serialization assumption). The recycle used to be justified by "the
+	  build queue serializes builds machine-wide, so by the time a build
+	  finishes no other queued build's compiler server can be mid-use" — but
+	  that invariant is violable (a reclaim race on a stale lock, or an
+	  off-queue `BUILD_QUEUE_BYPASS=1` build, can run concurrently with this
+	  build), and a blind recycle in that window kills a CONCURRENT
+	  worktree's live VBCSCompiler mid-compile (MSB4166). The caller now
+	  computes queue occupancy (`Get-BuildQueueOccupancy`) and passes
+	  `-OtherBuildActive`: when another build is active, the recycle is
+	  SKIPPED entirely (shared compilation stays enabled; only the recycle
+	  is gated) so it never tears down a concurrent build's compiler server.
+
+	  Residuals (accepted, not closed):
+	    (a) Occupancy is queue-visible only. An off-queue
+	        `BUILD_QUEUE_BYPASS=1` build never writes a ticket/active.lock
+	        entry, so it is invisible to `Get-BuildQueueOccupancy` and can
+	        still be torn down by a recycle that sees occupancy 0. Mitigated
+	        (the common case — a queue-obedient concurrent build — is now
+	        safe), not closed.
+	    (b) The fail-open bias is TOWARD recycling, not away from it. An
+	        occupancy-read failure (unreadable state dir, malformed ticket
+	        JSON, etc.) resolves to a count of 0 — i.e. the recycle
+	        proceeds — because a failed occupancy read must never silently
+	        leave a poisoned VBCSCompiler running machine-wide.
+
+	.PARAMETER OtherBuildActive
+	  Whether the caller has determined (via Get-BuildQueueOccupancy) that at
+	  least one OTHER build is currently active in the queue. When $true,
+	  the recycle is skipped and this function returns $false without
+	  attempting either the graceful shutdown or the fallback kill.
 
 	.OUTPUTS
-	  [bool] $true if a recycle action was taken/succeeded, $false otherwise
-	  (fail-open — never throws).
+	  [bool] $true if a recycle action was taken/succeeded, $false if it was
+	  skipped (occupancy-gated) or otherwise failed (fail-open — never
+	  throws).
 	#>
 	[CmdletBinding()]
 	[OutputType([bool])]
-	param()
+	param(
+		[bool]$OtherBuildActive = $false
+	)
+
+	if ($OtherBuildActive) {
+		Write-Verbose 'Reset-CompilerServer: another build is active (occupancy>0) — SKIPPING the machine-wide VBCSCompiler recycle to avoid tearing down a concurrent build''s compiler server.'
+		return $false
+	}
 
 	$result = Get-SafeValue {
 		$gracefulOk = Get-SafeValue {
