@@ -458,7 +458,10 @@ Get-SafeValue {
 	}
 }
 
-Get-SafeValue { Reset-CompilerServer }
+Get-SafeValue {
+	$occupancy = Get-SafeValue { Get-BuildQueueOccupancy -StateRoot $stateRoot -SelfSeq $seq } 0
+	Reset-CompilerServer -OtherBuildActive ($occupancy -gt 0)
+}
 
 Write-Output "build-queue: build complete (seq=$seq, exit_code=$exitCode)"
 

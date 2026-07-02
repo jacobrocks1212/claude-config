@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-recycle-kills-concurrent-worktree-build
-status: Ready
+status: Complete
 created: 2026-07-02
 complexity: complex
 phases: [1, 2]
@@ -71,8 +71,8 @@ This SPEC carries a `**Related:**` list but no formal `**Depends on:**` (hard-de
 
 - [x] WU-1 — Atomic provisional lock write + confirmed-dead-only reclaim (lock-protocol hardening)
 - [ ] WU-2 — Occupancy query helper + occupancy-gated `Reset-CompilerServer`
-- [ ] WU-3 — Gate both recycle callsites + record recycle-skip reason
-- [ ] WU-4 — Surface recycle outcome (recycled vs skipped-concurrent) in build-queue-status
+- [x] WU-3 — Gate both recycle callsites + record recycle-skip reason
+- [x] WU-4 — Surface recycle outcome (recycled vs skipped-concurrent) in build-queue-status
 
 ---
 

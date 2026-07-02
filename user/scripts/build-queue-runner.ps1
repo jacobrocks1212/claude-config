@@ -19,6 +19,7 @@
       seq: <int>, exit_code: <int>, ended_at: "<ISO-8601>",
       hygiene: {
         vbcscompiler_recycled: <bool>,   # whether VBCSCompiler was recycled after the build
+        recycle_skipped_reason: "concurrent-build-active" | null, # non-null iff the recycle was skipped because another queue build was live (occupancy > 0); null when the recycle ran (sole build) or otherwise
         quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
         result_fidelity: "verified" | "no-output" | "n/a"  # "no-output" = test op produced zero results; "verified" = test op had real output; "n/a" = build op
         build_fidelity: "log-failure-override" | "verified" | "n/a"  # "log-failure-override" = a build op exited 0 but its captured log matched a known MSBuild failure signature (Test-BuildLogFailure), so the exit code/buildFailed were overridden to failure BEFORE the quarantine gate; "verified" = build op needed no override; "n/a" = non-build op (e.g. test)
@@ -71,6 +72,7 @@ function Format-ProcArg {
 
 $job = [IntPtr]::Zero
 $vbcscompilerRecycled = $false
+$recycleSkippedReason = $null
 $quarantinedArtifacts = @()
 $lockersReaped = @()
 $execLeaf = Get-SafeValue { Split-Path -Leaf $Exec } ''
@@ -145,7 +147,10 @@ try {
 	}
 } finally {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
-	$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer } $false
+	$occupancy = Get-SafeValue { Get-BuildQueueOccupancy -StateRoot $StateRoot -SelfSeq $Seq } 0
+	$otherBuildActive = ($occupancy -gt 0)
+	$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer -OtherBuildActive $otherBuildActive } $false
+	$recycleSkippedReason = if ($otherBuildActive) { 'concurrent-build-active' } else { $null }
 
 	$buildFailed = Get-SafeValue { ($null -eq $exitCode) -or ($exitCode -ne 0) } $true
 	if ($buildFailed -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
@@ -174,11 +179,12 @@ $resultBody = [ordered]@{
 	exit_code = $exitCode
 	ended_at  = (Get-Date).ToString('o')
 	hygiene   = [ordered]@{
-		vbcscompiler_recycled = $vbcscompilerRecycled
-		quarantined_artifacts = $quarantinedArtifacts
-		result_fidelity       = $resultFidelity
-		build_fidelity        = $buildFidelity
-		lockers_reaped        = $lockersReaped
+		vbcscompiler_recycled  = $vbcscompilerRecycled
+		recycle_skipped_reason = $recycleSkippedReason
+		quarantined_artifacts  = $quarantinedArtifacts
+		result_fidelity        = $resultFidelity
+		build_fidelity         = $buildFidelity
+		lockers_reaped         = $lockersReaped
 	}
 } | ConvertTo-Json -Compress -Depth 5
 
