@@ -19865,6 +19865,50 @@ def test_phases_mcp_runtime_not_required_false_when_required_or_absent():
         assert lazy_core.phases_mcp_runtime_not_required(spec2) is False
 
 
+def test_read_mcp_runtime_decision_required_reason_mentions_not_required():
+    """A ``**MCP runtime:** required`` line whose REASON PROSE contains the
+    literal 'not-required' must resolve to runtime-up, NOT no-runtime.
+
+    Regression for the first-time-login deadlock (2026-07): the old unanchored
+    ``if "not-required" in stripped`` substring test mis-classified a required
+    line reading '... not eligible for not-required' as no-runtime, deadlocking
+    Step 9 (step_repeat_count=3). The anchored value-token test must ignore the
+    reason prose entirely.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        spec.mkdir()
+        (spec / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "**MCP runtime:** required — this feature is not eligible "
+            "for not-required and must boot the runtime\n",
+            encoding="utf-8",
+        )
+        variant, reason = lazy_core._read_mcp_runtime_decision(str(spec))
+        assert variant == "runtime-up"
+        assert reason is None
+
+
+def test_read_mcp_runtime_decision_not_required_value_token():
+    """A genuine ``**MCP runtime:** not-required`` line resolves to no-runtime
+    and extracts the post-dash reason. Guards against the anchored fix
+    over-tightening and dropping the true not-required case."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        spec.mkdir()
+        (spec / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "**MCP runtime:** not-required — the plan declares no "
+            "MCP-reachable surface\n",
+            encoding="utf-8",
+        )
+        variant, reason = lazy_core._read_mcp_runtime_decision(str(spec))
+        assert variant == "no-runtime"
+        assert reason == "the plan declares no MCP-reachable surface"
+
+
 def test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo():
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -23368,6 +23412,10 @@ _TESTS = _TESTS + [
      test_phases_mcp_runtime_not_required_false_when_required_or_absent),
     ("test_phases_mcp_runtime_not_required_true",
      test_phases_mcp_runtime_not_required_true),
+    ("test_read_mcp_runtime_decision_required_reason_mentions_not_required",
+     test_read_mcp_runtime_decision_required_reason_mentions_not_required),
+    ("test_read_mcp_runtime_decision_not_required_value_token",
+     test_read_mcp_runtime_decision_not_required_value_token),
     ("test_plan_series_index_from_filename",
      test_plan_series_index_from_filename),
     ("test_plan_series_index_frontmatter_override",

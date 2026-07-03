@@ -5746,7 +5746,15 @@ def _read_mcp_runtime_decision(spec_path: str | None) -> tuple[str, str | None]:
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("**MCP runtime:**"):
-            if "not-required" in stripped:
+            # ANCHORED value-token test — mirror phases_mcp_runtime_not_required
+            # (line ~449). Match ``not-required`` ONLY as the VALUE token right
+            # after the marker (word-boundary terminated), NOT as a substring
+            # anywhere on the line. Without the anchor, a ``**MCP runtime:**
+            # required`` line whose REASON PROSE mentions "not-required" (e.g.
+            # "... not eligible for not-required") is mis-classified as
+            # no-runtime, deadlocking a required-runtime mcp-test cycle
+            # (first-time-login, 2026-07).
+            if re.match(r"(?i)\*\*MCP runtime:\*\*\s*not-required\b", stripped):
                 # Reason = text after the first dash (ASCII '-' or em-dash '—').
                 reason = fallback_reason
                 for dash in ("—", "-"):
