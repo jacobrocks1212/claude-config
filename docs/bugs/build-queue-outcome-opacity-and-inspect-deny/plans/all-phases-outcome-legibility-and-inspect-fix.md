@@ -77,9 +77,9 @@ For context, the SPEC's `**Related:**` cross-links (read only if a WU's behavior
 - [x] WU-1 — Anchor the bqe deny surface to invoke-vs-reference + regression tests
 - [x] WU-2 — test-filtered.ps1 zero-match detection (pure decision helper) + Pester
 - [x] WU-3 — Runner `result_fidelity` mapping for `no-tests-matched` + schema doc
-- [ ] WU-4 — Pure banner-formatting helper in build-queue-hygiene.ps1 + Pester
-- [ ] WU-5 — Runner: capture test-op Passed/Failed/Total counts into hygiene JSON
-- [ ] WU-6 — Wrapper: compose+print banner; fix Step-5 hygiene clobber
+- [x] WU-4 — Pure banner-formatting helper in build-queue-hygiene.ps1 + Pester
+- [x] WU-5 — Runner: capture test-op Passed/Failed/Total counts into hygiene JSON
+- [x] WU-6 — Wrapper: compose+print banner; fix Step-5 hygiene clobber
 - [ ] WU-7 — Four SKILL.md files: trust-the-banner guidance
 
 ---

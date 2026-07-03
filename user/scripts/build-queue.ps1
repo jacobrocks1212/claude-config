@@ -422,13 +422,28 @@ $exitCode = $proc.ExitCode
 # ---------------------------------------------------------------------------
 # Step 5: Release - write results, delete active.lock
 # ---------------------------------------------------------------------------
-$resultBody = [ordered]@{
-	seq       = $seq
-	exit_code = $exitCode
-	ended_at  = (Get-Date).ToString('o')
-} | ConvertTo-Json -Compress
 $resultPath = Join-Path $resultsDir "$seq.json"
 $resultTmp  = Join-Path $resultsDir "$seq.tmp"
+$endedAt = (Get-Date).ToString('o')
+
+$mergedResult = Get-SafeValue {
+	$existingText = [System.IO.File]::ReadAllText($resultPath)
+	$parsed = $existingText | ConvertFrom-Json
+	$parsed.exit_code = $exitCode
+	$parsed.ended_at  = $endedAt
+	$parsed
+} $null
+
+$resultBody = if ($null -ne $mergedResult) {
+	$mergedResult | ConvertTo-Json -Compress -Depth 5
+} else {
+	[ordered]@{
+		seq       = $seq
+		exit_code = $exitCode
+		ended_at  = $endedAt
+	} | ConvertTo-Json -Compress
+}
+
 Get-SafeValue { [System.IO.File]::WriteAllText($resultTmp, $resultBody) }
 try {
 	[System.IO.File]::Replace($resultTmp, $resultPath, [NullString]::Value)
@@ -463,7 +478,26 @@ Get-SafeValue {
 	Reset-CompilerServer -OtherBuildActive ($occupancy -gt 0)
 }
 
-Write-Output "build-queue: build complete (seq=$seq, exit_code=$exitCode)"
+Get-SafeValue {
+	$finalResultText = [System.IO.File]::ReadAllText($resultPath)
+	$finalResult = $finalResultText | ConvertFrom-Json
+
+	$resultFidelity = Get-SafeValue { $finalResult.hygiene.result_fidelity } $null
+	$buildFidelity  = Get-SafeValue { $finalResult.hygiene.build_fidelity } $null
+
+	$bannerCounts = $null
+	$parsedCounts = Get-SafeValue { $finalResult.counts } $null
+	if ($null -ne $parsedCounts) {
+		$bannerCounts = @{
+			passed = $parsedCounts.passed
+			failed = $parsedCounts.failed
+			total  = $parsedCounts.total
+		}
+	}
+
+	$banner = Format-BuildQueueBanner -Seq $seq -Op $Op -ExitCode $exitCode -ResultFidelity $resultFidelity -BuildFidelity $buildFidelity -Counts $bannerCounts
+	Write-Output $banner
+}
 
 exit $exitCode
 

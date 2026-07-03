@@ -1186,3 +1186,106 @@ function Test-BuildLogFailure {
 		return [ordered]@{ failed = $false; signature = $null }
 	} $benignResult
 }
+
+function Format-BuildQueueBanner {
+	<#
+	.SYNOPSIS
+	  Composes a single-line build-queue outcome banner string — RESULT,
+	  test counts, result-fidelity, and (on any non-PASS result) a stable
+	  next-action hint.
+
+	.DESCRIPTION
+	  Pure, side-effect-free string formatting: no filesystem/process access,
+	  never throws (even on $null counts or $null/empty fidelity strings).
+
+	  RESULT precedence (checked in this order):
+	    1. NO-TESTS-MATCHED  when $ResultFidelity -eq 'no-tests-matched'
+	    2. FAIL              when $ExitCode -ne 0 OR $BuildFidelity -eq
+	                          'log-failure-override'
+	    3. PASS              otherwise
+
+	  A non-PASS RESULT appends exactly one next-action suffix:
+	    - NO-TESTS-MATCHED -> "widen the filter and retry"
+	    - FAIL, exit code 4 -> "rebuild (stale DLL)"
+	    - FAIL, otherwise    -> "read logs/<Seq>.build.err.log"
+
+	.PARAMETER Seq
+	  The build-queue sequence number for this build.
+
+	.PARAMETER Op
+	  The queued operation name (e.g. msbuild, mstest, nxbuild, nxtest).
+
+	.PARAMETER ExitCode
+	  The build/test process exit code.
+
+	.PARAMETER ResultFidelity
+	  The result-fidelity classification (e.g. verified, no-tests-matched).
+
+	.PARAMETER BuildFidelity
+	  The build-fidelity classification (e.g. verified, log-failure-override).
+
+	.PARAMETER Counts
+	  Optional hashtable with keys 'passed'/'failed'/'total'. Any key (or the
+	  whole hashtable) may be $null; a $null/missing 'total' omits the
+	  tests=/failed= segment entirely.
+
+	.OUTPUTS
+	  [string] a single-line banner. Never throws.
+	#>
+	[CmdletBinding()]
+	[OutputType([string])]
+	param(
+		[int]$Seq,
+		[string]$Op,
+		[int]$ExitCode,
+		[string]$ResultFidelity,
+		[string]$BuildFidelity,
+		[hashtable]$Counts
+	)
+
+	$result = Get-SafeValue {
+		$resultLabel = if ($ResultFidelity -eq 'no-tests-matched') {
+			'NO-TESTS-MATCHED'
+		} elseif ($ExitCode -ne 0 -or $BuildFidelity -eq 'log-failure-override') {
+			'FAIL'
+		} else {
+			'PASS'
+		}
+
+		$banner = "build-queue: seq=$Seq op=$Op RESULT=$resultLabel"
+
+		$total = $null
+		if ($null -ne $Counts) {
+			$total = Get-SafeValue { $Counts['total'] } $null
+		}
+		if ($null -ne $total) {
+			$failed = Get-SafeValue { $Counts['failed'] } $null
+			if ($null -eq $failed) {
+				$failed = 0
+			}
+			$banner += " tests=$total failed=$failed"
+		}
+
+		$banner += " (result_fidelity=$ResultFidelity)"
+
+		if ($resultLabel -ne 'PASS') {
+			$nextAction = if ($resultLabel -eq 'NO-TESTS-MATCHED') {
+				'widen the filter and retry'
+			} elseif ($ExitCode -eq 4) {
+				'rebuild (stale DLL)'
+			} else {
+				"read logs/$Seq.build.err.log"
+			}
+			$banner += " -> $nextAction"
+		}
+
+		$banner
+	} $null
+
+	if ($null -eq $result) {
+		Write-Warning 'Format-BuildQueueBanner: failed to compose banner; returning a benign fallback (fail-open).'
+		return "build-queue: seq=$Seq op=$Op RESULT=UNKNOWN (result_fidelity=$ResultFidelity)"
+	}
+
+	return [string]$result
+}

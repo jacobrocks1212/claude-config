@@ -17,6 +17,11 @@
   results/<seq>.json schema
     {
       seq: <int>, exit_code: <int>, ended_at: "<ISO-8601>",
+      counts: { passed: <int>, failed: <int>, total: <int> } | null,
+        # Parsed from the LAST "Results: Passed=<P> Failed=<F> Total=<T>" line found
+        # in logs/<seq>.log (the test grandchild's inherited stdout, which the
+        # wrapper already tails live — no separate redirect is added for this).
+        # null for a non-test op, a missing log, or an unparseable/absent line.
       hygiene: {
         vbcscompiler_recycled: <bool>,   # whether VBCSCompiler was recycled after the build
         recycle_skipped_reason: "concurrent-build-active" | null, # non-null iff the recycle was skipped because another queue build was live (occupancy > 0); null when the recycle ran (sole build) or otherwise
@@ -77,6 +82,7 @@ $quarantinedArtifacts = @()
 $lockersReaped = @()
 $execLeaf = Get-SafeValue { Split-Path -Leaf $Exec } ''
 $isBuildOp = $execLeaf -match 'build-filtered\.ps1$'
+$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
 $buildLogPath = $null
 $buildFidelity = 'n/a'
 trap {
@@ -159,12 +165,31 @@ try {
 }
 
 $resultFidelity = Get-SafeValue {
-	$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
 	if (-not $isTestOp) { 'n/a' }
 	elseif ($exitCode -eq 3) { 'no-output' }
 	elseif ($exitCode -eq 5) { 'no-tests-matched' }
 	else { 'verified' }
 } 'n/a'
+
+# Test-op Passed/Failed/Total counts, parsed from the grandchild's inherited stdout
+# (already captured in logs/<seq>.log by the wrapper's live-tail redirect — no
+# additional RedirectStandardOutput is added here for test ops, which would break
+# that live tail). Fail-open: any read/parse error, a non-test op, a missing log,
+# or an absent "Results:" line all yield $null (never throws).
+$counts = Get-SafeValue {
+	if (-not $isTestOp) { return $null }
+	$testLogPath = Join-Path (Join-Path $StateRoot 'logs') "$Seq.log"
+	if (-not (Test-Path $testLogPath)) { return $null }
+	$logText = [System.IO.File]::ReadAllText($testLogPath)
+	$resultMatches = [regex]::Matches($logText, '^Results:\s*Passed=(\d+)\s+Failed=(\d+)\s+Total=(\d+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+	if ($resultMatches.Count -eq 0) { return $null }
+	$m = $resultMatches[$resultMatches.Count - 1]
+	[ordered]@{
+		passed = [int]$m.Groups[1].Value
+		failed = [int]$m.Groups[2].Value
+		total  = [int]$m.Groups[3].Value
+	}
+} $null
 
 $resultsDir = Join-Path $StateRoot 'results'
 Get-SafeValue {
@@ -179,6 +204,7 @@ $resultBody = [ordered]@{
 	seq       = $Seq
 	exit_code = $exitCode
 	ended_at  = (Get-Date).ToString('o')
+	counts    = $counts
 	hygiene   = [ordered]@{
 		vbcscompiler_recycled  = $vbcscompilerRecycled
 		recycle_skipped_reason = $recycleSkippedReason

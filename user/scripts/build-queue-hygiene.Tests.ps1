@@ -588,3 +588,46 @@ Describe 'Reset-CompilerServer occupancy gate (-OtherBuildActive)' {
 		($result -eq $true -or $result -eq $false) | Should -Be $true
 	}
 }
+
+Describe 'Format-BuildQueueBanner' {
+	# NOTE: same child-scope discipline as above -- assign on its own line, assert on the next
+	# (except where the task explicitly wants a `{ } | Should -Not -Throw` guard, in which case
+	# the throw-guard call and the value-read call are both made, matching the Reset-CompilerServer
+	# pattern above).
+
+	It 'defines Format-BuildQueueBanner' {
+		Get-Command Format-BuildQueueBanner -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'PASS: renders tests=/failed= and (result_fidelity=...) with NO next-action suffix' {
+		$result = Format-BuildQueueBanner -Seq 614 -Op mstest -ExitCode 0 -ResultFidelity verified -BuildFidelity verified -Counts @{ passed = 312; failed = 0; total = 312 }
+		$result | Should -Be 'build-queue: seq=614 op=mstest RESULT=PASS tests=312 failed=0 (result_fidelity=verified)'
+	}
+
+	It 'FAIL via non-zero exit code: RESULT=FAIL with the read-logs next-action naming the seq' {
+		$result = Format-BuildQueueBanner -Seq 620 -Op msbuild -ExitCode 1 -ResultFidelity verified -BuildFidelity verified
+		$result | Should -Be 'build-queue: seq=620 op=msbuild RESULT=FAIL (result_fidelity=verified) -> read logs/620.build.err.log'
+	}
+
+	It 'FAIL via log-failure-override (exit 0): RESULT=FAIL with the SAME read-logs next-action' {
+		$result = Format-BuildQueueBanner -Seq 621 -Op nxtest -ExitCode 0 -ResultFidelity verified -BuildFidelity log-failure-override
+		$result | Should -Be 'build-queue: seq=621 op=nxtest RESULT=FAIL (result_fidelity=verified) -> read logs/621.build.err.log'
+	}
+
+	It 'NO-TESTS-MATCHED takes precedence over the exit code and gets the widen-filter next-action' {
+		$result = Format-BuildQueueBanner -Seq 622 -Op mstest -ExitCode 5 -ResultFidelity no-tests-matched -BuildFidelity verified
+		$result | Should -Be 'build-queue: seq=622 op=mstest RESULT=NO-TESTS-MATCHED (result_fidelity=no-tests-matched) -> widen the filter and retry'
+	}
+
+	It 'staleness: exit code 4 gets the rebuild-stale-DLL next-action' {
+		$result = Format-BuildQueueBanner -Seq 623 -Op msbuild -ExitCode 4 -ResultFidelity verified -BuildFidelity verified
+		$result | Should -Be 'build-queue: seq=623 op=msbuild RESULT=FAIL (result_fidelity=verified) -> rebuild (stale DLL)'
+	}
+
+	It 'null-counts safety: does not throw and omits the tests= segment' {
+		{ Format-BuildQueueBanner -Seq 624 -Op mstest -ExitCode 0 -ResultFidelity verified -BuildFidelity verified -Counts $null } | Should -Not -Throw
+
+		$result = Format-BuildQueueBanner -Seq 624 -Op mstest -ExitCode 0 -ResultFidelity verified -BuildFidelity verified -Counts $null
+		$result | Should -Be 'build-queue: seq=624 op=mstest RESULT=PASS (result_fidelity=verified)'
+	}
+}
