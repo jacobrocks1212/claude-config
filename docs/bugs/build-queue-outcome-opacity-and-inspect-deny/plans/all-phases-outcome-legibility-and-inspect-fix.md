@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-outcome-opacity-and-inspect-deny
-status: Ready
+status: Complete
 created: 2026-07-03
 complexity: complex
 phases: [1, 2, 3, 4]
