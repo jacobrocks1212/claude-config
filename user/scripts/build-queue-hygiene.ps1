@@ -108,6 +108,110 @@ function Read-WithRetry {
 	return $Fallback
 }
 
+function Test-BuildProducedNoOutput {
+	<#
+	.SYNOPSIS
+	  Positive build-output classifier: returns $true when a build op produced
+	  no captured output (the exit-0 silently-broken-build residual case).
+
+	.DESCRIPTION
+	  Fix for build-queue-false-green-on-silent-build-failure Root Cause B: the
+	  runner's negative log-signature scan (Test-BuildLogFailure) fails OPEN on a
+	  0-byte / empty / whitespace-only build log, so a build that compiled nothing
+	  is reported as a clean PASS. This is the POSITIVE complement — it asserts the
+	  build actually emitted output rather than only scanning for known failure
+	  signatures.
+
+	  DEFAULT DETECTION (implemented here): the passed build-log text is classified
+	  no-output ($true) when it is $null (a missing log path — the runner never
+	  captured a log), empty, whitespace-only, or NEAR-EMPTY (trimmed length below
+	  -MinChars). A real MSBuild / nx build log — even a trivial all-up-to-date one —
+	  carries the tool banner, "Build succeeded.", warning/error counts, and an
+	  elapsed-time line, i.e. hundreds of characters, so the near-empty threshold
+	  cannot false-positive a genuine build.
+
+	  FOLLOW-ON KNOB (documented, NOT implemented here): a stronger
+	  expected-output-DLL check — the build's expected output DLL exists AND is
+	  newer than its sources — would catch a build that logged plausibly but wrote
+	  no artifact. It requires an expected-output path the runner does not track
+	  today; it is a deliberate future extension (SPEC Open Question "Build-output
+	  detection method"), left out of this default classifier.
+
+	  Pure, side-effect-free; never throws.
+
+	.PARAMETER LogText
+	  The captured build-log text (read once, flush-safely, via Read-WithRetry).
+	  $null when the runner never captured a log.
+
+	.PARAMETER MinChars
+	  Near-empty threshold: a trimmed log shorter than this many characters counts
+	  as no-output. Default 40 — comfortably below any real build log, well above a
+	  truncated/empty capture.
+
+	.OUTPUTS
+	  [bool] $true when the build produced no output; $false otherwise.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[string]$LogText,
+		[int]$MinChars = 40
+	)
+
+	if ([string]::IsNullOrWhiteSpace($LogText)) { return $true }
+	if ($LogText.Trim().Length -lt $MinChars) { return $true }
+	return $false
+}
+
+function Get-HygieneHighlight {
+	<#
+	.SYNOPSIS
+	  Pure highlight selector for the per-build hygiene line in
+	  build-queue-status.ps1: maps a build_fidelity / result_fidelity pair to the
+	  status-line suffix + console color.
+
+	.DESCRIPTION
+	  Extracted so build-queue-status.ps1 and its Pester coverage exercise the SAME
+	  branch selection (the status script itself reads state dirs and is not
+	  dot-source-testable). Precedence (highest first):
+	    1. build_fidelity 'log-failure-override' -> Red  '[BUILD LIED - copy-lock override fired]'
+	    2. build_fidelity 'no-output'            -> Red  '[BUILD LIED - produced no output]'
+	    3. result_fidelity 'no-output' (test op) -> Yellow '[UNVERIFIED - no test output captured]'
+	    4. otherwise                             -> no highlight (empty suffix, $null color)
+
+	  The two build-op arms (1,2) are distinct RED signals; the test-op arm (3) is a
+	  softer YELLOW — a test op that captured no results is unverified, not a lie.
+	  Pure, side-effect-free; never throws.
+
+	.PARAMETER BuildFidelity
+	  The recorded hygiene.build_fidelity ('verified' | 'log-failure-override' |
+	  'no-output' | 'n/a').
+
+	.PARAMETER ResultFidelity
+	  The recorded hygiene.result_fidelity ('verified' | 'no-output' |
+	  'no-tests-matched' | 'n/a').
+
+	.OUTPUTS
+	  [hashtable] @{ Suffix = <string>; Color = <ConsoleColor name or $null> }.
+	#>
+	[CmdletBinding()]
+	[OutputType([hashtable])]
+	param(
+		[string]$BuildFidelity,
+		[string]$ResultFidelity
+	)
+
+	if ($BuildFidelity -eq 'log-failure-override') {
+		return @{ Suffix = '  [BUILD LIED - copy-lock override fired]'; Color = 'Red' }
+	} elseif ($BuildFidelity -eq 'no-output') {
+		return @{ Suffix = '  [BUILD LIED - produced no output]'; Color = 'Red' }
+	} elseif ($ResultFidelity -eq 'no-output') {
+		return @{ Suffix = '  [UNVERIFIED - no test output captured]'; Color = 'Yellow' }
+	} else {
+		return @{ Suffix = ''; Color = $null }
+	}
+}
+
 # Guard Add-Type so re-dot-sourcing this file in the same PowerShell session
 # (or re-importing in a test run) does not throw "type already exists".
 if (-not ([System.Management.Automation.PSTypeName]'BuildQueueHygiene.NativeMethods').Type) {
@@ -1331,6 +1435,7 @@ function Format-BuildQueueBanner {
 
 	  A non-PASS RESULT appends exactly one next-action suffix:
 	    - NO-TESTS-MATCHED -> "widen the filter and retry"
+	    - FAIL, build_fidelity no-output -> "build produced no output; delete obj/bin and rebuild"
 	    - FAIL, exit code 4 -> "rebuild (stale DLL)"
 	    - FAIL, otherwise    -> "read logs/<Seq>.build.err.log"
 
@@ -1347,7 +1452,8 @@ function Format-BuildQueueBanner {
 	  The result-fidelity classification (e.g. verified, no-tests-matched).
 
 	.PARAMETER BuildFidelity
-	  The build-fidelity classification (e.g. verified, log-failure-override).
+	  The build-fidelity classification (e.g. verified, log-failure-override,
+	  no-output).
 
 	.PARAMETER Counts
 	  Optional hashtable with keys 'passed'/'failed'/'total'. Any key (or the
@@ -1396,6 +1502,8 @@ function Format-BuildQueueBanner {
 		if ($resultLabel -ne 'PASS') {
 			$nextAction = if ($resultLabel -eq 'NO-TESTS-MATCHED') {
 				'widen the filter and retry'
+			} elseif ($BuildFidelity -eq 'no-output') {
+				'build produced no output; delete obj/bin and rebuild'
 			} elseif ($ExitCode -eq 4) {
 				'rebuild (stale DLL)'
 			} else {

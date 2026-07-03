@@ -821,3 +821,118 @@ Describe 'Read-WithRetry (WU-2 flush-retry helper)' {
 		$script:rwrCalls | Should -Be 3
 	}
 }
+
+Describe 'Test-BuildProducedNoOutput (WU-1 build-output classifier)' {
+	# Child-scope discipline: each function call on its OWN line, assertion on the next.
+
+	It 'defines Test-BuildProducedNoOutput' {
+		Get-Command Test-BuildProducedNoOutput -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'classifies a $null log (missing log path) as no-output' {
+		$result = Test-BuildProducedNoOutput -LogText $null
+		$result | Should -BeTrue
+	}
+
+	It 'classifies an empty (0-byte) log as no-output' {
+		$result = Test-BuildProducedNoOutput -LogText ''
+		$result | Should -BeTrue
+	}
+
+	It 'classifies a whitespace-only log as no-output' {
+		$result = Test-BuildProducedNoOutput -LogText "   `r`n`t  `n "
+		$result | Should -BeTrue
+	}
+
+	It 'classifies a near-empty log (below the default 40-char threshold) as no-output' {
+		# 12 non-whitespace chars, well under the default MinChars=40 threshold.
+		$result = Test-BuildProducedNoOutput -LogText 'Build ok.'
+		$result | Should -BeTrue
+	}
+
+	It 'pins the near-empty threshold: a log exactly at -MinChars is NOT no-output; one below IS' {
+		# 10-char trimmed body; -MinChars 10 => at threshold => produced output ($false).
+		$atThreshold = Test-BuildProducedNoOutput -LogText '0123456789' -MinChars 10
+		$atThreshold | Should -BeFalse
+
+		$belowThreshold = Test-BuildProducedNoOutput -LogText '012345678' -MinChars 10
+		$belowThreshold | Should -BeTrue
+	}
+
+	It 'classifies a real non-empty MSBuild log as produced-output ($false)' {
+		$realLog = @'
+Microsoft (R) Build Engine version 16.11.2+f32259642 for .NET Framework
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+  Restored C:\ws\Cognito\Cognito.csproj (in 512 ms).
+  Cognito -> C:\ws\Cognito\bin\Debug\netstandard2.0\Cognito.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:07.42
+'@
+		$result = Test-BuildProducedNoOutput -LogText $realLog
+		$result | Should -BeFalse
+	}
+}
+
+Describe 'Format-BuildQueueBanner — build_fidelity no-output arm (WU-1)' {
+	# Child-scope discipline: assign on its own line, assert on the next.
+
+	It 'no-output + forced exit=1: RESULT=FAIL with the delete-obj/bin-and-rebuild next-action' {
+		$result = Format-BuildQueueBanner -Seq 640 -Op msbuild -ExitCode 1 -ResultFidelity verified -BuildFidelity no-output
+		$result | Should -Be 'build-queue: seq=640 op=msbuild RESULT=FAIL (result_fidelity=verified) -> build produced no output; delete obj/bin and rebuild'
+	}
+
+	It 'regression: a normal PASS (exit 0, build_fidelity verified) is unchanged (no next-action)' {
+		$result = Format-BuildQueueBanner -Seq 641 -Op msbuild -ExitCode 0 -ResultFidelity verified -BuildFidelity verified
+		$result | Should -Be 'build-queue: seq=641 op=msbuild RESULT=PASS (result_fidelity=verified)'
+	}
+}
+
+Describe 'Get-HygieneHighlight (WU-3 status-view highlight selector)' {
+	# Pure highlight-selection helper shared by build-queue-status.ps1 and this test.
+	# Child-scope discipline: assign on its own line, assert on the next.
+
+	It 'defines Get-HygieneHighlight' {
+		Get-Command Get-HygieneHighlight -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'build-op no-output selects the distinct red BUILD LIED - produced no output arm' {
+		$hl = Get-HygieneHighlight -BuildFidelity 'no-output' -ResultFidelity 'n/a'
+		$hl.Suffix | Should -Match 'produced no output'
+		$hl.Color | Should -Be 'Red'
+	}
+
+	It 'copy-lock override still selects its own red BUILD LIED - copy-lock arm' {
+		$hl = Get-HygieneHighlight -BuildFidelity 'log-failure-override' -ResultFidelity 'n/a'
+		$hl.Suffix | Should -Match 'copy-lock override'
+		$hl.Color | Should -Be 'Red'
+	}
+
+	It 'test-op result_fidelity no-output still selects the yellow UNVERIFIED arm (distinct from build-op no-output)' {
+		$hl = Get-HygieneHighlight -BuildFidelity 'n/a' -ResultFidelity 'no-output'
+		$hl.Suffix | Should -Match 'no test output captured'
+		$hl.Color | Should -Be 'Yellow'
+	}
+
+	It 'build-op no-output takes precedence over a coincident test-op no-output result_fidelity' {
+		$hl = Get-HygieneHighlight -BuildFidelity 'no-output' -ResultFidelity 'no-output'
+		$hl.Suffix | Should -Match 'produced no output'
+		$hl.Color | Should -Be 'Red'
+	}
+
+	It 'copy-lock override takes precedence over a coincident test-op no-output result_fidelity' {
+		$hl = Get-HygieneHighlight -BuildFidelity 'log-failure-override' -ResultFidelity 'no-output'
+		$hl.Suffix | Should -Match 'copy-lock override'
+		$hl.Color | Should -Be 'Red'
+	}
+
+	It 'a clean verified build selects no highlight (empty suffix, null color)' {
+		$hl = Get-HygieneHighlight -BuildFidelity 'verified' -ResultFidelity 'n/a'
+		$hl.Suffix | Should -BeNullOrEmpty
+		$hl.Color | Should -BeNullOrEmpty
+	}
+}
