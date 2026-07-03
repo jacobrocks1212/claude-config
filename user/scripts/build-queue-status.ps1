@@ -23,6 +23,13 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
+# Dot-source the hygiene helpers so this status view and its Pester coverage
+# select the SAME per-build highlight arm (Get-HygieneHighlight) — the status
+# script reads state dirs and is not itself dot-source-testable. Fail-open: a
+# load error leaves Get-HygieneHighlight undefined and the highlight section
+# below degrades to a plain (un-highlighted) line.
+Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }
+
 function Format-Elapsed {
 	param([string]$IsoTimestamp)
 	$start = Get-SafeValue { [datetime]::Parse($IsoTimestamp, $null, [System.Globalization.DateTimeStyles]::RoundtripKind) }
@@ -179,10 +186,9 @@ if ($null -ne $hygieneSeq) {
 		$lockersReapedCount = $lockersReaped.Count
 		$lockersReapedStr = if ($lockersReapedCount -gt 0) { "{0} ({1})" -f $lockersReapedCount, ($lockersReaped -join ',') } else { '0' }
 		$line = "hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3} | build_fidelity={4} | lockers_reaped={5}" -f $hygieneSeq, $recycledStr, $quarantinedCount, $fidelityStr, $buildFidelityStr, $lockersReapedStr
-		if ($buildFidelityStr -eq 'log-failure-override') {
-			Write-Host ($line + '  [BUILD LIED - copy-lock override fired]') -ForegroundColor Red
-		} elseif ($fidelityStr -eq 'no-output') {
-			Write-Host ($line + '  [UNVERIFIED - no test output captured]') -ForegroundColor Yellow
+		$hl = Get-SafeValue { Get-HygieneHighlight -BuildFidelity $buildFidelityStr -ResultFidelity $fidelityStr }
+		if ($null -ne $hl -and $hl.Color) {
+			Write-Host ($line + $hl.Suffix) -ForegroundColor $hl.Color
 		} else {
 			Write-Output $line
 		}

@@ -27,7 +27,7 @@
         recycle_skipped_reason: "concurrent-build-active" | null, # non-null iff the recycle was skipped because another queue build was live (occupancy > 0); null when the recycle ran (sole build) or otherwise
         quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
         result_fidelity: "verified" | "no-output" | "no-tests-matched" | "n/a"  # "no-output" = test op produced zero results; "no-tests-matched" = test op whose filter matched zero tests (summary reported Total=0); "verified" = test op had real output; "n/a" = build op
-        build_fidelity: "log-failure-override" | "verified" | "n/a"  # "log-failure-override" = a build op exited 0 but its captured log matched a known MSBuild failure signature (Test-BuildLogFailure), so the exit code/buildFailed were overridden to failure BEFORE the quarantine gate; "verified" = build op needed no override; "n/a" = non-build op (e.g. test)
+        build_fidelity: "log-failure-override" | "no-output" | "verified" | "n/a"  # "log-failure-override" = a build op exited 0 but its captured log matched a known MSBuild failure signature (Test-BuildLogFailure), so the exit code/buildFailed were overridden to failure BEFORE the quarantine gate; "no-output" = a build op exited 0 but produced no captured output (missing/empty/whitespace/near-empty log — Test-BuildProducedNoOutput), overridden to failure the same way; "verified" = build op needed no override; "n/a" = non-build op (e.g. test)
         lockers_reaped: [<pid>]          # PIDs of in-worktree processes reaped (Stop-DllLockers) BEFORE a build op started, to clear a leftover DLL lock ahead of the copy step (empty on a clean run / test op / no worktree / fail-open)
       }
     }
@@ -142,6 +142,12 @@ try {
 		# classify. A genuinely-absent path returns immediately (not a race); an
 		# empty read returns $null → retry; exhaustion falls back to the same
 		# fail-open no-failure verdict the single-shot read used.
+		# Capture the SAME flush-safe read for the no-output classifier below —
+		# the Phase-3 build-output gate classifies on this text, it does NOT
+		# re-read the log (Phase-3 Integration Note: "classifier called AFTER the
+		# Phase 2 read, not a re-read"). Left $null when the log was genuinely
+		# absent or never settled (both => no output produced).
+		$script:buildLogTextForClassify = $null
 		$logFailure = Read-WithRetry -Parse {
 			if ([string]::IsNullOrWhiteSpace($buildLogPath) -or -not (Test-Path $buildLogPath)) {
 				return @{ failed = $false; signature = $null }
@@ -150,13 +156,28 @@ try {
 			if ([string]::IsNullOrEmpty($logText)) {
 				return $null
 			}
+			$script:buildLogTextForClassify = $logText
 			Get-SafeValue { Test-BuildLogFailure -Log $logText } @{ failed = $false; signature = $null }
 		} -Fallback @{ failed = $false; signature = $null }
 
 		if ($logFailure.failed -and $exitCode -eq 0) {
+			# Log-failure-override wins first: a real MSBuild failure signature is
+			# the strongest signal, so it takes precedence over the no-output
+			# residual case below.
 			$exitCode = 1
 			$buildFailed = $true
 			$buildFidelity = 'log-failure-override'
+		} elseif ($exitCode -eq 0 -and (Test-BuildProducedNoOutput -LogText $script:buildLogTextForClassify)) {
+			# Root Cause B: exit 0 but the build produced no captured output
+			# (missing / empty / whitespace-only / near-empty log) — a silently
+			# broken build that Test-BuildLogFailure fails OPEN on. Force failure,
+			# mirroring the log-failure-override mechanism above. Forcing
+			# $buildFailed = $true here ALSO makes Phase 1's per-project quarantine
+			# sweep (the finally block's `$buildFailed -and $Worktree` gate) fire on
+			# a no-output build, so its poisoned artifacts are swept too.
+			$exitCode = 1
+			$buildFailed = $true
+			$buildFidelity = 'no-output'
 		} else {
 			$buildFidelity = 'verified'
 		}
