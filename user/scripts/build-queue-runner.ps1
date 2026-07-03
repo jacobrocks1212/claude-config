@@ -21,7 +21,7 @@
         vbcscompiler_recycled: <bool>,   # whether VBCSCompiler was recycled after the build
         recycle_skipped_reason: "concurrent-build-active" | null, # non-null iff the recycle was skipped because another queue build was live (occupancy > 0); null when the recycle ran (sole build) or otherwise
         quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
-        result_fidelity: "verified" | "no-output" | "n/a"  # "no-output" = test op produced zero results; "verified" = test op had real output; "n/a" = build op
+        result_fidelity: "verified" | "no-output" | "no-tests-matched" | "n/a"  # "no-output" = test op produced zero results; "no-tests-matched" = test op whose filter matched zero tests (summary reported Total=0); "verified" = test op had real output; "n/a" = build op
         build_fidelity: "log-failure-override" | "verified" | "n/a"  # "log-failure-override" = a build op exited 0 but its captured log matched a known MSBuild failure signature (Test-BuildLogFailure), so the exit code/buildFailed were overridden to failure BEFORE the quarantine gate; "verified" = build op needed no override; "n/a" = non-build op (e.g. test)
         lockers_reaped: [<pid>]          # PIDs of in-worktree processes reaped (Stop-DllLockers) BEFORE a build op started, to clear a leftover DLL lock ahead of the copy step (empty on a clean run / test op / no worktree / fail-open)
       }
@@ -162,6 +162,7 @@ $resultFidelity = Get-SafeValue {
 	$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
 	if (-not $isTestOp) { 'n/a' }
 	elseif ($exitCode -eq 3) { 'no-output' }
+	elseif ($exitCode -eq 5) { 'no-tests-matched' }
 	else { 'verified' }
 } 'n/a'
 

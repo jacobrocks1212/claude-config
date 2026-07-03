@@ -156,3 +156,25 @@ Describe "Resolve-TestDllPath" {
         { Resolve-TestDllPath -ProjectDir $projectDir -TestDll "Foo" } | Should -Not -Throw
     }
 }
+
+Describe "Get-TestOutcomeExitCode" {
+    It "returns 5 when a summary was seen and Total is 0 (zero-match filter)" {
+        $result = Get-TestOutcomeExitCode -SummarySeen $true -Total 0 -ResultLineCount 0 -DotnetExit 0
+        $result | Should -Be 5
+    }
+
+    It "returns 0 when a summary was seen with a nonzero Total and DotnetExit is 0 (all-pass)" {
+        $result = Get-TestOutcomeExitCode -SummarySeen $true -Total 42 -ResultLineCount 42 -DotnetExit 0
+        $result | Should -Be 0
+    }
+
+    It "passes through a nonzero DotnetExit when a summary was seen with a nonzero Total (real failure)" {
+        $result = Get-TestOutcomeExitCode -SummarySeen $true -Total 39 -ResultLineCount 39 -DotnetExit 1
+        $result | Should -Be 1
+    }
+
+    It "returns 3 when no summary was seen and no result lines were captured (genuine zero-output)" {
+        $result = Get-TestOutcomeExitCode -SummarySeen $false -Total $null -ResultLineCount 0 -DotnetExit 0
+        $result | Should -Be 3
+    }
+}

@@ -40,6 +40,20 @@ function Test-SummaryLine([string]$line) {
     }
 }
 
+# Maps the streamed-output observations to a single exit code. Pure function -
+# safe to dot-source and unit test without invoking dotnet.
+function Get-TestOutcomeExitCode {
+    param(
+        [bool]$SummarySeen,
+        [Nullable[int]]$Total,
+        [int]$ResultLineCount,
+        [int]$DotnetExit
+    )
+    if (-not $SummarySeen -and $ResultLineCount -eq 0) { return 3 }
+    if ($SummarySeen -and $Total -eq 0) { return 5 }
+    return $DotnetExit
+}
+
 function Test-StaleTestDll([string]$DllPath, [string]$ProjectDir) {
     try {
         if (-not (Test-Path $DllPath)) {
@@ -127,6 +141,7 @@ function Invoke-Main {
     $failBlockLines = 0
     $resultLineCount = 0
     $summarySeen = $false
+    $summaryTotal = $null
 
     # Stream output line by line using pipeline instead of buffering
     $dotnetArgs = @("test", $testProjectPath, "--no-build", "--verbosity", "normal")
@@ -175,6 +190,7 @@ function Invoke-Main {
                 }
                 if ($null -ne $summary.total) {
                     Write-Host "Results: Passed=$($summary.passed) Failed=$($summary.failed) Total=$($summary.total)" -ForegroundColor Cyan
+                    $summaryTotal = $summary.total
                 }
             }
         }
@@ -182,13 +198,16 @@ function Invoke-Main {
 
     $dotnetExit = $LASTEXITCODE
 
-    # Distinguished exit for a zero-output run
-    if ($resultLineCount -eq 0 -and -not $summarySeen) {
+    # Distinguished exit codes: 3 = no summary captured at all (zero-output run);
+    # 5 = zero-match filter (summary seen, Total=0). Both are distinct from a
+    # genuine all-pass run (exit 0) or a real test failure (dotnet's own exit code).
+    $outcomeCode = Get-TestOutcomeExitCode -SummarySeen $summarySeen -Total $summaryTotal -ResultLineCount $resultLineCount -DotnetExit $dotnetExit
+    if ($outcomeCode -eq 5) {
+        Write-Host "WARN: Filter matched zero tests (summary reported Total=0)" -ForegroundColor Yellow
+    } elseif ($outcomeCode -eq 3) {
         Write-Host "WARN: No test results captured (zero tests matched filter or summary not parsed)" -ForegroundColor Yellow
-        exit 3
     }
-
-    exit $dotnetExit
+    exit $outcomeCode
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
