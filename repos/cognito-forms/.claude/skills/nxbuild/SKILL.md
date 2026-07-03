@@ -33,6 +33,6 @@ Build frontend projects in the Nx monorepo showing only errors and build summary
    - `-All` — build all projects
    - `-Targets "build","lint"` — custom target list (default: `build`)
 
-3. Run the command using Bash with `timeout: 600000` (10 min). A build can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast builds because Bash returns as soon as the command exits. Do not interpret or reformat the output.
+3. Run the command using Bash with `timeout: 600000` (10 min). A build can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast builds because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=nxbuild RESULT=<PASS|FAIL> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. On `RESULT=FAIL` the banner names the next action inline — read `logs/<seq>.build.err.log`.
 
 4. If the build is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead, then poll its log and read `$HOME/.claude/state/build-queue/results/<seq>.json` (the `exit_code` field) for the outcome — the `seq` is printed in the `build-queue: enqueued as seq=N` line.

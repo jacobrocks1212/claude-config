@@ -34,12 +34,14 @@ MSTest filter expressions: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
    - `-Filter "..."` — MSTest filter expression
    - `-TestDll "..."` — test project name without extension (default: `Cognito.UnitTests`)
 
-3. Run the command using Bash with `timeout: 600000` (10 min). A test run can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast runs because Bash returns as soon as the command exits. Do not interpret or reformat the output.
+3. Run the command using Bash with `timeout: 600000` (10 min). A test run can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast runs because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=mstest RESULT=<PASS|FAIL|NO-TESTS-MATCHED> tests=<T> failed=<F> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. See the exit-code guidance below for the banner's next-actions.
 
 4. If the run is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead, then poll its log and read `$HOME/.claude/state/build-queue/results/<seq>.json` (the `exit_code` field) for the outcome — the `seq` is printed in the `build-queue: enqueued as seq=N` line.
 
 ## Stale-DLL trap (--no-build)
 
-Because this skill runs `--no-build`, a red result can be bogus if the DLL under test is stale — e.g. the last build silently lost a DLL copy race (MSB3027 copy-lock). `test-filtered.ps1` now guards against this: it emits a staleness WARN and exits **`4`** when the target test DLL is missing, predates its source (`.cs`/`.csproj`) files, or the last build's hygiene recorded `build_fidelity: log-failure-override`. (Other distinct exit codes: `1` = not in a git repo, `3` = zero test output captured.)
+Because this skill runs `--no-build`, a red result can be bogus if the DLL under test is stale — e.g. the last build silently lost a DLL copy race (MSB3027 copy-lock). `test-filtered.ps1` now guards against this: it emits a staleness WARN and exits **`4`** when the target test DLL is missing, predates its source (`.cs`/`.csproj`) files, or the last build's hygiene recorded `build_fidelity: log-failure-override`. (Other distinct exit codes: `1` = not in a git repo, `3` = zero test output captured, `5` = filter matched zero tests.)
 
-**On the staleness WARN / exit 4: rebuild with `/msbuild` before trusting a red.** A failing test against a stale DLL is not a real failure — rebuild, then re-run `/mstest`.
+**On the staleness WARN / exit 4 (banner `RESULT=FAIL`): rebuild with `/msbuild` before trusting a red.** A failing test against a stale DLL is not a real failure — rebuild, then re-run `/mstest`.
+
+**On banner `RESULT=NO-TESTS-MATCHED` (exit 5): the filter matched zero tests — widen the `-Filter` and re-run.** A zero-match run is not a pass; the banner distinguishes it from a real all-pass (`result_fidelity=no-tests-matched` vs `verified`), so trust the banner rather than reading a bare `exit_code`.

@@ -80,7 +80,7 @@ For context, the SPEC's `**Related:**` cross-links (read only if a WU's behavior
 - [x] WU-4 — Pure banner-formatting helper in build-queue-hygiene.ps1 + Pester
 - [x] WU-5 — Runner: capture test-op Passed/Failed/Total counts into hygiene JSON
 - [x] WU-6 — Wrapper: compose+print banner; fix Step-5 hygiene clobber
-- [ ] WU-7 — Four SKILL.md files: trust-the-banner guidance
+- [x] WU-7 — Four SKILL.md files: trust-the-banner guidance
 
 ---
 
