@@ -51,8 +51,8 @@ N/A — fully covered by Pester in Deliverables.
 
 **Deliverables:**
 - [x] `Read-WithRetry`-style helper added to `user/scripts/build-queue-hygiene.ps1` (dot-sourced so it is Pester-testable), parameterized: a parse `[scriptblock]` returning the parsed payload or `$null` on failure, `-MaxAttempts` (default 3), `-DelayMs` (default 50); returns the first non-null result or a fallback sentinel after exhausting attempts. Modeled on the active.lock loop verbatim (attempts 1..Max, `Start-Sleep -Milliseconds` between attempts, no sleep after the last attempt).
-- [ ] Converge the runner's counts read (179-192) and build-log read (138-144) in `build-queue-runner.ps1` onto the helper.
-- [ ] Optional: converge the two active.lock loops (runner 234-241 + wrapper `build-queue.ps1:462-469`) onto the helper for dedupe/parity — call out as optional, not required for this phase's completion.
+- [x] Converge the runner's counts read (179-192) and build-log read (138-144) in `build-queue-runner.ps1` onto the helper.
+- [x] Optional: converge the two active.lock loops (runner 234-241 + wrapper `build-queue.ps1:462-469`) onto the helper for dedupe/parity — call out as optional, not required for this phase's completion.
 - [x] Tests: helper returns on the first non-null attempt; helper retries up to `-MaxAttempts` on a parse block that always returns `$null`; helper returns the fallback sentinel after `-MaxAttempts` exhausted; helper respects a parse block that succeeds only on the Nth attempt (simulated via a counter closure).
 
 **Minimum Verifiable Behavior:** `Invoke-Pester user/scripts/build-queue-hygiene.Tests.ps1` green for the new `Read-WithRetry` `Describe` block, including the "succeeds on Nth attempt" It-block; the runner's counts/build-log reads route through the helper (verified by code inspection + the existing counts-parsing tests continuing to pass).
@@ -66,6 +66,17 @@ N/A — fully covered by Pester in Deliverables.
 - **Gate:** `Invoke-Pester` → 81 passed, 3 pre-existing env-quirk failures. Parse-check `PARSE OK`.
 - Runner convergence (deliverable 2) + optional active.lock convergence (deliverable 3) are WU-3 — next batch.
 - **Files modified:** `user/scripts/build-queue-hygiene.ps1`, `user/scripts/build-queue-hygiene.Tests.ps1`.
+
+#### Implementation Notes — WU-3 (2026-07-03)
+
+**Review verdict:** PASS (parse-check + code inspection; runner body has no Pester harness by existing design — live e2e is Phase 4/Part 3).
+
+- **Build-log read** (`build-queue-runner.ps1` `if ($isBuildOp)` block): converged onto `Read-WithRetry`. The parse block returns the fail-open no-failure hashtable for a genuinely-absent log path (not a race, returns immediately), `$null` on an empty read (→ retry 3x/50ms), else `Test-BuildLogFailure` (Get-SafeValue-wrapped). `-Fallback` is the same `@{ failed=$false; signature=$null }` verdict the single-shot read used, so no-output/empty behavior is unchanged (Phase 3/Part 2 adds the positive no-output classifier on top of this flush-safe read).
+- **Counts read**: converged onto `Read-WithRetry` with the `$isTestOp` guard kept OUTSIDE the retry (a non-test op is `$null` immediately, never spins). The parse block returns `$null` for missing path / empty read / no `Results:` line (→ retry), else the parsed `[ordered]@{passed;failed;total}`. `-Fallback $null` preserves the current fail-open (a genuinely absent `Results:` line still yields `counts=$null`, not an error). Downstream `counts = $counts` consumer unchanged.
+- **Optional active.lock convergence (deliverable 3, done):** both the runner's and the wrapper's (`build-queue.ps1`) active.lock re-read loops converged onto `Read-WithRetry -MaxAttempts 3 -DelayMs 50 -Fallback $null` — a byte-clean mapping of the original `for`-loop (break-on-non-null → first-non-null return; 50ms between attempts, none after the last). Both files dot-source `build-queue-hygiene.ps1`, so the helper is in scope. active.lock semantics preserved exactly (`$lockSeq -eq $Seq` reclaim gate unchanged).
+- Scriptblock scope: the parse blocks reference runner/wrapper script-scope vars (`$buildLogPath`, `$Seq`, `$StateRoot`, `$activeLock`) — safe because an unbound scriptblock retains its defining session state under `& $Parse`, the identical pattern the pre-existing `Get-SafeValue { ... $buildLogPath ... }` calls already rely on.
+- **Gate:** parse-check `PARSE OK` for `build-queue-runner.ps1`, `build-queue.ps1`, `build-queue-hygiene.ps1`; `Invoke-Pester build-queue-hygiene.Tests.ps1` → 81 passed, 3 pre-existing env-quirk failures (unchanged).
+- **Files modified:** `user/scripts/build-queue-runner.ps1`, `user/scripts/build-queue.ps1`.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 N/A — fully covered by Pester in Deliverables.

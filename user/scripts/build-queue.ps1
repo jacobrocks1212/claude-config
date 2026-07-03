@@ -454,19 +454,17 @@ try {
 
 Get-SafeValue {
 	if (Test-Path $activeLock) {
-		# Bounded re-read: a transient partial/locked read of active.lock should
-		# not leave a stale lock behind - retry up to 3 total attempts (50ms
-		# apart) so a transient read resolves to the real .seq before giving up.
-		$lockSeq = $null
-		$maxAttempts = 3
-		for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-			$lockSeq = Get-SafeValue {
+		# Bounded re-read via the shared Read-WithRetry helper (3x/50ms, no sleep
+		# after the last attempt): a transient partial/locked read of active.lock
+		# resolves to the real .seq before giving up, so a transient read never
+		# leaves a stale lock behind. Converged onto Read-WithRetry for dedupe/
+		# parity with the runner's active.lock loop (WU-3, optional).
+		$lockSeq = Read-WithRetry -Parse {
+			Get-SafeValue {
 				$d = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
 				[int]$d.seq
 			} $null
-			if ($null -ne $lockSeq) { break }
-			if ($attempt -lt $maxAttempts) { Start-Sleep -Milliseconds 50 }
-		}
+		} -MaxAttempts 3 -DelayMs 50 -Fallback $null
 		if ($lockSeq -eq $seq) {
 			Remove-Item $activeLock -Force
 		}

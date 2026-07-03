@@ -135,13 +135,23 @@ try {
 	if ($null -eq $exitCode) { $exitCode = 0 }
 
 	if ($isBuildOp) {
-		$logFailure = Get-SafeValue {
+		# Flush-safe build-log read (Root Cause C): the build log is flushed/closed
+		# by the wrapper's live-tail redirect; a single-shot ReadAllText here can
+		# race that flush and see an empty/truncated log. Route through
+		# Read-WithRetry so a not-yet-flushed log settles (3x/50ms) before we
+		# classify. A genuinely-absent path returns immediately (not a race); an
+		# empty read returns $null → retry; exhaustion falls back to the same
+		# fail-open no-failure verdict the single-shot read used.
+		$logFailure = Read-WithRetry -Parse {
 			if ([string]::IsNullOrWhiteSpace($buildLogPath) -or -not (Test-Path $buildLogPath)) {
 				return @{ failed = $false; signature = $null }
 			}
-			$logText = [System.IO.File]::ReadAllText($buildLogPath)
-			Test-BuildLogFailure -Log $logText
-		} @{ failed = $false; signature = $null }
+			$logText = Get-SafeValue { [System.IO.File]::ReadAllText($buildLogPath) } $null
+			if ([string]::IsNullOrEmpty($logText)) {
+				return $null
+			}
+			Get-SafeValue { Test-BuildLogFailure -Log $logText } @{ failed = $false; signature = $null }
+		} -Fallback @{ failed = $false; signature = $null }
 
 		if ($logFailure.failed -and $exitCode -eq 0) {
 			$exitCode = 1
@@ -176,20 +186,30 @@ $resultFidelity = Get-SafeValue {
 # additional RedirectStandardOutput is added here for test ops, which would break
 # that live tail). Fail-open: any read/parse error, a non-test op, a missing log,
 # or an absent "Results:" line all yield $null (never throws).
-$counts = Get-SafeValue {
-	if (-not $isTestOp) { return $null }
-	$testLogPath = Join-Path (Join-Path $StateRoot 'logs') "$Seq.log"
-	if (-not (Test-Path $testLogPath)) { return $null }
-	$logText = [System.IO.File]::ReadAllText($testLogPath)
-	$resultMatches = [regex]::Matches($logText, '^Results:\s*Passed=(\d+)\s+Failed=(\d+)\s+Total=(\d+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-	if ($resultMatches.Count -eq 0) { return $null }
-	$m = $resultMatches[$resultMatches.Count - 1]
-	[ordered]@{
-		passed = [int]$m.Groups[1].Value
-		failed = [int]$m.Groups[2].Value
-		total  = [int]$m.Groups[3].Value
-	}
-} $null
+# Flush-safe counts read (Root Cause C): the "Results:" summary line is the LAST
+# thing written to the test log, so a single-shot read here most acutely races the
+# wrapper-owned flush/close — a dropped trailing line reads as counts=$null and the
+# agent bypasses the capture. Route through Read-WithRetry so a not-yet-flushed
+# Results line settles (3x/50ms) before we commit an empty parse. The $isTestOp
+# guard stays OUTSIDE the retry (a non-test op is $null immediately, not a race);
+# a genuinely-absent Results line still falls back to $null after exhaustion.
+$counts = $null
+if ($isTestOp) {
+	$counts = Read-WithRetry -Parse {
+		$testLogPath = Join-Path (Join-Path $StateRoot 'logs') "$Seq.log"
+		if (-not (Test-Path $testLogPath)) { return $null }
+		$logText = Get-SafeValue { [System.IO.File]::ReadAllText($testLogPath) } $null
+		if ([string]::IsNullOrEmpty($logText)) { return $null }
+		$resultMatches = [regex]::Matches($logText, '^Results:\s*Passed=(\d+)\s+Failed=(\d+)\s+Total=(\d+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+		if ($resultMatches.Count -eq 0) { return $null }
+		$m = $resultMatches[$resultMatches.Count - 1]
+		[ordered]@{
+			passed = [int]$m.Groups[1].Value
+			failed = [int]$m.Groups[2].Value
+			total  = [int]$m.Groups[3].Value
+		}
+	} -Fallback $null
+}
 
 $resultsDir = Join-Path $StateRoot 'results'
 Get-SafeValue {
@@ -226,19 +246,17 @@ try {
 $activeLock = Join-Path $StateRoot 'active.lock'
 Get-SafeValue {
 	if (Test-Path $activeLock) {
-		# Bounded re-read: a transient partial/locked read of active.lock should
-		# not leave a stale lock behind - retry up to 3 total attempts (50ms
-		# apart) so a transient read resolves to the real .seq before giving up.
-		$lockSeq = $null
-		$maxAttempts = 3
-		for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-			$lockSeq = Get-SafeValue {
+		# Bounded re-read via the shared Read-WithRetry helper (3x/50ms, no sleep
+		# after the last attempt): a transient partial/locked read of active.lock
+		# resolves to the real .seq before giving up, so a transient read never
+		# leaves a stale lock behind. Converged onto Read-WithRetry for dedupe/
+		# parity with the runner's other fidelity-bearing reads (WU-3, optional).
+		$lockSeq = Read-WithRetry -Parse {
+			Get-SafeValue {
 				$data = [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json
 				[int]$data.seq
 			} $null
-			if ($null -ne $lockSeq) { break }
-			if ($attempt -lt $maxAttempts) { Start-Sleep -Milliseconds 50 }
-		}
+		} -MaxAttempts 3 -DelayMs 50 -Fallback $null
 		if ($lockSeq -eq $Seq) {
 			Remove-Item $activeLock -Force
 		}

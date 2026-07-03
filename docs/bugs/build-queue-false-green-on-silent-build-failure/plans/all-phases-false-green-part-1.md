@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-false-green-on-silent-build-failure
-status: Ready
+status: Complete
 created: 2026-07-03
 phases: [1, 2]
 complexity: complex
@@ -154,7 +154,7 @@ This is the **claude-config** repo (a PowerShell/Python harness), NOT an app. Th
 
 - [x] WU-1 — Shared per-project DLL enumerator + retarget Remove-PoisonedArtifacts & Get-DllLockers
 - [x] WU-2 — Read-WithRetry helper + Pester tests
-- [ ] WU-3 — Converge runner counts + build-log reads onto Read-WithRetry
+- [x] WU-3 — Converge runner counts + build-log reads onto Read-WithRetry
 
 ---
 
