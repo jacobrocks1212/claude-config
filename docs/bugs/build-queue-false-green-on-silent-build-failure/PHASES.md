@@ -150,9 +150,9 @@ N/A — fully covered by Pester in Deliverables.
 **Scope:** With Root Causes A, B, and C fixed and Pester-covered, restore `build-queue-enforce.sh` to enforcing (it was deliberately, temporarily disabled pending this bug per the SPEC's Git History note) and prove the full fix chain live in a real Cognito worktree, then update the harness documentation that describes the hygiene sweep scope and fidelity domain.
 
 **Deliverables:**
-- [ ] Remove the temporary disable block in `user/hooks/build-queue-enforce.sh` (lines 2-8: a `>>> TEMPORARILY DISABLED <<<` banner with `exit 0` at line 6 before all hook logic), restoring the hook to its prior enforcing behavior.
-- [ ] Update the Scripts-table hygiene note in `C:\Users\JacobMadsen\source\repos\CLAUDE.md` to reflect the per-project sweep scope (Phase 1) and the new `no-output` build-output fidelity value (Phase 3).
-- [ ] Update the equivalent Scripts-table hygiene note in `C:\Users\JacobMadsen\source\repos\claude-config\CLAUDE.md` to match.
+- [x] Remove the temporary disable block in `user/hooks/build-queue-enforce.sh` (lines 2-8: a `>>> TEMPORARILY DISABLED <<<` banner with `exit 0` at line 6 before all hook logic), restoring the hook to its prior enforcing behavior.
+- [x] ~~Update the Scripts-table hygiene note in `C:\Users\JacobMadsen\source\repos\CLAUDE.md`~~ **N/A (misattribution — see Part-3 plan drift correction).** `workspace/CLAUDE.md` (= `~/source/repos/CLAUDE.md`) is a cross-repo *navigation* doc with no build-queue/hygiene/fidelity content (grep confirmed zero hits at execution time); it was not fabricated one. The sole real hygiene-note target is deliverable 3.
+- [x] Update the equivalent Scripts-table hygiene note in `C:\Users\JacobMadsen\source\repos\claude-config\CLAUDE.md` to match.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` passes its ~22 `test_bqe_*` deny/allow tests (defined from `:4795`) against the re-enabled hook (they cannot meaningfully pass against the disabled `exit 0` block today); all three Pester suites (`build-queue-hygiene.Tests.ps1`, `test-filtered.Tests.ps1` under `repos/cognito-forms/.claude/scripts/`, plus the new coverage from Phases 1-3) report green in the same run.
 
@@ -161,6 +161,19 @@ N/A — fully covered by Pester in Deliverables.
 - [ ] <!-- verification-only --> Run a real clean `/msbuild` build in the same worktree — confirm `RESULT=PASS` with `build_fidelity: verified`.
 - [ ] <!-- verification-only --> Force or observe a build that exits 0 with no compiled output — confirm `RESULT=FAIL` with `build_fidelity: no-output` and the corrective next-action text in the banner.
 - [ ] <!-- verification-only --> Confirm `python user/scripts/test_hooks.py`'s `test_bqe_*` suite passes with the hook re-enabled (deny/allow behavior matches pre-disable expectations).
+
+#### Implementation Notes (2026-07-03, Part 3)
+
+**Status:** Complete (hook re-enabled + docs updated; static gates green; live Cognito-worktree e2e — the 4 Runtime Verification rows — deferred to the gate-owned `__mark_fixed__` / manual step, NOT closed by `/execute-plan`).
+**Review verdict:** PASS.
+
+- **WU-1 — re-enable enforcement (`user/hooks/build-queue-enforce.sh`):** the temporary disable was an *uncommitted working-tree modification* (HEAD 2241bb5 already carried the enforcing hook). Removing the `>>> TEMPORARILY DISABLED <<<` banner (`# ====` border + 3 comment lines + `exit 0` + `# <<< END TEMPORARY DISABLE >>>`) reverted the file to an **exact byte match of HEAD** (`git diff --stat` empty). `bash -n` clean. Net effect: the hook now runs its real deny/allow logic instead of the early `exit 0`.
+- **WU-2 — hygiene note (`CLAUDE.md`, repo-root):** updated the "Each build now auto-reaps…" paragraph (line 180) so the quarantine sweep reads **per project** (`<root>/**/bin` + `<root>/**/obj` across every project subdir, not worktree-root-only — Phase 1) and the hygiene-outcome list now documents build-op `build_fidelity` in the domain `log-failure-override | no-output | verified`, calling out that `no-output` flags an exit-0 build that produced nothing and forces `RESULT=FAIL` (Phase 3). Deliverable 2 (`workspace/CLAUDE.md`) recorded N/A per the plan drift correction — grep confirmed zero build-queue content there at execution time; no net-new section fabricated.
+- **Gates (this repo = Python + Pester, not `/msbuild`/`/mstest`):**
+  - `python user/scripts/test_hooks.py` → **119/119 passed** (incl. all **20** `test_bqe_*` deny/allow tests — they cannot pass against the disabled `exit 0` short-circuit, so this is the affirmative signal the hook is enforcing again).
+  - `Invoke-Pester repos/cognito-forms/.claude/scripts/test-filtered.Tests.ps1` → **18/18 passed**, clean.
+  - `Invoke-Pester user/scripts/build-queue-hygiene.Tests.ps1` → **97 passed / 3 failed** — the 3 are the KNOWN pre-existing env-quirks (Job Object zero-handle ×2, `Reset-CompilerServer [bool]`), byte-identical to the Phase 1/2/3 baseline; neither WU touched `build-queue-hygiene.ps1`, so no regression.
+- **Files modified:** `user/hooks/build-queue-enforce.sh` (reverted to HEAD enforcing), `CLAUDE.md` (repo-root hygiene note).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface (claude-config PowerShell harness).
 
