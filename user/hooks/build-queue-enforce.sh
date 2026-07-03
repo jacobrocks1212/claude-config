@@ -91,24 +91,48 @@ _NX_SAFE_RE = re.compile(
     r"(?:npx\s+)?nx\s+(?:lint|typecheck|format)\b", re.IGNORECASE
 )
 
-# Deny patterns (unanchored — a heavy build anywhere in the command). Run against
-# the SUPPRESSED command (safe variants blanked out).
-_DOTNET_BUILD_RE = re.compile(r"dotnet\s+build(?:\s|$)", re.IGNORECASE)
-_DOTNET_TEST_RE = re.compile(r"dotnet\s+test(?:\s|$)", re.IGNORECASE)
+# Command-position anchor (mirrors long-build-ownership-guard.sh): a heavy
+# build must be the INVOKED command — either the start of the string, or
+# immediately after a shell separator (`&&`, `||`, `|`, `;`, `(`, `{`,
+# newline), with optional leading `NAME=value` env assignments. This lets a
+# build chained behind a leading command still deny (`cd "..." && dotnet
+# build ...`) while a read verb referencing a build token as an ARGUMENT
+# (`grep ... test-filtered.ps1`, `cat build-filtered.ps1 | head`) does not
+# begin a command segment and so does not match.
+_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+
+# Deny patterns. Run against the SUPPRESSED command (safe variants blanked out).
+_DOTNET_BUILD_RE = re.compile(_CMD_START + r"dotnet\s+build(?:\s|$)", re.IGNORECASE)
+_DOTNET_TEST_RE = re.compile(_CMD_START + r"dotnet\s+test(?:\s|$)", re.IGNORECASE)
 # nx / npx nx with build, test, or run-many target.
 # Matches: nx build X, nx test X, nx run-many --target=build/test,
 #          npx nx build X, npx nx test X, npx nx run-many --target=build/test
 _NX_BUILD_TEST_RE = re.compile(
-    r"(?:npx\s+)?nx\s+"
+    _CMD_START + r"(?:npx\s+)?nx\s+"
     r"(?:"
     r"(?:run-many\b.*?--target[= ]\s*(?:build|test)\b)"
     r"|(?:(?:build|test|run-many)\b)"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
-# A *-filtered.ps1 script invoked directly or via powershell.exe.
-_FILTERED_SCRIPT_RE = re.compile(
-    r"(?:build-filtered|test-filtered|client-build-filtered|client-test-filtered)\.ps1(?:\s|$|\")",
+# A *-filtered.ps1 script invoked directly (segment-leading, optionally with a
+# path prefix so `./x`, `.\x`, and an absolute path still deny) — this does
+# NOT match a bare `cat build-filtered.ps1` / `grep x test-filtered.ps1` /
+# `find . -name build-filtered.ps1` because the script name there follows a
+# read verb, not a command separator.
+_FILTERED_SCRIPT_DIRECT_RE = re.compile(
+    _CMD_START
+    + r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
+    r"(?:build-filtered|test-filtered|client-build-filtered|client-test-filtered)\.ps1"
+    r"(?:\s|$|\")",
+    re.IGNORECASE,
+)
+# ...or invoked via `powershell(.exe)?`/`pwsh` with a `-File <path>` argument
+# naming one of the four filtered scripts.
+_FILTERED_SCRIPT_POWERSHELL_RE = re.compile(
+    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*-File\s+\S*"
+    r"(?:build-filtered|test-filtered|client-build-filtered|client-test-filtered)\.ps1",
     re.IGNORECASE,
 )
 
@@ -299,7 +323,7 @@ def main():
     if _NX_BUILD_TEST_RE.search(scan):
         _deny(_redirect_reason(_classify_nx(command), command))
 
-    if _FILTERED_SCRIPT_RE.search(scan):
+    if _FILTERED_SCRIPT_DIRECT_RE.search(scan) or _FILTERED_SCRIPT_POWERSHELL_RE.search(scan):
         _deny(_redirect_reason(_classify_filtered_script(command), command))
 
     _allow()

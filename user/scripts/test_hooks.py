@@ -5039,6 +5039,214 @@ def test_longbuild_guard_denies_cd_prefixed_npm_run_build():
         )
 
 
+# ---------------------------------------------------------------------------
+# build-queue-recycle-kills-concurrent-worktree-build (test-agent addendum) —
+# build-queue-enforce.sh's deny regexes are UNANCHORED, so a READ-ONLY command
+# that merely REFERENCES a build token (grep/cat/find over a *-filtered.ps1
+# path, or a build-log/results-json path) is wrongly DENIED. The fix (a later
+# impl agent) anchors the deny to command-segment-start / the
+# `powershell -File <...>-filtered.ps1` arg case. These tests pin the
+# CORRECT behavior; the three *-filtered.ps1-as-read-argument ALLOW cases are
+# the genuine RED regression (currently wrongly denied).
+# ---------------------------------------------------------------------------
+
+
+def test_bqe_allows_cat_results_json():
+    """`cat "$HOME/.claude/state/build-queue/results/614.json"` → allow (a
+    read of a build-queue results file is not a build invocation)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = 'cat "$HOME/.claude/state/build-queue/results/614.json"'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"reading a build-queue results json must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_grep_filtered_script():
+    """`grep -n "stale|exit 4" test-filtered.ps1` → allow (grepping a
+    *-filtered.ps1 script's contents is a read, not a build invocation).
+    Currently RED: the unanchored deny regex wrongly denies this."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = 'grep -n "stale|exit 4" test-filtered.ps1'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"grep over test-filtered.ps1 must allow (read-only reference); "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_tail_build_log():
+    """`tail logs/500.build.err.log` → allow (tailing a build log is a read,
+    not a build invocation)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "tail logs/500.build.err.log"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"tailing a build log must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_find_filtered_script():
+    """`find . -name build-filtered.ps1` → allow (locating the file by name
+    is a read-only filesystem query, not a build invocation). Currently RED."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "find . -name build-filtered.ps1"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"find over build-filtered.ps1 must allow (read-only reference); "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_cat_filtered_script_piped_head():
+    """`cat build-filtered.ps1 | head -100` → allow (reading the script's
+    source, not executing it). Currently RED."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "cat build-filtered.ps1 | head -100"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"cat | head over build-filtered.ps1 must allow (read-only reference); "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_git_diff_settings():
+    """`git diff user/settings.json` → allow (an ordinary git diff, no build
+    token at all)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "git diff user/settings.json"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"git diff must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_bare_dotnet_build():
+    """`dotnet build ./Cognito.sln -c Debug` (bare, no cd prefix) → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "dotnet build ./Cognito.sln -c Debug"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) == "deny", (
+            f"bare dotnet build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_powershell_file_filtered_script():
+    """A bare `powershell.exe -File <...>-filtered.ps1` invocation NOT routed
+    through build-queue.ps1 → deny (the filtered script is being EXECUTED,
+    not merely referenced)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = ('powershell.exe -ExecutionPolicy Bypass -File '
+               '"$HOME/.claude/scripts/test-filtered.ps1" -Filter "ClassName~Foo"')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) == "deny", (
+            f"bare powershell -File invocation of a filtered script must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_direct_filtered_script_dot_slash():
+    """`./build-filtered.ps1` (direct segment-leading invocation) → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "./build-filtered.ps1"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) == "deny", (
+            f"direct ./build-filtered.ps1 invocation must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_cat_referencing_cargo_build():
+    """A read-verb ARG referencing `cargo build --release` (not the command
+    head) → allow. Expected already-green: the long-build guard is already
+    anchored to command-segment-start."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('grep -n "cargo build --release" build-notes.md'),
+            state_dir,
+        )
+        assert result.returncode == 0, f"guard must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"grep referencing 'cargo build --release' as an arg must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_grep_referencing_tauri_build():
+    """`grep -rn "tauri build" docs/` → allow. Expected already-green."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('grep -rn "tauri build" docs/'), state_dir
+        )
+        assert result.returncode == 0, f"guard must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"grep referencing 'tauri build' as an arg must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_find_referencing_npm_run_build():
+    """`find . -name "npm run build.log"` → allow. Expected already-green."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('find . -name "npm run build.log"'), state_dir
+        )
+        assert result.returncode == 0, f"guard must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"find referencing 'npm run build.log' as an arg must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -5264,6 +5472,23 @@ _TESTS = [
     ("test_bqe_allows_outside_cognito_worktree",
      test_bqe_allows_outside_cognito_worktree),
     ("test_bqe_fail_open_malformed_json", test_bqe_fail_open_malformed_json),
+    # build-queue-recycle-kills-concurrent-worktree-build (test-agent addendum)
+    # — build-queue-enforce.sh's UNANCHORED deny regexes wrongly deny a
+    # read-only command that merely REFERENCES a build token. The
+    # *-filtered.ps1-as-read-argument ALLOW cases (grep/find/cat|head) are
+    # the genuine RED regression; the rest are guard/regression coverage.
+    ("test_bqe_allows_cat_results_json", test_bqe_allows_cat_results_json),
+    ("test_bqe_allows_grep_filtered_script", test_bqe_allows_grep_filtered_script),
+    ("test_bqe_allows_tail_build_log", test_bqe_allows_tail_build_log),
+    ("test_bqe_allows_find_filtered_script", test_bqe_allows_find_filtered_script),
+    ("test_bqe_allows_cat_filtered_script_piped_head",
+     test_bqe_allows_cat_filtered_script_piped_head),
+    ("test_bqe_allows_git_diff_settings", test_bqe_allows_git_diff_settings),
+    ("test_bqe_denies_bare_dotnet_build", test_bqe_denies_bare_dotnet_build),
+    ("test_bqe_denies_powershell_file_filtered_script",
+     test_bqe_denies_powershell_file_filtered_script),
+    ("test_bqe_denies_direct_filtered_script_dot_slash",
+     test_bqe_denies_direct_filtered_script_dot_slash),
     # build-queue-enforce-cd-prefix-bypass — same cd-prefix fix in
     # long-build-ownership-guard.sh for its long-build set.
     ("test_longbuild_guard_denies_cd_prefixed_cargo_build_release",
@@ -5272,6 +5497,15 @@ _TESTS = [
      test_longbuild_guard_denies_cd_prefixed_tauri_build),
     ("test_longbuild_guard_denies_cd_prefixed_npm_run_build",
      test_longbuild_guard_denies_cd_prefixed_npm_run_build),
+    # build-queue-recycle-kills-concurrent-worktree-build (test-agent addendum)
+    # — regression pins: the long-build guard already discriminates a
+    # read-verb arg reference from a command-head invocation.
+    ("test_longbuild_guard_allows_cat_referencing_cargo_build",
+     test_longbuild_guard_allows_cat_referencing_cargo_build),
+    ("test_longbuild_guard_allows_grep_referencing_tauri_build",
+     test_longbuild_guard_allows_grep_referencing_tauri_build),
+    ("test_longbuild_guard_allows_find_referencing_npm_run_build",
+     test_longbuild_guard_allows_find_referencing_npm_run_build),
 ]
 
 
