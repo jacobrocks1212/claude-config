@@ -573,6 +573,82 @@ function Reset-CompilerServer {
 	return $true
 }
 
+function Get-ProjectDlls {
+	<#
+	.SYNOPSIS
+	  Shared per-project *.dll enumerator: recursively finds every *.dll under
+	  ANY bin/ or obj/ segment beneath the worktree root — across EVERY project
+	  subdir (<root>/**/bin, <root>/**/obj), not just <root>/bin + <root>/obj.
+
+	.DESCRIPTION
+	  This is the single enumeration source both Remove-PoisonedArtifacts (poison
+	  sweep, no filter) and Get-DllLockers (copy-lock enumeration, 'bin/Debug'
+	  filter) call. Widening from the worktree-root-only walk to a per-project
+	  walk is the fix for build-queue-false-green-on-silent-build-failure Root
+	  Cause A: a poisoned per-project artifact (e.g. a 0-byte
+	  Cognito/bin/Debug/netstandard2.0/Cognito.dll) survived the old
+	  <root>/bin-only sweep and poisoned the next incremental build.
+
+	  Enumeration is recursive from $WorktreeRoot for *.dll, then restricted to
+	  files whose path contains a bin/ or obj/ segment (so non-build DLLs are
+	  excluded). An optional -PathSegmentFilter (e.g. 'bin/Debug', either slash
+	  style) further restricts to files whose path contains that consecutive
+	  segment run — this is how Get-DllLockers keeps its bin/Debug scope while
+	  sharing this one enumeration.
+
+	  Fail-open: a nonexistent root or ANY enumeration error yields an empty
+	  array (never throws) — a build must proceed even if enumeration is
+	  impossible.
+
+	.PARAMETER WorktreeRoot
+	  Root directory of the worktree to enumerate.
+
+	.PARAMETER PathSegmentFilter
+	  Optional path-segment run (e.g. 'bin/Debug') that a DLL's full path must
+	  contain to be returned. Omitted / empty ⇒ every bin|obj DLL is returned.
+
+	.OUTPUTS
+	  [System.IO.FileInfo[]] the matching DLL file objects (empty array on a
+	  missing root, no matches, or any failure).
+	#>
+	[CmdletBinding()]
+	[OutputType([System.IO.FileInfo[]])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$WorktreeRoot,
+
+		[string]$PathSegmentFilter
+	)
+
+	if (-not (Test-Path -LiteralPath $WorktreeRoot)) {
+		return @()
+	}
+
+	# Recurse the WHOLE worktree for *.dll, then keep only those under a bin/ or
+	# obj/ path segment — the per-project widening of the old <root>/{bin,obj}
+	# roots loop. Fail-open to @() on any enumeration error.
+	$dlls = Get-SafeValue {
+		Get-ChildItem -LiteralPath $WorktreeRoot -Filter '*.dll' -Recurse -File -ErrorAction Stop |
+			Where-Object { $_.FullName -match '[\\/](bin|obj)[\\/]' }
+	} @()
+	if ($null -eq $dlls) { $dlls = @() }
+	$dlls = @($dlls)
+
+	if (-not [string]::IsNullOrEmpty($PathSegmentFilter)) {
+		# Turn e.g. 'bin/Debug' (either slash style) into a consecutive-segment
+		# regex: [\\/]bin[\\/]Debug[\\/]. This mirrors the pre-existing
+		# Get-DllLockers bin/Debug scoping.
+		$segments = @($PathSegmentFilter -split '[\\/]+' | Where-Object { $_ -ne '' })
+		$pattern = '[\\/]' + ($segments -join '[\\/]') + '[\\/]'
+		$dlls = @($dlls | Where-Object { $_.FullName -match $pattern })
+	}
+
+	# Emit the FileInfo objects directly; every caller re-wraps with @(...), so a
+	# single-element unwrap is harmless and an empty result yields nothing (NOT a
+	# one-element array containing @(), which the ,$dlls comma-operator would).
+	return $dlls
+}
+
 function Remove-PoisonedArtifacts {
 	<#
 	.SYNOPSIS
@@ -619,22 +695,15 @@ function Remove-PoisonedArtifacts {
 
 	$quarantined = New-Object System.Collections.Generic.List[string]
 
-	$roots = @(
-		(Join-Path $WorktreeRoot 'bin'),
-		(Join-Path $WorktreeRoot 'obj')
-	)
+	# Per-project sweep: enumerate *.dll across EVERY project subdir's bin/ and
+	# obj/ via the shared Get-ProjectDlls enumerator (no path filter → both bin
+	# and obj across all project subdirs and all build configs are swept). This
+	# replaces the old <root>/bin + <root>/obj-only roots loop that was blind to
+	# a poisoned per-project artifact (Root Cause A of
+	# build-queue-false-green-on-silent-build-failure).
+	$dlls = @(Get-ProjectDlls -WorktreeRoot $WorktreeRoot)
 
-	foreach ($root in $roots) {
-		if (-not (Test-Path -LiteralPath $root)) {
-			continue
-		}
-
-		$dlls = Get-SafeValue { Get-ChildItem -LiteralPath $root -Filter '*.dll' -Recurse -File -ErrorAction Stop } @()
-		if ($null -eq $dlls) {
-			$dlls = @()
-		}
-
-		foreach ($dll in @($dlls)) {
+	foreach ($dll in $dlls) {
 			$fullPath = $dll.FullName
 			$isPoisoned = $false
 
@@ -677,7 +746,6 @@ function Remove-PoisonedArtifacts {
 				Write-Warning "Remove-PoisonedArtifacts: failed to delete poisoned artifact '$fullPath'; continuing sweep (fail-open)."
 			}
 		}
-	}
 
 	return [string[]]$quarantined.ToArray()
 }
@@ -948,20 +1016,12 @@ function Get-DllLockers {
 			return @()
 		}
 
-		# Collect every bin/Debug/**/*.dll under the worktree. A build DLL lives
-		# beneath a 'bin\Debug' path segment; scope to that (mirrors the copy step).
-		$binRoot = Join-Path $WorktreeRoot 'bin'
-		if (-not (Test-Path -LiteralPath $binRoot)) {
-			return @()
-		}
-
-		$dllFiles = Get-SafeValue {
-			Get-ChildItem -LiteralPath $binRoot -Filter '*.dll' -Recurse -File -ErrorAction Stop |
-				Where-Object { $_.FullName -match '[\\/]bin[\\/]Debug[\\/]' }
-		} @()
-		if ($null -eq $dllFiles) { $dllFiles = @() }
-
-		$dllPaths = @(@($dllFiles) | ForEach-Object { $_.FullName })
+		# Collect every bin/Debug/**/*.dll across ALL project subdirs beneath the
+		# worktree (<root>/**/bin/Debug) via the shared per-project enumerator.
+		# This is the per-project widening that makes this function's docstring
+		# "mirroring how Remove-PoisonedArtifacts scopes its sweep" claim true —
+		# both now share ONE enumeration (Root Cause A / DLL-locker-sweep parity).
+		$dllPaths = @(Get-ProjectDlls -WorktreeRoot $WorktreeRoot -PathSegmentFilter 'bin/Debug' | ForEach-Object { $_.FullName })
 		if ($dllPaths.Count -eq 0) {
 			return @()
 		}

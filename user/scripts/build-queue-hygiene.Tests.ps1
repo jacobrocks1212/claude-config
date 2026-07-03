@@ -631,3 +631,150 @@ Describe 'Format-BuildQueueBanner' {
 		$result | Should -Be 'build-queue: seq=624 op=mstest RESULT=PASS (result_fidelity=verified)'
 	}
 }
+
+Describe 'Get-ProjectDlls (WU-1 shared per-project DLL enumerator)' {
+	# NOTE: per the child-scope quirk documented in DLL Locker Reap, every function
+	# call is assigned on its OWN line with the assertion on the NEXT line.
+
+	BeforeAll {
+		$script:GpdWorktree = Join-Path $env:TEMP ("gpd-pester-" + [guid]::NewGuid().ToString('N'))
+		# Per-project subdir layout (NOT worktree-root bin/obj) — the exact shape the
+		# worktree-root-only sweep was blind to.
+		$script:GpdBinDebug   = Join-Path $script:GpdWorktree 'Cognito\bin\Debug\netstandard2.0'
+		$script:GpdObjDebug   = Join-Path $script:GpdWorktree 'Cognito.Core\obj\Debug'
+		$script:GpdBinRelease = Join-Path $script:GpdWorktree 'Cognito\bin\Release'
+		New-Item -ItemType Directory -Path $script:GpdBinDebug -Force | Out-Null
+		New-Item -ItemType Directory -Path $script:GpdObjDebug -Force | Out-Null
+		New-Item -ItemType Directory -Path $script:GpdBinRelease -Force | Out-Null
+
+		$mz = New-Object byte[] 64
+		$mz[0] = 0x4D
+		$mz[1] = 0x5A
+		$script:GpdBinDebugDll   = Join-Path $script:GpdBinDebug 'Cognito.dll'
+		$script:GpdObjDebugDll   = Join-Path $script:GpdObjDebug 'Cognito.Core.dll'
+		$script:GpdBinReleaseDll = Join-Path $script:GpdBinRelease 'Cognito.dll'
+		[System.IO.File]::WriteAllBytes($script:GpdBinDebugDll, $mz)
+		[System.IO.File]::WriteAllBytes($script:GpdObjDebugDll, $mz)
+		[System.IO.File]::WriteAllBytes($script:GpdBinReleaseDll, $mz)
+	}
+
+	AfterAll {
+		Remove-Item -Path $script:GpdWorktree -Recurse -Force -ErrorAction SilentlyContinue
+	}
+
+	It 'defines Get-ProjectDlls' {
+		Get-Command Get-ProjectDlls -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'no filter: enumerates *.dll across per-project bin AND obj subdirs' {
+		$paths = @(Get-ProjectDlls -WorktreeRoot $script:GpdWorktree | ForEach-Object { $_.FullName })
+		$paths | Should -Contain $script:GpdBinDebugDll
+		$paths | Should -Contain $script:GpdObjDebugDll
+		$paths | Should -Contain $script:GpdBinReleaseDll
+	}
+
+	It 'bin/Debug filter: restricts to per-project bin/Debug DLLs only' {
+		$paths = @(Get-ProjectDlls -WorktreeRoot $script:GpdWorktree -PathSegmentFilter 'bin/Debug' | ForEach-Object { $_.FullName })
+		$paths | Should -Contain $script:GpdBinDebugDll
+		$paths | Should -Not -Contain $script:GpdObjDebugDll
+		$paths | Should -Not -Contain $script:GpdBinReleaseDll
+	}
+
+	It 'fail-open: does not throw and returns empty for a nonexistent worktree' {
+		$bogus = Join-Path $env:TEMP ("gpd-nonexistent-" + [guid]::NewGuid().ToString('N'))
+		{ Get-ProjectDlls -WorktreeRoot $bogus } | Should -Not -Throw
+		$result = @(Get-ProjectDlls -WorktreeRoot $bogus)
+		$result.Count | Should -Be 0
+	}
+}
+
+Describe 'Remove-PoisonedArtifacts — per-project sweep (WU-1)' {
+	BeforeEach {
+		$script:PpWorktree   = Join-Path $env:TEMP ("rpa-pp-" + [guid]::NewGuid().ToString('N'))
+		$script:PpBinDebug   = Join-Path $script:PpWorktree 'Cognito\bin\Debug\netstandard2.0'
+		$script:PpObjDebug   = Join-Path $script:PpWorktree 'Cognito.Core\obj\Debug'
+		$script:PpBinRelease = Join-Path $script:PpWorktree 'Cognito\bin\Release'
+		New-Item -ItemType Directory -Path $script:PpBinDebug -Force | Out-Null
+		New-Item -ItemType Directory -Path $script:PpObjDebug -Force | Out-Null
+		New-Item -ItemType Directory -Path $script:PpBinRelease -Force | Out-Null
+
+		# 0-byte poisoned DLL under a per-project bin/Debug subdir (the regression pin).
+		$script:PpZeroDll = Join-Path $script:PpBinDebug 'Cognito.dll'
+		[System.IO.File]::WriteAllBytes($script:PpZeroDll, [byte[]]@())
+
+		# Truncated non-MZ DLL under a per-project obj/Debug subdir.
+		$script:PpTruncDll = Join-Path $script:PpObjDebug 'Cognito.Core.dll'
+		[System.IO.File]::WriteAllBytes($script:PpTruncDll, [byte[]](0x00, 0x00, 0x00, 0x00))
+
+		# Valid-PE DLL under a per-project subdir — must be left alone.
+		$mz = New-Object byte[] 64
+		$mz[0] = 0x4D
+		$mz[1] = 0x5A
+		$script:PpGoodDll = Join-Path $script:PpBinDebug 'Valid.dll'
+		[System.IO.File]::WriteAllBytes($script:PpGoodDll, $mz)
+
+		# Poisoned DLL under bin/Release — the no-filter sweep must ALSO reach it.
+		$script:PpReleaseDll = Join-Path $script:PpBinRelease 'Cognito.dll'
+		[System.IO.File]::WriteAllBytes($script:PpReleaseDll, [byte[]]@())
+	}
+
+	AfterEach {
+		Remove-Item -Path $script:PpWorktree -Recurse -Force -ErrorAction SilentlyContinue
+	}
+
+	It 'quarantines a 0-byte DLL under a per-project bin/Debug subdir (regression pin)' {
+		Remove-PoisonedArtifacts -WorktreeRoot $script:PpWorktree | Out-Null
+		Test-Path $script:PpZeroDll | Should -Be $false
+	}
+
+	It 'quarantines a truncated (non-MZ) DLL under a per-project obj/Debug subdir' {
+		Remove-PoisonedArtifacts -WorktreeRoot $script:PpWorktree | Out-Null
+		Test-Path $script:PpTruncDll | Should -Be $false
+	}
+
+	It 'leaves a valid-PE DLL under a per-project subdir alone' {
+		Remove-PoisonedArtifacts -WorktreeRoot $script:PpWorktree | Out-Null
+		Test-Path $script:PpGoodDll | Should -Be $true
+	}
+
+	It 'sweeps both configs: a poisoned bin/Release DLL is also quarantined (no path filter)' {
+		Remove-PoisonedArtifacts -WorktreeRoot $script:PpWorktree | Out-Null
+		Test-Path $script:PpReleaseDll | Should -Be $false
+	}
+
+	It 'returns the quarantined per-project paths' {
+		$result = @(Remove-PoisonedArtifacts -WorktreeRoot $script:PpWorktree)
+		$result | Should -Contain $script:PpZeroDll
+		$result | Should -Contain $script:PpTruncDll
+	}
+}
+
+Describe 'Get-DllLockers — per-project enumeration (WU-1)' {
+	BeforeAll {
+		$script:GdlWorktree = Join-Path $env:TEMP ("gdl-pp-" + [guid]::NewGuid().ToString('N'))
+		# DLL under a per-project bin/Debug subdir (NOT worktree-root bin/Debug), the
+		# shape the old <root>/bin-only enumeration could not see.
+		$script:GdlBinDebug = Join-Path $script:GdlWorktree 'Cognito\bin\Debug\netstandard2.0'
+		New-Item -ItemType Directory -Path $script:GdlBinDebug -Force | Out-Null
+		$mz = New-Object byte[] 64
+		$mz[0] = 0x4D
+		$mz[1] = 0x5A
+		$script:GdlDll = Join-Path $script:GdlBinDebug 'Cognito.dll'
+		[System.IO.File]::WriteAllBytes($script:GdlDll, $mz)
+	}
+
+	AfterAll {
+		Remove-Item -Path $script:GdlWorktree -Recurse -Force -ErrorAction SilentlyContinue
+	}
+
+	It 'enumeration reaches a per-project bin/Debug DLL (via the shared filter)' {
+		$paths = @(Get-ProjectDlls -WorktreeRoot $script:GdlWorktree -PathSegmentFilter 'bin/Debug' | ForEach-Object { $_.FullName })
+		$paths | Should -Contain $script:GdlDll
+	}
+
+	It 'Get-DllLockers does not throw for a per-project bin/Debug fixture and returns empty when unlocked (fail-open)' {
+		{ Get-DllLockers -WorktreeRoot $script:GdlWorktree } | Should -Not -Throw
+		$result = @(Get-DllLockers -WorktreeRoot $script:GdlWorktree)
+		$result.Count | Should -Be 0
+	}
+}
