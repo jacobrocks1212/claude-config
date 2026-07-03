@@ -43,6 +43,71 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
+function Read-WithRetry {
+	<#
+	.SYNOPSIS
+	  Bounded parse-with-retry helper: invoke a parse scriptblock up to
+	  -MaxAttempts times, returning the first non-$null result, or -Fallback
+	  after all attempts are exhausted.
+
+	.DESCRIPTION
+	  Extracts the proven active.lock retry/settle pattern
+	  (build-queue-runner.ps1 / build-queue.ps1: 3 attempts, 50ms apart, NO
+	  sleep after the last attempt) into a reusable, Pester-testable helper. It
+	  is the fix for build-queue-false-green-on-silent-build-failure Root Cause
+	  C: a fidelity-bearing read (the runner's test-counts parse and build-log
+	  read) races the wrapper-owned log flush/close and drops a trailing line,
+	  reading as empty on the first shot. Routing those reads through this helper
+	  gives a not-yet-flushed line time to settle instead of committing an empty
+	  parse.
+
+	  A $null return from the parse block means "not ready — retry"; any non-null
+	  value (including '' if a caller chooses) means "done, use this". The sleep
+	  happens ONLY between attempts (never after the final attempt), matching the
+	  active.lock exemplar exactly.
+
+	.PARAMETER Parse
+	  Scriptblock that performs the read/parse and returns the parsed payload, or
+	  $null when the expected content is not (yet) present.
+
+	.PARAMETER MaxAttempts
+	  Total number of parse attempts (default 3, as in the active.lock loop).
+
+	.PARAMETER DelayMs
+	  Milliseconds to sleep BETWEEN attempts (default 50, as in the active.lock
+	  loop). No sleep occurs after the last attempt.
+
+	.PARAMETER Fallback
+	  Value returned when every attempt yields $null (default $null).
+
+	.OUTPUTS
+	  The first non-$null result of $Parse, or $Fallback.
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)]
+		[scriptblock]$Parse,
+
+		[int]$MaxAttempts = 3,
+
+		[int]$DelayMs = 50,
+
+		$Fallback = $null
+	)
+
+	for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+		$value = & $Parse
+		if ($null -ne $value) {
+			return $value
+		}
+		if ($attempt -lt $MaxAttempts) {
+			Start-Sleep -Milliseconds $DelayMs
+		}
+	}
+
+	return $Fallback
+}
+
 # Guard Add-Type so re-dot-sourcing this file in the same PowerShell session
 # (or re-importing in a test run) does not throw "type already exists".
 if (-not ([System.Management.Automation.PSTypeName]'BuildQueueHygiene.NativeMethods').Type) {

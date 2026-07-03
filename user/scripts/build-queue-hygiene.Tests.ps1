@@ -778,3 +778,46 @@ Describe 'Get-DllLockers — per-project enumeration (WU-1)' {
 		$result.Count | Should -Be 0
 	}
 }
+
+Describe 'Read-WithRetry (WU-2 flush-retry helper)' {
+	# Counter-closure scriptblocks — no filesystem/timing dependency. -DelayMs 0
+	# keeps the tests instant; sleep-between-attempts semantics are unchanged.
+	# Per the child-scope quirk: each Read-WithRetry call is on its OWN line and
+	# the assertion is separate.
+
+	It 'defines Read-WithRetry' {
+		Get-Command Read-WithRetry -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'returns on the first non-null attempt and invokes the parse block exactly once' {
+		$script:rwrCalls = 0
+		$parse = { $script:rwrCalls++; 'value' }
+		$result = Read-WithRetry -Parse $parse -MaxAttempts 3 -DelayMs 0
+		$result | Should -Be 'value'
+		$script:rwrCalls | Should -Be 1
+	}
+
+	It 'retries up to -MaxAttempts when the parse block always returns $null and returns the fallback sentinel' {
+		$script:rwrCalls = 0
+		$parse = { $script:rwrCalls++; $null }
+		$result = Read-WithRetry -Parse $parse -MaxAttempts 3 -DelayMs 0 -Fallback 'FALLBACK'
+		$script:rwrCalls | Should -Be 3
+		$result | Should -Be 'FALLBACK'
+	}
+
+	It 'returns the default fallback ($null) after -MaxAttempts is exhausted' {
+		$script:rwrCalls = 0
+		$parse = { $script:rwrCalls++; $null }
+		$result = Read-WithRetry -Parse $parse -MaxAttempts 2 -DelayMs 0
+		$script:rwrCalls | Should -Be 2
+		$result | Should -BeNullOrEmpty
+	}
+
+	It 'succeeds on the Nth attempt: returns the value and invokes the parse block exactly N times' {
+		$script:rwrCalls = 0
+		$parse = { $script:rwrCalls++; if ($script:rwrCalls -lt 3) { $null } else { 'ready' } }
+		$result = Read-WithRetry -Parse $parse -MaxAttempts 5 -DelayMs 0
+		$result | Should -Be 'ready'
+		$script:rwrCalls | Should -Be 3
+	}
+}

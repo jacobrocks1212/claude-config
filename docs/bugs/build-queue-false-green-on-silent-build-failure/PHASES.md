@@ -50,12 +50,22 @@ N/A — fully covered by Pester in Deliverables.
 **Scope:** The runner's counts read (`build-queue-runner.ps1:179-192`, single-shot `[System.IO.File]::ReadAllText` + regex for the last `Results:` line, no retry) and build-log read (`:138-144`, single-shot `ReadAllText`) race the wrapper-owned log flush/close, dropping trailing lines → `counts=$null` / misparse → agents bypass the capture. The `active.lock` read already retries 3x/50ms (runner `:234-241`, inline; mirrored in wrapper `build-queue.ps1:462-469`) — this phase extracts that proven pattern into a reusable, testable helper and converges the fidelity-bearing reads onto it.
 
 **Deliverables:**
-- [ ] `Read-WithRetry`-style helper added to `user/scripts/build-queue-hygiene.ps1` (dot-sourced so it is Pester-testable), parameterized: a parse `[scriptblock]` returning the parsed payload or `$null` on failure, `-MaxAttempts` (default 3), `-DelayMs` (default 50); returns the first non-null result or a fallback sentinel after exhausting attempts. Modeled on the active.lock loop verbatim (attempts 1..Max, `Start-Sleep -Milliseconds` between attempts, no sleep after the last attempt).
+- [x] `Read-WithRetry`-style helper added to `user/scripts/build-queue-hygiene.ps1` (dot-sourced so it is Pester-testable), parameterized: a parse `[scriptblock]` returning the parsed payload or `$null` on failure, `-MaxAttempts` (default 3), `-DelayMs` (default 50); returns the first non-null result or a fallback sentinel after exhausting attempts. Modeled on the active.lock loop verbatim (attempts 1..Max, `Start-Sleep -Milliseconds` between attempts, no sleep after the last attempt).
 - [ ] Converge the runner's counts read (179-192) and build-log read (138-144) in `build-queue-runner.ps1` onto the helper.
 - [ ] Optional: converge the two active.lock loops (runner 234-241 + wrapper `build-queue.ps1:462-469`) onto the helper for dedupe/parity — call out as optional, not required for this phase's completion.
-- [ ] Tests: helper returns on the first non-null attempt; helper retries up to `-MaxAttempts` on a parse block that always returns `$null`; helper returns the fallback sentinel after `-MaxAttempts` exhausted; helper respects a parse block that succeeds only on the Nth attempt (simulated via a counter closure).
+- [x] Tests: helper returns on the first non-null attempt; helper retries up to `-MaxAttempts` on a parse block that always returns `$null`; helper returns the fallback sentinel after `-MaxAttempts` exhausted; helper respects a parse block that succeeds only on the Nth attempt (simulated via a counter closure).
 
 **Minimum Verifiable Behavior:** `Invoke-Pester user/scripts/build-queue-hygiene.Tests.ps1` green for the new `Read-WithRetry` `Describe` block, including the "succeeds on Nth attempt" It-block; the runner's counts/build-log reads route through the helper (verified by code inspection + the existing counts-parsing tests continuing to pass).
+
+#### Implementation Notes — WU-2 (2026-07-03)
+
+**Review verdict:** PASS.
+
+- Added `Read-WithRetry -Parse <scriptblock> [-MaxAttempts 3] [-DelayMs 50] [-Fallback $null]` (`build-queue-hygiene.ps1`, placed right after `Get-SafeValue`). Loop is the active.lock exemplar verbatim: attempts `1..MaxAttempts`, return first non-`$null`, `Start-Sleep -Milliseconds $DelayMs` ONLY between attempts (no sleep after the last), `$Fallback` after exhaustion. A `$null` parse result = "not ready, retry".
+- 5 new counter-closure Pester It-blocks (`-DelayMs 0`, no filesystem/timing dependency): first-attempt success (1 invocation), always-`$null` → exactly `MaxAttempts` invocations + fallback sentinel, default-`$null` fallback after exhaustion, Nth-attempt success (exactly N invocations).
+- **Gate:** `Invoke-Pester` → 81 passed, 3 pre-existing env-quirk failures. Parse-check `PARSE OK`.
+- Runner convergence (deliverable 2) + optional active.lock convergence (deliverable 3) are WU-3 — next batch.
+- **Files modified:** `user/scripts/build-queue-hygiene.ps1`, `user/scripts/build-queue-hygiene.Tests.ps1`.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 N/A — fully covered by Pester in Deliverables.
