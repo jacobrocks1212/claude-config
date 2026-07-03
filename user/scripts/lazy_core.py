@@ -3388,6 +3388,29 @@ def apply_pseudo(
         fixed) and SPEC.md status is flipped to ``Fixed``.  Idempotent on
         existing FIXED.md with kind=="fixed".
     """
+    # --- C3 cycle-containment at the LIBRARY boundary (integrity backstop) ---
+    # refuse_if_cycle_active was historically invoked ONLY by the lazy-state.py /
+    # bug-state.py `--apply-pseudo` CLI wrappers (immediately before this call).
+    # That left a direct-import side-door: a dispatched cycle subagent (whose
+    # process never inherits the orchestrator's `export LAZY_ORCHESTRATOR=1`) can
+    # `import lazy_core` and call `apply_pseudo("__mark_complete__", ...)` in-process,
+    # bypassing the CLI-only guard entirely — self-authoring COMPLETED.md + the
+    # SPEC/PHASES Complete flip and pushing to main. That is exactly how a
+    # first-time-login mcp-test subagent rogue-completed a feature on partial
+    # evidence (hardening round, 2026-07). Guarding HERE — the sole author of every
+    # scripted completion write — closes the hole no matter the caller:
+    #   * The two CLI wrappers already export LAZY_ORCHESTRATOR=1 for the real
+    #     orchestrator, so refuse_if_cycle_active returns silently for them
+    #     (priority 1 immunity); the extra call is a harmless idempotent no-op.
+    #   * A subagent CLI call was already refused at the wrapper; now a subagent
+    #     DIRECT library call is refused here too (priority 2/3: LAZY_CYCLE_SUBAGENT
+    #     or a present cycle marker → exit 3, zero side effects — refuse_if_cycle_active
+    #     runs BEFORE any default resolution or filesystem work below).
+    # Immunity honors the SAME LAZY_ORCHESTRATOR=1 signal used by every other
+    # guarded op, so orchestrator behavior is byte-unchanged. In-process test
+    # callers run with no marker and no subagent env → the guard is a silent no-op.
+    refuse_if_cycle_active("apply_pseudo")
+
     # Resolve defaults for optional keyword arguments.
     if date is None:
         date = datetime.date.today().isoformat()

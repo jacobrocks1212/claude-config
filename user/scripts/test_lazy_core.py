@@ -19567,6 +19567,100 @@ def test_refuse_guard_orchestrator_env_overrides_explicit_subagent():
             _clear_state_dir()
 
 
+def test_apply_pseudo_direct_call_refused_under_cycle_marker_without_orchestrator():
+    """GAP-1 integrity backstop (hardening round 2026-07): a DIRECT in-process
+    ``lazy_core.apply_pseudo("__mark_complete__", ...)`` call under an active cycle
+    marker WITHOUT the ``LAZY_ORCHESTRATOR=1`` export (the rogue-subagent context)
+    must be refused by the internal ``refuse_if_cycle_active`` guard — exit 3, ZERO
+    filesystem side effects (no COMPLETED.md, SPEC/PHASES status untouched,
+    VALIDATED.md untouched). This closes the direct-import side-door around the
+    CLI-only guard that let an mcp-test subagent self-complete first-time-login on
+    partial evidence.
+    """
+    _guard()
+    _clear_cycle_env()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — Foundations\n\n**Status:** Complete\n\n- [x] Build the thing\n",
+        )
+        try:
+            # Arm the cycle marker; do NOT set LAZY_ORCHESTRATOR (subagent context).
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            code = None
+            try:
+                lazy_core.apply_pseudo(
+                    Path(td), "__mark_complete__", spec_dir, date="2026-07-03"
+                )
+            except SystemExit as exc:
+                code = exc.code if exc.code is not None else 0
+            assert code == 3, (
+                f"direct apply_pseudo under a cycle marker (no LAZY_ORCHESTRATOR) "
+                f"must exit 3, got exit code {code!r}"
+            )
+            # ZERO side effects: no receipt written, no status flips, sentinel intact.
+            assert not (spec_dir / "COMPLETED.md").exists(), (
+                "COMPLETED.md written despite the cycle-containment refusal"
+            )
+            assert "**Status:** In-progress" in (
+                spec_dir / "SPEC.md"
+            ).read_text(encoding="utf-8"), "SPEC.md status flipped despite refusal"
+            assert (spec_dir / "VALIDATED.md").exists(), (
+                "VALIDATED.md deleted despite refusal — must be untouched"
+            )
+        finally:
+            _clear_cycle_env()
+            _clear_state_dir()
+
+
+def test_apply_pseudo_direct_call_allowed_with_orchestrator_env_under_marker():
+    """GAP-1 orchestrator immunity: the SAME direct ``apply_pseudo`` call under an
+    active cycle marker but WITH ``LAZY_ORCHESTRATOR=1`` set (the real orchestrator
+    context, which the CLI wrappers export) must NOT be refused — the internal guard
+    is transparent to the orchestrator, so completion proceeds and COMPLETED.md is
+    written. Proves the backstop discriminates the rogue subagent from the
+    orchestrator on the same LAZY_ORCHESTRATOR signal every other guarded op uses.
+    """
+    _guard()
+    _clear_cycle_env()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Fully coherent PHASES: one phase, all boxes checked, Status Complete —
+        # so completion sails past the coherence gate once the containment guard
+        # allows the call.
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — Foundations\n\n**Status:** Complete\n\n- [x] Build the thing\n",
+        )
+        os.environ["LAZY_ORCHESTRATOR"] = "1"
+        try:
+            lazy_core.write_cycle_marker(feature_id="f", nonce="n")
+            result = lazy_core.apply_pseudo(
+                Path(td), "__mark_complete__", spec_dir, date="2026-07-03"
+            )
+            assert result["ok"] is True, (
+                f"orchestrator-context completion must succeed, got {result!r}"
+            )
+            assert result["refused"] is None, (
+                f"orchestrator call must NOT be refused, got {result['refused']!r}"
+            )
+            assert (spec_dir / "COMPLETED.md").exists(), (
+                "COMPLETED.md must be written for the orchestrator-context completion"
+            )
+        finally:
+            _clear_cycle_env()
+            _clear_state_dir()
+
+
 def test_refuse_guard_falsey_orchestrator_env_does_not_grant_immunity():
     """A falsey LAZY_ORCHESTRATOR (e.g. "0", "false", "") must NOT grant immunity —
     the marker backstop still refuses a subagent."""
@@ -23444,6 +23538,10 @@ _TESTS = _TESTS + [
      test_refuse_guard_orchestrator_env_never_refuses_even_with_marker),
     ("test_refuse_guard_orchestrator_env_overrides_explicit_subagent",
      test_refuse_guard_orchestrator_env_overrides_explicit_subagent),
+    ("test_apply_pseudo_direct_call_refused_under_cycle_marker_without_orchestrator",
+     test_apply_pseudo_direct_call_refused_under_cycle_marker_without_orchestrator),
+    ("test_apply_pseudo_direct_call_allowed_with_orchestrator_env_under_marker",
+     test_apply_pseudo_direct_call_allowed_with_orchestrator_env_under_marker),
     ("test_refuse_guard_symbol_present",
      test_refuse_guard_symbol_present),
     ("test_repo_has_no_app_surface_empty_repo",
