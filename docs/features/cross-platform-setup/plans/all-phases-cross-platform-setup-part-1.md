@@ -62,15 +62,15 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 2 — expansion + link primitives
 
-- [ ] WU-2.1 — Failing tests: `expand_live_path` home/separator handling; `expand_mappings`
+- [x] WU-2.1 — Failing tests: `expand_live_path` home/separator handling; `expand_mappings`
   per-scope fixtures, alias resolution (own live base, shared repo side), optional-key
   tolerance, sorted Repos order, `repos_root` remap, skip_absent flag, target filter;
   real-manifest expansion spot checks (11 User mappings, section labels).
-- [ ] WU-2.2 — Implement `Mapping`, `expand_live_path`, `expand_mappings`; green.
-- [ ] WU-2.3 — Failing tests: `_is_link`/`_read_link_target`/`_resolve_target` on real Linux
+- [x] WU-2.2 — Implement `Mapping`, `expand_live_path`, `expand_mappings`; green.
+- [x] WU-2.3 — Failing tests: `_is_link`/`_read_link_target`/`_resolve_target` on real Linux
   symlinks; mocked-nt selection (`symlink ok`, `OSError+dir → _create_junction`,
   `OSError+file → SetupError` naming Developer Mode); junction-probe `_is_link` on mocked nt.
-- [ ] WU-2.4 — Implement link primitives (patchable `_create_junction` seam); green.
+- [x] WU-2.4 — Implement link primitives (patchable `_create_junction` seam); green.
 
 ## Phase 3 — verbs + CLI + e2e
 

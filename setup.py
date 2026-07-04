@@ -23,10 +23,14 @@ Deliberate divergences from setup.ps1 (all SPEC-locked):
     add-repo verb are NOT ported (D6/D2) — setup.ps1 keeps them on Windows.
 """
 
+import os
 import re
 import sys
+from dataclasses import dataclass
 
-__all__ = ["SetupError", "parse_psd1", "main"]
+__all__ = ["SetupError", "parse_psd1", "expand_mappings", "expand_live_path", "main"]
+
+_WINDOWS = os.name == "nt"
 
 
 class SetupError(Exception):
@@ -228,6 +232,192 @@ def parse_psd1(text):
     dict/list/str values. Dies loudly (SetupError, with a line number) on any
     construct outside that grammar."""
     return _Psd1Parser(_tokenize(text)).parse_document()
+
+
+# ---------------------------------------------------------------------------
+# Mapping expansion — mirrors setup.ps1's Get-AllMappings (SPEC parity table).
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Mapping:
+    live: str          # absolute host path of the live location
+    repo: str          # absolute path inside this repo
+    type: str          # 'File' | 'Directory'
+    section: str       # 'User' | 'Personal' | 'Workspace' | 'Repo:<name>'
+    skip_absent: bool = False   # Repos entry whose base Path is absent (D5)
+    skip_reason: str = ""
+
+    @property
+    def label(self):
+        return f"{self.section} | {os.path.basename(self.live)}"
+
+
+def _norm_seps(path):
+    """Normalize manifest '\\'-separated paths to the host separator."""
+    return path.replace("\\", os.sep).replace("/", os.sep)
+
+
+def _platform_home():
+    if _WINDOWS:
+        return os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    return os.environ.get("HOME") or os.path.expanduser("~")
+
+
+def expand_live_path(path, home=None):
+    """Port of Expand-LivePath: a leading '~' becomes the platform home
+    (USERPROFILE on Windows, HOME on POSIX); separators host-normalized."""
+    if home is None:
+        home = _platform_home()
+    path = _norm_seps(path)
+    if path == "~" or path.startswith("~" + os.sep):
+        path = home + path[1:]
+    return path
+
+
+def _path_basename(manifest_path):
+    """Last component of a manifest Path regardless of separator style."""
+    return _norm_seps(manifest_path).rstrip(os.sep).rsplit(os.sep, 1)[-1]
+
+
+_SCOPE_SECTIONS = ("User", "Personal", "Workspace")
+TARGETS = ("All", "User", "Personal", "Workspace", "Repos")
+
+
+def expand_mappings(manifest, repo_root, target="All", repos_root=None, home=None):
+    """Flatten the manifest into Mapping records (setup.ps1 Get-AllMappings).
+
+    repos_root: optional override — each Repos entry's Path is remapped to
+    <repos_root>/<basename(Path)> so a non-Windows host can link checkouts
+    living under a different root (SPEC D2/D5).
+    A Repos entry whose base Path dir is absent is flagged skip_absent for
+    the whole entry — verbs render it as a skip, never broken (SPEC D5).
+    """
+    if target not in TARGETS:
+        _die(f"unknown target {target!r} (expected one of {', '.join(TARGETS)})")
+    repo_root = os.path.abspath(repo_root)
+    mappings = []
+
+    for section in _SCOPE_SECTIONS:
+        if target not in ("All", section):
+            continue
+        for entry in manifest.get(section, []):
+            mappings.append(Mapping(
+                live=expand_live_path(entry["Live"], home=home),
+                repo=os.path.join(repo_root, _norm_seps(entry["Repo"])),
+                type=entry["Type"],
+                section=section,
+            ))
+
+    if target in ("All", "Repos"):
+        repos = manifest.get("Repos", {})
+        for name in sorted(repos):
+            cfg = repos[name]
+            live_base = _norm_seps(cfg["Path"])
+            if repos_root is not None:
+                live_base = os.path.join(
+                    os.path.abspath(repos_root), _path_basename(cfg["Path"]))
+            config_name = cfg.get("Alias") or name
+            src_cfg = repos.get(config_name)
+            if src_cfg is None:
+                _die(f"Repos entry {name!r} aliases unknown repo {config_name!r}")
+            skip_absent = not os.path.isdir(live_base)
+            skip_reason = f"repo absent: {live_base}" if skip_absent else ""
+            section = f"Repo:{name}"
+
+            def _add(live_rel, repo_rel, mtype):
+                mappings.append(Mapping(
+                    live=os.path.join(live_base, _norm_seps(live_rel)),
+                    repo=os.path.join(repo_root, "repos", config_name,
+                                      _norm_seps(repo_rel)),
+                    type=mtype,
+                    section=section,
+                    skip_absent=skip_absent,
+                    skip_reason=skip_reason,
+                ))
+
+            for f in src_cfg.get("RootFiles", []):
+                _add(f, f, "File")
+            for f in src_cfg.get("DotClaudeFiles", []):
+                _add(os.path.join(".claude", _norm_seps(f)),
+                     os.path.join(".claude", _norm_seps(f)), "File")
+            for d in src_cfg.get("DotClaudeDirs", []):
+                _add(os.path.join(".claude", _norm_seps(d)),
+                     os.path.join(".claude", _norm_seps(d)), "Directory")
+
+    return mappings
+
+
+# ---------------------------------------------------------------------------
+# Link primitives (SPEC D3) — POSIX: plain symlinks. Windows: symlink-first
+# (matching setup.ps1's New-Item SymbolicLink); on a privilege error, fall
+# back to a directory junction (no privilege needed) or die actionably for
+# files. _symlink/_readlink/_create_junction are patchable seams so the
+# Windows-only branch is unit-testable with a mocked platform.
+# ---------------------------------------------------------------------------
+
+
+def _symlink(target, live, is_dir):
+    os.symlink(target, live, target_is_directory=is_dir)
+
+
+def _readlink(path):
+    return os.readlink(path)
+
+
+def _create_junction(target, live):  # pragma: no cover - Windows-only
+    import _winapi
+    _winapi.CreateJunction(str(target), str(live))
+
+
+def _is_link(path):
+    """True for symlinks everywhere; on Windows also for junctions (any
+    readable reparse target) — consistent with setup.ps1's ReparsePoint test."""
+    if os.path.islink(path):
+        return True
+    if _WINDOWS:
+        try:
+            _readlink(path)
+            return True
+        except OSError:
+            return False
+    return False
+
+
+def _read_link_target(path):
+    return _readlink(path)
+
+
+def _resolve_target(link_path):
+    """Resolve a link's stored target against the link's parent dir
+    (port of Resolve-Absolute) and normalize for comparison."""
+    target = _readlink(link_path)
+    if not os.path.isabs(target):
+        target = os.path.join(os.path.dirname(link_path), target)
+    return os.path.normcase(os.path.normpath(os.path.abspath(target)))
+
+
+def _targets_equal(link_path, repo_path):
+    return _resolve_target(link_path) == os.path.normcase(
+        os.path.normpath(os.path.abspath(repo_path)))
+
+
+def _create_link(live, repo, is_dir):
+    """Create the live→repo link. Returns 'symlink' or 'junction'."""
+    if not _WINDOWS:
+        _symlink(repo, live, is_dir)
+        return "symlink"
+    try:
+        _symlink(repo, live, is_dir)
+        return "symlink"
+    except OSError as exc:
+        if is_dir:
+            _create_junction(repo, live)
+            return "junction"
+        raise SetupError(
+            f"cannot create file symlink at {live}: {exc}. "
+            "Enable Windows Developer Mode (Settings > For developers) or run "
+            "elevated, then re-run.")
 
 
 if __name__ == "__main__":

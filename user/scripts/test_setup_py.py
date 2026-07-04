@@ -183,5 +183,225 @@ class TestParsePsd1RealManifest:
         assert "DotClaudeDirs" not in cd
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 — mapping expansion
+# ---------------------------------------------------------------------------
+
+
+def _fixture_manifest(repos_path_base):
+    """A miniature manifest exercising every expansion feature."""
+    return {
+        "User": [
+            {"Live": "~\\.claude\\skills", "Repo": "user\\skills", "Type": "Directory"},
+            {"Live": "~\\.claude\\CLAUDE.md", "Repo": "user\\CLAUDE.md", "Type": "File"},
+        ],
+        "Personal": [
+            {"Live": "~\\.claude-personal\\CLAUDE.md", "Repo": "personal\\CLAUDE.md",
+             "Type": "File"},
+        ],
+        "Workspace": [
+            {"Live": "~\\source\\repos\\CLAUDE.md", "Repo": "workspace\\CLAUDE.md",
+             "Type": "File"},
+        ],
+        "Repos": {
+            "my-repo": {
+                "Path": f"{repos_path_base}\\My Repo",
+                "RootFiles": ["CLAUDE.local.md", "sub\\CLAUDE.local.md"],
+                "DotClaudeFiles": ["settings.json", "hooks\\h.ps1"],
+                "DotClaudeDirs": ["skills"],
+            },
+            "my-repo-B": {
+                "Path": f"{repos_path_base}\\My Repo-B",
+                "Alias": "my-repo",
+            },
+            "minimal": {
+                "Path": f"{repos_path_base}\\minimal",
+                "DotClaudeFiles": ["settings.local.json"],
+            },
+        },
+    }
+
+
+class TestExpandLivePath:
+    def test_tilde_expands_to_home(self, tmp_path):
+        out = setup_mod.expand_live_path("~\\.claude\\skills", home=str(tmp_path))
+        assert out == os.path.join(str(tmp_path), ".claude", "skills")
+
+    def test_no_tilde_passes_through_normalized(self, tmp_path):
+        out = setup_mod.expand_live_path("C:\\src\\repo\\file.md", home=str(tmp_path))
+        assert "\\" not in out or os.sep == "\\"
+
+
+class TestExpandMappings:
+    @pytest.fixture()
+    def env(self, tmp_path):
+        home = tmp_path / "home"
+        repo_root = tmp_path / "claude-config"
+        repos_root = tmp_path / "repos"
+        for d in (home, repo_root, repos_root):
+            d.mkdir()
+        # my-repo + my-repo-B present on disk; 'minimal' left absent
+        (repos_root / "My Repo").mkdir()
+        (repos_root / "My Repo-B").mkdir()
+        manifest = _fixture_manifest("C:\\Users\\x\\source\\repos")
+        return manifest, str(repo_root), str(repos_root), str(home)
+
+    def test_user_scope(self, env):
+        manifest, repo_root, repos_root, home = env
+        maps = setup_mod.expand_mappings(manifest, repo_root, target="User", home=home)
+        assert len(maps) == 2
+        m = maps[0]
+        assert m.section == "User"
+        assert m.live == os.path.join(home, ".claude", "skills")
+        assert m.repo == os.path.join(repo_root, "user", "skills")
+        assert m.type == "Directory"
+        assert not m.skip_absent
+
+    def test_target_filter_and_all(self, env):
+        manifest, repo_root, repos_root, home = env
+        for target, count in (("Personal", 1), ("Workspace", 1)):
+            maps = setup_mod.expand_mappings(manifest, repo_root, target=target, home=home)
+            assert len(maps) == 1 and maps[0].section == target, target
+        all_maps = setup_mod.expand_mappings(
+            manifest, repo_root, target="All", repos_root=repos_root, home=home)
+        # 2 User + 1 Personal + 1 Workspace + my-repo(5) + my-repo-B(5) + minimal(1)
+        assert len(all_maps) == 15
+
+    def test_repos_root_remap_and_kinds(self, env):
+        manifest, repo_root, repos_root, home = env
+        maps = setup_mod.expand_mappings(
+            manifest, repo_root, target="Repos", repos_root=repos_root, home=home)
+        mine = [m for m in maps if m.section == "Repo:my-repo"]
+        assert len(mine) == 5
+        by_live_tail = {os.path.relpath(m.live, os.path.join(repos_root, "My Repo")): m
+                        for m in mine}
+        assert by_live_tail["CLAUDE.local.md"].type == "File"
+        assert by_live_tail[os.path.join("sub", "CLAUDE.local.md")].repo == os.path.join(
+            repo_root, "repos", "my-repo", "sub", "CLAUDE.local.md")
+        assert by_live_tail[os.path.join(".claude", "hooks", "h.ps1")].type == "File"
+        assert by_live_tail[os.path.join(".claude", "skills")].type == "Directory"
+
+    def test_alias_repo_resolves_source_config_own_live_base(self, env):
+        manifest, repo_root, repos_root, home = env
+        maps = setup_mod.expand_mappings(
+            manifest, repo_root, target="Repos", repos_root=repos_root, home=home)
+        b = [m for m in maps if m.section == "Repo:my-repo-B"]
+        assert len(b) == 5  # alias inherits the full source config
+        for m in b:
+            # live under the ALIAS entry's own worktree…
+            assert m.live.startswith(os.path.join(repos_root, "My Repo-B"))
+            # …repo side shared with the alias TARGET's config dir
+            assert os.path.join("repos", "my-repo") in m.repo
+            assert "my-repo-B" not in m.repo
+
+    def test_absent_repo_flagged_skip_absent(self, env):
+        manifest, repo_root, repos_root, home = env
+        maps = setup_mod.expand_mappings(
+            manifest, repo_root, target="Repos", repos_root=repos_root, home=home)
+        minimal = [m for m in maps if m.section == "Repo:minimal"]
+        assert len(minimal) == 1
+        assert minimal[0].skip_absent
+        assert os.path.join(repos_root, "minimal") in minimal[0].skip_reason
+
+    def test_windows_paths_absent_on_posix_without_repos_root(self, env):
+        manifest, repo_root, repos_root, home = env
+        maps = setup_mod.expand_mappings(manifest, repo_root, target="Repos", home=home)
+        assert maps and all(m.skip_absent for m in maps)
+
+    def test_repos_iterated_in_sorted_order(self, env):
+        manifest, repo_root, repos_root, home = env
+        maps = setup_mod.expand_mappings(
+            manifest, repo_root, target="Repos", repos_root=repos_root, home=home)
+        sections = [m.section for m in maps]
+        assert sections == sorted(sections, key=lambda s: s.split(":", 1)[1]) or \
+            sections == [s for s in sections]  # stable grouping
+        first_of = {s: sections.index(s) for s in dict.fromkeys(sections)}
+        assert list(first_of) == ["Repo:minimal", "Repo:my-repo", "Repo:my-repo-B"]
+
+
+class TestExpandRealManifest:
+    def test_user_scope_of_real_manifest(self, manifest, tmp_path):
+        maps = setup_mod.expand_mappings(
+            manifest, str(REPO_ROOT), target="User", home=str(tmp_path))
+        assert len(maps) == 11
+        assert all(m.section == "User" for m in maps)
+        skills = [m for m in maps if m.live.endswith(os.path.join(".claude", "skills"))]
+        assert skills and skills[0].repo == os.path.join(str(REPO_ROOT), "user", "skills")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — link primitives (D3)
+# ---------------------------------------------------------------------------
+
+
+class TestLinkPrimitivesPosix:
+    def test_create_and_detect_symlink(self, tmp_path):
+        repo = tmp_path / "repo-side.txt"
+        repo.write_text("x")
+        live = tmp_path / "live-side.txt"
+        kind = setup_mod._create_link(str(live), str(repo), is_dir=False)
+        assert kind == "symlink"
+        assert setup_mod._is_link(str(live))
+        assert not setup_mod._is_link(str(repo))
+        assert setup_mod._read_link_target(str(live)) == str(repo)
+
+    def test_resolve_target_relative_link(self, tmp_path):
+        (tmp_path / "repo").mkdir()
+        target_file = tmp_path / "repo" / "f.txt"
+        target_file.write_text("x")
+        (tmp_path / "live").mkdir()
+        live = tmp_path / "live" / "f.txt"
+        os.symlink(os.path.join("..", "repo", "f.txt"), str(live))
+        assert setup_mod._targets_equal(str(live), str(target_file))
+        assert not setup_mod._targets_equal(str(live), str(tmp_path / "other"))
+
+
+class TestCreateLinkWindowsSelection:
+    """Windows branch — mocked platform (exercised for real on Windows only)."""
+
+    def test_symlink_success_on_nt(self, tmp_path, monkeypatch):
+        calls = []
+        monkeypatch.setattr(setup_mod, "_WINDOWS", True)
+        monkeypatch.setattr(setup_mod, "_symlink",
+                            lambda t, l, d: calls.append(("symlink", t, l, d)))
+        kind = setup_mod._create_link(str(tmp_path / "l"), str(tmp_path / "r"), is_dir=True)
+        assert kind == "symlink" and calls
+
+    def test_privilege_error_dir_falls_back_to_junction(self, tmp_path, monkeypatch):
+        junctions = []
+        monkeypatch.setattr(setup_mod, "_WINDOWS", True)
+        monkeypatch.setattr(setup_mod, "_symlink",
+                            lambda t, l, d: (_ for _ in ()).throw(OSError(1314, "priv")))
+        monkeypatch.setattr(setup_mod, "_create_junction",
+                            lambda t, l: junctions.append((t, l)))
+        kind = setup_mod._create_link(str(tmp_path / "l"), str(tmp_path / "r"), is_dir=True)
+        assert kind == "junction"
+        assert junctions == [(str(tmp_path / "r"), str(tmp_path / "l"))]
+
+    def test_privilege_error_file_dies_actionably(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(setup_mod, "_WINDOWS", True)
+        monkeypatch.setattr(setup_mod, "_symlink",
+                            lambda t, l, d: (_ for _ in ()).throw(OSError(1314, "priv")))
+        with pytest.raises(setup_mod.SetupError) as exc:
+            setup_mod._create_link(str(tmp_path / "l"), str(tmp_path / "r"), is_dir=False)
+        assert "Developer Mode" in str(exc.value)
+
+    def test_posix_never_touches_junction(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(setup_mod, "_WINDOWS", False)
+        monkeypatch.setattr(setup_mod, "_create_junction",
+                            lambda t, l: pytest.fail("junction on POSIX"))
+        repo = tmp_path / "r"
+        repo.write_text("x")
+        assert setup_mod._create_link(str(tmp_path / "l"), str(repo), False) == "symlink"
+
+    def test_is_link_junction_probe_on_nt(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(setup_mod, "_WINDOWS", True)
+        monkeypatch.setattr(setup_mod, "_readlink", lambda p: "X:\\somewhere")
+        assert setup_mod._is_link(str(tmp_path / "junction-like"))
+        monkeypatch.setattr(setup_mod, "_readlink",
+                            lambda p: (_ for _ in ()).throw(OSError(22, "not a link")))
+        assert not setup_mod._is_link(str(tmp_path / "plain"))
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"] + sys.argv[1:]))
