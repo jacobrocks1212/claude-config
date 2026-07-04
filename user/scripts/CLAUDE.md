@@ -476,7 +476,21 @@ in another repo (it also kills stale-marker contagion across repos).
   (read-only; exit 0 present / 1 absent) so Python owns ALL repo-key derivation. A marker for a
   *different* repo resolves to a different subdir → absent → the hook is a no-op. Fail-OPEN: a
   query error falls back to current behavior. The `pipeline_visualizer` likewise binds the
-  visualized repo before reading the marker so it shows that repo's live run.
+  visualized repo before reading the marker so it shows that repo's live run — SINGLE-REPO mode
+  only.
+  - **Fleet raw marker read (`cross-repo-fleet-view`).** `pipeline_visualizer --fleet` serves
+    MANY repos from one `ThreadingHTTPServer`, where a per-request `set_active_repo_root` flip
+    would be a data race and `read_run_marker` would DELETE a ≥24h marker as a side effect of
+    *rendering* it. The fleet layer (`pipeline_visualizer/fleet.py`) therefore reads each
+    marker RAW at the composed keyed path `~/.claude/state/<repo_key(root)>/lazy-run-marker.json`
+    (the `write_run_checkpoint` precedent): never deletes, never writes, never creates state
+    dirs (`claude_state_dir(create=True)` is banned on that path). Staleness is DISPLAYED
+    (graded badge; `stale-marker` at the same `_MARKER_STALE_SECONDS` 24h boundary), never
+    reclaimed — reclamation stays exclusively script-owned. Discovery unions the
+    `~/source/repos/*/docs/{features,bugs}/queue.json` glob, `~/.claude/lazy-repos.json`
+    (`{"pins": [...], "excludes": [...]}` — optional, user-local, fail-open on malformed; this
+    is that file's first consumer, schema documented in `fleet.py`'s module docstring), and the
+    `repo_root` fields recorded in live run markers.
   - **Owner-scoping (`stale-marker-arms-validate-deny-on-unrelated-dispatches` D1, 2026-06-19).**
     `lazy-dispatch-guard.sh` now ALSO extracts the hook-input `session_id` and passes
     `--session-id "$SID"` ALONGSIDE `--repo-root` (never in place of it — repo keying preserved)

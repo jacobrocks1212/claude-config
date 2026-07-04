@@ -1,0 +1,114 @@
+/* Lazy Fleet home page (cross-repo-fleet-view) — same palette/conventions as
+ * the per-repo styles.css (colorblind-safe run badges, dark three-pane look).
+ * Kept as a SEPARATE sheet so the shipped per-repo page is untouched. */
+
+:root {
+  --c-active:     #2ECC40;  /* run-active */
+  --c-silent:     #FF851B;  /* run-silent (live or wedged — look closer) */
+  --c-stale:      #FF4136;  /* stale-marker (≥24h, presumed dead) */
+  --c-idle:       #888888;
+  --c-needsinput: #FF851B;
+  --c-blocked:    #FF4136;
+
+  --bg:      #11151c;
+  --bg-pane: #1b212b;
+  --bg-row:  #232b37;
+  --fg:      #e6edf3;
+  --fg-dim:  #9aa7b5;
+  --border:  #303a48;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+.fleet-app {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.fleet-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.fleet-header h1 { font-size: 20px; margin: 8px 0; }
+
+.fleet-refresh { color: var(--fg-dim); font-size: 12px; }
+
+.fleet-triage {
+  background: var(--bg-pane);
+  border: 1px solid var(--c-silent);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin: 10px 0;
+}
+
+.fleet-triage h2 { font-size: 14px; margin: 4px 0; color: var(--c-silent); }
+.fleet-triage ul { margin: 6px 0; padding-left: 18px; }
+.fleet-triage li { margin: 3px 0; }
+
+.fleet-pane {
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 10px 0;
+}
+
+#fleet-table { width: 100%; border-collapse: collapse; }
+
+#fleet-table th, #fleet-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+#fleet-table th { color: var(--fg-dim); font-weight: 600; font-size: 12px; }
+#fleet-table td.num, #fleet-table th.num { text-align: right; }
+#fleet-table tbody tr:hover { background: var(--bg-row); }
+
+.fleet-empty { color: var(--fg-dim); font-style: italic; }
+.fleet-error-row { outline: 1px solid var(--c-stale); }
+
+.fleet-note { color: var(--fg-dim); font-size: 12px; margin: 8px 4px 2px; }
+
+a { color: #58a6ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  border: 1px solid;
+}
+
+.badge-idle         { color: var(--c-idle);   border-color: var(--c-idle); }
+.badge-run-active   { color: var(--c-active); border-color: var(--c-active); }
+.badge-run-silent   { color: var(--c-silent); border-color: var(--c-silent); }
+.badge-stale-marker { color: var(--c-stale);  border-color: var(--c-stale); }
+.badge-error        { color: var(--c-stale);  border-color: var(--c-stale); }
+
+.halt { white-space: nowrap; margin-right: 6px; }
+.halt-needs-input { color: var(--c-needsinput); }
+.halt-blocked     { color: var(--c-blocked); }
+
+.fleet-conn {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--c-stale);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 6px;
+}

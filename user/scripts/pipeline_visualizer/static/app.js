@@ -473,7 +473,7 @@
   function postReorder(track, order) {
     var pipeline = track === "bug" ? "bugs" : "features";
     pendingReorder[track] = order.slice();   // optimistic — reconciled next poll
-    return fetch("/api/queue", {
+    return fetch("api/queue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pipeline: pipeline, order: order }),
@@ -690,7 +690,7 @@
     // AbortController gives us a hard timeout so a hung probe still trips the guard.
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, POLL_TIMEOUT_MS);
-    return fetch("/api/state", { signal: controller.signal, cache: "no-store" })
+    return fetch("api/state", { signal: controller.signal, cache: "no-store" })
       .then(function (resp) {
         clearTimeout(timer);
         if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -852,7 +852,7 @@
   }
 
   function fetchTrends() {
-    fetch("/api/trends", { cache: "no-store" })
+    fetch("api/trends", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(render)
       .catch(function () {

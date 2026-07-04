@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lazy Fleet</title>
+  <link rel="stylesheet" href="static/fleet.css" />
+</head>
+<body>
+  <div class="fleet-app">
+    <header class="fleet-header">
+      <h1>Lazy Fleet</h1>
+      <span id="fleet-refresh" class="fleet-refresh" title="age of the rendered snapshot">—</span>
+    </header>
+
+    <!-- Cross-repo triage strip (D4-B): every halted item, repo-prefixed.
+         Rendered ABOVE the table — a halt in repo N of M must not require
+         M drill-ins to find. -->
+    <section id="fleet-triage" class="fleet-triage" hidden>
+      <h2>Needs attention <span id="fleet-triage-count"></span></h2>
+      <ul id="fleet-triage-list"></ul>
+    </section>
+
+    <section class="fleet-pane">
+      <table id="fleet-table">
+        <thead>
+          <tr>
+            <th>repo</th>
+            <th>run</th>
+            <th class="num">features</th>
+            <th class="num">bugs</th>
+            <th>needs attention</th>
+            <th>links</th>
+          </tr>
+        </thead>
+        <tbody id="fleet-rows">
+          <tr><td colspan="6" class="fleet-empty">loading…</td></tr>
+        </tbody>
+      </table>
+      <p class="fleet-note">
+        Rows are a <em>shallow</em> read (queue depth, run-marker age, halt-sentinel
+        presence). Drill in for full per-item stages. Stale markers are shown, never
+        deleted — reclamation is script-owned.
+      </p>
+    </section>
+
+    <div id="fleet-conn" class="fleet-conn" hidden>Connection lost — retrying…</div>
+  </div>
+  <script src="static/fleet.js"></script>
+</body>
+</html>
