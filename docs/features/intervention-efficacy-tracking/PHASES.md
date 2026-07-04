@@ -86,18 +86,18 @@
 **Scope:** Bind the REFUTED consequence to the shipped ad-hoc enqueue (`lazy-state.py --enqueue-adhoc --type bug --id reconsider-<id> …` subprocess with `LAZY_ORCHESTRATOR=1`, brief naming the record path + verdict + revert-or-redesign) behind the D7 two-layer recurrence guard (layer 1: `docs/bugs/reconsider-<id>/` open OR archived; layer 2: `reconsideration_enqueued` stamp — once stamped, never again). Add the end-of-run flush paragraph to `/lazy-batch` §1c.6 AND `/lazy-batch-cloud` §1c.6 (coupled-pair mirror, alongside incident-scan, BEFORE `--run-end`) + the cloud divergence-table row, and the `/lazy-batch-retro` Step 6e report-only citation step (dry-run shell + status-bookend line).
 
 **Deliverables:**
-- [ ] `efficacy-eval.py`: `_enqueue_reconsideration` bound to the sanctioned subprocess; two-layer guard; `--dry-run` never enqueues; enqueue announced in output (`consequence: enqueued reconsider-<id>`).
-- [ ] `test_efficacy_eval.py`: end-to-end fixture — repeated evaluator runs over a REFUTED record produce EXACTLY ONE `reconsider-<id>` queue entry + brief; stamp survives bug-dir deletion (layer 2); archived-dir skip (layer 1); dry-run no-enqueue.
-- [ ] `user/skills/lazy-batch/SKILL.md` §1c.6: efficacy-eval flush paragraph (once per run, after incident-scan, BEFORE `--run-end`; non-blocking; relay verdict summary; commit any record updates with the run-end sequence).
-- [ ] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` §1c.6: mirrored paragraph + "Differences from /lazy-batch" table row (record updates ride the final cloud push).
-- [ ] `user/skills/lazy-batch-retro/SKILL.md` Step 6e: report-only `efficacy-eval.py --repo-root . --dry-run --json` citation (verdicts replace narrative claims; needs-triage listed; degrade-gracefully) + status-bookend `**Intervention verdicts:**` line.
-- [ ] `project-skills.py` projection (lane-local output dir) + `lint-skills.py` clean after the skill edits.
+- [x] `efficacy-eval.py`: `_enqueue_reconsideration` bound to the sanctioned subprocess; two-layer guard; `--dry-run` never enqueues; enqueue announced in output (`consequence: enqueued reconsider-<id>`).
+- [x] `test_efficacy_eval.py`: end-to-end fixture — repeated evaluator runs over a REFUTED record produce EXACTLY ONE `reconsider-<id>` queue entry + brief; stamp survives bug-dir deletion (layer 2); archived-dir skip (layer 1); dry-run no-enqueue.
+- [x] `user/skills/lazy-batch/SKILL.md` §1c.6: efficacy-eval flush paragraph (once per run, after incident-scan, BEFORE `--run-end`; non-blocking; relay verdict summary; commit any record updates with the run-end sequence).
+- [x] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` §1c.6: mirrored paragraph + "Differences from /lazy-batch" table row (record updates ride the final cloud push).
+- [x] `user/skills/lazy-batch-retro/SKILL.md` Step 6e: report-only `efficacy-eval.py --repo-root . --dry-run --json` citation (verdicts replace narrative claims; needs-triage listed; degrade-gracefully) + status-bookend `**Intervention verdicts:**` line.
+- [x] `project-skills.py` projection (lane-local output dir) + `lint-skills.py` clean after the skill edits.
 
 **Minimum Verifiable Behavior:** An end-to-end fixture run producing a reconsideration item exactly once across repeated evaluations; skill lint green.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] REFUTED enqueues once: repeated evaluator runs → `reconsider-<id>` exists exactly once; record stamped `reconsideration_enqueued`. *(Evidence: `SKIP_MCP_TEST.md` — `test_efficacy_eval.py` end-to-end fixture.)* <!-- verification-only -->
-- [ ] Escalation: third evaluation of a twice-INCONCLUSIVE record → `escalated: true` + needs-triage listing. *(Evidence: `test_efficacy_eval.py`.)* <!-- verification-only -->
+- [x] REFUTED enqueues once: repeated evaluator runs → `reconsider-<id>` exists exactly once; record stamped `reconsideration_enqueued`. *(Evidence: `SKIP_MCP_TEST.md` — `test_efficacy_eval.py` end-to-end fixture.)* <!-- verification-only -->
+- [x] Escalation: third evaluation of a twice-INCONCLUSIVE record → `escalated: true` + needs-triage listing. *(Evidence: `test_efficacy_eval.py`.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** live end-of-run flush observation — a real `/lazy-batch` run reaching a terminal and invoking `efficacy-eval.py` at §1c.6 (needs a live orchestrated run; the prose contract is projection-linted and the invocation is the same command the hermetic suite drives).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface. Verification is `pytest` + `lint-skills.py`.

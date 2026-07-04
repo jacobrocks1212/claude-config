@@ -77,8 +77,8 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 - [x] WU-3.1 — TESTS FIRST: `test_efficacy_eval.py` — refuted-enqueues-exactly-once (repeated runs), layer-2 stamp survives bug-dir deletion, layer-1 archived-dir skip, dry-run never enqueues, escalation listing; run → fail.
 - [x] WU-3.2 — `_enqueue_reconsideration` bound to the sanctioned `lazy-state.py --enqueue-adhoc --type bug` subprocess (`LAZY_ORCHESTRATOR=1` child env) + two-layer guard + stamp.
-- [ ] WU-3.3 — Skill prose: `/lazy-batch` §1c.6 flush paragraph; `/lazy-batch-cloud` §1c.6 mirror + divergence-table row; `/lazy-batch-retro` Step 6e citation + bookend line. Lane-local projection + `lint-skills.py` clean.
-- [ ] WU-3.4 — Gate suite green. Commit Phase 3.
+- [x] WU-3.3 — Skill prose: `/lazy-batch` §1c.6 flush paragraph; `/lazy-batch-cloud` §1c.6 mirror + divergence-table row; `/lazy-batch-retro` Step 6e citation + bookend line. Lane-local projection + `lint-skills.py` clean.
+- [x] WU-3.4 — Gate suite green. Commit Phase 3.
 
 ## Phase 4 — Hardening-round capture + docs
 
