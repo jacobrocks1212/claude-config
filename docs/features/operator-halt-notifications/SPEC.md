@@ -10,7 +10,7 @@
 > path is "notice fast, answer in chat as today"; a mobile-committable resolution surface is the
 > `native-android-pipeline-steering` sibling's territory, not built here.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research

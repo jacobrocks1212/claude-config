@@ -121,6 +121,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -5218,11 +5223,37 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/operator-halt-notifications/PHASES.md": [
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/operator-halt-notifications/RESEARCH.md": [
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "scheduled-autonomous-runs",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/operator-halt-notifications/RESEARCH_SUMMARY.md": [
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/operator-halt-notifications/SKIP_MCP_TEST.md": [
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/operator-halt-notifications/SPEC.md": [
@@ -5232,9 +5263,21 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "scheduled-autonomous-runs",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/operator-halt-notifications/plans/all-phases-operator-halt-notifications-part-1.md": [
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/parallel-worktree-batch-execution/RESEARCH.md": [
@@ -5452,6 +5495,11 @@
   ],
   "docs/features/scheduled-autonomous-runs/RESEARCH.md": [
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "scheduled-autonomous-runs",
       "type": "feature",
       "provenance": "backfilled"
@@ -5474,6 +5522,11 @@
   "docs/features/scheduled-autonomous-runs/SPEC.md": [
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "operator-halt-notifications",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6164,6 +6217,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -6244,6 +6302,11 @@
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "queue-dependency-dag",
@@ -6388,6 +6451,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -6525,6 +6593,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -6562,6 +6635,11 @@
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "queue-dependency-dag",
@@ -6953,6 +7031,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -6988,6 +7071,11 @@
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "queue-dependency-dag",
@@ -7115,6 +7203,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -7165,6 +7258,11 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "queue-dependency-dag",

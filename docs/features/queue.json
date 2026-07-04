@@ -3,12 +3,6 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "operator-halt-notifications",
-      "name": "Operator Paging on Pipeline Halts",
-      "spec_dir": "operator-halt-notifications",
-      "tier": 1
-    },
-    {
       "id": "claude-config-ci",
       "name": "CI for claude-config Itself",
       "spec_dir": "claude-config-ci",
