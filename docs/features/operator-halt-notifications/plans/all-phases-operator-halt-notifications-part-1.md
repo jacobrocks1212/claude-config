@@ -96,7 +96,7 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 3 — Live channel + environment verification
 
-- [ ] WU-3.1 — Confirm nothing code-side remains (production sender complete + unit-verified);
+- [x] WU-3.1 — Confirm nothing code-side remains (production sender complete + unit-verified);
   record the three live legs as DEFERRED (workstation/phone/cloud-run) prose rows in PHASES.md.
   Commit Phase 3 (docs-only).
 

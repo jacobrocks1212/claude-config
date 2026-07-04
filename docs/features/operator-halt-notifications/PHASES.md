@@ -161,7 +161,7 @@ environment-bound by nature: it needs the operator's phone, the real workstation
 run — none exist in this container.
 
 **Deliverables:**
-- [ ] The production sender path is complete and unit-verified (RFC-2047 headers, timeout=5,
+- [x] The production sender path is complete and unit-verified (RFC-2047 headers, timeout=5,
   Click link) — nothing code-side remains for this phase.
 - **DEFERRED (workstation-only, not a completion blocker):** operator receives a real page on the
   phone from a workstation manual `/lazy` step into a blocked fixture (screenshot-grade evidence),
