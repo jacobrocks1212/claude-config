@@ -70,9 +70,17 @@ Per `/spec-phases` Step 2.7 — every load-bearing assumption here is **code-pro
 **Scope:** Prove the fix at the ACTUAL failure site — the Step-9 completion leg — by adding a fixture to each state script's in-file `--test` harness where a fully-implemented item carries an operator-granted `SKIP_MCP_TEST.md` whose `reason:` contains an unquoted colon-space. Assert the probe reaches the skip→validated route (`__write_validated_from_skip__`) instead of exiting 2. This is the integration slice: it drives the real `compute_state` path that the bug hard-halted at the finish line.
 
 **Deliverables:**
-- [ ] `lazy-state.py --test` fixture: a feature past implementation, no `VALIDATED.md`, `SKIP_MCP_TEST.md` with `granted_by: operator` and an unquoted colon-space `reason` → probe returns `sub_skill == "__write_validated_from_skip__"` (not a `_die`/exit-2).
-- [ ] `bug-state.py --test` fixture: the mirrored bug-pipeline case (coupled pair) proving the same acceptance on the bug Step-9 read.
-- [ ] Regenerate the byte-pinned `--test` baselines (`tests/baselines/lazy-state-test-baseline.txt`, `tests/baselines/bug-state-test-baseline.txt`) via the sanctioned `_normalize_smoke_output` path (never by hand) so both suites stay green.
+- [x] `lazy-state.py --test` fixture: a feature past implementation, no `VALIDATED.md`, `SKIP_MCP_TEST.md` with `granted_by: operator` and an unquoted colon-space `reason` → probe returns `sub_skill == "__write_validated_from_skip__"` (not a `_die`/exit-2).
+- [x] `bug-state.py --test` fixture: the mirrored bug-pipeline case (coupled pair) proving the same acceptance on the bug Step-9 read.
+- [x] Regenerate the byte-pinned `--test` baselines (`tests/baselines/lazy-state-test-baseline.txt`, `tests/baselines/bug-state-test-baseline.txt`) via the sanctioned `_normalize_smoke_output` path (never by hand) so both suites stay green.
+
+#### Implementation Notes (Phase 2 — 2026-07-04, cloud)
+- Added fixture `skip-operator-colon-reason-validates` to `lazy-state.py::_build_fixture` (+ its assertion row expecting `sub_skill == "__write_validated_from_skip__"`, `feature_id == "feat-socr"`, `current_step == "Step 9: skip-mcp-test → validated"`).
+- Added the coupled-pair mirror `step9-skip-colon-reason` to `bug-state.py::_build_bug_fixture` (+ assertion row: `current_step == STEP_MCP_SKIP`, `sub_skill == "__write_validated_from_skip__"`).
+- **Load-bearing detail:** both fixtures write `SKIP_MCP_TEST.md` RAW via `.write_text()` (NOT `_write_yaml_sentinel`, whose `yaml.safe_dump` auto-quotes and would mask the bug) so the on-disk frontmatter carries the exact hand-authored unquoted colon-space `reason: untestable on this host: no real audio device` that reproduced the fault.
+- Regenerated both byte-pinned baselines through `_normalize_smoke_output` (isolated `LAZY_STATE_DIR`) — diff is exactly one new PASS line per baseline. `test_lazy_state_test_output_matches_baseline` + `test_bug_state_test_output_matches_baseline` green.
+- Coupled-pair HARD gate: `lazy_parity_audit.py --repo-root .` exit 0 after both edits.
+- **Review verdict:** PASS (self-review: fixtures drive the REAL `compute_state` Step-9 route end-to-end; RAW-write reproduces the fault shape; assertion targets the exact skip→validated sub_skill).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both pass with the new fixtures; the previously-`_die`-ing colon-bearing waiver now routes to `__write_validated_from_skip__`.
 

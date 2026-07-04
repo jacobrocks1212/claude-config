@@ -65,7 +65,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 - [x] WU-1 — Tolerant read at `parse_sentinel` (`lazy_core.py`) + unit regression tests
 - [x] WU-4 — Document read tolerance + cross-repo lockstep note in `sentinel-frontmatter.md`
-- [ ] WU-2 — End-to-end colon-bearing-waiver `--test` fixtures in `lazy-state.py` + `bug-state.py` (+ regenerate baselines)
+- [x] WU-2 — End-to-end colon-bearing-waiver `--test` fixtures in `lazy-state.py` + `bug-state.py` (+ regenerate baselines)
 - [ ] WU-3 — Quote-on-write hardening of `bug-state.py` `_write_yaml_sentinel` ImportError fallback + round-trip test
 
 ---
