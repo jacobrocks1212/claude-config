@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: harness-change-canary-rollback
-status: In-progress
+status: Complete
 created: 2026-07-04
 phases: [2, 3]
 complexity: complex
@@ -67,7 +67,7 @@ This plan's `## Plan-specific execution notes` override the contract's default g
 - [x] WU-4 — `--canary` mode scaffold + per-run window accrual + no-data handling
 - [x] WU-5 — D2 tripwire bands + D3 surface-based incident attribution
 - [x] WU-6 — Trip consequence: enqueue `canary-revert-<id>` + `EVIDENCE.md` + once-ever guard + notify line
-- [ ] WU-7 — End-of-run flush wiring across the feature orchestrators
+- [x] WU-7 — End-of-run flush wiring across the feature orchestrators
 
 ---
 

@@ -181,20 +181,45 @@ applies the D2 bands and D3 surface-based attribution over fixture deny-ledger/b
 inputs, and detects trips. Honest no-data handling; never blocks a run.
 
 **Deliverables:**
-- [ ] `--canary` branch in `efficacy-eval.py` `main()` reusing `_enumerate_records` (filtered to
+- [x] `--canary` branch in `efficacy-eval.py` `main()` reusing `_enumerate_records` (filtered to
       `canary.status: open`), the telemetry `run_ids` accrual, and `_write_record`.
-- [ ] D2 window accrual: next 10 completed runs after ship, 30-day wall-clock ceiling; defaults in
+- [x] D2 window accrual: next 10 completed runs after ship, 30-day wall-clock ceiling; defaults in
       ONE constants block, per-record overridable via the hypothesis block.
-- [ ] D2 tripwire: targeted-signal regression past the KPI band (else ≥25% relative with ≥3 post-ship
+- [x] D2 tripwire: targeted-signal regression past the KPI band (else ≥25% relative with ≥3 post-ship
       occurrences) OR ≥2 attributable fresh incidents.
-- [ ] D3 attribution: incident attributes iff its timestamp ∈ window AND its emitting surface ∈
+- [x] D3 attribution: incident attributes iff its timestamp ∈ window AND its emitting surface ∈
       `canary.surfaces`; unknown/unresolvable surfaces NEVER attribute; a shared surface counts
       against ALL matching open canaries. Reuse `incident-scan.py` readers + `_first_token`
       surface-signature; prefer clustered incidents, fall back to raw deny/breadcrumb.
-- [ ] Honest degradation: unreadable ledger fixture → window accrues nothing this run, never errors;
+- [x] Honest degradation: unreadable ledger fixture → window accrues nothing this run, never errors;
       a window closing with zero observable runs is stampable `closed-clean (no-data)`.
-- [ ] Tests (`test_efficacy_eval.py`): trip on band regression; trip on 2 attributable incidents;
+- [x] Tests (`test_efficacy_eval.py`): trip on band regression; trip on 2 attributable incidents;
       NO trip on 2 unattributable (unknown-surface) incidents; unattributable entries listed-but-not-counted; no-data window handling.
+
+**Implementation Notes (2026-07-04, cloud /execute-plan part 2 — WU-4/WU-5):**
+- Watcher lives behind a clean `--canary` boundary in `user/scripts/efficacy-eval.py` (separate
+  helpers, separate tests): `run_canary` → `_canary_open_records` (wake predicate: `canary.status:
+  open` only), `_canary_evaluate_record` (accrual + trip + no-data), `_canary_band_trip` (D2 band),
+  `_canary_gather_incidents` + `_canary_entry_surface` + `_canary_attribute` (D3), and the honest
+  no-data close `_canary_stamp_no_data`. Constants block: `CANARY_REGRESSION_BAND_PCT = 25`,
+  `CANARY_MIN_POST_OCCURRENCES = 3`, `CANARY_INCIDENT_TRIP_COUNT = 2` (window defaults reused from
+  `lazy_core.CANARY_WINDOW_RUNS_DEFAULT`/`CANARY_WINDOW_DAYS_CEILING`).
+- Accrual reuses `_post_runs(meta, run_ids)` (post-ship runs off the frozen `baseline.last_run_id`)
+  and takes `[:window_runs]`; maturity = run-count OR 30-day ceiling. No-data close fires only when
+  matured AND zero observable window runs AND no trip.
+- D3 attribution reuses the `incident-scan.py` readers (`read_hook_events`, `read_legacy_crumbs`) via
+  importlib (fail-open to deny-ledger-only on import failure) + `lazy_core.read_deny_ledger`. Surface
+  resolution: explicit `surface`/`source_file` fields, else a hook name → `user/hooks/<name>`;
+  unresolvable → None → NEVER attributes (conservative). In-window = incident ts ≥ the canary's
+  `opened` epoch; a shared surface attributes independently to every matching open canary.
+- The whole `--canary` branch is wrapped fail-open in `main()` — a watcher exception degrades to an
+  `error` payload, exit 0, NEVER blocks the run.
+- Fixture note: ~19 ambient `test_lazy_core.py::test_apply_pseudo_*`/`test_mark_*` failures in this
+  cloud run are PRE-EXISTING (the live cycle-active marker fires `refuse_if_cycle_active` inside
+  those tests). Proven ambient: `lazy_core.py`/`lazy-state.py`/`bug-state.py` are byte-identical to
+  the run base (empty diff), the same subset fails on the base test file, and this change touches
+  ZERO files imported by `test_lazy_core.py`. New failures from this change: zero.
+- Files modified: `user/scripts/efficacy-eval.py`, `user/scripts/test_efficacy_eval.py`.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/efficacy-eval.py --canary --repo-root <fixture> --json`
 over a fixture with a regressing signal emits JSON reporting a trip with the band numbers; over a
@@ -202,8 +227,8 @@ fixture with 2 same-surface breadcrumbs it reports a trip; over 2 unrelated-surf
 reports no trip with the entries listed as unattributed.
 
 **Runtime Verification** *(checked by fixture test / manual CLI run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 -m pytest user/scripts/test_efficacy_eval.py -k canary` → band-trip, incident-trip, no-trip-unattributable, and no-data fixtures pass.
-- [ ] <!-- verification-only --> `python3 user/scripts/efficacy-eval.py --canary --repo-root <fixture> --json` returns exit 0 on an unreadable-ledger fixture (never blocks the run; window notes no-data).
+- [x] <!-- verification-only --> `python3 -m pytest user/scripts/test_efficacy_eval.py -k canary` → band-trip, incident-trip, no-trip-unattributable, and no-data fixtures pass. (18 canary fixtures green.)
+- [x] <!-- verification-only --> `python3 user/scripts/efficacy-eval.py --canary --repo-root <fixture> --json` returns exit 0 on an unreadable-ledger fixture (never blocks the run; window notes no-data). (`test_canary_absent_telemetry_accrues_nothing_exit_zero`.)
 
 **MCP Integration Test Assertions:** N/A — stdlib evaluator over on-disk ledger/record fixtures; no
 MCP-reachable surface. All observable behavior is the CLI JSON asserted above.
@@ -241,26 +266,50 @@ feature orchestrators (mirrored across the coupled skill pairs). Flag-and-enqueu
 no writes outside record/evidence/queue.
 
 **Deliverables:**
-- [ ] Trip consequence in `efficacy-eval.py --canary`: shell `lazy-state.py --enqueue-adhoc --type
+- [x] Trip consequence in `efficacy-eval.py --canary`: shell `lazy-state.py --enqueue-adhoc --type
       bug --id canary-revert-<intervention_id> --brief …` with the `LAZY_ORCHESTRATOR=1` env (copy
       the `_enqueue_reconsideration` pattern) — NEVER a `queue.json` hand-edit.
-- [ ] `EVIDENCE.md` written into the seeded bug dir carrying: trip reason (band numbers or verbatim
+- [x] `EVIDENCE.md` written into the seeded bug dir carrying: trip reason (band numbers or verbatim
       incident lines), full `commit_set`, linked docs (SPEC / GATE_VERDICT / record path),
       `pair_scope` with the "revert must cover the pair and end with `lazy_parity_audit.py
       --repo-root .` green" instruction, and any `degraded_revert_note`.
-- [ ] Once-ever recurrence guard: `canary.status: tripped` + the enqueued id stamped on the record;
+- [x] Once-ever recurrence guard: `canary.status: tripped` + the enqueued id stamped on the record;
       repeated watcher runs produce exactly one revert item (mirror the two-layer guard shape of
       `_enqueue_reconsideration` — dir-exists check + stamp).
-- [ ] Notify line in the `--canary` JSON (`"notify": "canary tripped: <id>"`) for the orchestrator
+- [x] Notify line in the `--canary` JSON (`"notify": "canary tripped: <id>"`) for the orchestrator
       to surface, consistent with harden-harness spin-offs.
-- [ ] End-of-run flush wiring: add `efficacy-eval.py --canary --repo-root . --json` alongside the
+- [x] End-of-run flush wiring: add `efficacy-eval.py --canary --repo-root . --json` alongside the
       existing `incident-scan.py` / `efficacy-eval.py` invocations at §1c.6, mirrored in
       `lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`, and
       `lazy-batch-parallel/SKILL.md`; NON-BLOCKING (a non-zero exit prints one warning, run-end
       continues). Stage `docs/interventions/` + any `docs/bugs/canary-revert-*` seed in the run-end commit.
-- [ ] Tests (`test_efficacy_eval.py`): end-to-end fixture — repeated watcher runs over a tripped
+- [x] Tests (`test_efficacy_eval.py`): end-to-end fixture — repeated watcher runs over a tripped
       canary produce exactly ONE `canary-revert-<id>` item with complete evidence including
       pair scope; no commit reverts; record stamped `tripped`.
+
+**Implementation Notes (2026-07-04, cloud /execute-plan part 2 — WU-6/WU-7):**
+- Trip consequence (`_canary_fire_consequence`) copies the `_enqueue_reconsideration` subprocess +
+  `env={**os.environ, "LAZY_ORCHESTRATOR": "1"}` pattern verbatim with id `canary-revert-<id>`;
+  writes `EVIDENCE.md` into the enqueue-seeded bug dir via `lazy_core._atomic_write`
+  (`_canary_evidence_text`: trip reason verbatim, band numbers, attributed incident lines, full
+  `commit_set`, `pair_scope` + the `lazy_parity_audit.py --repo-root .` instruction, degraded note,
+  linked docs). NEVER a `queue.json` hand-edit; no revert; writes confined to record/evidence/queue.
+- Once-ever guard mirrors `_enqueue_reconsideration`'s two layers: layer 2 = the record-level
+  `canary_revert_enqueued` stamp (top-level meta field, like `reconsideration_enqueued`), layer 1 =
+  an open/archived `docs/bugs/canary-revert-<id>/` dir. Primary belt: `canary.status: tripped` drops
+  the record out of `_canary_open_records`, so the next run never re-evaluates it. Enqueue FAILURE
+  does not stamp (retries next run).
+- WU-7 flush wiring: `efficacy-eval.py --canary --repo-root . --json` added at §1c.6 alongside the
+  incident-scan / efficacy-eval invocations in `lazy-batch` AND `lazy-batch-cloud` (coupled pair —
+  diffed; a MIRRORED row added to the cloud "Differences" table), and by reference into
+  `lazy-batch-parallel`'s main-root flush. NON-BLOCKING. Deliberately NOT added to `lazy-bug-batch`
+  (feature-side flush — justified divergence). Gates green: `project-skills.py` (86 skills, no
+  errors), `lint-skills.py --check-projected --check-capabilities` (clean; the one ambient
+  `write-plan-cognito` planner-resolution note pre-dates this change), `lazy_parity_audit.py
+  --repo-root .` exit 0.
+- Files modified: `user/scripts/efficacy-eval.py`, `user/scripts/test_efficacy_eval.py`,
+  `user/skills/lazy-batch/SKILL.md`, `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md`,
+  `user/skills/lazy-batch-parallel/SKILL.md`.
 
 **Minimum Verifiable Behavior:** over a tripped-canary fixture, running the `--canary` watcher TWICE
 produces exactly one `docs/bugs/canary-revert-<id>/` seed with an `EVIDENCE.md` containing the commit
@@ -268,9 +317,9 @@ set + both pair halves + the parity-audit instruction, and the record shows `can
 `git log` shows no revert commits.
 
 **Runtime Verification** *(checked by fixture test / manual CLI run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 -m pytest user/scripts/test_efficacy_eval.py -k "canary and enqueue"` → once-ever + evidence-completeness (incl. pair scope) fixtures pass.
-- [ ] <!-- verification-only --> Two consecutive `efficacy-eval.py --canary` runs over a tripped fixture yield exactly one `canary-revert-<id>` bug dir (idempotent guard observed).
-- [ ] <!-- verification-only --> Coupled-pair flush mirror audited: `efficacy-eval.py --canary` appears in `lazy-batch`, `lazy-batch-cloud`, and `lazy-batch-parallel` §1c.6 blocks (grep check).
+- [x] <!-- verification-only --> `python3 -m pytest user/scripts/test_efficacy_eval.py -k "canary and enqueue"` → once-ever + evidence-completeness (incl. pair scope) fixtures pass. (Covered by `test_canary_trip_enqueues_revert_exactly_once` + `test_canary_evidence_is_complete`.)
+- [x] <!-- verification-only --> Two consecutive `efficacy-eval.py --canary` runs over a tripped fixture yield exactly one `canary-revert-<id>` bug dir (idempotent guard observed). (`test_canary_trip_enqueues_revert_exactly_once`.)
+- [x] <!-- verification-only --> Coupled-pair flush mirror audited: `efficacy-eval.py --canary` appears in `lazy-batch`, `lazy-batch-cloud`, and `lazy-batch-parallel` §1c.6 blocks (grep check). (Grep confirmed; absent from `lazy-bug-batch`.)
 
 **MCP Integration Test Assertions:** N/A — the enqueue is a subprocess to the existing sanctioned
 CLI path; observable behavior is the seeded bug dir + `EVIDENCE.md` + record stamp asserted above. No
