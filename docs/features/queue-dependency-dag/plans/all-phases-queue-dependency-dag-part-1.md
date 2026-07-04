@@ -88,12 +88,12 @@ Full lane gate suite (all ten pytest files + lazy_coord + toolify) at the end.
 
 ## Phase 3 — Skip-ahead integration (feature only)
 
-- [ ] WU-3.1 — TEST FIRST: smoke fixture in the `feat-sa-*` suite — candidate with queue
+- [x] WU-3.1 — TEST FIRST: smoke fixture in the `feat-sa-*` suite — candidate with queue
   `deps: [gated-head]`, SPEC `(none)`, `independent: true` → NOT dispatched; audit diag carries
   `source=queue`. Run → red.
-- [ ] WU-3.2 — `lazy-state.py`: union queue deps into `_sa_deps` (kind `hard`, `source: queue`;
+- [x] WU-3.2 — `lazy-state.py`: union queue deps into `_sa_deps` (kind `hard`, `source: queue`;
   SPEC-parsed deps tagged `source: spec` in the audit line).
-- [ ] WU-3.3 — gates green; re-pin lazy-state baseline.
+- [x] WU-3.3 — gates green; re-pin lazy-state baseline.
 
 ## Phase 4 — Feeder + drift
 

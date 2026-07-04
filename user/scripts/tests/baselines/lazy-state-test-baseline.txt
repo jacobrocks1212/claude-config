@@ -81,6 +81,7 @@
   [ncg-grace] near-completion grace + one-shot bound + corrective discount + corrective-cycle record: ok
   [ncg-flush] end-of-run near-complete resume flush + genuine-terminal-unchanged + evicted-never-resumed: ok
   [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
+  [skip-ahead-union] SPEC∪queue merged key-1 deps + queue-deps-only candidate not dispatched: ok
   [dep-gate] hold+advance + transitive + strict-flag independence + completion unlock + reorder composes: ok
   [dep-gate] dangling + superseded dep unknown-dependency fail-fast: ok
   [dep-gate] all-gated queue-exhausted-dependency-gated terminal: ok

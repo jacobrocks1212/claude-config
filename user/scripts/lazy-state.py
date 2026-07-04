@@ -1194,6 +1194,48 @@ def _stub_is_queue_flag_only(
 parse_dep_block = lazy_core.parse_dep_block
 
 
+def _merged_skip_ahead_deps(
+    spec_deps: list[dict[str, str]], queue_dep_ids: list[str]
+) -> list[dict[str, str]]:
+    """queue-dependency-dag Phase 3 (D7): merge the skip-ahead key-1 inputs.
+
+    Returns SPEC-parsed deps (tagged ``source: spec``) followed by the queue
+    ``deps`` ids (tagged ``source: queue``, treated as ``hard`` per D1's field
+    semantics — the queue field IS the hard-only enforcement projection),
+    deduped by feature_id (SPEC wins). ``skip_ahead_ready`` ignores the extra
+    ``source`` key — it exists for the audit ``_diag`` line.
+
+    Strictly-additive defense-in-depth: at the current walk order the Phase-2
+    dep-gate holds a queue-deps-on-incomplete candidate BEFORE the skip-ahead
+    branch evaluates it, so this union changes no outcome today — it guards
+    the readiness predicate against any future re-ordering of the walk's
+    branches (a SPEC authored before --sync-deps runs stays visible via the
+    spec side; a synced queue field stays visible even if the SPEC block is
+    later edited).
+    """
+    merged: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for d in spec_deps or []:
+        if not isinstance(d, dict):
+            continue
+        fid = d.get("feature_id")
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        merged.append({**d, "source": "spec"})
+    for qid in queue_dep_ids or []:
+        if not isinstance(qid, str) or qid in seen:
+            continue
+        seen.add(qid)
+        merged.append({
+            "feature_id": qid,
+            "kind": "hard",
+            "reason": "queue deps field",
+            "source": "queue",
+        })
+    return merged
+
+
 def resolve_upstream_dir(repo_root: Path, current_spec_dir: Path, feature_id: str) -> Path | None:
     """Resolve an upstream feature directory per the schema's resolution protocol."""
     # 1. Sibling-first
@@ -2375,7 +2417,13 @@ def compute_state(
                         if (spec_path / "SPEC.md").exists() else ""
                 except OSError:
                     _sa_spec_text = ""
-                _sa_deps = parse_dep_block(_sa_spec_text)
+                # queue-dependency-dag Phase 3 (D7): key 1 evaluates the UNION
+                # of SPEC hard deps ∪ queue `deps` (queue ids treated as hard,
+                # tagged source=queue for the audit line). Strictly-additive
+                # defense-in-depth — see _merged_skip_ahead_deps.
+                _sa_deps = _merged_skip_ahead_deps(
+                    parse_dep_block(_sa_spec_text), lazy_core.dep_ids(entry)
+                )
                 _sa_independent = lazy_core.parse_independent_marker(
                     _sa_spec_text, entry
                 )
@@ -2383,12 +2431,13 @@ def compute_state(
                     _sa_deps, gated_ids, _sa_independent
                 )
                 # Skip-ahead audit (RESEARCH_SUMMARY rich-audit leg): gated-head
-                # id(s) + the skipped-to candidate + the evaluated dep array +
-                # the readiness verdict — emitted on EVERY skip-ahead evaluation.
+                # id(s) + the skipped-to candidate + the evaluated dep array
+                # (with each dep's source: spec | queue) + the readiness
+                # verdict — emitted on EVERY skip-ahead evaluation.
                 _diag(
                     f"skip-ahead audit: gated_heads={sorted(gated_ids)!r} "
                     f"candidate='{feature_id}' independent={_sa_independent} "
-                    f"deps={[{'feature_id': d.get('feature_id'), 'kind': d.get('kind')} for d in _sa_deps]!r} "
+                    f"deps={[{'feature_id': d.get('feature_id'), 'kind': d.get('kind'), 'source': d.get('source')} for d in _sa_deps]!r} "
                     f"→ {'DISPATCH' if _sa_ready else 'SKIP (not skip-ahead-ready)'}"
                 )
                 if not _sa_ready:
@@ -7356,6 +7405,73 @@ def run_smoke_tests() -> int:
             )
         print("  [skip-ahead] default skip-onto-independent + unmarked/downstream "
               "NOT-skipped + --strict-research-halt legacy halt: ok")
+
+        # (d) queue-dependency-dag Phase 3 (D7): skip-ahead key 1 evaluates
+        #     the UNION of SPEC hard deps ∪ queue `deps` (queue ids treated as
+        #     hard per D1's field semantics). _merged_skip_ahead_deps is the
+        #     merge seam: queue ids append as hard deps tagged source=queue,
+        #     deduped against the SPEC-parsed set (tagged source=spec).
+        _sa_merged = _merged_skip_ahead_deps(
+            [{"feature_id": "feat-sa-head", "kind": "hard", "reason": "r"}],
+            ["feat-sa-other", "feat-sa-head"],
+        )
+        if [(d.get("feature_id"), d.get("kind"), d.get("source"))
+                for d in _sa_merged] != [
+            ("feat-sa-head", "hard", "spec"),
+            ("feat-sa-other", "hard", "queue"),
+        ]:
+            failures.append(
+                "[skip-ahead-union] merge seam: expected SPEC dep (source=spec) "
+                "+ deduped queue dep (source=queue), got "
+                f"{_sa_merged!r}"
+            )
+        if lazy_core.skip_ahead_ready(_sa_merged, {"feat-sa-other"}, True):
+            failures.append(
+                "[skip-ahead-union] a queue-sourced hard dep on a gated id must "
+                "block skip-ahead readiness (key 1 union)"
+            )
+
+        # (e) End-to-end layering: a queue-deps-only downstream candidate
+        #     (SPEC block '(none)', independent:true, queue deps on the gated
+        #     head) is NOT dispatched past the gated head — the Phase-2
+        #     dep-gate holds it first (dep_gated names it), and the union is
+        #     the defense-in-depth second layer. The independent, dep-free
+        #     alternative dispatches.
+        _sa_make(
+            sa_root, "feat-sa-qdep",
+            spec=(
+                "---\nindependent: true\n---\n\n# Spec\n\n**Status:** Draft\n\n"
+                "**Depends on:** (none)\n"
+            ),
+        )
+        (sa_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sa-head", "name": "SA Head",
+                 "spec_dir": "feat-sa-head", "tier": 1},
+                {"id": "feat-sa-qdep", "name": "SA QDep",
+                 "spec_dir": "feat-sa-qdep", "tier": 2,
+                 "deps": ["feat-sa-head"]},
+                {"id": "feat-sa-indep", "name": "SA Indep",
+                 "spec_dir": "feat-sa-indep", "tier": 4},
+            ]
+        }))
+        sa_st4 = compute_state(sa_root, cloud=False, real_device=True)
+        if sa_st4.get("feature_id") != "feat-sa-indep":
+            failures.append(
+                "[skip-ahead-union] queue-deps-only candidate: expected "
+                "feat-sa-indep dispatched (feat-sa-qdep held/blocked), got "
+                f"{sa_st4.get('feature_id')!r}"
+            )
+        if sa_st4.get("dep_gated") != [
+            {"id": "feat-sa-qdep", "missing": ["feat-sa-head"]},
+        ]:
+            failures.append(
+                "[skip-ahead-union] queue-deps-only candidate: expected the "
+                "dep-gate hold to surface feat-sa-qdep, got "
+                f"{sa_st4.get('dep_gated')!r}"
+            )
+        print("  [skip-ahead-union] SPEC∪queue merged key-1 deps + "
+              "queue-deps-only candidate not dispatched: ok")
 
         # -------------------------------------------------------------------
         # Functional check: queue-dependency-dag Phase 2 — the queue `deps`

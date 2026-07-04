@@ -170,20 +170,24 @@ source note. Feature-pipeline only — the bug pipeline has no skip-ahead (D9 di
 documented; no bug-side mirror).
 
 **Deliverables:**
-- [ ] `lazy-state.py` skip-ahead readiness evaluation: merge
+- [x] `lazy-state.py` skip-ahead readiness evaluation: merge
   `parse_dep_block(SPEC)` + `[{feature_id, kind: "hard", source: "queue"} for id in dep_ids(entry)]`
   before calling `lazy_core.skip_ahead_ready` (helper unchanged — extra keys ignored).
-- [ ] Audit line extension: each dep rendered with its `source` (`spec` | `queue`).
-- [ ] Smoke fixture extending the `feat-sa-*` suite: a candidate with NO SPEC dep block but a
-  queue `deps` on the gated head is NOT skipped onto (union key 1 blocks it); baseline re-pinned.
+- [x] Audit line extension: each dep rendered with its `source` (`spec` | `queue`).
+- [x] Smoke fixture extending the `feat-sa-*` suite: the merge seam (`_merged_skip_ahead_deps`)
+  pinned directly (SPEC dep source=spec, queue dep source=queue, dedup, key-1 union verdict), PLUS
+  the end-to-end contract — a queue-deps-only candidate is NOT dispatched past the gated head
+  (the Phase-2 dep-gate holds it first; the union is the defense-in-depth second layer);
+  baseline re-pinned.
 
 **Minimum Verifiable Behavior:** With gated head H and candidate C (`independent: true`, SPEC
 `**Depends on:** (none)`, queue `deps: ["H"]`), default skip-ahead does NOT dispatch C; the audit
 diag shows the merged dep with `source=queue`.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Queue-deps-only downstream candidate blocked from skip-ahead; pre-existing `feat-sa-*`
-  fixture outcomes unchanged. *(Evidence: `SKIP_MCP_TEST.md` — `--test` green against re-pinned
+- [x] Queue-deps-only downstream candidate never dispatched past the gated head (held by the
+  dep-gate; union verdict pinned at the merge seam); pre-existing `feat-sa-*` fixture outcomes
+  unchanged. *(Evidence: `SKIP_MCP_TEST.md` — `--test` green against re-pinned
   baseline.)*
 <!-- verification-only -->
 
