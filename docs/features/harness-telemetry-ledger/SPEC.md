@@ -9,7 +9,7 @@
 > narrative-only claims — so "did that harness change actually reduce coherence-recovery cycles?"
 > becomes answerable with data.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research

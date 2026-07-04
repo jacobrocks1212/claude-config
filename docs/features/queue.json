@@ -22,12 +22,6 @@
       "stub": true
     },
     {
-      "id": "harness-telemetry-ledger",
-      "name": "Harness Telemetry Ledger + Trends",
-      "spec_dir": "harness-telemetry-ledger",
-      "tier": 1
-    },
-    {
       "id": "friction-kpi-registry",
       "name": "Friction KPI Registry + Scorecards",
       "spec_dir": "friction-kpi-registry",

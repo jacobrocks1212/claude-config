@@ -208,7 +208,7 @@ same JSON, at most one aggregation per TTL window; an absent ledger renders
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [x] `/api/trends` aggregates match hand-computed fixture values; empty ledger renders the honest empty state. *(Evidence: SKIP_MCP_TEST.md — `test_pipeline_visualizer.py`.)* <!-- verification-only -->
-- [ ] Manual browser check of the Trends tab against a real instrumented run. *(Deferred: no browser/display in this cloud container; the tab's data path is covered by the `/api/trends` + static-serving tests. Re-open on a workstation visualizer session.)* <!-- verification-only -->
+- **DEFERRED (workstation-only, not a completion blocker):** Manual browser check of the Trends tab against a real instrumented run. *(Deferred: no browser/display in this cloud container; the tab's data path is covered by the `/api/trends` + static-serving tests. Re-open on a workstation visualizer session.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface
 
@@ -247,7 +247,7 @@ for route tests.
   = state-dir only, no flush).
 - [x] Projection + lint: `project-skills.py` into a lane-local output dir + `lint-skills.py`
   clean.
-- [ ] A retro over a real instrumented run cites ledger lines; a cloud run lands its committed
+- **DEFERRED (workstation-only, not a completion blocker):** A retro over a real instrumented run cites ledger lines; a cloud run lands its committed
   segment. *(Deferred: needs a live batch run — this container has no completed instrumented run
   to retro. The mechanical halves are proven by the Phase-2 cloud-flush fixture and the Phase-3
   `run_summary` citation tests.)*
@@ -258,7 +258,7 @@ Differences table carries the new tabulated divergence.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [x] Skill projection + lint green after the two skill edits. *(Evidence: SKIP_MCP_TEST.md — `lint-skills.py`.)* <!-- verification-only -->
-- [ ] Live retro citation + live cloud segment landing. *(Deferred with the Phase-4 deliverable above — needs a real instrumented run.)* <!-- verification-only -->
+- **DEFERRED (workstation-only, not a completion blocker):** Live retro citation + live cloud segment landing. *(Deferred with the Phase-4 deliverable above — needs a real instrumented run.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface
 
