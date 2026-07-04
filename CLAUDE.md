@@ -19,7 +19,8 @@ The harness **self-improves**: retros (`/lazy-batch-retro`), investigations (`/i
 ```
 claude-config/
 ├── manifest.psd1          # Defines ALL symlink mappings (source of truth)
-├── setup.ps1              # Creates/verifies/repairs symlinks
+├── setup.ps1              # Creates/verifies/repairs symlinks (Windows/PowerShell)
+├── setup.py               # Cross-platform port of setup.ps1 (stdlib Python; same manifest)
 ├── user/                  # → ~/.claude/
 │   ├── CLAUDE.md          # User-level constitution (persona, coding style, platform rules)
 │   ├── settings.json      # Model, permissions, hooks, status line config
@@ -82,6 +83,20 @@ Per-repo entries support: `RootFiles` (at repo root), `DotClaudeFiles` (individu
 .\setup.ps1 check                    # Verify all symlinks intact
 .\setup.ps1 repair                   # Fix broken symlinks
 .\setup.ps1 bootstrap -Target Repos  # Scope to repos only
+```
+
+Cross-platform (Linux/macOS/cloud containers, and Windows with python3 — `cross-platform-setup`):
+`setup.py` is a stdlib-only Python port of `setup.ps1` reading the SAME `manifest.psd1`
+(no second manifest; a minimal tolerant psd1 parser that dies loudly on unknown constructs).
+`setup.ps1` is kept as-is (retirement is a separate operator decision after Windows soak).
+
+```bash
+python3 setup.py check                     # Verify symlinks; exit 0 iff none broken
+python3 setup.py bootstrap --target User   # Materialize ~/.claude/* links (cloud self-hosting)
+python3 setup.py repair                    # Fix broken symlinks (real files -> .bak)
+python3 setup.py bootstrap --target Repos --repos-root ~/source/repos
+                                           # Repos scope against a host-local checkout root;
+                                           # repos absent on disk are skipped, never broken
 ```
 
 ### Adding a New Repo
