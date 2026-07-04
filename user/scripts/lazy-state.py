@@ -8753,6 +8753,242 @@ def run_smoke_tests() -> int:
             ro_ok = False
         print(f"  {'PASS' if ro_ok else 'FAIL'} [{fix_ro}] reorder tail/head/index/remove/missing/cycle-active/no-op")
 
+        # -------------------------------------------------------------------
+        # Fixture: harness-telemetry-ledger Phase 2 — chokepoint emission.
+        # (a) bracket: --run-start → --cycle-begin → --cycle-end → --run-end ⇒
+        #     four envelope-valid lazy-telemetry.jsonl lines sharing ONE run_id.
+        # (b) dispatch/halt: --emit-prompt under a marker emits `dispatch`
+        #     (+ `halt` when terminal_reason is in the halt set); output JSON
+        #     gains NO new keys.
+        # (c) read-path purity: a bare probe with NO marker creates neither the
+        #     state dir nor a ledger; with a marker it appends NOTHING.
+        # (d) refusal capture: subagent --apply-pseudo ⇒ exit 3 + ONE
+        #     containment-refusal line (its only side effect beyond stderr);
+        #     --verify-ledger on a dirty/non-git tree ⇒ exit 1 + gate-refusal.
+        # (e) D5-B cloud flush: a --cloud run's --run-end lands the committed
+        #     docs/telemetry/cloud/<run_id colon-stripped>.jsonl segment and
+        #     surfaces telemetry_flushed in the JSON.
+        # Driven via subprocess so the real CLI handlers run; hermetic via
+        # isolated LAZY_STATE_DIR dirs (never the live ~/.claude/state/).
+        # -------------------------------------------------------------------
+        fix_tl = "telemetry-ledger-chokepoints"
+        tl_ok = True
+        _tl_script = str(Path(__file__).resolve())
+        _TL_LEDGER = "lazy-telemetry.jsonl"
+
+        def _tl_env(state_dir: "Path", *, orchestrator: bool = True) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(state_dir)
+            if orchestrator:
+                e["LAZY_ORCHESTRATOR"] = "1"
+            return e
+
+        def _tl_events(state_dir: "Path") -> list:
+            ledger = state_dir / _TL_LEDGER
+            if not ledger.exists():
+                return []
+            out = []
+            for line in ledger.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    out.append(json.loads(line))
+            return out
+
+        try:
+            # (a) full bracket — one run_id across all four events.
+            tl_state = td_path / "tl-state"
+            tl_state.mkdir(parents=True, exist_ok=True)
+            tl_repo = td_path / "tl-repo"
+            tl_repo.mkdir(parents=True, exist_ok=True)
+            for cmd in (
+                ["--run-start"],
+                ["--cycle-begin", "--feature-id", "feat-tl", "--nonce", "abc123",
+                 "--kind", "real", "--sub-skill", "execute-plan"],
+                ["--cycle-end"],
+                ["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "all-features-complete"],
+            ):
+                r = subprocess.run(
+                    [sys.executable, _tl_script, "--repo-root", str(tl_repo)] + cmd,
+                    capture_output=True, text=True, env=_tl_env(tl_state),
+                )
+                if r.returncode != 0:
+                    failures.append(
+                        f"[{fix_tl}] {cmd[0]} must exit 0; got {r.returncode}: "
+                        f"{r.stderr[:200]}"
+                    )
+                    tl_ok = False
+            ev = _tl_events(tl_state)
+            got_types = [e.get("event") for e in ev]
+            if got_types != ["run-start", "cycle-begin", "cycle-end", "run-end"]:
+                failures.append(f"[{fix_tl}] bracket events wrong: {got_types}")
+                tl_ok = False
+            if ev:
+                run_ids = {e.get("run_id") for e in ev}
+                if len(run_ids) != 1 or None in run_ids:
+                    failures.append(f"[{fix_tl}] bracket must share ONE run_id: {run_ids}")
+                    tl_ok = False
+                for e in ev:
+                    if set(e) != {"v", "ts", "run_id", "pipeline", "event",
+                                  "item_id", "data"}:
+                        failures.append(f"[{fix_tl}] envelope keys wrong: {sorted(e)}")
+                        tl_ok = False
+                        break
+                if ev[0].get("pipeline") != "feature":
+                    failures.append(f"[{fix_tl}] pipeline must be 'feature': {ev[0]}")
+                    tl_ok = False
+                if ev[1].get("item_id") != "feat-tl" or ev[1]["data"].get("sub_skill") != "execute-plan":
+                    failures.append(f"[{fix_tl}] cycle-begin item/sub_skill wrong: {ev[1]}")
+                    tl_ok = False
+
+            # (b) dispatch + halt at --emit-prompt (halt fixture → blocked).
+            tl_state_b = td_path / "tl-state-b"
+            tl_state_b.mkdir(parents=True, exist_ok=True)
+            halt_root = _build_fixture(td_path, "blocker")
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--run-start"],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--emit-prompt"],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            probe_json = json.loads(r.stdout)
+            if "telemetry_flushed" in probe_json:
+                failures.append(f"[{fix_tl}] --emit-prompt output must gain no telemetry keys")
+                tl_ok = False
+            ev_b = _tl_events(tl_state_b)
+            types_b = [e.get("event") for e in ev_b]
+            if types_b != ["run-start", "dispatch", "halt"]:
+                failures.append(f"[{fix_tl}] emit-prompt events wrong: {types_b}")
+                tl_ok = False
+            else:
+                disp = ev_b[1]
+                if (disp.get("item_id") != "feat-b"
+                        or disp["data"].get("terminal_reason") != "blocked"):
+                    failures.append(f"[{fix_tl}] dispatch payload wrong: {disp}")
+                    tl_ok = False
+                if ev_b[2]["data"].get("terminal_reason") != "blocked":
+                    failures.append(f"[{fix_tl}] halt payload wrong: {ev_b[2]}")
+                    tl_ok = False
+
+            # (c) read-path purity — no marker: bare probe creates NOTHING.
+            tl_state_c = td_path / "tl-state-c"  # deliberately NOT created
+            pure_root = _build_fixture(td_path, "all-complete")
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(pure_root)],
+                capture_output=True, text=True,
+                env=_tl_env(tl_state_c, orchestrator=False),
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_tl}] bare probe must exit 0; got {r.returncode}")
+                tl_ok = False
+            if tl_state_c.exists():
+                failures.append(f"[{fix_tl}] bare probe (no marker) must not create the state dir")
+                tl_ok = False
+            #     — marker present: bare probe appends nothing.
+            before = (tl_state_b / _TL_LEDGER).read_bytes()
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(pure_root)],
+                capture_output=True, text=True,
+                env=_tl_env(tl_state_b, orchestrator=False),
+            )
+            if (tl_state_b / _TL_LEDGER).read_bytes() != before:
+                failures.append(f"[{fix_tl}] bare probe under a marker must append NOTHING")
+                tl_ok = False
+
+            # (d1) subagent --apply-pseudo ⇒ exit 3 + containment-refusal line.
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--cycle-begin", "--feature-id", "feat-b", "--nonce", "beef",
+                 "--kind", "real", "--sub-skill", "execute-plan"],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            n_before = len(_tl_events(tl_state_b))
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--apply-pseudo", "__mark_complete__",
+                 str(halt_root / "docs" / "features" / "feat-b" / "SPEC.md")],
+                capture_output=True, text=True,
+                env=_tl_env(tl_state_b, orchestrator=False),
+            )
+            if r.returncode != 3:
+                failures.append(f"[{fix_tl}] subagent --apply-pseudo must exit 3; got {r.returncode}")
+                tl_ok = False
+            ev_d = _tl_events(tl_state_b)
+            if len(ev_d) != n_before + 1 or ev_d[-1].get("event") != "containment-refusal":
+                failures.append(
+                    f"[{fix_tl}] refusal must append exactly ONE containment-refusal "
+                    f"line: {[e.get('event') for e in ev_d[n_before:]]}"
+                )
+                tl_ok = False
+            elif ev_d[-1]["data"].get("op") != "--apply-pseudo":
+                failures.append(f"[{fix_tl}] containment-refusal op wrong: {ev_d[-1]}")
+                tl_ok = False
+
+            # (d2) --verify-ledger on a non-git tree ⇒ exit 1 + gate-refusal.
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--verify-ledger",
+                 str(halt_root / "docs" / "features" / "feat-b" / "SPEC.md")],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            if r.returncode != 1:
+                failures.append(f"[{fix_tl}] --verify-ledger dirty must exit 1; got {r.returncode}")
+                tl_ok = False
+            ev_d2 = _tl_events(tl_state_b)
+            if not ev_d2 or ev_d2[-1].get("event") != "gate-refusal" \
+                    or ev_d2[-1]["data"].get("gate") != "verify-ledger" \
+                    or not ev_d2[-1]["data"].get("failing_check"):
+                failures.append(f"[{fix_tl}] gate-refusal (verify-ledger) missing/wrong: {ev_d2[-1:]}")
+                tl_ok = False
+
+            # (e) D5-B cloud flush at --run-end.
+            tl_state_e = td_path / "tl-state-e"
+            tl_state_e.mkdir(parents=True, exist_ok=True)
+            tl_repo_e = td_path / "tl-repo-e"
+            tl_repo_e.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
+                 "--cloud", "--run-start"],
+                capture_output=True, text=True, env=_tl_env(tl_state_e),
+            )
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
+                 "--cloud", "--run-end", "--reason", "terminal",
+                 "--terminal-reason", "cloud-queue-exhausted"],
+                capture_output=True, text=True, env=_tl_env(tl_state_e),
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_tl}] cloud --run-end must exit 0; got {r.returncode}")
+                tl_ok = False
+            out_e = json.loads(r.stdout) if r.stdout else {}
+            flushed = out_e.get("telemetry_flushed")
+            if not (isinstance(flushed, dict) and flushed.get("events", 0) >= 2):
+                failures.append(f"[{fix_tl}] cloud --run-end must surface telemetry_flushed: {out_e}")
+                tl_ok = False
+            else:
+                seg = Path(flushed["path"])
+                if not seg.exists() or ":" in seg.name \
+                        or seg.parent != tl_repo_e / "docs" / "telemetry" / "cloud":
+                    failures.append(f"[{fix_tl}] cloud segment missing/misplaced: {flushed}")
+                    tl_ok = False
+                else:
+                    seg_events = [json.loads(l) for l in
+                                  seg.read_text(encoding="utf-8").splitlines() if l.strip()]
+                    if [e.get("event") for e in seg_events] != ["run-start", "run-end"]:
+                        failures.append(
+                            f"[{fix_tl}] cloud segment events wrong: "
+                            f"{[e.get('event') for e in seg_events]}"
+                        )
+                        tl_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_tl}] unexpected error: {exc!r}")
+            tl_ok = False
+        print(f"  {'PASS' if tl_ok else 'FAIL'} [{fix_tl}] bracket/dispatch/purity/refusal/cloud-flush emission")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -9352,6 +9588,14 @@ def main() -> int:
     # orchestrator's && chains short-circuit (parity with --verify-ledger).
     if args.gate_coverage is not None:
         result = lazy_core.gate_coverage(Path(args.gate_coverage))
+        # harness-telemetry-ledger Phase 2 (D4-B): an exit-1 Gate-1 verdict is a
+        # `gate-refusal` event (marker-gated + fail-open; adds NO output keys).
+        if result["uncovered"]:
+            lazy_core.append_telemetry_event(
+                "gate-refusal",
+                item_id=Path(args.gate_coverage).resolve().parent.name,
+                data={"gate": "gate-coverage", "uncovered": result["uncovered"]},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if not result["uncovered"] else 1
 
@@ -9445,6 +9689,13 @@ def main() -> int:
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
             sub_skill=args.sub_skill, sub_skill_args=args.sub_skill_args,
         )
+        # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission.
+        # Marker-gated inside the emitter (no live run → no line) and fail-open
+        # (a write failure never blocks the bracket); adds NO output keys.
+        lazy_core.append_telemetry_event(
+            "cycle-begin", item_id=args.feature_id,
+            data={"kind": args.kind, "sub_skill": args.sub_skill},
+        )
         out: dict = dict(marker)
         if reconciliation is not None and reconciliation.get("reconciled"):
             out["git_consistency_reconciliation"] = reconciliation
@@ -9461,8 +9712,18 @@ def main() -> int:
         # process-friction signals BEFORE clearing the marker; on a hit, append a
         # kind: process-friction entry to the deny ledger (best-effort, never
         # blocks the clear).
+        # harness-telemetry-ledger Phase 2: capture the cycle identity BEFORE
+        # the clear (read-only) so the cycle-end event carries the item id.
+        _tl_cycle = lazy_core.read_cycle_marker()
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         cleared = lazy_core.clear_cycle_marker()
+        # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission
+        # (marker-gated + fail-open inside the emitter; adds NO output keys).
+        lazy_core.append_telemetry_event(
+            "cycle-end", item_id=(_tl_cycle or {}).get("feature_id"),
+            data={"cleared": cleared,
+                  "process_friction": (friction or {}).get("reason")},
+        )
         out: dict = {"cycle_marker_cleared": cleared}
         if friction is not None:
             out["process_friction"] = friction
@@ -9534,6 +9795,14 @@ def main() -> int:
                 out["last_advance_consume_count"] = restored.get(
                     "last_advance_consume_count"
                 )
+        # harness-telemetry-ledger Phase 2 (D4-B): run-bracket emission —
+        # fires AFTER write_run_marker so the fresh marker supplies the run
+        # identity (marker-gated + fail-open inside the emitter; no output keys).
+        lazy_core.append_telemetry_event(
+            "run-start",
+            data={"cloud": args.cloud, "max_cycles": args.max_cycles,
+                  "resumed_from_checkpoint": checkpoint is not None},
+        )
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
@@ -9681,12 +9950,31 @@ def main() -> int:
                 operator_authorized=bool(args.operator_authorized),
             )
 
+        # harness-telemetry-ledger Phase 2 (D4-B): run-bracket emission — MUST
+        # fire BEFORE delete_run_marker (the marker supplies the run identity),
+        # and before the D5-B flush so the run-end line rides the segment.
+        lazy_core.append_telemetry_event(
+            "run-end",
+            data={"reason": reason,
+                  "terminal_reason": getattr(args, "terminal_reason", None)},
+        )
+        # D5-B cloud run-end flush: persist this cloud run's ledger segment into
+        # the repo (docs/telemetry/cloud/) so it rides the final commit+push.
+        # No-op (None) for workstation runs / no matching events; fail-open.
+        telemetry_flushed = lazy_core.flush_cloud_telemetry_segment(
+            Path(args.repo_root)
+        )
+
         # Delete the marker AND the registry (both are run-scoped state).
         # clear_registry=True ensures the prompt registry does not bleed
         # across runs — entries from a previous run must never be dispatchable
         # in the next run's fresh startup.
         deleted = lazy_core.delete_run_marker(clear_registry=True)
         result_out: dict = {"run_marker_deleted": deleted, "reason": reason}
+        if telemetry_flushed is not None:
+            # Only a cloud run WITH telemetry events gains this key — every
+            # pre-feature output shape is byte-identical (no events → None).
+            result_out["telemetry_flushed"] = telemetry_flushed
         if override_note is not None:
             result_out["override"] = override_note
         if checkpoint_written is not None:
@@ -9814,6 +10102,16 @@ def main() -> int:
 
     if args.neutralize_sentinel is not None:
         result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
+        # harness-telemetry-ledger Phase 2 (D4-B): a successful neutralization
+        # is the halt-dwell END marker (`sentinel-resolved`). Marker-gated +
+        # fail-open; adds NO output keys.
+        if result.get("ok"):
+            _tl_sentinel = Path(args.neutralize_sentinel)
+            lazy_core.append_telemetry_event(
+                "sentinel-resolved",
+                item_id=_tl_sentinel.resolve().parent.name,
+                data={"sentinel": _tl_sentinel.name},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -9847,6 +10145,19 @@ def main() -> int:
                 lazy_core._diag(
                     f"--apply-pseudo {name}: forward-cycle advance failed ({exc})"
                 )
+        # harness-telemetry-ledger Phase 2 (D4-B): a successful apply is a
+        # `pseudo-applied` event; an exit-1 verdict is a `gate-refusal`.
+        # Marker-gated + fail-open; adds NO output keys.
+        _tl_item = Path(spec).resolve().parent.name
+        if result.get("ok"):
+            lazy_core.append_telemetry_event(
+                "pseudo-applied", item_id=_tl_item, data={"pseudo": name},
+            )
+        else:
+            lazy_core.append_telemetry_event(
+                "gate-refusal", item_id=_tl_item,
+                data={"gate": "apply-pseudo", "pseudo": name},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -9945,6 +10256,14 @@ def main() -> int:
             Path(args.repo_root), _spec_dir,
             plan_path=Path(args.plan) if args.plan else None,
         )
+        # harness-telemetry-ledger Phase 2 (D4-B): an exit-1 ledger verdict is a
+        # `gate-refusal` event (marker-gated + fail-open; adds NO output keys).
+        if not result["ok"]:
+            lazy_core.append_telemetry_event(
+                "gate-refusal", item_id=_spec_dir.resolve().name,
+                data={"gate": "verify-ledger",
+                      "failing_check": result.get("failing_check")},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -10076,6 +10395,27 @@ def main() -> int:
                     state["cycle_prompt_ref"] = None
             else:
                 state["cycle_prompt_ref"] = None
+        # harness-telemetry-ledger Phase 2 (D4-B): --emit-prompt IS the
+        # per-cycle dispatch surface — record the routed dispatch tuple (and a
+        # `halt` sibling when the terminal_reason is a halt). Marker-gated
+        # inside the emitter (a bare unmarked probe emits nothing) + fail-open;
+        # adds NO keys to the probe JSON.
+        _tl_dispatch_data = {
+            "current_step": state.get("current_step"),
+            "sub_skill": state.get("sub_skill"),
+            "terminal_reason": state.get("terminal_reason"),
+        }
+        if state.get("route_overridden_by"):
+            _tl_dispatch_data["route_overridden_by"] = state["route_overridden_by"]
+        lazy_core.append_telemetry_event(
+            "dispatch", item_id=state.get("feature_id"), data=_tl_dispatch_data,
+        )
+        if state.get("terminal_reason") in lazy_core.TELEMETRY_HALT_TERMINAL_REASONS:
+            lazy_core.append_telemetry_event(
+                "halt", item_id=state.get("feature_id"),
+                data={"terminal_reason": state.get("terminal_reason"),
+                      "current_step": state.get("current_step")},
+            )
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).

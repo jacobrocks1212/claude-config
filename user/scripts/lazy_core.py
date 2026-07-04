@@ -10619,6 +10619,16 @@ def refuse_if_cycle_active(op_name: str) -> None:
         return
 
     feature_id = (marker or {}).get("feature_id", "<unknown>")
+    # harness-telemetry-ledger Phase 2 (D4-B): record the containment trip AFTER
+    # the refusal decision, BEFORE exit. The append-only ledger line is
+    # observability, not state — the refused op still has ZERO state side
+    # effects (same standing the deny ledger has at guard-deny time).
+    # Marker-gated (non-destructive read) + fail-open inside the emitter.
+    append_telemetry_event(
+        "containment-refusal",
+        item_id=(marker or {}).get("feature_id"),
+        data={"op": op_name, "guard": "refuse_if_cycle_active"},
+    )
     sys.stderr.write(
         f"REFUSED: `{op_name}` is an orchestrator-only operation and you are a "
         f"single cycle subagent (the lazy-cycle-active marker is present for "
@@ -10679,6 +10689,13 @@ def refuse_cycle_marker_mutation_if_subagent(op_name: str) -> None:
         return
 
     feature_id = (marker or {}).get("feature_id", "<unknown>")
+    # harness-telemetry-ledger Phase 2 (D4-B): observability-only ledger line
+    # (see refuse_if_cycle_active) — zero STATE side effects preserved.
+    append_telemetry_event(
+        "containment-refusal",
+        item_id=(marker or {}).get("feature_id"),
+        data={"op": op_name, "guard": "refuse_cycle_marker_mutation_if_subagent"},
+    )
     sys.stderr.write(
         f"REFUSED: `{op_name}` mutates the cycle-containment marker and is an "
         f"orchestrator-only operation — you are a single cycle subagent (the "
@@ -10791,6 +10808,15 @@ def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None
         # concurrent SECOND walker on this repo+branch+pipeline → refuse the clobber.
         existing_session = existing.get("session_id")
         forward_cycles = existing.get("forward_cycles")
+        # harness-telemetry-ledger Phase 2 (D4-B): observability-only ledger
+        # line, attributed to the LIVE run being protected (its marker supplies
+        # the run identity). Zero STATE side effects preserved.
+        append_telemetry_event(
+            "containment-refusal",
+            data={"op": "--run-start", "guard": "refuse_run_start_clobber",
+                  "incoming_pipeline": incoming_pipeline},
+            now=now,
+        )
         sys.stderr.write(
             f"REFUSED: `--run-start` (pipeline={incoming_pipeline!r}) would CLOBBER "
             f"an ACTIVE run marker for the SAME pipeline with NO checkpoint waiting "
@@ -10809,6 +10835,14 @@ def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None
 
     # Live, well-formed, DIFFERENT-pipeline marker → refuse the clobber.
     existing_session = existing.get("session_id")
+    # harness-telemetry-ledger Phase 2 (D4-B): observability-only ledger line
+    # (see the same-pipeline branch above). Zero STATE side effects preserved.
+    append_telemetry_event(
+        "containment-refusal",
+        data={"op": "--run-start", "guard": "refuse_run_start_clobber",
+              "incoming_pipeline": incoming_pipeline},
+        now=now,
+    )
     sys.stderr.write(
         f"REFUSED: `--run-start` (pipeline={incoming_pipeline!r}) would CLOBBER an "
         f"ACTIVE run marker owned by a DIFFERENT pipeline "
