@@ -10843,7 +10843,12 @@ def detect_cycle_bracket_friction(
           orchestrator-driven remediation dispatch (hardening / input-audit /
           recovery / apply-resolution) that legitimately commits an unbounded
           number of times and carries no sub_skill to budget — signal (b) is
-          skipped entirely for it (signal (a) still applies).
+          skipped entirely for it (signal (a) still applies). ALSO exempt when a
+          NON-meta cycle carries a falsy ``sub_skill`` (the marker was written by a
+          --cycle-begin that omitted --sub-skill): the commit budget is
+          INDETERMINATE without a dispatch identity, so applying the single-commit
+          default would false-positive every legitimately multi-commit real cycle —
+          signal (b) is disabled (fail-open), signals (a)/(a.5) still fire.
 
     Args:
         marker: the cycle marker dict from read_cycle_marker() (snapshotted at
@@ -10964,6 +10969,28 @@ def detect_cycle_bracket_friction(
         # signal never accidentally disables.
         if isinstance(budget_override, int) and budget_override > 0:
             budget = budget_override
+        elif not (sub_skill or "").strip():
+            # BUDGET-INDETERMINATE INPUT (adhoc-derive-multi-commit-budget…,
+            # harden 2026-07-04): a NON-meta cycle whose sub_skill was never
+            # recorded (the marker was written by a --cycle-begin that omitted
+            # --sub-skill) has NO derivable commit budget — the dispatch identity
+            # that selects the multi-commit ceiling is unknown, so the registry
+            # lookup below would fall to the single-commit default and
+            # false-positive EVERY legitimately multi-commit real cycle. That is
+            # the observed friction: an /execute-plan cycle whose --cycle-begin
+            # recorded sub_skill=None landed 3 sanctioned per-WU commits and
+            # tripped budget=1 (a FALSE unexpected-commits). Disable signal (b)
+            # for this degraded input — the SAME fail-open posture the meta
+            # exemption and the null-HEAD / null-commits guards already take ("a
+            # degraded input yields None signals, never a false positive"). The
+            # integrity signals (a) bracket-break and (a.5) branch-divergence were
+            # evaluated ABOVE and are sub_skill-independent, so they still fire; a
+            # genuine runaway with a RECORDED sub_skill is unaffected (its budget is
+            # derivable). Write-side complement: the /lazy-batch(-bug-batch) prose
+            # MANDATES --sub-skill on every real --cycle-begin, so this input never
+            # occurs for a sanctioned dispatch — this guard is the read-side
+            # backstop that stops the mis-recorded marker from manufacturing debt.
+            return None
         else:
             # Branch (3): DERIVE the budget from the `_MULTI_COMMIT_DISPATCH_SKILLS`
             # registry SSOT — membership ⇒ the multi-commit ceiling, else the

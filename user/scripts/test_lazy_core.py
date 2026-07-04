@@ -18983,16 +18983,36 @@ def test_detect_friction_meta_cycle_exempt_from_unexpected_commits():
         commits_since=9,
     )
     assert torn is not None and torn["reason"] == "cycle-bracket-break", torn
-    # Control: the SAME multi-commit shape on a kind='real' cycle still trips (b).
+    # Control: the SAME multi-commit shape on a kind='real' cycle with a RECORDED
+    # sub_skill still trips (b) — a single-commit skill (budget 1) with 9 commits
+    # is a genuine runaway, and its budget IS derivable, so detection is intact.
     real_marker = dict(meta_marker, kind="real")
     real = lazy_core.detect_cycle_bracket_friction(
         real_marker,
         current_run_started_at="2026-06-16T00:00:00Z",
         current_head_sha="bbbb2222",
-        sub_skill=None,
+        sub_skill="some-single-commit-skill",  # recorded → budget derivable (1)
         commits_since=9,
     )
     assert real is not None and real["reason"] == "unexpected-commits", real
+    # Regression (skip-mcp-test-frontmatter-unquoted-colon, harden 2026-07-04): a
+    # kind='real' cycle whose sub_skill was NEVER recorded (--cycle-begin omitted
+    # --sub-skill) is BUDGET-INDETERMINATE — the dispatch identity that selects the
+    # multi-commit ceiling is unknown, so signal (b) is fail-open-disabled rather
+    # than false-tripping on the sanctioned multi-commit work the (unknown) real
+    # skill legitimately did. This is the exact false positive that fired for an
+    # /execute-plan cycle: 3 per-WU commits, marker sub_skill=None, mis-derived
+    # budget=1. Signals (a)/(a.5) — the integrity signals — are sub_skill-
+    # independent and still fire (a torn bracket / stray branch always self-
+    # announces); only the budget-dependent commit signal is spared.
+    real_null = lazy_core.detect_cycle_bracket_friction(
+        real_marker,
+        current_run_started_at="2026-06-16T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill=None,  # NOT recorded → indeterminate budget → fail-open, no trip
+        commits_since=9,
+    )
+    assert real_null is None, real_null
 
 
 def test_multi_commit_dispatch_skills_registry_membership():
