@@ -59,25 +59,25 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 1 — Core helper (lazy_core)
 
-- [ ] WU-1.1 — TDD: config loader tests (absent → None; disable kill switch; env-url only; file
+- [x] WU-1.1 — TDD: config loader tests (absent → None; disable kill switch; env-url only; file
   only; env overrides file url; malformed file → None fail-open) → implement
   `_load_notify_config()` + `_NOTIFY_*` frozensets + module constants.
-- [ ] WU-1.2 — TDD: identity tests (sentinel-backed mtime/size key; rewrite → new identity;
+- [x] WU-1.2 — TDD: identity tests (sentinel-backed mtime/size key; rewrite → new identity;
   sentinel-less date key; blocked-misnamed stray key) → implement `_notify_identity()` +
   `_notify_sentinel_path()`.
-- [ ] WU-1.3 — TDD: ledger tests (round-trip, 30-day prune, `_atomic_write` spy, corrupt ledger
+- [x] WU-1.3 — TDD: ledger tests (round-trip, 30-day prune, `_atomic_write` spy, corrupt ledger
   → treated empty) → implement `_load_notify_ledger()` / `_record_notify_ledger()`.
-- [ ] WU-1.4 — TDD: payload tests (title verbatim; body lines incl. needs-input decisions ≤4;
+- [x] WU-1.4 — TDD: payload tests (title verbatim; body lines incl. needs-input decisions ≤4;
   tolerant read of malformed sentinel; link from SSH/HTTPS/ssh:// remotes; no remote → None link)
   → implement `_compose_notify_payload()` + `_github_remote_url()` + `_notify_decisions()`.
-- [ ] WU-1.5 — TDD: notify_halt end-to-end (inert-without-config byte-identity + zero writes;
+- [x] WU-1.5 — TDD: notify_halt end-to-end (inert-without-config byte-identity + zero writes;
   attention-set gating; clean-stop opt-in both ways; dedup across 3 calls; fail-OPEN on sender
   raise → breadcrumb + no ledger + diagnostics line; success → ledger + diagnostics line) →
   implement `notify_halt()` wrapper + `_notify_halt_inner()` + `_write_notify_error()`.
-- [ ] WU-1.6 — TDD: `_ntfy_send` unit tests (POST body/headers via monkeypatched urlopen;
+- [x] WU-1.6 — TDD: `_ntfy_send` unit tests (POST body/headers via monkeypatched urlopen;
   RFC-2047 title encoding for non-latin-1; Click header only when link) → implement `_ntfy_send`
   + `_rfc2047_header()` + default-sender binding.
-- [ ] WU-1.7 — Register every new test in `_TESTS`; full pytest suite + `--test` smokes green
+- [x] WU-1.7 — Register every new test in `_TESTS`; full pytest suite + `--test` smokes green
   (no baseline change expected — no script edits yet). Commit Phase 1.
 
 ## Phase 2 — Wire both scripts (parity-coupled)

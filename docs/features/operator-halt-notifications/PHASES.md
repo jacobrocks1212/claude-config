@@ -43,30 +43,30 @@ composer (D5), ntfy sender behind the injected-`sender` seam (D1), breadcrumb + 
 failure (D9). No state-script change yet — probe output byte-identical.
 
 **Deliverables:**
-- [ ] `lazy_core._NOTIFY_ATTENTION_TERMINALS` frozenset (the locked 11-terminal D3 list) +
+- [x] `lazy_core._NOTIFY_ATTENTION_TERMINALS` frozenset (the locked 11-terminal D3 list) +
   `_NOTIFY_CLEAN_STOP_TERMINALS` (the 5 named clean stops, gated on `notify_on_clean_stop`).
-- [ ] `lazy_core._load_notify_config()` — `LAZY_NOTIFY_DISABLE=1` kill switch → `None`;
+- [x] `lazy_core._load_notify_config()` — `LAZY_NOTIFY_DISABLE=1` kill switch → `None`;
   `~/.claude/notify.json` (`{channel, url, notify_on_clean_stop, reping_hours}`) merged with the
   `LAZY_NOTIFY_URL` env override (env url wins); absent both → `None` (complete no-op).
-- [ ] `lazy_core._notify_identity(state, repo_root, pipeline, ...)` — sentinel-backed terminals
+- [x] `lazy_core._notify_identity(state, repo_root, pipeline, ...)` — sentinel-backed terminals
   (`blocked` → `BLOCKED.md`, `needs-input` → `NEEDS_INPUT.md`, `blocked-misnamed` → the
   `detect_noncanonical_blocker` stray, `needs-research` → `NEEDS_RESEARCH.md`/`RESEARCH_PROMPT.md`)
   key on `(pipeline, item_id, terminal_reason, mtime_ns, size)`; sentinel-less terminals key on
   `(pipeline, item_id, terminal_reason, date)`.
-- [ ] `notify-ledger.json` read/write in `claude_state_dir()` via `_atomic_write` — `notified_at`
+- [x] `notify-ledger.json` read/write in `claude_state_dir()` via `_atomic_write` — `notified_at`
   per identity (re-ping-ready schema), entries older than 30 days dropped on write; ledger updated
   ONLY on a successful send.
-- [ ] Payload composer — title = `notify_message` verbatim; body = repo basename · pipeline ·
+- [x] Payload composer — title = `notify_message` verbatim; body = repo basename · pipeline ·
   item id · halt kind, `needs-input` `decisions:` one-liners via a tolerant frontmatter read,
   `LAZY_QUEUE.md` + answer-path pointer; link = GitHub tree URL from
   `git config --get remote.origin.url` (SSH→HTTPS normalized; failure ⇒ link omitted, still send).
-- [ ] `lazy_core._ntfy_send(url, title, body, link)` — stdlib `urllib`, `timeout=5`, RFC-2047
+- [x] `lazy_core._ntfy_send(url, title, body, link)` — stdlib `urllib`, `timeout=5`, RFC-2047
   header encoding for non-latin-1 titles; `notify_halt(state, repo_root, *, pipeline, sender=None,
   now=None)` dispatches through the injected `sender` seam (defaults to the ntfy binding).
-- [ ] Fail-OPEN wrapper — no exception propagates; on send failure write the `notify-error.json`
+- [x] Fail-OPEN wrapper — no exception propagates; on send failure write the `notify-error.json`
   breadcrumb (`_atomic_write`, single overwritten file) + append the "why no page" line to
   `state["diagnostics"]`; halt JSON/exit code unchanged.
-- [ ] `test_lazy_core.py` additions (registered in `_TESTS`): inert-without-config byte-identity
+- [x] `test_lazy_core.py` additions (registered in `_TESTS`): inert-without-config byte-identity
   (state dict deep-equal + zero state-dir writes), attention-set gating (incl. clean-stop opt-in
   both ways), dedup across repeated probes, identity refresh on sentinel rewrite/neutralize,
   ledger written via `_atomic_write` + 30-day prune, fail-OPEN on sender raise, breadcrumb write,
@@ -78,8 +78,8 @@ state notifies exactly once across three `notify_halt` calls (ledger holds one e
 config, the same calls leave the state dict and state dir byte-untouched.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] One halt pages once across repeated probes; ledger self-clears on sentinel neutralize+rewrite (second page, new identity). *(Evidence: `SKIP_MCP_TEST.md` — `test_lazy_core.py` notify suite.)* <!-- verification-only -->
-- [ ] Sender raise leaves halt JSON unchanged, writes `notify-error.json`, adds no ledger entry. *(Evidence: `test_lazy_core.py` fail-OPEN cases.)* <!-- verification-only -->
+- [x] One halt pages once across repeated probes; ledger self-clears on sentinel neutralize+rewrite (second page, new identity). *(Evidence: `SKIP_MCP_TEST.md` — `test_lazy_core.py` notify suite.)* <!-- verification-only -->
+- [x] Sender raise leaves halt JSON unchanged, writes `notify-error.json`, adds no ledger entry. *(Evidence: `test_lazy_core.py` fail-OPEN cases.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface (claude-config has no
 Tauri/MCP app). Verification is `pytest`.
