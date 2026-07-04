@@ -312,12 +312,53 @@ def build_inventory(repo_root) -> list:
         for d in sorted(user_tree.iterdir()):
             if d.is_dir() and d.name != "_components":
                 _add(d, "user", None)
+    repos_tree = repo_root / "repos"
+    if repos_tree.is_dir():
+        for repo_dir in sorted(repos_tree.iterdir()):
+            tree = repo_dir / ".claude" / "skills"
+            if tree.is_dir():
+                for d in sorted(tree.iterdir()):
+                    if d.is_dir():
+                        _add(d, f"repo:{repo_dir.name}", repo_dir.name)
     return entries
 
 
 # ---------------------------------------------------------------------------
 # Report assembly
 # ---------------------------------------------------------------------------
+
+def skill_added_date(repo_root, skill_md_rel) -> str | None:
+    """D3 — first-commit date (YYYY-MM-DD) of the skill's SKILL.md, via
+    ``git log --follow --diff-filter=A --format=%cs``. The LAST output line is
+    the earliest add under --follow. Any failure degrades to None
+    ("age unknown — age gate not applied"), never a crash. Read-only."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(repo_root), "log", "--follow", "--diff-filter=A",
+             "--format=%cs", "--", str(skill_md_rel)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    return _date_of(lines[-1])
+
+
+def _proposal_row(entry: SkillEntry, created, age_days, n_sessions,
+                  floor, end, cloud_note) -> dict:
+    """One age-gated never-invoked row (D8 proposal text lands in Phase 3)."""
+    return {
+        "skill": entry.name,
+        "scope": entry.scope,
+        "created": created,
+        "age_days": age_days,
+        "cloud_note": cloud_note,
+    }
+
 
 def _shift_date(day: str, delta_days: int) -> str:
     d = _dt.date.fromisoformat(day) + _dt.timedelta(days=delta_days)
@@ -336,8 +377,14 @@ def build_report(repo_root, logs_dir, since=None) -> dict:
     inventory = build_inventory(repo_root)
     inv_names = {e.name for e in inventory}
 
-    hits = corpus.hits          # --since filtering lands in Phase 2 (D3)
+    # --since filter (D3): drop hits strictly before the date; undated hits kept.
+    hits = corpus.hits
+    if since:
+        hits = [h for h in hits
+                if _date_of(h.timestamp) is None or _date_of(h.timestamp) >= since]
     floor = corpus.ts_min
+    if since and floor is not None and since > floor:
+        floor = since
 
     # Recency window anchored to the newest corpus timestamp (byte-stable).
     recent_start = (_shift_date(corpus.ts_max, -RECENT_WINDOW_DAYS)
@@ -365,7 +412,18 @@ def build_report(repo_root, logs_dir, since=None) -> dict:
         rec = agg.get(entry.name)
         if rec is None:
             continue
-        notes = []                # cloud/attribution annotations land in Phase 2 (D4)
+        notes = []
+        if entry.name.endswith(CLOUD_VARIANT_SUFFIX):
+            notes.append("cloud-biased undercount")
+        if entry.repo is not None:
+            total_hits = len(rec["projects"])
+            slug = entry.repo.lower().replace("-", "")
+            matched = sum(1 for p in rec["projects"]
+                          if slug in p.lower().replace("-", ""))
+            notes.append(
+                f"repo-attribution: {matched}/{total_hits} hits in "
+                f"'{entry.repo}' project dirs (heuristic)"
+            )
         usage.append({
             "skill": entry.name,
             "scope": entry.scope,
@@ -379,9 +437,47 @@ def build_report(repo_root, logs_dir, since=None) -> dict:
         })
     usage.sort(key=lambda r: (-r["total"], r["skill"]))
 
-    # Zero-count rows: the D3 age gate + D8 proposal blocks land in Phase 2/3.
+    # Zero-count rows: age-gated never-invoked (D3) vs not-gated (explicit reason).
     never_invoked: list = []
     zero_unaged: list = []
+    span_ok = (corpus.found and floor is not None and corpus.ts_max is not None
+               and _span_days(floor, corpus.ts_max) >= RECENT_WINDOW_DAYS)
+    for entry in inventory:
+        if entry.name in agg:
+            continue
+        cloud_note = ("cloud-biased undercount"
+                      if entry.name.endswith(CLOUD_VARIANT_SUFFIX) else None)
+        if not corpus.found:
+            zero_unaged.append({"skill": entry.name, "scope": entry.scope,
+                                "reason": "no corpus scanned",
+                                "cloud_note": cloud_note})
+            continue
+        created = skill_added_date(repo_root, entry.skill_md)
+        if created is None:
+            zero_unaged.append({"skill": entry.name, "scope": entry.scope,
+                                "reason": "age unknown — age gate not applied",
+                                "cloud_note": cloud_note})
+            continue
+        if not span_ok:
+            zero_unaged.append({
+                "skill": entry.name, "scope": entry.scope,
+                "reason": (f"corpus span < {RECENT_WINDOW_DAYS}d — "
+                           "age gate not applied"),
+                "cloud_note": cloud_note})
+            continue
+        if created >= floor:
+            zero_unaged.append({
+                "skill": entry.name, "scope": entry.scope,
+                "reason": (f"skill younger than the observation floor "
+                           f"(created {created}, floor {floor})"),
+                "cloud_note": cloud_note})
+            continue
+        age_days = _span_days(created, corpus.ts_max)
+        never_invoked.append(_proposal_row(entry, created, age_days,
+                                           len(corpus.sessions), floor,
+                                           corpus.ts_max, cloud_note))
+    never_invoked.sort(key=lambda r: r["skill"])
+    zero_unaged.sort(key=lambda r: r["skill"])
 
     # Toolify candidates (D7) land in Phase 4.
     toolify: list = []
@@ -454,9 +550,8 @@ def render_markdown(report) -> str:
     if report["never_invoked"]:
         for r in report["never_invoked"]:
             cloud = f" [{r['cloud_note']}]" if r.get("cloud_note") else ""
-            lines.append(f"- {r['skill']} ({r['scope']}) — {r['evidence']}{cloud}")
-            lines.append(f"  propose: {r['git_mv']}")
-            lines.append(f"  archived/CLAUDE.md row: {r['archived_row']}")
+            lines.append(f"- {r['skill']} ({r['scope']}) — created {r['created']}, "
+                         f"age {r['age_days']}d{cloud}")
     else:
         lines.append("- (none)")
     if report["zero_unaged"]:
@@ -523,6 +618,9 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--repo-root", type=Path, default=_default_repo_root(),
         help="claude-config checkout (default: the repo containing this script)")
+    parser.add_argument(
+        "--since", type=str, default=None, metavar="YYYY-MM-DD",
+        help="only count hits on/after this date")
     parser.add_argument("--markdown", action="store_true",
                         help="emit the markdown report")
     parser.add_argument("--json", action="store_true", help="emit JSON")
@@ -530,7 +628,14 @@ def main(argv=None) -> int:
                         help="write the report to this file instead of stdout")
     args = parser.parse_args(argv)
 
-    report = build_report(repo_root=args.repo_root, logs_dir=args.logs)
+    if args.since is not None:
+        try:
+            _dt.date.fromisoformat(args.since)
+        except ValueError:
+            parser.error(f"--since must be YYYY-MM-DD, got {args.since!r}")
+
+    report = build_report(repo_root=args.repo_root, logs_dir=args.logs,
+                          since=args.since)
 
     # D6: both formats when neither flag is given.
     emit_md = args.markdown or not args.json

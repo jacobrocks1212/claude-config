@@ -85,15 +85,24 @@ are deliberately stubbed (`[]` sections) so each later phase starts RED.
 
 ## Phase 2 — Scope + windows
 
-- [ ] WU-2.1 — Tests (RED): repo-scoped inventory row (`repo:<name>` scope) + heuristic
+- [x] WU-2.1 — Tests (RED): repo-scoped inventory row (`repo:<name>` scope) + heuristic
       attribution note; `*-cloud` annotation; `--since` exclusion; 30d-column boundary (anchored
       to corpus max); age gate — old zero-count skill flagged with age, young NOT flagged,
       non-git checkout → age unknown + not flagged; corpus span <30d → gate not met.
-- [ ] WU-2.2 — Implement: `repos/*/.claude/skills` inventory glob; attribution
+- [x] WU-2.2 — Implement: `repos/*/.claude/skills` inventory glob; attribution
       (project-dir slug substring, case-insensitive); cloud-suffix annotation; `--since` filter +
       observation floor; recency column; `skill_added_date()` git subprocess + the age-gated
       never-invoked split (`never_invoked` vs `zero_unaged` with explicit reasons). GREEN.
-- [ ] WU-2.3 — Gates re-run green.
+- [x] WU-2.3 — Gates re-run green.
+
+**Implementation Notes (2026-07-04 — Phase 2):** RED confirmed (6 new failures: repo scope,
+cloud/attribution notes, `--since`, the three age-gate cases; the recency-boundary test was
+already satisfiable by the Phase-1 column and documented as such), then GREEN 20/20.
+Age-gate fixtures: `git init` + backdated `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` commits;
+fixture SKILL.md bodies are per-skill unique because `git log --follow` rename-detection
+otherwise maps a young skill's file onto an older near-identical fixture (real finding — the
+LAST `%cs` line is taken as the earliest add, and `--follow` is kept per SPEC to survive real
+renames). `test_toolify_miner.py` 19/19 green.
 
 
 ## Phase 3 — Hygiene sweep + archival proposal blocks

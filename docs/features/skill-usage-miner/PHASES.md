@@ -112,13 +112,13 @@ only when the creation date predates the observation floor (oldest scanned times
 "age unknown — age gate not applied".
 
 **Deliverables:**
-- [ ] Repo-scoped inventory rows with `repo:<name>` scope + per-repo heuristic attribution note.
-- [ ] `*-cloud` skills annotated `cloud-biased undercount` (never ranked naively).
-- [ ] `--since` filter (hits before the date excluded; observation floor raised accordingly).
-- [ ] 30-day recency column (`30d`), anchored to newest corpus timestamp.
-- [ ] Age-gated `## Never invoked` list + `### Zero invocations — age gate not met` subsection
+- [x] Repo-scoped inventory rows with `repo:<name>` scope + per-repo heuristic attribution note.
+- [x] `*-cloud` skills annotated `cloud-biased undercount` (never ranked naively).
+- [x] `--since` filter (hits before the date excluded; observation floor raised accordingly).
+- [x] 30-day recency column (`30d`), anchored to newest corpus timestamp.
+- [x] Age-gated `## Never invoked` list + `### Zero invocations — age gate not met` subsection
       (young skill / age-unknown / short-corpus reasons made explicit).
-- [ ] Tests: zero-count skill YOUNGER than the corpus floor NOT flagged; older skill flagged with
+- [x] Tests: zero-count skill YOUNGER than the corpus floor NOT flagged; older skill flagged with
       age; non-git checkout → age unknown, not flagged, no crash; `--since` exclusion; recency
       column boundary; repo-scope + attribution + cloud annotation fixtures.
 
@@ -128,8 +128,8 @@ skill appears under `## Never invoked` (with its age); the young one appears und
 age-gate-not-met subsection.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Never-invoked age gate: young zero-count skill absent from the archival list; old one present with age. *(Evidence: `test_skill_usage_miner.py` age-gate fixtures.)* <!-- verification-only -->
-- [ ] `--since` + recency column behave per D3 (deterministic given fixed corpus). *(Evidence: window tests.)* <!-- verification-only -->
+- [x] Never-invoked age gate: young zero-count skill absent from the archival list; old one present with age. *(Evidence: `test_skill_usage_miner.py` age-gate fixtures.)* <!-- verification-only -->
+- [x] `--since` + recency column behave per D3 (deterministic given fixed corpus). *(Evidence: window tests.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 

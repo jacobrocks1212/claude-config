@@ -125,8 +125,11 @@ def _mk_skill(repo_root: Path, name, *, repo=None, frontmatter_name=None):
         d = repo_root / "repos" / repo / ".claude" / "skills" / name
     d.mkdir(parents=True, exist_ok=True)
     fm_name = frontmatter_name if frontmatter_name is not None else name
+    # Body content is made per-skill unique so git's --follow rename detection
+    # can never map one fixture skill's SKILL.md onto another's (age-gate tests).
+    body = "\n".join(f"{name}-fixture-line-{i}" for i in range(20))
     (d / "SKILL.md").write_text(
-        f"---\ndescription: fixture skill\nname: {fm_name}\n---\n\n# {name}\n",
+        f"---\ndescription: fixture skill\nname: {fm_name}\n---\n\n# {name}\n\n{body}\n",
         encoding="utf-8",
     )
     return d
@@ -424,6 +427,168 @@ def test_both_formats_when_neither_flag():
         )
         assert res.returncode == 0, res.stderr
         assert "## Skill usage" in res.stdout and '"usage"' in res.stdout
+
+
+# ===========================================================================
+# Phase 2 — repo scope + attribution + cloud annotation + windows + age gate
+# ===========================================================================
+
+def _git(cwd, *args, env_extra=None):
+    env = dict(os.environ)
+    env.update({
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+    })
+    if env_extra:
+        env.update(env_extra)
+    res = subprocess.run(["git", "-C", str(cwd), *args],
+                         capture_output=True, text=True, env=env)
+    assert res.returncode == 0, f"git {args}: {res.stderr}"
+    return res.stdout
+
+
+def _git_repo_root(td: Path, dated_skills):
+    """A fixture checkout that is a real git repo; dated_skills is a list of
+    (skill_name, commit_date) committed with backdated author/committer dates."""
+    root = td / "cfg"
+    (root / "user" / "skills").mkdir(parents=True, exist_ok=True)
+    _git(root, "init", "-q")
+    for name, date in dated_skills:
+        _mk_skill(root, name)
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", f"add {name}",
+             env_extra={"GIT_AUTHOR_DATE": f"{date}T12:00:00",
+                        "GIT_COMMITTER_DATE": f"{date}T12:00:00"})
+    return root
+
+
+def test_repo_scoped_inventory_and_attribution_note():
+    """Repo-scoped skills inventory with scope repo:<name>; hits from project
+    dirs containing the repo slug counted in the heuristic attribution note."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=())
+        _mk_skill(root, "mcp-test", repo="algobooth")
+        logs = td / "projects"
+        _write_jsonl(logs / "C--Users-x-repos-AlgoBooth" / "s1.jsonl",
+                     [_user_slash_turn("mcp-test")])
+        _write_jsonl(logs / "C--Users-x-repos-Other" / "s2.jsonl",
+                     [_user_slash_turn("mcp-test")])
+        rep = _report(root, logs)
+        row = _usage_row(rep, "mcp-test")
+        assert row is not None and row["scope"] == "repo:algobooth", row
+        notes = "; ".join(row["notes"])
+        assert "1/2" in notes and "heuristic" in notes, notes
+
+
+def test_cloud_variant_annotated():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("lazy-cloud",))
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [_user_slash_turn("lazy-cloud")])
+        rep = _report(root, logs)
+        row = _usage_row(rep, "lazy-cloud")
+        assert any("cloud-biased undercount" in n for n in row["notes"]), row
+
+
+def test_since_filter_excludes_older_hits():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("commit",))
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-03-01T09:00:00.000Z"),
+            _user_slash_turn("commit", ts="2026-06-15T09:00:00.000Z"),
+        ])
+        rep = _report(root, logs, since="2026-06-01")
+        row = _usage_row(rep, "commit")
+        assert row["slash"] == 1, row
+        assert rep["meta"]["since"] == "2026-06-01"
+        assert rep["meta"]["observation_floor"] == "2026-06-01"
+
+
+def test_recency_column_anchored_to_corpus_max():
+    """30d column counts hits within RECENT_WINDOW_DAYS of the NEWEST corpus
+    timestamp — not wall clock (byte-stable reports)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("commit",))
+        logs = td / "projects"
+        # corpus max = 2026-07-01; window start = 2026-06-01.
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-04-01T09:00:00.000Z"),  # outside
+            _user_slash_turn("commit", ts="2026-06-01T09:00:00.000Z"),  # boundary: inside
+            _user_slash_turn("commit", ts="2026-07-01T09:00:00.000Z"),  # inside
+        ])
+        rep = _report(root, logs)
+        row = _usage_row(rep, "commit")
+        assert row["recent"] == 2, row
+        assert rep["meta"]["recent_window_start"] == "2026-06-01"
+
+
+def test_age_gate_old_flagged_young_not():
+    """D3: zero-count skill created BEFORE the corpus floor (corpus ≥30d) is
+    flagged never-invoked with its age; one created after is NOT."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _git_repo_root(td, [("old-skill", "2026-01-01"),
+                                   ("young-skill", "2026-06-15"),
+                                   ("commit", "2026-01-01")])
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-05-01T09:00:00.000Z"),
+            _user_slash_turn("commit", ts="2026-07-01T09:00:00.000Z"),
+        ])
+        rep = _report(root, logs)
+        flagged = {r["skill"] for r in rep["never_invoked"]}
+        assert "old-skill" in flagged, rep["never_invoked"]
+        assert "young-skill" not in flagged, rep["never_invoked"]
+        old = next(r for r in rep["never_invoked"] if r["skill"] == "old-skill")
+        assert old["created"] == "2026-01-01" and old["age_days"] > 0, old
+        young = next(r for r in rep["zero_unaged"] if r["skill"] == "young-skill")
+        assert "younger than the observation floor" in young["reason"], young
+
+
+def test_age_gate_degrades_when_not_a_git_checkout():
+    """A non-git fixture checkout -> 'age unknown — age gate not applied',
+    zero-count skill NOT proposed, no crash."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("orphan", "commit"))
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-05-01T09:00:00.000Z"),
+            _user_slash_turn("commit", ts="2026-07-01T09:00:00.000Z"),
+        ])
+        rep = _report(root, logs)
+        assert rep["never_invoked"] == [], rep["never_invoked"]
+        orphan = next(r for r in rep["zero_unaged"] if r["skill"] == "orphan")
+        assert "age unknown — age gate not applied" in orphan["reason"], orphan
+
+
+def test_age_gate_requires_min_corpus_span():
+    """A corpus spanning < 30 days can never produce a never-invoked proposal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _git_repo_root(td, [("old-skill", "2026-01-01"),
+                                   ("commit", "2026-01-01")])
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-06-20T09:00:00.000Z"),
+            _user_slash_turn("commit", ts="2026-07-01T09:00:00.000Z"),
+        ])
+        rep = _report(root, logs)
+        assert rep["never_invoked"] == [], rep["never_invoked"]
+        old = next(r for r in rep["zero_unaged"] if r["skill"] == "old-skill")
+        assert "corpus span" in old["reason"], old
 
 
 # ---------------------------------------------------------------------------
