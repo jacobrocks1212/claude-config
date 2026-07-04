@@ -142,7 +142,7 @@ path.
 except `provenance`/`derivation` (pytest compares both outputs).
 
 **Deferred (cross-repo — not reachable from this claude-config lane):**
-- [ ] *(deferred)* AlgoBooth `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS` mirror of
+- **DEFERRED (cross-repo / live-run follow-up, not a completion blocker):** *(deferred)* AlgoBooth `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS` mirror of
   `kind: implemented` (D2 lockstep rule). **Reason:** the AlgoBooth repo is a different repository
   not present in this lane's worktree; the mirror must land as an AlgoBooth-side change (route via
   the AlgoBooth queue or a manual follow-up). Recorded per the skip-vs-defer honesty rule.
@@ -227,7 +227,7 @@ prints the governing `{id, type, doc, decisions, provenance}` rows and mutates n
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [x] Lookup is a pure read: correct rows; index unchanged. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
-- [ ] A cycle-subagent transcript shows the lookup step firing. *(Deferred-to-live: no cycle subagent runs inside this lane; the prompt step is projection-linted and the CLI is pytest-proven — first live `/lazy-batch` run observes it. Recorded per skip-vs-defer honesty.)* <!-- verification-only -->
+- **DEFERRED (cross-repo / live-run follow-up, not a completion blocker):** A cycle-subagent transcript shows the lookup step firing. *(Deferred-to-live: no cycle subagent runs inside this lane; the prompt step is projection-linted and the CLI is pytest-proven — first live `/lazy-batch` run observes it. Recorded per skip-vs-defer honesty.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 

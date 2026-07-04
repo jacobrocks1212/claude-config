@@ -37,6 +37,13 @@
       "provenance": "backfilled"
     }
   ],
+  ".gitignore": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "CLAUDE.md": [
     {
       "id": "concurrent-same-branch-walkers-no-arbitration",
@@ -64,6 +71,21 @@
       "provenance": "backfilled"
     },
     {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -85,6 +107,21 @@
     },
     {
       "id": "multi-repo-concurrent-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -197,6 +234,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/adhoc-checkpoint-resume-field-complete-continuity/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/adhoc-checkpoint-resume-field-complete-continuity/PHASES.md": [
     {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
@@ -237,6 +281,13 @@
       "id": "adhoc-derive-cycle-commit-budget",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-derive-cycle-commit-budget/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/adhoc-derive-cycle-commit-budget/PHASES.md": [
@@ -281,6 +332,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/adhoc-ensure-runtime-test-injects-signal-under-test/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/adhoc-ensure-runtime-test-injects-signal-under-test/PHASES.md": [
     {
       "id": "adhoc-ensure-runtime-test-injects-signal-under-test",
@@ -321,6 +379,13 @@
       "id": "adhoc-parity-merged-view-fixture-stale-archive-fixed",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-parity-merged-view-fixture-stale-archive-fixed/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/adhoc-parity-merged-view-fixture-stale-archive-fixed/PHASES.md": [
@@ -365,6 +430,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/adhoc-stale-state-script-parity-test-fixtures/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/adhoc-stale-state-script-parity-test-fixtures/PHASES.md": [
     {
       "id": "adhoc-stale-state-script-parity-test-fixtures",
@@ -398,6 +470,13 @@
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/budget-guard-defers-near-complete-feature/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/budget-guard-defers-near-complete-feature/PHASES.md": [
@@ -442,6 +521,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref/PHASES.md": [
     {
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
@@ -475,6 +561,13 @@
       "id": "bug-state-scoped-query-loses-deferred-bug-identity",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/bug-state-scoped-query-loses-deferred-bug-identity/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/bug-state-scoped-query-loses-deferred-bug-identity/PHASES.md": [
@@ -526,6 +619,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/byref-dispatch-undercounts-forward-cycles/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/byref-dispatch-undercounts-forward-cycles/PHASES.md": [
     {
       "id": "byref-dispatch-undercounts-forward-cycles",
@@ -568,6 +668,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/concurrent-same-branch-walkers-no-arbitration/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/concurrent-same-branch-walkers-no-arbitration/PHASES.md": [
     {
       "id": "concurrent-same-branch-walkers-no-arbitration",
@@ -601,6 +708,13 @@
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/cycle-subagent-fabricates-policy-or-stray-branch/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/cycle-subagent-fabricates-policy-or-stray-branch/PHASES.md": [
@@ -638,6 +752,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/cycle-subagent-leaves-work-uncommitted-or-unticked/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/cycle-subagent-leaves-work-uncommitted-or-unticked/PHASES.md": [
     {
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
@@ -671,6 +792,13 @@
       "id": "cycle-subagent-runs-orchestrator-work",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/cycle-subagent-runs-orchestrator-work/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/cycle-subagent-runs-orchestrator-work/PHASES.md": [
@@ -715,6 +843,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/ensure-runtime-false-hijacked-on-owned-serving-runtime/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/ensure-runtime-false-hijacked-on-owned-serving-runtime/PHASES.md": [
     {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
@@ -750,6 +885,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/ensure-runtime-legacy-mode-optimistic-ready-verdict/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/ensure-runtime-legacy-mode-optimistic-ready-verdict/PHASES.md": [
     {
       "id": "ensure-runtime-legacy-mode-optimistic-ready-verdict",
@@ -783,6 +925,13 @@
       "id": "ensure-runtime-recovery-starves-cold-compile",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile/NEEDS_INPUT_RESOLVED_2026-06-21.md": [
@@ -827,6 +976,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/ensure-runtime-starves-pre-vite-sidecar-build/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/ensure-runtime-starves-pre-vite-sidecar-build/PHASES.md": [
     {
       "id": "ensure-runtime-starves-pre-vite-sidecar-build",
@@ -860,6 +1016,13 @@
       "id": "env-transient-counts-against-validation-retry-budget",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/env-transient-counts-against-validation-retry-budget/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/env-transient-counts-against-validation-retry-budget/PHASES.md": [
@@ -897,6 +1060,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/feature-queue-lacks-on-disk-autodiscovery/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/feature-queue-lacks-on-disk-autodiscovery/PHASES.md": [
     {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
@@ -930,6 +1100,13 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/hardening-blind-to-process-friction/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/hardening-blind-to-process-friction/PHASES.md": [
@@ -986,6 +1163,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/lazy-batch-unified-driver-parity-and-accounting/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/lazy-batch-unified-driver-parity-and-accounting/PHASES.md": [
     {
       "id": "lazy-batch-unified-driver-parity-and-accounting",
@@ -1019,6 +1203,13 @@
       "id": "loop-detected-false-positives-from-probe-and-reboot-churn",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/loop-detected-false-positives-from-probe-and-reboot-churn/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/loop-detected-false-positives-from-probe-and-reboot-churn/PHASES.md": [
@@ -1056,6 +1247,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/mark-complete-skips-roadmap-strike-and-followups-queue-trim/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/mark-complete-skips-roadmap-strike-and-followups-queue-trim/PHASES.md": [
     {
       "id": "mark-complete-skips-roadmap-strike-and-followups-queue-trim",
@@ -1091,6 +1289,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/mcp-test-haiku-tier-unwired/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/mcp-test-haiku-tier-unwired/PHASES.md": [
     {
       "id": "mcp-test-haiku-tier-unwired",
@@ -1124,6 +1329,13 @@
       "id": "mcp-test-legacy-md-routes-to-haiku",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/mcp-test-legacy-md-routes-to-haiku/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/mcp-test-legacy-md-routes-to-haiku/PHASES.md": [
@@ -1171,6 +1383,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/mcp-tooling-not-predetermined-at-planning/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/mcp-tooling-not-predetermined-at-planning/PHASES.md": [
     {
       "id": "mcp-tooling-not-predetermined-at-planning",
@@ -1213,6 +1432,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/no-gemini-sprint-staging-in-claude-config/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/no-gemini-sprint-staging-in-claude-config/PHASES.md": [
     {
       "id": "no-gemini-sprint-staging-in-claude-config",
@@ -1246,6 +1472,13 @@
       "id": "no-sanctioned-queue-reorder-command",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/no-sanctioned-queue-reorder-command/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/no-sanctioned-queue-reorder-command/PHASES.md": [
@@ -1283,6 +1516,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/noncanonical-blocker-filename-invisible-to-state-machine/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/noncanonical-blocker-filename-invisible-to-state-machine/PHASES.md": [
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -1316,6 +1556,13 @@
       "id": "park-mode-halts-on-blocked",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/park-mode-halts-on-blocked/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/park-mode-halts-on-blocked/PHASES.md": [
@@ -1356,6 +1603,13 @@
       "id": "per-feature-cycle-cap-defers-incomplete-work",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/per-feature-cycle-cap-defers-incomplete-work/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/per-feature-cycle-cap-defers-incomplete-work/PHASES.md": [
@@ -1400,6 +1654,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/probe-full-read-before-dispatch/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/probe-full-read-before-dispatch/PHASES.md": [
     {
       "id": "probe-full-read-before-dispatch",
@@ -1433,6 +1694,13 @@
       "id": "recovery-self-certifies-verification-rows-without-evidence",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/recovery-self-certifies-verification-rows-without-evidence/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/recovery-self-certifies-verification-rows-without-evidence/PHASES.md": [
@@ -1470,6 +1738,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/research-gate-ignores-existing-phases/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/research-gate-ignores-existing-phases/PHASES.md": [
     {
       "id": "research-gate-ignores-existing-phases",
@@ -1503,6 +1778,13 @@
       "id": "research-prompt-leaks-identity-doc-meta",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/research-prompt-leaks-identity-doc-meta/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/research-prompt-leaks-identity-doc-meta/PHASES.md": [
@@ -1540,6 +1822,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/single-slot-marker-ownership-race-disarms-owning-run/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/single-slot-marker-ownership-race-disarms-owning-run/PHASES.md": [
     {
       "id": "single-slot-marker-ownership-race-disarms-owning-run",
@@ -1573,6 +1862,13 @@
       "id": "stale-marker-arms-validate-deny-on-unrelated-dispatches",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/stale-marker-arms-validate-deny-on-unrelated-dispatches/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/stale-marker-arms-validate-deny-on-unrelated-dispatches/NEEDS_INPUT_RESOLVED_2026-06-19.md": [
@@ -1622,6 +1918,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/stub-spec-route-loops-until-queue-stub-cleared/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/stub-spec-route-loops-until-queue-stub-cleared/PHASES.md": [
     {
       "id": "stub-spec-route-loops-until-queue-stub-cleared",
@@ -1662,6 +1965,13 @@
       "id": "windows-portability-in-probe-glue-and-field-validators",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/PHASES.md": [
@@ -2842,6 +3152,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/operator-checkpoint-resume-counter-reset/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/operator-checkpoint-resume-counter-reset/PHASES.md": [
     {
       "id": "operator-checkpoint-resume-counter-reset",
@@ -3468,9 +3785,31 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/CLAUDE.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "docs/features/ROADMAP.md": [
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-coherence-gate-reconciliation",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -3485,7 +3824,17 @@
       "provenance": "backfilled"
     },
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "host-capability-declaration-for-gated-features",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -3515,9 +3864,109 @@
       "provenance": "backfilled"
     },
     {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/anti-overfit-design-gate/SPEC.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/build-queue-eta-priority-lanes/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/build-queue-generalization/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/claude-config-ci/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/code-doc-provenance-linkage/PHASES.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/code-doc-provenance-linkage/RESEARCH.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/code-doc-provenance-linkage/RESEARCH_SUMMARY.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/code-doc-provenance-linkage/SKIP_MCP_TEST.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/code-doc-provenance-linkage/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/code-doc-provenance-linkage/plans/all-phases-code-doc-provenance-linkage-part-1.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/completion-coherence-gate-reconciliation/COMPLETED.md": [
@@ -3525,6 +3974,13 @@
       "id": "completion-coherence-gate-reconciliation",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/completion-coherence-gate-reconciliation/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/completion-coherence-gate-reconciliation/NEEDS_INPUT.md": [
@@ -3619,11 +4075,119 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/cross-platform-setup/COMPLETED.md": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/cross-platform-setup/PHASES.md": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/cross-platform-setup/RESEARCH_SUMMARY.md": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/cross-platform-setup/SKIP_MCP_TEST.md": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/cross-platform-setup/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/cross-platform-setup/plans/all-phases-cross-platform-setup-part-1.md": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/cross-repo-fleet-view/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/doc-drift-linter/COMPLETED.md": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/doc-drift-linter/PHASES.md": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/doc-drift-linter/RESEARCH_SUMMARY.md": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/doc-drift-linter/SKIP_MCP_TEST.md": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/doc-drift-linter/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/doc-drift-linter/plans/all-phases-doc-drift-linter-part-1.md": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "docs/features/feature-budget-guard-and-skip-ahead/COMPLETED.md": [
     {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/feature-budget-guard-and-skip-ahead/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/feature-budget-guard-and-skip-ahead/NEEDS_INPUT.md": [
@@ -3717,11 +4281,39 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/friction-kpi-registry/RESEARCH.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/friction-kpi-registry/SPEC.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-change-canary-rollback/SPEC.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "docs/features/harness-hardening-retro-fixes/COMPLETED.md": [
     {
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-hardening-retro-fixes/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/harness-hardening-retro-fixes/PHASES.md": [
@@ -3800,11 +4392,72 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/harness-telemetry-ledger/COMPLETED.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-telemetry-ledger/PHASES.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-telemetry-ledger/RESEARCH.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-telemetry-ledger/RESEARCH_SUMMARY.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-telemetry-ledger/SKIP_MCP_TEST.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-telemetry-ledger/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/harness-telemetry-ledger/plans/all-phases-harness-telemetry-ledger-part-1.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "docs/features/host-capability-declaration-for-gated-features/COMPLETED.md": [
     {
       "id": "host-capability-declaration-for-gated-features",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/host-capability-declaration-for-gated-features/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/host-capability-declaration-for-gated-features/NEEDS_INPUT.md": [
@@ -3898,11 +4551,84 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/incident-auto-capture/COMPLETED.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/incident-auto-capture/PHASES.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/incident-auto-capture/RESEARCH.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/incident-auto-capture/RESEARCH_SUMMARY.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/incident-auto-capture/SKIP_MCP_TEST.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/incident-auto-capture/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/incident-auto-capture/plans/all-phases-incident-auto-capture-part-1.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/intervention-efficacy-tracking/SPEC.md": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "docs/features/lazy-cycle-containment/COMPLETED.md": [
     {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/lazy-cycle-containment/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-cycle-containment/PHASES.md": [
@@ -3987,6 +4713,13 @@
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/lazy-pipeline-visualizer/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-pipeline-visualizer/LAZY_BATCH_REVIEW_2026-06-16.md": [
@@ -4094,6 +4827,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/long-build-and-runtime-ownership/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/long-build-and-runtime-ownership/PHASES.md": [
     {
       "id": "no-gemini-sprint-staging-in-claude-config",
@@ -4195,6 +4935,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/mobile-queue-control/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/mobile-queue-control/NEEDS_INPUT.md": [
     {
       "id": "mobile-queue-control",
@@ -4270,6 +5017,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/multi-repo-concurrent-runs/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/multi-repo-concurrent-runs/PHASES.md": [
     {
       "id": "multi-repo-concurrent-runs",
@@ -4342,6 +5096,105 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/native-android-pipeline-steering/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/operator-halt-notifications/RESEARCH.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/operator-halt-notifications/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/parallel-worktree-batch-execution/RESEARCH.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/parallel-worktree-batch-execution/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/COMPLETED.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/PHASES.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/RESEARCH.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/RESEARCH_SUMMARY.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/SKIP_MCP_TEST.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/queue-dependency-dag/plans/all-phases-queue-dependency-dag-part-1.md": [
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "docs/features/queue.json": [
     {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
@@ -4354,7 +5207,22 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-coherence-gate-reconciliation",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4369,7 +5237,17 @@
       "provenance": "backfilled"
     },
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "host-capability-declaration-for-gated-features",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4399,7 +5277,237 @@
       "provenance": "backfilled"
     },
     {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/COMPLETED.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/PHASES.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/PLAYBOOK.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/RECIPES.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/RESEARCH.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/RESEARCH_SUMMARY.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/SKIP_MCP_TEST.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/TRIGGER_TEMPLATE.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/scheduled-autonomous-runs/plans/all-phases-scheduled-autonomous-runs-part-1.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/COMPLETED.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/PHASES.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/RESEARCH.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/RESEARCH_SUMMARY.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/SKIP_MCP_TEST.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/skill-usage-miner/plans/all-phases-skill-usage-miner-part-1.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/COMPLETED.md": [
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/PHASES.md": [
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/RESEARCH.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/RESEARCH_SUMMARY.md": [
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/SKIP_MCP_TEST.md": [
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/SPEC.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/VALIDATED.md": [
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/features/toolify-auto-promotion/plans/all-phases-toolify-auto-promotion-part-1.md": [
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -4409,6 +5517,13 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/unified-pipeline-orchestrator/IMPLEMENTED.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/unified-pipeline-orchestrator/NEEDS_INPUT.md": [
@@ -4517,9 +5632,28 @@
   ],
   "docs/features/unified-pipeline-orchestrator/toolify-bar.md": [
     {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/unified-pipeline-orchestrator/toolify-ledger.json": [
+    {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "docs/provenance-index.json": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT.md": [
@@ -4583,6 +5717,13 @@
       "provenance": "backfilled"
     }
   ],
+  "manifest.psd1": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "repos/algobooth/.claude/skill-config/long-build-ownership.md": [
     {
       "id": "long-build-and-runtime-ownership",
@@ -4617,7 +5758,22 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4644,6 +5800,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -4656,10 +5817,29 @@
       "provenance": "backfilled"
     }
   ],
+  "setup.py": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/hooks/CLAUDE.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "user/hooks/block-noncanonical-blocker-write.sh": [
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
       "type": "bug",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
       "provenance": "backfilled"
     }
   ],
@@ -4668,9 +5848,26 @@
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/hooks/build-queue-enforce.sh": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
     }
   ],
   "user/hooks/lazy-cycle-containment.sh": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
     {
       "id": "lazy-cycle-containment",
       "type": "feature",
@@ -4697,6 +5894,11 @@
     }
   ],
   "user/hooks/long-build-ownership-guard.sh": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
     {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
@@ -4765,7 +5967,22 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-coherence-gate-reconciliation",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4776,6 +5993,11 @@
     },
     {
       "id": "harness-hardening-retro-fixes",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4796,6 +6018,21 @@
     },
     {
       "id": "multi-repo-concurrent-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4832,7 +6069,17 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4852,7 +6099,26 @@
       "provenance": "backfilled"
     },
     {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/doc-drift-lint.py": [
+    {
+      "id": "doc-drift-linter",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/incident-scan.py": [
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -4933,7 +6199,17 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -4949,6 +6225,16 @@
     },
     {
       "id": "multi-repo-concurrent-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -5030,6 +6316,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-coherence-gate-reconciliation",
       "type": "feature",
       "provenance": "backfilled"
@@ -5041,6 +6332,16 @@
     },
     {
       "id": "harness-hardening-retro-fixes",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -5060,6 +6361,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -5069,6 +6375,11 @@
     {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
       "provenance": "backfilled"
     }
   ],
@@ -5080,6 +6391,11 @@
     },
     {
       "id": "multi-repo-concurrent-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -5140,6 +6456,11 @@
   ],
   "user/scripts/pipeline_visualizer/server.py": [
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
@@ -5151,6 +6472,11 @@
     }
   ],
   "user/scripts/pipeline_visualizer/static/app.js": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
     {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
@@ -5180,6 +6506,11 @@
   ],
   "user/scripts/pipeline_visualizer/static/index.html": [
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
@@ -5187,7 +6518,19 @@
   ],
   "user/scripts/pipeline_visualizer/static/styles.css": [
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-pipeline-visualizer",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/pipeline_visualizer/trends.py": [
+    {
+      "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5199,9 +6542,23 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/skill-usage-miner.py": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "user/scripts/surface_resolver.py": [
     {
       "id": "harness-hardening-retro-fixes",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/test_doc_drift_lint.py": [
+    {
+      "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5218,6 +6575,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -5229,6 +6591,13 @@
     },
     {
       "id": "multi-repo-concurrent-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/test_incident_scan.py": [
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5310,6 +6679,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-coherence-gate-reconciliation",
       "type": "feature",
       "provenance": "backfilled"
@@ -5325,6 +6699,16 @@
       "provenance": "backfilled"
     },
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -5336,6 +6720,11 @@
     },
     {
       "id": "multi-repo-concurrent-runs",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -5367,6 +6756,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -5385,6 +6779,11 @@
     }
   ],
   "user/scripts/test_pipeline_visualizer.py": [
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
     {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
@@ -5415,6 +6814,20 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/test_setup_py.py": [
+    {
+      "id": "cross-platform-setup",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/test_skill_usage_miner.py": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "user/scripts/test_surface_resolver.py": [
     {
       "id": "harness-hardening-retro-fixes",
@@ -5424,7 +6837,19 @@
   ],
   "user/scripts/test_toolify_miner.py": [
     {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/test_toolify_promote.py": [
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5438,6 +6863,21 @@
     {
       "id": "park-mode-halts-on-blocked",
       "type": "bug",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
       "provenance": "backfilled"
     }
   ],
@@ -5468,12 +6908,32 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
     },
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -5485,7 +6945,19 @@
   ],
   "user/scripts/toolify-miner.py": [
     {
+      "id": "toolify-auto-promotion",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/toolify-promote.py": [
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5512,9 +6984,28 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/CLAUDE.md": [
+    {
+      "id": "skill-usage-miner",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "user/skills/_components/adhoc-enqueue.md": [
     {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
+  "user/skills/_components/dep-block-schema.md": [
+    {
+      "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5529,6 +7020,11 @@
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",
@@ -5581,6 +7077,11 @@
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/harden-harness/SKILL.md": [
@@ -5590,9 +7091,26 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/incident-scan/SKILL.md": [
+    {
+      "id": "incident-auto-capture",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "user/skills/lazy-batch-retro/SKILL.md": [
     {
+      "id": "harness-telemetry-ledger",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
       "id": "lazy-cycle-containment",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     }
@@ -5639,7 +7157,17 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
+      "type": "feature",
+      "provenance": "backfilled"
+    },
+    {
+      "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
     },
@@ -5710,9 +7238,21 @@
       "provenance": "backfilled"
     },
     {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/link-provenance/SKILL.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/plan-feature/SKILL.md": [
@@ -5722,10 +7262,29 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/spec-phases/SKILL.md": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "queue-dependency-dag",
+      "type": "feature",
+      "provenance": "backfilled"
+    }
+  ],
   "user/skills/spec/SKILL.md": [
     {
       "id": "research-prompt-leaks-identity-doc-meta",
       "type": "bug",
+      "provenance": "backfilled"
+    }
+  ],
+  "workspace/CLAUDE.md": [
+    {
+      "id": "scheduled-autonomous-runs",
+      "type": "feature",
       "provenance": "backfilled"
     }
   ]

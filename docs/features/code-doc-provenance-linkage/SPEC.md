@@ -9,7 +9,7 @@
 > write-only archive into working memory. One deterministic producer, two triggers: the automatic
 > completion-gate path and an operator-invocable manual path for out-of-pipeline work.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04 (operator-requested; must-have); fleshed
