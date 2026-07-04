@@ -100,13 +100,6 @@
       "tier": 2
     },
     {
-      "id": "cross-platform-setup",
-      "name": "Cross-Platform Setup (Python Port of setup.ps1/manifest.psd1)",
-      "spec_dir": "cross-platform-setup",
-      "tier": 2,
-      "stub": true
-    },
-    {
       "id": "parallel-worktree-batch-execution",
       "name": "Sanctioned Parallel-Worktree Batch Execution",
       "spec_dir": "parallel-worktree-batch-execution",

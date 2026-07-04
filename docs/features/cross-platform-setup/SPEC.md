@@ -7,7 +7,7 @@
 > while keeping one manifest as the single source of truth and keeping `setup.ps1` working
 > unchanged on Windows.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; baseline-locked 2026-07-04 (Gemini
