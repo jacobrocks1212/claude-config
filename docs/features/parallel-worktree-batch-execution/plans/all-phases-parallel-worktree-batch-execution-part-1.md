@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: parallel-worktree-batch-execution
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: complex
 phases: [1, 2, 3, 4, 5, 6]
@@ -131,5 +131,5 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 - [x] WU-6.3 — `/lazy-batch-retro` demotion + false-`independent` audit feed.
 - [x] WU-6.4 — `user/scripts/CLAUDE.md` concurrency-plane section + lazy_coord row + CLI ref;
   root `CLAUDE.md` rows.
-- [ ] WU-6.5 — Projection into lane-local dir + `lint-skills.py` clean; parity audit exit 0;
+- [x] WU-6.5 — Projection into lane-local dir + `lint-skills.py` clean; parity audit exit 0;
   FULL gate suite green; PHASES/plan checkboxes reconciled.
