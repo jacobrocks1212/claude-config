@@ -2,7 +2,8 @@
 
 > Decomposition of `SPEC.md` (Plan-Skills Redesign). Six phases, ordered by dependency. Each is independently testable; phases 3→4 and the D2-dependent phases (5, 6) carry explicit prerequisites. This is harness-internals work in `claude-config/` — no Cognito product code, no `/msbuild`/`/mstest`. Verification is Python unit tests (`pytest user/scripts/test_*.py`), the projection/lint scripts, and `setup.ps1 check`.
 
-**Status:** Complete — all 6 phases landed (D1–D5). Final non-regression gate confirms healthy parts not regressed.
+**Status:** Complete
+**MCP runtime:** not-required — harness-internals work in `claude-config/` (no `src-tauri/`, no `package.json`); verification is Python unit tests (`pytest`), projection/lint, and `setup.ps1 check`, not an MCP runtime.
 **Spec:** `./SPEC.md`
 **Last updated:** 2026-06-29
 
@@ -176,7 +177,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Prerequisites.** None; establishes the tolerant-read pattern that Phase 4 propagates.
 
-**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 3)
+**Status:** Complete
 
 **Deliverables.**
 - [x] Flip `_components/phases-update.md` to append per-batch Implementation Notes to a sibling `IMPLEMENTATION_NOTES.md` (one file, per-phase sections — OQ3 default), not PHASES.md.
@@ -199,7 +200,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Prerequisites.** Phase 3 (writer flipped + tolerant-read pattern established).
 
-**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 4)
+**Status:** Complete
 
 **Deliverables.**
 - [x] `source-reread.md` component: sibling-then-embedded read of prior Implementation Notes.
@@ -222,7 +223,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 **Prerequisites.** Phase 2 (the rules live in `execution-contract.md`).
 
-**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 5)
+**Status:** Complete
 
 **Deliverables.**
 - [x] Encode same-message file-disjoint batching in `execution-contract.md` / `subagent-launch.md`: provably disjoint WUs dispatched as multiple `Agent` blocks in one assistant message.
@@ -238,7 +239,7 @@ Three read-only Explore agents verified every file the plan modifies. All paths 
 
 ## Phase 6 — Lighten the ground-truth gate (D5)
 
-**Status:** Complete (2026-06-29 — see sibling `IMPLEMENTATION_NOTES.md` § Phase 6)
+**Status:** Complete
 
 **Goal.** Stop re-running the full suite per WU (0/16 catch rate); make the cheap integrity + assertion read the default.
 
