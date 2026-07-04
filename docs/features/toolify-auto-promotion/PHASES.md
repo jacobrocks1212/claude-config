@@ -149,10 +149,10 @@ writes (D5 two-marker contract).
 marker round-trip pinned against the real detector.
 
 **Deliverables:**
-- [ ] `toolify-promote.py`: imports the miner via `importlib.util.spec_from_file_location`
+- [x] `toolify-promote.py`: imports the miner via `importlib.util.spec_from_file_location`
   (test-file pattern) for `mine()`/`signature()`/`candidate_id()`; imports `lazy_core` (plain
   module) for `_atomic_write`.
-- [ ] `--promote <cid>`: requires `--id` (kebab) + `--name` (D10); resolves the candidate from a
+- [x] `--promote <cid>`: requires `--id` (kebab) + `--name` (D10); resolves the candidate from a
   fresh `mine()` (or `--from-json <report>`); enforces `above_bar` RECOMPUTED from the miner's
   constants (never trusted from a stale report), naming the failed predicate (judgment /
   run-count / score) on refusal; ledger dedup per D7-B (promoted → hard refuse; declined →
@@ -160,23 +160,23 @@ marker round-trip pinned against the real detector.
   `lazy-state.py --enqueue-adhoc … --tier 2 --stub --at tail` → write the stub SPEC.md into the
   seeded dir → append the ledger entry last. Prints the one-block summary (queue position, stub
   path, Step-4.5 baseline-lock reminder).
-- [ ] `--decline <cid>`: requires `--reason`; resolves the candidate (fresh mine or
+- [x] `--decline <cid>`: requires `--reason`; resolves the candidate (fresh mine or
   `--from-json`); refuses an already-recorded id (prior record printed); appends a `declined`
   ledger entry. No repo writes beyond the ledger.
-- [ ] Stub template as a single module constant: canonical `**Status:** Draft (pre-Gemini)`
+- [x] Stub template as a single module constant: canonical `**Status:** Draft (pre-Gemini)`
   Status line + `> Draft (pre-Gemini). …` blockquote trailer (the two anchored
   `_spec_text_has_stub_marker` forms), evidence table (candidate_id / signature / occurrences /
   runs / est_tokens/occ / score / sample_tools / mined date), Problem section, "Direction
   (deliberately not locked)" suggestion, open-questions trailer. Hard-excludes decided-looking
   artifacts: no RESEARCH.md, no PHASES.md, no sentinel, no locked decisions.
-- [ ] Ledger `docs/features/unified-pipeline-orchestrator/toolify-ledger.json` (seeded empty,
+- [x] Ledger `docs/features/unified-pipeline-orchestrator/toolify-ledger.json` (seeded empty,
   git-tracked): `{"entries": {<candidate_id>: {signature, status, feature_id, target_repo,
   decided_at, reason, evidence: {occurrences, run_count, est_tokens_per_occurrence, score,
   sample_tools}, forced}}}`; `shipped` NEVER stored — derived at read time from
   `<target_repo>/docs/features/<feature_id>/COMPLETED.md`.
-- [ ] `--status`: fresh mine (or `--from-json`) ⨯ ledger join; each above-bar candidate marked
+- [x] `--status`: fresh mine (or `--from-json`) ⨯ ledger join; each above-bar candidate marked
   `NEW` / `promoted → <feature_id>` / `declined (<reason>)` / `shipped` (receipt-derived).
-- [ ] `test_toolify_promote.py` (mirrors the miner test's self-contained runner): template
+- [x] `test_toolify_promote.py` (mirrors the miner test's self-contained runner): template
   round-trip (real `_spec_text_has_stub_marker` True on the rendered template, False after a
   `/spec`-style marker strip); refusals (below-bar naming each failed predicate, unknown id,
   promoted-dup, declined-dup without force, missing `--id`/`--name`, malformed slug,
@@ -193,12 +193,12 @@ one `promoted` ledger entry; `lazy-state.py --repo-root <scratch>` dispatches `/
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the
 implementation agent):*
-- [ ] Stub routes to baseline-lock: scratch-repo probe JSON shows Step 4.5 (stub branch), not
+- [x] Stub routes to baseline-lock: scratch-repo probe JSON shows Step 4.5 (stub branch), not
   Step-5 fall-through. *(Evidence: `SKIP_MCP_TEST.md` — `test_toolify_promote.py` probe test.)*
   <!-- verification-only -->
-- [ ] Gate-bypass impossible by template: marker round-trip against the REAL detector.
+- [x] Gate-bypass impossible by template: marker round-trip against the REAL detector.
   *(Evidence: `test_toolify_promote.py` round-trip test.)* <!-- verification-only -->
-- [ ] Ledger atomic + audited: promote/decline diffs appear in `git status`; ledger remains valid
+- [x] Ledger atomic + audited: promote/decline diffs appear in `git status`; ledger remains valid
   JSON (written via `_atomic_write`). *(Evidence: `test_toolify_promote.py` +
   `_atomic_write` usage.)* <!-- verification-only -->
 

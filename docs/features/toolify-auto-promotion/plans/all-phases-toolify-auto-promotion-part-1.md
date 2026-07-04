@@ -79,26 +79,26 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 3 — Materializer + ledger
 
-- [ ] WU-3.1 — Scaffold `test_toolify_promote.py` (self-contained runner mirroring the miner
+- [x] WU-3.1 — Scaffold `test_toolify_promote.py` (self-contained runner mirroring the miner
   test): importlib load of `toolify-promote.py`, fixture builders (reuse miner corpus builders,
   scratch-repo builder, fixture ledger). First tests: module importable, template round-trip
   against the REAL `_spec_text_has_stub_marker` (True rendered / False stripped) → RED.
-- [ ] WU-3.2 — Implement `toolify-promote.py` skeleton: argparse (`--promote`, `--decline`,
+- [x] WU-3.2 — Implement `toolify-promote.py` skeleton: argparse (`--promote`, `--decline`,
   `--status`, `--from-json`, `--id`, `--name`, `--repo-root`, `--reason`, `--force`, `--logs`,
   `--ledger`), miner import, ledger load/append via `lazy_core._atomic_write`, the template
   constant + renderer → round-trip GREEN.
-- [ ] WU-3.3 — TEST-FIRST refusals: unknown id (exit 2, re-mine hint); below-bar naming the
+- [x] WU-3.3 — TEST-FIRST refusals: unknown id (exit 2, re-mine hint); below-bar naming the
   failed predicate (judgment / run-count / score — one fixture each); missing `--id`/`--name`;
   malformed slug; promoted-dup; declined-dup sans `--force`; `--force` sans `--reason` → then
   implement the promote guard chain → GREEN. No writes on any refusal path (asserted).
-- [ ] WU-3.4 — TEST-FIRST happy paths: promote (fresh-mine + `--from-json`) lands tail/tier-2/stub
+- [x] WU-3.4 — TEST-FIRST happy paths: promote (fresh-mine + `--from-json`) lands tail/tier-2/stub
   queue entry + brief + marker-bearing stub SPEC + `promoted` ledger entry (evidence embedded);
   decline records reason; `--force --reason` re-promote of a declined id records `forced: true`
   → implement enqueue shelling + spec write + ledger append → GREEN.
-- [ ] WU-3.5 — TEST-FIRST failure ordering: monkeypatched spec-writer failure ⇒ queue entry +
+- [x] WU-3.5 — TEST-FIRST failure ordering: monkeypatched spec-writer failure ⇒ queue entry +
   ADHOC_BRIEF present (routable), NO ledger entry, stderr names the degraded state; re-run exits
   non-zero via the enqueue duplicate-id refusal → implement ordering → GREEN.
-- [ ] WU-3.6 — TEST-FIRST scratch-repo probe: after a real promote,
+- [x] WU-3.6 — TEST-FIRST scratch-repo probe: after a real promote,
   `lazy-state.py --repo-root <scratch>` (hermetic `LAZY_STATE_DIR`) returns
   `current_step: "Step 4.5: stub-spec detected"` + `sub_skill: "spec"` → GREEN. `--status` join
   test (NEW / promoted / declined / shipped rows). Seed the tracked empty ledger file. Commit
