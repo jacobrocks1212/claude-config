@@ -137,20 +137,20 @@ like, how to recover, and the morning triage flow (D5 compositional report + D7 
 flush).
 
 **Deliverables:**
-- [ ] Live-run refusal collision: scheduled fire while an interactive run holds the marker →
+- [x] Live-run refusal collision: scheduled fire while an interactive run holds the marker →
   exit-3 refusal semantics (stderr names the in-flight run; zero side effects), what the
   completion push reads like, and the non-action (nothing to fix — arbitration worked; D6).
-- [ ] Crashed-marker recovery: hard-crashed overnight run leaves a <24h marker → next night also
+- [x] Crashed-marker recovery: hard-crashed overnight run leaves a <24h marker → next night also
   refuses; morning recovery via `lazy-state.py --run-end` (confirm-dead first; including the
   unacked-hardening-debt refusal branch + `--ack-unhardened` override — RESEARCH_SUMMARY finding
   3), then optional `fire_trigger` to re-run immediately.
-- [ ] Needs-research halt overnight: strict halt (`needs-research` / `queue-blocked-on-research`),
+- [x] Needs-research halt overnight: strict halt (`needs-research` / `queue-blocked-on-research`),
   sentinel + `--run-end` + push; dependency-aware skip-ahead spends the rest of the budget on
   independent items; morning action = supply research (direct `RESEARCH.md` drop per repo
   convention).
-- [ ] Nothing-to-do night: `cloud-queue-exhausted` / `all-features-complete` /
+- [x] Nothing-to-do night: `cloud-queue-exhausted` / `all-features-complete` /
   `queue-exhausted-all-parked` as clean quiet stops — what distinguishes them.
-- [ ] Morning triage flow: push/halt pages → `LAZY_QUEUE.md` diff on GitHub mobile (with the
+- [x] Morning triage flow: push/halt pages → `LAZY_QUEUE.md` diff on GitHub mobile (with the
   cloud-wiring caveat + git-log fallback) → open the fired session (answer the parked-decision
   flush — D4) → workstation `/lazy-batch` flushes `DEFERRED_NON_CLOUD.md` items through MCP
   validation → receipt-gated completion (D7).
@@ -160,7 +160,7 @@ surfaced" list has a playbook entry with a concrete recovery command or an expli
 needed" verdict.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Every recovery command cited (`--run-end`, `--ack-unhardened`, `fire_trigger`,
+- [x] Every recovery command cited (`--run-end`, `--ack-unhardened`, `fire_trigger`,
   `--marker-present`) exists with the documented semantics. *(Evidence: `RESEARCH_SUMMARY.md`
   anchor table rows for run-end/marker ops.)* <!-- verification-only -->
 

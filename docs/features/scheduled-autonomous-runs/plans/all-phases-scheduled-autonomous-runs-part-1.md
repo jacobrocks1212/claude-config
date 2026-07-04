@@ -93,11 +93,11 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 - [x] WU-3.1 — Cross-check: recovery-path commands (`--run-end` incl. unacked-debt refusal +
   `--ack-unhardened`, `--marker-present`, exit-3 stderr shape) resolved to file+line. DONE via
   RESEARCH_SUMMARY.
-- [ ] WU-3.2 — Author `PLAYBOOK.md`: live-run refusal collision, crashed-marker recovery,
+- [x] WU-3.2 — Author `PLAYBOOK.md`: live-run refusal collision, crashed-marker recovery,
   needs-research halt overnight, nothing-to-do night, morning triage flow (incl. D7 workstation
   flush + the `LAZY_QUEUE.md` cloud-wiring caveat/fallback), expected-evidence sections for the
   operator drills.
-- [ ] WU-3.3 — Tick PHASES.md Phase 3 boxes; commit.
+- [x] WU-3.3 — Tick PHASES.md Phase 3 boxes; commit.
 
 ## Phase 4 — workspace/CLAUDE.md pointer + validation
 
