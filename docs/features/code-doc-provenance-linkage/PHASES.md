@@ -2,7 +2,11 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 5 phases implemented + validated 2026-07-04 (pytest gate suite 1237 + smokes +
+     parity exit 0 + lint clean; live-validated by the claude-config --backfill-provenance
+     run: 50 items → 625 index keys / 896 rows). NOT Complete on the SPEC — the
+     __mark_complete__ integrity gate owns the SPEC Complete flip + COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (Python state scripts +
 skill/component prose). No Tauri app, no MCP-reachable surface; validation is `pytest` on

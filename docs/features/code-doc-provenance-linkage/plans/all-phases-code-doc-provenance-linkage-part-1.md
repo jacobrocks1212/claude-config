@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: code-doc-provenance-linkage
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: complex
 phases: [1, 2, 3, 4, 5]
