@@ -280,8 +280,447 @@ def lint_registry(registry, today: datetime.date) -> Tuple[list, list]:
 
 
 # ---------------------------------------------------------------------------
+# Signal layer (Phases 2–3) — every selector returns (value | None, note | None).
+# A None value is an HONEST no-data verdict (absent source, unrecordable
+# signal, empty window for a statistic) — never a fabricated zero. A real zero
+# is only returned when the source is present and genuinely counts to zero.
+# ---------------------------------------------------------------------------
+
+def _window_seconds(row) -> float:
+    m = _WINDOW_RE.match(((row.get("baseline") or {}).get("window")) or "")
+    days = int(m.group(1)) if m else 30
+    return days * 86400.0
+
+
+def _parse_ts(value) -> Optional[float]:
+    """Parse an epoch number or ISO-8601 string (incl. .NET 'o' 7-digit
+    fractions and trailing Z) to an epoch float. None if unparseable."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str) or not value:
+        return None
+    s = value.strip()
+    if s.endswith(("Z", "z")):
+        s = s[:-1] + "+00:00"
+    # Trim >6 fractional digits (the .NET round-trip format emits 7).
+    s = re.sub(r"(\.\d{6})\d+", r"\1", s)
+    try:
+        dt = datetime.datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.timestamp()
+
+
+def _abbrev_home(text: str) -> str:
+    return text.replace(str(Path.home()), "~")
+
+
+# -- build-queue-results ------------------------------------------------------
+
+def _build_queue_dir() -> Path:
+    override = os.environ.get(_BUILD_QUEUE_DIR_ENV)
+    if override:
+        return Path(override)
+    return Path.home() / ".claude" / "state" / "build-queue"
+
+
+def _read_build_queue_records() -> Tuple[Optional[list], Optional[str]]:
+    results = _build_queue_dir() / "results"
+    if not results.is_dir():
+        return (None, f"build-queue results dir absent "
+                      f"({_abbrev_home(str(results))}) — no build-queue state "
+                      f"on this machine")
+    records = []
+    for p in sorted(results.glob("*.json")):
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            continue  # a torn/partial result never bricks the scan
+        if isinstance(obj, dict):
+            records.append(obj)
+    return (records, None)
+
+
+def _bq_windowed(records: list, cutoff: float) -> list:
+    out = []
+    for rec in records:
+        ts = _parse_ts(rec.get("ended_at"))
+        if ts is not None and ts >= cutoff:
+            out.append(rec)
+    return out
+
+
+def _sel_false_green_rate(records: list) -> Tuple[Optional[float], Optional[str]]:
+    fidelities = []
+    for rec in records:
+        fid = (rec.get("hygiene") or {}).get("build_fidelity")
+        if isinstance(fid, str) and fid != "n/a":
+            fidelities.append(fid)
+    if not fidelities:
+        return (None, "no build records carrying hygiene.build_fidelity in "
+                      "the window")
+    flagged = sum(1 for f in fidelities if f in _FALSE_GREEN_FIDELITIES)
+    return (round(100.0 * flagged / len(fidelities), 2), None)
+
+
+def _sel_queue_wait_p50(records: list) -> Tuple[Optional[float], Optional[str]]:
+    waits = []
+    for rec in records:
+        queued = _parse_ts(rec.get("queued_at"))
+        started = _parse_ts(rec.get("started_at"))
+        if queued is not None and started is not None and started >= queued:
+            waits.append(started - queued)
+    if not waits:
+        return (None, "results records carry no queued_at/started_at pair — "
+                      "runner timestamp add is a workstation-deferred "
+                      "follow-up")
+    return (round(statistics.median(waits), 2), None)
+
+
+# -- deny-ledger ---------------------------------------------------------------
+
+def _bind_lazy_core(repo_root):
+    """Import lazy_core bound to the target repo (trends._bind_lazy_core
+    pattern). LAZY_STATE_DIR, when set, wins inside lazy_core regardless."""
+    import lazy_core
+    try:
+        if repo_root is not None:
+            lazy_core.set_active_repo_root(str(repo_root))
+    except Exception:  # noqa: BLE001 — binding failure degrades to cwd fallback
+        pass
+    return lazy_core
+
+
+def _read_deny_entries(repo_root) -> Tuple[Optional[list], Optional[str]]:
+    lazy_core = _bind_lazy_core(repo_root)
+    ledger = (lazy_core.claude_state_dir(create=False)
+              / lazy_core._DENY_LEDGER_FILENAME)
+    if not ledger.exists():
+        return (None, "deny ledger absent — no denies recorded for this repo")
+    return (lazy_core.read_deny_ledger(), None)
+
+
+def _deny_windowed(entries: list, cutoff: float) -> list:
+    return [e for e in entries
+            if isinstance(e.get("ts"), (int, float)) and e["ts"] >= cutoff]
+
+
+def _sel_deny_count(entries: list, kind: str) -> Tuple[Optional[float], Optional[str]]:
+    if kind == "build-queue-enforce-deny-count":
+        n = sum(1 for e in entries
+                if _BUILD_QUEUE_DENY_SIGNATURE
+                in str(e.get("reason_head", "")).lower())
+    elif kind == "process-friction-count":
+        n = sum(1 for e in entries if e.get("kind") == "process-friction")
+    else:  # guard-deny-count — plain guard denies (not friction/readmit)
+        n = sum(1 for e in entries
+                if e.get("kind") != "process-friction"
+                and not e.get("auto_readmit"))
+    return (float(n), None)
+
+
+# -- telemetry-ledger ----------------------------------------------------------
+
+def _telemetry_available(repo_root) -> bool:
+    """True iff any ledger segment (state dir) or committed cloud segment
+    exists — distinguishes 'no ledger at all' (NO-DATA) from 'ledger present,
+    zero matching events' (a real zero)."""
+    lazy_core = _bind_lazy_core(repo_root)
+    base = lazy_core.claude_state_dir(create=False)
+    active = base / lazy_core._TELEMETRY_LEDGER_FILENAME
+    if active.exists():
+        return True
+    for i in range(1, lazy_core._TELEMETRY_ROTATED_SEGMENTS + 1):
+        if Path(f"{active}.{i}").exists():
+            return True
+    cloud_dir = Path(repo_root) / "docs" / "telemetry" / "cloud"
+    try:
+        return cloud_dir.is_dir() and any(cloud_dir.glob("*.jsonl"))
+    except OSError:
+        return False
+
+
+def _load_trends():
+    from pipeline_visualizer import trends
+    return trends
+
+
+def _sel_telemetry(repo_root, selector: str,
+                   cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    if not _telemetry_available(repo_root):
+        return (None, "telemetry ledger absent — no run has emitted events "
+                      "for this repo yet")
+    trends = _load_trends()
+    events = trends.load_events(repo_root)
+    windowed = [e for e in events
+                if isinstance(e.get("ts"), (int, float)) and e["ts"] >= cutoff]
+    if selector == "containment-refusal-count":
+        n = sum(1 for e in windowed
+                if e.get("event") == "containment-refusal")
+        return (float(n), None)
+    if selector == "halt-dwell-p50-seconds":
+        dwells = [r["dwell_seconds"] for r in trends.halt_dwell(events)
+                  if r.get("dwell_seconds") is not None
+                  and isinstance(r.get("halt_ts"), (int, float))
+                  and r["halt_ts"] >= cutoff]
+        if not dwells:
+            return (None, "no resolved halts in the window (open halts are "
+                          "honest unknowns, never counted as zero)")
+        return (round(statistics.median(dwells), 2), None)
+    if selector == "cycles-per-completion":
+        cpc = trends.cycles_per_completion(windowed)
+        if cpc["cycles_per_completion"] is None:
+            return (None, "no completions in the window — a ratio is never "
+                          "fabricated")
+        return (float(cpc["cycles_per_completion"]), None)
+    return (None, f"unknown telemetry selector {selector!r}")
+
+
+# -- sentinel-scan ---------------------------------------------------------------
+
+_OPEN_SENTINELS = frozenset({"BLOCKED.md", "NEEDS_INPUT.md"})
+
+
+def _sel_open_halt_count(repo_root) -> Tuple[Optional[float], Optional[str]]:
+    roots = [Path(repo_root) / "docs" / "features",
+             Path(repo_root) / "docs" / "bugs"]
+    present = [r for r in roots if r.is_dir()]
+    if not present:
+        return (None, "docs/features + docs/bugs trees absent — nothing to "
+                      "scan")
+    n = 0
+    for root in present:
+        for name in _OPEN_SENTINELS:
+            n += sum(1 for _ in root.rglob(name))
+    return (float(n), None)
+
+
+# -- dispatcher -------------------------------------------------------------------
+
+def compute_reading(row, *, repo_root,
+                    now: float) -> Tuple[Optional[float], Optional[str]]:
+    """Compute one row's current windowed value → (value, note).
+
+    Pure-read; failure-tolerant (an exception is an honest NO-DATA with the
+    error as the note, never a crash of the whole render)."""
+    signal = row.get("signal") or {}
+    source = signal.get("source")
+    selector = signal.get("selector")
+    cutoff = now - _window_seconds(row)
+    try:
+        if source == "build-queue-results":
+            records, note = _read_build_queue_records()
+            if records is None:
+                return (None, note)
+            windowed = _bq_windowed(records, cutoff)
+            if selector == "false-green-rate":
+                return _sel_false_green_rate(windowed)
+            if selector == "queue-wait-p50-seconds":
+                return _sel_queue_wait_p50(windowed)
+        elif source == "deny-ledger":
+            entries, note = _read_deny_entries(repo_root)
+            if entries is None:
+                return (None, note)
+            return _sel_deny_count(_deny_windowed(entries, cutoff), selector)
+        elif source == "telemetry-ledger":
+            return _sel_telemetry(repo_root, selector, cutoff)
+        elif source == "sentinel-scan":
+            if selector == "open-halt-count":
+                return _sel_open_halt_count(repo_root)
+        return (None, f"no computation registered for "
+                      f"{source!r}/{selector!r}")
+    except Exception as exc:  # noqa: BLE001 — honest NO-DATA, never a crash
+        return (None, f"signal read failed: {exc}")
+
+
+def compute_readings(registry, *, repo_root, now: float) -> dict:
+    """{row id → (value, note)} for every registry row."""
+    readings: dict = {}
+    for row in registry.get("kpis", []):
+        rid = row.get("id")
+        if isinstance(rid, str):
+            readings[rid] = compute_reading(row, repo_root=repo_root, now=now)
+    return readings
+
+
+# ---------------------------------------------------------------------------
+# Status engine (D4-A) + renderer (Phase 2)
+# ---------------------------------------------------------------------------
+
+def row_status(row, value) -> str:
+    """The D4-A honesty ladder: NO-DATA → PENDING-BASELINE → band comparison."""
+    if value is None:
+        return _STATUS_NO_DATA
+    baseline = row.get("baseline") or {}
+    band = row.get("band")
+    if baseline.get("provenance") == "pending" or band is None:
+        return _STATUS_PENDING
+    warn, breach = band.get("warn"), band.get("breach")
+    if row.get("direction") == "up-is-good":
+        if value <= breach:
+            return _STATUS_BREACH
+        if value <= warn:
+            return _STATUS_WARN
+        return _STATUS_OK
+    if value >= breach:
+        return _STATUS_BREACH
+    if value >= warn:
+        return _STATUS_WARN
+    return _STATUS_OK
+
+
+def _fmt_num(value) -> str:
+    v = round(float(value), 2)
+    if v == int(v):
+        return str(int(v))
+    return f"{v:g}"
+
+
+def _fmt_measure(value, unit: str) -> str:
+    n = _fmt_num(value)
+    if unit == "percent":
+        return f"{n}%"
+    if unit == "seconds":
+        return f"{n}s"
+    if isinstance(unit, str) and unit.startswith("count/"):
+        return f"{n}/{unit.split('/', 1)[1]}"
+    return n
+
+
+def _baseline_cell(row) -> str:
+    baseline = row.get("baseline") or {}
+    if baseline.get("provenance") == "pending" or baseline.get("value") is None:
+        return "pending"
+    return (f"{_fmt_measure(baseline['value'], row.get('unit', ''))} "
+            f"({baseline.get('provenance')} {baseline.get('captured_at')})")
+
+
+def _band_cell(row) -> str:
+    band = row.get("band")
+    if not isinstance(band, dict):
+        return "—"
+    return f"{_fmt_num(band['warn'])} / {_fmt_num(band['breach'])}"
+
+
+def render_scorecard(registry, readings: dict, *, today: datetime.date) -> str:
+    """Render the full SCORECARD.md — a PURE function of (registry, readings,
+    today). No wall-clock embed; unchanged inputs → byte-identical output."""
+    lines = [
+        "# Friction KPI Scorecard",
+        "",
+        "> Pure-read render of `docs/kpi/registry.json` by "
+        "`user/scripts/kpi-scorecard.py` — script-computed values only, "
+        "no embedded wall-clock (freshness is this file's git commit "
+        "time). An absent/unrecordable signal renders NO-DATA, never a "
+        "fabricated zero; a `pending` baseline renders PENDING-BASELINE.",
+        "",
+    ]
+    kpis = [r for r in registry.get("kpis", []) if isinstance(r, dict)]
+    # Group by system, in first-seen registry order.
+    systems: list = []
+    by_system: dict = {}
+    for row in kpis:
+        system = row.get("system") or "unknown"
+        if system not in by_system:
+            by_system[system] = []
+            systems.append(system)
+        by_system[system].append(row)
+
+    regressions: list = []
+    notes: list = []
+    for system in systems:
+        lines.append(f"## {system}")
+        lines.append("")
+        lines.append("| KPI | current | baseline | band (warn/breach) | status |")
+        lines.append("|-----|---------|----------|--------------------|--------|")
+        for row in by_system[system]:
+            rid = row.get("id")
+            value, note = readings.get(rid, (None, "no reading computed"))
+            status = row_status(row, value)
+            window = (row.get("baseline") or {}).get("window", "")
+            if value is None:
+                current = "—"
+            else:
+                current = _fmt_measure(value, row.get("unit", ""))
+                if window and not str(row.get("unit", "")).startswith("count/"):
+                    current = f"{current} ({window})"
+            glyph = _DIRECTION_GLYPH.get(row.get("direction"), "")
+            status_cell = (f"{status} {glyph}"
+                           if status in (_STATUS_OK, _STATUS_WARN,
+                                         _STATUS_BREACH) and glyph
+                           else status)
+            scope = f" `[{row['repo_scope']}]`" if row.get("repo_scope") else ""
+            lines.append(
+                f"| {row.get('title', rid)}{scope} | {current} | "
+                f"{_baseline_cell(row)} | {_band_cell(row)} | {status_cell} |")
+            if status in (_STATUS_WARN, _STATUS_BREACH):
+                band = row.get("band") or {}
+                threshold = (band.get("breach") if status == _STATUS_BREACH
+                             else band.get("warn"))
+                regressions.append(
+                    f"- ⚠ {system}/{rid} {status}: {current} vs "
+                    f"{'breach' if status == _STATUS_BREACH else 'warn'} "
+                    f"{_fmt_num(threshold)} (baseline {_baseline_cell(row)})")
+            if note:
+                notes.append(f"- `{rid}`: {_abbrev_home(note)}")
+        lines.append("")
+
+    lines.append("## Regressions")
+    lines.append("")
+    lines.extend(regressions if regressions else ["- (none)"])
+    lines.append("")
+
+    lines.append("## Registry health")
+    lines.append("")
+    health: list = []
+    for row in kpis:
+        review_by = row.get("review_by")
+        if isinstance(review_by, str) and _DATE_RE.match(review_by):
+            try:
+                if datetime.date.fromisoformat(review_by) < today:
+                    health.append(f"- ⚠ {row.get('id')} past review_by "
+                                  f"{review_by}")
+            except ValueError:
+                pass
+    lines.extend(health if health else ["- (none)"])
+
+    if notes:
+        lines.append("")
+        lines.append("## Notes")
+        lines.append("")
+        lines.extend(notes)
+
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+def _cmd_render(repo_root: Path, *, stdout: bool, today: datetime.date,
+                now: Optional[float] = None) -> int:
+    import time
+    path = registry_path(repo_root)
+    try:
+        registry = load_registry(path)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"kpi-scorecard: cannot read registry {path}: {exc}",
+              file=sys.stderr)
+        return 1
+    readings = compute_readings(registry, repo_root=repo_root,
+                                now=now if now is not None else time.time())
+    doc = render_scorecard(registry, readings, today=today)
+    if stdout:
+        sys.stdout.write(doc)
+        return 0
+    out_path = Path(repo_root) / "docs" / "kpi" / "SCORECARD.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(doc, encoding="utf-8")
+    print(f"Wrote {out_path}")
+    return 0
+
 
 def _cmd_lint(repo_root: Path, today: datetime.date) -> int:
     path = registry_path(repo_root)

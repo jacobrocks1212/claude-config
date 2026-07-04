@@ -63,10 +63,10 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 2 — Scorecard over computable-today signals
 
-- [ ] WU-2.1 — Tests FIRST: selector value fixtures (false-green-rate 25% case; wait-time no-data; deny-count windowing; guard/friction partition; open-halt-count), availability-vs-zero, status matrix both directions at exact thresholds, byte-stability double-render, NO-DATA/PENDING rendering.
-- [ ] WU-2.2 — Signal layer + selectors for `build-queue-results` (env-overridable dir), `deny-ledger` (lazy_core reader, file-presence availability), `sentinel-scan`; window parsing (`Nd`); `(value, note)` contract.
-- [ ] WU-2.3 — Status engine + renderer (per-system tables, Regressions, Registry health, Notes; direction glyphs; fixed rounding); CLI default-write `docs/kpi/SCORECARD.md` + `--stdout`.
-- [ ] WU-2.4 — Commit the real `docs/kpi/SCORECARD.md` render (all rows honestly NO-DATA/PENDING-BASELINE in this container); live double-render byte-diff clean.
+- [x] WU-2.1 — Tests FIRST: selector value fixtures (false-green-rate 25% case; wait-time no-data; deny-count windowing; guard/friction partition; open-halt-count), availability-vs-zero, status matrix both directions at exact thresholds, byte-stability double-render, NO-DATA/PENDING rendering.
+- [x] WU-2.2 — Signal layer + selectors for `build-queue-results` (env-overridable dir), `deny-ledger` (lazy_core reader, file-presence availability), `sentinel-scan`; window parsing (`Nd`); `(value, note)` contract.
+- [x] WU-2.3 — Status engine + renderer (per-system tables, Regressions, Registry health, Notes; direction glyphs; fixed rounding); CLI default-write `docs/kpi/SCORECARD.md` + `--stdout`.
+- [x] WU-2.4 — Commit the real `docs/kpi/SCORECARD.md` render (all rows honestly NO-DATA/PENDING-BASELINE in this container); live double-render byte-diff clean.
 
 ## Phase 3 — Ledger-backed rows + regression flags + regen wiring
 

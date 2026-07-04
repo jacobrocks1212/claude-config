@@ -233,3 +233,421 @@ class TestLintCli:
             capture_output=True, text=True)
         assert proc.returncode == 1
         assert "registry" in (proc.stdout + proc.stderr).lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — signal layer, status engine, renderer (WU-2.*)
+# ---------------------------------------------------------------------------
+
+def _bq_record(seq, *, build_fidelity=None, ended_at=None, extra=None):
+    rec = {"seq": seq, "exit_code": 0,
+           "ended_at": ended_at or "2026-07-03T12:00:00+00:00"}
+    if build_fidelity is not None:
+        rec["hygiene"] = {"build_fidelity": build_fidelity}
+    if extra:
+        rec.update(extra)
+    return rec
+
+
+def _write_bq_results(tmp_path: Path, records) -> Path:
+    results = tmp_path / "build-queue" / "results"
+    results.mkdir(parents=True, exist_ok=True)
+    for rec in records:
+        (results / f"{rec['seq']}.json").write_text(
+            json.dumps(rec), encoding="utf-8")
+    return tmp_path / "build-queue"
+
+
+def _bq_row(selector="false-green-rate", **overrides):
+    unit = "percent" if selector == "false-green-rate" else "seconds"
+    return _row(id=f"bq-{selector}", system="build-queue",
+                signal={"source": "build-queue-results", "selector": selector},
+                unit=unit, **overrides)
+
+
+class TestBuildQueueSelectors:
+    def test_false_green_rate_computed(self, tmp_path, monkeypatch):
+        bq = _write_bq_results(tmp_path, [
+            _bq_record(1, build_fidelity="verified"),
+            _bq_record(2, build_fidelity="verified"),
+            _bq_record(3, build_fidelity="verified"),
+            _bq_record(4, build_fidelity="no-output"),
+        ])
+        monkeypatch.setenv("KPI_BUILD_QUEUE_DIR", str(bq))
+        value, note = ksc.compute_reading(_bq_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value == 25.0
+
+    def test_false_green_excludes_na_records(self, tmp_path, monkeypatch):
+        bq = _write_bq_results(tmp_path, [
+            _bq_record(1, build_fidelity="log-failure-override"),
+            _bq_record(2, build_fidelity="verified"),
+            _bq_record(3, build_fidelity="n/a"),  # test op — excluded
+        ])
+        monkeypatch.setenv("KPI_BUILD_QUEUE_DIR", str(bq))
+        value, _ = ksc.compute_reading(_bq_row(), repo_root=tmp_path, now=_NOW)
+        assert value == 50.0
+
+    def test_false_green_window_excludes_old_records(self, tmp_path, monkeypatch):
+        bq = _write_bq_results(tmp_path, [
+            _bq_record(1, build_fidelity="no-output",
+                       ended_at="2025-01-01T00:00:00+00:00"),  # out of window
+            _bq_record(2, build_fidelity="verified"),
+        ])
+        monkeypatch.setenv("KPI_BUILD_QUEUE_DIR", str(bq))
+        value, _ = ksc.compute_reading(_bq_row(), repo_root=tmp_path, now=_NOW)
+        assert value == 0.0  # real zero: source present, one verified record
+
+    def test_results_dir_absent_is_no_data_not_zero(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KPI_BUILD_QUEUE_DIR",
+                           str(tmp_path / "nope" / "build-queue"))
+        value, note = ksc.compute_reading(_bq_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None
+        assert note  # honest reason
+
+    def test_queue_wait_no_timestamps_is_no_data(self, tmp_path, monkeypatch):
+        bq = _write_bq_results(tmp_path, [_bq_record(1, build_fidelity="verified")])
+        monkeypatch.setenv("KPI_BUILD_QUEUE_DIR", str(bq))
+        value, note = ksc.compute_reading(
+            _bq_row(selector="queue-wait-p50-seconds"),
+            repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert "queued_at" in note
+
+    def test_queue_wait_computes_when_runner_adds_timestamps(self, tmp_path,
+                                                             monkeypatch):
+        # Forward-compat: once the workstation runner follow-up persists the
+        # pair, the selector computes without a code change.
+        bq = _write_bq_results(tmp_path, [
+            _bq_record(1, build_fidelity="verified",
+                       extra={"queued_at": "2026-07-03T11:59:00+00:00",
+                              "started_at": "2026-07-03T12:00:00+00:00"}),
+            _bq_record(2, build_fidelity="verified",
+                       extra={"queued_at": "2026-07-03T11:00:00+00:00",
+                              "started_at": "2026-07-03T11:05:00+00:00"}),
+        ])
+        monkeypatch.setenv("KPI_BUILD_QUEUE_DIR", str(bq))
+        value, _ = ksc.compute_reading(
+            _bq_row(selector="queue-wait-p50-seconds"),
+            repo_root=tmp_path, now=_NOW)
+        assert value == 180.0  # median of 60s and 300s
+
+
+def _deny_row(selector, **overrides):
+    return _row(id=f"deny-{selector}", system="containment",
+                signal={"source": "deny-ledger", "selector": selector},
+                unit="count/30d", **overrides)
+
+
+def _write_deny_ledger(state_dir: Path, entries) -> Path:
+    state_dir.mkdir(parents=True, exist_ok=True)
+    p = state_dir / "lazy-deny-ledger.jsonl"
+    p.write_text("".join(json.dumps(e) + "\n" for e in entries),
+                 encoding="utf-8")
+    return p
+
+
+class TestDenyLedgerSelectors:
+    def test_ledger_absent_is_no_data(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LAZY_STATE_DIR", str(tmp_path / "state"))
+        value, note = ksc.compute_reading(
+            _deny_row("guard-deny-count"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note
+
+    def test_guard_vs_friction_partition_and_window(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_deny_ledger(state, [
+            {"ts": _NOW - 100, "reason_head": "x", "acked": False},
+            {"ts": _NOW - 200, "reason_head": "y", "acked": True},
+            {"ts": _NOW - 100, "kind": "process-friction", "reason_head": "z"},
+            {"ts": _NOW - 90 * 86400, "reason_head": "ancient"},  # out of window
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        guard, _ = ksc.compute_reading(_deny_row("guard-deny-count"),
+                                       repo_root=tmp_path, now=_NOW)
+        friction, _ = ksc.compute_reading(_deny_row("process-friction-count"),
+                                          repo_root=tmp_path, now=_NOW)
+        assert guard == 2.0
+        assert friction == 1.0
+
+    def test_build_queue_deny_signature_filter(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_deny_ledger(state, [
+            {"ts": _NOW - 100,
+             "reason_head": "BUILD-QUEUE enforcement: raw dotnet build denied"},
+            {"ts": _NOW - 100, "reason_head": "some other deny"},
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, _ = ksc.compute_reading(
+            _deny_row("build-queue-enforce-deny-count"),
+            repo_root=tmp_path, now=_NOW)
+        assert value == 1.0
+
+
+class TestSentinelScanSelector:
+    def test_open_halt_count(self, tmp_path):
+        (tmp_path / "docs" / "features" / "f1").mkdir(parents=True)
+        (tmp_path / "docs" / "features" / "f1" / "BLOCKED.md").write_text("x")
+        (tmp_path / "docs" / "bugs" / "b1").mkdir(parents=True)
+        (tmp_path / "docs" / "bugs" / "b1" / "NEEDS_INPUT.md").write_text("x")
+        # Resolved sentinels do NOT count.
+        (tmp_path / "docs" / "bugs" / "b1"
+         / "NEEDS_INPUT_RESOLVED_2026-07-01.md").write_text("x")
+        row = _row(id="halt-open", system="halt-handling",
+                   signal={"source": "sentinel-scan",
+                           "selector": "open-halt-count"},
+                   unit="count/30d")
+        value, _ = ksc.compute_reading(row, repo_root=tmp_path, now=_NOW)
+        assert value == 2.0
+
+    def test_missing_docs_trees_is_no_data(self, tmp_path):
+        row = _row(id="halt-open", system="halt-handling",
+                   signal={"source": "sentinel-scan",
+                           "selector": "open-halt-count"},
+                   unit="count/30d")
+        value, note = ksc.compute_reading(row, repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note
+
+
+class TestStatusEngine:
+    def _status(self, value, *, direction="down-is-good", warn=4, breach=8,
+                provenance="retro-derived"):
+        row = _row(direction=direction,
+                   baseline={"value": 1, "captured_at": "2026-06-01",
+                             "window": "30d", "provenance": provenance},
+                   band=None if provenance == "pending"
+                        else {"warn": warn, "breach": breach})
+        return ksc.row_status(row, value)
+
+    def test_no_data(self):
+        assert self._status(None) == "NO-DATA"
+
+    def test_pending_baseline_beats_band_comparison(self):
+        assert self._status(99, provenance="pending") == "PENDING-BASELINE"
+
+    def test_null_band_is_pending(self):
+        row = _row(band=None)
+        assert ksc.row_status(row, 5) == "PENDING-BASELINE"
+
+    def test_down_is_good_thresholds(self):
+        assert self._status(3.9) == "OK"
+        assert self._status(4) == "WARN"      # exact warn edge
+        assert self._status(7.9) == "WARN"
+        assert self._status(8) == "BREACH"    # exact breach edge
+        assert self._status(20) == "BREACH"
+
+    def test_up_is_good_thresholds(self):
+        kw = dict(direction="up-is-good", warn=90, breach=80)
+        assert self._status(95, **kw) == "OK"
+        assert self._status(90, **kw) == "WARN"
+        assert self._status(85, **kw) == "WARN"
+        assert self._status(80, **kw) == "BREACH"
+        assert self._status(10, **kw) == "BREACH"
+
+
+class TestRenderScorecard:
+    def _render(self, registry, readings):
+        return ksc.render_scorecard(registry, readings, today=_TODAY)
+
+    def test_no_data_renders_dash_and_note_never_zero(self):
+        row = _row(baseline={"value": None, "captured_at": None,
+                             "window": "30d", "provenance": "pending"},
+                   band=None)
+        doc = self._render(_registry(row),
+                           {"sample-kpi": (None, "telemetry ledger absent")})
+        assert "NO-DATA" in doc
+        assert "telemetry ledger absent" in doc
+        line = next(l for l in doc.splitlines() if "Sample KPI" in l)
+        assert "0" not in line.split("|")[2]  # current cell carries no zero
+
+    def test_pending_baseline_rendered_for_present_value(self):
+        row = _row(baseline={"value": None, "captured_at": None,
+                             "window": "30d", "provenance": "pending"},
+                   band=None)
+        doc = self._render(_registry(row), {"sample-kpi": (3.0, None)})
+        assert "PENDING-BASELINE" in doc
+
+    def test_ok_row_renders_value_baseline_band_and_glyph(self):
+        doc = self._render(_registry(_row()), {"sample-kpi": (3.0, None)})
+        line = next(l for l in doc.splitlines() if "Sample KPI" in l)
+        assert "3/30d" in line
+        assert "2/30d (retro-derived 2026-06-01)" in line
+        assert "4 / 8" in line
+        assert "OK ▼" in line
+
+    def test_regressions_section_lists_warn_and_breach(self):
+        r1 = _row()
+        r2 = _row(id="second-kpi", title="Second KPI", direction="up-is-good",
+                  unit="percent",
+                  baseline={"value": 95, "captured_at": "2026-06-01",
+                            "window": "30d", "provenance": "measured"},
+                  band={"warn": 90, "breach": 80})
+        doc = self._render(_registry(r1, r2),
+                           {"sample-kpi": (5.0, None),      # WARN (down)
+                            "second-kpi": (75.0, None)})    # BREACH (up)
+        reg = doc.split("## Regressions", 1)[1].split("##", 1)[0]
+        assert "containment/sample-kpi WARN" in reg
+        assert "containment/second-kpi BREACH" in reg
+        assert "(none)" not in reg
+
+    def test_regressions_none_line_when_clean(self):
+        doc = self._render(_registry(_row()), {"sample-kpi": (1.0, None)})
+        reg = doc.split("## Regressions", 1)[1].split("##", 1)[0]
+        assert "(none)" in reg
+
+    def test_registry_health_flags_past_review_by(self):
+        doc = self._render(_registry(_row(review_by="2026-01-01")),
+                           {"sample-kpi": (1.0, None)})
+        health = doc.split("## Registry health", 1)[1]
+        assert "sample-kpi" in health
+        assert "2026-01-01" in health
+
+    def test_byte_stable_double_render(self):
+        registry = _registry(_row(), _row(id="second-kpi", title="Second"))
+        readings = {"sample-kpi": (3.0, None), "second-kpi": (None, "absent")}
+        a = self._render(registry, readings)
+        b = self._render(registry, readings)
+        assert a == b
+        assert a.endswith("\n") and not a.endswith("\n\n")
+        assert "20" not in a.split("## Notes")[0].split("|", 1)[0]  # no date in H1
+
+    def test_home_paths_abbreviated_in_notes(self):
+        home_note = f"results dir absent ({Path.home()}/x)"
+        doc = self._render(_registry(_row()), {"sample-kpi": (None, home_note)})
+        assert str(Path.home()) not in doc.split("## Notes", 1)[1]
+        assert "~/x" in doc
+
+
+class TestRenderCli:
+    def test_default_writes_scorecard_and_stdout_prints(self, tmp_path,
+                                                        monkeypatch):
+        _write_registry(tmp_path, _registry(_row()))
+        env = dict(os.environ,
+                   LAZY_STATE_DIR=str(tmp_path / "state"),
+                   KPI_BUILD_QUEUE_DIR=str(tmp_path / "bq"))
+        proc = subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--repo-root", str(tmp_path), "--stdout"],
+            capture_output=True, text=True, env=env)
+        assert proc.returncode == 0, proc.stderr
+        assert "# Friction KPI Scorecard" in proc.stdout
+        assert not (tmp_path / "docs" / "kpi" / "SCORECARD.md").exists()
+
+        proc2 = subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--repo-root", str(tmp_path)],
+            capture_output=True, text=True, env=env)
+        assert proc2.returncode == 0, proc2.stderr
+        out = tmp_path / "docs" / "kpi" / "SCORECARD.md"
+        assert out.exists()
+        # Byte-stability across CLI runs (no wall-clock embed).
+        first = out.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--repo-root", str(tmp_path)],
+            capture_output=True, text=True, env=env)
+        assert out.read_text(encoding="utf-8") == first
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — telemetry-ledger selectors (WU-3.*)
+# ---------------------------------------------------------------------------
+
+def _tel_event(event, *, ts, item_id=None, data=None, run_id="2026-07-01T00:00:00Z",
+               pipeline="feature"):
+    return {"v": 1, "ts": ts, "run_id": run_id, "pipeline": pipeline,
+            "event": event, "item_id": item_id, "data": data or {}}
+
+
+def _write_telemetry(state_dir: Path, events) -> Path:
+    state_dir.mkdir(parents=True, exist_ok=True)
+    p = state_dir / "lazy-telemetry.jsonl"
+    p.write_text("".join(json.dumps(e) + "\n" for e in events),
+                 encoding="utf-8")
+    return p
+
+
+def _tel_row(selector, **overrides):
+    unit = {"containment-refusal-count": "count/30d",
+            "halt-dwell-p50-seconds": "seconds",
+            "cycles-per-completion": "ratio"}[selector]
+    return _row(id=f"tel-{selector}",
+                signal={"source": "telemetry-ledger", "selector": selector},
+                unit=unit, **overrides)
+
+
+class TestTelemetrySelectors:
+    def test_ledger_absent_is_no_data(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LAZY_STATE_DIR", str(tmp_path / "state"))
+        value, note = ksc.compute_reading(
+            _tel_row("containment-refusal-count"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note
+
+    def test_containment_refusal_count_windowed(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("containment-refusal", ts=_NOW - 100),
+            _tel_event("containment-refusal", ts=_NOW - 200),
+            _tel_event("containment-refusal", ts=_NOW - 90 * 86400),  # out
+            _tel_event("gate-refusal", ts=_NOW - 100),  # different event
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, _ = ksc.compute_reading(
+            _tel_row("containment-refusal-count"), repo_root=tmp_path, now=_NOW)
+        assert value == 2.0
+
+    def test_halt_dwell_p50(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("halt", ts=_NOW - 10000, item_id="f1",
+                       data={"terminal_reason": "blocked"}),
+            _tel_event("sentinel-resolved", ts=_NOW - 6400, item_id="f1"),
+            _tel_event("halt", ts=_NOW - 5000, item_id="f2",
+                       data={"terminal_reason": "needs-input"}),  # unresolved
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, _ = ksc.compute_reading(
+            _tel_row("halt-dwell-p50-seconds"), repo_root=tmp_path, now=_NOW)
+        assert value == 3600.0  # the one resolved dwell; open halt excluded
+
+    def test_halt_dwell_no_resolved_halts_is_no_data(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("halt", ts=_NOW - 5000, item_id="f2",
+                       data={"terminal_reason": "blocked"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, note = ksc.compute_reading(
+            _tel_row("halt-dwell-p50-seconds"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert "resolved" in note
+
+    def test_cycles_per_completion(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("cycle-begin", ts=_NOW - 400, data={"kind": "real"}),
+            _tel_event("cycle-begin", ts=_NOW - 300, data={"kind": "real"}),
+            _tel_event("cycle-begin", ts=_NOW - 200, data={"kind": "meta"}),
+            _tel_event("pseudo-applied", ts=_NOW - 100,
+                       data={"pseudo": "__mark_complete__"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, _ = ksc.compute_reading(
+            _tel_row("cycles-per-completion"), repo_root=tmp_path, now=_NOW)
+        assert value == 3.0
+
+    def test_cycles_no_completions_is_no_data_not_fabricated(self, tmp_path,
+                                                             monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("cycle-begin", ts=_NOW - 400, data={"kind": "real"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, note = ksc.compute_reading(
+            _tel_row("cycles-per-completion"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert "completion" in note
