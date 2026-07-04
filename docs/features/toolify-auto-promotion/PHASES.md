@@ -66,9 +66,10 @@ recomputed offline matches the emitted id.
 implementation agent):*
 - [x] Candidate ids stable + unique across passes on the fixture corpus. *(Evidence:
   `SKIP_MCP_TEST.md` — `test_toolify_miner.py` new cases.)* <!-- verification-only -->
-- [ ] Miner over the REAL workstation corpus still maps top above-bar rows to nameable dances,
-  now with ids (bar doc's manual runtime verification). DEFERRED: no `~/.claude/projects` corpus
-  exists in this cloud container — workstation-only check. <!-- verification-only -->
+- **DEFERRED (workstation-only, not a completion blocker):** miner over the REAL workstation
+  corpus still maps top above-bar rows to nameable dances, now with ids (bar doc's manual
+  runtime verification). No `~/.claude/projects` corpus exists in this cloud container; re-run
+  on workstation at next miner use. <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface
 

@@ -10,7 +10,7 @@
 > re-promotion, and feeds a report-only acceptance-rate view so the bar's thresholds can be tuned
 > deliberately from real data.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
