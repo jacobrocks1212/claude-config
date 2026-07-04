@@ -133,12 +133,34 @@ the SPEC's Technical Design inventory bullet. `git status` clean after the run (
 
 ## Phase 4 — Toolify cross-links + Unknown invocations + docs
 
-- [ ] WU-4.1 — Tests (RED): `TOOLIFY_CANDIDATE_THRESHOLD` boundary (>= listed with bar-doc
+- [x] WU-4.1 — Tests (RED): `TOOLIFY_CANDIDATE_THRESHOLD` boundary (>= listed with bar-doc
       cross-link; below not); unknown invocation surfaced with detector counts, not dropped.
-- [ ] WU-4.2 — Implement `## Toolify candidates` + `## Unknown invocations`. GREEN.
-- [ ] WU-4.3 — Docs rows: `user/scripts/CLAUDE.md` files table, root `CLAUDE.md` scripts table,
+- [x] WU-4.2 — Implement `## Toolify candidates` + `## Unknown invocations`. GREEN.
+- [x] WU-4.3 — Docs rows: `user/scripts/CLAUDE.md` files table, root `CLAUDE.md` scripts table,
       `user/skills/CLAUDE.md` pointer (tightly scoped adds).
-- [ ] WU-4.4 — Demonstration run (fixture logs dir + this checkout) recorded below;
+- [x] WU-4.4 — Demonstration run (fixture logs dir + this checkout) recorded below;
       live-corpus run **workstation-deferred** (no `~/.claude/projects` in the cloud lane).
-- [ ] WU-4.5 — FULL gate suite green (counts in SKIP_MCP_TEST.md).
+- [x] WU-4.5 — FULL gate suite green (counts in SKIP_MCP_TEST.md).
 
+**Implementation Notes (2026-07-04 — Phase 4):** RED confirmed (2 new failures: threshold
+boundary, unknown invocations), then GREEN 27/27. Doc rows added (`user/scripts/CLAUDE.md`
+files table, root `CLAUDE.md` scripts table, `user/skills/CLAUDE.md` "Usage audit / pruning"
+pointer); doc-only edits — no SKILL.md/component body change, no projection delta;
+`lint-skills.py` exit 0.
+
+**Demonstration run (WU-4.4, 2026-07-04 — fixture corpus, live checkout):** fixture corpus of
+2 sessions + 1 subagent transcript spanning 2026-05-01 → 2026-07-01 against `--repo-root .`:
+ranked table correct (commit: skill-tool 1 [subagent], slash 12, sessions 2, 30d 12; repo-scoped
+`lazy-cloud`/`mcp-test` with cloud + heuristic-attribution notes), 65 age-gated never-invoked
+proposals (all real skills created 2026-04-24 < floor 2026-05-01; corpus span 61d ≥ 30d),
+Hygiene = the four SPEC-known findings + six genuine frontmatter findings (see Phase 3 notes),
+Toolify = `commit` (13 ≥ 10) with the bar-doc link, Unknown = `ghost-skill`, standing Caveats
+present; `--since 2026-06-01` raises the observation floor as designed; `git status` clean
+after every run. **Live-corpus run workstation-deferred** (no `~/.claude/projects` in the cloud
+lane; corpus wall-time + transcript-format empirical checks deferred with it).
+
+**Final gate suite (2026-07-04):** pytest (12 files incl. the new suite) **1248 passed,
+2 skipped** (the two sanctioned skips: test_lazy_core Windows cold-boot spawn, test_hooks WSL
+pipe); `test_skill_usage_miner.py` standalone 27/27; `test_toolify_miner.py` 19/19;
+`lazy-state.py --test` / `bug-state.py --test` / `lazy_coord.py --test` all smoke-pass;
+`lazy_parity_audit.py` exit 0; `lint-skills.py` exit 0.

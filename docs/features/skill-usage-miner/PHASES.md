@@ -210,12 +210,12 @@ from the inventory — renamed/archived/plugin skills — never silently dropped
 `user/skills/CLAUDE.md` to the audit tool; the demonstration run.
 
 **Deliverables:**
-- [ ] `## Toolify candidates` (threshold constant documented in the module; annotate-only).
-- [ ] `## Unknown invocations` section.
-- [ ] Doc rows: `user/scripts/CLAUDE.md` files table, root `CLAUDE.md` scripts table,
+- [x] `## Toolify candidates` (threshold constant documented in the module; annotate-only).
+- [x] `## Unknown invocations` section.
+- [x] Doc rows: `user/scripts/CLAUDE.md` files table, root `CLAUDE.md` scripts table,
       `user/skills/CLAUDE.md` pointer.
-- [ ] Tests: threshold boundary (at/below); unknown invocation surfaced with counts.
-- [ ] Demonstration run against this repo checkout with a fixture logs dir (output recorded in
+- [x] Tests: threshold boundary (at/below); unknown invocation surfaced with counts.
+- [x] Demonstration run against this repo checkout with a fixture logs dir (output recorded in
       the plan's implementation notes). Live-corpus run: **workstation-deferred** (no
       `~/.claude/projects` in this environment).
 
@@ -224,8 +224,8 @@ from the inventory — renamed/archived/plugin skills — never silently dropped
 skill appears under `## Unknown invocations` with its counts.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Threshold + unknown-invocation behavior per D7/SPEC. *(Evidence: `test_skill_usage_miner.py`.)* <!-- verification-only -->
-- [ ] Docs/lint consistency green after the doc rows. *(Evidence: `lint-skills.py` clean; gate suite.)* <!-- verification-only -->
+- [x] Threshold + unknown-invocation behavior per D7/SPEC. *(Evidence: `test_skill_usage_miner.py`.)* <!-- verification-only -->
+- [x] Docs/lint consistency green after the doc rows. *(Evidence: `lint-skills.py` clean; gate suite.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 

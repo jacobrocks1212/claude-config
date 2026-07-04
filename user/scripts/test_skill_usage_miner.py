@@ -714,6 +714,53 @@ def test_display_name_frontmatter_keys_by_dir_and_flags_mismatch():
                    for f in rep["hygiene"]), rep["hygiene"]
 
 
+# ===========================================================================
+# Phase 4 — toolify candidates (D7, annotate-only) + unknown invocations
+# ===========================================================================
+
+def test_toolify_candidate_threshold_boundary():
+    """A skill at/above TOOLIFY_CANDIDATE_THRESHOLD total invocations is listed
+    with the bar-doc cross-link; one below is not."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("hot", "cold"))
+        logs = td / "projects"
+        thr = sum_mod.TOOLIFY_CANDIDATE_THRESHOLD
+        _write_jsonl(logs / "P" / "s1.jsonl",
+                     [_user_slash_turn("hot") for _ in range(thr)]
+                     + [_user_slash_turn("cold") for _ in range(thr - 1)])
+        rep = _report(root, logs)
+        names = {r["skill"] for r in rep["toolify_candidates"]}
+        assert "hot" in names and "cold" not in names, rep["toolify_candidates"]
+        hot = next(r for r in rep["toolify_candidates"] if r["skill"] == "hot")
+        assert "toolify-bar.md" in hot["note"] and "toolify-miner.py" in hot["note"]
+        md = sum_mod.render_markdown(rep)
+        assert "## Toolify candidates" in md and "hot" in md
+
+
+def test_unknown_invocations_surfaced_not_dropped():
+    """A log-seen skill absent from the inventory lands in the Unknown
+    invocations section with its per-detector counts."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("commit",))
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("ghost-skill"),
+            _assistant_skill_turn("ghost-skill"),
+            _user_slash_turn("commit"),
+        ])
+        rep = _report(root, logs)
+        assert rep["unknown_invocations"] == [
+            {"skill": "ghost-skill", "skill_tool": 1, "slash": 1}
+        ], rep["unknown_invocations"]
+        assert _usage_row(rep, "ghost-skill") is None
+        md = sum_mod.render_markdown(rep)
+        assert "ghost-skill — skill-tool 1, slash 1" in md
+
+
 # ---------------------------------------------------------------------------
 # Self-contained runner (mirrors test_toolify_miner.py's pattern).
 # ---------------------------------------------------------------------------

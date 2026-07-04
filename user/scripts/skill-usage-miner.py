@@ -564,11 +564,23 @@ def build_report(repo_root, logs_dir, since=None) -> dict:
     never_invoked.sort(key=lambda r: r["skill"])
     zero_unaged.sort(key=lambda r: r["skill"])
 
-    # Toolify candidates (D7) land in Phase 4.
-    toolify: list = []
+    # Toolify candidates (D7 — annotate-only, never auto-enqueued).
+    toolify = [{
+        "skill": r["skill"],
+        "total": r["total"],
+        "note": (f"run toolify-miner.py over the sessions that invoked this "
+                 f"skill — see {TOOLIFY_BAR_DOC}"),
+    } for r in usage if r["total"] >= TOOLIFY_CANDIDATE_THRESHOLD]
 
-    # Unknown invocations land in Phase 4.
-    unknown: list = []
+    # Unknown invocations: log-seen names absent from the inventory
+    # (renamed/archived/plugin skills) — surfaced, never silently dropped.
+    unknown = []
+    for name in sorted(agg):
+        if name not in inv_names:
+            rec = agg[name]
+            unknown.append({"skill": name,
+                            "skill_tool": rec["skill_tool"],
+                            "slash": rec["slash"]})
 
     return {
         "meta": {
