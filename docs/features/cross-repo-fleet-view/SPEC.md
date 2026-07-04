@@ -7,7 +7,7 @@
 > halt sentinels), and links into the shipped per-repo visualizer views for drill-in. It never
 > re-infers pipeline state, never deletes a marker, and adds no new write path.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research

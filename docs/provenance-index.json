@@ -76,6 +76,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
@@ -4122,9 +4127,49 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/cross-repo-fleet-view/PHASES.md": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cross-repo-fleet-view/RESEARCH.md": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cross-repo-fleet-view/RESEARCH_SUMMARY.md": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cross-repo-fleet-view/SKIP_MCP_TEST.md": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/cross-repo-fleet-view/SPEC.md": [
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cross-repo-fleet-view/plans/all-phases-cross-repo-fleet-view-part-1.md": [
+    {
+      "id": "cross-repo-fleet-view",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -5096,9 +5141,21 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/native-android-pipeline-steering/RESEARCH.md": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/native-android-pipeline-steering/SPEC.md": [
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cross-repo-fleet-view",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -5982,6 +6039,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
@@ -6414,6 +6476,11 @@
   ],
   "user/scripts/pipeline_visualizer/__main__.py": [
     {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
@@ -6431,6 +6498,13 @@
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/pipeline_visualizer/fleet.py": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/pipeline_visualizer/leases.py": [
@@ -6456,6 +6530,11 @@
   ],
   "user/scripts/pipeline_visualizer/server.py": [
     {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
@@ -6472,6 +6551,11 @@
     }
   ],
   "user/scripts/pipeline_visualizer/static/app.js": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",
@@ -6504,7 +6588,33 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/pipeline_visualizer/static/fleet.css": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/pipeline_visualizer/static/fleet.html": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/pipeline_visualizer/static/fleet.js": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/pipeline_visualizer/static/index.html": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",
@@ -6779,6 +6889,11 @@
     }
   ],
   "user/scripts/test_pipeline_visualizer.py": [
+    {
+      "id": "cross-repo-fleet-view",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",

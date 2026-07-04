@@ -40,12 +40,6 @@
       "tier": 2
     },
     {
-      "id": "cross-repo-fleet-view",
-      "name": "Cross-Repo Fleet Home Page",
-      "spec_dir": "cross-repo-fleet-view",
-      "tier": 2
-    },
-    {
       "id": "build-queue-generalization",
       "name": "Generalize Build-Queue Beyond Cognito",
       "spec_dir": "build-queue-generalization",
