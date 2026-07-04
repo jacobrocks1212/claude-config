@@ -2,7 +2,11 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 4 phases implemented + validated 2026-07-04 (pytest 1260 + toolify + coord +
+     both --test baselines + parity audit exit 0 + lint/projection clean). NOT Complete
+     on the SPEC — the __mark_complete__ integrity gate owns the SPEC Complete flip +
+     COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (Python state-script capture chokepoint + a standalone stdlib evaluator + skill prose). No Tauri app, no MCP-reachable surface; validation is `pytest` on `test_lazy_core.py` / the NEW `test_efficacy_eval.py`, the `--test` smoke baselines, `lazy_parity_audit.py`, and `lint-skills.py`. This is the `standalone — no app integration` untestable class → `SKIP_MCP_TEST.md` at the MCP gate.
 
