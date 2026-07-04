@@ -15055,6 +15055,7 @@ _INTERVENTION_FIELD_RE = re.compile(r"^[-*]\s*([a-z_]+)\s*:\s*(.+?)\s*$")
 _INTERVENTION_INDEPENDENCE_ENUM = ("independent", "self-emitted", "mixed")
 _INTERVENTION_INT_FIELDS = (
     "review_after_runs", "baseline_runs", "min_sample", "band_pct",
+    "canary_window_runs",
 )
 
 
@@ -15095,9 +15096,16 @@ def parse_intervention_hypothesis(spec_text: str) -> dict | None:
             raw[current] = raw[current] + " " + stripped
             continue
         current = None  # non-field prose — stop folding
-    for key in ("target_signal", "expected_direction"):
+    for key in ("target_signal", "expected_direction",
+                "canary_degraded_revert_note"):
         if key in raw:
             fields[key] = raw[key]
+    # canary_revert_unsafe (bool, D5 degraded-note trigger): tolerant truthy.
+    if "canary_revert_unsafe" in raw:
+        fields["canary_revert_unsafe"] = (
+            raw["canary_revert_unsafe"].strip().lower()
+            in ("true", "yes", "1", "on")
+        )
     if "signal_independence" in raw:
         value = raw["signal_independence"]
         head = value.split()[0].rstrip(":,;") if value.split() else value
@@ -15359,6 +15367,62 @@ def _canary_load_parity_pairs(manifest_path: Path) -> list[tuple[str, str]]:
     return pairs
 
 
+_CANARY_DEFAULT_REVERT_UNSAFE_NOTE = (
+    "Change flagged revert-unsafe at ship time (e.g. it migrated on-disk state "
+    "or a schema). A plain `git revert` of the commit set may not fully back it "
+    "out — the bug pipeline must determine actual revert feasibility with the "
+    "repo checked out (v1 records this note; no `git revert` dry-run machinery)."
+)
+
+
+def _maybe_arm_canary(
+    repo_root: Path,
+    intervention_id: str,
+    shipped_commit: str | None,
+    hyp: dict,
+    opened_date: str,
+) -> dict | None:
+    """Build the canary sub-map for a shipped change, or None when the change
+    does not touch the control-surface manifest (D1/D5).
+
+    Derives the touched-file + commit sets from the provenance change->commit-set
+    mapping (bracket-primary, message-grep fallback, single-commit last resort),
+    intersects them with the control-surface manifest, and — on a scope hit —
+    returns ``{opened, window_runs, surfaces, commit_set, pair_scope,
+    degraded_revert_note, status: open}`` (the frozen Phase-2 key set). Read-only
+    and fail-open: any derivation miss simply yields None (no canary)."""
+    touched = (derive_touched_from_brackets(repo_root, intervention_id)
+               or derive_touched_from_grep(repo_root, intervention_id))
+    commit_set = list(touched.get("commits") or [])
+    files = list(touched.get("files") or [])
+    if not commit_set and shipped_commit and shipped_commit != "unknown":
+        commit_set = [shipped_commit]
+    if not files:
+        files = _canary_touched_files(repo_root, commit_set)
+    arm, surfaces = _canary_intersects(files, _canary_control_surfaces(repo_root))
+    if not arm:
+        return None
+    manifest_path = (
+        Path(repo_root) / "user" / "scripts" / "lazy-parity-manifest.json"
+    )
+    pair_scope = _compute_pair_scope(files, manifest_path)
+    window_runs = hyp.get("canary_window_runs")
+    if not isinstance(window_runs, int) or window_runs <= 0:
+        window_runs = CANARY_WINDOW_RUNS_DEFAULT
+    note = hyp.get("canary_degraded_revert_note")
+    if not note and hyp.get("canary_revert_unsafe"):
+        note = _CANARY_DEFAULT_REVERT_UNSAFE_NOTE
+    return {
+        "opened": opened_date,
+        "window_runs": window_runs,
+        "surfaces": surfaces,
+        "commit_set": commit_set,
+        "pair_scope": pair_scope,
+        "degraded_revert_note": note if note else None,
+        "status": "open",
+    }
+
+
 def _compute_pair_scope(touched_files, manifest_path: Path) -> list[str]:
     """Compute the coupled-pair scope for a set of touched files (D5).
 
@@ -15571,6 +15635,18 @@ def record_intervention(
         "(`## Review <date>` sections). Do not hand-edit the frontmatter — "
         "the evaluator is its sole post-capture writer.",
     ]
+    # --- Canary registration post-step (harness-change-canary-rollback D1/D5) ---
+    # Arm a canary window when the shipped change touches the control-surface
+    # manifest. Fail-open — a canary failure must never error a completion; a
+    # non-scoped change registers no canary (byte-identical to before).
+    try:
+        canary = _maybe_arm_canary(
+            repo_root, intervention_id, shipped_commit, hyp, shipped_date)
+        if canary is not None:
+            meta["canary"] = canary
+    except Exception:  # noqa: BLE001 — capture must never error a completion
+        pass
+
     _atomic_write(
         record_path, _render_intervention_record(meta, "\n".join(body_lines))
     )

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: harness-change-canary-rollback
-status: In-progress
+status: Complete
 created: 2026-07-04
 phases: [1]
 complexity: complex

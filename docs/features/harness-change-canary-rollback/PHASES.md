@@ -100,24 +100,46 @@ surfaces, commit set, computed coupled-pair scope, and a degraded-revert note. N
 register no canary (byte-identical to today).
 
 **Deliverables:**
-- [ ] `_canary_control_surfaces(repo_root)` in `lazy_core.py` — reads `docs/gate/control-surfaces.json`
+- [x] `_canary_control_surfaces(repo_root)` in `lazy_core.py` — reads `docs/gate/control-surfaces.json`
       when present, else returns the canary-owned fallback glob constant (mirrors the anti-overfit
       SPEC's initial set); documents manifest-precedence.
-- [ ] Touched-file derivation from the provenance change→commit-set mapping (reuse the
+- [x] Touched-file derivation from the provenance change→commit-set mapping (reuse the
       `code-doc-provenance-linkage` commit-bracket → touched-file path), and manifest intersection
       (glob-test) deciding whether to arm.
-- [ ] `_compute_pair_scope(touched_files, manifest_path)` over `lazy-parity-manifest.json`
+- [x] `_compute_pair_scope(touched_files, manifest_path)` over `lazy-parity-manifest.json`
       `pairs[].canonical`/`.derived` + the root `CLAUDE.md` pairs-table entries folded in as data —
       a touched file in either half yields BOTH halves.
-- [ ] Canary post-step inside `record_intervention`: on a scope hit, set
+- [x] Canary post-step inside `record_intervention`: on a scope hit, set
       `meta["canary"] = {opened, window_runs, surfaces, commit_set, pair_scope, degraded_revert_note, status: "open"}`
       before the existing `_atomic_write`; per-record overrides read from the `## Intervention
       Hypothesis` block via the existing `parse_intervention_hypothesis` precedence.
-- [ ] Degraded-revert-note plumbing: a static note when the change is known revert-unsafe (migrated
+- [x] Degraded-revert-note plumbing: a static note when the change is known revert-unsafe (migrated
       on-disk state/schema); no `git revert` dry-run machinery in v1.
-- [ ] Tests (`test_lazy_core.py`): control-surface fixture change registers `canary:` with correct
+- [x] Tests (`test_lazy_core.py`): control-surface fixture change registers `canary:` with correct
       `pair_scope`; a non-scoped change registers NO canary; fallback-vs-present-manifest precedence;
       parity audit stays green.
+
+**Implementation Notes (2026-07-04, cloud /execute-plan part 1):**
+- Work completed: Phase 1 shipped in `user/scripts/lazy_core.py` — `_canary_control_surfaces`
+  (+ `_CANARY_CONTROL_SURFACES_FALLBACK` glob constant + `_CANARY_CONTROL_SURFACES_FILE`),
+  `_canary_glob_to_re` (segment-aware `**`/`*`/`?` matcher), `_canary_touched_files`
+  (reuses `_git_capture_lines`, never re-shells), `_canary_intersects`, `_canary_load_parity_pairs`
+  + `_CANARY_CLAUDE_MD_PAIRS` + `_compute_pair_scope`, `_maybe_arm_canary`, and the
+  `record_intervention` post-step (fail-open, before `_atomic_write`). `parse_intervention_hypothesis`
+  now surfaces `canary_window_runs` (int), `canary_degraded_revert_note` (str), `canary_revert_unsafe`
+  (bool). Constants block: `CANARY_WINDOW_RUNS_DEFAULT = 10`, `CANARY_WINDOW_DAYS_CEILING = 30`.
+- Frozen canary key set (Phase-2 contract): `opened, window_runs, surfaces, commit_set, pair_scope,
+  degraded_revert_note, status`. `window_days_ceiling` is a module CONSTANT (not a sub-map key) so the
+  frozen key set stays exactly the seven Integration-Notes names — Phase 2 reads the constant directly.
+- `surfaces` = the matched touched files (repo-relative POSIX), the D3 attribution identity set.
+- Touched-file derivation order: `derive_touched_from_brackets` → `derive_touched_from_grep` →
+  single `shipped_commit` last resort; empty derivation ⇒ no canary (non-scoped byte-identical).
+- Tests: 8 new `test_lazy_core.py` cases (all `_TESTS`-registered). Parity audit green; both in-file
+  `--test` smoke harnesses green. NOTE: ~21 ambient `apply_pseudo`/`__mark_complete__` test failures
+  observed in this cloud run are pre-existing (the live cycle-active marker makes `refuse_if_cycle_active`
+  fire inside those tests) — a base-vs-branch diff under `LAZY_ORCHESTRATOR=1` confirmed ZERO new
+  failures from this change.
+- Files modified: `user/scripts/lazy_core.py`, `user/scripts/test_lazy_core.py`.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_core.py --test` (+ the added
 `test_lazy_core.py` cases) run green, AND a fixture capture of a control-surface change writes a

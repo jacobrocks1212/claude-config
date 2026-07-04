@@ -31003,7 +31003,148 @@ def test_compute_pair_scope():
         assert "user/skills/lazy-bug/SKILL.md" in scope4
 
 
-# harness-change-canary-rollback Phase 1 — WU-1 + WU-2 registration helpers.
+def _canary_repo_with_change(td: "Path", relpath: str, item_id: str,
+                             spec_body: str | None = None) -> "Path":
+    """git repo touching `relpath` in one commit past the seed, a recorded
+    commit bracket (seed..change) keyed by `item_id`, and an optional SPEC.md
+    at docs/features/<item_id>/SPEC.md. Returns the repo root."""
+    repo = Path(td) / f"repo-{item_id}"
+    repo.mkdir()
+    seed = _prov_git_fixture_repo(repo)
+    change = _prov_git_commit_file(repo, relpath, f"touch {relpath}")
+    ok = lazy_core.append_commit_bracket(item_id, seed, change)
+    assert ok is True, "fixture bracket append failed"
+    if spec_body is not None:
+        spec_dir = repo / "docs" / "features" / item_id
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "SPEC.md").write_text(spec_body, encoding="utf-8")
+    return repo
+
+
+def test_record_intervention_canary_arms_on_control_surface():
+    """A control-surface change registers a `canary:` sub-map (status open) with
+    the matched surfaces, the derived commit set, and the coupled-pair scope
+    (both halves); the whole map round-trips through parse_sentinel."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-feat"
+            repo = _canary_repo_with_change(
+                Path(td), "user/skills/lazy/SKILL.md", item, spec_body="# F\n")
+            res = lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+                date="2026-07-04",
+            )
+            assert res["recorded"] is True, res
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            canary = meta["canary"]
+            assert isinstance(canary, dict), canary
+            assert canary["status"] == "open"
+            assert "user/skills/lazy/SKILL.md" in canary["surfaces"]
+            assert isinstance(canary["surfaces"], list)
+            assert canary["commit_set"], "commit_set must be non-empty"
+            assert isinstance(canary["commit_set"], list)
+            # Pair scope carries BOTH halves of every pair the change hits.
+            ps = canary["pair_scope"]
+            assert isinstance(ps, list)
+            assert "user/skills/lazy/SKILL.md" in ps
+            assert "user/skills/lazy-bug/SKILL.md" in ps
+            assert "repos/algobooth/.claude/skills/lazy-cloud/SKILL.md" in ps
+            assert canary["window_runs"] == 10  # default
+            assert canary["degraded_revert_note"] is None
+            assert canary["opened"] == "2026-07-04"
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_no_canary_for_nonscoped():
+    """A change touching only non-control-surface files registers NO canary
+    (byte-identical to today — the record simply has no `canary` key)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-nonscoped"
+            repo = _canary_repo_with_change(
+                Path(td), "docs/notes/random.md", item, spec_body="# F\n")
+            res = lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+            )
+            assert res["recorded"] is True
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            assert "canary" not in meta, meta.get("canary")
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_canary_window_override():
+    """A per-record `canary_window_runs` override in the SPEC's Intervention
+    Hypothesis block is honored over the default 10."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-window"
+            spec = (
+                "# F\n\n## Intervention Hypothesis\n\n"
+                "- target_signal: event:gate-refusal\n"
+                "- expected_direction: decrease\n"
+                "- canary_window_runs: 5\n"
+            )
+            repo = _canary_repo_with_change(
+                Path(td), "user/scripts/lazy_core.py", item, spec_body=spec)
+            lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+            )
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            assert meta["canary"]["window_runs"] == 5
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_canary_degraded_note():
+    """A change flagged revert-unsafe records a non-null degraded_revert_note;
+    the default (unflagged) note is null (asserted in the arm test above)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-unsafe"
+            spec = (
+                "# F\n\n## Intervention Hypothesis\n\n"
+                "- target_signal: event:gate-refusal\n"
+                "- canary_revert_unsafe: true\n"
+            )
+            repo = _canary_repo_with_change(
+                Path(td), "user/scripts/bug-state.py", item, spec_body=spec)
+            lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+            )
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            assert meta["canary"]["degraded_revert_note"] is not None
+            assert isinstance(meta["canary"]["degraded_revert_note"], str)
+        finally:
+            _clear_state_dir()
+
+
+# harness-change-canary-rollback Phase 1 — WU-1 + WU-2 + WU-3.
 _TESTS = _TESTS + [
     ("test_canary_control_surfaces_fallback_and_manifest",
      test_canary_control_surfaces_fallback_and_manifest),
@@ -31012,6 +31153,14 @@ _TESTS = _TESTS + [
     ("test_canary_intersects_arm_decision",
      test_canary_intersects_arm_decision),
     ("test_compute_pair_scope", test_compute_pair_scope),
+    ("test_record_intervention_canary_arms_on_control_surface",
+     test_record_intervention_canary_arms_on_control_surface),
+    ("test_record_intervention_no_canary_for_nonscoped",
+     test_record_intervention_no_canary_for_nonscoped),
+    ("test_record_intervention_canary_window_override",
+     test_record_intervention_canary_window_override),
+    ("test_record_intervention_canary_degraded_note",
+     test_record_intervention_canary_degraded_note),
 ]
 
 
