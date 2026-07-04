@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import datetime
 import json
 import os
 import re
@@ -452,8 +453,90 @@ def _load_trends():
     return trends
 
 
+def _canary_date_epoch(value) -> Optional[float]:
+    """Parse a YYYY-MM-DD canary trip date to a midnight-UTC epoch. An
+    unparseable value → None (the caller then keeps the trip in-window — favors
+    inclusion, never silently drops a real trip)."""
+    try:
+        d = datetime.datetime.strptime(str(value), "%Y-%m-%d")
+        return d.replace(tzinfo=datetime.timezone.utc).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _canary_revert_closed_as_noise(repo_root, rid: str) -> bool:
+    """True iff the `canary-revert-<rid>` bug resolved as `Won't-fix` (the
+    close-as-noise triage outcome). An open / in-progress / fixed / MISSING
+    revert item is NOT noise (it counts toward precision). Archive-aware."""
+    revert_id = f"canary-revert-{rid}"
+    bugs = Path(repo_root) / "docs" / "bugs"
+    candidates = [bugs / revert_id / "SPEC.md"]
+    archive = bugs / "_archive"
+    try:
+        if archive.is_dir():
+            for child in sorted(archive.iterdir()):
+                if child.name == revert_id or child.name.startswith(
+                        revert_id + "-"):
+                    candidates.append(child / "SPEC.md")
+    except OSError:
+        pass
+    for spec in candidates:
+        try:
+            text = spec.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        m = re.search(r"(?mi)^\*\*Status:\*\*\s*(.+?)\s*$", text)
+        if m:
+            status = m.group(1).strip().lower().replace("’", "'")
+            return status in ("won't-fix", "wont-fix")
+    return False
+
+
+def _sel_canary_trip_precision(
+        repo_root, cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    """harness-change-canary-rollback KPI: precision = the fraction of canary
+    trips (in the window) whose `canary-revert-<id>` item was NOT closed-as-noise.
+    Read-only over docs/interventions/ records + docs/bugs/ revert outcomes.
+    Honest NO-DATA (None) until the canary has tripped — never a fabricated
+    zero (the D4-A ladder)."""
+    lazy_core = _bind_lazy_core(repo_root)
+    interventions = Path(repo_root) / "docs" / "interventions"
+    if not interventions.is_dir():
+        return (None, "no interventions ledger — the canary has never tripped")
+    trips: list = []
+    for path in sorted(interventions.glob("*.md")):
+        try:
+            meta = lazy_core.parse_sentinel(path)
+        except (SystemExit, Exception):  # noqa: BLE001 — a malformed record skips
+            continue
+        if not isinstance(meta, dict):
+            continue
+        canary = meta.get("canary")
+        if not isinstance(canary, dict) or canary.get("status") != "tripped":
+            continue
+        rid = meta.get("intervention_id") or path.stem
+        ts = _canary_date_epoch(
+            meta.get("canary_revert_enqueued") or canary.get("opened"))
+        if ts is not None and ts < cutoff:
+            continue  # trip predates the window
+        trips.append(rid)
+    if not trips:
+        return (None, "no canary trips in the window — precision is undefined "
+                      "until the canary has tripped (never a fabricated zero)")
+    not_noise = sum(
+        1 for rid in trips
+        if not _canary_revert_closed_as_noise(repo_root, rid))
+    return (round(not_noise / len(trips) * 100.0, 1), None)
+
+
 def _sel_telemetry(repo_root, selector: str,
                    cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    # The canary-trip-precision selector's data source is the intervention
+    # records + revert-bug outcomes, NOT the telemetry ledger — evaluate it
+    # before the ledger-presence gate so a repo with canary trips but no
+    # (yet-rotated) ledger still computes honestly.
+    if selector == "canary-trip-precision":
+        return _sel_canary_trip_precision(repo_root, cutoff)
     if not _telemetry_available(repo_root):
         return (None, "telemetry ledger absent — no run has emitted events "
                       "for this repo yet")

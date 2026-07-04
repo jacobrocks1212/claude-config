@@ -129,6 +129,27 @@
       "band": null,
       "review_by": "2026-10-01",
       "notes": "Bound to D4-B 'cycle-begin' vs 'pseudo-applied' events whose data.pseudo is a terminal (__mark_complete__/__mark_fixed__); computed by pipeline_visualizer.trends.cycles_per_completion (None when the window has zero completions — never a fabricated ratio). Marker counters alone could not supply this (deleted at --run-end), which is why the row waited for the ledger."
+    },
+    {
+      "id": "canary-trip-precision",
+      "system": "harness-canary",
+      "title": "Canary trip precision",
+      "friction": "A canary that trips on noise trains the operator to ignore it; every false trip costs a triaged bug stub and erodes trust in the tripwire. Trip precision measures whether the hair-triggered bands are catching real regressions versus crying wolf.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "canary-trip-precision"
+      },
+      "unit": "percent",
+      "direction": "up-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "90d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-12-01",
+      "notes": "Precision = trips whose canary-revert-<id> item was NOT closed-as-noise, over all trips in the window. Signal selector registered in kpi-scorecard.py _SOURCES at spec-finalization (renders NO-DATA until compute wired); computation + this registry row land in the feature's Phase 4. Baseline is unmeasurable until the canary has tripped >=5 times — provenance stays 'pending' (honest, never a fabricated zero) and the band is set with --capture-baseline once real trip data exists."
     }
   ]
 }

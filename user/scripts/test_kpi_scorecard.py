@@ -118,8 +118,10 @@ class TestLintGreen:
         registry = ksc.load_registry(path)
         errors, warnings = ksc.lint_registry(registry, today=_TODAY)
         assert errors == []
-        # The seed set is exactly the six D8 rows.
-        assert len(registry["kpis"]) == 6
+        # The six D8 rows + the harness-change-canary-rollback trip-precision row.
+        assert len(registry["kpis"]) == 7
+        ids = {r["id"] for r in registry["kpis"]}
+        assert "canary-trip-precision" in ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -651,6 +653,99 @@ class TestTelemetrySelectors:
             _tel_row("cycles-per-completion"), repo_root=tmp_path, now=_NOW)
         assert value is None
         assert "completion" in note
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 (WU-9) — canary-trip-precision selector
+# ---------------------------------------------------------------------------
+
+def _canary_row(**overrides):
+    return _row(id="canary-trip-precision", system="harness-canary",
+                title="Canary trip precision",
+                signal={"source": "telemetry-ledger",
+                        "selector": "canary-trip-precision"},
+                unit="percent", direction="up-is-good",
+                baseline={"value": None, "captured_at": None,
+                          "window": "90d", "provenance": "pending"},
+                band=None, **overrides)
+
+
+def _write_intervention(repo_root: Path, rid: str, *, canary_status="tripped",
+                        opened="2026-07-01", enqueued="2026-07-02") -> None:
+    d = repo_root / "docs" / "interventions"
+    d.mkdir(parents=True, exist_ok=True)
+    lines = ["---", "kind: intervention", f"intervention_id: {rid}",
+             "canary:", f"  status: {canary_status}", f"  opened: '{opened}'"]
+    if enqueued is not None:
+        lines.append(f"canary_revert_enqueued: '{enqueued}'")
+    lines += ["---", "", "body", ""]
+    (d / f"{rid}.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_revert_bug(repo_root: Path, rid: str, *, status: str,
+                      archived: bool = False) -> None:
+    revert_id = f"canary-revert-{rid}"
+    base = repo_root / "docs" / "bugs"
+    d = (base / "_archive" / revert_id) if archived else (base / revert_id)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SPEC.md").write_text(
+        f"# {revert_id}\n\n**Status:** {status}\n", encoding="utf-8")
+
+
+class TestCanaryTripPrecision:
+    def test_no_interventions_ledger_is_no_data(self, tmp_path):
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None
+        assert "never tripped" in note
+
+    def test_open_canary_no_trips_is_no_data_not_zero(self, tmp_path):
+        _write_intervention(tmp_path, "still-open", canary_status="open",
+                            enqueued=None)
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None                       # NEVER a fabricated 0
+        assert "no canary trips" in note
+
+    def test_precision_computed_from_trips_and_noise(self, tmp_path):
+        for i in range(4):
+            _write_intervention(tmp_path, f"trip-{i}")
+        _write_revert_bug(tmp_path, "trip-0", status="Won't-fix")    # noise
+        _write_revert_bug(tmp_path, "trip-1", status="Fixed")        # real revert
+        _write_revert_bug(tmp_path, "trip-2", status="In-progress")  # real, open
+        # trip-3 has no revert bug on disk → not noise (counts toward precision)
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert note is None
+        assert value == 75.0                       # 3 of 4 not closed-as-noise
+
+    def test_archived_wont_fix_counts_as_noise(self, tmp_path):
+        _write_intervention(tmp_path, "arch-trip")
+        _write_revert_bug(tmp_path, "arch-trip", status="Won't-fix",
+                          archived=True)
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert note is None
+        assert value == 0.0                        # single trip, closed-as-noise
+
+    def test_trip_outside_window_excluded_is_no_data(self, tmp_path):
+        _write_intervention(tmp_path, "old-trip", opened="2020-01-01",
+                            enqueued="2020-01-02")
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None
+        assert "no canary trips" in note
+
+    def test_stdout_renders_canary_row_as_no_data(self):
+        doc = ksc.render_scorecard(
+            _registry(_canary_row()),
+            {"canary-trip-precision": (None, "no canary trips in the window")},
+            today=_TODAY)
+        assert "Canary trip precision" in doc
+        assert "NO-DATA" in doc
+        line = next(l for l in doc.splitlines()
+                    if "Canary trip precision" in l)
+        assert "0" not in line.split("|")[2]       # current cell carries no zero
 
 
 # ---------------------------------------------------------------------------
