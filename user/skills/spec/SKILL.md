@@ -59,7 +59,7 @@ Detect Phase context: examine `{spec-dir}/{feature-slug}/`:
 Phase 1 is normally an interactive brainstorm. Under `--batch` it runs autonomously with the SAME product-behavior contract Phase 3 uses, so the loop advances until a decision the user must own surfaces — then pauses via `NEEDS_INPUT.md` / Step 1g rather than hard-halting.
 
 1. **Do the mechanical Phase 1 work autonomously** (no `AskUserQuestion`): Phase 0 project-context discovery, the Step 1b dependency-block search (upstream + downstream), and the Step 1c one-shot Atomic Decomposition Gate. These are analysis, not preference — complete them and record the results in the draft.
-2. **Draft the baseline `SPEC.md`** (the same structure Phase 3 finalizes later). Auto-accept every **mechanical-internal** decision using the single defensible option. For each unresolved **product-behavior** decision, write an explicit `## Open Questions` entry / inline `TBD (pending input)` marker — do NOT invent an answer. **Writing the draft is required** (this DIVERGES from Phase 3's "do not write a half-finished SPEC.md" rule, which holds only because in Phase 3 SPEC.md already exists): in Phase 1 the draft must exist on disk so the Step 1g apply-resolution subagent has a document to propagate the user's answers into.
+2. **Draft the baseline `SPEC.md`** (the same structure Phase 3 finalizes later). Auto-accept every **mechanical-internal** decision using the single defensible option. For each unresolved **product-behavior** decision, write an explicit `## Open Questions` entry / inline `TBD (pending input)` marker — do NOT invent an answer. **Writing the draft is required** (this DIVERGES from Phase 3's "do not write a half-finished SPEC.md" rule, which holds only because in Phase 3 SPEC.md already exists): in Phase 1 the draft must exist on disk so the Step 1g apply-resolution subagent has a document to propagate the user's answers into. **Stamp the mandatory `**Friction-reduction feature:** {yes|no}` classification line** into the draft header (friction-kpi-registry measurability gate — see Step 8.5); a `yes` also owes a `## KPI Declaration` section (name registry row ids and/or draft new rows). The full gate runs at the Phase 3 Step 8.5 finalization checkpoint, but the classification line must be present from the baseline draft on.
 3. **Classify every Phase 1 decision** as `product-behavior` or `mechanical-internal` using the definitions in "Phase 3 under `--batch`" below, then route by class:
    - **`product-behavior` decisions that GATE the baseline** (scope: what's in v1; ownership: which subsystem owns this; core UX shape; user-facing defaults) → collect into `NEEDS_INPUT.md` (Halt protocol below). These are user-authority calls research cannot decide, so they are NOT deferred into the research prompt.
    - **research-answerable questions** (prior art, technical tradeoffs, industry conventions, "what do similar products do") → do NOT write `NEEDS_INPUT.md`. Leave them as `## Open Questions` in the draft; Phase 2 harvests them into `RESEARCH_PROMPT.md`.
@@ -522,6 +522,11 @@ After the decomposition, proceed with iterative brainstorming below.
 **Priority:** {P0-P3}
 **Last updated:** {today's date}
 **Branch:** `{p/* branch — omit if not yet on a work branch}`
+**Friction-reduction feature:** {yes|no}
+
+<!-- The classification line is MANDATORY (friction-kpi-registry measurability gate, Step 8.5).
+     'yes' = reducing harness/process friction is part of this feature's stated purpose; it then
+     REQUIRES a `## KPI Declaration` section. 'no' = an ordinary feature. See Step 8.5. -->
 
 **Depends on:**
 
@@ -592,6 +597,10 @@ If the feature's validation calls no MCP tools, omit this — no Locked Decision
    - If no deps, the block reads exactly `**Depends on:** (none)`.
 
    If any check fails, fix the block before writing the final SPEC.md. Do NOT write the SPEC.md with a malformed or missing dep block — downstream skills (`/spec-phases`, `/write-plan`, `/lazy` Step 4.6, `/realign-spec`) depend on this being parseable, and project-side doc-lint will reject the commit.
+
+8.5. **Friction-KPI Measurability Gate (BLOCKING — before marking Final):**
+
+!`cat .claude/skill-config/spec-friction-kpi-gate.md 2>/dev/null || cat ~/.claude/skills/_components/spec-friction-kpi-gate.md`
 
 9. **Cross-Boundary Validation (before marking Final):**
    Before finalizing any spec that references runtime data access, surface counts, or cross-boundary propagation:
