@@ -13027,6 +13027,286 @@ def pending_denial_reasons() -> list[str]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# harness-telemetry-ledger — the telemetry ledger (sibling of the deny ledger).
+#
+# An append-only JSONL ledger of the pipeline's deterministic chokepoint events
+# (run/cycle brackets, dispatches, halts, gate/containment refusals, pseudo-skill
+# completions, sentinel resolutions — the D4-B vocabulary), written by BOTH state
+# scripts through this ONE shared emitter (D2-A: parity by construction) into the
+# per-repo keyed state dir beside lazy-deny-ledger.jsonl.
+#
+# Contract (clones the deny-ledger precedent wholesale):
+#   - MARKER-GATED (D3-A): no live run marker → no write, no file, return False.
+#     Bare probes and unmarked interactive invocations stay side-effect-free.
+#     The marker read here is RAW and NON-DESTRUCTIVE (never read_run_marker,
+#     whose stale path DELETES the marker) — emission also fires from exit-3
+#     refusal paths that promise ZERO side effects.
+#   - FAIL-OPEN (D2-A): plain `open(..., "a")` append (never _atomic_write — an
+#     atomic rewrite adds a read-modify-write race on an append-only file whose
+#     torn final line the reader already tolerates); every exception is
+#     swallowed → False. The emitter NEVER calls _diag — a failed append must
+#     not perturb the diagnostics[] surface of the op it rides on.
+#   - RAW EVENTS ONLY (D9-A): metrics are derived reader-side
+#     (pipeline_visualizer/trends.py); nothing here aggregates.
+#   - ROTATION (D6-B): at emit time an over-cap active file rotates to `.1`
+#     (shifting `.1`→`.2` … and dropping the oldest beyond
+#     _TELEMETRY_ROTATED_SEGMENTS); a rotation failure degrades to plain append.
+# ---------------------------------------------------------------------------
+
+_TELEMETRY_LEDGER_FILENAME = "lazy-telemetry.jsonl"
+_TELEMETRY_SCHEMA_VERSION = 1
+_TELEMETRY_ROTATE_BYTES = 10 * 1024 * 1024  # D6-B: 10 MB active-file cap
+_TELEMETRY_ROTATED_SEGMENTS = 4             # D6-B: .1 (newest) … .4 (oldest)
+
+# D4-B: the dispatch terminal_reasons that ALSO emit a `halt` event (the
+# halt-dwell start marker; the matching `sentinel-resolved` ends the dwell).
+TELEMETRY_HALT_TERMINAL_REASONS: frozenset[str] = frozenset({
+    "blocked",
+    "needs-input",
+    "needs-spec-input",
+    "needs-research",
+    "completion-unverified",
+    "blocked-misnamed",
+})
+
+
+def _telemetry_run_marker(now: float | None = None) -> dict | None:
+    """RAW, NON-destructive run-marker read for telemetry gating (D3-A).
+
+    Returns the marker dict when a well-formed, age-fresh (≤24h) marker exists;
+    otherwise None. Unlike ``read_run_marker`` this NEVER deletes a stale or
+    corrupt marker and NEVER applies session-id gating — the emitter is called
+    from refusal paths whose contract is "zero side effects", and from any
+    session that runs a marker-gated op (the run identity is the marker's, not
+    the caller's). Mirrors ``refuse_run_start_clobber``'s own raw read.
+
+    Args:
+        now: epoch float for the age check (injectable for hermetic tests).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        marker_path = claude_state_dir(create=False) / _MARKER_FILENAME
+        if not marker_path.exists():
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, dict):
+            return None
+        started_at_str = marker.get("started_at", "")
+        started_dt = datetime.datetime.strptime(
+            started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+        )
+        started_epoch = (
+            started_dt - datetime.datetime(1970, 1, 1)
+        ).total_seconds()
+        if now - started_epoch > _MARKER_STALE_SECONDS:
+            return None  # age-stale → gated; deletion is read_run_marker's job
+        return marker
+    except Exception:  # noqa: BLE001
+        # Fail-open gate: any read/parse error means "no live run" → no emit.
+        return None
+
+
+def _rotate_telemetry_segments(ledger_path: Path) -> None:
+    """D6-B size-based rollover, called at emit time BEFORE the append.
+
+    When the active file is at/over ``_TELEMETRY_ROTATE_BYTES``: drop the oldest
+    segment (``.N``), shift ``.i`` → ``.i+1``, and rename the active file to
+    ``.1``. Best-effort — any failure returns silently so the caller degrades to
+    a plain append on the (over-cap) active file rather than losing the event.
+    """
+    try:
+        if not ledger_path.exists():
+            return
+        if ledger_path.stat().st_size < _TELEMETRY_ROTATE_BYTES:
+            return
+        oldest = Path(f"{ledger_path}.{_TELEMETRY_ROTATED_SEGMENTS}")
+        if oldest.exists():
+            oldest.unlink()
+        for i in range(_TELEMETRY_ROTATED_SEGMENTS - 1, 0, -1):
+            src = Path(f"{ledger_path}.{i}")
+            if src.exists():
+                src.rename(Path(f"{ledger_path}.{i + 1}"))
+        ledger_path.rename(Path(f"{ledger_path}.1"))
+    except OSError:
+        # Degrade to plain append on the over-cap active file — never raise.
+        return
+
+
+def append_telemetry_event(
+    event: str,
+    *,
+    item_id: str | None = None,
+    data: dict | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one telemetry event to the telemetry ledger (JSONL), best-effort.
+
+    The ONE shared writer both state scripts (and the shared exit-3 refusal
+    helpers) call at their CLI write-path chokepoints (D2-A / D3-A). Envelope
+    (D1-A), one compact JSON object per line:
+
+        {"v": 1, "ts": <epoch float>, "run_id": <marker started_at>,
+         "pipeline": "feature"|"bug", "event": "<type>",
+         "item_id": <str|None>, "data": {…}}
+
+    MARKER-GATED: no live (age-fresh) run marker → nothing is written and False
+    is returned — bare probes / unmarked interactive invocations never create
+    the ledger. FAIL-OPEN: swallows every exception and returns False; callers
+    never branch on the return value (telemetry can never block the pipeline).
+    The ledger line is observability, not state — a refused op that emits one
+    still has zero STATE side effects.
+
+    Args:
+        event: the D4-B event type (e.g. "run-start", "dispatch", "gate-refusal").
+        item_id: the feature/bug id the event concerns (None for run-level events).
+        data: small per-event payload map (untyped by design — D1-A).
+        now: epoch float for ts + the marker age gate (injectable for tests).
+
+    Returns:
+        True iff a line was appended; False when gated or on any write failure.
+    """
+    if now is None:
+        now = time.time()
+    try:
+        marker = _telemetry_run_marker(now=now)
+        if marker is None:
+            return False  # D3-A: no live run → no emit
+        entry = {
+            "v": _TELEMETRY_SCHEMA_VERSION,
+            "ts": now,
+            "run_id": marker.get("started_at"),
+            "pipeline": marker.get("pipeline"),
+            "event": event,
+            "item_id": item_id,
+            "data": data or {},
+        }
+        ledger_path = claude_state_dir() / _TELEMETRY_LEDGER_FILENAME
+        _rotate_telemetry_segments(ledger_path)
+        # Plain append (not _atomic_write) — deny-ledger precedent: append-only
+        # file, torn final line tolerated by the reader.
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a telemetry write must never propagate.
+        return False
+
+
+def read_telemetry_events(
+    paths: "list[Path] | None" = None,
+    with_provenance: bool = False,
+) -> list[dict]:
+    """Read telemetry events, skipping unparseable lines and unknown ``v``.
+
+    Default path set: the rotated segments OLDEST-first (``.4`` → ``.1``) then
+    the active file, so the returned list is in chronological append order
+    across the whole retained window (D6-B). A missing file / unreadable path /
+    torn line / non-dict line / line whose ``v`` is not a known schema version
+    is skipped, never fatal (D1-A: tolerate what you don't understand).
+
+    Args:
+        paths: explicit files to read (e.g. committed cloud segments); None →
+            the state-dir default set.
+        with_provenance: when True, stamp ``_source`` (str path) and ``_line``
+            (1-based physical line number) onto each event for the retro's
+            per-figure ledger citations (D8). Default False keeps the envelope
+            pure for aggregation.
+
+    Returns:
+        The list of parsed event dicts in file/line order.
+    """
+    if paths is None:
+        base = claude_state_dir(create=False)
+        active = base / _TELEMETRY_LEDGER_FILENAME
+        paths = [
+            Path(f"{active}.{i}")
+            for i in range(_TELEMETRY_ROTATED_SEGMENTS, 0, -1)
+        ] + [active]
+    events: list[dict] = []
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        try:
+            raw = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for lineno, line in enumerate(raw.splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue  # torn append — skip, never brick the ledger
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("v") != _TELEMETRY_SCHEMA_VERSION:
+                continue  # unknown schema version — a future writer's line
+            if with_provenance:
+                obj = dict(obj)
+                obj["_source"] = str(p)
+                obj["_line"] = lineno
+            events.append(obj)
+    return events
+
+
+def flush_cloud_telemetry_segment(
+    repo_root: Path,
+    *,
+    now: float | None = None,
+) -> dict | None:
+    """D5-B cloud run-end flush: persist the live cloud run's ledger segment
+    into the repo so it survives the container.
+
+    Called by both scripts' ``--run-end`` handlers AFTER the run-end emission
+    and BEFORE ``delete_run_marker`` (the marker supplies the run identity).
+    Gated on a live marker with ``cloud: true`` — workstation runs return None
+    untouched. Filters the state-dir ledger to lines whose ``run_id`` equals
+    the marker's ``started_at`` and writes them (one-shot, via _atomic_write —
+    this is a segment REWRITE, not an append-only file) to:
+
+        <repo_root>/docs/telemetry/cloud/<run_id with colons stripped>.jsonl
+
+    The colon-strip keeps the committed filename legal on a Windows checkout
+    (run_id is ``2026-07-04T09:12:03Z``); each line's ``run_id`` FIELD is
+    unchanged, so aggregation keys on content, never the filename. Zero
+    matching events → None (nothing to persist; pre-feature byte-identity).
+    Fail-open: any error returns None and never blocks the run-end.
+
+    Args:
+        repo_root: the repo the segment lands in (rides the final cloud push).
+        now: epoch float for the marker age gate (injectable for tests).
+
+    Returns:
+        {"path": <str>, "events": <int>} when a segment was written, else None.
+    """
+    try:
+        marker = _telemetry_run_marker(now=now)
+        if marker is None or not marker.get("cloud"):
+            return None
+        run_id = marker.get("started_at")
+        if not run_id:
+            return None
+        lines = [
+            e for e in read_telemetry_events() if e.get("run_id") == run_id
+        ]
+        if not lines:
+            return None
+        seg_dir = Path(repo_root) / "docs" / "telemetry" / "cloud"
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        seg_path = seg_dir / (run_id.replace(":", "") + ".jsonl")
+        _atomic_write(
+            seg_path, "\n".join(json.dumps(e) for e in lines) + "\n"
+        )
+        return {"path": str(seg_path), "events": len(lines)}
+    except Exception:  # noqa: BLE001
+        # Fail-open: the flush must never block --run-end.
+        return None
+
+
 def oldest_unacked_deny() -> dict | None:
     """Return the OLDEST (FIFO) unacked deny-ledger entry, or None when there is
     no pending debt.

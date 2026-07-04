@@ -28291,5 +28291,360 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# harness-telemetry-ledger Phase 1 — the telemetry emitter substrate.
+#
+# One shared fail-open writer (`append_telemetry_event`, D2-A) cloned from the
+# deny-ledger contract, marker-gated (D3-A) via a RAW NON-DESTRUCTIVE marker
+# read (a failed emit must never delete a stale marker — the exit-3 refusal
+# paths promise zero side effects), a torn-line/unknown-`v`-tolerant reader
+# (D1-A), size-based rotation (D6-B), and the D5-B cloud run-end segment flush.
+# Hermetic via LAZY_STATE_DIR temp dirs (the Phase-1 discipline throughout this
+# file).
+# ---------------------------------------------------------------------------
+
+
+def test_telemetry_symbols_present():
+    """All harness-telemetry-ledger Phase 1 public symbols exist on lazy_core."""
+    _guard()
+    expected = [
+        "_TELEMETRY_LEDGER_FILENAME",
+        "_TELEMETRY_SCHEMA_VERSION",
+        "_TELEMETRY_ROTATE_BYTES",
+        "_TELEMETRY_ROTATED_SEGMENTS",
+        "TELEMETRY_HALT_TERMINAL_REASONS",
+        "append_telemetry_event",
+        "read_telemetry_events",
+        "flush_cloud_telemetry_segment",
+    ]
+    missing = [s for s in expected if not hasattr(lazy_core, s)]
+    assert not missing, f"missing telemetry symbols: {missing}"
+    assert lazy_core._TELEMETRY_LEDGER_FILENAME == "lazy-telemetry.jsonl"
+    # The D4-B halt vocabulary (dispatches whose terminal_reason is a halt).
+    for reason in ("blocked", "needs-input", "needs-spec-input", "needs-research",
+                   "completion-unverified", "blocked-misnamed"):
+        assert reason in lazy_core.TELEMETRY_HALT_TERMINAL_REASONS, reason
+
+
+def test_telemetry_append_envelope_shape_and_now_injection():
+    """append → read: the D1 envelope, marker-derived run identity, FIFO order,
+    injectable `now` for a deterministic epoch `ts`."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            import time as _time
+            now0 = _time.time()
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=9, now=now0,
+            )
+            ok1 = lazy_core.append_telemetry_event(
+                "run-start", data={"cloud": False, "max_cycles": 9}, now=now0 + 1.0,
+            )
+            ok2 = lazy_core.append_telemetry_event(
+                "cycle-begin", item_id="feat-x", data={"kind": "real"},
+                now=now0 + 2.0,
+            )
+            assert ok1 is True and ok2 is True, (ok1, ok2)
+            events = lazy_core.read_telemetry_events()
+            assert len(events) == 2, events
+            first, second = events
+            # Envelope shape (D1-A): v / ts / run_id / pipeline / event /
+            # item_id / data — exactly these keys.
+            assert set(first) == {"v", "ts", "run_id", "pipeline", "event",
+                                  "item_id", "data"}, first
+            assert first["v"] == lazy_core._TELEMETRY_SCHEMA_VERSION, first
+            assert first["ts"] == now0 + 1.0, first
+            assert first["run_id"] == marker["started_at"], first
+            assert first["pipeline"] == "feature", first
+            assert first["event"] == "run-start", first
+            assert first["item_id"] is None, first
+            assert first["data"] == {"cloud": False, "max_cycles": 9}, first
+            # FIFO order + item_id threading.
+            assert second["event"] == "cycle-begin", second
+            assert second["item_id"] == "feat-x", second
+            assert second["run_id"] == first["run_id"], "one run → one run_id"
+        finally:
+            _clear_state_dir()
+
+
+def test_telemetry_marker_gated_no_marker_no_emit():
+    """D3-A: no run marker → no ledger file, no line, emitter returns False.
+    Bare probes / unmarked interactive invocations must stay side-effect-free."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ok = lazy_core.append_telemetry_event("run-start", now=1000.0)
+            assert ok is False, "no marker must gate the emit (False)"
+            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            assert not ledger.exists(), "no marker → no ledger file created"
+            assert lazy_core.read_telemetry_events() == []
+        finally:
+            _clear_state_dir()
+
+
+def test_telemetry_fail_open_unwritable_dir():
+    """D2-A: an unwritable state dir → emitter swallows and returns False; the
+    reader is equally non-fatal. (Same shape as the deny-ledger fail-open test.)"""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bad_dir = Path(td) / "not-a-dir"
+        bad_dir.write_text("i am a file, not a directory\n", encoding="utf-8")
+        _set_state_dir(bad_dir)
+        try:
+            ok = lazy_core.append_telemetry_event("run-start", now=1.0)
+            assert ok is False, "unwritable state dir must fail-open (False)"
+            assert lazy_core.read_telemetry_events() == []
+        finally:
+            _clear_state_dir()
+
+
+def test_telemetry_emit_nondestructive_on_stale_marker():
+    """The emitter's marker gate must be NON-destructive: an age-stale marker
+    gates the emit (False) but is NOT deleted (read_run_marker would delete it —
+    the emitter must not, because refusal paths promise zero side effects)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            import time as _time
+            now = _time.time()
+            # Marker started >24h ago → age-stale.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                now=now - (25 * 3600),
+            )
+            marker_path = Path(td) / lazy_core._MARKER_FILENAME
+            assert marker_path.exists()
+            ok = lazy_core.append_telemetry_event("run-start", now=now)
+            assert ok is False, "age-stale marker must gate the emit"
+            assert marker_path.exists(), (
+                "the emitter must NOT delete a stale marker (non-destructive read)"
+            )
+            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            assert not ledger.exists(), "gated emit must write nothing"
+        finally:
+            _clear_state_dir()
+
+
+def test_telemetry_reader_tolerates_torn_and_unknown_v():
+    """D1-A reader contract: blank lines, torn appends, non-dict JSON, and
+    unknown schema versions are skipped — never fatal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            good = json.dumps({
+                "v": 1, "ts": 1.0, "run_id": "2026-07-04T00:00:00Z",
+                "pipeline": "feature", "event": "run-start",
+                "item_id": None, "data": {},
+            })
+            unknown_v = json.dumps({"v": 99, "ts": 2.0, "event": "future-thing"})
+            non_dict = json.dumps(["not", "a", "dict"])
+            torn = '{"v": 1, "ts": 3.0, "event": "cycle-b'
+            ledger.write_text(
+                "\n".join([good, unknown_v, non_dict, torn, ""]) + "\n",
+                encoding="utf-8",
+            )
+            events = lazy_core.read_telemetry_events()
+            assert len(events) == 1, f"only the good v1 line must survive: {events}"
+            assert events[0]["event"] == "run-start", events
+        finally:
+            _clear_state_dir()
+
+
+def test_telemetry_read_with_provenance():
+    """with_provenance=True stamps _source/_line (1-based physical line number)
+    for the retro's per-figure ledger citations (D8)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            line1 = json.dumps({"v": 1, "ts": 1.0, "run_id": "r", "pipeline":
+                                "feature", "event": "run-start", "item_id": None,
+                                "data": {}})
+            line3 = json.dumps({"v": 1, "ts": 2.0, "run_id": "r", "pipeline":
+                                "feature", "event": "run-end", "item_id": None,
+                                "data": {}})
+            # Line 2 is torn → skipped, but physical numbering must be preserved.
+            ledger.write_text(line1 + "\n" + '{"torn' + "\n" + line3 + "\n",
+                              encoding="utf-8")
+            events = lazy_core.read_telemetry_events(with_provenance=True)
+            assert len(events) == 2, events
+            assert events[0]["_line"] == 1 and events[1]["_line"] == 3, events
+            assert events[0]["_source"].endswith(
+                lazy_core._TELEMETRY_LEDGER_FILENAME), events
+            # Default read stays provenance-free (envelope purity).
+            plain = lazy_core.read_telemetry_events()
+            assert all("_line" not in e and "_source" not in e for e in plain)
+        finally:
+            _clear_state_dir()
+
+
+def test_telemetry_rotation_shift_and_reader_order():
+    """D6-B: an over-cap active file rotates active → .1 (shifting .1→.2 …,
+    dropping the oldest beyond the segment count) BEFORE the append; the reader
+    walks rotated segments oldest-first then the active file."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            import time as _time
+            now = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            # Pre-seed the full rotated chain so the shift + oldest-drop is
+            # observable in one append.
+            seg = lambda i: Path(str(ledger) + f".{i}")  # noqa: E731
+            for i in range(1, lazy_core._TELEMETRY_ROTATED_SEGMENTS + 1):
+                seg(i).write_text(
+                    json.dumps({"v": 1, "ts": float(-i), "run_id": "old",
+                                "pipeline": "feature", "event": f"seg-{i}",
+                                "item_id": None, "data": {}}) + "\n",
+                    encoding="utf-8",
+                )
+            active_line = json.dumps({"v": 1, "ts": 0.5, "run_id": "old",
+                                      "pipeline": "feature", "event": "active-old",
+                                      "item_id": None, "data": {}})
+            ledger.write_text(active_line + "\n", encoding="utf-8")
+            # Shrink the cap so the seeded active file is over it.
+            orig_cap = lazy_core._TELEMETRY_ROTATE_BYTES
+            lazy_core._TELEMETRY_ROTATE_BYTES = 8
+            try:
+                ok = lazy_core.append_telemetry_event("cycle-begin",
+                                                      item_id="f", now=now + 1)
+            finally:
+                lazy_core._TELEMETRY_ROTATE_BYTES = orig_cap
+            assert ok is True
+            n = lazy_core._TELEMETRY_ROTATED_SEGMENTS
+            # active rotated to .1; old .1 shifted to .2; …; old .N dropped.
+            assert json.loads(seg(1).read_text(encoding="utf-8"))["event"] == \
+                "active-old", ".1 must be the pre-rotation active file"
+            assert json.loads(seg(2).read_text(encoding="utf-8"))["event"] == \
+                "seg-1", ".2 must be the old .1"
+            assert json.loads(seg(n).read_text(encoding="utf-8"))["event"] == \
+                f"seg-{n-1}", f".{n} must be the old .{n-1} (old .{n} dropped)"
+            # The fresh active file holds only the new event.
+            active_events = [json.loads(l) for l in
+                             ledger.read_text(encoding="utf-8").splitlines() if l]
+            assert [e["event"] for e in active_events] == ["cycle-begin"]
+            # Reader order: oldest segment first … then the active file last.
+            order = [e["event"] for e in lazy_core.read_telemetry_events()]
+            assert order == [f"seg-{n-1}"] + \
+                [f"seg-{i}" for i in range(n - 2, 0, -1)] + \
+                ["active-old", "cycle-begin"], order
+        finally:
+            _clear_state_dir()
+
+
+def test_flush_cloud_telemetry_segment_writes_colon_stripped_segment():
+    """D5-B: a cloud run's flush writes docs/telemetry/cloud/<run_id minus
+    colons>.jsonl containing ONLY this run's lines; returns {path, events}."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _set_state_dir(state)
+        try:
+            import time as _time
+            now = _time.time()
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=True, repo_root=str(repo), now=now,
+            )
+            run_id = marker["started_at"]
+            # A foreign (previous-run) line must NOT be flushed.
+            ledger = state / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger.write_text(
+                json.dumps({"v": 1, "ts": 1.0, "run_id": "2020-01-01T00:00:00Z",
+                            "pipeline": "feature", "event": "run-start",
+                            "item_id": None, "data": {}}) + "\n",
+                encoding="utf-8",
+            )
+            lazy_core.append_telemetry_event("run-start", now=now + 1)
+            lazy_core.append_telemetry_event("run-end", now=now + 2)
+            result = lazy_core.flush_cloud_telemetry_segment(repo, now=now + 3)
+            assert isinstance(result, dict), "cloud flush must report its segment"
+            assert result["events"] == 2, result
+            seg_path = Path(result["path"])
+            assert seg_path.parent == repo / "docs" / "telemetry" / "cloud"
+            assert ":" not in seg_path.name, (
+                "segment filename must be Windows-checkout-safe (no colons)"
+            )
+            assert seg_path.name == run_id.replace(":", "") + ".jsonl", seg_path
+            lines = [json.loads(l) for l in
+                     seg_path.read_text(encoding="utf-8").splitlines() if l]
+            assert [e["event"] for e in lines] == ["run-start", "run-end"], lines
+            assert all(e["run_id"] == run_id for e in lines), (
+                "only the live run's lines may flush (run_id field unchanged)"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_flush_cloud_telemetry_segment_noop_cases():
+    """D5-B gating: no marker / non-cloud marker / zero matching events → None,
+    nothing written under docs/telemetry/."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _set_state_dir(state)
+        try:
+            import time as _time
+            now = _time.time()
+            # (a) No marker.
+            assert lazy_core.flush_cloud_telemetry_segment(repo, now=now) is None
+            # (b) Workstation (non-cloud) marker with events.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(repo), now=now,
+            )
+            lazy_core.append_telemetry_event("run-start", now=now + 1)
+            assert lazy_core.flush_cloud_telemetry_segment(repo, now=now + 2) is None
+            # (c) Cloud marker but no events for THIS run (fresh started_at).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=True, repo_root=str(repo), now=now + 100,
+            )
+            assert lazy_core.flush_cloud_telemetry_segment(repo, now=now + 101) is None
+            assert not (repo / "docs" / "telemetry").exists(), (
+                "no-op flush must not create docs/telemetry/"
+            )
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    # harness-telemetry-ledger Phase 1 — emitter substrate.
+    ("test_telemetry_symbols_present", test_telemetry_symbols_present),
+    ("test_telemetry_append_envelope_shape_and_now_injection",
+     test_telemetry_append_envelope_shape_and_now_injection),
+    ("test_telemetry_marker_gated_no_marker_no_emit",
+     test_telemetry_marker_gated_no_marker_no_emit),
+    ("test_telemetry_fail_open_unwritable_dir",
+     test_telemetry_fail_open_unwritable_dir),
+    ("test_telemetry_emit_nondestructive_on_stale_marker",
+     test_telemetry_emit_nondestructive_on_stale_marker),
+    ("test_telemetry_reader_tolerates_torn_and_unknown_v",
+     test_telemetry_reader_tolerates_torn_and_unknown_v),
+    ("test_telemetry_read_with_provenance",
+     test_telemetry_read_with_provenance),
+    ("test_telemetry_rotation_shift_and_reader_order",
+     test_telemetry_rotation_shift_and_reader_order),
+    ("test_flush_cloud_telemetry_segment_writes_colon_stripped_segment",
+     test_flush_cloud_telemetry_segment_writes_colon_stripped_segment),
+    ("test_flush_cloud_telemetry_segment_noop_cases",
+     test_flush_cloud_telemetry_segment_noop_cases),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())
