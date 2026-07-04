@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: scheduled-autonomous-runs
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: simple
 phases: [1, 2, 3, 4, 5]

@@ -2,7 +2,14 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- Phases 1-4 (documentation) implemented + validated 2026-07-04 (pytest 1202 passed / 2
+     sanctioned skips; --test smokes green ×3; parity audit exit 0; lint-skills exit 0; every
+     doc citation contract-verified at file+line in RESEARCH_SUMMARY.md). Phase 5 (live pilot,
+     drills, weeklong cron rollout) is OPERATOR-DEFERRED by design — requires live platform
+     triggers + phone + wall-clock; RECIPES.md is its copy-paste input. NOT Complete on the
+     SPEC — the __mark_complete__ integrity gate owns the SPEC Complete flip + COMPLETED.md
+     receipt. -->
 
 **MCP runtime:** not-required — this feature is docs/configuration glue ONLY (trigger prompt
 template + platform-trigger recipes + failure/recovery playbook + a `workspace/CLAUDE.md`
