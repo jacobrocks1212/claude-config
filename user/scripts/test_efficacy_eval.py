@@ -669,5 +669,102 @@ def test_canary_dry_run_does_not_stamp_no_data(state_env):
     assert lazy_core.parse_sentinel(rec)["canary"]["status"] == "open"
 
 
+# --- WU-5: D2 band tripwire + D3 surface attribution ------------------------
+
+
+def test_canary_band_regression_trips(state_env):
+    """A telemetry ledger regressing the targeted signal past +25% within the
+    window trips, with the band numbers reported."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)                          # baseline 1.0 ev/run (decrease)
+    rec = _capture(repo, "band-regress")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST)
+    _seed_runs(4, 3, start=4)                 # post 3.0 ev/run → +200%
+    code, payload = _run_canary(repo)
+    assert code == 0
+    t = _trip_of(payload, "band-regress")
+    assert t is not None, payload
+    assert t["band"]["rel"] >= 25.0
+    assert t["band"]["post_events"] >= 3
+    assert "regressed" in t["reason"]
+
+
+def test_canary_incident_attribution_trips_on_surface_match(state_env):
+    """≥2 fresh incidents whose emitting surface ∈ canary.surfaces trip."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "incident-trip")
+    _add_canary(rec, surfaces=["user/hooks/lazy-cycle-containment.sh"],
+                opened=_CANARY_OPENED_PAST)
+    _write_hook_events([
+        {"hook": "lazy-cycle-containment.sh", "kind": "error", "ts": _BASE_NOW},
+        {"hook": "lazy-cycle-containment.sh", "kind": "error",
+         "ts": _BASE_NOW + 60},
+    ])
+    code, payload = _run_canary(repo)
+    t = _trip_of(payload, "incident-trip")
+    assert t is not None, payload
+    assert len(t["attributed"]) == 2
+
+
+def test_canary_no_trip_on_unrelated_surface_listed_not_counted(state_env):
+    """Incidents on an UNRELATED surface do not trip; they are listed as
+    unattributed but not counted (D3)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "unrelated-surface")
+    _add_canary(rec, surfaces=["user/hooks/lazy-cycle-containment.sh"],
+                opened=_CANARY_OPENED_PAST)
+    _seed_runs(2, 0, start=4)                 # observable runs → not no-data
+    _write_hook_events([
+        {"hook": "block-terminal-kill.sh", "kind": "error", "ts": _BASE_NOW},
+        {"hook": "block-terminal-kill.sh", "kind": "error",
+         "ts": _BASE_NOW + 60},
+    ])
+    code, payload = _run_canary(repo)
+    assert _trip_of(payload, "unrelated-surface") is None
+    mon = _mon_of(payload, "unrelated-surface")
+    assert mon is not None and mon["attributed"] == 0
+    assert mon["unattributed"] == 2
+
+
+def test_canary_unresolvable_surface_never_attributes(state_env):
+    """An incident whose surface cannot be resolved NEVER attributes."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "unresolvable-surface")
+    _add_canary(rec, surfaces=["user/hooks/lazy-cycle-containment.sh"],
+                opened=_CANARY_OPENED_PAST)
+    _seed_runs(2, 0, start=4)
+    _write_hook_events([
+        {"op": "some-op", "kind": "error", "ts": _BASE_NOW},   # no hook/surface
+        {"op": "some-op", "kind": "error", "ts": _BASE_NOW + 60},
+    ])
+    code, payload = _run_canary(repo)
+    assert _trip_of(payload, "unresolvable-surface") is None
+    mon = _mon_of(payload, "unresolvable-surface")
+    assert mon is not None and mon["attributed"] == 0
+
+
+def test_canary_shared_surface_counts_against_all_matching(state_env):
+    """A surface shared by two open canaries counts the incident against BOTH
+    — each trips its own item."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec_a = _capture(repo, "shared-a")
+    rec_b = _capture(repo, "shared-b")
+    for r in (rec_a, rec_b):
+        _add_canary(r, surfaces=["user/hooks/lazy-cycle-containment.sh"],
+                    opened=_CANARY_OPENED_PAST)
+    _write_hook_events([
+        {"hook": "lazy-cycle-containment.sh", "kind": "error", "ts": _BASE_NOW},
+        {"hook": "lazy-cycle-containment.sh", "kind": "error",
+         "ts": _BASE_NOW + 60},
+    ])
+    code, payload = _run_canary(repo)
+    assert _trip_of(payload, "shared-a") is not None, payload
+    assert _trip_of(payload, "shared-b") is not None, payload
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

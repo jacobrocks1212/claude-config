@@ -507,24 +507,171 @@ CANARY_MIN_POST_OCCURRENCES = 3
 CANARY_INCIDENT_TRIP_COUNT = 2
 
 
-# --- WU-5/WU-6 seams (filled in by later batches; WU-4 no-op-safe stubs) ----
+# --- WU-5: D2 tripwire band + D3 surface-based incident attribution ---------
 
 def _canary_band_trip(meta: dict, canary: dict, events: list[dict],
                       window: list[str]) -> dict:
-    """D2 targeted-signal regression band (WU-5 fills this; WU-4 no-trip)."""
-    return {"trip": False, "reason": "", "rel": None, "band": None,
-            "post_events": None, "post_value": None, "base_value": None}
+    """D2 tripwire: the targeted signal regressed past the declared band
+    (default ±25% relative to the FROZEN baseline) with ≥3 post-ship
+    occurrences in the accrued window. Hair-triggered relative to the efficacy
+    verdict band. A kpi:<...> / undeclared / no-baseline target degrades to
+    no-trip (never errors) — the KPI-registry band is the sibling seam, not
+    wired here in v1."""
+    out = {"trip": False, "reason": "", "rel": None,
+           "band": CANARY_REGRESSION_BAND_PCT, "post_events": None,
+           "post_value": None, "base_value": None}
+    kind, ev_type = _resolve_target_signal(meta.get("target_signal"))
+    if kind != "event":
+        out["reason"] = f"band-not-evaluable (target {kind})"
+        return out
+    direction = meta.get("expected_direction")
+    if direction not in ("decrease", "increase"):
+        out["reason"] = f"band-not-evaluable (direction {direction!r})"
+        return out
+    baseline = meta.get("baseline") or {}
+    if not isinstance(baseline, dict) or baseline.get("status") != "frozen":
+        out["reason"] = "band-not-evaluable (no frozen baseline)"
+        return out
+    window_set = set(window)
+    post_events = sum(
+        1 for e in events
+        if e.get("run_id") in window_set and e.get("event") == ev_type
+    )
+    post_value = round(post_events / len(window), 4) if window else 0.0
+    base_value = float(baseline.get("value") or 0.0)
+    band = _cfg_int(meta, "canary_band_pct", CANARY_REGRESSION_BAND_PCT)
+    out.update({"post_events": post_events, "post_value": post_value,
+                "base_value": base_value, "band": band})
+    if base_value == 0.0:
+        rel = 100.0 if post_value > 0 else 0.0
+    else:
+        rel = round((post_value - base_value) / base_value * 100.0, 1)
+    out["rel"] = rel
+    # A "regression" is movement AGAINST the intervention's intended direction:
+    # a change that was meant to DECREASE a signal regresses when the signal
+    # goes UP (rel >= +band); an INCREASE target regresses on a drop.
+    regressed = rel >= band if direction == "decrease" else rel <= -band
+    out["trip"] = bool(regressed and post_events >= CANARY_MIN_POST_OCCURRENCES)
+    if out["trip"]:
+        out["reason"] = (
+            f"targeted signal {meta.get('target_signal')} regressed "
+            f"{rel:+.1f}% vs frozen baseline {base_value} ev/run "
+            f"(band ±{band}%, {post_events} post-ship occurrences over "
+            f"{len(window)} window runs)")
+    else:
+        out["reason"] = (
+            f"within band: {rel:+.1f}% vs ±{band}% "
+            f"({post_events} post-ship occurrences)")
+    return out
+
+
+def _canary_hook_surface(hook) -> "str | None":
+    """Map a hook name to its repo-relative script path (`user/hooks/<name>`).
+    A non-hook / empty value → None (conservative: never attributes)."""
+    if not isinstance(hook, str) or not hook.strip():
+        return None
+    base = hook.strip().replace("\\", "/").split("/")[-1]
+    if base.endswith(".sh") or base.endswith(".ps1"):
+        return "user/hooks/" + base
+    return None
+
+
+def _canary_entry_surface(entry: dict) -> "str | None":
+    """Resolve a fresh-incident entry's emitting surface to a repo-relative
+    path (D3). Explicit surface fields win; else a hook name maps to its
+    script. An unresolvable surface returns None and NEVER attributes."""
+    if not isinstance(entry, dict):
+        return None
+    for key in ("surface", "surface_file", "source_file"):
+        v = entry.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip().replace("\\", "/")
+    return _canary_hook_surface(entry.get("hook"))
+
+
+def _load_incident_scan():
+    """Import the dash-named incident-scan module for its READ-ONLY fresh-
+    incident readers. Fail-open — an import failure degrades to deny-ledger-
+    only attribution (never raises)."""
+    try:
+        import importlib.util
+        path = _SCRIPTS_DIR / "incident-scan.py"
+        spec = importlib.util.spec_from_file_location("incident_scan", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _canary_gather_incidents(repo_root: Path) -> list[dict]:
+    """Read fresh incidents from the deny ledger + hook-events + legacy
+    breadcrumbs (the incident-scan.py reader surface — clustered incidents are
+    the preferred input, raw deny/breadcrumb the fallback), each resolved to
+    {ts, surface, kind, line}. Read-only + fail-open."""
+    incidents: list[dict] = []
+
+    def _add(ts, surface, kind, entry):
+        if not isinstance(ts, (int, float)):
+            return
+        incidents.append({"ts": float(ts), "surface": surface, "kind": kind,
+                          "line": json.dumps(entry, sort_keys=True)})
+
+    try:
+        for e in lazy_core.read_deny_ledger():
+            kind = "friction" if e.get("kind") == "process-friction" else "deny"
+            _add(e.get("ts"), _canary_entry_surface(e), kind, e)
+    except Exception:  # noqa: BLE001
+        pass
+
+    inc = _load_incident_scan()
+    if inc is not None:
+        try:
+            for e in inc.read_hook_events(repo_root):
+                _add(e.get("ts"), _canary_entry_surface(e),
+                     f"hook-{e.get('kind') or ''}", e)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for c in inc.read_legacy_crumbs():
+                ts = inc._parse_crumb_ts(str(c.get("at") or ""))
+                _add(ts, _canary_entry_surface(c), "hook-error", c)
+        except Exception:  # noqa: BLE001
+            pass
+    return incidents
+
+
+def _canary_window_start_ts(opened) -> float:
+    """The window's lower time bound: the `opened` date at 00:00 UTC. An
+    unparseable date → 0.0 (attribute all fresh incidents — favors detection,
+    a false trip costs one triaged stub per the SPEC's D2 philosophy)."""
+    try:
+        d = datetime.datetime.strptime(str(opened), "%Y-%m-%d")
+        return d.replace(tzinfo=datetime.timezone.utc).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def _canary_attribute(canary: dict,
                       incidents: list[dict]) -> "tuple[list, list]":
-    """D3 surface-based incident attribution (WU-5 fills this; WU-4 empty)."""
-    return ([], [])
-
-
-def _canary_gather_incidents(repo_root: Path) -> list[dict]:
-    """Fresh-incident source read (WU-5 fills this; WU-4 empty)."""
-    return []
+    """D3 surface-based attribution: an incident attributes iff (i) its
+    timestamp is inside the window (≥ the canary's opened epoch) AND (ii) its
+    emitting surface ∈ canary.surfaces. Unknown/unresolvable surfaces NEVER
+    attribute. Returns (attributed, unattributed_in_window) — the latter is
+    listed-but-not-counted per D3. A shared surface counts against every
+    matching open canary because each is attributed independently."""
+    start = _canary_window_start_ts(canary.get("opened"))
+    surfaces = set(canary.get("surfaces") or [])
+    attributed: list[dict] = []
+    unattributed: list[dict] = []
+    for inc in incidents:
+        if inc["ts"] < start:
+            continue  # pre-window — not fresh for this canary
+        if inc.get("surface") and inc["surface"] in surfaces:
+            attributed.append(inc)
+        else:
+            unattributed.append(inc)
+    return (attributed, unattributed)
 
 
 def _canary_fire_consequence(repo_root: Path, rec: dict, ev: dict,
