@@ -69,14 +69,14 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 2 — Evaluator
 
-- [ ] WU-2.1 — TESTS FIRST: `test_efficacy_eval.py` fixtures — confirmed/refuted/inconclusive bands, min-sample, not-due, undeclared, kpi-unresolvable, no-ledger-data, frozen-baseline-after-ledger-delete, dry-run byte-inert, `--id` filter, exit codes; run → fail (script absent).
-- [ ] WU-2.2 — `efficacy-eval.py`: enumeration, `_resolve_target_signal` seam, window accrual, verdict arithmetic, confounder scan/cap, independence annotation, review append + frontmatter update, escalation (N=2), `--json`/`--dry-run`/`--id`, exit 0 on verdicts.
-- [ ] WU-2.3 — Gate suite green incl. the new file. Commit Phase 2.
+- [x] WU-2.1 — TESTS FIRST: `test_efficacy_eval.py` fixtures — confirmed/refuted/inconclusive bands, min-sample, not-due, undeclared, kpi-unresolvable, no-ledger-data, frozen-baseline-after-ledger-delete, dry-run byte-inert, `--id` filter, exit codes; run → fail (script absent).
+- [x] WU-2.2 — `efficacy-eval.py`: enumeration, `_resolve_target_signal` seam, window accrual, verdict arithmetic, confounder scan/cap, independence annotation, review append + frontmatter update, escalation (N=2), `--json`/`--dry-run`/`--id`, exit 0 on verdicts.
+- [x] WU-2.3 — Gate suite green incl. the new file. Commit Phase 2.
 
 ## Phase 3 — Consequences + surfacing
 
-- [ ] WU-3.1 — TESTS FIRST: `test_efficacy_eval.py` — refuted-enqueues-exactly-once (repeated runs), layer-2 stamp survives bug-dir deletion, layer-1 archived-dir skip, dry-run never enqueues, escalation listing; run → fail.
-- [ ] WU-3.2 — `_enqueue_reconsideration` bound to the sanctioned `lazy-state.py --enqueue-adhoc --type bug` subprocess (`LAZY_ORCHESTRATOR=1` child env) + two-layer guard + stamp.
+- [x] WU-3.1 — TESTS FIRST: `test_efficacy_eval.py` — refuted-enqueues-exactly-once (repeated runs), layer-2 stamp survives bug-dir deletion, layer-1 archived-dir skip, dry-run never enqueues, escalation listing; run → fail.
+- [x] WU-3.2 — `_enqueue_reconsideration` bound to the sanctioned `lazy-state.py --enqueue-adhoc --type bug` subprocess (`LAZY_ORCHESTRATOR=1` child env) + two-layer guard + stamp.
 - [ ] WU-3.3 — Skill prose: `/lazy-batch` §1c.6 flush paragraph; `/lazy-batch-cloud` §1c.6 mirror + divergence-table row; `/lazy-batch-retro` Step 6e citation + bookend line. Lane-local projection + `lint-skills.py` clean.
 - [ ] WU-3.4 — Gate suite green. Commit Phase 3.
 
