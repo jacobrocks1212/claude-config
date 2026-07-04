@@ -70,9 +70,9 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 3 — Ledger-backed rows + regression flags + regen wiring
 
-- [ ] WU-3.1 — Tests FIRST: fixture telemetry ledger (halt→sentinel-resolved dwell 3600s; cycles/completions ratio; containment count), ledger-absent NO-DATA, WARN + BREACH fixtures rendering Regressions lines (both directions).
-- [ ] WU-3.2 — `telemetry-ledger` selectors over `trends` functions + availability check (state-dir segments + cloud segments).
-- [ ] WU-3.3 — Regen wiring prose: `/lazy-batch` per-cycle blockquote + `.claude/skill-config/commit-policy.md` bullet extended (registry-gated, fail-open); `/lazy-batch-cloud` Differences-table row added (coupled-pair record).
+- [x] WU-3.1 — Tests FIRST: fixture telemetry ledger (halt→sentinel-resolved dwell 3600s; cycles/completions ratio; containment count), ledger-absent NO-DATA, WARN + BREACH fixtures rendering Regressions lines (both directions).
+- [x] WU-3.2 — `telemetry-ledger` selectors over `trends` functions + availability check (state-dir segments + cloud segments).
+- [x] WU-3.3 — Regen wiring prose: `/lazy-batch` per-cycle blockquote + `.claude/skill-config/commit-policy.md` bullet extended (registry-gated, fail-open); `/lazy-batch-cloud` Differences-table row added (coupled-pair record).
 
 ## Phase 4 — `/spec` measurability gate + baseline capture
 

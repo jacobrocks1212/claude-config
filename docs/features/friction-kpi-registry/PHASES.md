@@ -133,17 +133,17 @@ the regen wiring lands at the same orchestrator commit step that regenerates `LA
 the coupled-pair record mirrored into `/lazy-batch-cloud`'s Differences table.
 
 **Deliverables:**
-- [ ] Telemetry selectors over `trends` functions: `containment-refusal-count` (windowed event count), `halt-dwell-p50-seconds` (median of resolved `halt`→`sentinel-resolved` dwells; unresolved halts excluded, empty → no-data note), `cycles-per-completion` (`trends.cycles_per_completion`; zero completions → no-data note, never a fabricated ratio). Availability = any ledger segment or cloud segment file exists (absent → NO-DATA).
-- [ ] Regressions section: WARN/BREACH rows rendered `⚠ <system>/<id> <STATUS>: <current> vs band <threshold> (baseline <value>)`; `- (none)` otherwise. Fixture crossing warn then breach (both directions) renders the right flag.
-- [ ] Regen wiring (prose, orchestrator-invoked only, fail-open): extend the `/lazy-batch` per-cycle regen blockquote + commit-policy bullet to also run `python user/scripts/kpi-scorecard.py --repo-root <repo_root>` when `docs/kpi/registry.json` exists (registry-gated no-op elsewhere; a scorecard failure never blocks the commit); add the mirrored "Differences from `/lazy-batch`" table row in `/lazy-batch-cloud` covering the committed-doc regen (also retro-recording the `LAZY_QUEUE.md` wiring the pair table omitted).
-- [ ] Tests: fixture telemetry ledgers (hermetic `LAZY_STATE_DIR`) produce hand-computed dwell/ratio/count values; band-crossing fixtures render WARN and BREACH flags in Regressions; ledger-absent → NO-DATA.
+- [x] Telemetry selectors over `trends` functions: `containment-refusal-count` (windowed event count), `halt-dwell-p50-seconds` (median of resolved `halt`→`sentinel-resolved` dwells; unresolved halts excluded, empty → no-data note), `cycles-per-completion` (`trends.cycles_per_completion`; zero completions → no-data note, never a fabricated ratio). Availability = any ledger segment or cloud segment file exists (absent → NO-DATA).
+- [x] Regressions section: WARN/BREACH rows rendered `⚠ <system>/<id> <STATUS>: <current> vs band <threshold> (baseline <value>)`; `- (none)` otherwise. Fixture crossing warn then breach (both directions) renders the right flag.
+- [x] Regen wiring (prose, orchestrator-invoked only, fail-open): extend the `/lazy-batch` per-cycle regen blockquote + commit-policy bullet to also run `python user/scripts/kpi-scorecard.py --repo-root <repo_root>` when `docs/kpi/registry.json` exists (registry-gated no-op elsewhere; a scorecard failure never blocks the commit); add the mirrored "Differences from `/lazy-batch`" table row in `/lazy-batch-cloud` covering the committed-doc regen (also retro-recording the `LAZY_QUEUE.md` wiring the pair table omitted).
+- [x] Tests: fixture telemetry ledgers (hermetic `LAZY_STATE_DIR`) produce hand-computed dwell/ratio/count values; band-crossing fixtures render WARN and BREACH flags in Regressions; ledger-absent → NO-DATA.
 
 **Minimum Verifiable Behavior:** A fixture ledger with one resolved halt (dwell 3600s) renders
 `halt-dwell-p50` = 3600 seconds; a fixture containment-trip count past the row's `breach`
 renders a `## Regressions` BREACH line naming the row.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Fixture ledger produces expected values; a band-crossing fixture renders a BREACH flag. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` telemetry + regression suites.)* <!-- verification-only -->
+- [x] Fixture ledger produces expected values; a band-crossing fixture renders a BREACH flag. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` telemetry + regression suites.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** observing the regen ride a real `/lazy-batch` per-cycle commit (requires a live orchestrator run on the workstation; the wiring is prose consumed by the orchestrator, mirrored from the proven `LAZY_QUEUE.md` block).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
