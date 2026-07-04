@@ -2,7 +2,11 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 4 phases implemented + validated 2026-07-04 (pytest 1207+ green incl. 10 new
+     telemetry-emitter tests + 15 new trends tests; both --test smoke harnesses green against
+     regenerated baselines; parity audit exit 0; lint-skills clean). NOT Complete on the SPEC —
+     the __mark_complete__ integrity gate owns the SPEC Complete flip + COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (Python state scripts +
 `pipeline_visualizer` + skill prose). No Tauri app, no MCP-reachable surface; validation is
