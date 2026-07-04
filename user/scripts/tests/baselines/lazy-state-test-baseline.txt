@@ -138,5 +138,6 @@
   PASS [cycle-begin-git-consistency-reconciliation] stale pre-boot index.lock reconciled at --cycle-begin
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission
+  PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
 
 All smoke tests passed.

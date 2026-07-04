@@ -187,6 +187,18 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   - ATOMIC GATE+COMMIT (R5): the final action of each batch / plan-part
     completion is the ONE chained command from the turn-end contract below.
 
+<!-- @section provenance-lookup pipelines=feature,bug modes=workstation,cloud skills=execute-plan,retro-feature -->
+Provenance lookup before editing (code-doc-provenance-linkage D6-A):
+  Before your FIRST edit to each source/script file this cycle, run the cheap
+  pure-read lookup:
+    python3 ~/.claude/scripts/lazy-state.py --provenance-lookup <file> --repo-root {cwd}
+  It lists the decision records governing that file (<id, doc, decisions>
+  rows from docs/provenance-index.json). Open the cited IMPLEMENTED.md ONLY
+  when the decision ids are unfamiliar to the task at hand — do not re-read
+  ledgers you already know. Empty governed_by / no index → proceed (the step
+  is a no-op where no index exists). This is how you avoid re-deriving — or
+  contradicting — a past Locked Decision that governs the file under edit.
+
 <!-- @section skill-retro pipelines=feature,bug modes=workstation,cloud skills=retro,retro-feature -->
 <!-- DORMANT — retro unwired from the autonomous pipeline 2026-06; emit_cycle_prompt never selects this section (sub_skill=retro is no longer emitted by lazy-state.py). Retained so section-lookup / residue checks remain stable. -->
 /retro — inline execution:

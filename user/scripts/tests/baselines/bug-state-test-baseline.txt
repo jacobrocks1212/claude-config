@@ -67,5 +67,6 @@
   "path": null
 }
   PASS [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop + enqueue --deps
+  PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
 
 All smoke tests passed.

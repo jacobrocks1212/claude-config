@@ -9753,6 +9753,77 @@ def run_smoke_tests() -> int:
             tl_ok = False
         print(f"  {'PASS' if tl_ok else 'FAIL'} [{fix_tl}] bracket/dispatch/purity/refusal/cloud-flush emission")
 
+        # -------------------------------------------------------------------
+        # Fixture: --cycle-end commit-bracket append is FAIL-OPEN
+        # (code-doc-provenance-linkage Phase 1 / D4-A). A directory squatting on
+        # the ledger filename makes the bracket append unwritable; the
+        # orchestrator --cycle-end must STILL exit 0 and clear the marker (the
+        # bookkeeping never blocks the clear), and the JSON carries no
+        # commit_bracket key (the append honestly reported nothing recorded).
+        # Driven via subprocess so the real handler (friction check → bracket →
+        # clear) runs against a real git bracket (begin → one commit → end).
+        # -------------------------------------------------------------------
+        fix_cbfo = "cycle-end-bracket-fail-open"
+        cbfo_ok = True
+        try:
+            cbfo_state = td_path / "cbfo-state"
+            cbfo_state.mkdir(parents=True, exist_ok=True)
+            # Squat a DIRECTORY on the ledger name so open(..., "a") fails.
+            (cbfo_state / "lazy-commit-brackets.jsonl").mkdir()
+            cbfo_repo = td_path / "cbfo-repo"
+            cbfo_repo.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.email", "t@t"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.name", "t"], check=True)
+            # Hermetic: never depend on the host's commit-signing setup.
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "commit.gpgsign", "false"], check=True)
+            (cbfo_repo / "seed.txt").write_text("seed", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "seed"], check=True)
+            cbfo_env = {k: v for k, v in os.environ.items()
+                        if k not in ("LAZY_CYCLE_SUBAGENT",)}
+            cbfo_env["LAZY_STATE_DIR"] = str(cbfo_state)
+            cbfo_env["LAZY_ORCHESTRATOR"] = "1"
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-begin",
+                 "--feature-id", "feat-cbfo", "--nonce", "beef",
+                 "--repo-root", str(cbfo_repo)],
+                capture_output=True, text=True, env=cbfo_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_cbfo}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
+                cbfo_ok = False
+            # Advance HEAD so a real (non-empty) bracket is attempted.
+            (cbfo_repo / "work.txt").write_text("work", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "work"], check=True)
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-end",
+                 "--repo-root", str(cbfo_repo)],
+                capture_output=True, text=True, env=cbfo_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_cbfo}] --cycle-end must exit 0 despite the unwritable ledger; got {r.returncode}: {r.stderr}")
+                cbfo_ok = False
+            if (cbfo_state / "lazy-cycle-active.json").exists():
+                failures.append(f"[{fix_cbfo}] --cycle-end must still clear the marker (fail-open)")
+                cbfo_ok = False
+            try:
+                cbfo_out = json.loads(r.stdout)
+                if cbfo_out.get("cycle_marker_cleared") is not True:
+                    failures.append(f"[{fix_cbfo}] JSON must report cycle_marker_cleared: true")
+                    cbfo_ok = False
+                if "commit_bracket" in cbfo_out:
+                    failures.append(f"[{fix_cbfo}] a failed append must NOT report a commit_bracket")
+                    cbfo_ok = False
+            except (json.JSONDecodeError, TypeError):
+                failures.append(f"[{fix_cbfo}] --cycle-end stdout must be JSON; got {r.stdout!r}")
+                cbfo_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_cbfo}] unexpected error: {exc!r}")
+            cbfo_ok = False
+        print(f"  {'PASS' if cbfo_ok else 'FAIL'} [{fix_cbfo}] unwritable bracket ledger never blocks the --cycle-end clear")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -9857,6 +9928,42 @@ def main() -> int:
                               "empty hard set removes the key). Gated by "
                               "refuse_if_cycle_active FIRST (exit 3 for a "
                               "cycle subagent, zero side effects)."))
+    # --- code-doc-provenance-linkage: provenance CLI (mirrored on bug-state.py) ---
+    parser.add_argument("--link-provenance", action="store_true",
+                        help=("Manual provenance link (the one-writer producer's "
+                              "second trigger): distill out-of-pipeline work "
+                              "(--commits A..B primary, --pr <n> sugar) into "
+                              "IMPLEMENTED.md + docs/provenance-index.json rows "
+                              "(provenance: manual). Requires --id; optional "
+                              "--body-file (approved prose) and --dry-run. Gated "
+                              "by refuse_if_cycle_active like --enqueue-adhoc."))
+    parser.add_argument("--commits", default=None, metavar="A..B",
+                        help="Commit range for --link-provenance (primary addressing).")
+    parser.add_argument("--pr", type=int, default=None, metavar="N",
+                        help=("PR-number sugar for --link-provenance — resolved to a "
+                              "range via `gh pr view`; degrades to a clean refusal "
+                              "naming the --commits fallback when gh is absent."))
+    parser.add_argument("--body-file", default=None, metavar="PATH",
+                        help=("Operator-approved distillate body prose for "
+                              "--link-provenance (written through the producer, "
+                              "which still owns frontmatter + index)."))
+    parser.add_argument("--dry-run", action="store_true",
+                        help=("With --link-provenance: derive + preview the "
+                              "touched-file set and distillate, write NOTHING."))
+    parser.add_argument("--provenance-lookup", default=None, metavar="PATH",
+                        help=("Pure read: print the provenance-index rows governing "
+                              "PATH ({path, governed_by: [{id, type, doc, decisions, "
+                              "provenance}]}). Never mutates; missing index → empty "
+                              "governed_by (degrades to a no-op)."))
+    parser.add_argument("--lint-provenance", action="store_true",
+                        help=("Pure read, report only (D10): dead index rows (path "
+                              "gone), high-churn files with no provenance rows, and "
+                              "cross-orphans (distillate↔index). Never mutates."))
+    parser.add_argument("--backfill-provenance", action="store_true",
+                        help=("One-shot backfill (D7): distill every receipted item "
+                              "(COMPLETED.md/FIXED.md incl. docs/bugs/_archive/) "
+                              "via message-grep derivation, provenance: backfilled. "
+                              "Idempotent (items with IMPLEMENTED.md are skipped)."))
     parser.add_argument("--materialize-wi", type=int, default=None,
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
@@ -10512,6 +10619,13 @@ def main() -> int:
         # the clear (read-only) so the cycle-end event carries the item id.
         _tl_cycle = lazy_core.read_cycle_marker()
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
+        # code-doc-provenance-linkage Phase 1 (D4-A): record this cycle's commit
+        # bracket (marker begin_head_sha → current HEAD) into the state-dir
+        # bracket ledger BEFORE clearing the marker. Fail-open — a degraded
+        # snapshot / write failure returns None and never blocks the clear.
+        bracket = lazy_core.record_cycle_commit_bracket(
+            repo_root=Path(args.repo_root)
+        )
         cleared = lazy_core.clear_cycle_marker()
         # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission
         # (marker-gated + fail-open inside the emitter; adds NO output keys).
@@ -10523,6 +10637,8 @@ def main() -> int:
         out: dict = {"cycle_marker_cleared": cleared}
         if friction is not None:
             out["process_friction"] = friction
+        if bracket is not None:
+            out["commit_bracket"] = bracket
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
@@ -11072,6 +11188,49 @@ def main() -> int:
         result = backfill_receipts(Path(args.repo_root))
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
+
+    if args.link_provenance:
+        # code-doc-provenance-linkage Phase 3: the manual trigger of the
+        # one-writer provenance producer. Operator-only / out-of-cycle —
+        # gated EXACTLY like --enqueue-adhoc (a cycle subagent is refused
+        # exit 3 with zero side effects).
+        lazy_core.refuse_if_cycle_active("--link-provenance")
+        if not args.id:
+            _die("--link-provenance requires --id")
+        result = lazy_core.link_provenance(
+            Path(args.repo_root), args.id,
+            commit_range=args.commits, pr=args.pr,
+            body_file=Path(args.body_file) if args.body_file else None,
+            dry_run=args.dry_run,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
+    if args.provenance_lookup is not None:
+        # code-doc-provenance-linkage Phase 4 (D6-A): PURE READ — which
+        # decision records govern this file. Not cycle-guarded: dispatched
+        # subagents are the intended consumers (read-only, like --verify-ledger).
+        result = lazy_core.provenance_lookup(
+            Path(args.repo_root), args.provenance_lookup
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.lint_provenance:
+        # code-doc-provenance-linkage Phase 5 (D10): PURE READ, report only.
+        result = lazy_core.lint_provenance(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.backfill_provenance:
+        # code-doc-provenance-linkage Phase 5 (D7-A): one-shot backfill of
+        # already-receipted items through the ONE producer (honest degraded
+        # provenance: backfilled + message-grep). Operator-only — cycle-guarded
+        # like --backfill-receipts' sibling mutations.
+        lazy_core.refuse_if_cycle_active("--backfill-provenance")
+        result = lazy_core.backfill_provenance(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
 
     if args.verify_ledger is not None:
         # Scripted completion-ledger guard: verify the four preconditions for
