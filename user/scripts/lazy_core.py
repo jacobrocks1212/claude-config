@@ -532,6 +532,123 @@ def validate_queue_deps(
         return  # pragma: no cover
 
 
+def dep_completion_status(
+    dep_id: str,
+    repo_root: "Path",
+    *,
+    pipeline: str,
+    id_dir_map: "dict | None" = None,
+) -> str:
+    """Classify a declared dependency for gating purposes (D3 — receipt-gated).
+
+    Returns one of:
+      * ``"complete"`` — the dep's dir resolves with the pipeline's terminal
+        status AND a content-valid completion receipt
+        (feature: ``**Status:** Complete`` + ``COMPLETED.md``;
+        bug: ``**Status:** Fixed`` + ``FIXED.md``) — the EXACT completion
+        definition ``__mark_complete__`` / ``__mark_fixed__`` already enforce.
+      * ``"incomplete"`` — the dir resolves but the dep is not (provably)
+        done: any working status, a claimed terminal status WITHOUT a valid
+        receipt, or a dir with no parseable SPEC yet (an ad-hoc seed). A
+        still-workable queued item always classifies here, so
+        "still-queued ⇒ incomplete" holds by construction.
+      * ``"unsatisfiable-superseded"`` / ``"unsatisfiable-wont-fix"`` — the
+        dep was retired without the work happening (``Superseded`` /
+        ``Won't-fix``); the dependent must fail fast (D4), never silently
+        hold.
+      * ``"missing"`` — no dir resolves anywhere (a dangling id) — the D4
+        fail-fast surface.
+
+    Resolution: ``id_dir_map`` (the caller's queued id → dir map, honoring a
+    custom ``spec_dir``) wins; then the canonical ``docs/features/<id>/`` —
+    or, for the bug pipeline, ``docs/bugs/<id>/`` THEN
+    ``docs/bugs/_archive/<id>/`` (``__mark_fixed__`` archives on fix — the D9
+    justified divergence). Pure on-disk reads; no LLM judgment, no new state.
+    """
+    candidates: list = []
+    if id_dir_map and dep_id in id_dir_map:
+        candidates.append(Path(id_dir_map[dep_id]))
+    if pipeline == "bug":
+        candidates.append(repo_root / "docs" / "bugs" / dep_id)
+        candidates.append(repo_root / "docs" / "bugs" / "_archive" / dep_id)
+        terminal_status, receipt_name, retired, retired_tag = (
+            "Fixed", "FIXED.md", "Won't-fix", "unsatisfiable-wont-fix",
+        )
+    else:
+        candidates.append(repo_root / "docs" / "features" / dep_id)
+        terminal_status, receipt_name, retired, retired_tag = (
+            "Complete", "COMPLETED.md", "Superseded",
+            "unsatisfiable-superseded",
+        )
+    for d in candidates:
+        if not d.exists() or not d.is_dir():
+            continue
+        status = spec_status(d)
+        if status == retired:
+            return retired_tag
+        if status == terminal_status and has_completion_receipt(
+            d, filename=receipt_name
+        ):
+            return "complete"
+        # Resolvable but not provably done (working status, claimed-terminal
+        # without receipt, or no SPEC yet) — the dependent holds.
+        return "incomplete"
+    return "missing"
+
+
+def format_unknown_dependency_blocker(
+    item_id: str, dep_id: str, status: str, known_ids: "list | set"
+) -> str:
+    """Build the BLOCKED.md body for the D4 unknown-dependency fail-fast.
+
+    Written on the DEPENDENT when a declared queue dep is a dangling id
+    (``missing``) or a retired upstream (``unsatisfiable-superseded`` /
+    ``unsatisfiable-wont-fix``). Names the offending id, WHY it can never
+    complete, and the known queued-id set — the
+    ``format_unknown_host_capability_blocker`` shape, for the same reason: a
+    silent hold on an unsatisfiable dep is infinite queue starvation. Shared
+    so the bug-pipeline parity mirror is a one-line reuse.
+    """
+    why = {
+        "missing": (
+            "the id resolves to no on-disk item (open or archived) and no "
+            "queued entry — a dangling reference (typo, renamed slug, or a "
+            "removed item)"
+        ),
+        "unsatisfiable-superseded": (
+            "the upstream is Superseded — it was retired without the work "
+            "happening, so this dependency can never become Complete"
+        ),
+        "unsatisfiable-wont-fix": (
+            "the upstream is Won't-fix — it was retired without the work "
+            "happening, so this dependency can never become Fixed"
+        ),
+    }.get(status, f"the dependency classified {status!r}")
+    known_sorted = sorted(set(known_ids))
+    known_line = (
+        ", ".join(f"`{k}`" for k in known_sorted) if known_sorted
+        else "(none queued)"
+    )
+    return (
+        "# Blocked — unknown dependency\n\n"
+        "## Details\n\n"
+        f"Item `{item_id}` declares a queue dependency (`deps`) on "
+        f"`{dep_id}`, but {why}.\n\n"
+        f"Classification: `{status}`.\n\n"
+        "An unsatisfiable dependency would hold this item forever (silent, "
+        "infinite queue starvation), so this is a loud, immediate validation "
+        "failure instead (blocker_kind: unknown-dependency).\n\n"
+        "## Known queued ids\n\n"
+        f"{known_line}\n\n"
+        "## Recovery Suggestion\n\n"
+        "Either fix the dep id in the item's SPEC `**Depends on:**` block and "
+        "re-run `--sync-deps --id " + item_id + "`, or drop the dependency "
+        "(edit the SPEC block, re-sync), or — if the upstream really is "
+        "retired — redesign this item against a live upstream. Then rename/"
+        "neutralize this BLOCKED.md.\n"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sentinel parsing (per _components/sentinel-frontmatter.md)
 # ---------------------------------------------------------------------------
@@ -9488,6 +9605,13 @@ SANCTIONED_STOP_TERMINAL: frozenset[str] = frozenset({
     "blocked-halt-for-manual", # script-emitted BLOCKED.md halt
     "needs-research",          # NEEDS_INPUT.md needs-research halt
     "queue-blocked-on-research",  # all queue items need research
+    # queue-dependency-dag D4: every remaining queue item is dep-gated (held
+    # on an incomplete declared dependency). A clean, sanctioned stop — the
+    # holds re-open automatically as their deps complete — so the orchestrator
+    # may end a run on it without --operator-authorized, exactly like the
+    # host-capability / all-parked exhaustion terminals. Emitted by BOTH state
+    # scripts (the dep-gate is a coupled-pair surface).
+    "queue-exhausted-dependency-gated",  # all remaining items held on incomplete deps
 })
 
 

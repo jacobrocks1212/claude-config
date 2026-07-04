@@ -171,6 +171,15 @@ def _state(
     # end-of-run gated-head flush.
     if _GATED_HEADS:
         out["gated_heads"] = list(_GATED_HEADS)
+    # queue-dependency-dag Phase 2 (D10): the items the dep-gate HELD this
+    # probe — [{id, missing: [<incomplete dep ids>]}] — are ONLY surfaced when
+    # the walk held at least one item (_DEP_GATED non-empty). When empty the
+    # key is entirely absent so default output (no `deps` fields anywhere)
+    # stays byte-identical — same discipline as "parked" / "gated_heads".
+    # Pure-read consumers (pipeline_visualizer, lazy-queue-doc.py) can render
+    # a "waiting on <dep>" state from this without re-inferring anything.
+    if _DEP_GATED:
+        out["dep_gated"] = [dict(r) for r in _DEP_GATED]
     # budget-guard-defers-near-complete-feature Phase 3: the end-of-run resume
     # flush auto-resumed a near-complete budget-deferred feature this probe. Only
     # surfaced when the flush actually resumed one (_BUDGET_RESUMED set) so default
@@ -257,6 +266,12 @@ _GATED_HEADS: list = []
 # the "budget_resumed_near_complete" probe key is absent, keeping default output
 # byte-identical). Reset at the start of each compute_state().
 _BUDGET_RESUMED: str | None = None
+
+# queue-dependency-dag Phase 2: the items the dep-gate held this invocation —
+# [{id, missing: [<incomplete dep ids>]}], in walk order. Surfaced via the
+# "dep_gated" probe key ONLY when non-empty (byte-identity discipline). Reset
+# at the start of each compute_state().
+_DEP_GATED: list = []
 
 
 # ---------------------------------------------------------------------------
@@ -1530,9 +1545,15 @@ def compute_state(
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
-    global _BUDGET_RESUMED
+    global _BUDGET_RESUMED, _DEP_GATED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # queue-dependency-dag Phase 2: reset the dep-gate hold list for this
+    # invocation. _dep_dir_map is the lazily-built queued id → dir map the
+    # dep-completion classifier resolves custom spec_dirs through — built only
+    # when an entry actually carries `deps` (zero cost on the no-deps path).
+    _DEP_GATED = []
+    _dep_dir_map: dict | None = None
     # Reset the per-feature budget-guard state for this invocation.
     _DEFERRED_BUDGET = []
     _BUDGET_GUARD = None
@@ -2215,6 +2236,90 @@ def compute_state(
                     }
                 _DEFERRED_BUDGET.append(feature_id)
                 continue
+        # queue-dependency-dag Phase 2: the dep-gate (D2-A). An entry whose
+        # queue `deps` (D1: the flat hard-only enforcement projection of the
+        # SPEC dep-block) contain an id that is not receipt-gated-complete
+        # (D3) is HELD — recorded in the dep_gated probe list and skipped with
+        # a _diag audit line — so the walk naturally lands on the dependency
+        # first (an ORDER CORRECTION, not a skip-past-halted-work: no
+        # independent:true rail is demanded of the successor). Transitivity is
+        # emergent — a still-queued dep is incomplete by construction, so a
+        # C→B→A chain holds C and B with no graph traversal. A dangling or
+        # retired (Superseded) dep is the D4 fail-fast: canonical BLOCKED.md
+        # (blocker_kind: unknown-dependency) on the DEPENDENT, halting
+        # terminal_reason="blocked" — the unknown-host-capability shape.
+        # Placed AFTER the completion/cloud/device/host/research/park/budget
+        # skips and BEFORE the skip-ahead branch; runs regardless of
+        # --strict-research-halt (a correctness gate on an opt-in field, not a
+        # throughput optimization — there is no legacy behavior to restore for
+        # entries that carry `deps`). Entries WITHOUT `deps` never enter this
+        # block — byte-identical on every path.
+        _dg_deps = lazy_core.dep_ids(entry)
+        if _dg_deps:
+            if _dep_dir_map is None:
+                _dep_dir_map = {
+                    e.get("id"): (
+                        repo_root / "docs" / "features" / e.get("spec_dir")
+                    ).resolve()
+                    for e in queue
+                    if isinstance(e, dict) and e.get("id") and e.get("spec_dir")
+                }
+            _dg_missing: list[str] = []
+            _dg_bad: tuple[str, str] | None = None
+            for _dg_dep in _dg_deps:
+                _dg_status = lazy_core.dep_completion_status(
+                    _dg_dep, repo_root, pipeline="feature",
+                    id_dir_map=_dep_dir_map,
+                )
+                if _dg_status == "complete":
+                    continue
+                if _dg_status == "incomplete":
+                    _dg_missing.append(_dg_dep)
+                    continue
+                # missing / unsatisfiable-* → D4 fail-fast on the FIRST bad dep.
+                _dg_bad = (_dg_dep, _dg_status)
+                break
+            if _dg_bad is not None:
+                blocked_file = spec_path / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_unknown_dependency_blocker(
+                        feature_id, _dg_bad[0], _dg_bad[1],
+                        sorted(_dep_dir_map or {}),
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=feature_id,
+                        phase="Dependency validation",
+                        blocker_kind="unknown-dependency",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"unknown-dependency: {name} declares queue dep "
+                    f"'{_dg_bad[0]}' which classified {_dg_bad[1]!r} — wrote "
+                    f"BLOCKED.md (blocker_kind: unknown-dependency). Fix the "
+                    f"SPEC dep-block + --sync-deps, or drop the dep."
+                )
+                return _state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=str(spec_path),
+                    current_step="Step 3: blocked",
+                    terminal_reason="blocked",
+                    notify_message=(
+                        f"BLOCKED: {name} — queue dependency '{_dg_bad[0]}' is "
+                        f"{_dg_bad[1]} (unknown-dependency). Awaiting input."
+                    ),
+                )
+            if _dg_missing:
+                _DEP_GATED.append({"id": feature_id, "missing": _dg_missing})
+                _diag(
+                    f"dep-gate: '{feature_id}' held — dep(s) "
+                    f"{', '.join(repr(m) for m in _dg_missing)} not Complete "
+                    f"(receipt-gated); advancing."
+                )
+                continue
         # feature-budget-guard-and-skip-ahead Phase 3: dependency-aware skip-ahead
         # past a gated head (default-on; --strict-research-halt disables it). This
         # is the FINAL gate before a candidate is dispatched, so it sees only
@@ -2492,6 +2597,30 @@ def compute_state(
                     f"--feature-id '{scope_feature_id}' matched no entry in "
                     "docs/features/queue.json — check the id (typo?) or that the "
                     "feature is queued. No cycle was dispatched."
+                ),
+            )
+        # queue-dependency-dag D4: honest all-dep-gated terminal. The walk
+        # exhausted and at least one item was HELD on an incomplete declared
+        # dependency this probe — a clean, sanctioned stop (the holds re-open
+        # automatically as their deps complete), NOT all-features-complete (a
+        # false completion). Placed AFTER the specific global terminals above
+        # (cloud/device/host/research/scoped-id keep their precedence) and
+        # BEFORE the all-parked fallback (a dep-gated item is held for a more
+        # specific reason than "parked"); the flush names each held item and
+        # its incomplete deps. Gated on a hold having actually occurred, so
+        # dep-less queues are byte-identical.
+        if _DEP_GATED:
+            _dg_lines = "; ".join(
+                f"{r['id']} waiting on {', '.join(r['missing'])}"
+                for r in _DEP_GATED
+            )
+            return _state(
+                terminal_reason="queue-exhausted-dependency-gated",
+                notify_message=(
+                    f"Queue exhausted — {len(_DEP_GATED)} item(s) "
+                    f"dependency-gated: {_dg_lines}. Each re-opens "
+                    "automatically once its dependencies are Complete with a "
+                    "receipt."
                 ),
             )
         # Honest all-parked terminal (SPEC D3): when every remaining feature was
@@ -7227,6 +7356,236 @@ def run_smoke_tests() -> int:
             )
         print("  [skip-ahead] default skip-onto-independent + unmarked/downstream "
               "NOT-skipped + --strict-research-halt legacy halt: ok")
+
+        # -------------------------------------------------------------------
+        # Functional check: queue-dependency-dag Phase 2 — the queue `deps`
+        # dep-gate. Covers: hold + advance (B(deps:[A]) held, A dispatched),
+        # transitive hold (C→B→A, no traversal special-case), the gate running
+        # regardless of --strict-research-halt (D2), completion unlock
+        # (receipt-gated, D3), reorder-composes (D8), the unknown-dependency
+        # fail-fast for dangling + Superseded deps (D4), and the all-gated
+        # clean terminal.
+        # -------------------------------------------------------------------
+        def _dg_make(root: Path, fid: str, *, status: str = "Draft",
+                     receipt: bool = False) -> Path:
+            fdir = root / "docs" / "features" / fid
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "SPEC.md").write_text(
+                f"# {fid}\n\n**Status:** {status}\n\n**Depends on:** (none)\n",
+                encoding="utf-8",
+            )
+            if receipt:
+                (fdir / "COMPLETED.md").write_text(
+                    f"---\nkind: completed\nfeature_id: {fid}\n"
+                    "provenance: mark-complete\n---\n\n# Completed\n",
+                    encoding="utf-8",
+                )
+            if status not in ("Complete", "Superseded"):
+                (fdir / "RESEARCH.md").write_text("# R\n")
+                (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+                (fdir / "PHASES.md").write_text(
+                    "# Phases\n\n### Phase 1\n- [ ] Build\n"
+                )
+                (fdir / "plans").mkdir(exist_ok=True)
+                (fdir / "plans" / f"all-phases-{fid}.md").write_text("# Plan\n")
+            return fdir
+
+        dg_root = td_path / "dep-gate"
+        dg_feats = dg_root / "docs" / "features"
+        dg_feats.mkdir(parents=True, exist_ok=True)
+        (dg_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dg_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-c", "name": "DG C", "spec_dir": "feat-dg-c",
+             "tier": 1, "deps": ["feat-dg-b"]},
+            {"id": "feat-dg-b", "name": "DG B", "spec_dir": "feat-dg-b",
+             "tier": 2, "deps": ["feat-dg-a"]},
+            {"id": "feat-dg-a", "name": "DG A", "spec_dir": "feat-dg-a",
+             "tier": 3},
+        ]}))
+        for _dg_fid in ("feat-dg-a", "feat-dg-b", "feat-dg-c"):
+            _dg_make(dg_root, _dg_fid)
+
+        # (a) Hold + advance + transitive: C held on B, B held on A (both
+        #     incomplete-because-queued), A dispatched. dep_gated surfaces the
+        #     holds in walk order with their missing dep ids.
+        dg_st = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st.get("feature_id") != "feat-dg-a":
+            failures.append(
+                "[dep-gate] hold+advance: expected feat-dg-a dispatched past the "
+                f"held dependents, got {dg_st.get('feature_id')!r} "
+                f"(terminal={dg_st.get('terminal_reason')!r})"
+            )
+        if dg_st.get("dep_gated") != [
+            {"id": "feat-dg-c", "missing": ["feat-dg-b"]},
+            {"id": "feat-dg-b", "missing": ["feat-dg-a"]},
+        ]:
+            failures.append(
+                "[dep-gate] hold+advance: expected dep_gated to name C(missing B) "
+                f"then B(missing A); got {dg_st.get('dep_gated')!r}"
+            )
+
+        # (b) The dep-gate is a correctness gate, NOT a throughput
+        #     optimization: it runs identically under --strict-research-halt.
+        dg_st2 = compute_state(
+            dg_root, cloud=False, real_device=True, strict_research_halt=True
+        )
+        if dg_st2.get("feature_id") != "feat-dg-a" or not dg_st2.get("dep_gated"):
+            failures.append(
+                "[dep-gate] strict-flag independence: expected the same hold "
+                f"under --strict-research-halt, got "
+                f"feature_id={dg_st2.get('feature_id')!r} "
+                f"dep_gated={dg_st2.get('dep_gated')!r}"
+            )
+
+        # (c) Completion unlock (D3 receipt-gated): flip A to Complete + a
+        #     valid COMPLETED.md receipt → next probe dispatches B normally;
+        #     C stays held on the still-queued B.
+        (dg_root / "docs" / "features" / "feat-dg-a" / "SPEC.md").write_text(
+            "# feat-dg-a\n\n**Status:** Complete\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (dg_root / "docs" / "features" / "feat-dg-a" / "COMPLETED.md").write_text(
+            "---\nkind: completed\nfeature_id: feat-dg-a\n"
+            "provenance: mark-complete\n---\n\n# Completed\n",
+            encoding="utf-8",
+        )
+        dg_st3 = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st3.get("feature_id") != "feat-dg-b":
+            failures.append(
+                "[dep-gate] completion unlock: expected feat-dg-b dispatched once "
+                f"its dep gained Complete + receipt, got "
+                f"{dg_st3.get('feature_id')!r}"
+            )
+        if dg_st3.get("dep_gated") != [
+            {"id": "feat-dg-c", "missing": ["feat-dg-b"]},
+        ]:
+            failures.append(
+                "[dep-gate] completion unlock: expected only C still held, got "
+                f"{dg_st3.get('dep_gated')!r}"
+            )
+
+        # (d) Reorder composes (D8): queue order is pure preference, the DAG is
+        #     pure constraint — moving the dependent to head is storable and the
+        #     next probe simply holds it again.
+        lazy_core.reorder_queue(
+            dg_feats / "queue.json", "feat-dg-b", to="head",
+            queue_label="queue.json",
+        )
+        dg_st4 = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st4.get("feature_id") != "feat-dg-b":
+            failures.append(
+                "[dep-gate] reorder composes: expected feat-dg-b (dep already "
+                f"complete) after reorder-to-head, got {dg_st4.get('feature_id')!r}"
+            )
+        lazy_core.reorder_queue(
+            dg_feats / "queue.json", "feat-dg-c", to="head",
+            queue_label="queue.json",
+        )
+        dg_st5 = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st5.get("feature_id") != "feat-dg-b" or dg_st5.get("dep_gated") != [
+            {"id": "feat-dg-c", "missing": ["feat-dg-b"]},
+        ]:
+            failures.append(
+                "[dep-gate] reorder composes: dependent-at-head must be held, dep "
+                f"worked first; got feature_id={dg_st5.get('feature_id')!r} "
+                f"dep_gated={dg_st5.get('dep_gated')!r}"
+            )
+        print("  [dep-gate] hold+advance + transitive + strict-flag independence "
+              "+ completion unlock + reorder composes: ok")
+
+        # (e) Unknown-dependency fail-fast (D4): a DANGLING dep id (resolves
+        #     nowhere) writes canonical BLOCKED.md (blocker_kind:
+        #     unknown-dependency) on the DEPENDENT and halts blocked.
+        dgu_root = td_path / "dep-gate-unknown"
+        dgu_feats = dgu_root / "docs" / "features"
+        dgu_feats.mkdir(parents=True, exist_ok=True)
+        (dgu_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgu_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-d", "name": "DG D", "spec_dir": "feat-dg-d",
+             "tier": 1, "deps": ["feat-dg-ghost"]},
+        ]}))
+        _dg_make(dgu_root, "feat-dg-d")
+        dgu_st = compute_state(dgu_root, cloud=False, real_device=True)
+        dgu_blocked = dgu_feats / "feat-dg-d" / "BLOCKED.md"
+        if dgu_st.get("terminal_reason") != "blocked" \
+                or dgu_st.get("feature_id") != "feat-dg-d":
+            failures.append(
+                "[dep-gate] dangling dep: expected blocked halt on feat-dg-d, got "
+                f"terminal={dgu_st.get('terminal_reason')!r} "
+                f"feature_id={dgu_st.get('feature_id')!r}"
+            )
+        if not dgu_blocked.exists():
+            failures.append("[dep-gate] dangling dep: BLOCKED.md was not written")
+        else:
+            dgu_meta = parse_sentinel(dgu_blocked) or {}
+            if dgu_meta.get("blocker_kind") != "unknown-dependency":
+                failures.append(
+                    "[dep-gate] dangling dep: expected blocker_kind "
+                    f"unknown-dependency, got {dgu_meta.get('blocker_kind')!r}"
+                )
+            if "feat-dg-ghost" not in dgu_blocked.read_text(encoding="utf-8"):
+                failures.append(
+                    "[dep-gate] dangling dep: BLOCKED.md body must name the "
+                    "offending dep id"
+                )
+
+        # (f) Superseded dep → the same unknown-dependency fail-fast (the work
+        #     never happened; silently holding would starve the dependent).
+        dgs_root = td_path / "dep-gate-superseded"
+        dgs_feats = dgs_root / "docs" / "features"
+        dgs_feats.mkdir(parents=True, exist_ok=True)
+        (dgs_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgs_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-e", "name": "DG E", "spec_dir": "feat-dg-e",
+             "tier": 1, "deps": ["feat-dg-old"]},
+        ]}))
+        _dg_make(dgs_root, "feat-dg-e")
+        _dg_make(dgs_root, "feat-dg-old", status="Superseded")
+        dgs_st = compute_state(dgs_root, cloud=False, real_device=True)
+        if dgs_st.get("terminal_reason") != "blocked" \
+                or not (dgs_feats / "feat-dg-e" / "BLOCKED.md").exists():
+            failures.append(
+                "[dep-gate] superseded dep: expected unknown-dependency blocked "
+                f"halt on feat-dg-e, got terminal={dgs_st.get('terminal_reason')!r}"
+            )
+        print("  [dep-gate] dangling + superseded dep unknown-dependency "
+              "fail-fast: ok")
+
+        # (g) All-gated clean terminal: the only queued item is dep-gated on an
+        #     incomplete unqueued on-disk dir → queue-exhausted-dependency-gated
+        #     (an honest distinct terminal, never all-features-complete), flush
+        #     naming the held item.
+        dgt_root = td_path / "dep-gate-terminal"
+        dgt_feats = dgt_root / "docs" / "features"
+        dgt_feats.mkdir(parents=True, exist_ok=True)
+        (dgt_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgt_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-h", "name": "DG H", "spec_dir": "feat-dg-h",
+             "tier": 1, "deps": ["feat-dg-open"]},
+        ]}))
+        _dg_make(dgt_root, "feat-dg-h")
+        _dg_make(dgt_root, "feat-dg-open")  # on-disk, incomplete, NOT queued
+        dgt_st = compute_state(dgt_root, cloud=False, real_device=True)
+        if dgt_st.get("terminal_reason") != "queue-exhausted-dependency-gated":
+            failures.append(
+                "[dep-gate] all-gated terminal: expected "
+                "queue-exhausted-dependency-gated, got "
+                f"{dgt_st.get('terminal_reason')!r}"
+            )
+        if dgt_st.get("dep_gated") != [
+            {"id": "feat-dg-h", "missing": ["feat-dg-open"]},
+        ]:
+            failures.append(
+                "[dep-gate] all-gated terminal: expected the flush to name the "
+                f"held item + missing dep, got {dgt_st.get('dep_gated')!r}"
+            )
+        if "feat-dg-h" not in (dgt_st.get("notify_message") or ""):
+            failures.append(
+                "[dep-gate] all-gated terminal: notify_message must name the "
+                f"held item, got {dgt_st.get('notify_message')!r}"
+            )
+        print("  [dep-gate] all-gated queue-exhausted-dependency-gated "
+              "terminal: ok")
 
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.

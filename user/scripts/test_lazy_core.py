@@ -28445,5 +28445,127 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# queue-dependency-dag Phase 2 — receipt-gated dep-completion classifier (D3)
+# and the unknown-dependency blocker body (D4).
+# ---------------------------------------------------------------------------
+
+def _dep_write_feature(root, fid, status, *, receipt=False, spec_dir=None):
+    d = root / "docs" / "features" / (spec_dir or fid)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SPEC.md").write_text(
+        f"# {fid}\n\n**Status:** {status}\n", encoding="utf-8"
+    )
+    if receipt:
+        (d / "COMPLETED.md").write_text(
+            "---\nkind: completed\nfeature_id: " + fid +
+            "\nprovenance: mark-complete\n---\n\n# Completed\n",
+            encoding="utf-8",
+        )
+    return d
+
+
+def _dep_write_bug(root, bid, status, *, receipt=False, archived=False):
+    base = root / "docs" / "bugs"
+    if archived:
+        base = base / "_archive"
+    d = base / bid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SPEC.md").write_text(
+        f"# {bid}\n\n**Status:** {status}\n", encoding="utf-8"
+    )
+    if receipt:
+        (d / "FIXED.md").write_text(
+            "---\nkind: fixed\nbug_id: " + bid +
+            "\nprovenance: mark-fixed\n---\n\n# Fixed\n",
+            encoding="utf-8",
+        )
+    return d
+
+
+def test_dep_completion_status_feature_pipeline(tmp_path):
+    """D3 (feature): complete iff SPEC **Status:** Complete AND a content-valid
+    COMPLETED.md receipt exists. Draft/receiptless-Complete → incomplete;
+    Superseded → unsatisfiable-superseded (the work never happened); no dir
+    anywhere → missing. pytest-only (tmp_path)."""
+    _guard()
+    root = tmp_path
+    _dep_write_feature(root, "dep-done", "Complete", receipt=True)
+    _dep_write_feature(root, "dep-draft", "Draft")
+    _dep_write_feature(root, "dep-claimed", "Complete", receipt=False)
+    _dep_write_feature(root, "dep-super", "Superseded")
+    f = lambda i, **kw: lazy_core.dep_completion_status(
+        i, root, pipeline="feature", **kw)
+    assert f("dep-done") == "complete"
+    assert f("dep-draft") == "incomplete"
+    assert f("dep-claimed") == "incomplete"
+    assert f("dep-super") == "unsatisfiable-superseded"
+    assert f("dep-nowhere") == "missing"
+    # spec_dir hint (queued entry whose dir name differs from its id).
+    _dep_write_feature(root, "dep-hinted", "Complete", receipt=True,
+                       spec_dir="custom-dir")
+    hint = {"dep-hinted": root / "docs" / "features" / "custom-dir"}
+    assert f("dep-hinted") == "missing"
+    assert f("dep-hinted", id_dir_map=hint) == "complete"
+
+
+def test_dep_completion_status_bug_pipeline_archive_aware(tmp_path):
+    """D3/D9 divergence 2 (bug): resolution consults docs/bugs/<id>/ THEN
+    docs/bugs/_archive/<id>/ (__mark_fixed__ archives on fix). Fixed + valid
+    FIXED.md → complete (open or archived); Won't-fix → unsatisfiable-wont-fix
+    (bug-side analog of Superseded); Open → incomplete; no dir → missing.
+    pytest-only (tmp_path)."""
+    _guard()
+    root = tmp_path
+    _dep_write_bug(root, "bug-open", "Open")
+    _dep_write_bug(root, "bug-fixed-open", "Fixed", receipt=True)
+    _dep_write_bug(root, "bug-archived", "Fixed", receipt=True, archived=True)
+    _dep_write_bug(root, "bug-wontfix", "Won't-fix")
+    _dep_write_bug(root, "bug-claimed", "Fixed", receipt=False)
+    f = lambda i: lazy_core.dep_completion_status(i, root, pipeline="bug")
+    assert f("bug-open") == "incomplete"
+    assert f("bug-fixed-open") == "complete"
+    assert f("bug-archived") == "complete"
+    assert f("bug-wontfix") == "unsatisfiable-wont-fix"
+    assert f("bug-claimed") == "incomplete"
+    assert f("bug-nowhere") == "missing"
+
+
+def test_format_unknown_dependency_blocker_names_everything():
+    """D4: the BLOCKED.md body names the dependent, the offending dep id, WHY
+    it is unsatisfiable (missing vs superseded vs wont-fix), and the known
+    queued-id set — the format_unknown_host_capability_blocker shape."""
+    _guard()
+    body = lazy_core.format_unknown_dependency_blocker(
+        "feat-downstream", "feat-ghost", "missing", ["feat-a", "feat-b"]
+    )
+    assert "feat-downstream" in body
+    assert "feat-ghost" in body
+    assert "missing" in body
+    assert "feat-a" in body and "feat-b" in body
+    assert "unknown-dependency" in body
+    body2 = lazy_core.format_unknown_dependency_blocker(
+        "feat-downstream", "feat-old", "unsatisfiable-superseded", []
+    )
+    assert "superseded" in body2.lower()
+
+
+def test_sanctioned_stop_terminal_has_dependency_gated():
+    """D4: queue-exhausted-dependency-gated is a sanctioned clean terminal
+    (the host-capability-saturated / queue-exhausted-all-parked shape)."""
+    _guard()
+    assert "queue-exhausted-dependency-gated" in lazy_core.SANCTIONED_STOP_TERMINAL
+
+
+_TESTS = _TESTS + [
+    # queue-dependency-dag Phase 2 — classifier + blocker + terminal. (The two
+    # tmp_path classifier tests are pytest-only.)
+    ("test_format_unknown_dependency_blocker_names_everything",
+     test_format_unknown_dependency_blocker_names_everything),
+    ("test_sanctioned_stop_terminal_has_dependency_gated",
+     test_sanctioned_stop_terminal_has_dependency_gated),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

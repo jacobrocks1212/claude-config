@@ -60,5 +60,6 @@
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [cycle-prompt-ref-surfacing] cycle_prompt_ref surfaced with marker / None without
+  PASS [dep-gate] hold+advance / archive-aware / wont-fix+dangling fail-fast / all-gated terminal
 
 All smoke tests passed.

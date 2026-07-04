@@ -71,19 +71,19 @@ Full lane gate suite (all ten pytest files + lazy_coord + toolify) at the end.
 
 ## Phase 2 — Dep-gate enforcement
 
-- [ ] WU-2.1 — TESTS FIRST: pytest for `dep_completion_status` (feature complete/incomplete/
+- [x] WU-2.1 — TESTS FIRST: pytest for `dep_completion_status` (feature complete/incomplete/
   superseded/missing + spec_dir hint; bug open/archived/wont-fix/missing) and
   `format_unknown_dependency_blocker` (names id, status, known ids); smoke fixtures added to BOTH
   `run_smoke_tests` (hold+advance, transitive, unlock, dangling→BLOCKED, superseded/wont-fix→
   BLOCKED, all-gated terminal, reorder-composes). Run → red.
-- [ ] WU-2.2 — `lazy_core.py`: `dep_completion_status`, `format_unknown_dependency_blocker`,
+- [x] WU-2.2 — `lazy_core.py`: `dep_completion_status`, `format_unknown_dependency_blocker`,
   `SANCTIONED_STOP_TERMINAL += queue-exhausted-dependency-gated`.
-- [ ] WU-2.3 — `lazy-state.py`: `_DEP_GATED` global + reset + `_state()` key + walk-loop dep-gate
+- [x] WU-2.3 — `lazy-state.py`: `_DEP_GATED` global + reset + `_state()` key + walk-loop dep-gate
   block (after budget guard, before skip-ahead; unconditional w.r.t. `--strict-research-halt`) +
   terminal (after scoped-id, before all-parked).
-- [ ] WU-2.4 — `bug-state.py`: mirrored global/reset/key/gate (reads `entry["queue_entry"]`;
+- [x] WU-2.4 — `bug-state.py`: mirrored global/reset/key/gate (reads `entry["queue_entry"]`;
   archive-aware pipeline="bug") + terminal (after scoped-id, before all-parked).
-- [ ] WU-2.5 — gates green; re-pin BOTH baselines via `_normalize_smoke_output`; verify the
+- [x] WU-2.5 — gates green; re-pin BOTH baselines via `_normalize_smoke_output`; verify the
   baseline diff is purely additive (pre-existing lines unchanged).
 
 ## Phase 3 — Skip-ahead integration (feature only)

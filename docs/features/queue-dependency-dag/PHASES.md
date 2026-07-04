@@ -101,24 +101,24 @@ before bug dispatch); `dep_gated` probe key + per-hold `_diag` (D10); the
 completion-unlock behavior.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `dep_completion_status(dep_id, repo_root, *, pipeline, id_dir_map=None)` →
+- [x] `lazy_core.py`: `dep_completion_status(dep_id, repo_root, *, pipeline, id_dir_map=None)` →
   `complete | incomplete | unsatisfiable-superseded | unsatisfiable-wont-fix | missing`.
   Feature: `docs/features/<id>/` (queue `spec_dir` hint honored), Complete + valid `COMPLETED.md`
   ⇒ complete; Superseded ⇒ unsatisfiable. Bug: `docs/bugs/<id>/` THEN `docs/bugs/_archive/<id>/`
   (D9 divergence 2), Fixed + valid `FIXED.md` ⇒ complete; Won't-fix ⇒ unsatisfiable. No dir
   anywhere ⇒ missing.
-- [ ] `lazy_core.py`: `format_unknown_dependency_blocker(item_id, dep_id, status, known_ids)` —
+- [x] `lazy_core.py`: `format_unknown_dependency_blocker(item_id, dep_id, status, known_ids)` —
   BLOCKED.md body naming the offending id, why it is unsatisfiable, and the known queued-id set
   (the `format_unknown_host_capability_blocker` shape).
-- [ ] `lazy_core.py`: `queue-exhausted-dependency-gated` added to `SANCTIONED_STOP_TERMINAL`.
-- [ ] `lazy-state.py`: `_DEP_GATED` module global (reset per `compute_state`); dep-gate block in
+- [x] `lazy_core.py`: `queue-exhausted-dependency-gated` added to `SANCTIONED_STOP_TERMINAL`.
+- [x] `lazy-state.py`: `_DEP_GATED` module global (reset per `compute_state`); dep-gate block in
   the walk loop (gated on `dep_ids(entry)` non-empty; runs regardless of
   `--strict-research-halt`); `dep_gated` key in `_state()` ONLY when non-empty; terminal fires
   when the walk exhausts with holds (placed after scoped-id, before all-parked), flush naming each
   held item + its missing deps.
-- [ ] `bug-state.py`: mirrored `_DEP_GATED` + dep-gate (reading `entry["queue_entry"]`) +
+- [x] `bug-state.py`: mirrored `_DEP_GATED` + dep-gate (reading `entry["queue_entry"]`) +
   `dep_gated` key in `_bug_state()` + terminal (same precedence slot).
-- [ ] Smoke fixtures (both scripts, baselines re-pinned via `_normalize_smoke_output`):
+- [x] Smoke fixtures (both scripts, baselines re-pinned via `_normalize_smoke_output`):
   hold+advance (B `deps:[A]` ahead of A → A dispatched, `dep_gated` names B); transitive
   (C→B→A, B and C held); completion unlock (receipt written → next probe dispatches dependent);
   dangling dep → BLOCKED.md `unknown-dependency` + `terminal_reason=blocked`; Superseded
@@ -131,11 +131,11 @@ completion-unlock behavior.
 `**Status:** Complete` + `COMPLETED.md`, the next probe dispatches B with no special action.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Dep-gated hold + advance, transitive hold, completion unlock, both fail-fast variants, the
+- [x] Dep-gated hold + advance, transitive hold, completion unlock, both fail-fast variants, the
   all-gated terminal, and reorder-composes each pinned by a smoke fixture on BOTH scripts.
   *(Evidence: `SKIP_MCP_TEST.md` — `--test` suites green against re-pinned baselines.)*
 <!-- verification-only -->
-- [ ] Entries without `deps` remain byte-identical on every path (all pre-existing fixture lines
+- [x] Entries without `deps` remain byte-identical on every path (all pre-existing fixture lines
   in both baselines unchanged; diff is purely additive new-fixture lines). *(Evidence: baseline
   re-pin diff inspection.)*
 <!-- verification-only -->

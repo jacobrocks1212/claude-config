@@ -234,6 +234,12 @@ _OPERATOR_DEFERRED: list[str] = []
 _PARKED: list = []
 _PARK_MODE: bool = False
 
+# queue-dependency-dag Phase 2 (coupled-pair mirror of lazy-state.py): the
+# bugs the dep-gate held this invocation — [{id, missing: [<incomplete dep
+# ids>]}], in walk order. Surfaced via the "dep_gated" probe key ONLY when
+# non-empty (byte-identity discipline). Reset at each compute_state().
+_DEP_GATED: list = []
+
 
 # ===========================================================================
 # === IMPLEMENTATION (WU-2.2 impl-agent owns the bodies below) ==============
@@ -291,6 +297,11 @@ def _bug_state(
     # byte-identical to the pre-WU-1 Phase-4 baseline.
     if _PARK_MODE:
         out["parked"] = list(_PARKED)
+    # queue-dependency-dag Phase 2 (D10, coupled-pair mirror of lazy-state.py):
+    # the bugs the dep-gate HELD this probe. ONLY surfaced when non-empty so
+    # default output (no `deps` fields anywhere) stays byte-identical.
+    if _DEP_GATED:
+        out["dep_gated"] = [dict(r) for r in _DEP_GATED]
     return out
 
 
@@ -652,9 +663,14 @@ def compute_state(
     _OPERATOR_DEFERRED.clear()
     # Park mode: set the module global from the param so _bug_state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
-    global _PARK_MODE, _PARKED
+    global _PARK_MODE, _PARKED, _DEP_GATED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # queue-dependency-dag Phase 2: reset the dep-gate hold list; the lazily-
+    # built queued id → dir map resolves deps through normalized spec_paths
+    # (built only when an entry actually carries `deps` — zero cost otherwise).
+    _DEP_GATED = []
+    _dep_dir_map: dict | None = None
     repo_root = repo_root.resolve()
 
     # Load the hybrid-ordered bug queue.
@@ -999,6 +1015,82 @@ def compute_state(
             )
             continue
 
+        # queue-dependency-dag Phase 2: the dep-gate (D2-A; coupled-pair
+        # mirror of lazy-state.py's). A bug whose queue `deps` contain an id
+        # that is not receipt-gated-complete (D3: **Status:** Fixed + a valid
+        # FIXED.md — resolution consults docs/bugs/<id>/ THEN
+        # docs/bugs/_archive/<id>/, the D9 archive-aware divergence) is HELD
+        # and the walk advances to the dependency. A dangling or Won't-fix dep
+        # is the D4 fail-fast (canonical BLOCKED.md, blocker_kind:
+        # unknown-dependency). This is the FINAL check before dispatch (the
+        # bug pipeline has no skip-ahead branch — justified divergence).
+        # Entries WITHOUT `deps` never enter this block — byte-identical.
+        _dg_deps = lazy_core.dep_ids(entry.get("queue_entry"))
+        if _dg_deps:
+            if _dep_dir_map is None:
+                _dep_dir_map = {
+                    e.get("id"): e.get("spec_path")
+                    for e in queue
+                    if isinstance(e, dict) and e.get("id") and e.get("spec_path")
+                }
+            _dg_missing: list[str] = []
+            _dg_bad: tuple[str, str] | None = None
+            for _dg_dep in _dg_deps:
+                _dg_status = lazy_core.dep_completion_status(
+                    _dg_dep, repo_root, pipeline="bug",
+                    id_dir_map=_dep_dir_map,
+                )
+                if _dg_status == "complete":
+                    continue
+                if _dg_status == "incomplete":
+                    _dg_missing.append(_dg_dep)
+                    continue
+                # missing / unsatisfiable-* → D4 fail-fast on the FIRST bad dep.
+                _dg_bad = (_dg_dep, _dg_status)
+                break
+            if _dg_bad is not None:
+                blocked_file = spec_dir / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_unknown_dependency_blocker(
+                        bug_id, _dg_bad[0], _dg_bad[1],
+                        sorted(_dep_dir_map or {}),
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=bug_id,
+                        phase="Dependency validation",
+                        blocker_kind="unknown-dependency",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"unknown-dependency: {bug_name} declares queue dep "
+                    f"'{_dg_bad[0]}' which classified {_dg_bad[1]!r} — wrote "
+                    f"BLOCKED.md (blocker_kind: unknown-dependency). Fix the "
+                    f"SPEC dep-block + --sync-deps, or drop the dep."
+                )
+                return _bug_state(
+                    feature_id=bug_id,
+                    feature_name=bug_name,
+                    spec_path=str(spec_dir),
+                    current_step=STEP_BLOCKED,
+                    terminal_reason=TR_BLOCKED,
+                    notify_message=(
+                        f"BLOCKED: {bug_name} — queue dependency "
+                        f"'{_dg_bad[0]}' is {_dg_bad[1]} (unknown-dependency). "
+                        "Awaiting input."
+                    ),
+                )
+            if _dg_missing:
+                _DEP_GATED.append({"id": bug_id, "missing": _dg_missing})
+                _diag(
+                    f"dep-gate: '{bug_id}' held — dep(s) "
+                    f"{', '.join(repr(m) for m in _dg_missing)} not Fixed "
+                    f"(receipt-gated); advancing."
+                )
+                continue
+
         # This bug is actionable — stop scanning.
         current = {
             "id": bug_id,
@@ -1067,6 +1159,29 @@ def compute_state(
                 notify_message=(
                     f"--bug-id '{scope_bug_id}' matched no entry in the bug queue — "
                     "check the id (typo?) or that the bug is queued. No cycle was dispatched."
+                ),
+            )
+        # queue-dependency-dag D4 (coupled-pair mirror of lazy-state.py):
+        # honest all-dep-gated terminal. The walk exhausted and at least one
+        # bug was HELD on an incomplete declared dependency this probe — a
+        # clean, sanctioned stop (holds re-open as their deps are fixed +
+        # archived), NOT all-bugs-fixed. Placed AFTER the specific global
+        # terminals above and BEFORE the all-parked fallback (a dep-gated bug
+        # is held for a more specific reason than "parked"); the flush names
+        # each held bug and its incomplete deps. Gated on a hold having
+        # occurred — dep-less queues are byte-identical.
+        if _DEP_GATED:
+            _dg_lines = "; ".join(
+                f"{r['id']} waiting on {', '.join(r['missing'])}"
+                for r in _DEP_GATED
+            )
+            return _bug_state(
+                terminal_reason="queue-exhausted-dependency-gated",
+                notify_message=(
+                    f"Queue exhausted — {len(_DEP_GATED)} bug(s) "
+                    f"dependency-gated: {_dg_lines}. Each re-opens "
+                    "automatically once its dependencies are Fixed with a "
+                    "receipt."
                 ),
             )
         # Honest all-parked terminal (SPEC D3): when every remaining bug was
@@ -4961,6 +5076,187 @@ def run_smoke_tests() -> int:
         print(
             f"  {'PASS' if cpr_ok else 'FAIL'} [{fix_cpr}] "
             f"cycle_prompt_ref surfaced with marker / None without"
+        )
+
+        # -------------------------------------------------------------------
+        # Fixture: queue-dependency-dag Phase 2 — the bug-pipeline dep-gate
+        # (coupled-pair mirror of lazy-state.py's). Covers: hold + advance,
+        # ARCHIVE-AWARE dep resolution (D9 divergence 2: a dep fixed +
+        # archived under docs/bugs/_archive/<id>/ counts complete), the
+        # Won't-fix / dangling unknown-dependency fail-fast (D4), and the
+        # all-gated queue-exhausted-dependency-gated terminal.
+        # -------------------------------------------------------------------
+        fix_dg = "dep-gate"
+        dg_ok = True
+
+        def _dg_bug(root: Path, bid: str, *, status: str = "Open",
+                    receipt: bool = False, archived: bool = False) -> Path:
+            base = root / "docs" / "bugs"
+            if archived:
+                base = base / "_archive"
+            d = base / bid
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "SPEC.md").write_text(
+                f"# {bid}\n\n**Status:** {status}\n**Severity:** P2\n"
+                "**Discovered:** 2026-07-04\n",
+                encoding="utf-8",
+            )
+            if receipt:
+                (d / "FIXED.md").write_text(
+                    f"---\nkind: fixed\nbug_id: {bid}\n"
+                    "provenance: mark-fixed\n---\n\n# Fixed\n",
+                    encoding="utf-8",
+                )
+            return d
+
+        # (a) Hold + advance: bug-dg-b (deps:[bug-dg-a]) ahead of bug-dg-a →
+        #     bug-dg-a dispatched, dep_gated names bug-dg-b.
+        dg_root = td_path / "bug-dep-gate"
+        dg_bugs = dg_root / "docs" / "bugs"
+        dg_bugs.mkdir(parents=True, exist_ok=True)
+        (dg_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-b", "name": "DG Bug B", "spec_dir": "bug-dg-b",
+             "severity": "P1", "deps": ["bug-dg-a"]},
+            {"id": "bug-dg-a", "name": "DG Bug A", "spec_dir": "bug-dg-a",
+             "severity": "P2"},
+        ]}))
+        _dg_bug(dg_root, "bug-dg-a")
+        _dg_bug(dg_root, "bug-dg-b")
+        dg_st = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st.get("feature_id") != "bug-dg-a":
+            failures.append(
+                f"[{fix_dg}] hold+advance: expected bug-dg-a dispatched past the "
+                f"held dependent, got {dg_st.get('feature_id')!r} "
+                f"(terminal={dg_st.get('terminal_reason')!r})"
+            )
+            dg_ok = False
+        if dg_st.get("dep_gated") != [
+            {"id": "bug-dg-b", "missing": ["bug-dg-a"]},
+        ]:
+            failures.append(
+                f"[{fix_dg}] hold+advance: expected dep_gated to name bug-dg-b "
+                f"missing bug-dg-a, got {dg_st.get('dep_gated')!r}"
+            )
+            dg_ok = False
+
+        # (b) Archive-aware unlock: bug-dg-c deps a bug that exists ONLY under
+        #     docs/bugs/_archive/ (Fixed + FIXED.md receipt — the
+        #     __mark_fixed__ end-state) → the dep is complete, c dispatches.
+        dga_root = td_path / "bug-dep-gate-archive"
+        dga_bugs = dga_root / "docs" / "bugs"
+        dga_bugs.mkdir(parents=True, exist_ok=True)
+        (dga_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-c", "name": "DG Bug C", "spec_dir": "bug-dg-c",
+             "severity": "P1", "deps": ["bug-dg-x"]},
+        ]}))
+        _dg_bug(dga_root, "bug-dg-c")
+        _dg_bug(dga_root, "bug-dg-x", status="Fixed", receipt=True,
+                archived=True)
+        dga_st = compute_state(dga_root, cloud=False, real_device=True)
+        if dga_st.get("feature_id") != "bug-dg-c" or dga_st.get("dep_gated"):
+            failures.append(
+                f"[{fix_dg}] archive-aware: expected bug-dg-c dispatched (its dep "
+                f"is fixed + archived), got {dga_st.get('feature_id')!r} "
+                f"dep_gated={dga_st.get('dep_gated')!r}"
+            )
+            dg_ok = False
+
+        # (c) Won't-fix dep → unknown-dependency fail-fast on the DEPENDENT
+        #     (the bug-side analog of a Superseded feature upstream — the work
+        #     never happened).
+        dgw_root = td_path / "bug-dep-gate-wontfix"
+        dgw_bugs = dgw_root / "docs" / "bugs"
+        dgw_bugs.mkdir(parents=True, exist_ok=True)
+        (dgw_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-d", "name": "DG Bug D", "spec_dir": "bug-dg-d",
+             "severity": "P1", "deps": ["bug-dg-w"]},
+        ]}))
+        _dg_bug(dgw_root, "bug-dg-d")
+        _dg_bug(dgw_root, "bug-dg-w", status="Won't-fix")
+        dgw_st = compute_state(dgw_root, cloud=False, real_device=True)
+        dgw_blocked = dgw_bugs / "bug-dg-d" / "BLOCKED.md"
+        if dgw_st.get("terminal_reason") != TR_BLOCKED \
+                or dgw_st.get("feature_id") != "bug-dg-d" \
+                or not dgw_blocked.exists():
+            failures.append(
+                f"[{fix_dg}] wont-fix dep: expected unknown-dependency blocked "
+                f"halt on bug-dg-d, got "
+                f"terminal={dgw_st.get('terminal_reason')!r} "
+                f"blocked_exists={dgw_blocked.exists()}"
+            )
+            dg_ok = False
+        else:
+            dgw_meta = parse_sentinel(dgw_blocked) or {}
+            if dgw_meta.get("blocker_kind") != "unknown-dependency":
+                failures.append(
+                    f"[{fix_dg}] wont-fix dep: expected blocker_kind "
+                    f"unknown-dependency, got {dgw_meta.get('blocker_kind')!r}"
+                )
+                dg_ok = False
+
+        # (d) Dangling dep id (resolves nowhere, open or archived) → the same
+        #     fail-fast.
+        dgd_root = td_path / "bug-dep-gate-dangling"
+        dgd_bugs = dgd_root / "docs" / "bugs"
+        dgd_bugs.mkdir(parents=True, exist_ok=True)
+        (dgd_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-e", "name": "DG Bug E", "spec_dir": "bug-dg-e",
+             "severity": "P1", "deps": ["bug-dg-ghost"]},
+        ]}))
+        _dg_bug(dgd_root, "bug-dg-e")
+        dgd_st = compute_state(dgd_root, cloud=False, real_device=True)
+        if dgd_st.get("terminal_reason") != TR_BLOCKED \
+                or not (dgd_bugs / "bug-dg-e" / "BLOCKED.md").exists():
+            failures.append(
+                f"[{fix_dg}] dangling dep: expected unknown-dependency blocked "
+                f"halt on bug-dg-e, got "
+                f"terminal={dgd_st.get('terminal_reason')!r}"
+            )
+            dg_ok = False
+
+        # (e) All-gated clean terminal: the dependent is dep-gated and its dep
+        #     is parked (BLOCKED.md under --park-blocked) → nothing dispatches
+        #     → queue-exhausted-dependency-gated (checked BEFORE the all-parked
+        #     fallback; an honest distinct terminal, never all-bugs-fixed).
+        dgt_root = td_path / "bug-dep-gate-terminal"
+        dgt_bugs = dgt_root / "docs" / "bugs"
+        dgt_bugs.mkdir(parents=True, exist_ok=True)
+        (dgt_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-f", "name": "DG Bug F", "spec_dir": "bug-dg-f",
+             "severity": "P1", "deps": ["bug-dg-g"]},
+            {"id": "bug-dg-g", "name": "DG Bug G", "spec_dir": "bug-dg-g",
+             "severity": "P2"},
+        ]}))
+        _dg_bug(dgt_root, "bug-dg-f")
+        dgt_g = _dg_bug(dgt_root, "bug-dg-g")
+        _write_yaml_blocked_sentinel(
+            dgt_g / "BLOCKED.md", feature_id="bug-dg-g", phase="Fix",
+            blocker_kind="external", blocked_at="2026-07-04T00:00:00Z",
+            retry_count=0,
+        )
+        dgt_st = compute_state(
+            dgt_root, cloud=False, real_device=True, park_blocked=True
+        )
+        if dgt_st.get("terminal_reason") != "queue-exhausted-dependency-gated":
+            failures.append(
+                f"[{fix_dg}] all-gated terminal: expected "
+                f"queue-exhausted-dependency-gated, got "
+                f"{dgt_st.get('terminal_reason')!r}"
+            )
+            dg_ok = False
+        if dgt_st.get("dep_gated") != [
+            {"id": "bug-dg-f", "missing": ["bug-dg-g"]},
+        ]:
+            failures.append(
+                f"[{fix_dg}] all-gated terminal: expected the flush to name the "
+                f"held item + missing dep, got {dgt_st.get('dep_gated')!r}"
+            )
+            dg_ok = False
+
+        print(
+            f"  {'PASS' if dg_ok else 'FAIL'} [{fix_dg}] "
+            f"hold+advance / archive-aware / wont-fix+dangling fail-fast / "
+            f"all-gated terminal"
         )
 
     # Summary
