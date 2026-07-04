@@ -65,7 +65,7 @@ This plan's `## Plan-specific execution notes` override the contract's default g
 
 ## Work Units
 
-- [ ] WU-8 — Window-close stamps + `## Canary <date>` record section
+- [x] WU-8 — Window-close stamps + `## Canary <date>` record section
 - [ ] WU-9 — `canary-trip-precision` KPI selector + registry row
 - [ ] WU-10 — Retro citation of canary outcomes + `canary:` schema docs
 

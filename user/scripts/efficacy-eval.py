@@ -946,11 +946,49 @@ def _canary_evaluate_record(rec: dict, events: list[dict], run_ids: list[str],
     }
 
 
-def _canary_stamp_no_data(rec: dict) -> None:
-    """Stamp a matured, zero-observable-run canary `closed-clean (no-data)`
-    (D2/D7 honest degradation). The watcher stays the SOLE writer of
-    `canary.*`."""
-    rec["meta"]["canary"]["status"] = "closed-clean (no-data)"
+def _canary_close_section(ev: dict, today: str) -> str:
+    """The `## Canary <date>` record-body section (D7 steady-state handoff):
+    runs observed, signal movement, and incidents attributed (none/list)."""
+    band = ev.get("band") or {}
+    attributed = ev.get("attributed") or []
+    unattributed = ev.get("unattributed") or []
+    lines = [
+        f"## Canary {today}",
+        "",
+        f"- window: closed after {ev['window']}/{ev['window_runs']} observed "
+        f"post-ship run(s) (matured: {ev['matured']})",
+        f"- signal movement: {band.get('reason') or 'n/a (no observable runs)'}",
+    ]
+    if attributed:
+        surfaces = sorted({i.get("surface") for i in attributed
+                           if i.get("surface")})
+        lines.append(
+            f"- incidents attributed: {len(attributed)} on "
+            f"{', '.join(surfaces) or '(surface)'}")
+        lines.append("")
+        lines.append("```")
+        lines.extend(i["line"] for i in attributed)
+        lines.append("```")
+    else:
+        lines.append("- incidents attributed: none")
+    if unattributed:
+        lines.append(
+            f"- unattributed in-window incidents: {len(unattributed)} "
+            f"(listed, never counted)")
+    lines.append(
+        "- handoff: the efficacy review proceeds on its own longer cadence — "
+        "a clean canary does NOT pre-judge the efficacy verdict, and the "
+        "watcher stops waking this record.")
+    return "\n".join(lines)
+
+
+def _canary_stamp_closed(rec: dict, ev: dict, today: str, status: str) -> None:
+    """Close a matured, no-trip canary window (D7): stamp `canary.status`
+    (`closed-clean` or `closed-clean (no-data)`) and append a `## Canary <date>`
+    record-body section. The watcher stays the SOLE writer of `canary.*` and
+    NEVER touches an efficacy verdict field (status / review_count / …)."""
+    rec["meta"]["canary"]["status"] = status
+    rec["body"] = rec["body"].rstrip() + "\n\n" + _canary_close_section(ev, today)
     _write_record(rec)
 
 
@@ -970,6 +1008,7 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
 
     trips: list[dict] = []
     closed_no_data: list[str] = []
+    closed_clean: list[str] = []
     monitoring: list[dict] = []
     for rec in open_recs:
         ev = _canary_evaluate_record(rec, events, run_ids, incidents, today)
@@ -989,10 +1028,18 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
                 "pair_scope": ev["pair_scope"],
                 "consequence": consequence,
             })
-        elif ev["no_data"]:
+        elif ev["matured"]:
+            # D7 window close: a matured window with no trip closes clean. Zero
+            # observable runs is the honest `(no-data)` variant; both append a
+            # `## Canary <date>` record section and stop waking the record.
+            status = "closed-clean (no-data)" if ev["no_data"] \
+                else "closed-clean"
             if not args.dry_run:
-                _canary_stamp_no_data(rec)
-            closed_no_data.append(ev["id"])
+                _canary_stamp_closed(rec, ev, today, status)
+            if ev["no_data"]:
+                closed_no_data.append(ev["id"])
+            else:
+                closed_clean.append(ev["id"])
         else:
             monitoring.append({
                 "id": ev["id"],
@@ -1010,6 +1057,7 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
         "open_canaries": len(open_recs),
         "trips": trips,
         "closed_no_data": closed_no_data,
+        "closed_clean": closed_clean,
         "monitoring": monitoring,
         "notify": notify,
         "dry_run": bool(args.dry_run),
@@ -1073,6 +1121,7 @@ def main(argv: "list[str] | None" = None) -> int:
             sys.stdout.write(
                 f"efficacy-eval --canary: {payload.get('open_canaries', 0)} "
                 f"open, {len(trips)} tripped, "
+                f"{len(payload.get('closed_clean', []))} closed-clean, "
                 f"{len(payload.get('closed_no_data', []))} closed no-data\n")
             for t in trips:
                 sys.stdout.write(

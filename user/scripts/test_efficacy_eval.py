@@ -598,25 +598,26 @@ def test_canary_window_accrues_post_ship_runs_capped_at_window(state_env):
     mon = _mon_of(payload, "accrual-item")
     assert mon is not None and mon["window"] == "6/10 runs"
     assert mon["matured"] is False
-    # Shrink the window to 4 → run-matured (6 post >= 4).
+    # Shrink the window to 4 → run-matured (6 post >= 4) → D7 clean close.
     _add_canary(rec, opened="2099-01-01", window_runs=4)
     code, payload = _run_canary(repo)
-    mon = _mon_of(payload, "accrual-item")
-    assert mon["window"] == "4/4 runs" and mon["matured"] is True
+    assert _mon_of(payload, "accrual-item") is None       # no longer open
+    assert "accrual-item" in payload["closed_clean"]
 
 
 def test_canary_30day_ceiling_matures_with_few_runs(state_env):
     """The 30-day wall-clock ceiling matures a window even with < window_runs
-    observable runs."""
+    observable runs — a matured no-trip window then closes clean (D7), with
+    observable runs (not the no-data variant)."""
     repo = state_env["repo"]
     _seed_runs(4, 1)
-    rec = _capture(repo, "ceiling-item")
+    rec = _capture(repo, "ceiling-item", target="event:halt")  # no signal → no band trip
     _add_canary(rec, opened=_CANARY_OPENED_PAST, window_runs=10)
-    _seed_runs(2, 1, start=4)                 # only 2 post runs (< 10)
+    _seed_runs(2, 0, start=4)                 # only 2 post runs (< 10), zero signal
     code, payload = _run_canary(repo)
-    mon = _mon_of(payload, "ceiling-item")
-    assert mon is not None and mon["window"] == "2/10 runs"
-    assert mon["matured"] is True             # ceiling, not run count
+    assert _mon_of(payload, "ceiling-item") is None
+    assert "ceiling-item" in payload["closed_clean"]        # ceiling, not run count
+    assert "ceiling-item" not in payload["closed_no_data"]  # 2 observable runs
 
 
 def test_canary_absent_telemetry_accrues_nothing_exit_zero(state_env):
@@ -723,9 +724,12 @@ def test_canary_no_trip_on_unrelated_surface_listed_not_counted(state_env):
     ])
     code, payload = _run_canary(repo)
     assert _trip_of(payload, "unrelated-surface") is None
-    mon = _mon_of(payload, "unrelated-surface")
-    assert mon is not None and mon["attributed"] == 0
-    assert mon["unattributed"] == 2
+    # Matured, no trip → D7 clean close; the unattributed incidents are listed
+    # (not counted) in the appended `## Canary` section.
+    assert "unrelated-surface" in payload["closed_clean"]
+    body = rec.read_text(encoding="utf-8")
+    assert "incidents attributed: none" in body
+    assert "unattributed in-window incidents: 2" in body
 
 
 def test_canary_unresolvable_surface_never_attributes(state_env):
@@ -742,8 +746,9 @@ def test_canary_unresolvable_surface_never_attributes(state_env):
     ])
     code, payload = _run_canary(repo)
     assert _trip_of(payload, "unresolvable-surface") is None
-    mon = _mon_of(payload, "unresolvable-surface")
-    assert mon is not None and mon["attributed"] == 0
+    # Matured, no trip, unresolvable surface never attributes → D7 clean close.
+    assert "unresolvable-surface" in payload["closed_clean"]
+    assert "incidents attributed: none" in rec.read_text(encoding="utf-8")
 
 
 def test_canary_shared_surface_counts_against_all_matching(state_env):
@@ -891,6 +896,98 @@ def test_canary_guard_layer1_archived_dir_skips_enqueue(state_env):
     meta = lazy_core.parse_sentinel(rec)
     assert meta["canary"]["status"] == "tripped"
     assert meta["canary_revert_enqueued"] is not None
+
+
+# --- WU-8: window-close stamps + `## Canary <date>` record section ----------
+
+
+def _cc_of(payload: dict, rid: str) -> bool:
+    return rid in payload.get("closed_clean", [])
+
+
+def test_canary_matured_no_trip_stamps_closed_clean(state_env):
+    """A matured window (run-count) with observable runs and NO trip closes
+    `closed-clean` and appends a `## Canary <date>` record section; a
+    subsequent run no longer wakes it."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)                              # baseline
+    rec = _capture(repo, "clean-close-item")
+    _add_canary(rec, opened="2099-01-01", window_runs=4)  # ceiling far off
+    _seed_runs(4, 0, start=4)                     # 4 post runs, zero signal → no band trip
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert _cc_of(payload, "clean-close-item")
+    assert _trip_of(payload, "clean-close-item") is None
+    meta = lazy_core.parse_sentinel(rec)
+    assert meta["canary"]["status"] == "closed-clean"
+    body = rec.read_text(encoding="utf-8")
+    assert "## Canary " in body
+    assert "incidents attributed: none" in body
+    assert "does NOT pre-judge the efficacy verdict" in body
+    # The watcher stops waking a closed record.
+    code2, payload2 = _run_canary(repo)
+    assert payload2["open_canaries"] == 0
+    assert _cc_of(payload2, "clean-close-item") is False
+
+
+def test_canary_no_data_close_appends_canary_section(state_env):
+    """The `closed-clean (no-data)` close ALSO appends the `## Canary <date>`
+    section (D7 handoff), not only the status stamp."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)                              # baseline only; NO post runs
+    rec = _capture(repo, "nodata-section-item")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST)  # 30-day ceiling matured
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert "nodata-section-item" in payload["closed_no_data"]
+    meta = lazy_core.parse_sentinel(rec)
+    assert meta["canary"]["status"] == "closed-clean (no-data)"
+    body = rec.read_text(encoding="utf-8")
+    assert "## Canary " in body
+    assert "0/10 observed" in body
+
+
+def test_canary_close_does_not_alter_efficacy_verdict_fields(state_env):
+    """A canary close writes ONLY canary.* + the appended section — it never
+    creates or mutates an efficacy verdict field (status / review_count)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "efficacy-untouched-item")
+    before = lazy_core.parse_sentinel(rec)
+    _add_canary(rec, opened="2099-01-01", window_runs=4)
+    _seed_runs(4, 0, start=4)
+    _run_canary(repo)
+    after = lazy_core.parse_sentinel(rec)
+    assert after["canary"]["status"] == "closed-clean"
+    # The efficacy fields are byte-identical to pre-canary capture.
+    assert after.get("status") == before.get("status")
+    assert after.get("review_count") == before.get("review_count")
+    assert after.get("escalated") == before.get("escalated")
+    # No efficacy `## Review <date>` section was appended (only `## Canary`).
+    assert "\n## Review 20" not in rec.read_text(encoding="utf-8")
+
+
+def test_canary_close_lists_attributed_incidents_in_section(state_env):
+    """A matured no-trip window (1 attributable incident — below the ≥2 trip
+    bar) records that incident in the `## Canary` section (listed, not a
+    trip)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 0)
+    rec = _capture(repo, "one-incident-item", target="event:halt")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST, window_runs=4,
+                surfaces=["user/hooks/lazy-cycle-containment.sh"])
+    # 4 post runs (matured), ONE attributable incident (< CANARY_INCIDENT_TRIP_COUNT).
+    _seed_runs(4, 0, start=4)
+    _write_hook_events([{
+        "ts": _CANARY_WINDOW_START + 500.0, "kind": "deny",
+        "hook": "lazy-cycle-containment.sh",
+    }])
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert _cc_of(payload, "one-incident-item")     # no trip (only 1 incident)
+    assert _trip_of(payload, "one-incident-item") is None
+    body = rec.read_text(encoding="utf-8")
+    assert "incidents attributed: 1" in body
 
 
 if __name__ == "__main__":
