@@ -2001,5 +2001,186 @@ class TestFleetStaticServing:
         assert 'fetch("/' not in app_js
 
 
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 4 — aggregation hardening
+# ---------------------------------------------------------------------------
+
+import time as _fl_time
+
+
+class TestFleetAggregationHardening:
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def _many_repo_fixture(self, tmp_path, n=12):
+        base = tmp_path / "repos"
+        base.mkdir()
+        state_base = tmp_path / "state"
+        state_base.mkdir()
+        for i in range(n):
+            repo = _fl_seed_repo(base, f"repo-{i:02d}",
+                                 features=("f1", "f2"), bugs=("b1",))
+            if i % 3 == 0:
+                _fl_write_marker(state_base, repo,
+                                 _fl_time.time() - (i + 1) * 3600)
+        return base, tmp_path / "no-config.json", state_base
+
+    def test_twelve_repo_poll_bounded_zero_subprocess(self, tmp_path, monkeypatch):
+        # SPEC Phase 4: a ≥10-repo fleet poll stays under a bounded wall-time
+        # with ZERO state-script subprocesses spawned.
+        from pipeline_visualizer import probe as probe_mod
+        calls = {"n": 0}
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return "{}"
+
+        monkeypatch.setattr(probe_mod, "_run_state_script", counting)
+        base, cfg, state_base = self._many_repo_fixture(tmp_path, n=12)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            t0 = _fl_time.monotonic()
+            resp, body = self._get(port, "/api/fleet")
+            elapsed = _fl_time.monotonic() - t0
+            assert resp.status == 200
+            payload = json.loads(body)
+            assert len(payload["repos"]) == 12
+            assert elapsed < 5.0  # stat-level reads; generous flake-free bound
+        finally:
+            httpd.shutdown()
+        assert calls["n"] == 0
+
+    def test_shallow_fanout_is_parallel(self, tmp_path, monkeypatch):
+        # 12 repos × a 0.2s-slow marker read: sequential would be ≥2.4s; the
+        # ThreadPoolExecutor fan-out (8 workers) finishes well under that.
+        from pipeline_visualizer import fleet
+        real = fleet.read_marker_raw
+
+        def slow(repo_root, state_base=None):
+            _fl_time.sleep(0.2)
+            return real(repo_root, state_base=state_base)
+
+        monkeypatch.setattr(fleet, "read_marker_raw", slow)
+        base, cfg, state_base = self._many_repo_fixture(tmp_path, n=12)
+        t0 = _fl_time.monotonic()
+        payload = fleet.fleet_payload(repos_base=base, lazy_repos_path=cfg,
+                                      state_base=state_base)
+        elapsed = _fl_time.monotonic() - t0
+        assert len(payload["repos"]) == 12
+        assert elapsed < 1.5
+
+    def test_broken_repo_renders_error_row_over_http(self, tmp_path, monkeypatch):
+        # Failure honesty end-to-end: a repo whose shallow read raises renders
+        # an explicit error row in /api/fleet — never a silently-omitted repo.
+        from pipeline_visualizer import fleet
+        real = fleet.read_queue
+
+        def flaky(path):
+            if "repo-b" in str(path):
+                raise PermissionError("unreadable queue.json (fixture)")
+            return real(path)
+
+        monkeypatch.setattr(fleet, "read_queue", flaky)
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/api/fleet")
+            assert resp.status == 200
+            rows = {r["slug"]: r for r in json.loads(body)["repos"]}
+            assert rows["repo-a"]["error"] is None
+            assert rows["repo-b"]["error"] is not None
+            assert "unreadable queue.json" in rows["repo-b"]["error"]
+        finally:
+            httpd.shutdown()
+
+    def test_fleet_payload_carries_ttl_constant(self, tmp_path):
+        from pipeline_visualizer import fleet
+        from pipeline_visualizer.cache import DEFAULT_TTL_SECONDS
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        payload = fleet.fleet_payload(repos_base=base, lazy_repos_path=cfg,
+                                      state_base=state_base)
+        assert payload["fleet_ttl_seconds"] == fleet.FLEET_TTL_SECONDS
+        # D5: the fleet TTL is distinct from — and ≥ — the per-repo probe TTL.
+        assert fleet.FLEET_TTL_SECONDS >= DEFAULT_TTL_SECONDS
+
+
+class TestLazyQueueUrl:
+    """D4-B GitHub-link derivation from PLAIN file reads (no git subprocess)."""
+
+    def _seed_git(self, repo: Path, url: str, branch="main"):
+        git = repo / ".git"
+        git.mkdir(parents=True)
+        (git / "config").write_text(
+            '[core]\n\trepositoryformatversion = 0\n'
+            '[remote "origin"]\n'
+            f'\turl = {url}\n'
+            '\tfetch = +refs/heads/*:refs/remotes/origin/*\n',
+            encoding="utf-8")
+        (git / "HEAD").write_text(f"ref: refs/heads/{branch}\n", encoding="utf-8")
+
+    def test_https_origin(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "https://github.com/jacob/repo-a.git")
+        assert lazy_queue_url(repo) == \
+            "https://github.com/jacob/repo-a/blob/main/LAZY_QUEUE.md"
+
+    def test_ssh_origin_normalized(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "git@github.com:jacob/repo-a.git", branch="trunk")
+        assert lazy_queue_url(repo) == \
+            "https://github.com/jacob/repo-a/blob/trunk/LAZY_QUEUE.md"
+
+    def test_no_doc_or_no_git_is_none(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        no_doc = _fl_seed_repo(tmp_path, "repo-a", features=("f1",))
+        self._seed_git(no_doc, "https://github.com/jacob/repo-a.git")
+        assert lazy_queue_url(no_doc) is None
+        no_git = _fl_seed_repo(tmp_path, "repo-b", features=("f1",),
+                               lazy_queue_doc=True)
+        assert lazy_queue_url(no_git) is None
+
+    def test_detached_head_is_none(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "https://github.com/jacob/repo-a.git")
+        (repo / ".git" / "HEAD").write_text("a" * 40 + "\n", encoding="utf-8")
+        assert lazy_queue_url(repo) is None
+
+    def test_worktree_gitfile_followed(self, tmp_path):
+        # A worktree's .git is a FILE (gitdir: …); HEAD lives in the worktree
+        # gitdir, config in the common .git dir.
+        from pipeline_visualizer.fleet import lazy_queue_url
+        main = _fl_seed_repo(tmp_path, "main-repo", features=("f1",))
+        self._seed_git(main, "https://github.com/jacob/main-repo.git")
+        wt_gitdir = main / ".git" / "worktrees" / "wt-a"
+        wt_gitdir.mkdir(parents=True)
+        (wt_gitdir / "HEAD").write_text("ref: refs/heads/lane/x\n",
+                                        encoding="utf-8")
+        wt = _fl_seed_repo(tmp_path, "wt-a", features=("f1",),
+                           lazy_queue_doc=True)
+        (wt / ".git").write_text(f"gitdir: {wt_gitdir}\n", encoding="utf-8")
+        assert lazy_queue_url(wt) == \
+            "https://github.com/jacob/main-repo/blob/lane/x/LAZY_QUEUE.md"
+
+    def test_fleet_row_carries_url_only_with_doc(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "https://github.com/jacob/repo-a.git")
+        row = fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["lazy_queue_doc"] is True
+        assert row["lazy_queue_url"] == \
+            "https://github.com/jacob/repo-a/blob/main/LAZY_QUEUE.md"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

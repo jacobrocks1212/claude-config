@@ -210,18 +210,18 @@ rows proven end-to-end, ≥10-repo wall-time bound, `LAZY_QUEUE.md` GitHub-link 
 plain `.git` file reads, `~/.claude/lazy-repos.json` schema documentation, CLAUDE.md rows.
 
 **Deliverables:**
-- [ ] `fleet.py`: `fleet_payload(...)` — ThreadPoolExecutor fan-out over `fleet_row`, rows
+- [x] `fleet.py`: `fleet_payload(...)` — ThreadPoolExecutor fan-out over `fleet_row`, rows
   sorted by slug; `{repos: [...], fleet_ttl_seconds, server_time}`.
-- [ ] `fleet.py`: `lazy_queue_url(repo_root)` — GitHub blob URL for a committed `LAZY_QUEUE.md`
+- [x] `fleet.py`: `lazy_queue_url(repo_root)` — GitHub blob URL for a committed `LAZY_QUEUE.md`
   from plain-file reads of `.git/config` (origin URL, ssh→https normalized) + `.git/HEAD`
   (branch); worktree `.git` file followed; any failure → `None`.
-- [ ] `fleet.py` module docstring: the `~/.claude/lazy-repos.json` schema (first consumer):
+- [x] `fleet.py` module docstring: the `~/.claude/lazy-repos.json` schema (first consumer):
   `{"pins": ["<abs repo path>", ...], "excludes": ["<abs repo path>", ...]}`, `~` expanded,
   realpath-matched; malformed file → ignored (fail-open discovery, never a crash).
-- [ ] Tests: ≥10-repo fixture fleet poll bounded wall-time with zero `_run_state_script`
+- [x] Tests: ≥10-repo fixture fleet poll bounded wall-time with zero `_run_state_script`
   spawns; error row rendered (not omitted) for a broken repo; `lazy_queue_url` https/ssh/
   missing-git/no-doc cases.
-- [ ] Docs: root `CLAUDE.md` `pipeline_visualizer/` script-table row extended with `--fleet`;
+- [x] Docs: root `CLAUDE.md` `pipeline_visualizer/` script-table row extended with `--fleet`;
   `user/scripts/CLAUDE.md` per-repo-keyed-state-dir section notes the fleet raw read +
   `lazy-repos.json` schema pointer.
 
@@ -230,7 +230,7 @@ bounded wall-time with zero state-script subprocesses; a repo whose row computat
 renders an explicit error row.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] ≥10-repo fixture poll under the wall-time bound, zero subprocesses. *(Evidence: `TestFleetAggregationHardening`.)* <!-- verification-only -->
+- [x] ≥10-repo fixture poll under the wall-time bound, zero subprocesses. *(Evidence: `TestFleetAggregationHardening`.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** shallow-poll wall time against the
   operator's REAL repo set (fleet size + real disk latency) — requires the workstation's
   `~/source/repos`; the fixture bound covers the algorithmic claim.

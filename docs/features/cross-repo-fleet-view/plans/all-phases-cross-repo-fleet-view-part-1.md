@@ -85,11 +85,11 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 4 — Aggregation hardening + docs
 
-- [ ] WU-4.1 — Tests first: `TestFleetAggregationHardening` (12-repo fixture: wall-time bound +
+- [x] WU-4.1 — Tests first: `TestFleetAggregationHardening` (12-repo fixture: wall-time bound +
   zero subprocess; error row end-to-end over HTTP; `lazy_queue_url` https/ssh/worktree/missing
   cases). Run → fail (fleet_payload sequential/url absent).
-- [ ] WU-4.2 — Implement: `fleet_payload` ThreadPoolExecutor fan-out; `lazy_queue_url` plain-
+- [x] WU-4.2 — Implement: `fleet_payload` ThreadPoolExecutor fan-out; `lazy_queue_url` plain-
   file `.git` derivation; `lazy-repos.json` schema in module docstring. Re-run → green.
-- [ ] WU-4.3 — Docs: root `CLAUDE.md` pipeline_visualizer row (--fleet), `user/scripts/CLAUDE.md`
+- [x] WU-4.3 — Docs: root `CLAUDE.md` pipeline_visualizer row (--fleet), `user/scripts/CLAUDE.md`
   keyed-state-dir section note (fleet raw read + lazy-repos.json). Full LANE gate suite green.
   Commit Phase 4.
