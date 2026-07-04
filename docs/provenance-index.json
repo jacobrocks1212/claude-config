@@ -91,6 +91,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -3844,6 +3849,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -3899,6 +3909,11 @@
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/build-queue-eta-priority-lanes/SPEC.md": [
@@ -4338,6 +4353,11 @@
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/harness-change-canary-rollback/SPEC.md": [
@@ -4345,6 +4365,11 @@
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/harness-hardening-retro-fixes/COMPLETED.md": [
@@ -4655,11 +4680,44 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/intervention-efficacy-tracking/PHASES.md": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/intervention-efficacy-tracking/RESEARCH_SUMMARY.md": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/intervention-efficacy-tracking/SKIP_MCP_TEST.md": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/intervention-efficacy-tracking/SPEC.md": [
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/intervention-efficacy-tracking/plans/all-phases-intervention-efficacy-tracking-part-1.md": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-cycle-containment/COMPLETED.md": [
@@ -5309,6 +5367,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -5706,6 +5769,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/interventions/CLAUDE.md": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/provenance-index.json": [
     {
       "id": "code-doc-provenance-linkage",
@@ -5833,6 +5903,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",
@@ -6064,6 +6139,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -6146,6 +6226,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -6176,6 +6261,13 @@
       "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/efficacy-eval.py": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/incident-scan.py": [
@@ -6274,6 +6366,11 @@
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",
@@ -6408,6 +6505,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -6450,6 +6552,11 @@
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "multi-repo-concurrent-runs",
@@ -6673,6 +6780,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/test_efficacy_eval.py": [
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/test_hooks.py": [
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
@@ -6819,6 +6933,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -6854,6 +6973,11 @@
       "id": "adhoc-stale-state-script-parity-test-fixtures",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",
@@ -7204,6 +7328,11 @@
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/incident-scan/SKILL.md": [
@@ -7218,6 +7347,11 @@
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",
@@ -7285,6 +7419,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",

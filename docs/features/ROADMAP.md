@@ -45,12 +45,12 @@ the historical / manually-authored spec archive (not under pipeline management).
 > improvements are measured (not narrated) and the self-improvement loop cannot overfit, weaken
 > its own gates, or grade itself with tautological metrics. Substrate → semantics → hypothesis →
 ~~> guardrail: `harness-telemetry-ledger` (promoted from Tier 2 — raw-event substrate) →~~  ✅ COMPLETE
-> `friction-kpi-registry` → `intervention-efficacy-tracking` → `anti-overfit-design-gate`, with
+~~> `friction-kpi-registry` → `intervention-efficacy-tracking` → `anti-overfit-design-gate`, with~~  ✅ COMPLETE
 > `harness-change-canary-rollback` (Tier 2) as the self-healing consumer.
 
 ~~- Harness Telemetry Ledger + Trends (`harness-telemetry-ledger`) — state scripts emit a per-cycle JSONL ledger (cycles-per-feature, gate refusals, halt dwell, wall-time); `pipeline_visualizer` gains a trends view so hardening changes are measured, not vibes. *(Promoted from Tier 2 2026-07-04 — measurement substrate for this cluster.)*~~  ✅ COMPLETE
 - Friction KPI Registry + Scorecards (`friction-kpi-registry`) — every friction-reduction system (build-queue, containment, halt handling, and anything designed later) declares canonical KPIs (signal sources, direction-of-goodness, baseline) in a machine-readable registry; scorecards trend per-system health and flag regressions; a `/spec`-time gate makes measurability a precondition for locking any future friction-reduction feature's baseline.
-- Intervention Efficacy Tracking (`intervention-efficacy-tracking`) — every harness change registers its hypothesis (targeted friction signal, baseline, expected direction, review-by date) at ship time; a post-window evaluator writes CONFIRMED/REFUTED/INCONCLUSIVE verdicts against telemetry; REFUTED auto-enqueues a reconsideration item, closing the observe→measure loop the retro system currently leaves open.
+~~- Intervention Efficacy Tracking (`intervention-efficacy-tracking`) — every harness change registers its hypothesis (targeted friction signal, baseline, expected direction, review-by date) at ship time; a post-window evaluator writes CONFIRMED/REFUTED/INCONCLUSIVE verdicts against telemetry; REFUTED auto-enqueues a reconsideration item, closing the observe→measure loop the retro system currently leaves open.~~  ✅ COMPLETE
 - Anti-Overfit + Tautology Design Gate (`anti-overfit-design-gate`) — mechanical + adversarial review gate on harness self-modifications: overfit-smell detection (incident-literal rules), tautological-metric detection (a system graded by a signal it controls or suppresses), gate-weakening detection (loosened thresholds/exemptions demand operator sign-off), and a complexity budget; verdicts are recorded so the gate itself stays auditable.
 
 ## Tier 2 — proposed (repo-exploration stubs 2026-07-04)

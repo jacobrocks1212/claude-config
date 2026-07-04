@@ -22,12 +22,6 @@
       "tier": 1
     },
     {
-      "id": "intervention-efficacy-tracking",
-      "name": "Intervention Efficacy Tracking (Hypothesis Ledger)",
-      "spec_dir": "intervention-efficacy-tracking",
-      "tier": 1
-    },
-    {
       "id": "anti-overfit-design-gate",
       "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
       "spec_dir": "anti-overfit-design-gate",
