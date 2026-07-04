@@ -51,15 +51,15 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 1 — Discovery + shallow probe library
 
-- [ ] WU-1.1 — Tests first: `TestFleetDiscovery` (registry glob, pins, excludes, marker-union,
+- [x] WU-1.1 — Tests first: `TestFleetDiscovery` (registry glob, pins, excludes, marker-union,
   realpath dedup), `TestFleetMarkerRawRead` (raw read; ≥24h marker survives; corrupt marker
   survives), `TestFleetMarkerView` (badge grading, injected now), `TestFleetRow` (depths,
   halts, lazy_queue_doc, error row), `TestFleetSlugs` (collision fallback). Run → fail
   (module absent).
-- [ ] WU-1.2 — Implement `pipeline_visualizer/fleet.py`: `discover_repos`, `marker_path`,
+- [x] WU-1.2 — Implement `pipeline_visualizer/fleet.py`: `discover_repos`, `marker_path`,
   `read_marker_raw`, `marker_view`, `marker_fresh_present`, `slugify`/`assign_slugs`,
   `_queue_summary`, `fleet_row`. Re-run → green.
-- [ ] WU-1.3 — Full `test_pipeline_visualizer.py` green (existing 86 + new). Commit Phase 1.
+- [x] WU-1.3 — Full `test_pipeline_visualizer.py` green (existing 86 + new). Commit Phase 1.
 
 ## Phase 2 — `--fleet` serving mode
 

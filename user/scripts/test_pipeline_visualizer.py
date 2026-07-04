@@ -1344,5 +1344,366 @@ class TestTrendsRetroCli:
         assert payload["telemetry_available"] is False
 
 
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 1 — pipeline_visualizer.fleet (shallow read layer)
+#
+# Pure-read fleet library: D1 discovery (registry glob + lazy-repos.json
+# pins/excludes + live-marker union), the raw NEVER-DELETING marker read + D3
+# badge grading, D5 shallow rows (queue depths + halt-sentinel presence), and
+# D7 slug assignment. Zero state-script subprocesses anywhere in this layer.
+# ---------------------------------------------------------------------------
+
+import datetime as _fl_datetime
+
+
+def _fl_iso(epoch: float) -> str:
+    """ISO-8601 UTC 'Z' string for an epoch float (the marker's format)."""
+    return (_fl_datetime.datetime(1970, 1, 1)
+            + _fl_datetime.timedelta(seconds=epoch)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _fl_seed_repo(base: Path, name: str, features=(), bugs=(),
+                  lazy_queue_doc: bool = False) -> Path:
+    """Seed a minimal lazy-enabled repo: queue.json + item dirs per pipeline."""
+    repo = base / name
+    for pipeline, ids in (("features", features), ("bugs", bugs)):
+        pdir = repo / "docs" / pipeline
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": i, "name": i, "spec_dir": i, "tier": 1} for i in ids
+            ]}, indent=2) + "\n", encoding="utf-8")
+        for i in ids:
+            d = pdir / i
+            d.mkdir(exist_ok=True)
+            (d / "SPEC.md").write_text("# x\n\n**Status:** Draft\n",
+                                       encoding="utf-8")
+    if lazy_queue_doc:
+        (repo / "LAZY_QUEUE.md").write_text("# Lazy Queue\n", encoding="utf-8")
+    return repo
+
+
+def _fl_write_marker(state_base: Path, repo_root: Path, started_epoch: float,
+                     pipeline="feature", work_branch="lazy/run-branch") -> Path:
+    """Write a keyed run marker (production layout: <state_base>/<repo_key>/)."""
+    import lazy_core
+    d = state_base / lazy_core.repo_key(str(repo_root))
+    d.mkdir(parents=True, exist_ok=True)
+    marker = {
+        "pipeline": pipeline, "cloud": False, "repo_root": str(repo_root),
+        "session_id": None, "started_at": _fl_iso(started_epoch),
+        "work_branch": work_branch, "max_cycles": 20,
+    }
+    p = d / "lazy-run-marker.json"
+    p.write_text(json.dumps(marker), encoding="utf-8")
+    return p
+
+
+_FL_NOW = 1_800_000_000.0  # fixed injected 'now' for age grading
+
+
+class TestFleetDiscovery:
+    """discover_repos: registry glob ∪ pins ∪ live-marker roots, realpath-
+    deduped, excludes applied last."""
+
+    def test_registry_glob_finds_lazy_repos_only(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        b = _fl_seed_repo(base, "repo-b", bugs=("b1",))
+        (base / "not-a-repo").mkdir()  # no docs/ → not discovered
+        got = discover_repos(repos_base=base,
+                             lazy_repos_path=tmp_path / "no-config.json",
+                             state_base=tmp_path / "no-state")
+        assert set(got) == {_os.path.realpath(str(a)), _os.path.realpath(str(b))}
+
+    def test_pins_added_and_excludes_removed(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        b = _fl_seed_repo(base, "repo-b", features=("f1",))
+        # An out-of-tree pinned repo (not under repos_base).
+        c = _fl_seed_repo(tmp_path / "elsewhere", "repo-c", features=("f1",))
+        cfg = tmp_path / "lazy-repos.json"
+        cfg.write_text(json.dumps({
+            "pins": [str(c)],
+            "excludes": [str(b)],
+        }), encoding="utf-8")
+        got = discover_repos(repos_base=base, lazy_repos_path=cfg,
+                             state_base=tmp_path / "no-state")
+        assert set(got) == {_os.path.realpath(str(a)), _os.path.realpath(str(c))}
+
+    def test_live_marker_union_adds_out_of_tree_repo(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        # A live run in a nonstandard root, discoverable only via its marker.
+        d = _fl_seed_repo(tmp_path / "outside", "repo-d", features=("f1",))
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, d, _FL_NOW - 60)
+        got = discover_repos(repos_base=base,
+                             lazy_repos_path=tmp_path / "no-config.json",
+                             state_base=state_base)
+        assert set(got) == {_os.path.realpath(str(a)), _os.path.realpath(str(d))}
+
+    def test_union_dedups_by_realpath(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        # Pin the SAME repo via a non-canonical path form (trailing slash) AND
+        # give it a live marker — still one entry.
+        cfg = tmp_path / "lazy-repos.json"
+        cfg.write_text(json.dumps({"pins": [str(a) + _os.sep]}), encoding="utf-8")
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, a, _FL_NOW - 60)
+        got = discover_repos(repos_base=base, lazy_repos_path=cfg,
+                             state_base=state_base)
+        assert got == [_os.path.realpath(str(a))]
+
+    def test_missing_sources_and_malformed_config_fail_open(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        bad_cfg = tmp_path / "lazy-repos.json"
+        bad_cfg.write_text("{ not json", encoding="utf-8")
+        got = discover_repos(repos_base=base, lazy_repos_path=bad_cfg,
+                             state_base=tmp_path / "absent-state")
+        assert got == [_os.path.realpath(str(a))]
+
+
+class TestFleetMarkerRawRead:
+    """read_marker_raw: raw keyed-path read; NEVER deletes (the ≥24h marker
+    survival is the load-bearing D3 invariant)."""
+
+    def test_absent_returns_none(self, tmp_path):
+        from pipeline_visualizer.fleet import read_marker_raw
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        assert read_marker_raw(repo, state_base=tmp_path / "state") is None
+
+    def test_present_returns_raw_fields(self, tmp_path):
+        from pipeline_visualizer.fleet import read_marker_raw
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, repo, _FL_NOW - 120, pipeline="bug",
+                         work_branch="lazy/bugs-x")
+        raw = read_marker_raw(repo, state_base=state_base)
+        assert raw["pipeline"] == "bug"
+        assert raw["work_branch"] == "lazy/bugs-x"
+        assert raw["repo_root"] == str(repo)
+
+    def test_stale_marker_survives_repeated_reads(self, tmp_path):
+        # THE invariant: a ≥24h-old marker is still on disk (bytes unchanged)
+        # after every fleet read path has run over it, repeatedly.
+        from pipeline_visualizer.fleet import (
+            fleet_row, marker_fresh_present, marker_view, read_marker_raw)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "docs" / "features").mkdir(parents=True)
+        state_base = tmp_path / "state"
+        mp = _fl_write_marker(state_base, repo, _FL_NOW - 25 * 3600)
+        before = mp.read_bytes()
+        for _ in range(3):
+            raw = read_marker_raw(repo, state_base=state_base)
+            view = marker_view(raw, now=_FL_NOW)
+            assert view["badge"] == "stale-marker"
+            assert marker_fresh_present(repo, state_base=state_base,
+                                        now=_FL_NOW) is False
+            fleet_row(repo, state_base=state_base, now=_FL_NOW)
+        assert mp.exists()
+        assert mp.read_bytes() == before
+
+    def test_corrupt_marker_flagged_not_deleted(self, tmp_path):
+        # lazy_core.read_run_marker DELETES a corrupt marker; the fleet read
+        # must flag it and leave it on disk.
+        from pipeline_visualizer.fleet import (marker_fresh_present,
+                                               marker_view, read_marker_raw)
+        import lazy_core
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        state_base = tmp_path / "state"
+        d = state_base / lazy_core.repo_key(str(repo))
+        d.mkdir(parents=True)
+        mp = d / "lazy-run-marker.json"
+        mp.write_text("{ not json", encoding="utf-8")
+        raw = read_marker_raw(repo, state_base=state_base)
+        assert raw is not None and raw.get("unreadable") is True
+        view = marker_view(raw, now=_FL_NOW)
+        assert view["present"] is True
+        assert view["badge"] == "stale-marker"
+        assert view["age_seconds"] is None
+        assert marker_fresh_present(repo, state_base=state_base,
+                                    now=_FL_NOW) is False
+        assert mp.exists()  # never deleted
+
+    def test_lazy_state_dir_flat_layout_honored(self, tmp_path, monkeypatch):
+        # With no explicit state_base and LAZY_STATE_DIR set, the marker is
+        # read flat from that dir (claude_state_dir override semantics).
+        from pipeline_visualizer.fleet import read_marker_raw
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        flat = tmp_path / "flat-state"
+        flat.mkdir()
+        (flat / "lazy-run-marker.json").write_text(json.dumps({
+            "pipeline": "feature", "repo_root": str(repo),
+            "started_at": _fl_iso(_FL_NOW - 60),
+        }), encoding="utf-8")
+        monkeypatch.setenv("LAZY_STATE_DIR", str(flat))
+        raw = read_marker_raw(repo)
+        assert raw is not None and raw["pipeline"] == "feature"
+
+
+class TestFleetMarkerView:
+    """D3 badge grading over an injected now. Warn threshold 2h; stale 24h
+    (aligned with lazy_core._MARKER_STALE_SECONDS)."""
+
+    def _raw(self, age_seconds):
+        return {"pipeline": "feature", "started_at": _fl_iso(_FL_NOW - age_seconds),
+                "work_branch": "lazy/x", "repo_root": "/r"}
+
+    def test_idle_when_no_marker(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(None, now=_FL_NOW)
+        assert view == {"present": False, "age_seconds": None, "badge": "idle",
+                        "pipeline": None, "work_branch": None}
+
+    def test_run_active_within_warn_threshold(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(self._raw(60), now=_FL_NOW)
+        assert view["badge"] == "run-active"
+        assert view["present"] is True
+        assert abs(view["age_seconds"] - 60) < 0.001
+        assert view["pipeline"] == "feature"
+        assert view["work_branch"] == "lazy/x"
+
+    def test_run_silent_past_warn_threshold(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(self._raw(3 * 3600), now=_FL_NOW)
+        assert view["badge"] == "run-silent"
+        assert abs(view["age_seconds"] - 3 * 3600) < 0.001
+
+    def test_stale_marker_past_24h(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(self._raw(25 * 3600), now=_FL_NOW)
+        assert view["badge"] == "stale-marker"
+        assert abs(view["age_seconds"] - 25 * 3600) < 0.001
+
+    def test_thresholds_align_with_lazy_core(self):
+        from pipeline_visualizer import fleet
+        import lazy_core
+        assert fleet.STALE_SECONDS == lazy_core._MARKER_STALE_SECONDS
+        assert fleet.WARN_SECONDS == 2 * 3600
+
+    def test_unparseable_started_at_is_stale_with_null_age(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view({"pipeline": "feature", "started_at": "yesterday-ish"},
+                           now=_FL_NOW)
+        assert view["present"] is True
+        assert view["badge"] == "stale-marker"
+        assert view["age_seconds"] is None
+
+
+class TestFleetSlugs:
+    def test_slugify_kebab_cases(self):
+        from pipeline_visualizer.fleet import slugify
+        assert slugify("My_Repo!") == "my-repo"
+        assert slugify("claude-config") == "claude-config"
+        assert slugify("...") == "repo"  # never empty
+
+    def test_assign_unique_basenames_keep_plain_slugs(self, tmp_path):
+        from pipeline_visualizer.fleet import assign_slugs
+        a = tmp_path / "alpha"
+        b = tmp_path / "beta"
+        a.mkdir()
+        b.mkdir()
+        slugs = assign_slugs([str(a), str(b)])
+        assert slugs[str(a)] == "alpha"
+        assert slugs[str(b)] == "beta"
+
+    def test_basename_collision_gets_repo_key_suffix(self, tmp_path):
+        from pipeline_visualizer.fleet import assign_slugs
+        import lazy_core
+        a = tmp_path / "one" / "same-name"
+        b = tmp_path / "two" / "same-name"
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        slugs = assign_slugs([str(a), str(b)])
+        assert slugs[str(a)] != slugs[str(b)]
+        for root, slug in slugs.items():
+            assert slug.startswith("same-name-")
+            assert slug == "same-name-" + lazy_core.repo_key(root)[:8]
+
+
+class TestFleetRow:
+    """fleet_row: shallow shape — depths, halt presence, marker view, doc flag,
+    error-row degradation. No state-script subprocess anywhere."""
+
+    def test_depths_match_queue_lengths(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a",
+                             features=("f1", "f2", "f3"), bugs=("b1", "b2"))
+        row = fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["features"]["depth"] == 3
+        assert row["bugs"]["depth"] == 2
+        assert row["error"] is None
+        assert row["name"] == "repo-a"
+        assert row["slug"] == "repo-a"
+        assert row["repo_root"] == str(repo)
+
+    def test_halt_sentinel_presence_listed_with_kind(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a",
+                             features=("f1", "f2"), bugs=("b1",))
+        (repo / "docs" / "features" / "f2" / "NEEDS_INPUT.md").write_text(
+            "---\nkind: needs-input\n---\n", encoding="utf-8")
+        (repo / "docs" / "bugs" / "b1" / "BLOCKED.md").write_text(
+            "---\nkind: blocked\n---\n", encoding="utf-8")
+        row = fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["features"]["halts"] == [{"id": "f2", "kind": "needs-input"}]
+        assert row["bugs"]["halts"] == [{"id": "b1", "kind": "blocked"}]
+
+    def test_marker_view_embedded(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",))
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, repo, _FL_NOW - 300)
+        row = fleet_row(repo, state_base=state_base, now=_FL_NOW)
+        assert row["marker"]["present"] is True
+        assert row["marker"]["badge"] == "run-active"
+        assert row["marker"]["pipeline"] == "feature"
+        assert row["marker"]["work_branch"] == "lazy/run-branch"
+
+    def test_lazy_queue_doc_flag(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        with_doc = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                                 lazy_queue_doc=True)
+        without = _fl_seed_repo(tmp_path, "repo-b", features=("f1",))
+        sb = tmp_path / "state"
+        assert fleet_row(with_doc, state_base=sb, now=_FL_NOW)["lazy_queue_doc"] is True
+        assert fleet_row(without, state_base=sb, now=_FL_NOW)["lazy_queue_doc"] is False
+
+    def test_internal_error_degrades_to_error_row(self, tmp_path, monkeypatch):
+        # A broken repo renders an explicit error row, never a raise/omission.
+        from pipeline_visualizer import fleet
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",))
+
+        def boom(path):
+            raise OSError("permission denied (fixture)")
+
+        monkeypatch.setattr(fleet, "read_queue", boom)
+        row = fleet.fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["error"] is not None
+        assert "permission denied" in row["error"]
+        assert row["slug"] == "repo-a"
+        assert row["repo_root"] == str(repo)
+        assert row["features"]["depth"] == 0  # shape stays renderable
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

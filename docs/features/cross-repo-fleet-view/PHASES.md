@@ -42,29 +42,29 @@ extension + static frontend assets). No Tauri app, no MCP-reachable surface; val
 halt-sentinel presence), and D7 slug assignment. No server change yet.
 
 **Deliverables:**
-- [ ] `fleet.py`: `discover_repos(repos_base=None, lazy_repos_path=None, state_base=None)` —
+- [x] `fleet.py`: `discover_repos(repos_base=None, lazy_repos_path=None, state_base=None)` —
   union of (a) `<repos_base>/*/docs/{features,bugs}/queue.json` glob, (b) `lazy-repos.json`
   `pins`, (c) raw `repo_root` fields scanned from `<state_base>/*/lazy-run-marker.json` (keyed
   layout; a flat `lazy-run-marker.json` directly under the base is also honored for
   `LAZY_STATE_DIR`-style dirs); realpath-deduped, `excludes` applied last, sorted.
-- [ ] `fleet.py`: `marker_path(repo_root, state_base=None)` + `read_marker_raw(repo_root, ...)`
+- [x] `fleet.py`: `marker_path(repo_root, state_base=None)` + `read_marker_raw(repo_root, ...)`
   — raw JSON read of the keyed marker path composed via `lazy_core.repo_key`; NEVER calls
   `read_run_marker`, never writes, never deletes, never calls `claude_state_dir(create=True)`.
   Honors `LAZY_STATE_DIR` (flat, un-keyed) when no explicit `state_base` is given.
-- [ ] `fleet.py`: `marker_view(raw, now)` — D3 badge grading: `idle` / `run-active` (< 2h) /
+- [x] `fleet.py`: `marker_view(raw, now)` — D3 badge grading: `idle` / `run-active` (< 2h) /
   `run-silent` (2h–24h) / `stale-marker` (≥ 24h, aligned with `_MARKER_STALE_SECONDS`);
   `age_seconds` always carried; unparseable marker/`started_at` → `stale-marker` with
   `age_seconds: null` (honest, still never deleted).
-- [ ] `fleet.py`: `marker_fresh_present(repo_root, ...)` — presence + age < 24h only (the fleet-
+- [x] `fleet.py`: `marker_fresh_present(repo_root, ...)` — presence + age < 24h only (the fleet-
   mode substitute for `server._run_marker_present`, race-free across threads, no delete).
-- [ ] `fleet.py`: `fleet_row(repo_root, slug, now, state_base)` → `{slug, repo_root, name,
+- [x] `fleet.py`: `fleet_row(repo_root, slug, now, state_base)` → `{slug, repo_root, name,
   marker: {present, age_seconds, badge, pipeline, work_branch}, features: {depth, halts:[{id,
   kind}]}, bugs: {…}, lazy_queue_doc, lazy_queue_url, error}`; halt detection is presence-stat
   of `NEEDS_INPUT.md`/`BLOCKED.md` in `<pipeline_dir>/<spec_dir or id>` (the `_item_dir`
   fallback shape); any internal exception degrades to an error row (`error` set), never a raise.
-- [ ] `fleet.py`: `slugify` + `assign_slugs(roots)` — basename slug; on collision append a short
+- [x] `fleet.py`: `slugify` + `assign_slugs(roots)` — basename slug; on collision append a short
   `repo_key` prefix (D7).
-- [ ] Tests (`test_pipeline_visualizer.py`, new fleet section): discovery union/dedup/excludes/
+- [x] Tests (`test_pipeline_visualizer.py`, new fleet section): discovery union/dedup/excludes/
   pins (incl. an out-of-tree live-marker repo), ≥24h marker STILL ON DISK after
   `read_marker_raw` + `fleet_row` + repeated polls, badge grading at 60s/3h/25h/absent, queue
   depths equal `len(queue)`, halts listed with kinds, slug collision fallback, error-row
@@ -76,8 +76,8 @@ out-of-tree repo represented only by a live keyed marker, `discover_repos` retur
 `stale-marker` + age and the marker file still exists afterwards.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] ≥24h-old marker survives N fleet reads (file existence + mtime unchanged). *(Evidence: `test_pipeline_visualizer.py` `TestFleetMarkerRawRead`.)* <!-- verification-only -->
-- [ ] Discovery union matches D1 across fixture sources. *(Evidence: `TestFleetDiscovery`.)* <!-- verification-only -->
+- [x] ≥24h-old marker survives N fleet reads (file existence + mtime unchanged). *(Evidence: `test_pipeline_visualizer.py` `TestFleetMarkerRawRead`.)* <!-- verification-only -->
+- [x] Discovery union matches D1 across fixture sources. *(Evidence: `TestFleetDiscovery`.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
