@@ -2,7 +2,12 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 4 phases implemented + validated 2026-07-04 (pytest gate suite 1288 passed / 2 sanctioned
+     skips incl. test_pipeline_visualizer 136 = 86 pre-existing green unmodified + 50 new fleet
+     tests; smoke baselines + parity audit + lint green; live fleet-server smoke recorded in
+     SKIP_MCP_TEST.md). NOT Complete on the SPEC — the __mark_complete__ integrity gate owns the
+     SPEC Complete flip + COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a stdlib Python package
 extension + static frontend assets). No Tauri app, no MCP-reachable surface; validation is
