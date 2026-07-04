@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: toolify-auto-promotion
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -114,5 +114,5 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 - [x] WU-4.3 — Doc rows: `user/scripts/CLAUDE.md` (promote script row, miner row update, CLI
   surface + justified divergence), root `CLAUDE.md` script row, `toolify-bar.md` checklist
   annotations. Commit Phase 4.
-- [ ] WU-4.4 — FULL gate suite green (all suites + smokes + parity + lint); write
+- [x] WU-4.4 — FULL gate suite green (all suites + smokes + parity + lint); write
   `SKIP_MCP_TEST.md`; finalize PHASES/plan statuses. Final commit.

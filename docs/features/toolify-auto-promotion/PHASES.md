@@ -2,7 +2,12 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 4 phases implemented + validated 2026-07-04 (pytest 1220 passed + 2 sanctioned skips;
+     test_toolify_miner 22/22; test_toolify_promote 18/18; lazy-state/bug-state/lazy_coord --test
+     smokes green; lazy_parity_audit exit 0; lint-skills clean; lane-local projection clean).
+     NOT Complete on the SPEC — the __mark_complete__ integrity gate owns the SPEC Complete
+     flip + COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (stdlib Python scripts +
 one skill-prose step). No Tauri app, no MCP-reachable surface; validation is pytest
