@@ -31,9 +31,21 @@ un-generalized.
   since the governed code lives there, not in claude-config.
 - **Consumer:** component injection and/or lookup surfaced at edit time so subagents read the
   linked decision records nearest their edit.
+- **Manual invocation for out-of-pipeline work (in scope):** not all governed code flows through
+  the lazy pipeline — teammates land changes with no completion gate to emit the linkage. Provide
+  an operator-invocable entry point (skill and/or script CLI) that runs the SAME distillate +
+  index-update path against an arbitrary commit range / PR / branch: derive the touched-file set
+  from the commits, author or point at the decision record (interactive when no SPEC exists —
+  e.g. distill from the PR description/review thread), and write through the identical index
+  format. One writer, two triggers — the automatic completion-gate path and the manual path must
+  share the producer so the index never forks into pipeline-shaped vs. manual-shaped entries.
 - **Maintenance:** a lint pass flags index entries whose files were deleted/renamed and
-  high-churn files with no provenance.
+  high-churn files with no provenance — the latter doubling as the prompt to run the manual
+  linking pass over teammate-authored churn.
 
 > Draft (pre-Gemini). Open questions for `/spec` baseline-lock: index format + location per repo;
 > distillate schema; rename/churn tolerance; consumption mechanism (injection vs. hook vs. skill
-> step); backfill strategy for already-completed items. Solutions above are directional, not locked.
+> step); backfill strategy for already-completed items; manual-path ergonomics (commit-range vs.
+> PR-number addressing; how much distillate authoring is interactive vs. LLM-drafted-then-
+> approved; provenance attribution field distinguishing pipeline-emitted from manually-linked
+> entries). Solutions above are directional, not locked.
