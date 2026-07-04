@@ -13413,6 +13413,226 @@ def provenance_lookup(repo_root: Path, path_str: str) -> dict:
     return out
 
 
+# Churn-lint defaults (D10) — placeholder thresholds, tunable in one place:
+# a file with >= _PROVENANCE_CHURN_THRESHOLD authored commits in the last
+# _PROVENANCE_CHURN_DAYS days and NO index rows is a hotspot (the prompt to
+# run the manual --link-provenance pass over teammate churn).
+_PROVENANCE_CHURN_DAYS = 90
+_PROVENANCE_CHURN_THRESHOLD = 5
+
+
+def _iter_receipted_item_dirs(repo_root: Path):
+    """Yield (item_dir, kind, receipt_name) for every dir holding a valid
+    completion receipt: docs/features/*/COMPLETED.md (feature),
+    docs/bugs/*/FIXED.md and docs/bugs/_archive/*/FIXED.md (bug)."""
+    repo_root = Path(repo_root)
+    roots = [
+        (repo_root / "docs" / "features", "feature", "COMPLETED.md", "completed"),
+        (repo_root / "docs" / "bugs", "bug", "FIXED.md", "fixed"),
+        (repo_root / "docs" / "bugs" / "_archive", "bug", "FIXED.md", "fixed"),
+    ]
+    for base, kind, receipt_name, receipt_kind in roots:
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir()):
+            if not d.is_dir() or d.name.startswith("_"):
+                continue
+            meta = parse_sentinel(d / receipt_name)
+            if meta is not None and meta.get("kind") == receipt_kind:
+                yield d, kind, receipt_name
+
+
+def backfill_provenance(repo_root: Path, date: str | None = None) -> dict:
+    """One-shot backfill (D7-A): distill every already-receipted item through
+    the ONE producer with honest degraded provenance.
+
+    Walks items with a valid COMPLETED.md/FIXED.md (features, bugs, AND
+    docs/bugs/_archive/), skips items already carrying IMPLEMENTED.md
+    (idempotent — never clobbers a richer pipeline/manual distillate), derives
+    the touched-file set via message-grep (no commit brackets exist for
+    pre-feature history), and writes provenance: backfilled +
+    derivation: message-grep. A zero-hit slug still gets a distillate
+    (commits: []) and contributes no index rows — honest, never silent.
+    """
+    repo_root = Path(repo_root)
+    backfilled: list[str] = []
+    skipped_existing: list[str] = []
+    no_commit_matches: list[str] = []
+    failures: list[str] = []
+    for item_dir, kind, receipt_name in _iter_receipted_item_dirs(repo_root):
+        item_id = item_dir.name
+        if (item_dir / "IMPLEMENTED.md").exists():
+            skipped_existing.append(item_id)
+            continue
+        derived = derive_touched_from_grep(repo_root, item_id)
+        receipt_meta = parse_sentinel(item_dir / receipt_name) or {}
+        receipt_prov = receipt_meta.get("provenance", "gated")
+        if not derived["commits"]:
+            no_commit_matches.append(item_id)
+            validated_line = (
+                f"Backfilled: message-grep resolved NO commits for this slug "
+                f"(pre-feature history). Receipt: {receipt_name} "
+                f"(provenance: {receipt_prov})."
+            )
+        else:
+            validated_line = (
+                f"Backfilled from message-grep history. Receipt: "
+                f"{receipt_name} (provenance: {receipt_prov})."
+            )
+        result = write_provenance(
+            repo_root, item_dir, item_id, kind,
+            derived["commits"], derived["files"],
+            provenance="backfilled", derivation="message-grep",
+            date=date, validated_line=validated_line,
+        )
+        if result.get("ok"):
+            backfilled.append(item_id)
+        else:
+            failures.append(f"{item_id}: {result.get('refused')}")
+    out = {
+        "ok": not failures,
+        "backfilled": backfilled,
+        "skipped_existing": skipped_existing,
+        "no_commit_matches": no_commit_matches,
+        "count": len(backfilled),
+    }
+    if failures:
+        out["failures"] = failures
+    return out
+
+
+def lint_provenance(
+    repo_root: Path,
+    churn_days: int = _PROVENANCE_CHURN_DAYS,
+    churn_threshold: int = _PROVENANCE_CHURN_THRESHOLD,
+) -> dict:
+    """Maintenance lint (D10) — PURE READ, report only, never mutates.
+
+    Three checks:
+      (a) dead_rows — index keys whose path no longer exists in the working
+          tree (D5's rename/delete correction prompt: re-link or accept the
+          tombstone);
+      (b) churn_hotspots — files with >= churn_threshold authored commits in
+          the last churn_days days and NO index rows (the prompt to run the
+          manual pass over teammate churn). ``docs/**`` paths are excluded —
+          decision records/queues churn by design and are not governed code;
+      (c) cross_orphans — distillates (with a non-empty commits list) that
+          have no index rows, and index rows citing a missing distillate.
+    """
+    repo_root = Path(repo_root)
+    index_path = _provenance_index_path(repo_root)
+    index: dict = {}
+    index_error: str | None = None
+    if index_path.is_file():
+        try:
+            loaded = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                index = loaded
+            else:
+                index_error = "index is not a JSON object"
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            index_error = f"index unreadable ({exc})"
+
+    # (a) dead rows.
+    dead_rows: list[dict] = []
+    for key in sorted(index):
+        if not (repo_root / key).exists():
+            ids = [r.get("id") for r in index[key] if isinstance(r, dict)]
+            dead_rows.append({"path": key, "ids": ids})
+
+    # (b) churn hotspots with no rows.
+    churn_hotspots: list[dict] = []
+    out = _git_capture_lines(
+        repo_root,
+        ["log", "--no-merges", f"--since={churn_days} days ago",
+         "--name-only", "--pretty=format:"],
+    )
+    if out is not None:
+        counts: dict[str, int] = {}
+        for ln in out:
+            s = ln.strip()
+            if s:
+                counts[s] = counts.get(s, 0) + 1
+        for path, n in sorted(counts.items()):
+            if n < churn_threshold:
+                continue
+            if path in index:
+                continue
+            if path.startswith("docs/"):
+                continue  # decision records / queues churn by design
+            if not (repo_root / path).exists():
+                continue  # deleted since — not an actionable hotspot
+            churn_hotspots.append({"path": path, "commits": n})
+
+    # (c) cross-orphans.
+    ids_with_rows: set[tuple[str, str]] = set()
+    for rows in index.values():
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if isinstance(r, dict):
+                ids_with_rows.add((str(r.get("id")), str(r.get("type"))))
+    distillates_without_rows: list[str] = []
+    known_distillate_ids: set[str] = set()
+    dist_globs = [
+        ("docs/features", "feature"),
+        ("docs/bugs", "bug"),
+        ("docs/bugs/_archive", "bug"),
+    ]
+    for rel_base, kind in dist_globs:
+        base = repo_root / rel_base
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir()):
+            if not d.is_dir() or d.name.startswith("_"):
+                continue
+            doc = d / "IMPLEMENTED.md"
+            meta = parse_sentinel(doc)
+            if meta is None or meta.get("kind") != "implemented":
+                continue
+            known_distillate_ids.add(d.name)
+            commits = meta.get("commits")
+            has_commits = isinstance(commits, list) and len(commits) > 0
+            if has_commits and (d.name, kind) not in ids_with_rows:
+                distillates_without_rows.append(
+                    str(doc.relative_to(repo_root)).replace("\\", "/"))
+    rows_without_distillate: list[dict] = []
+    seen_missing: set[tuple[str, str]] = set()
+    for key in sorted(index):
+        rows = index[key]
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            item_id = str(r.get("id"))
+            kind = str(r.get("type"))
+            if (item_id, kind) in seen_missing:
+                continue
+            doc_rel = _provenance_doc_path(repo_root, item_id, kind)
+            if not (repo_root / doc_rel).is_file():
+                seen_missing.add((item_id, kind))
+                rows_without_distillate.append(
+                    {"path": key, "id": item_id, "type": kind})
+    report = {
+        "ok": True,
+        "index_present": index_path.is_file(),
+        "dead_rows": dead_rows,
+        "churn_hotspots": churn_hotspots,
+        "cross_orphans": {
+            "distillates_without_rows": distillates_without_rows,
+            "rows_without_distillate": rows_without_distillate,
+        },
+        "thresholds": {
+            "churn_days": churn_days,
+            "churn_threshold": churn_threshold,
+        },
+    }
+    if index_error:
+        report["index_error"] = index_error
+    return report
+
+
 def append_auto_readmit_event(
     tool_use_id: str,
     readmitted_sha12: str,

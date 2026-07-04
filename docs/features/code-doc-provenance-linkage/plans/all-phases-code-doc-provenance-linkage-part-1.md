@@ -105,11 +105,11 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 5 — Backfill + lint
 
-- [ ] WU-5.1 — Failing tests first: backfill honesty (`backfilled` + `message-grep`) +
+- [x] WU-5.1 — Failing tests first: backfill honesty (`backfilled` + `message-grep`) +
   idempotency; lint catches planted dead row / hot un-provenanced file / cross-orphan; lint
   purity.
-- [ ] WU-5.2 — `lazy_core.backfill_provenance` + `lazy_core.lint_provenance` (+ churn threshold
+- [x] WU-5.2 — `lazy_core.backfill_provenance` + `lazy_core.lint_provenance` (+ churn threshold
   constants).
-- [ ] WU-5.3 — `--backfill-provenance` / `--lint-provenance` handlers on BOTH scripts (mirrored).
-- [ ] WU-5.4 — Live claude-config backfill run (commit the generated index + distillates; record
+- [x] WU-5.3 — `--backfill-provenance` / `--lint-provenance` handlers on BOTH scripts (mirrored).
+- [x] WU-5.4 — Live claude-config backfill run (commit the generated index + distillates; record
   actual counts); `user/scripts/CLAUDE.md` CLI rows; FULL gate suite green.

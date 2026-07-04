@@ -252,23 +252,23 @@ populates the index the lookup serves.
 **Scope:** Day-one usefulness (backfill claude-config) + the honesty loop (`--lint-provenance`).
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `backfill_provenance(repo_root)` — walks items with a valid
+- [x] `lazy_core.py`: `backfill_provenance(repo_root)` — walks items with a valid
   `COMPLETED.md`/`FIXED.md` (features, bugs, `docs/bugs/_archive/`), skips items already carrying
   `IMPLEMENTED.md` (idempotent), derives via message-grep, writes through `write_provenance`
   (`provenance: backfilled`, `derivation: message-grep`); zero-hit items get a distillate with
   `commits: []` + a body note and no index rows (honest, never silent).
-- [ ] `lazy_core.py`: `lint_provenance(repo_root, churn_days=90, churn_threshold=5)` — report
+- [x] `lazy_core.py`: `lint_provenance(repo_root, churn_days=90, churn_threshold=5)` — report
   only, never mutates: (a) dead rows (path gone from the working tree); (b) churn hotspots with
   no rows (`git log --since` aggregation over the threshold); (c) cross-orphans (distillate with
   no rows / rows citing a missing distillate).
-- [ ] CLI on BOTH scripts: `--backfill-provenance`, `--lint-provenance` (mirrored; parity green).
-- [ ] Tests: backfilled entries carry `provenance: backfilled` + `derivation: message-grep`;
+- [x] CLI on BOTH scripts: `--backfill-provenance`, `--lint-provenance` (mirrored; parity green).
+- [x] Tests: backfilled entries carry `provenance: backfilled` + `derivation: message-grep`;
   backfill idempotent; lint catches a planted dead row, a planted hot un-provenanced file, and a
   planted cross-orphan; lint mutates nothing.
-- [ ] Run `--backfill-provenance` for claude-config (this repo) as validation — commits the index
+- [x] Run `--backfill-provenance` for claude-config (this repo) as validation — commits the index
   + `IMPLEMENTED.md` distillates for already-completed items (SPEC estimated 10 features + 39
   archived bugs; actual counts recorded in the commit).
-- [ ] Docs: `user/scripts/CLAUDE.md` CLI quick-reference rows for the four new subcommands
+- [x] Docs: `user/scripts/CLAUDE.md` CLI quick-reference rows for the four new subcommands
   (tight, no reflow).
 
 **Minimum Verifiable Behavior:** `--backfill-provenance --repo-root <claude-config>` emits
@@ -277,8 +277,8 @@ hits; `--lint-provenance` on a fixture with a planted dead row + hot file report
 mutates nothing.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Backfill honesty: receipted item → `provenance: backfilled`, `derivation: message-grep`. *(Evidence: `test_lazy_core.py` + the live claude-config backfill run.)* <!-- verification-only -->
-- [ ] Lint catches rot: planted dead row + churned non-indexed file both flagged; nothing mutated. *(Evidence: `test_lazy_core.py` + manual run.)* <!-- verification-only -->
+- [x] Backfill honesty: receipted item → `provenance: backfilled`, `derivation: message-grep`. *(Evidence: `test_lazy_core.py` + the live claude-config backfill run.)* <!-- verification-only -->
+- [x] Lint catches rot: planted dead row + churned non-indexed file both flagged; nothing mutated. *(Evidence: `test_lazy_core.py` + manual run.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 

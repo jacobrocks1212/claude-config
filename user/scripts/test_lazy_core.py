@@ -29288,5 +29288,189 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# code-doc-provenance-linkage — Phase 5: --backfill-provenance + --lint-provenance
+# ---------------------------------------------------------------------------
+
+def test_backfill_provenance_honest_and_idempotent():
+    """Backfill walks receipted items (features + ARCHIVED bugs), emits
+    provenance: backfilled + derivation: message-grep distillates, and is
+    idempotent (existing IMPLEMENTED.md → skipped, index byte-stable)."""
+    _guard()
+    assert hasattr(lazy_core, "backfill_provenance"), (
+        "lazy_core.backfill_provenance is missing"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        # Receipted feature + receipted archived bug, seeded BEFORE the git
+        # fixture so the slug-named commits are the only touched-file source.
+        feat_dir = _prov_spec_dir(repo_root, "feat-done")
+        lazy_core.write_completed_receipt(
+            feat_dir / "COMPLETED.md", "feat-done", "2026-06-01",
+            provenance="gated")
+        arch_dir = repo_root / "docs" / "bugs" / "_archive" / "bug-old"
+        arch_dir.mkdir(parents=True)
+        lazy_core.write_completed_receipt(
+            arch_dir / "FIXED.md", "bug-old", "2026-06-01",
+            provenance="gated", kind="fixed")
+        _prov_git_fixture_repo(repo_root)
+        _prov_git_commit_file(repo_root, "src/f.py", "feat(feat-done): impl")
+        _prov_git_commit_file(repo_root, "src/b.py", "fix(bug-old): repair")
+        result = lazy_core.backfill_provenance(repo_root, date="2026-07-04")
+        assert result["ok"] is True, f"got {result}"
+        assert sorted(result["backfilled"]) == ["bug-old", "feat-done"], f"got {result}"
+        feat_meta = lazy_core.parse_sentinel(feat_dir / "IMPLEMENTED.md")
+        assert feat_meta.get("provenance") == "backfilled"
+        assert feat_meta.get("derivation") == "message-grep"
+        bug_meta = lazy_core.parse_sentinel(arch_dir / "IMPLEMENTED.md")
+        assert bug_meta.get("provenance") == "backfilled"
+        index_path = repo_root / "docs" / "provenance-index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        assert index["src/f.py"][0] == {
+            "id": "feat-done", "type": "feature", "provenance": "backfilled"}
+        assert index["src/b.py"][0]["type"] == "bug"
+        # Idempotency: second run skips both; index byte-stable.
+        before = index_path.read_bytes()
+        result2 = lazy_core.backfill_provenance(repo_root, date="2026-07-04")
+        assert sorted(result2["skipped_existing"]) == ["bug-old", "feat-done"], (
+            f"got {result2}")
+        assert result2["backfilled"] == []
+        assert index_path.read_bytes() == before
+
+
+def test_backfill_provenance_zero_hit_still_distills():
+    """A receipted item whose slug matches NO commit message still gets an
+    honest distillate (commits: []) and contributes no index rows."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        feat_dir = _prov_spec_dir(repo_root, "feat-ancient")
+        lazy_core.write_completed_receipt(
+            feat_dir / "COMPLETED.md", "feat-ancient", "2026-06-01",
+            provenance="backfilled-unverified")
+        _prov_git_fixture_repo(repo_root)
+        result = lazy_core.backfill_provenance(repo_root, date="2026-07-04")
+        assert result["ok"] is True and result["backfilled"] == ["feat-ancient"]
+        assert "feat-ancient" in result.get("no_commit_matches", []), f"got {result}"
+        meta = lazy_core.parse_sentinel(feat_dir / "IMPLEMENTED.md")
+        assert meta.get("commits") == [], f"got {meta}"
+        index_path = repo_root / "docs" / "provenance-index.json"
+        if index_path.exists():
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            assert all(
+                not any(r.get("id") == "feat-ancient" for r in rows)
+                for rows in index.values()
+            ), f"zero-hit item must contribute no rows: {index}"
+
+
+def test_lint_provenance_catches_rot_and_is_pure():
+    """The D10 lint flags (a) dead rows, (b) hot un-provenanced files,
+    (c) cross-orphans — and mutates NOTHING."""
+    _guard()
+    assert hasattr(lazy_core, "lint_provenance"), (
+        "lazy_core.lint_provenance is missing"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        # (b) churn a non-indexed file past the threshold.
+        for i in range(5):
+            _prov_git_commit_file(repo_root, "src/hot.py", f"churn {i}")
+        # (a) an index row whose path no longer exists + (c) a row citing a
+        # missing distillate.
+        index_path = repo_root / "docs" / "provenance-index.json"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps({
+            "src/gone.py": [
+                {"id": "feat-ghost", "type": "feature", "provenance": "manual"}],
+        }, indent=2) + "\n", encoding="utf-8")
+        # (c) a distillate (non-empty commits) with NO index rows.
+        orphan_dir = repo_root / "docs" / "features" / "feat-orphan"
+        orphan_dir.mkdir(parents=True)
+        (orphan_dir / "IMPLEMENTED.md").write_text(
+            "---\nkind: implemented\nfeature_id: feat-orphan\ndate: 2026-07-04\n"
+            "provenance: manual\nderivation: commit-range\ncommits: [abc1234]\n"
+            "decisions: []\n---\n\n# Implementation Ledger\n", encoding="utf-8")
+        before = index_path.read_bytes()
+        mtime_before = index_path.stat().st_mtime_ns
+        report = lazy_core.lint_provenance(repo_root, churn_days=90, churn_threshold=5)
+        assert report["ok"] is True, f"got {report}"
+        assert [d["path"] for d in report["dead_rows"]] == ["src/gone.py"], f"got {report}"
+        assert any(h["path"] == "src/hot.py" and h["commits"] >= 5
+                   for h in report["churn_hotspots"]), f"got {report}"
+        orphans = report["cross_orphans"]
+        assert "docs/features/feat-orphan/IMPLEMENTED.md" in orphans[
+            "distillates_without_rows"], f"got {report}"
+        assert any(r["id"] == "feat-ghost"
+                   for r in orphans["rows_without_distillate"]), f"got {report}"
+        # Report only — nothing mutated.
+        assert index_path.read_bytes() == before
+        assert index_path.stat().st_mtime_ns == mtime_before
+        assert (orphan_dir / "IMPLEMENTED.md").exists()
+
+
+def _run_lint_backfill_cli(script_name: str):
+    """Shared body: --lint-provenance / --backfill-provenance CLI (parity)."""
+    script = _SCRIPTS_DIR / script_name
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td) / "repo"
+        repo_root.mkdir()
+        feat_dir = _prov_spec_dir(repo_root, "feat-cli-bf")
+        lazy_core.write_completed_receipt(
+            feat_dir / "COMPLETED.md", "feat-cli-bf", "2026-06-01",
+            provenance="gated")
+        _prov_git_fixture_repo(repo_root)
+        _prov_git_commit_file(repo_root, "src/bf.py", "feat(feat-cli-bf): impl")
+        env = {k: v for k, v in _os_env.environ.items()
+               if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+        env["LAZY_STATE_DIR"] = str(Path(td) / "state")
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(script)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r = run(["--repo-root", str(repo_root), "--backfill-provenance"])
+        assert r.returncode == 0, f"{script_name} backfill failed: {r.stderr[:300]}"
+        out = json.loads(r.stdout)
+        assert out["backfilled"] == ["feat-cli-bf"], f"got {out}"
+        assert (feat_dir / "IMPLEMENTED.md").exists()
+        index_path = repo_root / "docs" / "provenance-index.json"
+        before = index_path.read_bytes()
+        r = run(["--repo-root", str(repo_root), "--lint-provenance"])
+        assert r.returncode == 0, f"{script_name} lint failed: {r.stderr[:300]}"
+        report = json.loads(r.stdout)
+        assert report["ok"] is True and "dead_rows" in report
+        assert index_path.read_bytes() == before, "lint must be a pure read"
+
+
+def test_lint_backfill_cli_lazy_state():
+    """lazy-state.py --backfill-provenance / --lint-provenance round-trip."""
+    _guard()
+    _run_lint_backfill_cli("lazy-state.py")
+
+
+def test_lint_backfill_cli_bug_state_parity():
+    """bug-state.py --backfill-provenance / --lint-provenance parity."""
+    _guard()
+    _run_lint_backfill_cli("bug-state.py")
+
+
+# Extend _TESTS with code-doc-provenance-linkage Phase 5 entries.
+_TESTS = _TESTS + [
+    ("test_backfill_provenance_honest_and_idempotent",
+     test_backfill_provenance_honest_and_idempotent),
+    ("test_backfill_provenance_zero_hit_still_distills",
+     test_backfill_provenance_zero_hit_still_distills),
+    ("test_lint_provenance_catches_rot_and_is_pure",
+     test_lint_provenance_catches_rot_and_is_pure),
+    ("test_lint_backfill_cli_lazy_state",
+     test_lint_backfill_cli_lazy_state),
+    ("test_lint_backfill_cli_bug_state_parity",
+     test_lint_backfill_cli_bug_state_parity),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

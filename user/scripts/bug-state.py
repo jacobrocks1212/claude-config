@@ -5984,6 +5984,22 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.lint_provenance:
+        # code-doc-provenance-linkage Phase 5 (D10): PURE READ, report only.
+        result = lazy_core.lint_provenance(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.backfill_provenance:
+        # code-doc-provenance-linkage Phase 5 (D7-A): one-shot backfill of
+        # already-receipted items through the ONE producer (honest degraded
+        # provenance: backfilled + message-grep). Operator-only — cycle-guarded
+        # like --backfill-receipts' sibling mutations.
+        lazy_core.refuse_if_cycle_active("--backfill-provenance")
+        result = lazy_core.backfill_provenance(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
     if args.verify_ledger is not None:
         # Scripted completion-ledger guard: verify the four preconditions for
         # marking a bug fixed. The orchestrator's && chains short-circuit on
