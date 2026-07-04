@@ -57,16 +57,16 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 1 — Commit-bracket ledger + receipt anchor
 
-- [ ] WU-1.1 — Failing tests first: `test_append_commit_bracket_roundtrip`,
+- [x] WU-1.1 — Failing tests first: `test_append_commit_bracket_roundtrip`,
   `test_append_commit_bracket_fail_open`, `test_record_cycle_commit_bracket_skips_empty`,
   `test_cycle_end_records_bracket_cli` (registered in `_TESTS`).
-- [ ] WU-1.2 — `lazy_core.append_commit_bracket` / `read_commit_brackets` /
+- [x] WU-1.2 — `lazy_core.append_commit_bracket` / `read_commit_brackets` /
   `record_cycle_commit_bracket` (fail-open, `claude_state_dir()`-resident JSONL).
-- [ ] WU-1.3 — Wire `record_cycle_commit_bracket` into BOTH `--cycle-end` handlers (mirrored).
-- [ ] WU-1.4 — Failing test: `test_mark_complete_receipt_carries_completed_commit` (+ non-git
+- [x] WU-1.3 — Wire `record_cycle_commit_bracket` into BOTH `--cycle-end` handlers (mirrored).
+- [x] WU-1.4 — Failing test: `test_mark_complete_receipt_carries_completed_commit` (+ non-git
   absent case); then thread `completed_commit=_current_head(repo_root)` at the
   `write_completed_receipt` mark-complete call site.
-- [ ] WU-1.5 — In-file `--test` fixture on both scripts (fail-open cycle-end); re-pin baselines
+- [x] WU-1.5 — In-file `--test` fixture on both scripts (fail-open cycle-end); re-pin baselines
   via `_normalize_smoke_output`; full gate suite green.
 
 ## Phase 2 — Producer + gate wiring

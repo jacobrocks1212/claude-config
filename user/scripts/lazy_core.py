@@ -4190,12 +4190,17 @@ def apply_pseudo(
         )
 
         # Write the receipt using the existing helper.
+        # code-doc-provenance-linkage Phase 1 (D4): anchor the receipt to the
+        # HEAD at flip time. write_completed_receipt has always supported the
+        # field; this call site simply never passed it. A non-git repo_root
+        # resolves None → the field is omitted (legacy byte-shape preserved).
         write_completed_receipt(
             receipt_path,
             feature_id,
             date,
             provenance="gated",
             kind=receipt_kind,
+            completed_commit=_current_head(repo_root),
             validated_via=validated_via,
             mcp_pass_count=mcp_pass_count,
             mcp_total_count=mcp_total_count,
@@ -12695,6 +12700,132 @@ def append_friction_ledger_entry(
     except Exception:  # noqa: BLE001
         # Fail-open: a ledger write must never propagate.
         return False
+
+
+# ---------------------------------------------------------------------------
+# Commit-bracket ledger (code-doc-provenance-linkage Phase 1 / SPEC D4-A)
+#
+# Per-cycle commit brackets are the deterministic raw material for the
+# provenance producer's touched-file-set derivation: at --cycle-end (BOTH state
+# scripts — coupled pair) the cycle marker's begin_head_sha → current-HEAD span
+# is appended as {feature_id, begin_sha, end_sha, ts} to
+# ``lazy-commit-brackets.jsonl`` in the per-repo keyed state dir. Append-only,
+# FAIL-OPEN — the identical contract to append_friction_ledger_entry: a write
+# failure returns False and never blocks the --cycle-end marker clear.
+# ---------------------------------------------------------------------------
+
+_COMMIT_BRACKETS_FILENAME = "lazy-commit-brackets.jsonl"
+
+
+def append_commit_bracket(
+    feature_id: str,
+    begin_sha: str,
+    end_sha: str,
+    now: float | None = None,
+) -> bool:
+    """Append one commit-bracket record to the state-dir bracket ledger.
+
+    Entry shape (one JSON object per line):
+        {"ts": <epoch float>, "feature_id": <str>,
+         "begin_sha": <str>, "end_sha": <str>}
+
+    Best-effort / fail-open: swallows its own write errors and returns False
+    rather than raising, so a ledger-write failure never derails the
+    --cycle-end marker clear (identical to append_friction_ledger_entry).
+
+    Returns:
+        True if the line was appended; False on any write failure.
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "feature_id": feature_id,
+            "begin_sha": begin_sha,
+            "end_sha": end_sha,
+        }
+        ledger_path = claude_state_dir() / _COMMIT_BRACKETS_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def read_commit_brackets(item_id: str) -> list[dict]:
+    """Return the recorded commit brackets for ``item_id`` (pure read).
+
+    Reads ``lazy-commit-brackets.jsonl`` from the state dir and filters by the
+    ``feature_id`` field (the bug pipeline records its bug ids in the same
+    field — the cycle marker's id slot is shared). Malformed lines are skipped;
+    a missing ledger / any read error degrades to ``[]`` (never raises, never
+    creates the state dir).
+    """
+    try:
+        ledger_path = claude_state_dir(create=False) / _COMMIT_BRACKETS_FILENAME
+        if not ledger_path.is_file():
+            return []
+        out: list[dict] = []
+        for line in ledger_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get("feature_id") == item_id:
+                out.append(entry)
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def record_cycle_commit_bracket(
+    repo_root: Path | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """--cycle-end bracket recording (called by BOTH state scripts' handlers
+    immediately BEFORE clear_cycle_marker — coupled pair).
+
+    Reads the live cycle marker (the --cycle-begin snapshot), resolves the
+    current HEAD, and appends the {feature_id, begin_sha, end_sha} bracket to
+    the ledger via append_commit_bracket.
+
+    Degradations (all return None; NEVER raise — the clear must proceed):
+      - no/partial cycle marker (no feature_id or no begin_head_sha snapshot);
+      - HEAD unresolvable (non-git tree);
+      - begin == end (an empty bracket contributes no touched files and would
+        only bloat the ledger — skipped);
+      - the append itself failing (fail-open, returns False).
+
+    Returns:
+        The recorded bracket dict {feature_id, begin_sha, end_sha}, or None.
+    """
+    try:
+        marker = read_cycle_marker()
+        if not isinstance(marker, dict):
+            return None
+        feature_id = marker.get("feature_id")
+        begin_sha = marker.get("begin_head_sha")
+        if not feature_id or not begin_sha:
+            return None
+        root = repo_root or Path.cwd()
+        end_sha = head_sha_snapshot(root)
+        if not end_sha or end_sha == begin_sha:
+            return None
+        if not append_commit_bracket(feature_id, begin_sha, end_sha, now=now):
+            return None
+        return {
+            "feature_id": feature_id,
+            "begin_sha": begin_sha,
+            "end_sha": end_sha,
+        }
+    except Exception:  # noqa: BLE001
+        # Fail-open: bracket bookkeeping must never block the marker clear.
+        return None
 
 
 def append_auto_readmit_event(

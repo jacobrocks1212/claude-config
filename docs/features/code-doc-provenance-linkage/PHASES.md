@@ -38,21 +38,21 @@ in `RESEARCH_SUMMARY.md`:
 scripts; fail-open) and stamp `completed_commit` into the completion receipt.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `append_commit_bracket(...)` + `record_cycle_commit_bracket(repo_root)` —
+- [x] `lazy_core.py`: `append_commit_bracket(...)` + `record_cycle_commit_bracket(repo_root)` —
   reads the live cycle marker, resolves `begin_head_sha` → current HEAD, and appends
   `{feature_id, begin_sha, end_sha, ts}` to `lazy-commit-brackets.jsonl` in `claude_state_dir()`
   (append-only, fail-open — identical contract to `append_friction_ledger_entry`; a write failure
   never blocks the marker clear; an empty bracket `begin == end` is skipped).
-- [ ] `lazy_core.py`: `read_commit_brackets(item_id)` — pure read of the ledger, filtered by id.
-- [ ] `--cycle-end` handlers in BOTH `lazy-state.py` and `bug-state.py` call
+- [x] `lazy_core.py`: `read_commit_brackets(item_id)` — pure read of the ledger, filtered by id.
+- [x] `--cycle-end` handlers in BOTH `lazy-state.py` and `bug-state.py` call
   `record_cycle_commit_bracket` BEFORE `clear_cycle_marker()` (coupled pair; mirrored).
-- [ ] `apply_pseudo` mark-complete/mark-fixed branch passes
+- [x] `apply_pseudo` mark-complete/mark-fixed branch passes
   `completed_commit=_current_head(repo_root)` at the existing `write_completed_receipt` call site.
-- [ ] Tests (`test_lazy_core.py`, registered in `_TESTS`): bracket append + read round-trip;
+- [x] Tests (`test_lazy_core.py`, registered in `_TESTS`): bracket append + read round-trip;
   fail-open on unwritable state dir; empty-bracket skip; `completed_commit` stamped in a git
   fixture and absent in a non-git fixture; cycle-end handler integration (marker cleared AND
   bracket recorded).
-- [ ] In-file `--test` fixture (both scripts, mirrored): `--cycle-end` with an unwritable
+- [x] In-file `--test` fixture (both scripts, mirrored): `--cycle-end` with an unwritable
   state-dir ledger still clears the marker (fail-open). Baselines re-pinned ONLY via
   `_normalize_smoke_output`.
 
@@ -62,8 +62,8 @@ whose `begin_sha`/`end_sha` bracket the commit; an unwritable ledger still exits
 `cycle_marker_cleared: true`.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Bracket append is fail-open: unwritable state dir at `--cycle-end` → marker still cleared, no exception. *(Evidence: in-file `--test` fixture + `test_lazy_core.py`.)* <!-- verification-only -->
-- [ ] `completed_commit` lands on a gated receipt in a git repo fixture. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
+- [x] Bracket append is fail-open: unwritable state dir at `--cycle-end` → marker still cleared, no exception. *(Evidence: in-file `--test` fixture + `test_lazy_core.py`.)* <!-- verification-only -->
+- [x] `completed_commit` lands on a gated receipt in a git repo fixture. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface (claude-config has no Tauri/MCP app). Verification is `pytest`.
 

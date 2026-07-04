@@ -28291,5 +28291,279 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# code-doc-provenance-linkage — Phase 1: commit-bracket ledger + receipt anchor
+#
+# The per-cycle commit-bracket ledger (`lazy-commit-brackets.jsonl` in the keyed
+# state dir) is the deterministic raw material for the provenance producer's
+# touched-file-set derivation (SPEC D4-A). Append is fail-open (identical
+# contract to append_friction_ledger_entry); the receipt anchor threads
+# completed_commit at the existing write_completed_receipt call site.
+# ---------------------------------------------------------------------------
+
+def _prov_git_fixture_repo(root: "Path") -> str:
+    """git init + one seed commit under `root`; return the seed HEAD sha."""
+    def g(*args):
+        subprocess.run(
+            ["git", "-C", str(root)] + list(args),
+            check=True, capture_output=True, text=True,
+        )
+    g("init", "-q")
+    g("config", "user.email", "t@t")
+    g("config", "user.name", "t")
+    (root / "seed.txt").write_text("seed\n", encoding="utf-8")
+    g("add", "-A")
+    g("commit", "-q", "-m", "seed")
+    r = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    return r.stdout.strip()
+
+
+def _prov_git_commit_file(root: "Path", relpath: str, message: str) -> str:
+    """Write `relpath` under `root`, commit it, return the new HEAD sha."""
+    p = root / relpath
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(f"content for {message}\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "-A"],
+                   check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", message],
+                   check=True, capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                       check=True, capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def test_append_commit_bracket_roundtrip():
+    """append_commit_bracket writes one JSONL record; read_commit_brackets
+    returns it filtered by item id (foreign ids invisible)."""
+    _guard()
+    assert hasattr(lazy_core, "append_commit_bracket"), (
+        "lazy_core.append_commit_bracket is missing"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            ok = lazy_core.append_commit_bracket("feat-a", "aaa111", "bbb222", now=1000.0)
+            assert ok is True, "append must return True on success"
+            ok2 = lazy_core.append_commit_bracket("feat-b", "ccc333", "ddd444", now=1001.0)
+            assert ok2 is True
+            got = lazy_core.read_commit_brackets("feat-a")
+            assert len(got) == 1, f"expected 1 bracket for feat-a, got {got}"
+            assert got[0]["begin_sha"] == "aaa111" and got[0]["end_sha"] == "bbb222"
+            assert got[0]["feature_id"] == "feat-a"
+            assert lazy_core.read_commit_brackets("feat-none") == []
+            # The ledger is JSONL — one JSON object per line.
+            lines = (state_dir / "lazy-commit-brackets.jsonl").read_text(
+                encoding="utf-8").strip().splitlines()
+            assert len(lines) == 2
+            for ln in lines:
+                json.loads(ln)
+        finally:
+            _clear_state_dir()
+
+
+def test_append_commit_bracket_fail_open():
+    """A ledger path that cannot be opened (a DIRECTORY squats on the JSONL
+    name) → append returns False, never raises (fail-open — the --cycle-end
+    clear must always proceed). read_commit_brackets likewise degrades to []."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        # Squat a directory on the ledger filename so open(..., "a") fails.
+        (state_dir / "lazy-commit-brackets.jsonl").mkdir()
+        _set_state_dir(state_dir)
+        try:
+            ok = lazy_core.append_commit_bracket("feat-a", "aaa", "bbb")
+            assert ok is False, "append must return False (not raise) on a write failure"
+            assert lazy_core.read_commit_brackets("feat-a") == []
+        finally:
+            _clear_state_dir()
+
+
+def test_record_cycle_commit_bracket_appends_real_bracket():
+    """With a live cycle marker snapshotting begin_head_sha and HEAD advanced
+    past it, record_cycle_commit_bracket appends {feature_id, begin, end}."""
+    _guard()
+    assert hasattr(lazy_core, "record_cycle_commit_bracket"), (
+        "lazy_core.record_cycle_commit_bracket is missing"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo = td_path / "repo"
+        repo.mkdir()
+        begin = _prov_git_fixture_repo(repo)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_cycle_marker(
+                feature_id="feat-br", nonce="n1", begin_head_sha=begin,
+            )
+            end = _prov_git_commit_file(repo, "src/a.py", "work")
+            rec = lazy_core.record_cycle_commit_bracket(repo_root=repo)
+            assert rec is not None, "a real bracket must be recorded"
+            assert rec["feature_id"] == "feat-br"
+            assert rec["begin_sha"] == begin and rec["end_sha"] == end
+            got = lazy_core.read_commit_brackets("feat-br")
+            assert len(got) == 1 and got[0]["end_sha"] == end
+        finally:
+            _clear_state_dir()
+
+
+def test_record_cycle_commit_bracket_skips_empty():
+    """begin == HEAD (no commits this cycle) → nothing appended, returns None.
+    No cycle marker at all → None. Both degrade silently (fail-open)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo = td_path / "repo"
+        repo.mkdir()
+        head = _prov_git_fixture_repo(repo)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # (a) no marker → None.
+            assert lazy_core.record_cycle_commit_bracket(repo_root=repo) is None
+            # (b) marker with begin == current HEAD → empty bracket skipped.
+            lazy_core.write_cycle_marker(
+                feature_id="feat-empty", nonce="n1", begin_head_sha=head,
+            )
+            assert lazy_core.record_cycle_commit_bracket(repo_root=repo) is None
+            assert lazy_core.read_commit_brackets("feat-empty") == []
+            # (c) marker without begin_head_sha (degraded snapshot) → None.
+            lazy_core.write_cycle_marker(feature_id="feat-nogit", nonce="n2")
+            assert lazy_core.record_cycle_commit_bracket(repo_root=repo) is None
+        finally:
+            _clear_state_dir()
+
+
+def _run_cycle_end_records_bracket_cli(script_name: str, id_flag: str):
+    """Shared body: the --cycle-end handler records the bracket AND clears the
+    marker (coupled pair — both state scripts)."""
+    script = _SCRIPTS_DIR / script_name
+    assert script.exists(), f"{script_name} missing"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo = td_path / "repo"
+        repo.mkdir()
+        _prov_git_fixture_repo(repo)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = {k: v for k, v in _os_env.environ.items()
+               if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        env["LAZY_ORCHESTRATOR"] = "1"
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(script)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r = run(["--cycle-begin", id_flag, "feat-cli-br", "--nonce", "cafe",
+                 "--repo-root", str(repo)])
+        assert r.returncode == 0, f"--cycle-begin failed: {r.stderr[:300]}"
+        end = _prov_git_commit_file(repo, "src/b.py", "cycle work")
+        r = run(["--cycle-end", "--repo-root", str(repo)])
+        assert r.returncode == 0, f"--cycle-end failed: {r.stderr[:300]}"
+        out = json.loads(r.stdout)
+        assert out.get("cycle_marker_cleared") is True
+        # The bracket landed in the ledger with the cycle's HEAD advance.
+        ledger = state_dir / "lazy-commit-brackets.jsonl"
+        assert ledger.exists(), (
+            f"{script_name} --cycle-end must append the commit bracket"
+        )
+        entries = [json.loads(ln) for ln in
+                   ledger.read_text(encoding="utf-8").strip().splitlines()]
+        assert any(
+            e.get("feature_id") == "feat-cli-br" and e.get("end_sha") == end
+            for e in entries
+        ), f"bracket for feat-cli-br/{end[:8]} not found: {entries}"
+
+
+def test_cycle_end_records_bracket_cli_lazy_state():
+    """lazy-state.py --cycle-end appends the cycle's commit bracket."""
+    _guard()
+    _run_cycle_end_records_bracket_cli("lazy-state.py", "--feature-id")
+
+
+def test_cycle_end_records_bracket_cli_bug_state_parity():
+    """bug-state.py --cycle-end appends the bracket identically (parity)."""
+    _guard()
+    _run_cycle_end_records_bracket_cli("bug-state.py", "--bug-id")
+
+
+def test_mark_complete_receipt_carries_completed_commit():
+    """In a git repo, the gated receipt records completed_commit == HEAD
+    (write_completed_receipt supported the field; the call site now passes it)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        head = _prov_git_fixture_repo(repo_root)
+        spec_dir = repo_root / "docs" / "features" / "feat-cc"
+        spec_dir.mkdir(parents=True)
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="feat-cc", date="2026-07-04",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        parsed = lazy_core.parse_sentinel(spec_dir / "COMPLETED.md")
+        assert parsed is not None
+        assert str(parsed.get("completed_commit") or "") == head, (
+            f"receipt must anchor completed_commit to HEAD {head[:8]}, "
+            f"got {parsed.get('completed_commit')!r}"
+        )
+
+
+def test_mark_complete_receipt_non_git_omits_completed_commit():
+    """A non-git repo_root resolves no HEAD → the field is omitted (legacy
+    byte-shape preserved), never a crash."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir, date="2026-07-04",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        parsed = lazy_core.parse_sentinel(spec_dir / "COMPLETED.md")
+        assert parsed is not None
+        assert "completed_commit" not in parsed, (
+            f"non-git completion must omit completed_commit, got {parsed!r}"
+        )
+
+
+# Extend _TESTS with code-doc-provenance-linkage Phase 1 entries.
+_TESTS = _TESTS + [
+    ("test_append_commit_bracket_roundtrip",
+     test_append_commit_bracket_roundtrip),
+    ("test_append_commit_bracket_fail_open",
+     test_append_commit_bracket_fail_open),
+    ("test_record_cycle_commit_bracket_appends_real_bracket",
+     test_record_cycle_commit_bracket_appends_real_bracket),
+    ("test_record_cycle_commit_bracket_skips_empty",
+     test_record_cycle_commit_bracket_skips_empty),
+    ("test_cycle_end_records_bracket_cli_lazy_state",
+     test_cycle_end_records_bracket_cli_lazy_state),
+    ("test_cycle_end_records_bracket_cli_bug_state_parity",
+     test_cycle_end_records_bracket_cli_bug_state_parity),
+    ("test_mark_complete_receipt_carries_completed_commit",
+     test_mark_complete_receipt_carries_completed_commit),
+    ("test_mark_complete_receipt_non_git_omits_completed_commit",
+     test_mark_complete_receipt_non_git_omits_completed_commit),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

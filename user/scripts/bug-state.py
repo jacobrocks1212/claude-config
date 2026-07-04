@@ -4954,6 +4954,73 @@ def run_smoke_tests() -> int:
             f"cycle_prompt_ref surfaced with marker / None without"
         )
 
+        # -------------------------------------------------------------------
+        # Fixture: --cycle-end commit-bracket append is FAIL-OPEN
+        # (code-doc-provenance-linkage Phase 1 / D4-A) — coupled-pair mirror of
+        # lazy-state.py's fixture. A directory squatting on the ledger filename
+        # makes the bracket append unwritable; the orchestrator --cycle-end
+        # must STILL exit 0 and clear the marker, with no commit_bracket key.
+        # -------------------------------------------------------------------
+        fix_cbfo = "cycle-end-bracket-fail-open"
+        cbfo_ok = True
+        try:
+            cbfo_state = td_path / "cbfo-state"
+            cbfo_state.mkdir(parents=True, exist_ok=True)
+            # Squat a DIRECTORY on the ledger name so open(..., "a") fails.
+            (cbfo_state / "lazy-commit-brackets.jsonl").mkdir()
+            cbfo_repo = td_path / "cbfo-repo"
+            cbfo_repo.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.email", "t@t"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.name", "t"], check=True)
+            (cbfo_repo / "seed.txt").write_text("seed", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "seed"], check=True)
+            cbfo_env = {k: v for k, v in os.environ.items()
+                        if k not in ("LAZY_CYCLE_SUBAGENT",)}
+            cbfo_env["LAZY_STATE_DIR"] = str(cbfo_state)
+            cbfo_env["LAZY_ORCHESTRATOR"] = "1"
+            _cbfo_script = str(Path(__file__).resolve())
+            r = subprocess.run(
+                [sys.executable, _cbfo_script, "--cycle-begin",
+                 "--bug-id", "bug-cbfo", "--nonce", "beef",
+                 "--repo-root", str(cbfo_repo)],
+                capture_output=True, text=True, env=cbfo_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_cbfo}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
+                cbfo_ok = False
+            # Advance HEAD so a real (non-empty) bracket is attempted.
+            (cbfo_repo / "work.txt").write_text("work", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "work"], check=True)
+            r = subprocess.run(
+                [sys.executable, _cbfo_script, "--cycle-end",
+                 "--repo-root", str(cbfo_repo)],
+                capture_output=True, text=True, env=cbfo_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_cbfo}] --cycle-end must exit 0 despite the unwritable ledger; got {r.returncode}: {r.stderr}")
+                cbfo_ok = False
+            if (cbfo_state / "lazy-cycle-active.json").exists():
+                failures.append(f"[{fix_cbfo}] --cycle-end must still clear the marker (fail-open)")
+                cbfo_ok = False
+            try:
+                cbfo_out = json.loads(r.stdout)
+                if cbfo_out.get("cycle_marker_cleared") is not True:
+                    failures.append(f"[{fix_cbfo}] JSON must report cycle_marker_cleared: true")
+                    cbfo_ok = False
+                if "commit_bracket" in cbfo_out:
+                    failures.append(f"[{fix_cbfo}] a failed append must NOT report a commit_bracket")
+                    cbfo_ok = False
+            except (json.JSONDecodeError, TypeError):
+                failures.append(f"[{fix_cbfo}] --cycle-end stdout must be JSON; got {r.stdout!r}")
+                cbfo_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_cbfo}] unexpected error: {exc!r}")
+            cbfo_ok = False
+        print(f"  {'PASS' if cbfo_ok else 'FAIL'} [{fix_cbfo}] unwritable bracket ledger never blocks the --cycle-end clear")
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -5485,10 +5552,20 @@ def main() -> int:
         # check the two process-friction signals BEFORE clearing the marker; on a
         # hit append a kind: process-friction entry to the deny ledger.
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
+        # code-doc-provenance-linkage Phase 1 (D4-A) — coupled-pair mirror:
+        # record this cycle's commit bracket (marker begin_head_sha → current
+        # HEAD) into the state-dir bracket ledger BEFORE clearing the marker.
+        # Fail-open — a degraded snapshot / write failure returns None and
+        # never blocks the clear.
+        bracket = lazy_core.record_cycle_commit_bracket(
+            repo_root=Path(args.repo_root)
+        )
         cleared = lazy_core.clear_cycle_marker()
         out: dict = {"cycle_marker_cleared": cleared}
         if friction is not None:
             out["process_friction"] = friction
+        if bracket is not None:
+            out["commit_bracket"] = bracket
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
