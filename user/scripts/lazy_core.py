@@ -781,6 +781,50 @@ def format_unknown_dependency_blocker(
 _FENCE = "---"
 
 
+# A flat top-level `key: value` frontmatter line (no leading indentation).
+# Group 1 = key, group 2 = the value (everything after the first colon+space).
+_FLAT_SCALAR_LINE_RE = re.compile(r"^([A-Za-z0-9_-]+):[ \t]+(.*)$")
+
+
+def _yaml_load_tolerant(yaml_body: str) -> dict[str, Any] | None:
+    """Rescue an unquoted colon-space (or trailing-colon) scalar VALUE.
+
+    Called ONLY on the `yaml.YAMLError` path of parse_sentinel (well-formed
+    frontmatter never reaches here — it parsed strictly). Operates per-line: for
+    each flat top-level ``key: value`` line whose value is a plain (unquoted, non
+    flow-collection, non block-scalar) scalar, single-quote the value so an
+    embedded ``: `` / trailing ``:`` is read as a literal instead of a nested
+    mapping. Re-invokes ``yaml.safe_load``; returns the dict on success or None
+    (caller then falls through to the original ``_die`` — genuinely-malformed
+    frontmatter, e.g. a broken indented block or an unclosed flow collection, is
+    NOT rescued and still hard-halts). Strict schema semantics for keys/kinds are
+    preserved: only VALUES are quoted, never keys or structure.
+    """
+    out_lines: list[str] = []
+    for line in yaml_body.splitlines():
+        m = _FLAT_SCALAR_LINE_RE.match(line)
+        if not m:
+            out_lines.append(line)
+            continue
+        key, value = m.group(1), m.group(2).rstrip()
+        # Leave values that are empty (null), already quoted, a flow collection,
+        # a block-scalar indicator, or an anchor/alias/tag — quoting those would
+        # change meaning or is unnecessary.
+        if not value or value[0] in ("'", '"', "[", "{", "|", ">", "&", "*", "!", "#"):
+            out_lines.append(line)
+            continue
+        escaped = value.replace("'", "''")
+        out_lines.append(f"{key}: '{escaped}'")
+    rescued = "\n".join(out_lines)
+    try:
+        data = yaml.safe_load(rescued)
+    except yaml.YAMLError:
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
 def parse_sentinel(path: Path) -> dict[str, Any] | None:
     """Parse a sentinel file's YAML frontmatter. Returns dict or None if absent."""
     if not path.exists():
@@ -816,6 +860,13 @@ def parse_sentinel(path: Path) -> dict[str, Any] | None:
     try:
         data = yaml.safe_load(yaml_body) or {}
     except yaml.YAMLError as exc:
+        # Tolerant re-parse: an unquoted colon-space (or trailing-colon) in a
+        # flat scalar value is quoted on-read and re-loaded. Only rescues that
+        # narrow case; genuinely-malformed frontmatter still falls through to
+        # _die below (skip-mcp-test-frontmatter-unquoted-colon).
+        rescued = _yaml_load_tolerant(yaml_body)
+        if rescued is not None:
+            return rescued
         _die(f"invalid YAML frontmatter: {exc}", path)
         return None  # pragma: no cover
     if not isinstance(data, dict):

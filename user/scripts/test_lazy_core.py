@@ -1025,6 +1025,137 @@ def test_parse_sentinel_leading_blanks():
 
 
 # ---------------------------------------------------------------------------
+# Tests: parse_sentinel tolerance for unquoted colon-space scalar values
+# (skip-mcp-test-frontmatter-unquoted-colon — WU-1)
+# ---------------------------------------------------------------------------
+
+def test_parse_sentinel_unquoted_colon_space_reason():
+    """An unquoted colon-space in a scalar `reason` value → read as a literal
+    string (no _die/SystemExit). This is the exact bug: an operator-authored
+    SKIP_MCP_TEST.md `reason` carrying a colon-space hard-halted parse_sentinel."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: skip-mcp-test\n"
+        "granted_by: operator\n"
+        "reason: untestable on this host: no real audio device\n"
+        "---\n\n"
+        "# Skip\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "SKIP_MCP_TEST.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("kind") == "skip-mcp-test", f"kind mismatch: {result}"
+    assert result.get("granted_by") == "operator", f"granted_by mismatch: {result}"
+    assert result.get("reason") == "untestable on this host: no real audio device", (
+        f"reason should be the literal full string, got: {result.get('reason')!r}"
+    )
+
+
+def test_parse_sentinel_value_naming_key_value_pair():
+    """A scalar value that itself names a `key: value` pair → parses to the
+    literal string (no nested mapping, no _die)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "skipped_by: deferred because config: value was missing\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("skipped_by") == "deferred because config: value was missing", (
+        f"skipped_by should be the literal string, got: {result.get('skipped_by')!r}"
+    )
+
+
+def test_parse_sentinel_trailing_colon_value():
+    """A value ending in a bare colon → read as a literal (no _die)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "reason: waiting on:\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("reason") == "waiting on:", (
+        f"reason should be the literal 'waiting on:', got: {result.get('reason')!r}"
+    )
+
+
+def test_parse_sentinel_colon_no_space_is_plain_scalar_control():
+    """CONTROL: a colon with NO following space (`build:step`) is already a
+    valid plain scalar — the result is byte-identical to today (the tolerant
+    path is never reached because yaml.safe_load succeeds)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "reason: build:step\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("reason") == "build:step", f"reason mismatch: {result}"
+
+
+def test_parse_sentinel_malformed_non_scalar_still_dies():
+    """NON-VACUITY: a genuinely-malformed frontmatter that is NOT a flat-scalar
+    colon case (an unclosed flow collection) must STILL _die/SystemExit — the
+    tolerant path must not mask real malformation."""
+    _guard()
+    import pytest as _pytest
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "reason: [unclosed, flow, collection\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        with _pytest.raises(SystemExit):
+            lazy_core.parse_sentinel(p)
+
+
+def test_parse_sentinel_well_formed_no_colon_unchanged():
+    """REGRESSION GUARD: a well-formed, no-colon sentinel is byte-identical to
+    pre-change (the tolerant path is never entered)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: validated\n"
+        "feature_id: my-feature\n"
+        "validated_commit: abc123\n"
+        "pass_count: 5\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "VALIDATED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert result == {
+        "kind": "validated",
+        "feature_id": "my-feature",
+        "validated_commit": "abc123",
+        "pass_count": 5,
+    }, f"well-formed parse drifted: {result}"
+
+
+# ---------------------------------------------------------------------------
 # Tests: build_parked_entry
 # ---------------------------------------------------------------------------
 
@@ -16018,6 +16149,12 @@ _TESTS = [
     ("test_parse_sentinel_no_frontmatter", test_parse_sentinel_no_frontmatter),
     ("test_parse_sentinel_with_frontmatter", test_parse_sentinel_with_frontmatter),
     ("test_parse_sentinel_leading_blanks", test_parse_sentinel_leading_blanks),
+    ("test_parse_sentinel_unquoted_colon_space_reason", test_parse_sentinel_unquoted_colon_space_reason),
+    ("test_parse_sentinel_value_naming_key_value_pair", test_parse_sentinel_value_naming_key_value_pair),
+    ("test_parse_sentinel_trailing_colon_value", test_parse_sentinel_trailing_colon_value),
+    ("test_parse_sentinel_colon_no_space_is_plain_scalar_control", test_parse_sentinel_colon_no_space_is_plain_scalar_control),
+    ("test_parse_sentinel_malformed_non_scalar_still_dies", test_parse_sentinel_malformed_non_scalar_still_dies),
+    ("test_parse_sentinel_well_formed_no_colon_unchanged", test_parse_sentinel_well_formed_no_colon_unchanged),
     # spec_status
     ("test_spec_status_none_path", test_spec_status_none_path),
     ("test_spec_status_no_spec_md", test_spec_status_no_spec_md),

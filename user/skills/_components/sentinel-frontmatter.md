@@ -10,7 +10,33 @@ All sentinel files the `/lazy` and `/lazy-cloud` state machine reads or writes c
 4. Parse the YAML with a standard library parser (e.g. `yaml.safe_load`). If parsing fails, surface the file path and the parser's line/column rather than silently treating the file as missing.
 5. Anything after the closing `---` is the markdown body. Consumers SHOULD NOT parse the body. Producers SHOULD keep the body informative for humans reading the file directly.
 
+> **Read tolerance for an unquoted colon-space in a scalar value
+> (`skip-mcp-test-frontmatter-unquoted-colon`).** The canonical reader
+> (`lazy_core.parse_sentinel`) tolerates an **unquoted colon-space** (`foo: a: b`)
+> or **trailing colon** (`foo: waiting on:`) in a flat *scalar value* — it is read
+> as the literal string, not a nested mapping. `yaml.safe_load` is attempted first
+> (well-formed files parse byte-identically); ONLY on a `YAMLError` does a tolerant
+> re-parse single-quote each flat top-level `key: value` line's plain scalar value
+> and re-load. This means a hand-authored `reason:` carrying a colon (e.g.
+> `reason: untestable on this host: no real audio device`) no longer hard-halts the
+> pipeline at the completion gate. **Strict schema semantics for keys/kinds are
+> preserved**, and genuinely-malformed frontmatter (a broken indented block, an
+> unclosed flow collection, a value that yields a non-mapping) is NOT rescued — it
+> still surfaces the parse error and halts. Producers SHOULD still emit
+> colon-bearing values pre-quoted (`yaml.safe_dump` does this automatically); the
+> read tolerance is a safety net for hand-authored files, not a license to write
+> ambiguous YAML.
+
 The shared sentinel writer in lazy-state.py — and the skill prose that writes these files inline — both follow this contract. If you read sentinel files ad-hoc from skill prose, prefer dispatching to `python3 ~/.claude/scripts/lazy-state.py` instead of re-implementing the parse.
+
+> **Cross-repo `.ts`-validator lockstep (standing follow-up).** AlgoBooth's
+> `scripts/check-docs-consistency.ts` / `check-bugs-consistency.ts` `SENTINEL_SCHEMAS`
+> mirror this schema (see the per-schema notes below). Those validators do NOT yet
+> implement the unquoted-colon-space read tolerance above; if/when they adopt it,
+> their frontmatter parse must mirror `parse_sentinel`'s try-strict-then-tolerant
+> behavior so a colon-bearing scalar value that is valid to this repo's reader is
+> also valid to theirs. Those `.ts` files live in AlgoBooth, NOT this repo — this is
+> a documented cross-repo obligation, not an edit made from here.
 
 ### Required `kind` field
 
@@ -413,6 +439,8 @@ alternative_validation: <one-line>
 date: <YYYY-MM-DD>
 ---
 ```
+
+> A hand-authored `reason:` containing a colon-space (e.g. `untestable on this host: no real audio device`) is read as a literal by `parse_sentinel` (see **Read tolerance** in the Parsing protocol above) and no longer hard-halts the completion gate — but prefer quoting it (`reason: 'untestable on this host: no real audio device'`) when authoring by hand.
 
 Optional:
 - `skipped_by: <"lazy" | "lazy-cloud" | "operator" | "pipeline">` — who wrote the skip.

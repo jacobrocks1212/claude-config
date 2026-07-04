@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: skip-mcp-test-frontmatter-unquoted-colon
-status: Ready
+status: In-progress
 created: 2026-07-04
 complexity: complex
 phases: [1, 2, 3]
@@ -63,8 +63,8 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — Tolerant read at `parse_sentinel` (`lazy_core.py`) + unit regression tests
-- [ ] WU-4 — Document read tolerance + cross-repo lockstep note in `sentinel-frontmatter.md`
+- [x] WU-1 — Tolerant read at `parse_sentinel` (`lazy_core.py`) + unit regression tests
+- [x] WU-4 — Document read tolerance + cross-repo lockstep note in `sentinel-frontmatter.md`
 - [ ] WU-2 — End-to-end colon-bearing-waiver `--test` fixtures in `lazy-state.py` + `bug-state.py` (+ regenerate baselines)
 - [ ] WU-3 — Quote-on-write hardening of `bug-state.py` `_write_yaml_sentinel` ImportError fallback + round-trip test
 
