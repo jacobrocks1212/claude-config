@@ -9,7 +9,7 @@
 > high-frequency prose skills. It **proposes, never auto-archives** — archival stays a deliberate
 > operator move into `archived/` with its audit-trail row.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research

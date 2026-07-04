@@ -88,12 +88,6 @@
       "tier": 2
     },
     {
-      "id": "skill-usage-miner",
-      "name": "Skill Usage Miner + Dead-Weight Audit",
-      "spec_dir": "skill-usage-miner",
-      "tier": 2
-    },
-    {
       "id": "incident-auto-capture",
       "name": "Incident Auto-Capture to Bug Stubs",
       "spec_dir": "incident-auto-capture",
