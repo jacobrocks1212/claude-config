@@ -5116,7 +5116,6 @@ def run_smoke_tests() -> int:
         )
 
         # -------------------------------------------------------------------
-<<<<<<< HEAD
         # Fixture: harness-telemetry-ledger Phase 2 — chokepoint emission
         # (coupled-pair mirror of the lazy-state.py fixture; --bug-id item ids,
         # pipeline "bug", no --gate-coverage — the documented divergence).
@@ -5330,7 +5329,6 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_tl}] unexpected error: {exc!r}")
             tl_ok = False
         print(f"  {'PASS' if tl_ok else 'FAIL'} [{fix_tl}] bracket/dispatch/purity/refusal/cloud-flush emission")
-=======
         # Fixture: queue-dependency-dag Phase 2 — the bug-pipeline dep-gate
         # (coupled-pair mirror of lazy-state.py's). Covers: hold + advance,
         # ARCHIVE-AWARE dep resolution (D9 divergence 2: a dep fixed +
@@ -5650,7 +5648,6 @@ def run_smoke_tests() -> int:
             f"cycle-subagent exit-3 refusal + hard-only projection + "
             f"idempotent noop + enqueue --deps"
         )
->>>>>>> lane/queue-dependency-dag
 
     # Summary
     if failures:

@@ -98,22 +98,45 @@
 }
   [enqueue] enqueue_adhoc prepend + brief + roadmap: ok
   [enqueue-flags] default byte-identical + stub/tail/tier + bug-type refusal: ok
-  File "/home/user/claude-config/user/scripts/bug-state.py", line 5119
-    <<<<<<< HEAD
-    ^^
-SyntaxError: invalid syntax
-Traceback (most recent call last):
-  File "/home/user/claude-config/user/scripts/lazy-state.py", line 11299, in <module>
-    sys.exit(main())
-             ^^^^^^
-  File "/home/user/claude-config/user/scripts/lazy-state.py", line 11102, in main
-    return run_smoke_tests()
-           ^^^^^^^^^^^^^^^^^
-  File "/home/user/claude-config/user/scripts/lazy-state.py", line 8070, in run_smoke_tests
-    resb = enqueue_adhoc_bug(
-           ^^^^^^^^^^^^^^^^^^
-  File "/home/user/claude-config/user/scripts/lazy-state.py", line 783, in enqueue_adhoc_bug
-    subprocess.run(cmd, check=True, env=_enqueue_env)
-  File "/usr/lib/python3.11/subprocess.py", line 571, in run
-    raise CalledProcessError(retcode, process.args,
-subprocess.CalledProcessError: Command '['/usr/local/bin/python3', '/home/user/claude-config/user/scripts/bug-state.py', '--enqueue-adhoc', '--id', 'adhoc-bug-1', '--name', 'Adhoc Bug 1', '--spec-dir', 'adhoc-bug-1', '--repo-root', '<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-bug-test']' returned non-zero exit status 1.
+{
+  "id": "adhoc-bug-1",
+  "spec_dir": "adhoc-bug-1",
+  "status": "queued"
+}
+{
+  "id": "adhoc-bug-1",
+  "spec_dir": "adhoc-bug-1",
+  "status": "duplicate"
+}
+  [enqueue-bug] enqueue_adhoc_bug routes to docs/bugs + idempotent: ok
+  PASS [materialize-feature] feature materialize
+{
+  "id": "broken-submit-button",
+  "spec_dir": "broken-submit-button",
+  "status": "queued"
+}
+  PASS [materialize-bug] bug materialize
+  PASS [materialize-unknown-type] unknown type → skip
+  PASS [materialize-idempotent] idempotent: 1 record after 2 materialize calls
+  PASS [stale-detection-writer] stale detection writes STALE_UPSTREAM.md, preserves SPEC.md
+  PASS [stale-halt-reader] stale halt: terminal_reason='stale_upstream'
+  PASS [scoped-feature-id] scope_feature_id selected feat-scope-beta
+  PASS [baseline-regression-default] default picks feat-scope-alpha at 'Step 6: plan feature (phases + plan)'
+  PASS [scoped-feature-id-not-found] terminal_reason='scoped-id-not-found' (impl landed)
+  PASS [scoped-cloud-saturated-identity] scoped cloud query returns feat-sc + scoped terminal
+  PASS [scoped-device-saturated-identity] scoped device query returns feat-sd + scoped terminal
+  PASS [scoped-host-capability-identity] scoped host-capability query returns feat-sh + scoped terminal
+  PASS [park-needs-input-default-halt] default: terminal_reason='needs-input', parked key absent=True
+  PASS [park-needs-input-mode-skip] park mode: dispatched='feat-after', parked count=1
+  PASS [park-needs-input-resolved-reenter] resolved: dispatched='feat-parked', parked=[]
+  PASS [park-needs-input-blocked-precedence] blocked-precedence: terminal_reason='blocked', feat-parked in parked[]=False
+  PASS [park-blocked-mode-skip] dispatched='workable-feat', parked count=1
+  PASS [park-blocked-default-halt] default: terminal_reason='blocked', parked key absent=True
+  PASS [park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
+  PASS [park-blocked-and-needs-input-single-park] dispatched='workable-feat', blocked-feat park count=1
+  PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
+  PASS [cycle-begin-git-consistency-reconciliation] stale pre-boot index.lock reconciled at --cycle-begin
+  PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
+  PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission
+
+All smoke tests passed.
