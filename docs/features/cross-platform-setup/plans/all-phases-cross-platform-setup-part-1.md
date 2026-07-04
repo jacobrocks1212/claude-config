@@ -53,11 +53,11 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 1 — psd1 parser
 
-- [ ] WU-1.1 — Failing tests: grammar fixtures (nested hashtables, newline+comma arrays, `''`
+- [x] WU-1.1 — Failing tests: grammar fixtures (nested hashtables, newline+comma arrays, `''`
   escape, double-quoted string, full-line + trailing comments, quoted keys) + loud-die cases
   (`$var`, here-string, expression, unterminated string, garbage token → SetupError w/ line) +
   real-manifest shape assertions. Run → fail (module lacks `parse_psd1`).
-- [ ] WU-1.2 — Implement `SetupError`/`_die` + tokenizer + recursive-descent `parse_psd1` in
+- [x] WU-1.2 — Implement `SetupError`/`_die` + tokenizer + recursive-descent `parse_psd1` in
   new `setup.py`; re-run → green.
 
 ## Phase 2 — expansion + link primitives
