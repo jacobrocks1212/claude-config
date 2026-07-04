@@ -74,14 +74,14 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 3 — Fleet home frontend
 
-- [ ] WU-3.1 — Tests first: `TestFleetStaticServing` (fleet `/` serves fleet.html with table +
+- [x] WU-3.1 — Tests first: `TestFleetStaticServing` (fleet `/` serves fleet.html with table +
   triage markers; `/repo/<slug>/` serves index.html; `/repo/<slug>/static/app.js` served;
   `/repo/<slug>` 301 → trailing slash; relative-URL pin: index.html/app.js carry no absolute
   `/api/` or `/static/` references). Run → fail.
-- [ ] WU-3.2 — Implement: `static/fleet.html`+`fleet.js`+`fleet.css` (table, triage strip,
+- [x] WU-3.2 — Implement: `static/fleet.html`+`fleet.js`+`fleet.css` (table, triage strip,
   badges + age, error rows, poll > TTL); relative URLs in `index.html`/`app.js`; fleet static
   routing in `server.py`. Re-run → green.
-- [ ] WU-3.3 — Full suite green. Commit Phase 3.
+- [x] WU-3.3 — Full suite green. Commit Phase 3.
 
 ## Phase 4 — Aggregation hardening + docs
 

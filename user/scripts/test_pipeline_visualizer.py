@@ -1924,5 +1924,82 @@ class TestFleetServer:
         assert "--fleet" in r.stdout
 
 
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 3 — fleet home frontend + nested per-repo page
+# ---------------------------------------------------------------------------
+
+
+class TestFleetStaticServing:
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def test_fleet_root_serves_fleet_home(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/")
+            assert resp.status == 200
+            assert "text/html" in (resp.getheader("Content-Type") or "")
+            # Load-bearing DOM markers: the table + the D4-B triage strip.
+            assert b"fleet-table" in body
+            assert b"Needs attention" in body
+        finally:
+            httpd.shutdown()
+
+    def test_fleet_assets_served(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/static/fleet.js")
+            assert resp.status == 200 and len(body) > 0
+            assert "javascript" in (resp.getheader("Content-Type") or "")
+            resp, body = self._get(port, "/static/fleet.css")
+            assert resp.status == 200
+            assert "css" in (resp.getheader("Content-Type") or "")
+        finally:
+            httpd.shutdown()
+
+    def test_repo_nested_index_and_asset_served(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/repo/repo-a/")
+            assert resp.status == 200
+            assert "text/html" in (resp.getheader("Content-Type") or "")
+            assert b"app.js" in body  # the shipped per-repo page
+            resp, body = self._get(port, "/repo/repo-a/static/app.js")
+            assert resp.status == 200 and len(body) > 0
+            assert "javascript" in (resp.getheader("Content-Type") or "")
+        finally:
+            httpd.shutdown()
+
+    def test_repo_without_trailing_slash_redirects(self, tmp_path):
+        # Relative api/asset URLs only resolve under the slug prefix with a
+        # trailing slash — the bare form must redirect, not serve.
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = self._get(port, "/repo/repo-a")
+            assert resp.status == 301
+            assert resp.getheader("Location") == "/repo/repo-a/"
+        finally:
+            httpd.shutdown()
+
+    def test_per_repo_frontend_uses_relative_urls(self):
+        # The nested page reuses the SAME assets, so index.html/app.js must
+        # reference api/static paths RELATIVE (absolute would escape the
+        # /repo/<slug>/ prefix and break drill-in).
+        static = Path(__file__).parent / "pipeline_visualizer" / "static"
+        index_html = (static / "index.html").read_text(encoding="utf-8")
+        app_js = (static / "app.js").read_text(encoding="utf-8")
+        assert 'href="/static' not in index_html
+        assert 'src="/static' not in index_html
+        assert 'fetch("/' not in app_js
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

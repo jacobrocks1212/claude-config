@@ -160,16 +160,16 @@ per-repo frontend's absolute API/asset URLs to relative so the same page serves 
 `/repo/<slug>/`.
 
 **Deliverables:**
-- [ ] `static/fleet.html` / `static/fleet.js` / `static/fleet.css`: table + triage strip +
+- [x] `static/fleet.html` / `static/fleet.js` / `static/fleet.css`: table + triage strip +
   badges (`run-active`/`run-silent`/`stale-marker`/`idle`, age always shown) + error rows +
   refresh age indicator; polls `/api/fleet` (interval > fleet TTL); stale-marker badge names
   the age and is information-only (no delete button).
-- [ ] `static/index.html` + `static/app.js`: absolute `/static/...` and `/api/...` references →
+- [x] `static/index.html` + `static/app.js`: absolute `/static/...` and `/api/...` references →
   relative (`static/...`, `api/...`) so the page works at both `/` and `/repo/<slug>/`.
-- [ ] `server.py` fleet routing for the page: `/` → `fleet.html`; `/repo/<slug>` →
+- [x] `server.py` fleet routing for the page: `/` → `fleet.html`; `/repo/<slug>` →
   301 `/repo/<slug>/`; `/repo/<slug>/` → per-repo `index.html`; `/repo/<slug>/static/<x>` →
   bundled asset.
-- [ ] Tests: fleet mode `/` serves the fleet page (contains table + triage markers);
+- [x] Tests: fleet mode `/` serves the fleet page (contains table + triage markers);
   `/repo/<slug>/` serves the per-repo index; `/repo/<slug>/static/app.js` served; no-slash
   redirect; single-repo `/` still serves the per-repo index (existing tests).
 
@@ -178,7 +178,7 @@ whose rows and triage strip reflect a multi-repo fixture, each row linking into 
 three-pane per-repo view.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Fleet page + nested per-repo page served with correct routing. *(Evidence: `TestFleetStaticServing`.)* <!-- verification-only -->
+- [x] Fleet page + nested per-repo page served with correct routing. *(Evidence: `TestFleetStaticServing`.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** visual render check of the fleet
   landing page + drill-in in a real browser against the operator's live multi-repo layout
   (`~/source/repos`) — this container has no browser and no real repo fleet; the DOM contract
