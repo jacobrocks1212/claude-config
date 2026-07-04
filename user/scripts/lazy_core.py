@@ -532,6 +532,131 @@ def validate_queue_deps(
         return  # pragma: no cover
 
 
+def sync_deps(
+    queue_path: "Path",
+    item_id: str,
+    docs_dir: "Path",
+    *,
+    queue_label: str = "queue.json",
+) -> dict:
+    """Project an item's SPEC ``**Depends on:**`` HARD deps into its queue
+    entry's ``deps`` field (queue-dependency-dag D5 — the script-owned feeder).
+
+    The SPEC dep-block stays the human/design SSOT (kinds + reasons); the
+    queue field is the enforcement projection the dep-gate reads. Invoked by
+    ``/spec-phases`` once the SPEC baseline is locked (deps are settled by
+    then); also callable ad-hoc by the operator. Mirrors the
+    ``reorder_queue``/``clear_queue_stub`` load → find → mutate →
+    ``_atomic_write`` shape.
+
+    Behavior:
+      * ``hard`` deps only (``soft``/``composes`` need the upstream to exist,
+        not be Complete — they stay prose-only by design), SPEC order,
+        deduped, ids validated (regex + reserved ``bug:``/``feature:``
+        prefixes → ``_die``).
+      * Idempotent / byte-stable: equal sets → ``noop: true``, ZERO write.
+      * Empty hard set: an existing ``deps`` key is REMOVED (restoring the
+        byte-identical no-deps entry shape); absent key → ``noop: true``.
+      * Fail-fast, zero mutation (``_die`` exit 2): missing queue id; missing
+        ``SPEC.md``; a self-dep; a projection that would create a queue cycle
+        (which would brick every subsequent probe at load — D4).
+
+    Args:
+        queue_path: the pipeline's queue.json.
+        item_id: the queue entry id to sync.
+        docs_dir: the pipeline docs root the entry's ``spec_dir`` resolves
+            under (``docs/features`` or ``docs/bugs``).
+        queue_label: diagnostic label ("queue.json" vs "bugs/queue.json").
+
+    Returns ``{"synced": bool, "noop": bool, "item_id": str,
+    "deps": [<ids>], "queue_length": int}``.
+    """
+    if not queue_path.exists():
+        _die(f"{queue_label} not found", queue_path)
+        return {}  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid {queue_label}: {exc}", queue_path)
+        return {}  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die(f"{queue_label} 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    spec_dir = entry.get("spec_dir") or item_id
+    spec_md = docs_dir / spec_dir / "SPEC.md"
+    if not spec_md.exists():
+        _die(
+            f"--sync-deps: no SPEC.md for {item_id!r} at {spec_md} — nothing "
+            f"to project (author the SPEC dep-block first)",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+    try:
+        spec_text = spec_md.read_text(encoding="utf-8")
+    except OSError as exc:
+        _die(f"--sync-deps: cannot read {spec_md}: {exc}", queue_path)
+        return {}  # pragma: no cover
+
+    hard: list[str] = []
+    for d in parse_dep_block(spec_text):
+        if d.get("kind") == "hard" and d["feature_id"] not in hard:
+            hard.append(d["feature_id"])
+    validate_dep_id_list(hard, queue_path, context=f"'deps' (sync {item_id!r})")
+    if item_id in hard:
+        _die(
+            f"--sync-deps: {item_id!r} declares a hard dep on itself — a "
+            f"self-dependency can never unblock. Fix the SPEC dep-block.",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+
+    current = entry.get("deps")
+    if hard:
+        if current == hard:
+            return {"synced": True, "noop": True, "item_id": item_id,
+                    "deps": hard, "queue_length": len(items)}
+        entry["deps"] = hard
+    else:
+        if "deps" not in entry:
+            return {"synced": True, "noop": True, "item_id": item_id,
+                    "deps": [], "queue_length": len(items)}
+        entry.pop("deps", None)
+
+    # D4 write-side guard: never persist a projection that would cycle the
+    # queued graph (a cycle bricks every subsequent probe at load). Checked on
+    # the POST-mutation in-memory items; _die leaves the file untouched.
+    cycle = detect_dep_cycle(items)
+    if cycle is not None:
+        _die(
+            f"--sync-deps: projecting {item_id!r}'s hard deps would create a "
+            f"dependency cycle among queued entries: "
+            f"{', '.join(repr(c) for c in cycle)} — refusing to write. Fix "
+            f"the SPEC dep-blocks first.",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"sync-deps: projected {item_id!r} hard deps {hard!r} into "
+        f"{queue_label}"
+    )
+    return {"synced": True, "noop": False, "item_id": item_id,
+            "deps": hard, "queue_length": len(items)}
+
+
 def dep_completion_status(
     dep_id: str,
     repo_root: "Path",

@@ -97,20 +97,20 @@ Full lane gate suite (all ten pytest files + lazy_coord + toolify) at the end.
 
 ## Phase 4 — Feeder + drift
 
-- [ ] WU-4.1 — TESTS FIRST: pytest for `validate_dep_id_list` + `sync_deps` (first-run write,
+- [x] WU-4.1 — TESTS FIRST: pytest for `validate_dep_id_list` + `sync_deps` (first-run write,
   second-run `noop: true` + byte-identical file, missing id `_die`, missing SPEC `_die`,
   hard-filter (soft/composes excluded), empty-hard-set removes the key); smoke fixtures for
   enqueue `--deps`, drift diag (fires on mismatch / silent without the key), `--sync-deps`
   cycle-subagent subprocess refusal exit 3. Run → red.
-- [ ] WU-4.2 — `lazy_core.py`: `validate_dep_id_list` + `sync_deps`.
-- [ ] WU-4.3 — `lazy-state.py`: `--sync-deps` CLI (refuse-first) + `--deps` on `--enqueue-adhoc`
+- [x] WU-4.2 — `lazy_core.py`: `validate_dep_id_list` + `sync_deps`.
+- [x] WU-4.3 — `lazy-state.py`: `--sync-deps` CLI (refuse-first) + `--deps` on `--enqueue-adhoc`
   (validated, stored, forwarded on `--type bug`); `enqueue_adhoc(deps=...)`.
-- [ ] WU-4.4 — `bug-state.py`: mirrored `--sync-deps` + `--deps` (`enqueue_adhoc(deps=...)`).
-- [ ] WU-4.5 — probe-time drift `_diag` in both walk loops (gated on `"deps" in raw_entry`;
+- [x] WU-4.4 — `bug-state.py`: mirrored `--sync-deps` + `--deps` (`enqueue_adhoc(deps=...)`).
+- [x] WU-4.5 — probe-time drift `_diag` in both walk loops (gated on `"deps" in raw_entry`;
   reuses the existing per-entry SPEC read).
-- [ ] WU-4.6 — skill prose: `spec-phases/SKILL.md` sync step; `_components/adhoc-enqueue.md`
+- [x] WU-4.6 — skill prose: `spec-phases/SKILL.md` sync step; `_components/adhoc-enqueue.md`
   `--deps` note; lane-local projection + lint.
-- [ ] WU-4.7 — gates green; re-pin BOTH baselines.
+- [x] WU-4.7 — gates green; re-pin BOTH baselines.
 
 ## Phase 5 — Parity + docs
 

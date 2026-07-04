@@ -28567,5 +28567,115 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# queue-dependency-dag Phase 4 — the --sync-deps feeder (D5): SPEC dep-block →
+# queue `deps` projection, script-owned, idempotent, byte-stable no-op.
+# ---------------------------------------------------------------------------
+
+def _sync_fixture(tmp_path, spec_block, *, entry_deps=None, spec_dir=None):
+    """Build docs/features/{queue.json + <dir>/SPEC.md} for sync_deps tests."""
+    feats = tmp_path / "docs" / "features"
+    d = feats / (spec_dir or "feat-sync")
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SPEC.md").write_text(
+        "# feat-sync\n\n**Status:** Draft\n\n" + spec_block, encoding="utf-8"
+    )
+    entry = {"id": "feat-sync", "name": "Sync", "spec_dir": spec_dir or "feat-sync",
+             "tier": 1}
+    if entry_deps is not None:
+        entry["deps"] = entry_deps
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        entry,
+        {"id": "feat-up", "name": "Up", "spec_dir": "feat-up", "tier": 2},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    return qp, feats
+
+
+def test_sync_deps_writes_then_noops_byte_stable(tmp_path):
+    """First run projects the SPEC's HARD deps (soft/composes excluded, SPEC
+    order, deduped) into the entry's `deps`; a second identical run returns
+    noop: true with a byte-identical file. pytest-only (tmp_path)."""
+    _guard()
+    qp, feats = _sync_fixture(
+        tmp_path,
+        "**Depends on:**\n"
+        "- feat-up — hard — needs it\n"
+        "- feat-soft — soft — nice to have\n"
+        "- feat-comp — composes — extends it\n"
+        "- feat-up — hard — duplicate line\n",
+    )
+    res = lazy_core.sync_deps(qp, "feat-sync", feats)
+    assert res.get("synced") is True and res.get("noop") is False, res
+    data = json.loads(qp.read_text(encoding="utf-8"))
+    assert data["queue"][0]["deps"] == ["feat-up"], data["queue"][0]
+    first_bytes = qp.read_bytes()
+    res2 = lazy_core.sync_deps(qp, "feat-sync", feats)
+    assert res2.get("noop") is True, res2
+    assert qp.read_bytes() == first_bytes, "noop must be byte-stable"
+
+
+def test_sync_deps_empty_hard_set_removes_key(tmp_path):
+    """A SPEC with no hard deps removes an existing `deps` key (restoring the
+    byte-identical no-deps state); absent key → pure noop. pytest-only."""
+    _guard()
+    qp, feats = _sync_fixture(
+        tmp_path, "**Depends on:** (none)\n", entry_deps=["feat-up"]
+    )
+    res = lazy_core.sync_deps(qp, "feat-sync", feats)
+    assert res.get("synced") is True, res
+    data = json.loads(qp.read_text(encoding="utf-8"))
+    assert "deps" not in data["queue"][0], data["queue"][0]
+    res2 = lazy_core.sync_deps(qp, "feat-sync", feats)
+    assert res2.get("noop") is True, res2
+
+
+def test_sync_deps_die_on_missing_id_or_spec(tmp_path):
+    """A missing queue id or a missing SPEC.md _die()s exit 2 with zero
+    mutation. pytest-only."""
+    _guard()
+    qp, feats = _sync_fixture(tmp_path, "**Depends on:** (none)\n")
+    before = qp.read_bytes()
+    code, out = _dep_die_exit_code(
+        lambda: lazy_core.sync_deps(qp, "feat-ghost", feats))
+    assert code == 2 and "feat-ghost" in out
+    assert qp.read_bytes() == before
+    # Missing SPEC.md (entry present, dir/SPEC absent).
+    data = json.loads(qp.read_text(encoding="utf-8"))
+    data["queue"].append(
+        {"id": "feat-nospec", "name": "NoSpec", "spec_dir": "feat-nospec"})
+    qp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    code, out = _dep_die_exit_code(
+        lambda: lazy_core.sync_deps(qp, "feat-nospec", feats))
+    assert code == 2 and "SPEC.md" in out
+
+
+def test_sync_deps_refuses_self_dep_and_written_cycle(tmp_path):
+    """sync_deps fails fast (zero mutation) rather than writing poison: a SPEC
+    hard-dep on the item itself, or a projection that would create a queue
+    cycle (which would brick every subsequent probe at load). pytest-only."""
+    _guard()
+    # Self-dep.
+    qp, feats = _sync_fixture(
+        tmp_path, "**Depends on:**\n- feat-sync — hard — itself\n")
+    before = qp.read_bytes()
+    code, out = _dep_die_exit_code(
+        lambda: lazy_core.sync_deps(qp, "feat-sync", feats))
+    assert code == 2 and "itself" in out
+    assert qp.read_bytes() == before
+    # Written cycle: feat-up already deps feat-sync; feat-sync's SPEC hard-deps
+    # feat-up → projecting would close the cycle.
+    qp2, feats2 = _sync_fixture(
+        tmp_path / "c2", "**Depends on:**\n- feat-up — hard — needs it\n")
+    data = json.loads(qp2.read_text(encoding="utf-8"))
+    data["queue"][1]["deps"] = ["feat-sync"]
+    qp2.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    before2 = qp2.read_bytes()
+    code, out = _dep_die_exit_code(
+        lambda: lazy_core.sync_deps(qp2, "feat-sync", feats2))
+    assert code == 2 and "cycle" in out.lower()
+    assert qp2.read_bytes() == before2
+
+
 if __name__ == "__main__":
     sys.exit(main())

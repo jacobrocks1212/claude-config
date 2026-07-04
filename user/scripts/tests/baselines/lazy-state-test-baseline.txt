@@ -85,6 +85,13 @@
   [dep-gate] hold+advance + transitive + strict-flag independence + completion unlock + reorder composes: ok
   [dep-gate] dangling + superseded dep unknown-dependency fail-fast: ok
   [dep-gate] all-gated queue-exhausted-dependency-gated terminal: ok
+  [dep-drift] queue-vs-SPEC hard-dep drift diagnostic (lint-grade, no halt): ok
+{
+  "error": "invalid '--deps' (enqueue 'adhoc-dep-bad') id 'bug:some-bug': the 'bug:'/'feature:' prefixes are reserved for future cross-pipeline deps (vN) and are rejected in v1 \u2014 declare same-pipeline deps as bare ids",
+  "path": null
+}
+  [enqueue-deps] --deps stored on the ad-hoc entry + reserved prefix refused: ok
+  [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop: ok
 {
   "error": "feature_id already queued: adhoc-test",
   "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"

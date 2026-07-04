@@ -608,6 +608,7 @@ def enqueue_adhoc(
     brief: str,
     spec_dir: str | None = None,
     tier: int = 0,
+    deps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Insert an ad-hoc feature at the TOP of docs/features/queue.json.
 
@@ -616,10 +617,21 @@ def enqueue_adhoc(
     ADHOC_BRIEF.md (which Step 4 routes to /spec), and adds a ROADMAP.md row.
     queue.json / ROADMAP.md are created if absent so ad-hoc works in a fresh
     repo. Idempotent on the brief/dir; refuses a duplicate feature_id.
+
+    queue-dependency-dag Phase 4: an optional ``deps`` id list (the
+    ``--enqueue-adhoc --deps a,b`` surface) lets an ad-hoc item declare hard
+    queue deps at enqueue time without waiting for ``/spec-phases`` to run
+    ``--sync-deps``. Validated up front (regex + reserved ``bug:``/``feature:``
+    prefixes → ``_die``, zero side effects); omitted ⇒ the entry shape is
+    byte-identical to before.
     """
     repo_root = repo_root.resolve()
     if not re.match(r"^[a-z0-9][a-z0-9-]*$", feature_id):
         _die(f"invalid feature_id (must be kebab-case): {feature_id!r}")
+    if deps:
+        lazy_core.validate_dep_id_list(
+            deps, context=f"'--deps' (enqueue {feature_id!r})"
+        )
     features = repo_root / "docs" / "features"
     features.mkdir(parents=True, exist_ok=True)
     spec_dir = spec_dir or feature_id
@@ -641,13 +653,18 @@ def enqueue_adhoc(
         _die(f"feature_id already queued: {feature_id}", queue_path)
         return {}  # pragma: no cover
 
-    items.insert(0, {
+    _new_entry: dict[str, Any] = {
         "id": feature_id,
         "name": name,
         "spec_dir": spec_dir,
         "tier": tier,
         "adhoc": True,
-    })
+    }
+    if deps:
+        # queue-dependency-dag: the optional hard-deps declaration. Key absent
+        # when not supplied — byte-identical legacy entry shape.
+        _new_entry["deps"] = list(deps)
+    items.insert(0, _new_entry)
     data["queue"] = items
     _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
 
@@ -697,6 +714,7 @@ def enqueue_adhoc_bug(
     brief: str = "",
     spec_dir: str | None = None,
     severity: str | None = None,
+    deps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Route an ad-hoc item into docs/bugs/queue.json (the bug pipeline).
 
@@ -733,6 +751,10 @@ def enqueue_adhoc_bug(
     ]
     if severity:
         cmd += ["--severity", severity]
+    if deps:
+        # queue-dependency-dag Phase 4: forward the deps declaration to the
+        # bug-state enqueue (which validates + stores it on the entry).
+        cmd += ["--deps", ",".join(deps)]
     _enqueue_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
     # Flush our buffered stdout/stderr BEFORE the child inherits the fds: when
     # stdout is a pipe (CI, pytest capture) the parent's buffered lines would
@@ -2296,6 +2318,27 @@ def compute_state(
         # throughput optimization — there is no legacy behavior to restore for
         # entries that carry `deps`). Entries WITHOUT `deps` never enter this
         # block — byte-identical on every path.
+        #
+        # queue-dependency-dag Phase 4 (D5): probe-time DRIFT diagnostic —
+        # gated on the entry CARRYING a `deps` key (an opted-in entry), so
+        # legacy entries (no key) emit nothing even when their SPEC has a dep
+        # block. Compares the queue set against the SPEC's parsed hard-dep set
+        # (reusing _hc_spec_text — the walk's existing per-entry SPEC read, so
+        # zero additional file I/O). Lint-grade: a mismatch warns, never halts.
+        if "deps" in entry:
+            _drift_spec_hard = sorted({
+                d["feature_id"]
+                for d in parse_dep_block(_hc_spec_text)
+                if d.get("kind") == "hard"
+            })
+            _drift_queue = sorted(set(lazy_core.dep_ids(entry)))
+            if _drift_spec_hard != _drift_queue:
+                _diag(
+                    f"dep-drift: '{feature_id}' queue deps {_drift_queue!r} != "
+                    f"SPEC hard deps {_drift_spec_hard!r} — re-run "
+                    f"`--sync-deps --id {feature_id}` to re-project "
+                    f"(lint-grade warning; not a halt)."
+                )
         _dg_deps = lazy_core.dep_ids(entry)
         if _dg_deps:
             if _dep_dir_map is None:
@@ -7703,6 +7746,164 @@ def run_smoke_tests() -> int:
         print("  [dep-gate] all-gated queue-exhausted-dependency-gated "
               "terminal: ok")
 
+        # -------------------------------------------------------------------
+        # Functional check: queue-dependency-dag Phase 4 — the feeder + drift.
+        # (h) probe-time drift diagnostic: an entry CARRYING a `deps` key whose
+        #     set diverges from the SPEC's parsed hard-dep set emits a
+        #     lint-grade dep-drift warning (never a halt; the item still
+        #     routes). Entries without the key emit nothing (byte-identity —
+        #     pinned by every pre-existing fixture + the baselines).
+        # -------------------------------------------------------------------
+        dgr_root = td_path / "dep-drift"
+        dgr_feats = dgr_root / "docs" / "features"
+        dgr_feats.mkdir(parents=True, exist_ok=True)
+        (dgr_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgr_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-drift", "name": "DG Drift",
+             "spec_dir": "feat-dg-drift", "tier": 1, "deps": []},
+        ]}))
+        dgr_dir = _dg_make(dgr_root, "feat-dg-drift")
+        # SPEC declares one hard dep the queue field does not carry.
+        (dgr_dir / "SPEC.md").write_text(
+            "# feat-dg-drift\n\n**Status:** Draft\n\n"
+            "**Depends on:**\n- feat-dg-drift-up — hard — upstream contract\n",
+            encoding="utf-8",
+        )
+        dgr_st = compute_state(dgr_root, cloud=False, real_device=True)
+        if dgr_st.get("feature_id") != "feat-dg-drift":
+            failures.append(
+                "[dep-drift] expected the drifted entry to still route "
+                f"normally (lint-grade), got {dgr_st.get('feature_id')!r} "
+                f"terminal={dgr_st.get('terminal_reason')!r}"
+            )
+        if not any("dep-drift" in d for d in dgr_st.get("diagnostics", [])):
+            failures.append(
+                "[dep-drift] expected a dep-drift diagnostic naming the "
+                f"diverged sets; got {dgr_st.get('diagnostics')!r}"
+            )
+        print("  [dep-drift] queue-vs-SPEC hard-dep drift diagnostic "
+              "(lint-grade, no halt): ok")
+
+        # -------------------------------------------------------------------
+        # (i) enqueue_adhoc --deps: an ad-hoc item can declare deps at enqueue
+        #     time (validated: reserved bug:/feature: prefixes refused).
+        # -------------------------------------------------------------------
+        enqd_root = td_path / "enqueue-deps-test"
+        enqd_feats = enqd_root / "docs" / "features"
+        enqd_feats.mkdir(parents=True, exist_ok=True)
+        (enqd_feats / "queue.json").write_text(json.dumps({"queue": []}))
+        (enqd_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        enqd_res = enqueue_adhoc(
+            enqd_root, "adhoc-dep", "Adhoc Dep", "do it",
+            deps=["feat-dg-up"],
+        )
+        enqd_queue = json.loads((enqd_feats / "queue.json").read_text())
+        if not enqd_res.get("enqueued") \
+                or enqd_queue["queue"][0].get("deps") != ["feat-dg-up"]:
+            failures.append(
+                "[enqueue-deps] expected the prepended entry to carry "
+                f"deps=['feat-dg-up']; got {enqd_queue['queue'][0]!r}"
+            )
+        try:
+            enqueue_adhoc(
+                enqd_root, "adhoc-dep-bad", "Bad", "x", deps=["bug:some-bug"],
+            )
+            failures.append(
+                "[enqueue-deps] a reserved bug:/feature: prefixed dep id must "
+                "be refused (_die), but was accepted"
+            )
+        except SystemExit:
+            pass
+        print("  [enqueue-deps] --deps stored on the ad-hoc entry + reserved "
+              "prefix refused: ok")
+
+        # -------------------------------------------------------------------
+        # (j) --sync-deps CLI (subprocess, real handler): projects the SPEC's
+        #     hard deps into the queue entry (script-owned, atomic), noop:true
+        #     + byte-identical on re-run, and REFUSED exit 3 with zero side
+        #     effects for a cycle subagent (refuse_if_cycle_active FIRST — the
+        #     --reorder-queue/--enqueue-adhoc contract).
+        # -------------------------------------------------------------------
+        sd_root = td_path / "sync-deps-test"
+        sd_feats = sd_root / "docs" / "features"
+        sd_feats.mkdir(parents=True, exist_ok=True)
+        (sd_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (sd_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-sd", "name": "SD", "spec_dir": "feat-sd", "tier": 1},
+            {"id": "feat-sd-up", "name": "SD Up", "spec_dir": "feat-sd-up",
+             "tier": 2},
+        ]}, indent=2) + "\n")
+        sd_dir = _dg_make(sd_root, "feat-sd")
+        (sd_dir / "SPEC.md").write_text(
+            "# feat-sd\n\n**Status:** Draft\n\n"
+            "**Depends on:**\n- feat-sd-up — hard — upstream contract\n"
+            "- feat-sd-soft — soft — optional\n",
+            encoding="utf-8",
+        )
+        _dg_make(sd_root, "feat-sd-up")
+        _sd_script = str(Path(__file__).resolve())
+        _sd_state = td_path / "sd-state"
+        _sd_state.mkdir(parents=True, exist_ok=True)
+
+        def _sd_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(_sd_state)
+            e.update(extra)
+            return e
+
+        # Cycle-subagent refusal FIRST (zero side effects proven below).
+        sd_before = (sd_feats / "queue.json").read_bytes()
+        r_sd_refuse = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_sd_refuse.returncode != 3 \
+                or (sd_feats / "queue.json").read_bytes() != sd_before:
+            failures.append(
+                "[sync-deps] cycle-subagent refusal: expected exit 3 with zero "
+                f"side effects, got rc={r_sd_refuse.returncode} "
+                f"mutated={(sd_feats / 'queue.json').read_bytes() != sd_before}"
+            )
+        # Orchestrator-side write.
+        r_sd = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_ORCHESTRATOR="1"),
+        )
+        sd_queue = json.loads((sd_feats / "queue.json").read_text())
+        if r_sd.returncode != 0 \
+                or sd_queue["queue"][0].get("deps") != ["feat-sd-up"]:
+            failures.append(
+                "[sync-deps] write: expected exit 0 + deps=['feat-sd-up'] "
+                f"(hard only), got rc={r_sd.returncode} "
+                f"entry={sd_queue['queue'][0]!r} stderr={r_sd.stderr[:200]!r}"
+            )
+        # Idempotent re-run: noop true, file byte-identical.
+        sd_after_first = (sd_feats / "queue.json").read_bytes()
+        r_sd2 = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_ORCHESTRATOR="1"),
+        )
+        try:
+            sd_out2 = json.loads(r_sd2.stdout)
+        except json.JSONDecodeError:
+            sd_out2 = {}
+        if r_sd2.returncode != 0 or sd_out2.get("noop") is not True \
+                or (sd_feats / "queue.json").read_bytes() != sd_after_first:
+            failures.append(
+                "[sync-deps] idempotent re-run: expected noop:true + "
+                f"byte-identical file, got rc={r_sd2.returncode} "
+                f"out={sd_out2!r}"
+            )
+        print("  [sync-deps] cycle-subagent exit-3 refusal + hard-only "
+              "projection + idempotent noop: ok")
+
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
         enq_features = td_path / "enqueue-test" / "docs" / "features"
@@ -9273,6 +9474,24 @@ def main() -> int:
                               "subagent). single-slot-marker-ownership-race."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
+    parser.add_argument("--deps", default=None,
+                        help=("queue-dependency-dag: comma-separated hard-dep "
+                              "ids for --enqueue-adhoc (e.g. --deps a,b). "
+                              "Validated (kebab-case ids; bug:/feature: "
+                              "prefixes reserved → exit 2); stored on the "
+                              "prepended entry's `deps` field; forwarded to "
+                              "bug-state.py on --type bug. Omitted → the "
+                              "entry shape is byte-identical to before."))
+    parser.add_argument("--sync-deps", dest="sync_deps", action="store_true",
+                        help=("queue-dependency-dag D5 (orchestrator-only, "
+                              "wired at /spec-phases): project the SPEC "
+                              "**Depends on:** block's HARD deps into the "
+                              "queue entry's `deps` field (requires --id). "
+                              "Script-owned load → parse → mutate → atomic "
+                              "write; idempotent (noop:true when in sync; "
+                              "empty hard set removes the key). Gated by "
+                              "refuse_if_cycle_active FIRST (exit 3 for a "
+                              "cycle subagent, zero side effects)."))
     parser.add_argument("--materialize-wi", type=int, default=None,
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
@@ -10304,6 +10523,12 @@ def main() -> int:
         lazy_core.refuse_if_cycle_active("--enqueue-adhoc")
         if not args.id or not args.name:
             _die("--enqueue-adhoc requires --id and --name")
+        # queue-dependency-dag Phase 4: optional --deps a,b (comma-separated
+        # hard-dep ids). Parsed here; validated inside the enqueue helpers.
+        _adhoc_deps = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
         if args.adhoc_type == "bug":
             # unified-pipeline-orchestrator P3: route into docs/bugs/queue.json
             # via the existing bug-state.py enqueue (do NOT reimplement it).
@@ -10313,6 +10538,7 @@ def main() -> int:
                 args.name,
                 args.brief,
                 args.spec_dir,
+                deps=_adhoc_deps,
             )
         else:
             result = enqueue_adhoc(
@@ -10322,6 +10548,7 @@ def main() -> int:
                 args.brief,
                 args.spec_dir,
                 args.tier,
+                deps=_adhoc_deps,
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
@@ -10343,6 +10570,23 @@ def main() -> int:
             Path(args.repo_root) / "docs" / "features" / "queue.json",
             args.id,
             to=to_arg,
+            queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.sync_deps:
+        # queue-dependency-dag D5: the script-owned SPEC→queue deps feeder.
+        # Orchestrator-only — refuse FIRST (before any read/mutate) so a cycle
+        # subagent gets exit 3 with ZERO side effects, exactly like
+        # --enqueue-adhoc / --reorder-queue.
+        lazy_core.refuse_if_cycle_active("--sync-deps")
+        if not args.id:
+            _die("--sync-deps requires --id")
+        result = lazy_core.sync_deps(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            args.id,
+            Path(args.repo_root) / "docs" / "features",
             queue_label="queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")

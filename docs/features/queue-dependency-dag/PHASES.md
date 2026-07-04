@@ -218,29 +218,29 @@ probe-time drift `_diag` (gated on the entry carrying a `deps` key); `/spec-phas
 `adhoc-enqueue.md` component wiring.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `validate_dep_id_list(dep_ids, ...)` (shared by sync/enqueue: regex +
+- [x] `lazy_core.py`: `validate_dep_id_list(dep_ids, ...)` (shared by sync/enqueue: regex +
   reserved-prefix `_die`) and `sync_deps(queue_path, item_id, docs_dir, *, queue_label)` — load →
   find entry (missing id → `_die`) → resolve `spec_dir` → `parse_dep_block(SPEC.md)` (missing
   SPEC.md → `_die`) → filter `hard` → dedupe (SPEC order) → write via `_atomic_write`; equal sets
   → `noop: true`, zero write; empty hard-set removes the `deps` key (restores the
   byte-identical no-deps state).
-- [ ] `lazy-state.py --sync-deps --id <id>`: `refuse_if_cycle_active("--sync-deps")` FIRST
+- [x] `lazy-state.py --sync-deps --id <id>`: `refuse_if_cycle_active("--sync-deps")` FIRST
   (exit 3, zero side effects for a cycle subagent), then `sync_deps` against
   `docs/features/queue.json`.
-- [ ] `bug-state.py --sync-deps --id <id>`: coupled-pair mirror against `docs/bugs/queue.json`.
-- [ ] `--enqueue-adhoc --deps a,b`: comma-split + validated; stored on the prepended entry (key
+- [x] `bug-state.py --sync-deps --id <id>`: coupled-pair mirror against `docs/bugs/queue.json`.
+- [x] `--enqueue-adhoc --deps a,b`: comma-split + validated; stored on the prepended entry (key
   absent when flag omitted — byte-identical); `lazy-state.py --type bug` forwards `--deps` to the
   `bug-state.py` subprocess.
-- [ ] Probe-time drift `_diag` in both walk loops: when the raw entry HAS a `deps` key, compare
+- [x] Probe-time drift `_diag` in both walk loops: when the raw entry HAS a `deps` key, compare
   it (as a set) against the SPEC's parsed hard-dep set (reusing the walk's existing SPEC read);
   mismatch → warning naming both sets; never a halt. Entries without the key: zero new output.
-- [ ] `user/skills/spec-phases/SKILL.md`: post-baseline step invoking
+- [x] `user/skills/spec-phases/SKILL.md`: post-baseline step invoking
   `lazy-state.py --sync-deps --id <feature-id>` (bug variant noted).
-- [ ] `user/skills/_components/adhoc-enqueue.md`: optional `--deps a,b` documented on both
+- [x] `user/skills/_components/adhoc-enqueue.md`: optional `--deps a,b` documented on both
   command forms.
-- [ ] Lane-local projection + lint after the skill/component edits (`project-skills.py
+- [x] Lane-local projection + lint after the skill/component edits (`project-skills.py
   --output-dir /tmp/proj-queue-dependency-dag`; `lint-skills.py`).
-- [ ] Smoke fixtures: sync writes-then-noop (second run `noop: true`, file byte-identical by
+- [x] Smoke fixtures: sync writes-then-noop (second run `noop: true`, file byte-identical by
   hash); drift diag fires on mismatch and stays silent without the `deps` key; enqueue `--deps`
   lands on the entry; cycle-subagent `--sync-deps` refusal (subprocess, exit 3, zero side
   effects). Baselines re-pinned.
@@ -251,12 +251,12 @@ file; a probe over an entry whose queue deps ≠ SPEC hard deps emits the drift 
 still routes normally.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Feeder idempotent (write → noop, file hash equal), drift diagnostic (fires on mismatch,
+- [x] Feeder idempotent (write → noop, file hash equal), drift diagnostic (fires on mismatch,
   silent when key absent), cycle-subagent exit-3 refusal with zero side effects — each pinned by
   a smoke fixture on the owning script(s). *(Evidence: `SKIP_MCP_TEST.md` — `--test` suites
   green.)*
 <!-- verification-only -->
-- [ ] Skill projection + lint clean after the prose edits. *(Evidence: `SKIP_MCP_TEST.md` —
+- [x] Skill projection + lint clean after the prose edits. *(Evidence: `SKIP_MCP_TEST.md` —
   `project-skills.py` lane-local run + `lint-skills.py` exit 0.)*
 <!-- verification-only -->
 

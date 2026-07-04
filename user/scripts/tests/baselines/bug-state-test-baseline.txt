@@ -61,5 +61,10 @@
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [cycle-prompt-ref-surfacing] cycle_prompt_ref surfaced with marker / None without
   PASS [dep-gate] hold+advance / archive-aware / wont-fix+dangling fail-fast / all-gated terminal
+{
+  "error": "invalid '--deps' (enqueue 'adhoc-bug-dep-bad') id 'feature:some-feat': the 'bug:'/'feature:' prefixes are reserved for future cross-pipeline deps (vN) and are rejected in v1 \u2014 declare same-pipeline deps as bare ids",
+  "path": null
+}
+  PASS [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop + enqueue --deps
 
 All smoke tests passed.
