@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: doc-drift-linter
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: moderate
 phases: [1, 2, 3]
@@ -83,10 +83,10 @@ python3 doc-drift-lint.py --repo-root <repo-root>          # Phase 2 onward: mus
 
 ## Phase 3 — Docs rows + finalize
 
-- [ ] WU-3.1 — Script-table rows for `doc-drift-lint.py` in root `CLAUDE.md` and
+- [x] WU-3.1 — Script-table rows for `doc-drift-lint.py` in root `CLAUDE.md` and
   `user/scripts/CLAUDE.md`; linter still exit 0 (the rows are themselves under the scripts
   check).
-- [ ] WU-3.2 — FULL gate suite + final linter run; `SKIP_MCP_TEST.md`; PHASES/plan finalize.
+- [x] WU-3.2 — FULL gate suite + final linter run; `SKIP_MCP_TEST.md`; PHASES/plan finalize.
   Commit.
 
 ## Phase notes

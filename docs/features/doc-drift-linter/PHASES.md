@@ -2,7 +2,12 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 3 phases implemented + validated 2026-07-04 (pytest 1238 passed / 2 sanctioned skips incl.
+     test_doc_drift_lint.py 36; lazy-state/bug-state/lazy_coord --test green; parity audit exit 0;
+     lint-skills clean; doc-drift-lint.py --repo-root . exit 0 with 1 exempted divergence).
+     NOT Complete on the SPEC — the __mark_complete__ integrity gate owns the SPEC Complete
+     flip + COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a stdlib-Python pure-read
 lint script + doc fixes). No Tauri app, no MCP-reachable surface; validation is pytest
@@ -57,11 +62,11 @@ class, the linter prints four drift findings and exits 1; against the corrected 
 0; with the marker on a drifted row the finding moves to "exempted" and the exit returns to 0.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] All four check classes detect their planted drift and pass their clean fixtures; exit codes
-  0/1/2 observed as specified.
+- [x] All four check classes detect their planted drift and pass their clean fixtures; exit codes
+  0/1/2 observed as specified. *(Evidence: `SKIP_MCP_TEST.md` — `test_doc_drift_lint.py` 36 passed.)*
 <!-- verification-only -->
-- [ ] Marker exemption changes reporting but never masks a *different* finding on the same
-  surface.
+- [x] Marker exemption changes reporting but never masks a *different* finding on the same
+  surface. *(Evidence: `test_hooks_marker_exempts_row_but_not_siblings` — exempted ghost.sh, sibling ghost2.sh still exit 1.)*
 <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface (claude-config has no
@@ -107,9 +112,9 @@ expected (a needed change means Phase 1 missed a case — fix with a test).
 reporting 0 drift findings and exactly 1 exempted divergence (algobooth).
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] The five RESEARCH_SUMMARY inventory items were each detected by the linter BEFORE the doc
+- [x] The five RESEARCH_SUMMARY inventory items were each detected by the linter BEFORE the doc
   fixes (exit 1) and resolved AFTER (exit 0) — detection demonstrated on real drift, not only
-  fixtures.
+  fixtures. *(Evidence: plan Phase notes WU-2.1 — 7 drift findings at `aea2b59`, 0 drift + 1 exempted after.)*
 <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — docs + one repo-root self-check; verification is the
@@ -136,18 +141,18 @@ scripts check then covers, so the docs for this feature are themselves under its
 linter self-run.
 
 **Deliverables:**
-- [ ] Root `CLAUDE.md` `## Scripts` table: `doc-drift-lint.py` row (purpose, four checks, exit
+- [x] Root `CLAUDE.md` `## Scripts` table: `doc-drift-lint.py` row (purpose, four checks, exit
   contract, marker convention).
-- [ ] `user/scripts/CLAUDE.md` `## Files in this directory` table: `doc-drift-lint.py` row
+- [x] `user/scripts/CLAUDE.md` `## Files in this directory` table: `doc-drift-lint.py` row
   (+ tests pointer to `test_doc_drift_lint.py`).
-- [ ] Full gate suite green (all existing suites + `test_doc_drift_lint.py`); final
+- [x] Full gate suite green (all existing suites + `test_doc_drift_lint.py`); final
   `doc-drift-lint.py --repo-root .` exit 0 at the finalize commit.
 
 **Minimum Verifiable Behavior:** Gate suite green; the linter's scripts check passes over the
 two rows that document the linter itself.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Docs/lint consistency green at final HEAD.
+- [x] Docs/lint consistency green at final HEAD. *(Evidence: `SKIP_MCP_TEST.md` — full gate suite + final linter run at `validated_commit`.)*
 <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A.
