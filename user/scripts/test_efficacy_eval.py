@@ -766,5 +766,132 @@ def test_canary_shared_surface_counts_against_all_matching(state_env):
     assert _trip_of(payload, "shared-b") is not None, payload
 
 
+# --- WU-6: trip consequence (enqueue + EVIDENCE.md + once-ever + notify) -----
+
+
+def _canary_tripped_fixture(repo: Path, rid: str = "canary-target") -> Path:
+    """An incident-tripping canary fixture with a non-empty commit set + pair
+    scope, so EVIDENCE.md carries both halves."""
+    _seed_runs(4, 1)
+    rec = _capture(repo, rid)
+    _add_canary(rec, surfaces=["user/hooks/lazy-cycle-containment.sh"],
+                opened=_CANARY_OPENED_PAST,
+                commit_set=["aaaa1111", "bbbb2222"],
+                pair_scope=["user/skills/lazy/SKILL.md",
+                            "user/skills/lazy-bug/SKILL.md"])
+    _write_hook_events([
+        {"hook": "lazy-cycle-containment.sh", "kind": "error", "ts": _BASE_NOW},
+        {"hook": "lazy-cycle-containment.sh", "kind": "error",
+         "ts": _BASE_NOW + 60},
+    ])
+    return rec
+
+
+def _bug_queue_entries(repo: Path, rid: str) -> list:
+    qpath = repo / "docs" / "bugs" / "queue.json"
+    if not qpath.exists():
+        return []
+    queue = json.loads(qpath.read_text(encoding="utf-8"))
+    return [e for e in queue.get("queue", []) if e.get("id") == rid]
+
+
+def test_canary_trip_enqueues_revert_exactly_once(state_env):
+    """A tripped canary produces exactly ONE docs/bugs/canary-revert-<id>/
+    seed; a second watcher run adds nothing (record stamped tripped)."""
+    repo = state_env["repo"]
+    rec = _canary_tripped_fixture(repo)
+    code, payload = _run_canary(repo)
+    assert code == 0
+    t = _trip_of(payload, "canary-target")
+    assert t is not None, payload
+    assert "enqueued canary-revert-canary-target" in t["consequence"]
+    assert (repo / "docs" / "bugs" / "canary-revert-canary-target").is_dir()
+    assert len(_bug_queue_entries(repo, "canary-revert-canary-target")) == 1
+    meta = lazy_core.parse_sentinel(rec)
+    assert meta["canary"]["status"] == "tripped"
+    assert meta["canary_revert_enqueued"] is not None
+    # Second + third run: the record no longer wakes → no second item.
+    for _ in range(2):
+        _, p = _run_canary(repo)
+        assert p["open_canaries"] == 0
+    assert len(_bug_queue_entries(repo, "canary-revert-canary-target")) == 1
+
+
+def test_canary_evidence_is_complete(state_env):
+    """EVIDENCE.md carries the commit set, BOTH pair-scope halves, the parity-
+    audit instruction, and the trip reason verbatim."""
+    repo = state_env["repo"]
+    _canary_tripped_fixture(repo)
+    _run_canary(repo)
+    ev = (repo / "docs" / "bugs" / "canary-revert-canary-target"
+          / "EVIDENCE.md").read_text(encoding="utf-8")
+    assert "aaaa1111" in ev and "bbbb2222" in ev            # commit set
+    assert "user/skills/lazy/SKILL.md" in ev                # pair half 1
+    assert "user/skills/lazy-bug/SKILL.md" in ev            # pair half 2
+    assert "lazy_parity_audit.py" in ev                     # parity instruction
+    assert "lazy-cycle-containment.sh" in ev                # trip reason verbatim
+
+
+def test_canary_trip_writes_only_record_evidence_queue(state_env):
+    """Flag-and-enqueue only: the SPEC source is untouched; writes are confined
+    to the record + evidence + bug queue."""
+    repo = state_env["repo"]
+    rec = _canary_tripped_fixture(repo)
+    spec = repo / "docs" / "features" / "canary-target" / "SPEC.md"
+    spec_before = spec.read_bytes()
+    rec_before = rec.read_bytes()
+    _run_canary(repo)
+    assert spec.read_bytes() == spec_before               # source untouched
+    assert rec.read_bytes() != rec_before                 # record stamped
+    assert (repo / "docs" / "bugs" / "canary-revert-canary-target"
+            / "EVIDENCE.md").is_file()
+
+
+def test_canary_json_carries_notify_line_on_trip(state_env):
+    """The --canary --json output carries the notify line on a trip."""
+    repo = state_env["repo"]
+    _canary_tripped_fixture(repo)
+    code, payload = _run_canary(repo)
+    assert payload["notify"] == "canary tripped: canary-target"
+
+
+def test_canary_no_notify_without_trip(state_env):
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "quiet-canary")
+    _add_canary(rec, opened="2099-01-01")   # open, not matured, no trip
+    code, payload = _run_canary(repo)
+    assert payload["notify"] is None
+    assert payload["trips"] == []
+
+
+def test_canary_dry_run_trip_never_enqueues(state_env):
+    """--dry-run reports the trip but performs no enqueue and no stamp."""
+    repo = state_env["repo"]
+    rec = _canary_tripped_fixture(repo)
+    code, payload = _run_canary(repo, "--dry-run")
+    t = _trip_of(payload, "canary-target")
+    assert t is not None and "dry-run" in t["consequence"]
+    assert not (repo / "docs" / "bugs").exists()
+    assert lazy_core.parse_sentinel(rec)["canary"]["status"] == "open"
+
+
+def test_canary_guard_layer1_archived_dir_skips_enqueue(state_env):
+    """Layer 1: an existing docs/bugs/_archive/canary-revert-<id>/ short-
+    circuits the enqueue; the record is still stamped tripped."""
+    repo = state_env["repo"]
+    rec = _canary_tripped_fixture(repo)
+    arch = (repo / "docs" / "bugs" / "_archive"
+            / "canary-revert-canary-target")
+    arch.mkdir(parents=True)
+    code, payload = _run_canary(repo)
+    t = _trip_of(payload, "canary-target")
+    assert t is not None and "exists" in t["consequence"]
+    assert not (repo / "docs" / "bugs" / "canary-revert-canary-target").exists()
+    meta = lazy_core.parse_sentinel(rec)
+    assert meta["canary"]["status"] == "tripped"
+    assert meta["canary_revert_enqueued"] is not None
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

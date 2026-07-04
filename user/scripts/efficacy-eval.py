@@ -674,10 +674,189 @@ def _canary_attribute(canary: dict,
     return (attributed, unattributed)
 
 
+# --- WU-6: trip consequence (flag-and-enqueue + EVIDENCE.md + once-ever) -----
+
+def _canary_revert_dir_exists(repo_root: Path, revert_id: str) -> bool:
+    """Guard layer 1: an open docs/bugs/<revert-id>/ dir OR any archived
+    docs/bugs/_archive/ entry whose name starts with it (mirrors
+    _reconsideration_dir_exists)."""
+    bugs = repo_root / "docs" / "bugs"
+    if (bugs / revert_id).exists():
+        return True
+    archive = bugs / "_archive"
+    try:
+        if archive.is_dir():
+            for child in archive.iterdir():
+                if child.name == revert_id or child.name.startswith(
+                        revert_id + "-"):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+_CANARY_PARITY_INSTRUCTION = (
+    "This change touches a parity-guarded coupled pair. Any revert MUST cover "
+    "the WHOLE pair and END with `python3 user/scripts/lazy_parity_audit.py "
+    "--repo-root .` green — reverting one half breaks the audit."
+)
+
+
+def _canary_evidence_text(rec: dict, ev: dict, repo_root: Path,
+                          today: str) -> str:
+    """Serialize the trip evidence (D5) — trip reason verbatim, full commit
+    set, coupled-pair scope + the parity-audit instruction, degraded note, and
+    linked docs — for the seeded bug dir's EVIDENCE.md."""
+    meta = rec["meta"]
+    rid = meta.get("intervention_id")
+    record_rel = os.path.relpath(str(rec["path"]), str(repo_root))
+    pipeline = meta.get("pipeline") or "feature"
+    item_root = "bugs" if pipeline == "bug" else "features"
+    commit_lines = "\n".join(f"- {c}" for c in ev["commit_set"]) or "- (none derived)"
+    attributed = [i["line"] for i in ev["attributed"]]
+    band = ev["band"]
+    fm = [
+        "---",
+        "kind: canary-evidence",
+        f"canary_revert_of: {rid}",
+        f"intervention_record: {record_rel}",
+        f"tripped: {today}",
+        "---",
+    ]
+    body = [
+        "",
+        f"# Canary Trip Evidence — {rid}",
+        "",
+        "Flag-and-enqueue only — NOTHING was reverted automatically (D4). "
+        "Triage this like any bug: revert (covering the pair scope + parity "
+        "audit below), redesign, or close-as-noise (itself a signal for "
+        "tuning the canary bands).",
+        "",
+        "## Trip reason",
+        "",
+        ev["reason"] or "(trip detected)",
+        "",
+        "### Band numbers",
+        "",
+        f"- relative movement: {band.get('rel')}% (band ±{band.get('band')}%)",
+        f"- post-ship occurrences: {band.get('post_events')} "
+        f"(baseline {band.get('base_value')} ev/run → "
+        f"post {band.get('post_value')} ev/run)",
+        "",
+        "### Attributed fresh incidents (verbatim)",
+        "",
+        "```",
+        *(attributed or ["(none — band-only trip)"]),
+        "```",
+        "",
+        "## Commit set (revert target)",
+        "",
+        commit_lines,
+        "",
+        "## Coupled-pair scope",
+        "",
+    ]
+    if ev["pair_scope"]:
+        body.append(_CANARY_PARITY_INSTRUCTION)
+        body.append("")
+        body.extend(f"- {half}" for half in ev["pair_scope"])
+    else:
+        body.append(
+            "No coupled-pair scope — the commit set touches no parity-guarded "
+            "pair, so a revert need not span a sibling.")
+    body += [
+        "",
+        "## Degraded-revert note",
+        "",
+        ev["degraded_revert_note"] or (
+            "none — a plain `git revert` of the commit set is expected to back "
+            "the change out."),
+        "",
+        "## Linked docs",
+        "",
+        f"- Intervention record: {record_rel}",
+        f"- SPEC: docs/{item_root}/{rid}/SPEC.md",
+        f"- Gate verdict (if present): docs/{item_root}/{rid}/GATE_VERDICT.md",
+        "",
+    ]
+    return "\n".join(fm + body)
+
+
+def _canary_enqueue_revert(repo_root: Path, revert_id: str, rid: str,
+                           record_rel: str) -> bool:
+    """Shell the SHIPPED bug enqueue (copies the _enqueue_reconsideration
+    subprocess + LAZY_ORCHESTRATOR=1 env pattern verbatim — NEVER a queue.json
+    hand-edit). Returns True on a clean enqueue."""
+    brief = (
+        f"Canary tripped for a shipped control-surface change — evidence "
+        f"attached (EVIDENCE.md in this dir).\n\n"
+        f"- Intervention record: {record_rel}\n"
+        f"- Canary: {rid}\n\n"
+        f"Question for /spec-bug: REVERT (covering the coupled-pair scope + a "
+        f"green parity audit), REDESIGN, or close-as-noise? Nothing was "
+        f"reverted automatically — the canary only flags and enqueues; this "
+        f"item flows through spec, plan, and normal triage under full gates."
+    )
+    cmd = [
+        sys.executable,
+        str(_SCRIPTS_DIR / "lazy-state.py"),
+        "--enqueue-adhoc",
+        "--type", "bug",
+        "--id", revert_id,
+        "--name", f"Revert-or-redesign canary trip: {rid}",
+        "--brief", brief,
+        "--repo-root", str(repo_root),
+    ]
+    env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+    try:
+        proc = subprocess.run(
+            cmd, env=env, capture_output=True, text=True, check=False)
+    except OSError:
+        return False
+    return proc.returncode == 0
+
+
 def _canary_fire_consequence(repo_root: Path, rec: dict, ev: dict,
                              today: str) -> str:
-    """Trip consequence: enqueue + EVIDENCE.md + stamp (WU-6 fills this)."""
-    return "trip detected (consequence not yet wired)"
+    """Fire the trip consequence behind the two-layer once-ever guard (mirrors
+    _enqueue_reconsideration): enqueue canary-revert-<id>, write EVIDENCE.md,
+    and stamp canary.status: tripped + the record-level guard stamp. The
+    watcher stays the SOLE writer of canary.* fields. Flag-and-enqueue ONLY —
+    no revert, no writes outside record/evidence/queue."""
+    meta = rec["meta"]
+    canary = meta["canary"]
+    rid = meta.get("intervention_id")
+    revert_id = f"canary-revert-{rid}"
+
+    # Layer 2: the record-level stamp — once set, never enqueue again (even if
+    # the bug dir vanished). One revert item per canary, ever.
+    if meta.get("canary_revert_enqueued"):
+        return f"skipped (already enqueued {meta.get('canary_revert_enqueued')})"
+
+    # Layer 1: an existing revert dir, open or archived.
+    if _canary_revert_dir_exists(repo_root, revert_id):
+        canary["status"] = "tripped"
+        meta["canary_revert_enqueued"] = today
+        _write_record(rec)
+        return f"skipped (docs/bugs/{revert_id} exists, open or archived)"
+
+    record_rel = os.path.relpath(str(rec["path"]), str(repo_root))
+    if not _canary_enqueue_revert(repo_root, revert_id, rid, record_rel):
+        # No stamp on failure — the next run retries (status stays open).
+        return "enqueue-failed — will retry next run"
+
+    # The enqueue seeded docs/bugs/<revert_id>/; drop the EVIDENCE.md capsule.
+    evidence_path = repo_root / "docs" / "bugs" / revert_id / "EVIDENCE.md"
+    try:
+        lazy_core._atomic_write(
+            evidence_path, _canary_evidence_text(rec, ev, repo_root, today))
+    except OSError:
+        pass  # evidence is best-effort; the guard stamp still fires
+
+    canary["status"] = "tripped"
+    meta["canary_revert_enqueued"] = today
+    _write_record(rec)
+    return f"enqueued {revert_id}"
 
 
 def _canary_open_records(records: list[dict]) -> list[dict]:
