@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cross-platform-setup
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: medium
 phases: [1, 2, 3, 4]
@@ -90,9 +90,28 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 4 — docs + gates
 
-- [ ] WU-4.1 — Root `CLAUDE.md` Setup Commands: add `python3 setup.py` forms (scoped edit).
+- [x] WU-4.1 — Root `CLAUDE.md` Setup Commands: add `python3 setup.py` forms (scoped edit).
   `user/scripts/CLAUDE.md`: `test_setup_py.py` note.
-- [ ] WU-4.2 — FULL gate suite green (all pytest suites + `--test` harnesses + parity audit +
+- [x] WU-4.2 — FULL gate suite green (all pytest suites + `--test` harnesses + parity audit +
   lint-skills; only the two sanctioned skips). `git diff setup.ps1 manifest.psd1` empty.
-- [ ] WU-4.3 — `SKIP_MCP_TEST.md` with suites/counts + `validated_commit`; PHASES.md +
+- [x] WU-4.3 — `SKIP_MCP_TEST.md` with suites/counts + `validated_commit`; PHASES.md +
   plan finalized (checkboxes ticked with evidence, statuses per protocol).
+
+**Implementation Notes (2026-07-04 — all phases complete):**
+- Parser: single-pass tokenizer (string/comment aware) + recursive descent; `;` accepted as a
+  separator alongside newline/comma; trailing comments stripped outside strings; double-quoted
+  strings accepted but die on `$`/backtick (no interpolation in a data file); bare-word values
+  refused (this manifest only uses quoted strings/arrays/hashtables) — loud over guessing.
+- Expansion refinement vs `setup.ps1`: skip_absent is flagged at expansion time (Repos base
+  `Path` dir absent) so all three verbs render `SKIP … (repo absent: …)` uniformly — the D5
+  divergence. Dangling-link + repo-missing (a case setup.ps1 would throw on) degrades to
+  removing the dead link + NONE.
+- Windows selection logic behind patchable seams (`_WINDOWS`, `_symlink`, `_readlink`,
+  `_create_junction`) — covered by 5 mocked-platform tests; exercised for real on Windows only.
+- CLI: `--repos-root` validated to exist (SetupError, exit 2) so a typo is loud rather than
+  silently skip-absent-ing every repo; `check` exits 0 iff broken==0 (documented hardening —
+  setup.ps1 never propagated its bool).
+- e2e runs `setup.py` as a subprocess with temp HOME/USERPROFILE and proves write-through by
+  realpath identity + content equality (no writes into the worktree from tests).
+- Root `.gitignore` gained `__pycache__/` (the test suite imports the repo-root script, which
+  writes bytecode there — new artifact introduced by this feature).
