@@ -66,6 +66,11 @@ _SOURCES: dict[str, frozenset] = {
         "containment-refusal-count",
         "halt-dwell-p50-seconds",
         "cycles-per-completion",
+        # harness-change-canary-rollback: registered at spec-finalization so the
+        # feature's drafted `## KPI Declaration` row lints clean. Compute is
+        # wired in the feature's Phase 4 (until then _sel_telemetry returns an
+        # honest NO-DATA for this selector — never a fabricated zero).
+        "canary-trip-precision",
     }),
     "deny-ledger": frozenset({
         "build-queue-enforce-deny-count",
