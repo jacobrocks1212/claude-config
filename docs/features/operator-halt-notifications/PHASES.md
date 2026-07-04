@@ -2,7 +2,13 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
+<!-- All 4 phases implemented + validated 2026-07-04 (pytest 1300 passed / 2 sanctioned
+     skips; both --test smokes green with the new [notify-halt-call-site] fixtures;
+     lazy_parity_audit exit 0 with surface #7; lint + doc-drift clean). Phase 3's live
+     phone/cloud delivery legs are explicitly DEFERRED (workstation-only). NOT Complete on
+     the SPEC — the __mark_complete__ integrity gate owns the SPEC Complete flip +
+     COMPLETED.md receipt. -->
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a `lazy_core.py` notifier +
 two one-line state-script call sites). No Tauri app, no MCP-reachable surface; validation is

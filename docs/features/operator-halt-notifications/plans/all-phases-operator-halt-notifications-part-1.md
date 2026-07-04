@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: operator-halt-notifications
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -105,5 +105,5 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 - [x] WU-4.1 — `user/scripts/CLAUDE.md` "Operator halt notifications" section (config schema, env
   overrides, sets, ledger/breadcrumb, fail-OPEN, §1c.6 coexistence, parity surface #7).
 - [x] WU-4.2 — Root `CLAUDE.md`: `notify.json` in the untracked-secrets list.
-- [ ] WU-4.3 — Final FULL gate suite (all suites + smokes + parity + lint) green; SKIP_MCP_TEST.md;
+- [x] WU-4.3 — Final FULL gate suite (all suites + smokes + parity + lint) green; SKIP_MCP_TEST.md;
   finalize PHASES/plan statuses. Commit Phase 4 + finalization.
