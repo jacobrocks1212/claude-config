@@ -10,7 +10,7 @@
 > `parallel-worktree-batch-execution` coordinator shards on. Entries without `deps` behave
 > byte-identically to today.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research

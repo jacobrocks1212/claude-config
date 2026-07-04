@@ -56,7 +56,7 @@ the historical / manually-authored spec archive (not under pipeline management).
 ## Tier 2 — proposed (repo-exploration stubs 2026-07-04)
 
 - Harness-Change Canary + Rollback (`harness-change-canary-rollback`) — shipped control-surface changes enter an observation window; KPI regression or fresh incident clusters on the change's surface auto-enqueue an evidence-backed revert-or-redesign item, with revertibility metadata (change → commits via the provenance ledger) recorded at ship time. Flag-and-enqueue, never silent auto-revert.
-- First-Class Dependency DAG in queue.json (`queue-dependency-dag`) — promote ROADMAP-prose hard-deps to an enforced `deps: [...]` queue field so skip-ahead can jump around dependency chains safely; prerequisite readiness signal for parallel execution.
+~~- First-Class Dependency DAG in queue.json (`queue-dependency-dag`) — promote ROADMAP-prose hard-deps to an enforced `deps: [...]` queue field so skip-ahead can jump around dependency chains safely; prerequisite readiness signal for parallel execution.~~  ✅ COMPLETE
 - Cross-Repo Fleet Home Page (`cross-repo-fleet-view`) — multi-repo landing view in `pipeline_visualizer` aggregating every repo's queues, run markers, and halts into one control plane.
 ~~- Scheduled Autonomous Runs (`scheduled-autonomous-runs`) — cron-triggered `/lazy-batch-cloud` drains the queue nightly; `LAZY_QUEUE.md` + halt notifications are the morning report; existing arbitration keeps scheduled runs from clobbering live ones.~~  ✅ COMPLETE
 - Generalize Build-Queue Beyond Cognito (`build-queue-generalization`) — config-driven per-repo ops manifest + hygiene profiles so AlgoBooth's `tauri build`/`cargo build --release` class rides the same machine-global serializer.
