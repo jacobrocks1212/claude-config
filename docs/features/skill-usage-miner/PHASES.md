@@ -51,17 +51,17 @@ markdown + JSON renderers, the standing Caveats block, the explicit
 `--out`; both formats when neither flag).
 
 **Deliverables:**
-- [ ] `user/scripts/skill-usage-miner.py` — corpus walk (imported `_iter_log_files`), detector 1
+- [x] `user/scripts/skill-usage-miner.py` — corpus walk (imported `_iter_log_files`), detector 1
       (Skill-tool, incl. `subagents/agent-*.jsonl`), detector 2 (slash markers), name
       normalization, session/project/timestamp per hit, malformed-line graceful skip.
-- [ ] User-level inventory: `user/skills/*/SKILL.md` glob + full-frontmatter `name:` scan
+- [x] User-level inventory: `user/skills/*/SKILL.md` glob + full-frontmatter `name:` scan
       (dir-name fallback flagged for Phase 3 hygiene).
-- [ ] Ranked markdown table (`rank | skill | scope | skill-tool | slash | sessions | last seen |
+- [x] Ranked markdown table (`rank | skill | scope | skill-tool | slash | sessions | last seen |
       30d | notes`) + JSON schema; deterministic ordering (total desc, name asc).
-- [ ] Standing `## Caveats` block (false negatives: component injection, auto-invoke prose,
+- [x] Standing `## Caveats` block (false negatives: component injection, auto-invoke prose,
       off-workstation sessions; zero = investigate, never proof of deadness).
-- [ ] Empty/missing corpus → explicit `no corpus found at <path>` line, never a bare empty table.
-- [ ] `user/scripts/test_skill_usage_miner.py` — fixture transcripts (Skill tool_use, command-name
+- [x] Empty/missing corpus → explicit `no corpus found at <path>` line, never a bare empty table.
+- [x] `user/scripts/test_skill_usage_miner.py` — fixture transcripts (Skill tool_use, command-name
       markers, subagent file, malformed line), per-skill counts + distinct sessions, separate
       detector columns, the two-tree read-only `_dir_hash` test (fixture logs dir AND fixture
       skills tree), deterministic-output diff test, missing-logs-dir message, CLI smoke
@@ -73,9 +73,9 @@ fixture skills tree containing `commit/SKILL.md` renders a table row for `commit
 skill-tool=1, slash=2, sessions=2, and both fixture trees hash byte-identical before/after.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Skill-tool + slash hits counted separately, incl. subagent transcripts; distinct sessions correct. *(Evidence: `test_skill_usage_miner.py` detector tests.)* <!-- verification-only -->
-- [ ] Read-only over BOTH trees: fixture logs dir + fixture skills tree byte-identical before/after a full run. *(Evidence: mirrored `_dir_hash` test.)* <!-- verification-only -->
-- [ ] Malformed JSONL tolerated; missing logs dir → explicit message. *(Evidence: `test_skill_usage_miner.py`.)* <!-- verification-only -->
+- [x] Skill-tool + slash hits counted separately, incl. subagent transcripts; distinct sessions correct. *(Evidence: `test_skill_usage_miner.py` detector tests.)* <!-- verification-only -->
+- [x] Read-only over BOTH trees: fixture logs dir + fixture skills tree byte-identical before/after a full run. *(Evidence: mirrored `_dir_hash` test.)* <!-- verification-only -->
+- [x] Malformed JSONL tolerated; missing logs dir → explicit message. *(Evidence: `test_skill_usage_miner.py`.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface (claude-config has no
 Tauri/MCP app). Verification is `test_skill_usage_miner.py`.

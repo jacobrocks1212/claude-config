@@ -64,19 +64,24 @@ python3 user/scripts/lint-skills.py --skills-dir user/skills --repos-dir repos
 
 ## Phase 1 — Corpus walk + detectors + user-level inventory + ranked table
 
-- [ ] WU-1.1 — `test_skill_usage_miner.py` (RED): import guard, fixture builders
+- [x] WU-1.1 — `test_skill_usage_miner.py` (RED): import guard, fixture builders
       (`_write_jsonl`, `_assistant_skill_turn`, `_user_slash_turn`, `_mk_skill`, `_dir_hash`),
       detector tests (per-skill counts, separate columns, subagent attribution, distinct
       sessions, plugin/leading-`/` normalization), two-tree read-only test, malformed-line test,
       missing-corpus message test, determinism test, CLI smoke + `--out` test. Run → RED
       (module not importable).
-- [ ] WU-1.2 — `skill-usage-miner.py`: importlib reuse of `_iter_log_files`; `extract_hits`
+- [x] WU-1.2 — `skill-usage-miner.py`: importlib reuse of `_iter_log_files`; `extract_hits`
       (value-preserving; per-line timestamp/session/project); user-level `build_inventory`
       (full-frontmatter `name:` scan, dir-name fallback recorded); report assembly + markdown/JSON
       renderers (ranked table, Caveats, empty-corpus message); CLI (`--logs/--markdown/--json/--out`).
       Run tests → GREEN.
-- [ ] WU-1.3 — Gates: `test_skill_usage_miner.py` green; `test_toolify_miner.py` still green.
+- [x] WU-1.3 — Gates: `test_skill_usage_miner.py` green; `test_toolify_miner.py` still green.
 
+**Implementation Notes (2026-07-04 — Phase 1):** RED run confirmed first
+(`skill-usage-miner.py not importable` across all 13 Phase-1 tests), then GREEN 13/13
+(also pytest-discovered: 13 passed). Sibling `test_toolify_miner.py` 19/19 green (untouched).
+Phase 2–4 surfaces (repo inventory, `--since`, age gate, hygiene, proposals, toolify, unknown)
+are deliberately stubbed (`[]` sections) so each later phase starts RED.
 
 ## Phase 2 — Scope + windows
 
