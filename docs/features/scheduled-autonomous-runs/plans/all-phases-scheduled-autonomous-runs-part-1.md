@@ -81,12 +81,12 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 - [x] WU-2.1 — Cross-check: recipe parameter names against the live platform tool schemas
   (`create_trigger` / `update_trigger` / `delete_trigger` / `fire_trigger` / `list_triggers` /
   `list_environments`). DONE via RESEARCH_SUMMARY platform row.
-- [ ] WU-2.2 — Author `RECIPES.md`: nightly create (cron + fresh-session + push notifications),
+- [x] WU-2.2 — Author `RECIPES.md`: nightly create (cron + fresh-session + push notifications),
   one-shot pilot (`run_once_at`), fire-now (`fire_trigger` [+ `text`]), registry view
   (`list_triggers`), enable/disable/re-slot (`update_trigger`), teardown (`delete_trigger`),
   constraint notes (hourly min, UTC 5-field cron, notifications fresh-session-only,
   `run_once_fired` self-disable).
-- [ ] WU-2.3 — Tick PHASES.md Phase 2 boxes; commit.
+- [x] WU-2.3 — Tick PHASES.md Phase 2 boxes; commit.
 
 ## Phase 3 — PLAYBOOK.md
 

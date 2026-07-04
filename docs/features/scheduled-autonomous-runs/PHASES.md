@@ -93,16 +93,16 @@ of the lane confirms no accidental harness breakage.
 API surface (D9: managed via chat ops, NO wrapper script), parameterized per repo.
 
 **Deliverables:**
-- [ ] Create recipe: `create_trigger` with `cron_expression` (staggered slots `0 1 * * *` /
+- [x] Create recipe: `create_trigger` with `cron_expression` (staggered slots `0 1 * * *` /
   `0 3 * * *` — D2), `create_new_session_on_fire: true` (D1), `notifications: {push: true}`
   (D5; email per taste), the Phase-1 template as `prompt`, and the environment note (fires into
   the repo's existing cloud environment — D8; `environment_id` required only outside a session,
   discovered via `list_environments`).
-- [ ] Pilot recipe: one-shot `run_once_at` variant (SPEC Phase 1 pilot) + `fire_trigger` for
+- [x] Pilot recipe: one-shot `run_once_at` variant (SPEC Phase 1 pilot) + `fire_trigger` for
   run-tonight's-job-now (optionally with appended run-specific `text`).
-- [ ] Registry/inspection recipes: `list_triggers` as the registry view (D2 — the trigger list IS
+- [x] Registry/inspection recipes: `list_triggers` as the registry view (D2 — the trigger list IS
   the registry), `update_trigger` enable/disable/cron-move, `delete_trigger` teardown.
-- [ ] Constraint notes carried from the live schemas: cron minimum interval hourly;
+- [x] Constraint notes carried from the live schemas: cron minimum interval hourly;
   `run_once_at` RFC3339 + self-disables after firing (`ended_reason=run_once_fired`);
   `notifications` valid ONLY for fresh-session routines; cron is 5-field UTC.
 
@@ -110,7 +110,7 @@ API surface (D9: managed via chat ops, NO wrapper script), parameterized per rep
 (matching the live tool schemas verbatim) and is copy-paste executable by the operator in chat.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Parameter names/constraints in every recipe match the live platform tool schemas
+- [x] Parameter names/constraints in every recipe match the live platform tool schemas
   (`create_trigger`/`update_trigger`/`delete_trigger`/`fire_trigger`/`list_triggers`/
   `list_environments`). *(Evidence: `RESEARCH_SUMMARY.md` platform-contract row.)* <!-- verification-only -->
 
