@@ -8,3 +8,6 @@
 # OS
 Thumbs.db
 .DS_Store
+
+# Python bytecode (repo-root setup.py imported by its test suite)
+__pycache__/
