@@ -12,7 +12,7 @@
 > divergences are annotated in place with a single SSOT marker constant
 > (the `<!-- verification-only -->` precedent).
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; baseline-locked via internal codebase

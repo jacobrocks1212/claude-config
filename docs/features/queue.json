@@ -22,12 +22,6 @@
       "stub": true
     },
     {
-      "id": "doc-drift-linter",
-      "name": "Doc-Drift Linter (CLAUDE.md vs. Reality)",
-      "spec_dir": "doc-drift-linter",
-      "tier": 1
-    },
-    {
       "id": "harness-telemetry-ledger",
       "name": "Harness Telemetry Ledger + Trends",
       "spec_dir": "harness-telemetry-ledger",
