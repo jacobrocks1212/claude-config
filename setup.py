@@ -420,5 +420,203 @@ def _create_link(live, repo, is_dir):
             "elevated, then re-run.")
 
 
+# ---------------------------------------------------------------------------
+# Verbs — one-for-one port of setup.ps1's Invoke-Bootstrap / Invoke-Check /
+# Invoke-Repair (normative parity table in the SPEC). Deliberate divergences:
+# skip_absent rendering (D5) and check's real exit code.
+# ---------------------------------------------------------------------------
+
+
+def _remove_link(path):
+    try:
+        os.unlink(path)
+    except OSError:  # Windows directory symlink/junction
+        os.rmdir(path)
+
+
+def _ensure_parent(path):
+    parent = os.path.dirname(path)
+    if parent and not os.path.exists(parent):
+        os.makedirs(parent, exist_ok=True)
+
+
+def cmd_bootstrap(mappings):
+    import shutil
+    moved = linked = skipped = warned = 0
+    for m in mappings:
+        label = m.label
+        if m.skip_absent:
+            print(f"  SKIP     {label} ({m.skip_reason})")
+            skipped += 1
+            continue
+        live, repo = m.live, m.repo
+        is_dir = m.type == "Directory"
+
+        # Already correctly linked
+        if _is_link(live) and _targets_equal(live, repo):
+            print(f"  SKIP     {label}")
+            skipped += 1
+            continue
+
+        _ensure_parent(repo)
+
+        if _is_link(live):
+            # Symlink pointing at the wrong target
+            if os.path.exists(repo):
+                _remove_link(live)
+                _create_link(live, repo, is_dir)
+                print(f"  RELINK   {label}")
+                linked += 1
+            elif os.path.exists(live):  # referent alive -> preserve its content
+                if is_dir:
+                    shutil.copytree(live, repo)
+                else:
+                    shutil.copy2(live, repo)
+                _remove_link(live)
+                _create_link(live, repo, is_dir)
+                print(f"  COPYLINK {label}")
+                linked += 1
+            else:  # dangling link, nothing to recover on either side
+                _remove_link(live)
+                print(f"  NONE     {label} (dangling link removed)")
+                skipped += 1
+        elif os.path.lexists(live):
+            # Real file/directory
+            if os.path.exists(repo):
+                print(f"  WARN     {label} (both live and repo exist)")
+                warned += 1
+                continue
+            shutil.move(live, repo)
+            _create_link(live, repo, is_dir)
+            print(f"  MOVE     {label}")
+            moved += 1
+        elif os.path.exists(repo):
+            _ensure_parent(live)
+            _create_link(live, repo, is_dir)
+            print(f"  LINK     {label} (recovery)")
+            linked += 1
+        else:
+            print(f"  NONE     {label}")
+            skipped += 1
+
+    print(f"\nBootstrap: {moved} moved, {linked} linked, {skipped} skipped, "
+          f"{warned} warnings")
+    return 0
+
+
+def cmd_check(mappings):
+    ok = broken = absent = 0
+    for m in mappings:
+        label = m.label
+        if m.skip_absent:
+            print(f"  SKIP     {label} ({m.skip_reason})")
+            absent += 1
+            continue
+        live, repo = m.live, m.repo
+        if not os.path.lexists(live):
+            if os.path.exists(repo):
+                print(f"  MISSING  {label}")
+                broken += 1
+            else:
+                print(f"  ABSENT   {label}")
+                absent += 1
+            continue
+        if not _is_link(live):
+            print(f"  REAL     {label} (not symlinked)")
+            broken += 1
+            continue
+        if _targets_equal(live, repo):
+            print(f"  OK       {label}")
+            ok += 1
+        else:
+            print(f"  WRONG    {label} -> {_read_link_target(live)}")
+            broken += 1
+
+    print(f"\nCheck: {ok} OK, {broken} broken, {absent} absent")
+    # Hardening over setup.ps1 (which never propagated its bool): real exit code.
+    return 0 if broken == 0 else 1
+
+
+def cmd_repair(mappings):
+    import shutil
+    repaired = skipped = 0
+    for m in mappings:
+        label = m.label
+        if m.skip_absent:
+            print(f"  SKIP     {label} ({m.skip_reason})")
+            skipped += 1
+            continue
+        live, repo = m.live, m.repo
+        if not os.path.exists(repo):
+            skipped += 1
+            continue
+        if _is_link(live):
+            if _targets_equal(live, repo):
+                skipped += 1
+                continue
+            _remove_link(live)
+        elif os.path.lexists(live):
+            shutil.move(live, live + ".bak")
+            print(f"  BACKUP   {label}")
+        _ensure_parent(live)
+        _create_link(live, repo, m.type == "Directory")
+        print(f"  REPAIR   {label}")
+        repaired += 1
+
+    print(f"\nRepair: {repaired} fixed, {skipped} OK")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="setup.py",
+        description="Cross-platform symlink bootstrap/check/repair for "
+                    "claude-config (Python port of setup.ps1; reads the same "
+                    "manifest.psd1).")
+    parser.add_argument("command", choices=("bootstrap", "check", "repair"))
+    parser.add_argument("--target", choices=TARGETS, default="All",
+                        help="scope to one manifest section (default: All)")
+    parser.add_argument("--repos-root", default=None,
+                        help="remap each Repos entry's Path to "
+                             "<repos-root>/<basename(Path)> (host-local checkouts)")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:  # argparse exits 2 on usage errors already
+        return exc.code
+
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    try:
+        manifest_path = os.path.join(repo_root, "manifest.psd1")
+        if not os.path.isfile(manifest_path):
+            _die(f"manifest not found: {manifest_path}")
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = parse_psd1(fh.read())
+        repos_root = args.repos_root
+        if repos_root is not None:
+            repos_root = os.path.abspath(os.path.expanduser(repos_root))
+            if not os.path.isdir(repos_root):
+                _die(f"--repos-root does not exist: {repos_root}")
+        mappings = expand_mappings(manifest, repo_root, target=args.target,
+                                   repos_root=repos_root)
+
+        print("\n=== Claude Config Setup ===")
+        print(f"Command: {args.command} | Target: {args.target} | Root: {repo_root}\n")
+        print(f"Mappings: {len(mappings)}\n")
+
+        dispatch = {"bootstrap": cmd_bootstrap, "check": cmd_check,
+                    "repair": cmd_repair}
+        return dispatch[args.command](mappings)
+    except SetupError as exc:
+        print(f"setup.py: error: {exc}", file=sys.stderr)
+        return 2
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

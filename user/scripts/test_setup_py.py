@@ -403,5 +403,283 @@ class TestCreateLinkWindowsSelection:
         assert not setup_mod._is_link(str(tmp_path / "plain"))
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 — bootstrap / check / repair verbs (parity table rows)
+# ---------------------------------------------------------------------------
+
+
+def _mk(live, repo, mtype="File", section="User", skip_absent=False, skip_reason=""):
+    return setup_mod.Mapping(live=str(live), repo=str(repo), type=mtype,
+                             section=section, skip_absent=skip_absent,
+                             skip_reason=skip_reason)
+
+
+@pytest.fixture()
+def fx(tmp_path):
+    """live/ and repo/ dirs for verb fixtures."""
+    live = tmp_path / "live"
+    repo = tmp_path / "repo"
+    live.mkdir()
+    repo.mkdir()
+    return live, repo
+
+
+class TestBootstrap:
+    def test_correct_link_skips(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        os.symlink(str(repo / "f.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_bootstrap([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "SKIP" in out
+        assert "Bootstrap: 0 moved, 0 linked, 1 skipped, 0 warnings" in out
+
+    def test_wrong_link_repo_exists_relinks(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("repo")
+        (repo / "other.md").write_text("other")
+        os.symlink(str(repo / "other.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_bootstrap([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "RELINK" in out
+        assert (live / "f.md").read_text() == "repo"
+
+    def test_wrong_link_repo_missing_copylinks_referent(self, fx, capsys):
+        live, repo = fx
+        (live / "elsewhere.md").write_text("content")
+        os.symlink(str(live / "elsewhere.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_bootstrap([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "COPYLINK" in out
+        assert (repo / "f.md").read_text() == "content"
+        assert os.path.islink(str(live / "f.md"))
+        assert setup_mod._targets_equal(str(live / "f.md"), str(repo / "f.md"))
+
+    def test_real_file_repo_missing_moves_and_links(self, fx, capsys):
+        live, repo = fx
+        (live / "f.md").write_text("moved")
+        rc = setup_mod.cmd_bootstrap([_mk(live / "f.md", repo / "sub" / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "MOVE" in out
+        assert (repo / "sub" / "f.md").read_text() == "moved"  # repo parent created
+        assert os.path.islink(str(live / "f.md"))
+        assert "Bootstrap: 1 moved, 0 linked, 0 skipped, 0 warnings" in out
+
+    def test_real_dir_repo_missing_moves_and_links(self, fx, capsys):
+        live, repo = fx
+        (live / "skills").mkdir()
+        (live / "skills" / "a.md").write_text("a")
+        rc = setup_mod.cmd_bootstrap(
+            [_mk(live / "skills", repo / "skills", mtype="Directory")])
+        assert rc == 0
+        assert (repo / "skills" / "a.md").read_text() == "a"
+        assert os.path.islink(str(live / "skills"))
+
+    def test_both_exist_warns_untouched(self, fx, capsys):
+        live, repo = fx
+        (live / "f.md").write_text("live")
+        (repo / "f.md").write_text("repo")
+        rc = setup_mod.cmd_bootstrap([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "WARN" in out and "both live and repo exist" in out
+        assert (live / "f.md").read_text() == "live"
+        assert (repo / "f.md").read_text() == "repo"
+        assert "1 warnings" in out
+
+    def test_live_missing_repo_exists_recovery_link(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        rc = setup_mod.cmd_bootstrap([_mk(live / "deep" / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "LINK" in out and "recovery" in out
+        assert os.path.islink(str(live / "deep" / "f.md"))  # live parent created
+
+    def test_both_missing_none(self, fx, capsys):
+        live, repo = fx
+        rc = setup_mod.cmd_bootstrap([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "NONE" in out
+
+    def test_skip_absent_repo_never_materialized(self, fx, capsys):
+        live, repo = fx
+        rc = setup_mod.cmd_bootstrap([_mk(
+            live / "wt" / "f.md", repo / "f.md", section="Repo:gone",
+            skip_absent=True, skip_reason="repo absent: /nope")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "SKIP" in out and "repo absent: /nope" in out
+        assert not (live / "wt").exists()
+
+
+class TestCheck:
+    def test_ok_and_exit_0(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        os.symlink(str(repo / "f.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_check([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "OK" in out
+        assert "Check: 1 OK, 0 broken, 0 absent" in out
+
+    def test_missing_is_broken_exit_1(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        rc = setup_mod.cmd_check([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 1 and "MISSING" in out
+
+    def test_absent_not_broken(self, fx, capsys):
+        live, repo = fx
+        rc = setup_mod.cmd_check([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "ABSENT" in out
+        assert "Check: 0 OK, 0 broken, 1 absent" in out
+
+    def test_real_file_is_broken(self, fx, capsys):
+        live, repo = fx
+        (live / "f.md").write_text("real")
+        (repo / "f.md").write_text("x")
+        rc = setup_mod.cmd_check([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 1 and "REAL" in out and "not symlinked" in out
+
+    def test_wrong_target_is_broken_and_named(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        (repo / "other.md").write_text("y")
+        os.symlink(str(repo / "other.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_check([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 1 and "WRONG" in out and "other.md" in out
+
+    def test_skip_absent_repo_not_broken(self, fx, capsys):
+        live, repo = fx
+        rc = setup_mod.cmd_check([_mk(
+            live / "wt" / "f.md", repo / "f.md", section="Repo:gone",
+            skip_absent=True, skip_reason="repo absent: /nope")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "repo absent: /nope" in out
+
+
+class TestRepair:
+    def test_repo_missing_skips(self, fx, capsys):
+        live, repo = fx
+        rc = setup_mod.cmd_repair([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "Repair: 0 fixed, 1 OK" in out
+
+    def test_correct_link_skips(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        os.symlink(str(repo / "f.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_repair([_mk(live / "f.md", repo / "f.md")])
+        assert rc == 0 and "Repair: 0 fixed, 1 OK" in capsys.readouterr().out
+
+    def test_wrong_link_relinked(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("repo")
+        (repo / "other.md").write_text("y")
+        os.symlink(str(repo / "other.md"), str(live / "f.md"))
+        rc = setup_mod.cmd_repair([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "REPAIR" in out
+        assert (live / "f.md").read_text() == "repo"
+
+    def test_real_file_backed_up_then_linked(self, fx, capsys):
+        live, repo = fx
+        (live / "f.md").write_text("precious")
+        (repo / "f.md").write_text("repo")
+        rc = setup_mod.cmd_repair([_mk(live / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "BACKUP" in out and "REPAIR" in out
+        assert (live / "f.md.bak").read_text() == "precious"
+        assert (live / "f.md").read_text() == "repo"
+
+    def test_missing_live_linked(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        rc = setup_mod.cmd_repair([_mk(live / "deep" / "f.md", repo / "f.md")])
+        out = capsys.readouterr().out
+        assert rc == 0 and "REPAIR" in out
+        assert os.path.islink(str(live / "deep" / "f.md"))
+
+    def test_repair_then_check_roundtrip(self, fx, capsys):
+        live, repo = fx
+        (repo / "f.md").write_text("x")
+        (live / "f.md").write_text("real")
+        maps = [_mk(live / "f.md", repo / "f.md")]
+        assert setup_mod.cmd_check(maps) == 1
+        assert setup_mod.cmd_repair(maps) == 0
+        assert setup_mod.cmd_check(maps) == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — CLI + end-to-end
+# ---------------------------------------------------------------------------
+
+
+def _run_cli(args, home):
+    import subprocess
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
+    return subprocess.run([sys.executable, str(SETUP_PY)] + args,
+                          capture_output=True, text=True, env=env)
+
+
+class TestCli:
+    def test_setup_error_maps_to_exit_2(self, monkeypatch, capsys):
+        monkeypatch.setattr(setup_mod, "parse_psd1",
+                            lambda text: setup_mod._die("boom", 3))
+        rc = setup_mod.main(["check"])
+        assert rc == 2
+        assert "line 3: boom" in capsys.readouterr().err
+
+    def test_unknown_command_exits_2(self, tmp_path):
+        proc = _run_cli(["frobnicate"], tmp_path)
+        assert proc.returncode == 2
+
+    def test_check_header_and_honest_exit_on_empty_home(self, tmp_path):
+        proc = _run_cli(["check", "--target", "User"], tmp_path)
+        assert proc.returncode == 1  # empty container HOME -> MISSING rows
+        assert "Command: check | Target: User" in proc.stdout
+        assert "MISSING" in proc.stdout
+        assert "Check:" in proc.stdout
+
+    def test_repos_root_must_exist(self, tmp_path):
+        proc = _run_cli(
+            ["check", "--target", "Repos", "--repos-root", str(tmp_path / "nope")],
+            tmp_path)
+        assert proc.returncode == 2
+        assert "repos-root" in proc.stderr
+
+
+class TestEndToEnd:
+    """SPEC D5: fresh (container-like) HOME -> bootstrap User self-hosts."""
+
+    def test_bootstrap_user_then_check_green(self, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        boot = _run_cli(["bootstrap", "--target", "User"], home)
+        assert boot.returncode == 0, boot.stdout + boot.stderr
+        # links materialized from the clone
+        skills = home / ".claude" / "skills"
+        assert os.path.islink(str(skills))
+        assert os.path.realpath(str(skills)) == os.path.realpath(
+            str(REPO_ROOT / "user" / "skills"))
+        claude_md = home / ".claude" / "CLAUDE.md"
+        assert os.path.islink(str(claude_md))
+        # write-through identity: live path and repo path are the same file
+        assert claude_md.read_text() == (REPO_ROOT / "user" / "CLAUDE.md").read_text()
+        check = _run_cli(["check", "--target", "User"], home)
+        assert check.returncode == 0, check.stdout
+        assert "0 broken" in check.stdout
+
+    def test_bootstrap_is_idempotent(self, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        assert _run_cli(["bootstrap", "--target", "User"], home).returncode == 0
+        second = _run_cli(["bootstrap", "--target", "User"], home)
+        assert second.returncode == 0
+        assert "0 moved" in second.stdout and "0 linked" in second.stdout
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"] + sys.argv[1:]))

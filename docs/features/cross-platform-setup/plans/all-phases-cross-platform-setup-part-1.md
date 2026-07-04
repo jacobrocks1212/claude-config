@@ -74,19 +74,19 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 3 — verbs + CLI + e2e
 
-- [ ] WU-3.1 — Failing tests: bootstrap parity rows (SKIP / RELINK / COPYLINK / MOVE / WARN /
+- [x] WU-3.1 — Failing tests: bootstrap parity rows (SKIP / RELINK / COPYLINK / MOVE / WARN /
   LINK-recovery / NONE / SKIP-repo-absent) incl. filesystem effects + summary line.
-- [ ] WU-3.2 — Implement `cmd_bootstrap`; green.
-- [ ] WU-3.3 — Failing tests: check verdicts (OK/MISSING/ABSENT/REAL/WRONG), exit 0/1
+- [x] WU-3.2 — Implement `cmd_bootstrap`; green.
+- [x] WU-3.3 — Failing tests: check verdicts (OK/MISSING/ABSENT/REAL/WRONG), exit 0/1
   contract, empty-HOME honesty, skip_absent never-broken.
-- [ ] WU-3.4 — Implement `cmd_check`; green.
-- [ ] WU-3.5 — Failing tests: repair rows (skip-correct, skip-repo-missing, relink-wrong,
+- [x] WU-3.4 — Implement `cmd_check`; green.
+- [x] WU-3.5 — Failing tests: repair rows (skip-correct, skip-repo-missing, relink-wrong,
   BACKUP+REPAIR real file, REPAIR missing live) + repair→check round-trip.
-- [ ] WU-3.6 — Implement `cmd_repair`; green.
-- [ ] WU-3.7 — Failing tests: CLI (`main(argv)` header/labels/exit codes; SetupError → exit 2;
+- [x] WU-3.6 — Implement `cmd_repair`; green.
+- [x] WU-3.7 — Failing tests: CLI (`main(argv)` header/labels/exit codes; SetupError → exit 2;
   subprocess smoke) + END-TO-END: temp HOME, `python3 setup.py bootstrap --target User` against
   the real worktree → links materialized; `check --target User` exit 0; write-through proof.
-- [ ] WU-3.8 — Implement argparse `main` + wire verbs; green. Full feature suite green.
+- [x] WU-3.8 — Implement argparse `main` + wire verbs; green. Full feature suite green.
 
 ## Phase 4 — docs + gates
 
