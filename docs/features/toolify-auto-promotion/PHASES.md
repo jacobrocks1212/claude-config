@@ -228,17 +228,17 @@ promote lines.
 (D3-A); doc rows everywhere the SPEC lists them; checklist annotations.
 
 **Deliverables:**
-- [ ] `--acceptance-report`: totals (promoted / declined / shipped-derived), acceptance rate,
+- [x] `--acceptance-report`: totals (promoted / declined / shipped-derived), acceptance rate,
   score + run-count distribution per cohort, and the SAMPLE SIZE named on every rate (a
   two-candidate "100%" is labeled as such). Observations only — never edits the bar's constants.
-- [ ] `test_toolify_promote.py` report cases: rates + sample sizes match a hand-counted fixture
+- [x] `test_toolify_promote.py` report cases: rates + sample sizes match a hand-counted fixture
   ledger; `shipped` matches receipts on disk.
-- [ ] `user/skills/lazy-batch-retro/SKILL.md`: new report-only Step 6d — runs the miner
+- [x] `user/skills/lazy-batch-retro/SKILL.md`: new report-only Step 6d — runs the miner
   (read-only), joins the ledger, prints NEW above-bar candidates with ready-to-run
   `toolify-promote.py --promote <id> --id <slug> --name "<title>"` lines; NEVER invokes the
   materializer; degrades gracefully (no corpus / no miner → skip with a note). Projection +
   lint re-run (lane-local output dir).
-- [ ] Docs: `user/scripts/CLAUDE.md` (script-table row for `toolify-promote.py`, miner row
+- [x] Docs: `user/scripts/CLAUDE.md` (script-table row for `toolify-promote.py`, miner row
   updated for `candidate_id`, CLI-surface line for the new enqueue flags + justified-divergence
   note); root `CLAUDE.md` script-table row; `toolify-bar.md` checklist annotated (steps 1–2
   mechanized, 3 human-named, 4 stub-drafted, 5–6 unchanged) + ledger/promote cross-references.
@@ -249,10 +249,10 @@ edit.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the
 implementation agent):*
-- [ ] Acceptance report honest: fixture cohorts hand-counted; shipped receipt-derived.
+- [x] Acceptance report honest: fixture cohorts hand-counted; shipped receipt-derived.
   *(Evidence: `SKIP_MCP_TEST.md` — `test_toolify_promote.py` report tests.)*
   <!-- verification-only -->
-- [ ] Skill projection + lint green after the retro-step edit. *(Evidence: `SKIP_MCP_TEST.md` —
+- [x] Skill projection + lint green after the retro-step edit. *(Evidence: `SKIP_MCP_TEST.md` —
   `project-skills.py` lane-local run + `lint-skills.py`.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface

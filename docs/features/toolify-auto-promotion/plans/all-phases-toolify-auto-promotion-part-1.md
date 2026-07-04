@@ -106,12 +106,12 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 4 — Reports + docs + retro hook
 
-- [ ] WU-4.1 — TEST-FIRST `--acceptance-report`: fixture ledger with known cohorts (promoted /
+- [x] WU-4.1 — TEST-FIRST `--acceptance-report`: fixture ledger with known cohorts (promoted /
   declined / one shipped via a receipt on disk) ⇒ totals, rates, sample sizes, cohort score/run
   distributions match hand counts → implement → GREEN.
-- [ ] WU-4.2 — `lazy-batch-retro/SKILL.md` Step 6d (report-only resurface; ready-to-run promote
+- [x] WU-4.2 — `lazy-batch-retro/SKILL.md` Step 6d (report-only resurface; ready-to-run promote
   lines; never invokes); lane-local projection + `lint-skills.py` green.
-- [ ] WU-4.3 — Doc rows: `user/scripts/CLAUDE.md` (promote script row, miner row update, CLI
+- [x] WU-4.3 — Doc rows: `user/scripts/CLAUDE.md` (promote script row, miner row update, CLI
   surface + justified divergence), root `CLAUDE.md` script row, `toolify-bar.md` checklist
   annotations. Commit Phase 4.
 - [ ] WU-4.4 — FULL gate suite green (all suites + smokes + parity + lint); write

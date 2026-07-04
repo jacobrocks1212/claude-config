@@ -631,6 +631,45 @@ So the commit history surfaces the validation outcome without requiring the audi
 
 ---
 
+## Step 6d: Toolify candidate resurface (REPORT-ONLY — never invokes the materializer)
+
+**Rationale (toolify-auto-promotion D3-A).** Above-bar toolify candidates rot silently when the
+operator forgets to run the promotion loop. This step resurfaces them every retro by joining a
+fresh mine against the promotion ledger and printing the still-undecided (`NEW`) rows with
+ready-to-run promote command lines. It is strictly report-only: this skill NEVER runs
+`toolify-promote.py --promote`/`--decline` — the deliberate-promotion bar (naming the dance is a
+human judgment, bar checklist step 3) stays an operator act.
+
+Run (read-only over logs and the ledger; both commands are safe to run in any repo):
+
+```bash
+python3 ~/.claude/scripts/toolify-promote.py --status
+```
+
+- For each row marked `NEW`, print one ready-to-run line the operator can copy verbatim after
+  supplying the two judgment inputs (`<slug>`, `"<title>"`):
+
+  ```
+  python3 ~/.claude/scripts/toolify-promote.py --promote <candidate_id> --id <slug> --name "<title>"
+  ```
+
+- Rows already `promoted → <feature_id>` / `declined (<reason>)` / `shipped` need no action; do
+  not repeat them beyond the status table.
+- **Degrade gracefully:** if the session-log corpus (`~/.claude/projects`) or
+  `toolify-promote.py` is unavailable, print one line noting the step was skipped and why, then
+  continue — this step must never fail the retro.
+- **Never** enqueue, never write the ledger, never call `--promote`/`--decline` from this skill
+  (D3-A: retro reports; promotion is a standalone operator command).
+
+### Status-bookend integration
+
+The Step 8 final bookend gains a `**Toolify candidates:**` line:
+
+- `**Toolify candidates:** {N} NEW above-bar (promote lines printed above) — {M} promoted, {K} declined, {S} shipped.`
+- or `**Toolify candidates:** step skipped — {reason}.`
+
+---
+
 ## Step 7: Commit (Phase 6)
 
 Stage the review artifacts and create a commit:

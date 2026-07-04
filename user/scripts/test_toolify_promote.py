@@ -623,6 +623,96 @@ def test_status_join_marks_new_promoted_declined_shipped():
         assert "shipped" not in led_text, "shipped must NEVER be stored"
 
 
+# ===========================================================================
+# WU-4.1 — --acceptance-report (D8-A: report-only, sample sizes named)
+# ===========================================================================
+
+def _fixture_ledger_with_cohorts(td: Path):
+    """Ledger with hand-countable cohorts: 2 promoted (1 shipped via a real
+    receipt on disk), 1 declined. Rates: 2/3 promoted; shipped 1."""
+    shipped_repo = td / "shipped-repo"
+    (shipped_repo / "docs" / "features" / "dance-a").mkdir(parents=True)
+    (shipped_repo / "docs" / "features" / "dance-a" / "COMPLETED.md").write_text(
+        "---\nkind: completed\n---\n", encoding="utf-8")
+    unshipped_repo = td / "unshipped-repo"
+    (unshipped_repo / "docs" / "features" / "dance-b").mkdir(parents=True)
+
+    def _entry(status, feature_id, target_repo, score, runs, reason=""):
+        return {
+            "signature": f"sig-{feature_id or reason}",
+            "status": status,
+            "feature_id": feature_id,
+            "target_repo": str(target_repo) if target_repo else None,
+            "decided_at": "2026-07-01",
+            "reason": reason,
+            "evidence": {
+                "occurrences": 4, "run_count": runs,
+                "est_tokens_per_occurrence": score // 4, "score": score,
+                "sample_tools": ["Bash"],
+            },
+            "forced": False,
+        }
+
+    ledger = td / "cohort-ledger.json"
+    ledger.write_text(json.dumps({"entries": {
+        "aaaaaaaaaaaa": _entry("promoted", "dance-a", shipped_repo, 2880, 3),
+        "bbbbbbbbbbbb": _entry("promoted", "dance-b", unshipped_repo, 1500, 2),
+        "cccccccccccc": _entry("declined", None, None, 900, 2,
+                               reason="mining artifact"),
+    }}, indent=2) + "\n", encoding="utf-8")
+    return ledger
+
+
+def test_acceptance_report_totals_rates_and_sample_sizes():
+    """Totals, acceptance rate, and cohort distributions match a hand count;
+    every rate NAMES its sample size; shipped is receipt-derived."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        ledger = _fixture_ledger_with_cohorts(td)
+        empty_logs = td / "no-corpus"  # absent dir → mine degrades to []
+        rc, out, err = _run(["--acceptance-report", "--ledger", str(ledger),
+                             "--logs", str(empty_logs)])
+        assert rc == 0, err
+        assert "promoted: 2" in out and "declined: 1" in out, out
+        assert "shipped: 1" in out, out
+        assert "2/3" in out, f"acceptance rate must be shown as 2/3: {out!r}"
+        assert "n=3" in out, f"the rate's SAMPLE SIZE must be named: {out!r}"
+        assert "small sample" in out, (
+            "a single-digit sample must carry the anecdote caveat"
+        )
+        # Cohort score distributions (hand-counted min/max).
+        assert "1500" in out and "2880" in out, out
+        assert "900" in out, out
+        # Report-only: the bar's constants are pointed at, never edited.
+        assert "toolify-miner.py" in out, out
+
+
+def test_acceptance_report_empty_ledger_no_crash():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        ledger = _empty_ledger(td)
+        rc, out, err = _run(["--acceptance-report", "--ledger", str(ledger),
+                             "--logs", str(td / "no-corpus")])
+        assert rc == 0, err
+        assert "n=0" in out, f"empty ledger must report n=0 honestly: {out!r}"
+
+
+def test_acceptance_report_counts_undecided_new_candidates():
+    """The fresh-mine join surfaces still-undecided above-bar candidates so
+    unpromoted ones cannot rot invisibly."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        logs = _build_corpus(td)  # the dance is above-bar and undecided
+        ledger = _empty_ledger(td)
+        rc, out, err = _run(["--acceptance-report", "--ledger", str(ledger),
+                             "--logs", str(logs)])
+        assert rc == 0, err
+        assert "undecided" in out and "NEW" in out, out
+
+
 # ---------------------------------------------------------------------------
 # Self-contained runner (mirrors test_toolify_miner.py's pattern).
 # ---------------------------------------------------------------------------

@@ -98,21 +98,39 @@ Each row the miner emits (markdown and JSON) carries:
 The miner **proposes**; a candidate becomes a real subcommand only via this reviewed
 sequence. No step here is automatic, and the miner itself **never writes code**.
 
+> **Mechanization status (toolify-auto-promotion).** `toolify-promote.py` mechanizes the
+> *clerical* steps of this checklist; the judgment steps stay human. Steps 1–2:
+> **mechanized** (`--promote` re-mines and re-verifies `above_bar` from the constants,
+> refusing below-bar with the failed predicate named). Step 3: **human-named** (`--id` /
+> `--name` are required operator inputs — a candidate the operator cannot name is a mining
+> artifact and *should* fail to promote). Step 4: **stub-drafted** (the materialized SPEC
+> stub embeds the evidence and suggests a home, direction deliberately NOT locked; the item
+> halts at `/spec` Step 4.5 for the interactive baseline-lock). Steps 5–6: **unchanged**
+> (implementation + rewiring stay reviewed pipeline work). Outcomes are recorded in
+> `toolify-ledger.json` (promoted / declined; `shipped` receipt-derived) and reported by
+> `--status` / the report-only `--acceptance-report`.
+
 1. **Mine.** Run `toolify-miner.py` over real session logs; read the ranked table.
+   *(Mechanized: steps 1–2 are re-run inside `toolify-promote.py --promote`.)*
 2. **Confirm above-bar.** The candidate must be `above_bar: true`. A below-bar candidate
    (judgment-bearing, single-run, or below the token threshold) is **not** eligible —
    re-confirm by eye that the dance is genuinely deterministic, not just lacking a marker.
+   *(Mechanized: `--promote` recomputes the bar and refuses below-bar unconditionally —
+   `--force` never bypasses it.)*
 3. **Name the dance.** Map the signature back to the human dance it represents (e.g. the
    runtime-ensure, Gate-1 coverage, or mark-complete dance). A signature with no clear
    real-world dance behind it is a mining artifact, not a candidate.
+   *(Human: `--promote` requires the operator-supplied `--id`/`--name`.)*
 4. **Spec the subcommand.** Decide its name, inputs, structured return, and home script.
    Capture genuine product/architecture forks (e.g. repo-specific coupling) as
    `NEEDS_INPUT.md`, not as a silent hard-code.
+   *(Stub-drafted: the materializer writes an evidence-embedding stub SPEC routed through
+   the `/spec` Step-4.5 baseline-lock; the home-script suggestion is explicitly not locked.)*
 5. **Implement under full gates.** Promote the dance to a `lazy-state.py` (or
    `bug-state.py`) subcommand test-first; keep the coupled pairs + parity audit in sync;
-   run the full quality-gate suite.
+   run the full quality-gate suite. *(Unchanged.)*
 6. **Rewire the caller.** Replace the hand-run dance in the batch skill prose with the new
-   subcommand call. Mirror the change across any coupled-pair twin.
+   subcommand call. Mirror the change across any coupled-pair twin. *(Unchanged.)*
 7. **(Future) Auto-initiation.** Once `harness-hardening-retro-fixes` lands, harden-harness
    may auto-initiate steps 1-4 as a `/spec-bug` when it detects a dance in-run — but the
    *implementation* (step 5+) stays a reviewed change. The framework defines the schema and

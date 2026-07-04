@@ -512,9 +512,59 @@ def do_status(args) -> int:
     return 0
 
 
+def _dist(values: list[int]) -> str:
+    """min/median/max gloss for a small integer cohort."""
+    if not values:
+        return "-"
+    vs = sorted(values)
+    n = len(vs)
+    median = vs[n // 2] if n % 2 else (vs[n // 2 - 1] + vs[n // 2]) / 2
+    if isinstance(median, float) and median.is_integer():
+        median = int(median)
+    return f"min/median/max = {vs[0]}/{median}/{vs[-1]}"
+
+
 def do_acceptance_report(args) -> int:
-    _die("--acceptance-report not implemented yet")
-    return 2  # pragma: no cover
+    """D8-A: REPORT-ONLY acceptance view. Observations with sample sizes —
+    the bar's constants are only ever changed by a deliberate human edit to
+    toolify-miner.py; this command never touches them."""
+    entries = load_ledger(args.ledger)["entries"]
+    promoted = [e for e in entries.values() if e.get("status") == "promoted"]
+    declined = [e for e in entries.values() if e.get("status") == "declined"]
+    shipped = [e for e in promoted if entry_is_shipped(e)]
+    n = len(promoted) + len(declined)
+
+    # Fresh-mine join: still-undecided above-bar candidates (rot visibility).
+    rows = resolve_candidates(args.logs, args.from_json)
+    undecided = [r for r in rows
+                 if r["above_bar"] and r["candidate_id"] not in entries]
+
+    print(f"Toolify acceptance report — decided candidates: n={n}")
+    print(f"  promoted: {len(promoted)} (shipped: {len(shipped)}, "
+          f"receipt-derived)   declined: {len(declined)}")
+    if n:
+        rate = 100.0 * len(promoted) / n
+        caveat = "  [small sample — treat as anecdote, not signal]" if n < 10 else ""
+        print(f"  acceptance rate: {len(promoted)}/{n} ({rate:.1f}%) — "
+              f"n={n}{caveat}")
+    else:
+        print(f"  acceptance rate: n/a — n={n} (nothing decided yet)")
+    for label, cohort in (("promoted", promoted), ("declined", declined)):
+        scores = [e.get("evidence", {}).get("score", 0) for e in cohort]
+        runs = [e.get("evidence", {}).get("run_count", 0) for e in cohort]
+        print(f"  {label} cohort (n={len(cohort)}): score {_dist(scores)}; "
+              f"runs {_dist(runs)}")
+    print(f"  undecided above-bar candidates in the current mine (NEW): "
+          f"{len(undecided)}")
+    for r in undecided:
+        print(f"    NEW `{r['candidate_id']}` score={r['score']} "
+              f"runs={r['run_count']} tools={', '.join(r.get('sample_tools', ()))}")
+    print(
+        "  NOTE: report-only. Tuning MIN_RUNS / TOKEN_HEAVY_THRESHOLD / "
+        "EST_TOKENS_PER_CALL stays a deliberate human edit to "
+        "toolify-miner.py (see toolify-bar.md)."
+    )
+    return 0
 
 
 # ---------------------------------------------------------------------------
