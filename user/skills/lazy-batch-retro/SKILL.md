@@ -735,6 +735,44 @@ The Step 8 final bookend gains an `**Intervention verdicts:**` line:
 
 - `**Intervention verdicts:** {C} confirmed, {R} refuted, {I} inconclusive due this scan; {T} escalated (needs triage).`
 - or `**Intervention verdicts:** step skipped — {reason}.`
+## Step 6f: Parallel-run lane audit feed (lanes.json — demotions + false-`independent` markers)
+
+**Rationale (parallel-worktree-batch-execution D3/D4).** In a `/lazy-batch-parallel` run, a
+merge-conflict **demotion is the deterministic signal that an item's `independent: true` marker
+was WRONG** — the item was claimed as shardable and then collided with a sibling at merge. The
+retro is where that marker-audit debt is surfaced so the operator (or a hardening spin-off)
+corrects the marker/SPEC instead of paying the demotion again next wave.
+
+Run (read-only; skip silently when the file is absent — serial runs have no ledger):
+
+```bash
+python3 -c "import sys,os;sys.path.insert(0,os.path.expanduser('~/.claude/scripts'));import lazy_core;lazy_core.set_active_repo_root(os.getcwd());p=lazy_core.claude_state_dir(create=False)/'lanes.json';print(p.read_text(encoding='utf-8') if p.exists() else '{}')"
+```
+
+For the graded run (match ledger timestamps against the run window):
+
+- **Every `demoted: serial` entry** becomes a Findings row (Section 7) of class
+  `false-independent-marker`: name the item, the `demotion_reason` (the conflicting path is in
+  it), the preserved lane branch, and whether the serial re-run completed. Recommendation text:
+  re-examine the item's `independent: true`/`no_shared_state: true` marker (SPEC frontmatter +
+  queue entry) — either remove it or narrow the overlapping surface; if demotions cluster on a
+  predictable overlap, propose the SPEC's vN deterministic overlap heuristic as a spin-off.
+- **Every `parked` entry** is cross-checked: the recorded `sentinel_ported_to` file must exist
+  on the canonical tree (the flush's port obligation, D5). A parked entry with a missing ported
+  sentinel is a Findings row of class `lost-sentinel` (flush contract violation — the halt is
+  invisible to the next serial run).
+- **Budget reconciliation:** sum the run's lane + tail + demoted-re-run cycles from the parent
+  jsonl and assert ≤ the authorized `max_cycles` (HARD CONSTRAINT 8 / P4). Overage is a
+  Findings row of class `budget-overrun`.
+- **Degrade gracefully:** no ledger / unreadable JSON → one line noting the step was skipped
+  and why; never fail the retro.
+
+### Status-bookend integration
+
+The Step 8 final bookend gains a `**Lane audit:**` line when a ledger was found:
+
+- `**Lane audit:** {M} merged · {D} demoted (false-independent flagged) · {P} parked (sentinels ported: {P_ok}/{P}) · budget {used}/{max}.`
+- or `**Lane audit:** no lanes.json — serial run.`
 
 ---
 

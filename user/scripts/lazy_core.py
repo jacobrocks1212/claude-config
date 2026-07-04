@@ -7069,6 +7069,12 @@ RUN_FRESH_FIELDS: frozenset = frozenset({
     "nonce_seed",
     "attended",
     "work_branch",
+    # parallel-worktree-batch-execution (D2-A): the sanctioned-lane identity
+    # stamp ({repo_root, started_at} of the parent run; None on serial runs).
+    # Run-INVARIANT identity re-derived at run-start — a checkpoint resume's
+    # --run-start re-supplies it (or correctly resets a serial resume to None),
+    # so it belongs on the FRESH side, never carried.
+    "parent_run",
 })
 
 
@@ -9862,6 +9868,7 @@ def write_run_marker(
     session_id: str | None = None,
     nonce_seed: str | None = None,
     attended: bool = True,
+    parent_run: dict | None = None,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the run marker to the state dir.
@@ -9898,6 +9905,14 @@ def write_run_marker(
         nonce_seed: optional nonce seed string
         attended: Phase 7 — True (default) for interactive runs; False for
             scheduled/unattended runs that pass --unattended to --run-start.
+        parent_run: parallel-worktree-batch-execution (D2-A) — the sanctioned-
+            lane identity stamp `{repo_root, started_at}` of the PARENT run
+            whose coordinator armed this marker at a worktree root. None (the
+            default) on every serial run — the key is ALWAYS minted so the
+            marker shape is stable and the continuity-partition completeness
+            test forces explicit classification. Audits and --run-end sweeps
+            use it to prove a lane marker sanctioned (vs a rogue walker's).
+            Run-invariant identity re-derived at run-start ⇒ RUN_FRESH_FIELDS.
         now: epoch float for started_at (injectable for hermetic tests;
              defaults to time.time())
 
@@ -9960,10 +9975,46 @@ def write_run_marker(
         # marker_work_branch() (back-compat, same pattern as attended /
         # per_feature_forward_cycles).
         "work_branch": _emit_work_branch(Path(repo_root)),
+        # parallel-worktree-batch-execution (D2-A): sanctioned-lane identity —
+        # the parent run's {repo_root, started_at} when a coordinator armed
+        # this marker at a worktree root; None on every serial run. ALWAYS
+        # minted (stable marker shape); classified RUN_FRESH_FIELDS.
+        "parent_run": parent_run,
     }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
+
+
+def parse_parent_run_arg(raw: "str | None") -> "dict | None":
+    """Validate a ``--run-start --parent-run`` JSON payload (D2-A, shared).
+
+    ``None``/empty → ``None`` (a serial run; the marker still mints
+    ``parent_run: null``).  Otherwise the payload MUST be a JSON object with
+    string ``repo_root`` and ``started_at`` — anything else ``_die``s exit 2
+    with ZERO side effects (callers invoke this BEFORE ``write_run_marker``).
+    Extra keys are dropped: the marker stores exactly the two-identity stamp.
+    Shared by BOTH state scripts (coupled pair — the marker is shared).
+    """
+    if not raw:
+        return None
+    shape_msg = (
+        "--parent-run must be a JSON object "
+        '{"repo_root": <str>, "started_at": <str>} identifying the parent run'
+    )
+    try:
+        val = json.loads(raw)
+    except ValueError:
+        _die(shape_msg)
+        return None  # pragma: no cover — _die exits
+    if not (
+        isinstance(val, dict)
+        and isinstance(val.get("repo_root"), str)
+        and isinstance(val.get("started_at"), str)
+    ):
+        _die(shape_msg)
+        return None  # pragma: no cover — _die exits
+    return {"repo_root": val["repo_root"], "started_at": val["started_at"]}
 
 
 def read_run_marker(

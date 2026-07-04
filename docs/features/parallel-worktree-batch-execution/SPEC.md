@@ -87,8 +87,7 @@ invoked.
 
 ### D1. Coordinator shape and v1 scope
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended option taken)`
 - **Question:** What is the operator-facing entry point, and which environments does v1 cover?
   This decides whether parallelism is a mode of the autonomous batch family or a scaling-out of
   the manual `lazy-worker` sessions.
@@ -118,13 +117,13 @@ invoked.
   (their prose is regression-sensitive), makes the parallel mode auditable as one unit, and gives
   the retro/hardening loop a clean skill identity to grade. It composes with, rather than edits,
   the `/lazy-batch` contract; `lazy-worker` remains the Cognito multi-session path.
-- **Resolution:** OPEN — recommendation is A (workstation-only v1); awaiting operator
-  confirmation.
+- **Resolution:** RESOLVED — **A** (new skill `user/skills/lazy-batch-parallel/SKILL.md`,
+  workstation-only v1: claude-config + AlgoBooth). *(operator-approved 2026-07-04 — recommended
+  option taken)*
 
 ### D2. Marker and arbitration model for lanes
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended option taken)`
 - **Question:** How do sanctioned lanes coexist with the single-slot run-marker ownership model,
   and how does `refuse_run_start_clobber` tell a sanctioned lane from a rogue second walker —
   without weakening either?
@@ -164,13 +163,14 @@ invoked.
   lane branch. The fencing-token lease supplies the zombie-writer protection the marker model
   deliberately lacks (the archived ownership bug names `lazy_coord`'s `term_token` as the
   in-codebase precedent).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (this is the
-  feature's central arbitration contract).
+- **Resolution:** RESOLVED — **A** (per-worktree keyed lane markers born owner-bound to the
+  coordinator session under one parent marker + `lazy_coord` fencing leases per item; the new
+  marker content field `parent_run: {repo_root, started_at}` is classified into
+  `RUN_FRESH_FIELDS`). *(operator-approved 2026-07-04 — recommended option taken)*
 
 ### D3. Independence criterion: DAG readiness + isolation marker; no file-overlap prediction
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended option taken)`
 - **Question:** What proves two items safe to run concurrently? The stub explicitly asks whether
   predicted file overlap should augment dep-DAG readiness.
 - **Options:**
@@ -196,13 +196,14 @@ invoked.
   bounded, recoverable event rather than a corruption. If retros show demotions clustering on
   predictable overlaps, a deterministic overlap heuristic (e.g. declared `spec_dir`-adjacent path
   globs) is a vN refinement — flagged, not silently added.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (this bounds what the
-  operator must mark before parallelism does anything).
+- **Resolution:** RESOLVED — **A** (independence = dep-DAG readiness ∧
+  `parse_independent_marker` true ∧ no live lease; NO file-overlap prediction; merge-conflict
+  demotion is the deterministic safety net). *(operator-approved 2026-07-04 — recommended option
+  taken)*
 
 ### D4. Lane lifecycle scope and merge policy
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended option taken)`
 - **Question:** Which lifecycle steps run inside a lane vs serially in the coordinator, and how do
   lane branches land on the work branch?
 - **Options (lifecycle):**
@@ -240,13 +241,16 @@ invoked.
 - **Recommendation:** Lifecycle A + queue-order merge + abort-and-demote. Grounded in the runtime
   singleton, the receipt-visibility requirement, and the stub's two explicit constraints
   (deterministic ordering; demote on conflict).
-- **Resolution:** OPEN — recommendation as stated; awaiting operator confirmation (merge behavior
-  is the most operator-visible failure surface in the feature).
+- **Resolution:** RESOLVED — **Lifecycle A + queue-order merge + abort-and-demote** (lanes run
+  spec→implementation; the coordinator owns the validation+completion serial tail at the main
+  root: `--ensure-runtime`, `/mcp-test`, `__mark_complete__`, ROADMAP strike, queue trim,
+  LAZY_QUEUE.md regen; queue-order merge under the global lock; `git merge --abort` ⇒
+  `demoted: serial` in the ledger, lane branch preserved). *(operator-approved 2026-07-04 —
+  recommended option taken)*
 
 ### D5. Failure isolation: parked-lane semantics
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended option taken)`
 - **Question:** A lane halts on `BLOCKED.md` / `NEEDS_INPUT.md` (written inside its worktree, on
   its lane branch — invisible to the main root until surfaced). What happens to the lane, its
   siblings, and the sentinel?
@@ -271,8 +275,9 @@ invoked.
   sentinel write-path canonical (the port is a verbatim copy of a pipeline-written sentinel onto
   the marker's own `work_branch` — satisfying both `block-noncanonical-blocker-write.sh` and
   `block-sentinel-write-on-stray-branch.sh`), and loses no information (lane branch preserved).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (halt semantics are
-  operator-experienced).
+- **Resolution:** RESOLVED — **A** (park-on-sentinel: the lane parks, siblings continue, the
+  sentinel is ported verbatim to the canonical `docs/{features,bugs}/<slug>/` at flush, the lane
+  branch is preserved). *(operator-approved 2026-07-04 — recommended option taken)*
 
 ### D6. Lane count and budget accounting
 
@@ -286,8 +291,10 @@ invoked.
   reconciled at lane end. Demoted-to-serial re-runs draw from the same parent budget (no hidden
   budget growth). HARD CONSTRAINT 8's spirit is preserved: total dispatched cycles across all
   lanes never exceed the operator-authorized `max_cycles`.
-- **Resolution:** Auto-accepted; accounting internals with one operator-visible rule (the
-  authorized total is never exceeded), which is inherited, not new.
+- **Resolution:** RESOLVED — as shaped (lanes = min(requested N, shardable count, pool_size);
+  parent `max_cycles` is the aggregate SSOT; per-lane ceiling slice
+  `min(remaining_parent, ceil(max_cycles / lanes))`; demoted re-runs draw from the same parent
+  budget). *(operator-approved / locked 2026-07-04)*
 
 ### D7. Contended-resource discipline: coordinator single-writer
 
@@ -303,7 +310,9 @@ invoked.
   order, demotions, and parks — written via `lazy_core._atomic_write`. This restates the stub's
   single-writer constraint as the implementation invariant (also the user-level constitution's
   "one writer per file" orchestration rule).
-- **Resolution:** Auto-accepted; a direct application of an operator-set constraint.
+- **Resolution:** RESOLVED — as shaped (contended-resource single-writer: ONLY the coordinator,
+  at the main root, under `lazy_coord.acquire_lock`, after `verify_fencing`; `lanes.json` is the
+  coordinator-owned ledger). *(operator-approved / locked 2026-07-04)*
 
 ### D8. Build-queue and long-build interaction on shared hosts
 
@@ -318,7 +327,8 @@ invoked.
   `promote_artifact_atomically`) serialized in the parent session — one compiler at a time by
   construction. v1 adds no new build arbitration; retros watch for lane starvation under build
   contention as a vN signal.
-- **Resolution:** Auto-accepted; existing machinery applies unchanged.
+- **Resolution:** RESOLVED — cite existing machinery (`build-queue.ps1` FIFO +
+  `long-build-ownership-guard.sh` takeover), add none. *(operator-approved / locked 2026-07-04)*
 
 ### D9. Containment: unchanged hooks, armed per lane
 
@@ -335,7 +345,8 @@ invoked.
   like `--reorder-queue`. One genuinely new hardening surface: N cycle markers can be live in N
   state dirs simultaneously — the `--cycle-end` friction detector runs per lane against per-lane
   HEADs, which Phase 5 must fixture explicitly.
-- **Resolution:** Auto-accepted; a constraint restated with its one new test obligation.
+- **Resolution:** RESOLVED — containment hooks unchanged, armed per lane; ONE new obligation:
+  per-lane `--cycle-end` friction-detector fixtures. *(operator-approved / locked 2026-07-04)*
 
 ### D10. Worktree pool generalization
 
@@ -351,8 +362,12 @@ invoked.
   as-is, except the detach target parameterizes to the run's base branch. `lazy_coord.py` stays
   stdlib-only and MUST NOT import `lazy_core` (its stated contract); the coordinator composes the
   two modules, they never import each other.
-- **Resolution:** Auto-accepted; API generalization with no behavioral change for existing
-  callers (`lazy-worker` fixtures stay green — `lazy_coord.py --test`).
+- **Resolution:** RESOLVED — rename `cognito_root` → `repo_root`; branch template parameterized
+  (lanes use `lane/<item-id>`); pool location = sibling dir `<repo_root>-lanes/wt-NN`; detach
+  target parameterizes to the run base branch; `lazy_coord.py` stays stdlib-only and MUST NOT
+  import `lazy_core` (justified atomic-write duplication documented in-module). No behavioral
+  change for existing callers (`lazy-worker` fixtures stay green — `lazy_coord.py --test`).
+  *(operator-approved / locked 2026-07-04)*
 
 ## User Experience
 
@@ -499,21 +514,9 @@ Estimate: ~6 sessions (one per phase; Phases 4 and 5 are the risk-dense ones).
 
 ## Open Questions
 
-- **D1 — coordinator shape + v1 scope:** new `/lazy-batch-parallel` skill, workstation-only v1
-  (vs a `--lanes` flag on `/lazy-batch`, vs scaling out `/lazy-worker`). Standing recommendation:
-  the new skill.
-- **D2 — marker/arbitration model:** per-worktree keyed lane markers born owner-bound to the
-  coordinator session, under one parent marker, with `lazy_coord` fencing leases per item (vs a
-  lane-map marker or markerless lanes). Standing recommendation: per-worktree lane markers —
-  every existing invariant applies verbatim per lane.
-- **D3 — independence criterion:** dep-DAG readiness + `independent: true`, no file-overlap
-  prediction; merge-conflict demotion as the deterministic safety net. Standing recommendation:
-  yes — conservative, deterministic, prediction-free.
-- **D4 — lane lifecycle + merge policy:** lanes through implement/retro; coordinator-owned
-  validation + completion; queue-order merge; abort-and-demote on conflict. Standing
-  recommendation: as stated.
-- **D5 — parked-lane semantics:** park on sentinel, siblings continue, sentinel ported to the
-  work branch at flush, lane branch preserved. Standing recommendation: park-and-port.
+None remaining — D1–D5 were resolved at their recommended options and D6–D10 locked as shaped by
+the operator on 2026-07-04 (see each decision's **Resolution** line above).
+
 - **Deferred empirical checks (implementation-time, not decisions):** confirm distinct
   `repo_key(worktree)` values on Windows (realpath vs 8.3/`subst` aliases — the keying is
   normalization-invariant but worktrees were not its original fixture set); measure worktree

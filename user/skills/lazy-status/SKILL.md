@@ -49,6 +49,7 @@ These are presentation-only enrichments — they do NOT influence state. Run in 
 3. If `feature_name` is set: list `{spec_path}/mcp-tests/` entries if the directory exists.
 4. If `feature_name` is set AND `{spec_path}/BLOCKED.md` exists: parse its YAML frontmatter per `~/.claude/skills/_components/sentinel-frontmatter.md` and grab the `phase` and `recovery_suggestion` fields.
 5. From `docs/features/queue.json`: total queue length and how many features have a strikethrough+COMPLETE row in `docs/features/ROADMAP.md`.
+6. **Lane rows (parallel-worktree-batch-execution):** if the repo's keyed state dir holds a `lanes.json` lane ledger (`$(python3 -c "import sys,os;sys.path.insert(0,os.path.expanduser('~/.claude/scripts'));import lazy_core;lazy_core.set_active_repo_root(os.getcwd());print(lazy_core.claude_state_dir(create=False))")/lanes.json`), read it (one `Bash` JSON read — presentation only). Group entries via the ledger's `status` field (`claimed`/`lane-complete`/`merged`/`demoted`/`parked`). For each still-interesting lane (anything not `merged`), optionally enrich with a read-only per-worktree probe `python3 ~/.claude/scripts/lazy-state.py --repo-root <pool>/<slot> --feature-id <id>` when the worktree still exists. Absent file ⇒ skip entirely (output byte-identical to today).
 
 If any of these reads fail (file missing, parse error), continue with the field set to `"—"`. Do not error out — this skill is a dashboard.
 
@@ -107,6 +108,7 @@ Output this exact format (fill in values, replacing missing fields with `—`):
 **Blockers:** {None | "<BLOCKED phase>: <recovery_suggestion>"}
 **MCP Tests:** {count} scenarios linked | Not yet created | Skipped (see SKIP_MCP_TEST.md) | Deferred (cloud) | Deferred (real-device — see DEFERRED_REQUIRES_DEVICE.md)
 **Device-deferred:** {None | comma-separated `device_deferred_features`} — features awaiting a real-device host
+**Lanes:** {one row per lane from lanes.json: `{item} · {slot} · {branch} · {status}` — a parked lane renders `⬡ needs-input (lane parked)` / `⬡ blocked (lane parked)`; a demoted lane renders `↩ demoted: serial (branch preserved)`}
 **Next /lazy action:** {mapped action from Step 3}
 ```
 
@@ -118,6 +120,7 @@ Notes:
 - The "Skipped (cloud)" / "Deferred (cloud)" labels for MCP Tests apply when `$ARGUMENTS` contains `--cloud` AND the spec dir has SKIP_MCP_TEST.md / DEFERRED_NON_CLOUD.md respectively.
 - The "Deferred (real-device)" label applies when the spec dir has `DEFERRED_REQUIRES_DEVICE.md` — real-device-only assertions deferred on the device axis (independent of `--cloud`).
 - The **Device-deferred** line lists `device_deferred_features` from the state JSON (features the QUEUE skipped past this probe, distinct from the current feature). Drop the line when the list is empty. This is the deterministic surface for lingering In-progress deferrals that would otherwise be invisible until queue exhaustion.
+- The **Lanes** rows appear ONLY when a `lanes.json` lane ledger exists in the repo's keyed state dir (a `/lazy-batch-parallel` run, live or recently flushed). Drop the line entirely otherwise — output stays byte-identical for serial-only repos. Rows are read from the ledger (+ optional per-worktree probes); this skill never mutates the ledger, leases, or any lane worktree.
 
 **Do NOT execute any skills or modify any files. Report only.**
 

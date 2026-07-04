@@ -5718,6 +5718,118 @@ def run_smoke_tests() -> int:
             cbfo_ok = False
         print(f"  {'PASS' if cbfo_ok else 'FAIL'} [{fix_cbfo}] unwritable bracket ledger never blocks the --cycle-end clear")
 
+        # Fixture: parallel-worktree-batch-execution — lane markers (D2-A,
+        # coupled-pair mirror of lazy-state.py; the marker is SHARED).
+        # (a) --run-start --parent-run stamps the lane marker (owner-bound,
+        #     per-lane --max-cycles slice); (b) rogue second --run-start →
+        #     exit 3, marker intact; (c) malformed --parent-run → exit 2,
+        #     zero side effects; (d) subagent --run-end at the lane state dir
+        #     → exit 3; (e) serial --run-start mints parent_run: null.
+        # -------------------------------------------------------------------
+        fix_lane = "lane-parent-run-marker"
+        lane_ok = True
+        _lane_script = str(Path(__file__).resolve())
+
+        def _lane_env(state_dir: "Path", **extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(state_dir)
+            e.update(extra)
+            return e
+
+        try:
+            lane_state = td_path / "lane-state"
+            lane_state.mkdir(parents=True, exist_ok=True)
+            lane_repo = td_path / "lane-repo"
+            lane_repo.mkdir(parents=True, exist_ok=True)
+            parent_identity = (
+                '{"repo_root": "/main/root", "started_at": "2026-07-04T00:00:00Z"}'
+            )
+            r = subprocess.run(
+                [sys.executable, _lane_script, "--repo-root", str(lane_repo),
+                 "--run-start", "--session-id", "coordinator-sess",
+                 "--max-cycles", "8", "--parent-run", parent_identity],
+                capture_output=True, text=True,
+                env=_lane_env(lane_state, LAZY_ORCHESTRATOR="1"),
+            )
+            out_lane = json.loads(r.stdout) if r.stdout else {}
+            if r.returncode != 0 \
+                    or out_lane.get("parent_run") != {
+                        "repo_root": "/main/root",
+                        "started_at": "2026-07-04T00:00:00Z"} \
+                    or out_lane.get("session_id") != "coordinator-sess" \
+                    or out_lane.get("max_cycles") != 8:
+                failures.append(
+                    f"[{fix_lane}] lane --run-start must stamp parent_run + the "
+                    f"owner session + the per-lane max-cycles slice; got "
+                    f"rc={r.returncode} {out_lane!r}"
+                )
+                lane_ok = False
+            marker_path_lane = lane_state / "lazy-run-marker.json"
+            marker_bytes_lane = marker_path_lane.read_bytes()
+            # (b) rogue second walker at the lane root → exit 3, marker intact.
+            r = subprocess.run(
+                [sys.executable, _lane_script, "--repo-root", str(lane_repo),
+                 "--run-start"],
+                capture_output=True, text=True,
+                env=_lane_env(lane_state, LAZY_ORCHESTRATOR="1"),
+            )
+            if r.returncode != 3 or marker_path_lane.read_bytes() != marker_bytes_lane:
+                failures.append(
+                    f"[{fix_lane}] rogue second --run-start at the lane root must "
+                    f"refuse exit 3 with the lane marker intact; got {r.returncode}"
+                )
+                lane_ok = False
+            # (d) containment in-lane: subagent --run-end → exit 3, marker survives.
+            r = subprocess.run(
+                [sys.executable, _lane_script, "--repo-root", str(lane_repo),
+                 "--run-end", "--reason", "terminal"],
+                capture_output=True, text=True,
+                env=_lane_env(lane_state, LAZY_CYCLE_SUBAGENT="1"),
+            )
+            if r.returncode != 3 or not marker_path_lane.exists():
+                failures.append(
+                    f"[{fix_lane}] subagent --run-end at the lane state dir must "
+                    f"refuse exit 3 leaving the lane marker; got {r.returncode}"
+                )
+                lane_ok = False
+            # (c) malformed --parent-run in a FRESH state dir → exit 2, no marker.
+            lane_state_bad = td_path / "lane-state-bad"
+            lane_state_bad.mkdir(parents=True, exist_ok=True)
+            r = subprocess.run(
+                [sys.executable, _lane_script, "--repo-root", str(lane_repo),
+                 "--run-start", "--parent-run", '["not", "a", "dict"]'],
+                capture_output=True, text=True,
+                env=_lane_env(lane_state_bad, LAZY_ORCHESTRATOR="1"),
+            )
+            if r.returncode != 2 or (lane_state_bad / "lazy-run-marker.json").exists():
+                failures.append(
+                    f"[{fix_lane}] malformed --parent-run must exit 2 with ZERO "
+                    f"side effects; got {r.returncode}"
+                )
+                lane_ok = False
+            # (e) serial --run-start mints parent_run: null (stable shape).
+            lane_state_serial = td_path / "lane-state-serial"
+            lane_state_serial.mkdir(parents=True, exist_ok=True)
+            r = subprocess.run(
+                [sys.executable, _lane_script, "--repo-root", str(lane_repo),
+                 "--run-start"],
+                capture_output=True, text=True,
+                env=_lane_env(lane_state_serial, LAZY_ORCHESTRATOR="1"),
+            )
+            out_serial = json.loads(r.stdout) if r.stdout else {}
+            if r.returncode != 0 or "parent_run" not in out_serial \
+                    or out_serial.get("parent_run") is not None:
+                failures.append(
+                    f"[{fix_lane}] serial --run-start must mint parent_run: null; "
+                    f"got rc={r.returncode} {out_serial.get('parent_run')!r}"
+                )
+                lane_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_lane}] unexpected error: {exc!r}")
+            lane_ok = False
+        print(f"  {'PASS' if lane_ok else 'FAIL'} [{fix_lane}] parent_run stamp/rogue-refusal/containment/serial-null")
+
 
     # -----------------------------------------------------------------------
     # operator-halt-notifications Phase 2 — call-site wiring fixture
@@ -5836,7 +5948,6 @@ def run_smoke_tests() -> int:
         failures.append(f"[{fix_nh}] unexpected error: {exc!r}")
         nh_ok = False
     print(f"  {'PASS' if nh_ok else 'FAIL'} [{fix_nh}] bug halt + fake sender: one page (bug| identity), dedup on re-probe, kill switch inert")
-
 
     # Summary
     if failures:
@@ -6382,6 +6493,19 @@ def main() -> int:
             "(non-destructive session isolation)."
         ),
     )
+    # parallel-worktree-batch-execution (D2-A, coupled-pair mirror of
+    # lazy-state.py — the marker is SHARED): with --run-start at a worktree
+    # root, stamp the lane marker with the PARENT run's identity. Serial runs
+    # omit the flag → parent_run: null (byte-identical shape).
+    parser.add_argument(
+        "--parent-run", default=None, metavar="JSON",
+        help=(
+            "With --run-start: JSON object "
+            "'{\"repo_root\": str, \"started_at\": str}' identifying the PARENT "
+            "run whose coordinator armed this lane marker (parallel-worktree "
+            "lanes). Malformed → exit 2, zero side effects. Omit for serial runs."
+        ),
+    )
     args = parser.parse_args()
 
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
@@ -6544,6 +6668,10 @@ def main() -> int:
         # window at its source. The marker is SHARED between pipelines, so this
         # threading must match lazy-state.py exactly. Absent --session-id →
         # session_id=None as before (legacy path, _bind_marker_on_allow fallback).
+        # parallel-worktree-batch-execution (D2-A, coupled-pair mirror of
+        # lazy-state.py): validate + thread the optional sanctioned-lane
+        # identity stamp. Malformed → _die exit 2 BEFORE any marker write.
+        parent_run = lazy_core.parse_parent_run_arg(args.parent_run)
         marker = lazy_core.write_run_marker(
             pipeline="bug",
             cloud=args.cloud,
@@ -6551,6 +6679,7 @@ def main() -> int:
             max_cycles=args.max_cycles,
             session_id=args.session_id,
             attended=not args.unattended,
+            parent_run=parent_run,
         )
         out: dict = dict(marker)
         # Phase 7 WU-7.4: consume any checkpoint left by a prior checkpoint
