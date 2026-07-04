@@ -25,3 +25,34 @@ the historical / manually-authored spec archive (not under pipeline management).
 
 ~~- Host-Capability Declaration for Gated Features (`host-capability-declaration-for-gated-features`) — features gated on absent host capabilities (C++ toolchains, audio devices) churn through BLOCKED/SKIP/AskUserQuestion instead of skipping proactively.~~  ✅ COMPLETE
 ~~- Lazy Queue Status Doc (GitHub-Mobile Readable) — (ad-hoc, enqueued 2026-06-22)~~  ✅ COMPLETE
+
+## Tier 1 — proposed (repo-exploration stubs 2026-07-04)
+
+> Pre-Gemini stubs from the repo-exploration proposal session 2026-07-04 (operator-curated
+> candidate list). Each carries `**Status:** Draft (pre-Gemini)` + `"stub": true`, so the pipeline
+> routes it to `/spec` (Step 4.5) to shape the baseline interactively. Solutions are deliberately
+> NOT baked. (The `cd`-prefix bypass candidate was dropped — already tracked and Concluded in
+> `docs/bugs/build-queue-enforce-cd-prefix-bypass`.)
+
+- Code↔Doc Provenance Linkage / Implementation Ledger (`code-doc-provenance-linkage`) — at `__mark_complete__`/`__mark_fixed__`, distill each item into a small durable `IMPLEMENTED.md` (what shipped, which Locked Decisions, why) and record the touched-file set into a per-repo reverse index (file → slugs); skills consult the index before editing so the docs corpus becomes working memory instead of a write-only archive. Operator must-have.
+- Operator Paging on Pipeline Halts (`operator-halt-notifications`) — `NEEDS_INPUT.md`/`BLOCKED.md` halts sit silent until the operator checks in; push the decision (options inline) to the phone from the state scripts' halt writers, answerable from mobile.
+- CI for claude-config Itself (`claude-config-ci`) — no `.github/workflows/` exists; run the pytest suites, skill lint, parity audit, bash hook harness, and Pester/PSScriptAnalyzer on every push so the harness's own integrity gates are un-skippable.
+- Doc-Drift Linter (`doc-drift-linter`) — mechanically cross-check CLAUDE.md's hooks/scripts/coupled-pair tables against `settings.json`, the filesystem, and `lazy-parity-manifest.json`; the `worktree-claude-doc-drift` class, generalized.
+
+## Tier 2 — proposed (repo-exploration stubs 2026-07-04)
+
+- Harness Telemetry Ledger + Trends (`harness-telemetry-ledger`) — state scripts emit a per-cycle JSONL ledger (cycles-per-feature, gate refusals, halt dwell, wall-time); `pipeline_visualizer` gains a trends view so hardening changes are measured, not vibes.
+- First-Class Dependency DAG in queue.json (`queue-dependency-dag`) — promote ROADMAP-prose hard-deps to an enforced `deps: [...]` queue field so skip-ahead can jump around dependency chains safely; prerequisite readiness signal for parallel execution.
+- Cross-Repo Fleet Home Page (`cross-repo-fleet-view`) — multi-repo landing view in `pipeline_visualizer` aggregating every repo's queues, run markers, and halts into one control plane.
+- Scheduled Autonomous Runs (`scheduled-autonomous-runs`) — cron-triggered `/lazy-batch-cloud` drains the queue nightly; `LAZY_QUEUE.md` + halt notifications are the morning report; existing arbitration keeps scheduled runs from clobbering live ones.
+- Generalize Build-Queue Beyond Cognito (`build-queue-generalization`) — config-driven per-repo ops manifest + hygiene profiles so AlgoBooth's `tauri build`/`cargo build --release` class rides the same machine-global serializer.
+- Build-Queue ETA + Priority Lanes (`build-queue-eta-priority-lanes`) — predict per-op ETAs from historical `results/<seq>.json` durations and add a starvation-safe fast lane for small ops.
+- Auto-Promotion Pipeline for Toolify Candidates (`toolify-auto-promotion`) — auto-draft pre-Gemini stubs (miner evidence attached) for above-bar `toolify-miner.py` candidates; track acceptance rate to tune the bar; operator baseline-lock gate preserved.
+- Skill Usage Miner + Dead-Weight Audit (`skill-usage-miner`) — mine session logs for per-skill invocation frequency; flag never-invoked skills for `archived/` and high-frequency prose skills for toolification; sweep stray non-skill files (e.g. `sh.exe.stackdump`).
+- Incident Auto-Capture → Bug Stubs (`incident-auto-capture`) — cluster hook `hook-error.json` breadcrumbs + repeated deny signatures and auto-enqueue `--type bug` stubs, closing the observe→harden loop between retros.
+- Cross-Platform Setup (`cross-platform-setup`) — stdlib-Python `setup.py bootstrap|check|repair` over a portable manifest so Linux/cloud containers can materialize the symlink layout; ends the recurring windows-portability rediscovery.
+
+## Tier 3 — proposed (repo-exploration stubs 2026-07-04, high-ambition)
+
+- Sanctioned Parallel-Worktree Batch Execution (`parallel-worktree-batch-execution`) — a coordinator that shards dependency-independent queue items across worktrees (per-item branch + marker arbitration extending the ownership model, containment unchanged); the biggest throughput multiplier available.
+- Native Android App for Pipeline Steering (`native-android-pipeline-steering`) — mobile client over the `mobile-queue-control`/fleet-view foundations with a sanctioned write path (resolve NEEDS_INPUT, reorder, enqueue) via committed files the pipeline already understands; PWA-vs-native is an open decision.

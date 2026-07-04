@@ -1,5 +1,118 @@
 {
-  "_note": "Feature stubs sourced from the /lazy-batch session-log audit 2026-06-19 (AlgoBooth, 19 sessions). Each is a pre-Gemini stub ('> Draft (pre-Gemini)' trailer + \"stub\": true), so lazy-state.py routes it to /spec (Step 4.5) to shape the baseline interactively before research/plan. Tier orders priority.",
+  "_note": "Feature stubs are pre-Gemini ('> Draft (pre-Gemini)' Status + \"stub\": true), so lazy-state.py routes each to /spec (Step 4.5) to shape the baseline interactively before research/plan. Tier orders priority; explicit queue order takes precedence. Current batch sourced from the repo-exploration proposal session 2026-07-04 (operator-curated candidate list). The 2026-06-19 session-audit batch is fully complete and drained.",
   "autodiscover": true,
-  "queue": []
+  "queue": [
+    {
+      "id": "code-doc-provenance-linkage",
+      "name": "Code-Doc Provenance Linkage (Implementation Ledger)",
+      "spec_dir": "code-doc-provenance-linkage",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "operator-halt-notifications",
+      "name": "Operator Paging on Pipeline Halts",
+      "spec_dir": "operator-halt-notifications",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "claude-config-ci",
+      "name": "CI for claude-config Itself",
+      "spec_dir": "claude-config-ci",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "doc-drift-linter",
+      "name": "Doc-Drift Linter (CLAUDE.md vs. Reality)",
+      "spec_dir": "doc-drift-linter",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "harness-telemetry-ledger",
+      "name": "Harness Telemetry Ledger + Trends",
+      "spec_dir": "harness-telemetry-ledger",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "queue-dependency-dag",
+      "name": "First-Class Dependency DAG in queue.json",
+      "spec_dir": "queue-dependency-dag",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "cross-repo-fleet-view",
+      "name": "Cross-Repo Fleet Home Page",
+      "spec_dir": "cross-repo-fleet-view",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "scheduled-autonomous-runs",
+      "name": "Scheduled Autonomous Runs (Overnight Builder)",
+      "spec_dir": "scheduled-autonomous-runs",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "build-queue-generalization",
+      "name": "Generalize Build-Queue Beyond Cognito",
+      "spec_dir": "build-queue-generalization",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "build-queue-eta-priority-lanes",
+      "name": "Build-Queue ETA + Priority Lanes",
+      "spec_dir": "build-queue-eta-priority-lanes",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "toolify-auto-promotion",
+      "name": "Auto-Promotion Pipeline for Toolify Candidates",
+      "spec_dir": "toolify-auto-promotion",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "skill-usage-miner",
+      "name": "Skill Usage Miner + Dead-Weight Audit",
+      "spec_dir": "skill-usage-miner",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "incident-auto-capture",
+      "name": "Incident Auto-Capture to Bug Stubs",
+      "spec_dir": "incident-auto-capture",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "cross-platform-setup",
+      "name": "Cross-Platform Setup (Python Port of setup.ps1/manifest.psd1)",
+      "spec_dir": "cross-platform-setup",
+      "tier": 2,
+      "stub": true
+    },
+    {
+      "id": "parallel-worktree-batch-execution",
+      "name": "Sanctioned Parallel-Worktree Batch Execution",
+      "spec_dir": "parallel-worktree-batch-execution",
+      "tier": 3,
+      "stub": true
+    },
+    {
+      "id": "native-android-pipeline-steering",
+      "name": "Native Android App for Pipeline Steering",
+      "spec_dir": "native-android-pipeline-steering",
+      "tier": 3,
+      "stub": true
+    }
+  ]
 }
