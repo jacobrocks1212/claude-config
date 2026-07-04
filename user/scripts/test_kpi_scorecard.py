@@ -651,3 +651,226 @@ class TestTelemetrySelectors:
             _tel_row("cycles-per-completion"), repo_root=tmp_path, now=_NOW)
         assert value is None
         assert "completion" in note
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — `/spec` measurability gate validator (WU-4.1) + baseline capture
+# ---------------------------------------------------------------------------
+
+_SPEC_HEADER = (
+    "# Sample Feature — Feature Specification\n\n"
+    "> One-line summary\n\n"
+    "**Status:** Draft\n**Priority:** P1\n**Last updated:** 2026-07-04\n\n"
+)
+
+
+def _spec(*, classification=None, keywords=False, declaration=None, body=""):
+    """Build a SPEC.md body with an optional classification line + declaration."""
+    text = _SPEC_HEADER
+    if classification is not None:
+        text += f"**Friction-reduction feature:** {classification}\n\n"
+    text += "---\n\n## Executive Summary\n\n"
+    if keywords:
+        text += ("This feature reduces friction and wasted cycles, cutting "
+                 "retry toil across the harness.\n\n")
+    else:
+        text += "A perfectly ordinary feature with a plain user purpose.\n\n"
+    text += body
+    if declaration is not None:
+        text += "\n## KPI Declaration\n\n" + declaration + "\n"
+    text += "\n## Open Questions\n\n- (none)\n"
+    return text
+
+
+class TestSpecClassificationParse:
+    def test_yes(self):
+        assert ksc.parse_spec_classification(
+            _spec(classification="yes")) == "yes"
+
+    def test_no(self):
+        assert ksc.parse_spec_classification(
+            _spec(classification="no")) == "no"
+
+    def test_missing_is_none(self):
+        assert ksc.parse_spec_classification(_spec()) is None
+
+    def test_case_insensitive(self):
+        assert ksc.parse_spec_classification(
+            _spec(classification="YES")) == "yes"
+
+
+class TestLintSpec:
+    def _lint(self, spec_text, registry=None):
+        if registry is None:
+            registry = _registry(_row(id="build-queue-false-green-rate"))
+        return ksc.lint_spec(spec_text, registry, today=_TODAY)
+
+    def test_missing_classification_is_error(self):
+        errors, _ = self._lint(_spec())
+        assert errors
+        assert any("Friction-reduction feature" in e for e in errors)
+
+    def test_no_ordinary_spec_is_clean(self):
+        errors, warnings = self._lint(_spec(classification="no"))
+        assert errors == []
+        assert warnings == []
+
+    def test_no_with_friction_keywords_is_advisory_warning(self):
+        errors, warnings = self._lint(
+            _spec(classification="no", keywords=True))
+        assert errors == []  # non-blocking
+        assert warnings
+        assert any("friction" in w.lower() for w in warnings)
+
+    def test_yes_without_declaration_section_is_error(self):
+        errors, _ = self._lint(_spec(classification="yes"))
+        assert errors
+        assert any("KPI Declaration" in e for e in errors)
+
+    def test_yes_with_resolving_id_is_clean(self):
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration="- kpi: build-queue-false-green-rate"))
+        assert errors == []
+
+    def test_yes_with_unresolved_id_is_error(self):
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration="- kpi: no-such-registered-kpi"))
+        assert errors
+        assert any("no-such-registered-kpi" in e for e in errors)
+
+    def test_yes_with_valid_json_draft_row_is_clean(self):
+        draft = json.dumps(_row(id="drafted-new-kpi"), indent=2)
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration=f"```json\n{draft}\n```"))
+        assert errors == []
+
+    def test_yes_with_invalid_json_draft_row_is_error(self):
+        bad = json.dumps(_row(id="Bad_ID!"), indent=2)  # bad id regex
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration=f"```json\n{bad}\n```"))
+        assert errors
+        assert any("Bad_ID!" in e or "draft" in e.lower() for e in errors)
+
+    def test_yes_with_malformed_json_is_error(self):
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration="```json\n{ not valid json \n```"))
+        assert errors
+        assert any("json" in e.lower() for e in errors)
+
+    def test_yes_with_empty_declaration_is_error(self):
+        errors, _ = self._lint(
+            _spec(classification="yes", declaration="(nothing here)"))
+        assert errors
+
+
+class TestLintSpecCli:
+    def _run(self, tmp_path, spec_text, registry=None):
+        if registry is None:
+            registry = _registry(_row(id="build-queue-false-green-rate"))
+        _write_registry(tmp_path, registry)
+        spec = tmp_path / "SPEC.md"
+        spec.write_text(spec_text, encoding="utf-8")
+        return subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--lint", "--spec", str(spec), "--repo-root", str(tmp_path)],
+            capture_output=True, text=True)
+
+    def test_friction_spec_without_declaration_exits_one(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="yes"))
+        assert proc.returncode == 1
+        assert "KPI Declaration" in proc.stdout
+
+    def test_ordinary_no_spec_exits_zero_untouched(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="no"))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    def test_no_with_keywords_advisory_exits_zero(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="no", keywords=True))
+        assert proc.returncode == 0, proc.stdout
+        assert "WARNING" in proc.stdout or "advisory" in proc.stdout.lower()
+
+    def test_resolving_declaration_exits_zero(self, tmp_path):
+        proc = self._run(
+            tmp_path,
+            _spec(classification="yes",
+                  declaration="- kpi: build-queue-false-green-rate"))
+        assert proc.returncode == 0, proc.stdout
+
+    def test_unresolved_id_exits_one(self, tmp_path):
+        proc = self._run(
+            tmp_path,
+            _spec(classification="yes", declaration="- kpi: nope-not-real"))
+        assert proc.returncode == 1
+        assert "nope-not-real" in proc.stdout
+
+    def test_missing_classification_exits_one(self, tmp_path):
+        proc = self._run(tmp_path, _spec())
+        assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — `--capture-baseline` (WU-4.1)
+# ---------------------------------------------------------------------------
+
+class TestCaptureBaseline:
+    def _capture(self, tmp_path, kpi_id, env):
+        return subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--capture-baseline", kpi_id, "--repo-root", str(tmp_path)],
+            capture_output=True, text=True, env=env)
+
+    def test_stamps_measured_and_captured_at(self, tmp_path):
+        # A build-queue false-green row + a fixture results dir with data.
+        row = _bq_row(baseline={"value": None, "captured_at": None,
+                                "window": "30d", "provenance": "pending"},
+                      band=None)
+        _write_registry(tmp_path, _registry(row))
+        bq = _write_bq_results(tmp_path, [
+            _bq_record(1, build_fidelity="verified"),
+            _bq_record(2, build_fidelity="no-output",
+                       ended_at=datetime.datetime.now(
+                           datetime.timezone.utc).isoformat()),
+            _bq_record(1, build_fidelity="verified",
+                       ended_at=datetime.datetime.now(
+                           datetime.timezone.utc).isoformat()),
+        ])
+        env = dict(os.environ, KPI_BUILD_QUEUE_DIR=str(bq),
+                   LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "bq-false-green-rate", env)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        reg = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        b = reg["kpis"][0]["baseline"]
+        assert b["provenance"] == "measured"
+        assert b["value"] is not None
+        assert b["captured_at"] == datetime.date.today().isoformat()
+        # Registry remains lint-green after capture.
+        errors, _ = ksc.lint_registry(reg, today=datetime.date.today())
+        assert errors == []
+
+    def test_refuses_on_no_data(self, tmp_path):
+        row = _bq_row(baseline={"value": None, "captured_at": None,
+                                "window": "30d", "provenance": "pending"},
+                      band=None)
+        _write_registry(tmp_path, _registry(row))
+        env = dict(os.environ,
+                   KPI_BUILD_QUEUE_DIR=str(tmp_path / "nope"),
+                   LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "bq-false-green-rate", env)
+        assert proc.returncode == 1
+        # Baseline unchanged (still pending / null).
+        reg = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        assert reg["kpis"][0]["baseline"]["provenance"] == "pending"
+        assert reg["kpis"][0]["baseline"]["value"] is None
+
+    def test_unknown_id_refuses(self, tmp_path):
+        _write_registry(tmp_path, _registry(_row()))
+        env = dict(os.environ, LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "no-such-kpi", env)
+        assert proc.returncode == 1

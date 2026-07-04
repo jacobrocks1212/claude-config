@@ -742,6 +742,207 @@ def _cmd_lint(repo_root: Path, today: datetime.date) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# `/spec` measurability gate validator (Phase 4, D6/D7) — the deterministic
+# backstop the injected `spec-friction-kpi-gate.md` component shells.
+# ---------------------------------------------------------------------------
+
+_CLASSIFICATION_RE = re.compile(
+    r"^\*\*Friction-reduction feature:\*\*\s*(yes|no)\b",
+    re.IGNORECASE | re.MULTILINE)
+
+
+def parse_spec_classification(spec_text: str) -> Optional[str]:
+    """Return 'yes' | 'no' from the mandatory classification line, or None
+    when the line is absent (a missing declaration is itself the gate miss)."""
+    m = _CLASSIFICATION_RE.search(spec_text or "")
+    return m.group(1).lower() if m else None
+
+
+def _spec_friction_keywords(spec_text: str) -> list:
+    # Scan the SPEC body EXCLUDING the classification line itself — the line
+    # "**Friction-reduction feature:** no" contains "friction" by construction
+    # and must not self-trigger the advisory cross-check.
+    body = _CLASSIFICATION_RE.sub("", spec_text or "")
+    low = body.lower()
+    return [k for k in _FRICTION_KEYWORDS if k in low]
+
+
+def _extract_declaration_section(spec_text: str) -> Tuple[str, bool]:
+    """Return (section_body, present) for the `## KPI Declaration` section —
+    everything up to the next `## ` header or EOF."""
+    out: list = []
+    inside = False
+    for line in (spec_text or "").splitlines():
+        if re.match(r"^##\s+KPI Declaration\s*$", line):
+            inside = True
+            continue
+        if inside and re.match(r"^##\s+\S", line):
+            break
+        if inside:
+            out.append(line)
+    return ("\n".join(out), inside)
+
+
+def _parse_declaration(section_text: str) -> Tuple[list, list, list]:
+    """Parse the declaration body → (referenced_ids, draft_rows, json_errors).
+
+    Referenced rows are `- kpi: <id>` lines; drafted rows are fenced ```json
+    blocks (each a full-schema row)."""
+    ids: list = []
+    for line in section_text.splitlines():
+        m = re.match(r"^\s*-\s*kpi:\s*(\S+)\s*$", line)
+        if m:
+            ids.append(m.group(1))
+    drafts: list = []
+    json_errors: list = []
+    for block in re.findall(r"```json\s*\n(.*?)```", section_text,
+                            re.DOTALL):
+        try:
+            drafts.append(json.loads(block))
+        except (json.JSONDecodeError, ValueError) as exc:
+            json_errors.append(str(exc))
+    return (ids, drafts, json_errors)
+
+
+def lint_spec(spec_text: str, registry, today: datetime.date) -> Tuple[list, list]:
+    """Validate a SPEC's friction-KPI declaration → (errors, warnings).
+
+    Pure; no I/O. Contract (D6/D7):
+      - missing classification line → error.
+      - `no` → clean; `no` + friction vocabulary → advisory warning (non-blocking).
+      - `yes` → a `## KPI Declaration` section is REQUIRED; every `- kpi: <id>`
+        must resolve to the registry and every fenced-json draft row must pass
+        row-level lint.
+    """
+    errors: list = []
+    warnings: list = []
+    classification = parse_spec_classification(spec_text)
+    if classification is None:
+        errors.append(
+            "SPEC missing the mandatory '**Friction-reduction feature:** "
+            "yes|no' classification line (the measurability gate cannot "
+            "classify this feature)")
+        return (errors, warnings)
+    keywords = _spec_friction_keywords(spec_text)
+    if classification == "no":
+        if keywords:
+            warnings.append(
+                f"SPEC declares '**Friction-reduction feature:** no' but "
+                f"carries friction vocabulary {keywords} — confirm this is "
+                f"not a friction-reduction feature (advisory, non-blocking; "
+                f"D6-B keyword cross-check)")
+        return (errors, warnings)
+    # classification == "yes" — a KPI Declaration is required.
+    section, present = _extract_declaration_section(spec_text)
+    if not present:
+        errors.append(
+            "friction-reduction feature ('yes') requires a '## KPI "
+            "Declaration' section — name existing registry row ids "
+            "('- kpi: <id>') and/or draft new fully-schema'd rows (fenced "
+            "json) before finalizing")
+        return (errors, warnings)
+    ids, drafts, json_errors = _parse_declaration(section)
+    for je in json_errors:
+        errors.append(f"KPI Declaration: malformed JSON draft row ({je})")
+    if not ids and not drafts and not json_errors:
+        errors.append(
+            "KPI Declaration section is empty — name at least one registry "
+            "row id ('- kpi: <id>') or draft a new row (fenced json)")
+    known = {r.get("id") for r in registry.get("kpis", [])
+             if isinstance(r, dict)}
+    for rid in ids:
+        if rid not in known:
+            errors.append(
+                f"KPI Declaration: referenced kpi id '{rid}' does not resolve "
+                f"to the registry (add the row or fix the id)")
+    for draft in drafts:
+        d_errors: list = []
+        d_warnings: list = []
+        lint_row(draft, d_errors, d_warnings, today)
+        for e in d_errors:
+            errors.append(f"KPI Declaration draft row: {e}")
+    return (errors, warnings)
+
+
+def _cmd_lint_spec(repo_root: Path, spec_path: Path,
+                   registry_arg: Optional[Path], today: datetime.date) -> int:
+    try:
+        spec_text = Path(spec_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"kpi-scorecard --lint --spec: cannot read spec {spec_path}: "
+              f"{exc}")
+        return 1
+    reg_path = registry_arg if registry_arg else registry_path(repo_root)
+    try:
+        registry = load_registry(reg_path)
+    except (OSError, json.JSONDecodeError, ValueError):
+        registry = {"schema_version": SCHEMA_VERSION, "kpis": []}
+    errors, warnings = lint_spec(spec_text, registry, today=today)
+    for e in errors:
+        print(f"ERROR   {e}")
+    for w in warnings:
+        print(f"WARNING {w}")
+    if errors:
+        print(f"kpi-scorecard --lint --spec: {len(errors)} error(s), "
+              f"{len(warnings)} warning(s)")
+        return 1
+    print(f"kpi-scorecard --lint --spec: OK ({len(warnings)} warning(s))")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# `--capture-baseline` (Phase 4, D3) — the ONLY computed-field registry writer.
+# ---------------------------------------------------------------------------
+
+def _cmd_capture_baseline(repo_root: Path, kpi_id: str,
+                          today: datetime.date) -> int:
+    import time
+    path = registry_path(repo_root)
+    try:
+        registry = load_registry(path)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"kpi-scorecard --capture-baseline: cannot read registry "
+              f"{path}: {exc}")
+        return 1
+    row = next((r for r in registry.get("kpis", [])
+                if isinstance(r, dict) and r.get("id") == kpi_id), None)
+    if row is None:
+        print(f"kpi-scorecard --capture-baseline: no KPI row with id "
+              f"{kpi_id!r} in {path}")
+        return 1
+    value, note = compute_reading(row, repo_root=repo_root, now=time.time())
+    if value is None:
+        print(f"kpi-scorecard --capture-baseline: REFUSED — {kpi_id} has no "
+              f"data to measure ({_abbrev_home(note or 'no reading')}); a "
+              f"baseline is never fabricated. Capture it on a host where the "
+              f"signal exists.")
+        return 1
+    window = (row.get("baseline") or {}).get("window") or "30d"
+    row["baseline"] = {
+        "value": value,
+        "captured_at": today.isoformat(),
+        "window": window,
+        "provenance": "measured",
+    }
+    # Re-lint the mutated registry BEFORE writing — never persist a row the
+    # linter would reject.
+    errors, _ = lint_registry(registry, today=today)
+    if errors:
+        print("kpi-scorecard --capture-baseline: ABORTED — the captured "
+              "baseline would make the registry lint-dirty:")
+        for e in errors:
+            print(f"ERROR   {e}")
+        return 1
+    lazy_core = _bind_lazy_core(repo_root)
+    lazy_core._atomic_write(
+        path, json.dumps(registry, indent=2, ensure_ascii=False) + "\n")
+    print(f"kpi-scorecard --capture-baseline: {kpi_id} baseline = "
+          f"{_fmt_measure(value, row.get('unit', ''))} "
+          f"(measured {today.isoformat()}, window {window})")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="kpi-scorecard",

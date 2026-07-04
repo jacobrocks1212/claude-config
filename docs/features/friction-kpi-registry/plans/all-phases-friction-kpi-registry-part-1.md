@@ -76,8 +76,8 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 4 — `/spec` measurability gate + baseline capture
 
-- [ ] WU-4.1 — Tests FIRST: `--lint --spec` fixtures (missing classification line → exit 1; `no` ordinary SPEC → exit 0; `no` + friction keywords → advisory exit 0; `yes` w/o section → exit 1; resolving ids → exit 0; unresolved id → exit 1; valid/invalid JSON draft rows); `--capture-baseline` (stamps measured + captured_at; refuses on no-data; registry stays lint-green).
-- [ ] WU-4.2 — `--lint --spec [--registry]` validator + `--capture-baseline` (`_atomic_write`).
+- [x] WU-4.1 — Tests FIRST: `--lint --spec` fixtures (missing classification line → exit 1; `no` ordinary SPEC → exit 0; `no` + friction keywords → advisory exit 0; `yes` w/o section → exit 1; resolving ids → exit 0; unresolved id → exit 1; valid/invalid JSON draft rows); `--capture-baseline` (stamps measured + captured_at; refuses on no-data; registry stays lint-green).
+- [x] WU-4.2 — `--lint --spec [--registry]` validator + `--capture-baseline` (`_atomic_write`).
 - [ ] WU-4.3 — `user/skills/_components/spec-friction-kpi-gate.md` (new) + `/spec` SKILL.md edits (Phase 3 Step 8.5 injection, template classification line, Phase 1 batch-contract reference).
 - [ ] WU-4.4 — Projection (lane-local output dir) + `lint-skills.py` clean; docs rows (root `CLAUDE.md` scripts table + components bullet; `user/scripts/CLAUDE.md` table row).
 - [ ] WU-4.5 — FULL gate suite green (pytest suites + `--test` smokes + parity audit + skill lint); `SKIP_MCP_TEST.md`; finalize PHASES/plan statuses.
