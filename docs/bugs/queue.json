@@ -2,6 +2,12 @@
   "_note": "Ordering is hybrid (explicit queue order + severity fallback). HEAD: the P0 'skip-mcp-test-frontmatter-unquoted-colon' hardening bug is the merged-view head \u2014 /lazy-batch's unified driver picks it FIRST. The 10 build-queue/harness bugs below it carry a DEPRIORITIZED queue-entry severity of null (real severity lives in each SPEC's **Severity:** line) so they sort to merged priority 99 \u2014 AFTER every feature \u2014 set 2026-07-04 (resume-lanes-hardening) because they are PowerShell/Pester build-queue defects untestable off a Windows workstation and were otherwise interleaving ahead of the feature queue in the merged view. The two adhoc-* bugs were already null-severity. Restore a bug's priority by removing its queue entry (autodiscovery re-reads the SPEC severity) or setting an explicit severity here.",
   "queue": [
     {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "name": "Repeated hook deny: lazy-cycle-containment lazy-batch-invocation (8x/24h)",
+      "spec_dir": "adhoc-incident-hook-deny-4b767b",
+      "severity": null
+    },
+    {
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
       "name": "cycle-begin --kind real should require/validate --sub-skill (write-side durable fix)",
       "spec_dir": "adhoc-cycle-begin-real-requires-sub-skill",
