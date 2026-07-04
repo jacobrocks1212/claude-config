@@ -51,25 +51,25 @@ python3 doc-drift-lint.py --repo-root <repo-root>          # Phase 2 onward: mus
 
 ## Phase 1 — Linter core + hermetic tests
 
-- [ ] WU-1.1 — Test scaffolding + finding/CLI contract: `test_doc_drift_lint.py` fixture
+- [x] WU-1.1 — Test scaffolding + finding/CLI contract: `test_doc_drift_lint.py` fixture
   builders (minimal repo tree per check); failing tests for exit 0/1/2 + summary line; then
   `doc-drift-lint.py` skeleton (finding model, `main`, `--repo-root`, output).
-- [ ] WU-1.2 — Markdown table extractor: tests for pipe-table parse (separator skip, raw line
+- [x] WU-1.2 — Markdown table extractor: tests for pipe-table parse (separator skip, raw line
   per row, backtick token extraction, section-anchored lookup, missing-heading → malformed);
   then `parse_markdown_tables` + `find_section_table`.
-- [ ] WU-1.3 — Hooks check (TDD): documented-unregistered, registered-undocumented,
+- [x] WU-1.3 — Hooks check (TDD): documented-unregistered, registered-undocumented,
   matcher-mismatch (incl. `Write|Edit` and `startup|resume|clear|compact` set normalization),
   NOT-registered rows asserted both ways, missing hook file on disk, marker exemption on a row.
-- [ ] WU-1.4 — Scripts check (TDD): missing documented file, trailing-slash dir row, clean case,
+- [x] WU-1.4 — Scripts check (TDD): missing documented file, trailing-slash dir row, clean case,
   both tables scanned (root `## Scripts` + scripts-dir `## Files in this directory`), marker
   exemption.
-- [ ] WU-1.5 — Coupled-pairs check (TDD): manifest-pair-missing-from-doc,
+- [x] WU-1.5 — Coupled-pairs check (TDD): manifest-pair-missing-from-doc,
   doc-pair-missing-from-manifest, unordered pair matching, section-comment marker exemption for
   a missing row, malformed manifest JSON → exit 2.
-- [ ] WU-1.6 — Manifest check (TDD): psd1 mini-parser (entries, Alias, comments; out-of-shape →
+- [x] WU-1.6 — Manifest check (TDD): psd1 mini-parser (entries, Alias, comments; out-of-shape →
   malformed), entry-without-dir, alias-to-missing-key, dir-without-entry, psd1 `#`-comment
   marker exemption.
-- [ ] WU-1.7 — Phase gates: new suite green; full existing gate suite unperturbed. Commit.
+- [x] WU-1.7 — Phase gates: new suite green; full existing gate suite unperturbed. Commit.
 
 ## Phase 2 — Fix the live drift
 

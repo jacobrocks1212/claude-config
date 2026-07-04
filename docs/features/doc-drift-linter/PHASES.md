@@ -40,12 +40,12 @@ coupled-pairs, manifest), the D2 marker exemption, the D6 finding model, and the
 `user/scripts/test_doc_drift_lint.py`.
 
 **Deliverables:**
-- [ ] `doc-drift-lint.py`: `DIVERGENCE_MARKER` module constant (SSOT), `parse_markdown_tables`,
+- [x] `doc-drift-lint.py`: `DIVERGENCE_MARKER` module constant (SSOT), `parse_markdown_tables`,
   section-anchored table lookup, `parse_psd1_manifest` (shape-bound, fail-closed → malformed),
   `check_hooks`, `check_scripts`, `check_coupled_pairs`, `check_manifest`, finding model
   (`check`/`kind`/`doc file`/`subject`/`message` + exempted flag), `main()` with `--repo-root`,
   summary line, exit contract 0/1/2.
-- [ ] `test_doc_drift_lint.py` (pytest): per-check fixtures — drift-present AND clean cases for
+- [x] `test_doc_drift_lint.py` (pytest): per-check fixtures — drift-present AND clean cases for
   each of the four checks; matcher-mismatch; NOT-registered-row assertion (both directions);
   registered-but-undocumented; missing-script (file + trailing-slash dir rows); coupled-pair
   symmetric difference (both directions); manifest forward/reverse + Alias resolution;
