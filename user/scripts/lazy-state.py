@@ -9927,8 +9927,12 @@ def main() -> int:
         # on non-zero exit when any check fails. When --plan is also passed,
         # checks 3+4 narrow to that plan part's scope (Phase 9 WU-3) — reuses the
         # existing --plan flag (shared with --apply-pseudo, no dest collision).
+        # verify_ledger expects a spec directory (not the SPEC.md file path).
+        # Normalize: if the caller passed a .md file, use its parent directory.
+        _vl_path = Path(args.verify_ledger)
+        _spec_dir = _vl_path.parent if _vl_path.suffix == ".md" else _vl_path
         result = lazy_core.verify_ledger(
-            Path(args.repo_root), Path(args.verify_ledger),
+            Path(args.repo_root), _spec_dir,
             plan_path=Path(args.plan) if args.plan else None,
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
