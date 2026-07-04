@@ -1,0 +1,4 @@
+{
+  "_note": "Toolify promotion ledger (toolify-auto-promotion D6-A). Written ONLY by user/scripts/toolify-promote.py via lazy_core._atomic_write — never hand-edit. Keyed on candidate_id (= sha256(signature)[:12], the miner's D2-A derivation). Central + git-tracked even for cross-repo promotions (one joined acceptance dataset; target_repo recorded per entry). 'shipped' is NEVER stored — it is derived at read time from the target repo's docs/features/<feature_id>/COMPLETED.md receipt.",
+  "entries": {}
+}
