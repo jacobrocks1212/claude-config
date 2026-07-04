@@ -503,6 +503,17 @@ The orchestrator fires `PushNotification` at exactly four canonical event points
 > invocation lands in that repo's `/lazy-batch`(-cloud) cycle commit (a one-line `--repo-root`-addressable
 > add — the generator itself needs no AlgoBooth-side change; cross-repo wiring is documented for the operator,
 > not authored from this repo's tree).
+>
+> **KPI scorecard regen (friction-kpi-registry) — same commit step, registry-gated.** At the SAME
+> per-cycle commit points, immediately after the `lazy-queue-doc.py` invocation and still BEFORE the
+> `git add -A`, additionally run `python user/scripts/kpi-scorecard.py --repo-root <repo_root>` **only
+> when `<repo_root>/docs/kpi/registry.json` exists** (no registry → skip; a no-op in repos without a
+> KPI registry, e.g. AlgoBooth today). The regenerated `docs/kpi/SCORECARD.md` rides the same cycle
+> commit. Same discipline as the queue doc: PURE read (registry + declared signal sources), byte-stable
+> (no wall-clock embed — an unchanged-signal regen adds nothing to the commit), orchestrator-invoked
+> only (NEVER from the state-script compute path), and **fail-open** — a scorecard generation failure
+> is logged to `cycle_log` and never blocks the commit or any pipeline op. Mirrored coupled-pair record:
+> see `/lazy-batch-cloud`'s "Differences from `/lazy-batch`" table (per-cycle committed-doc regen row).
 
 ### 1c.5. Inline pseudo-skill handling (NO subagent dispatch)
 

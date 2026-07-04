@@ -71,8 +71,8 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
 
 ### D1. Registry residency + granularity
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** One registry file or many, and where does it live? This is the operator's review
   surface for every measurability contract in the harness.
 - **Options:**
@@ -91,7 +91,9 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
   first registrant is a claude-config-owned system; a single file keeps the schema, the lint, and
   the operator's review in one place at negligible size (tens of rows for years). Revisit B only
   if the registry exceeds review-friendly size.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Single
+  committed `docs/kpi/registry.json` in claude-config with per-row optional `repo_scope`;
+  revisit per-system files only if the registry exceeds review-friendly size.
 
 ### D2. KPI row schema
 
@@ -115,8 +117,11 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
   `provenance` so a retro-derived baseline is honest debt, never silently equal to a measured
   one (the `backfilled-unverified` receipt precedent). The `source` enum is closed like
   `_HOST_CAPABILITY_REGISTRY` — an unknown source is a lint error, not a silent no-data.
-- **Resolution:** Auto-accepted B; internal schema shape — the operator-visible choices it feeds
-  (bands, channel, residency) are decided in D1/D4/D5.
+- **Resolution:** Auto-accepted B; **operator-locked 2026-07-04** (full row schema:
+  `id`/`system`/`title`/`friction`/`signal{source,selector}`/`unit`/`direction`/
+  `baseline{value,captured_at,window,provenance}`/`band`/`review_by`/`repo_scope`/`notes`; closed
+  v1 `source` enum `telemetry-ledger | deny-ledger | build-queue-results | sentinel-scan`). The
+  operator-visible choices it feeds (bands, channel, residency) are decided in D1/D4/D5.
 
 ### D3. Scorecard computation: pure-read stdlib script; the only registry mutations are explicit CLI acts
 
@@ -136,13 +141,15 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
 - **Recommendation:** A — matches the house split exactly (deterministic state in scripts;
   renderers pure-read; mutations explicit CLI primitives). The visualizer can *call* the same
   module later without owning it.
-- **Resolution:** Auto-accepted A; helper placement and write-discipline, invisible to the
-  operator beyond the CLI surface documented in User Experience.
+- **Resolution:** Auto-accepted A; **operator-locked 2026-07-04** (pure-read stdlib
+  `kpi-scorecard.py`; registry mutations only via explicit `_atomic_write`-backed CLI acts —
+  `--capture-baseline` is the sole computed-field writer). Helper placement and write-discipline,
+  invisible to the operator beyond the CLI surface documented in User Experience.
 
 ### D4. Regression-band semantics
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** What does "regression" mean mechanically? This defines when the operator gets a
   flag and when the future canary sibling fires — the core alerting semantics.
 - **Options:**
@@ -162,12 +169,16 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
   statistical bands honestly; static declared thresholds with a mandatory review cadence are the
   SLO-style contract that stays auditable. B/C remain documented vN paths requiring only a `band`
   sub-schema addition.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Static
+  declared `band: {warn, breach}` absolute values in the row's `unit` (`null` while baseline is
+  `pending`); status is a pure comparison honoring `direction` — OK / WARN / BREACH / NO-DATA /
+  PENDING-BASELINE; mandatory `review_by` cadence surfaces recalibration debt. B/C remain
+  documented vN paths.
 
 ### D5. Scorecard rendering channel
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Where does the operator read per-system health and regression flags?
 - **Options:**
   - **A — committed `docs/kpi/SCORECARD.md` in claude-config (recommended):** rendered by
@@ -185,12 +196,15 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
 - **Recommendation:** A for v1, with C as the natural follow-up once
   `harness-telemetry-ledger`'s trends page exists (the scorecard module exposes its computation
   as importable functions so the visualizer tab is a rendering add, not a second computer).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Committed
+  byte-stable `docs/kpi/SCORECARD.md` in v1 (no embedded wall-clock; regenerated at run
+  boundaries + on demand); the visualizer tab follows later per C once the telemetry trends page
+  exists (the scorecard module exposes its computation as importable functions).
 
 ### D6. How the `/spec` gate detects a "friction-reduction feature"
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** The measurability gate must know which SPECs it applies to. Misclassification in
   either direction is operator-visible: false positives burden ordinary features with KPI
   ceremony; false negatives let un-measurable friction claims through.
@@ -216,8 +230,12 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
   the same component (a keyword hit + a `no` declaration ⇒ the component instructs surfacing the
   contradiction in the NEEDS_INPUT round rather than silently proceeding). This mirrors how the
   harness treats other declared surfaces: declaration is canonical, lint catches drift.
-- **Resolution:** OPEN — recommendation is A (+B as advisory cross-check); awaiting operator
-  confirmation.
+- **Resolution:** **A + B-advisory** (operator-approved 2026-07-04 — recommended option taken).
+  Self-declaration via the mandatory `**Friction-reduction feature:** yes|no` classification
+  line (recorded in the Decision-Classification Ledger under `--batch`, cross-checked by the
+  Step 1d.5 input-audit subagent), with B's keyword scan folded in as a *non-blocking* advisory
+  cross-check inside the same component (keyword hit + `no` declaration ⇒ surface the
+  contradiction, never silently proceed).
 
 ### D7. Gate enforcement mechanics: injected component, refuse-to-finalize, deterministic lint backstop
 
@@ -245,8 +263,10 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
   moment + deterministic validator to shell), costs one component + one lint mode, and follows
   `phases-runtime-validation.md`'s precedent of auditing at planning time what used to fail at
   pipeline end. Re-project + `lint-skills.py` after the skill edit, per house rule.
-- **Resolution:** Auto-accepted A; enforcement mechanics implementing the seed's fixed
-  constraint — the operator-facing choices live in D6.
+- **Resolution:** Auto-accepted A; **operator-locked 2026-07-04** (new injected gate component
+  `spec-friction-kpi-gate.md` + refuse-to-finalize at the Phase 3 checkpoint + the deterministic
+  `kpi-scorecard.py --lint --spec <path>` backstop). Enforcement mechanics implementing the
+  seed's fixed constraint — the operator-facing choices live in D6.
 
 ### D8. First registrants + baseline capture policy
 
@@ -267,8 +287,10 @@ in Technical Design), so the registry, lint, and scorecard land before the ledge
 - **Recommendation:** A — the registry's whole point is that a declared-but-not-yet-measurable
   KPI is *visible* debt; option B would re-create the "unmeasured system" problem inside the
   measurement system. The concrete computability analysis is in Technical Design.
-- **Resolution:** Auto-accepted A; the registrant set is an operator-set seed constraint — this
-  decision only implements its capture mechanics.
+- **Resolution:** Auto-accepted A; **operator-locked 2026-07-04** (full six-row seed set with
+  per-row provenance honesty — `retro-derived` where history allows, `pending` where the signal
+  or its history does not exist yet, never a fabricated zero). The registrant set is an
+  operator-set seed constraint — this decision only implements its capture mechanics.
 
 ## User Experience
 
@@ -407,19 +429,11 @@ docs/kpi/registry.json  (committed; schema_version; the ONLY declaration surface
 
 ## Open Questions
 
-- **D1 — registry residency + granularity:** single `docs/kpi/registry.json` in claude-config vs
-  per-system files vs per-repo registries. Recommendation: single committed file with per-row
-  `repo_scope`.
-- **D4 — regression-band semantics:** static declared warn/breach bands + review cadence vs
-  relative-to-baseline percentages vs rolling statistical bands. Recommendation: static declared
-  bands (SLO-style; honest at this data volume; band changes are auditable commits).
-- **D5 — scorecard channel:** committed `docs/kpi/SCORECARD.md` (mobile-readable, no server) vs
-  visualizer page vs both. Recommendation: committed markdown in v1; visualizer tab follows the
-  telemetry trends page.
-- **D6 — friction-feature detection for the `/spec` gate:** self-declaration with prompted
-  classification (+ advisory keyword cross-check) vs heuristic-only vs queue.json tags.
-  Recommendation: self-declaration + advisory cross-check, audited by the existing
-  input-audit subagent.
+*(All four operator-facing decisions were resolved 2026-07-04 — operator approved each at its
+recommended option. See the per-decision Resolution lines above: D1 → A, D4 → A, D5 → A,
+D6 → A + B-advisory. D2/D3/D7/D8 were operator-locked at their auto-accepted forms the same
+day.)*
+
 - **Deferred empirical checks (implementation, not decisions):** whether `results/<seq>.json`
   (or the runner) can supply queued-at/started-at for the wait-time KPI (Phase 2); the
   best-effort deny-append from `build-queue-enforce.sh` for deny-recurrence (fail-OPEN
