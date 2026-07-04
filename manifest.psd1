@@ -22,6 +22,11 @@
         @{ Live = '~\source\repos\CLAUDE.md'; Repo = 'workspace\CLAUDE.md'; Type = 'File' }
     )
     Repos = @{
+        # doc-drift:deliberate-divergence: algobooth — repos/algobooth/ has no Repos entry on
+        # purpose: the live repo was deleted locally and its manifest entry dropped (47b4fa4),
+        # but repos/algobooth/.claude/skills stays tracked as the cloud halves of the /lazy
+        # coupled pairs (lazy-cloud, lazy-batch-cloud). Do NOT re-add an entry while the live
+        # repo does not exist.
         'cognito-forms' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\Cognito Forms'
             RootFiles      = @(

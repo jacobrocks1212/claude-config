@@ -73,12 +73,12 @@ python3 doc-drift-lint.py --repo-root <repo-root>          # Phase 2 onward: mus
 
 ## Phase 2 — Fix the live drift
 
-- [ ] WU-2.1 — Baseline evidence run: `doc-drift-lint.py --repo-root .` BEFORE fixes; record the
+- [x] WU-2.1 — Baseline evidence run: `doc-drift-lint.py --repo-root .` BEFORE fixes; record the
   finding list (expected: RESEARCH_SUMMARY items 1–5) in the phase notes below.
-- [ ] WU-2.2 — Doc fixes: hooks-table corrections (pr-review-cache-guard → `(Read)`;
+- [x] WU-2.2 — Doc fixes: hooks-table corrections (pr-review-cache-guard → `(Read)`;
   block-work-repo-git-writes → NOT-registered row; + `load-branch-docs-context.sh` row);
   Coupled Skill Pairs table + 3 bug-axis rows; `manifest.psd1` algobooth marker comment.
-- [ ] WU-2.3 — Self-check test `test_this_repo_is_clean` (runs the linter against this repo
+- [x] WU-2.3 — Self-check test `test_this_repo_is_clean` (runs the linter against this repo
   root, asserts exit 0); phase gates green. Commit.
 
 ## Phase 3 — Docs rows + finalize
@@ -91,4 +91,15 @@ python3 doc-drift-lint.py --repo-root <repo-root>          # Phase 2 onward: mus
 
 ## Phase notes
 
-- *(WU-2.1 baseline evidence recorded here during Phase 2.)*
+- **WU-2.1 baseline evidence (2026-07-04, pre-fix HEAD `aea2b59`):** live run against this repo
+  → **7 drift findings, 0 exempted, exit 1** — hooks: `block-work-repo-git-writes.sh`
+  documented `PreToolUse (Bash)` / registered nowhere; `pr-review-cache-guard.sh` doc matcher
+  `Bash` vs registered `Read`; `load-branch-docs-context.sh` registered (`SessionStart`,
+  startup|resume|clear|compact) with no table row; coupled-pairs: the 3 bug-axis manifest pairs
+  (`lazy↔lazy-bug`, `lazy-batch↔lazy-bug-batch`, `lazy-status↔lazy-bug-status`) missing from the
+  doc table; manifest: `repos/algobooth/` with no Repos entry. Matches the RESEARCH_SUMMARY
+  inventory exactly (items 1–4 = 6 findings; item 5 = the algobooth finding, confirmed
+  deliberate and exempted via the D2 marker in WU-2.2).
+- **WU-2.2/2.3 post-fix evidence:** `doc-drift-lint.py --repo-root .` → **0 drift findings,
+  1 exempted divergence (algobooth), exit 0**; `test_doc_drift_lint.py` 36 passed (incl.
+  `test_this_repo_is_clean`).

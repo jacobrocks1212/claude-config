@@ -596,5 +596,21 @@ def test_missing_root_claude_exit_2(tmp_path):
     assert res.returncode == 2
 
 
+# ---------------------------------------------------------------------------
+# Self-check: this repo must be drift-clean (Phase 2 acceptance — WU-2.3)
+# ---------------------------------------------------------------------------
+
+
+def test_this_repo_is_clean():
+    """The linter gates its own home: any genuine doc drift in claude-config fails here.
+
+    Deliberate divergences carry DIVERGENCE_MARKER (currently: the algobooth
+    Repos-entry omission in manifest.psd1) and do not affect the exit code.
+    """
+    res = run_lint(REPO_ROOT)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "0 drift findings" in res.stdout
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

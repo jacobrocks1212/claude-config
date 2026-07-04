@@ -91,16 +91,16 @@ the docs; annotate the one deliberate divergence with the D2 marker. No linter c
 expected (a needed change means Phase 1 missed a case — fix with a test).
 
 **Deliverables:**
-- [ ] Root `CLAUDE.md` hooks table: `pr-review-cache-guard.sh` trigger corrected to
+- [x] Root `CLAUDE.md` hooks table: `pr-review-cache-guard.sh` trigger corrected to
   `PreToolUse (Read)`; `block-work-repo-git-writes.sh` row rewritten as a NOT-registered row
   (script exists, never registered in tracked `user/settings.json`); new row for
   `load-branch-docs-context.sh` (`SessionStart (startup|resume|clear|compact)`).
-- [ ] Root `CLAUDE.md` Coupled Skill Pairs table: 3 new rows for the bug-axis pairs
+- [x] Root `CLAUDE.md` Coupled Skill Pairs table: 3 new rows for the bug-axis pairs
   (`/lazy ↔ /lazy-bug`, `/lazy-batch ↔ /lazy-bug-batch`, `/lazy-status ↔ /lazy-bug-status`)
   matching `lazy-parity-manifest.json`.
-- [ ] `manifest.psd1`: D2 marker `#` comment exempting `repos/algobooth/` (reason: live repo
+- [x] `manifest.psd1`: D2 marker `#` comment exempting `repos/algobooth/` (reason: live repo
   deleted in `47b4fa4`; `.claude/skills` kept as coupled-pair cloud halves).
-- [ ] `test_doc_drift_lint.py::test_this_repo_is_clean` self-check green (linter exit 0 against
+- [x] `test_doc_drift_lint.py::test_this_repo_is_clean` self-check green (linter exit 0 against
   the repo root).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/doc-drift-lint.py --repo-root .` exits 0,
