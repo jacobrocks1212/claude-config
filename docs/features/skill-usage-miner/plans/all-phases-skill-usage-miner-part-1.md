@@ -107,17 +107,29 @@ renames). `test_toolify_miner.py` 19/19 green.
 
 ## Phase 3 — Hygiene sweep + archival proposal blocks
 
-- [ ] WU-3.1 — Tests (RED): fixture tree with all four hygiene classes (stray file, dangling
+- [x] WU-3.1 — Tests (RED): fixture tree with all four hygiene classes (stray file, dangling
       symlink, lowercase `skill.md`, dispatcher-less dir) each flagged + healthy skill not
       flagged + repo-tree sweep; proposal block contains exact `git mv` + `archived/CLAUDE.md`
       row + evidence line; repo-scoped proposal uses `archived/repo-skills/<repo>/<name>`.
-- [ ] WU-3.2 — Implement `hygiene_sweep()` (both trees, classified, deterministic) + proposal
+- [x] WU-3.2 — Implement `hygiene_sweep()` (both trees, classified, deterministic) + proposal
       block assembly on never-invoked rows. GREEN.
-- [ ] WU-3.3 — Live-repo validation: run the miner against THIS checkout with a fixture logs
+- [x] WU-3.3 — Live-repo validation: run the miner against THIS checkout with a fixture logs
       dir → `## Hygiene` lists exactly `sh.exe.stackdump` (stray file), `remotion` (dangling
       symlink), `local-site/` + `teach/` (case-variant `skill.md`); zero repo-tree findings;
       `git status` clean afterward.
 
+**Implementation Notes (2026-07-04 — Phase 3):** RED confirmed (4 new failures: hygiene classes,
+malformed frontmatter, both proposal-block shapes), then GREEN. Live-checkout validation
+(fixture logs dir, `--repo-root .`) surfaced the four SPEC-known findings EXACTLY — plus six
+GENUINE additional findings of classes the SPEC defines: three `frontmatter-name-mismatch`
+(`error-resolver` -> `Error Resolver`, `plugin-structure` -> `Plugin Structure`,
+`performance-optimization-advisor`, and repo-scoped `cognito-forms` -> `Guiding Cognito Forms
+Development`) and two repo-scoped `malformed-frontmatter` (`cognito-person-fields`,
+`write-pr-description` have NO frontmatter). This exposed a real defect fixed test-first
+(25/25): the inventory now keys by the DIR name (the invocation identity — `/foo` dispatches by
+dir, both detectors record that form); keying by a human-title frontmatter name broke the
+usage join AND emitted `git mv ... archived/user-skills/Error Resolver`. Deviation recorded in
+the SPEC's Technical Design inventory bullet. `git status` clean after the run (report-only).
 
 ## Phase 4 — Toolify cross-links + Unknown invocations + docs
 

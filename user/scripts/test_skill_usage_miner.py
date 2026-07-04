@@ -591,6 +591,129 @@ def test_age_gate_requires_min_corpus_span():
         assert "corpus span" in old["reason"], old
 
 
+# ===========================================================================
+# Phase 3 — hygiene sweep + archival proposal blocks
+# ===========================================================================
+
+def test_hygiene_sweep_flags_all_four_classes():
+    """Stray file, dangling symlink, case-variant skill.md, dispatcher-less dir
+    all flagged; a healthy skill and _components/ are NOT; repo trees swept too."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=("healthy",))
+        tree = root / "user" / "skills"
+        (tree / "_components").mkdir()
+        (tree / "_components" / "x.md").write_text("c", encoding="utf-8")
+        (tree / "sh.exe.stackdump").write_text("dump", encoding="utf-8")
+        os.symlink("C:/Users/nobody/nonexistent", tree / "remotion")
+        (tree / "local-site").mkdir()
+        (tree / "local-site" / "skill.md").write_text("x", encoding="utf-8")
+        (tree / "empty-dir").mkdir()
+        # repo-scoped stray
+        rtree = root / "repos" / "somerepo" / ".claude" / "skills"
+        rtree.mkdir(parents=True)
+        (rtree / "junk.txt").write_text("x", encoding="utf-8")
+        findings = sum_mod.hygiene_sweep(root)
+        by_path = {f["path"]: f for f in findings}
+        assert by_path["user/skills/sh.exe.stackdump"]["kind"] == "stray-file"
+        assert by_path["user/skills/remotion"]["kind"] == "dangling-symlink"
+        assert "C:/Users/nobody/nonexistent" in by_path["user/skills/remotion"]["detail"]
+        assert by_path["user/skills/local-site"]["kind"] == "case-variant-dispatcher"
+        assert by_path["user/skills/empty-dir"]["kind"] == "missing-dispatcher"
+        assert by_path["repos/somerepo/.claude/skills/junk.txt"]["kind"] == "stray-file"
+        assert "user/skills/healthy" not in by_path
+        assert not any("_components" in p for p in by_path), by_path.keys()
+        # deterministic ordering by path
+        assert [f["path"] for f in findings] == sorted(f["path"] for f in findings)
+
+
+def test_hygiene_flags_malformed_frontmatter():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=())
+        bad = root / "user" / "skills" / "badfm"
+        bad.mkdir(parents=True)
+        (bad / "SKILL.md").write_text("no frontmatter here\n", encoding="utf-8")
+        findings = sum_mod.hygiene_sweep(root)
+        assert any(f["path"] == "user/skills/badfm"
+                   and f["kind"] == "malformed-frontmatter" for f in findings), findings
+
+
+def test_archival_proposal_block_text_user_scope():
+    """D8: a never-invoked user skill carries the ready-to-paste git mv +
+    archived/CLAUDE.md row + evidence line; nothing is executed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _git_repo_root(td, [("dead-skill", "2026-01-01"),
+                                   ("commit", "2026-01-01")])
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-05-01T09:00:00.000Z"),
+            _user_slash_turn("commit", ts="2026-07-01T09:00:00.000Z"),
+        ])
+        before = _dir_hash(root)
+        rep = _report(root, logs)
+        row = next(r for r in rep["never_invoked"] if r["skill"] == "dead-skill")
+        assert row["git_mv"] == \
+            "git mv user/skills/dead-skill archived/user-skills/dead-skill", row
+        assert row["archived_row"].startswith("| `user-skills/dead-skill` | "), row
+        assert "(none — retired unused)" in row["archived_row"], row
+        assert "0 invocations across 1 sessions spanning 2026-05-01..2026-07-01" \
+            in row["evidence"], row
+        assert "created 2026-01-01" in row["evidence"], row
+        md = sum_mod.render_markdown(rep)
+        assert "propose: git mv user/skills/dead-skill" in md
+        assert "archived/CLAUDE.md row: | `user-skills/dead-skill` |" in md
+        assert _dir_hash(root) == before, "proposal must never be executed"
+
+
+def test_archival_proposal_block_repo_scope_destination():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _git_repo_root(td, [("commit", "2026-01-01")])
+        _mk_skill(root, "dead-repo-skill", repo="somerepo")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "add repo skill",
+             env_extra={"GIT_AUTHOR_DATE": "2026-01-02T12:00:00",
+                        "GIT_COMMITTER_DATE": "2026-01-02T12:00:00"})
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [
+            _user_slash_turn("commit", ts="2026-05-01T09:00:00.000Z"),
+            _user_slash_turn("commit", ts="2026-07-01T09:00:00.000Z"),
+        ])
+        rep = _report(root, logs)
+        row = next(r for r in rep["never_invoked"] if r["skill"] == "dead-repo-skill")
+        assert row["git_mv"] == ("git mv repos/somerepo/.claude/skills/dead-repo-skill "
+                                 "archived/repo-skills/somerepo/dead-repo-skill"), row
+        assert "`repo-skills/somerepo/dead-repo-skill`" in row["archived_row"], row
+
+
+def test_display_name_frontmatter_keys_by_dir_and_flags_mismatch():
+    """Live-repo finding: some real skills carry a human-title frontmatter name
+    (e.g. `name: Error Resolver`). The DIR name is the invocation identity
+    (`/error-resolver`), so the inventory keys by dir name — the join still
+    counts hits, proposals emit valid paths — and the mismatch is a Hygiene
+    finding."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        root = _mk_repo_root(td, skills=())
+        _mk_skill(root, "error-resolver", frontmatter_name="Error Resolver")
+        logs = td / "projects"
+        _write_jsonl(logs / "P" / "s1.jsonl", [_user_slash_turn("error-resolver")])
+        rep = _report(root, logs)
+        row = _usage_row(rep, "error-resolver")
+        assert row is not None and row["slash"] == 1, rep["usage"]
+        assert any(f["path"] == "user/skills/error-resolver"
+                   and f["kind"] == "frontmatter-name-mismatch"
+                   and "Error Resolver" in f["detail"]
+                   for f in rep["hygiene"]), rep["hygiene"]
+
+
 # ---------------------------------------------------------------------------
 # Self-contained runner (mirrors test_toolify_miner.py's pattern).
 # ---------------------------------------------------------------------------

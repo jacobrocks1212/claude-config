@@ -336,9 +336,13 @@ table. Nothing about the pipeline changes; this tool is never on the state-scrip
   the bare skill name with any `plugin:` prefix and leading `/` stripped); `type == "user"` text
   content is scanned with the `digest_sessions.py:125` regex. Each hit records
   (skill, detector, session file, timestamp, project dir).
-- **Inventory:** glob the two skills trees for `SKILL.md`, parse the frontmatter `name:` (fall
-  back to the dir name on a malformed header — and flag it in Hygiene), record scope
-  (`user` / `repo:<name>`). Names not in the inventory but seen in logs are reported in an
+- **Inventory:** glob the two skills trees for `SKILL.md`, record scope (`user` / `repo:<name>`).
+  *(Implementation-time correction, live-validated 2026-07-04:)* the inventory keys by the **dir
+  name**, not the frontmatter `name:` — the dir name is the invocation identity (`/foo` dispatches
+  by dir; both detectors record that form), and several real skills carry a human-title
+  frontmatter name (`name: Error Resolver`) that would break the join AND the proposal paths. A
+  missing `name:` (malformed header) and a frontmatter/dir-name mismatch are both flagged in
+  Hygiene. Names not in the inventory but seen in logs are reported in an
   `## Unknown invocations` section (renamed/archived/plugin skills) rather than dropped.
 - **Attribution (D4):** repo-scoped rows also report the share of hits whose project-dir slug
   matches their repo — labeled heuristic.

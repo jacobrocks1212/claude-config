@@ -299,8 +299,12 @@ def build_inventory(repo_root) -> list:
         if not skill_md.is_file():
             return
         fm = _frontmatter_name(skill_md)
+        # The DIR name is the invocation identity (`/foo` dispatches by dir;
+        # both detectors record that form). Some real skills carry a human-title
+        # frontmatter `name:` ("Error Resolver") — keying by it would break the
+        # join AND the proposal paths; the mismatch is flagged in Hygiene.
         entries.append(SkillEntry(
-            name=fm if fm else skill_dir.name,
+            name=skill_dir.name,
             scope=scope,
             repo=repo,
             skill_md=skill_md.relative_to(repo_root).as_posix(),
@@ -350,14 +354,95 @@ def skill_added_date(repo_root, skill_md_rel) -> str | None:
 
 def _proposal_row(entry: SkillEntry, created, age_days, n_sessions,
                   floor, end, cloud_note) -> dict:
-    """One age-gated never-invoked row (D8 proposal text lands in Phase 3)."""
+    """One age-gated never-invoked row with its D8 archival proposal block —
+    ready-to-review TEXT (git mv + archived/CLAUDE.md row); NEVER executed."""
+    skill_dir = entry.skill_md.rsplit("/", 1)[0]
+    if entry.repo is None:
+        dest = f"archived/user-skills/{entry.name}"
+        row_key = f"user-skills/{entry.name}"
+    else:
+        dest = f"archived/repo-skills/{entry.repo}/{entry.name}"
+        row_key = f"repo-skills/{entry.repo}/{entry.name}"
     return {
         "skill": entry.name,
         "scope": entry.scope,
         "created": created,
         "age_days": age_days,
+        "evidence": (f"0 invocations across {n_sessions} sessions spanning "
+                     f"{floor}..{end}; skill age {age_days}d (created {created})"),
+        "git_mv": f"git mv {skill_dir} {dest}",
+        "archived_row": (f"| `{row_key}` | (none — retired unused) "
+                         f"| <archival-commit sha> |"),
         "cloud_note": cloud_note,
     }
+
+
+def hygiene_sweep(repo_root) -> list:
+    """D5 — flag non-skill artifacts in the skills trees (report content only):
+    stray files, dangling symlinks (flagged, not auto-classified — the operator
+    decides), case-variant ``skill.md`` dispatchers, dispatcher-less dirs, and
+    SKILL.md files whose frontmatter has no parseable ``name:``. Read-only."""
+    repo_root = Path(repo_root)
+    findings: list = []
+
+    def _sweep(tree: Path):
+        if not tree.is_dir():
+            return
+        for entry in sorted(tree.iterdir()):
+            rel = entry.relative_to(repo_root).as_posix()
+            if entry.is_symlink() and not entry.exists():
+                try:
+                    target = os.readlink(entry)
+                except OSError:
+                    target = "?"
+                findings.append({
+                    "path": rel, "kind": "dangling-symlink",
+                    "detail": f"dangling symlink -> {target} "
+                              "(unresolvable from repo)"})
+                continue
+            if entry.is_dir():
+                if entry.name == "_components":
+                    continue
+                if (entry / "SKILL.md").is_file():
+                    fm = _frontmatter_name(entry / "SKILL.md")
+                    if fm is None:
+                        findings.append({
+                            "path": rel, "kind": "malformed-frontmatter",
+                            "detail": ("SKILL.md frontmatter has no parseable "
+                                       "`name:` (dir name used as fallback)")})
+                    elif fm != entry.name:
+                        findings.append({
+                            "path": rel, "kind": "frontmatter-name-mismatch",
+                            "detail": (f"frontmatter `name: {fm}` != dir name "
+                                       f"`{entry.name}` (contract: kebab-case, "
+                                       "matches the dir; dir name used as the "
+                                       "invocation key)")})
+                    continue
+                case_variant = [p.name for p in sorted(entry.iterdir())
+                                if p.is_file() and p.name.lower() == "skill.md"]
+                if case_variant:
+                    findings.append({
+                        "path": rel, "kind": "case-variant-dispatcher",
+                        "detail": (f"case-variant dispatcher `{case_variant[0]}` "
+                                   "(contract expects `SKILL.md`)")})
+                else:
+                    findings.append({
+                        "path": rel, "kind": "missing-dispatcher",
+                        "detail": "directory with no SKILL.md dispatcher"})
+            elif entry.is_file():
+                if entry.name == "CLAUDE.md":
+                    continue
+                findings.append({
+                    "path": rel, "kind": "stray-file",
+                    "detail": "file, not a skill dir"})
+
+    _sweep(repo_root / "user" / "skills")
+    repos_tree = repo_root / "repos"
+    if repos_tree.is_dir():
+        for repo_dir in sorted(repos_tree.iterdir()):
+            _sweep(repo_dir / ".claude" / "skills")
+    findings.sort(key=lambda f: f["path"])
+    return findings
 
 
 def _shift_date(day: str, delta_days: int) -> str:
@@ -502,7 +587,7 @@ def build_report(repo_root, logs_dir, since=None) -> dict:
         "usage": usage,
         "never_invoked": never_invoked,
         "zero_unaged": zero_unaged,
-        "hygiene": [],  # D5 sweep lands in Phase 3
+        "hygiene": hygiene_sweep(repo_root),
         "toolify_candidates": toolify,
         "unknown_invocations": unknown,
         "caveats": list(_CAVEATS),
@@ -550,8 +635,9 @@ def render_markdown(report) -> str:
     if report["never_invoked"]:
         for r in report["never_invoked"]:
             cloud = f" [{r['cloud_note']}]" if r.get("cloud_note") else ""
-            lines.append(f"- {r['skill']} ({r['scope']}) — created {r['created']}, "
-                         f"age {r['age_days']}d{cloud}")
+            lines.append(f"- {r['skill']} ({r['scope']}) — {r['evidence']}{cloud}")
+            lines.append(f"  propose: {r['git_mv']}")
+            lines.append(f"  archived/CLAUDE.md row: {r['archived_row']}")
     else:
         lines.append("- (none)")
     if report["zero_unaged"]:

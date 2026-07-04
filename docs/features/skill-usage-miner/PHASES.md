@@ -160,14 +160,14 @@ command (`archived/user-skills/<name>` or `archived/repo-skills/<repo>/<name>`),
 the evidence line. The miner never executes any of it (covered by the two-tree hash test).
 
 **Deliverables:**
-- [ ] Hygiene sweep over `user/skills/` + every `repos/*/.claude/skills/`, with the four
+- [x] Hygiene sweep over `user/skills/` + every `repos/*/.claude/skills/`, with the four
       classifications; deterministic ordering.
-- [ ] D8 proposal blocks (git mv + archived/CLAUDE.md row + evidence line) attached to each
+- [x] D8 proposal blocks (git mv + archived/CLAUDE.md row + evidence line) attached to each
       never-invoked row; scope-aware destination paths.
-- [ ] Tests: fixture tree reproducing all four hygiene classes (stray file, dangling symlink,
+- [x] Tests: fixture tree reproducing all four hygiene classes (stray file, dangling symlink,
       lowercase `skill.md`, dir with no dispatcher) all flagged, healthy skill NOT flagged;
       proposal-block text contains the exact `git mv` + row text; nothing executed.
-- [ ] Live-repo validation: run against this checkout — the four known findings
+- [x] Live-repo validation: run against this checkout — the four known findings
       (`sh.exe.stackdump`, `remotion`, `local-site/`, `teach/`) appear and no other user-skill
       false positive does. *(Ran 2026-07-04 against the lane checkout: exactly the four expected
       user-tree findings; zero findings across both repo trees — recorded in the plan's
@@ -178,8 +178,8 @@ the evidence line. The miner never executes any of it (covered by the two-tree h
 (case-variant dispatcher) under `## Hygiene`, and `git status` stays clean.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] The four real hygiene findings appear against the live tree with no other user-skill false positives. *(Evidence: demonstration run, plan implementation notes.)* <!-- verification-only -->
-- [ ] Proposals never executed: full run leaves the checkout `git status`-clean. *(Evidence: two-tree hash test + demo run.)* <!-- verification-only -->
+- [x] The four real hygiene findings appear against the live tree with no other user-skill false positives. *(Evidence: demonstration run, plan implementation notes.)* <!-- verification-only -->
+- [x] Proposals never executed: full run leaves the checkout `git status`-clean. *(Evidence: two-tree hash test + demo run.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
