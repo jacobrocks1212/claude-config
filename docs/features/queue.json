@@ -58,12 +58,6 @@
       "tier": 2
     },
     {
-      "id": "scheduled-autonomous-runs",
-      "name": "Scheduled Autonomous Runs (Overnight Builder)",
-      "spec_dir": "scheduled-autonomous-runs",
-      "tier": 2
-    },
-    {
       "id": "build-queue-generalization",
       "name": "Generalize Build-Queue Beyond Cognito",
       "spec_dir": "build-queue-generalization",

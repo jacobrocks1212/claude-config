@@ -238,14 +238,14 @@ weeklong nightly cron rollout.
 > copy-paste input; the playbook defines the expected evidence for each drill.
 
 **Deliverables:**
-- [ ] One-shot pilot fire (claude-config): `run_once_at` trigger per `RECIPES.md` §Pilot; capture
+- **OPERATOR-DEFERRED (live platform + phone + overnight wall-clock; not a completion blocker):** One-shot pilot fire (claude-config): `run_once_at` trigger per `RECIPES.md` §Pilot; capture
   marker contents (`attended: false`, `pipeline: feature`, `max_cycles: 10`), per-cycle commits,
   terminal + `--run-end`, completion push, and flush-question survivability (feeds D4 A-vs-C).
   *(deferred — operator: requires live platform trigger + phone)*
-- [ ] Collision & recovery drills: `fire_trigger` during a live interactive run → exit-3 refusal
+- **OPERATOR-DEFERRED (live platform + phone + overnight wall-clock; not a completion blocker):** Collision & recovery drills: `fire_trigger` during a live interactive run → exit-3 refusal
   reported, nothing clobbered; planted <24h marker → refusal + morning `--run-end` recovery.
   *(deferred — operator: requires live trigger + a live interactive run to collide with)*
-- [ ] Nightly cron rollout: convert to `cron_expression` per opted-in repo (staggered slots), one
+- **OPERATOR-DEFERRED (live platform + phone + overnight wall-clock; not a completion blocker):** Nightly cron rollout: convert to `cron_expression` per opted-in repo (staggered slots), one
   real week, morning routine exercised per surface incl. a workstation `DEFERRED_NON_CLOUD.md`
   flush. *(deferred — operator: requires a calendar week of live fires)*
 
@@ -253,7 +253,7 @@ weeklong nightly cron rollout.
 least once per surface; both drills captured with transcripts.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] SPEC Validation Criteria table rows (all nine) evidenced from live fires/drills.
+- **OPERATOR-DEFERRED (live platform + phone + overnight wall-clock; not a completion blocker):** SPEC Validation Criteria table rows (all nine) evidenced from live fires/drills.
   *(deferred — operator: live platform triggers + phone + wall-clock week)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
