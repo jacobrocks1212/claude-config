@@ -15193,6 +15193,137 @@ def _render_intervention_record(meta: dict, body: str) -> str:
     return f"---\n{fm}\n---\n\n{body.rstrip()}\n"
 
 
+# ---------------------------------------------------------------------------
+# harness-change-canary-rollback Phase 1 — canary registration helpers.
+#
+# A shipped control-surface change enters a canary observation window: at
+# capture time (record_intervention below), if the change's touched-file set
+# (from the provenance change->commit-set mapping) intersects the
+# control-surface manifest, the record gains a `canary:` sub-map. All the
+# defaults live in ONE constants block; the manifest, when present, takes
+# precedence over the canary-owned fallback glob constant (which mirrors the
+# anti-overfit-design-gate's initial control-surface set until
+# docs/gate/control-surfaces.json ships). Read-only + fail-open throughout —
+# capture must NEVER error a completion.
+# ---------------------------------------------------------------------------
+
+# Window defaults (D2-A): next 10 completed runs after ship, 30-day ceiling.
+CANARY_WINDOW_RUNS_DEFAULT = 10
+CANARY_WINDOW_DAYS_CEILING = 30
+
+# The canary-owned fallback control-surface set — used only when
+# docs/gate/control-surfaces.json is absent (anti-overfit-design-gate ships
+# that manifest; the manifest takes precedence when present). Mirrors the
+# anti-overfit SPEC's initial set. Segment-aware glob semantics: `**` crosses
+# directory separators, `*`/`?` stay within a path segment.
+_CANARY_CONTROL_SURFACES_FALLBACK: tuple[str, ...] = (
+    "user/hooks/**",
+    "user/scripts/lazy-state.py",
+    "user/scripts/bug-state.py",
+    "user/scripts/lazy_core.py",
+    "user/scripts/lazy_guard.py",
+    "user/scripts/lazy_inject.py",
+    "user/scripts/lazy-parity-manifest.json",
+    "user/scripts/build-queue*.ps1",
+    "user/skills/lazy*/**",
+    "user/skills/harden-harness/**",
+    "user/skills/_components/*gate*.md",
+    "user/settings.json",
+)
+
+_CANARY_CONTROL_SURFACES_FILE = ("docs", "gate", "control-surfaces.json")
+
+
+def _canary_control_surfaces(repo_root: Path) -> list[str] | tuple[str, ...]:
+    """Resolve the control-surface glob set (manifest-when-present, else the
+    fallback constant).
+
+    Reads ``docs/gate/control-surfaces.json`` when present — a dict carrying a
+    ``globs`` / ``surfaces`` / ``control_surfaces`` list, or a bare list. Any
+    read/parse failure or an unrecognized shape degrades to the fallback
+    constant (never raises)."""
+    manifest_path = Path(repo_root).joinpath(*_CANARY_CONTROL_SURFACES_FILE)
+    try:
+        if manifest_path.is_file():
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            globs: list | None = None
+            if isinstance(data, list):
+                globs = data
+            elif isinstance(data, dict):
+                for key in ("globs", "surfaces", "control_surfaces"):
+                    if isinstance(data.get(key), list):
+                        globs = data[key]
+                        break
+            if globs is not None:
+                cleaned = [str(g).strip() for g in globs if str(g).strip()]
+                if cleaned:
+                    return cleaned
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    return _CANARY_CONTROL_SURFACES_FALLBACK
+
+
+def _canary_glob_to_re(glob: str) -> "re.Pattern":
+    """Compile a control-surface glob to an anchored regex with segment-aware
+    semantics: ``**`` crosses ``/`` (any depth), ``*`` matches within a segment,
+    ``?`` matches one non-separator char."""
+    out: list[str] = []
+    i = 0
+    n = len(glob)
+    while i < n:
+        if glob[i:i + 2] == "**":
+            out.append(".*")
+            i += 2
+            if i < n and glob[i] == "/":
+                i += 1  # swallow the trailing slash so `a/**` matches `a/x`
+        elif glob[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif glob[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(glob[i]))
+            i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+def _canary_touched_files(repo_root: Path, commit_set) -> list[str]:
+    """Derive the sorted, repo-relative POSIX file set touched by a commit set.
+
+    Reuses the provenance git helper ``_git_capture_lines`` (NOT an ad-hoc
+    subprocess) — one ``git show --name-only`` per sha, unioned. Any
+    unresolvable sha / non-git tree contributes nothing; the result is empty
+    rather than an error."""
+    files: set[str] = set()
+    for sha in commit_set or []:
+        sha = str(sha).strip()
+        if not sha:
+            continue
+        lines = _git_capture_lines(
+            repo_root, ["show", "--name-only", "--pretty=format:", sha])
+        if not lines:
+            continue
+        for ln in lines:
+            s = ln.strip()
+            if s:
+                files.add(_normalize_index_key(repo_root, s))
+    return sorted(files)
+
+
+def _canary_intersects(touched_files, surfaces) -> tuple[bool, list[str]]:
+    """Return (arm, matched_surfaces): whether any touched file matches a
+    control-surface glob, and the sorted list of the matching touched files
+    (the resolved file-identity ``surfaces:`` the watcher's D3 attribution
+    matches incident surfaces against — repo-relative POSIX paths)."""
+    pats = [_canary_glob_to_re(g) for g in (surfaces or [])]
+    hits = sorted({
+        f for f in (touched_files or [])
+        if any(p.match(f) for p in pats)
+    })
+    return (bool(hits), hits)
+
+
 def record_intervention(
     repo_root: Path,
     intervention_id: str,

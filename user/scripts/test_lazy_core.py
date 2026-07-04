@@ -30860,6 +30860,102 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# harness-change-canary-rollback Phase 1 — registration + revertibility metadata
+#
+# WU-1: control-surface manifest resolution (fallback glob constant vs. present
+#       docs/gate/control-surfaces.json), touched-file derivation from the
+#       provenance commit-set, and the manifest-intersection arm decision.
+# WU-2: coupled-pair scope computation over lazy-parity-manifest.json + the
+#       CLAUDE.md pairs-table folded in as data.
+# WU-3: the record_intervention canary post-step (arms a canary: sub-map on a
+#       control-surface change; non-scoped change registers none).
+# ===========================================================================
+
+
+def test_canary_control_surfaces_fallback_and_manifest():
+    """`_canary_control_surfaces` returns the canary-owned fallback glob
+    constant when docs/gate/control-surfaces.json is absent, and the parsed
+    globs (manifest precedence) when the file is present."""
+    _guard()
+    assert hasattr(lazy_core, "_canary_control_surfaces")
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        # Absent manifest → fallback constant (mirrors the anti-overfit set).
+        fallback = lazy_core._canary_control_surfaces(repo)
+        assert isinstance(fallback, (list, tuple))
+        assert "user/scripts/lazy_core.py" in fallback
+        assert "user/hooks/**" in fallback
+        assert tuple(fallback) == tuple(lazy_core._CANARY_CONTROL_SURFACES_FALLBACK)
+        # Present manifest → its globs take precedence.
+        gate_dir = repo / "docs" / "gate"
+        gate_dir.mkdir(parents=True)
+        (gate_dir / "control-surfaces.json").write_text(
+            json.dumps({"globs": ["custom/only/**", "one_file.py"]}) + "\n",
+            encoding="utf-8",
+        )
+        present = lazy_core._canary_control_surfaces(repo)
+        assert list(present) == ["custom/only/**", "one_file.py"]
+        assert "user/scripts/lazy_core.py" not in present
+
+
+def test_canary_touched_files_from_commit():
+    """`_canary_touched_files` derives repo-relative POSIX paths from a commit
+    set by reusing the provenance git helper (never re-shelling ad hoc)."""
+    _guard()
+    assert hasattr(lazy_core, "_canary_touched_files")
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _prov_git_fixture_repo(repo)
+        sha = _prov_git_commit_file(
+            repo, "user/scripts/lazy_core.py", "touch control surface")
+        touched = lazy_core._canary_touched_files(repo, [sha])
+        assert "user/scripts/lazy_core.py" in touched
+        # POSIX, repo-relative, no backslashes / leading ./
+        assert all("\\" not in f and not f.startswith("./") for f in touched)
+        # A non-git tree / empty commit set → empty, never raises.
+        nongit = Path(td) / "nongit"
+        nongit.mkdir()
+        assert lazy_core._canary_touched_files(nongit, ["deadbeef"]) == []
+        assert lazy_core._canary_touched_files(repo, []) == []
+
+
+def test_canary_intersects_arm_decision():
+    """`_canary_intersects` arms (True + matched surfaces) iff a touched file
+    matches a control-surface glob; a non-intersecting set does not."""
+    _guard()
+    assert hasattr(lazy_core, "_canary_intersects")
+    surfaces = lazy_core._CANARY_CONTROL_SURFACES_FALLBACK
+    # Exact-path match.
+    arm, hits = lazy_core._canary_intersects(
+        ["user/scripts/lazy_core.py", "docs/foo.md"], surfaces)
+    assert arm is True
+    assert hits == ["user/scripts/lazy_core.py"]
+    # ** glob match (segment-crossing).
+    arm2, hits2 = lazy_core._canary_intersects(["user/hooks/x.sh"], surfaces)
+    assert arm2 is True and hits2 == ["user/hooks/x.sh"]
+    # lazy*/** skill glob.
+    arm3, hits3 = lazy_core._canary_intersects(
+        ["user/skills/lazy-batch/SKILL.md"], surfaces)
+    assert arm3 is True
+    # Non-intersecting → no arm.
+    arm4, hits4 = lazy_core._canary_intersects(
+        ["docs/foo.md", "README.md"], surfaces)
+    assert arm4 is False and hits4 == []
+
+
+# harness-change-canary-rollback Phase 1 — WU-1 registration helpers.
+_TESTS = _TESTS + [
+    ("test_canary_control_surfaces_fallback_and_manifest",
+     test_canary_control_surfaces_fallback_and_manifest),
+    ("test_canary_touched_files_from_commit",
+     test_canary_touched_files_from_commit),
+    ("test_canary_intersects_arm_decision",
+     test_canary_intersects_arm_decision),
+]
+
 
 # ===========================================================================
 # operator-halt-notifications — script-owned halt notifier (Phases 1-2)
