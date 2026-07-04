@@ -70,11 +70,11 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 - [x] WU-1.1 — Cross-check (test-first analogue): every surface the template will cite resolved
   to file+line (RESEARCH_SUMMARY table rows: Step 0 command, budget default 10, `--park`,
   terminal set, refusal semantics). A grep miss = halt. DONE via RESEARCH_SUMMARY.
-- [ ] WU-1.2 — Author `TRIGGER_TEMPLATE.md`: canonical fresh-session prompt (parameterized
+- [x] WU-1.2 — Author `TRIGGER_TEMPLATE.md`: canonical fresh-session prompt (parameterized
   `{repo}` / `{budget}`), conduct rules, per-terminal-class instructions, per-repo
   parameterization table (claude-config / AlgoBooth, staggered slots), preconditions section
   (cloud env, push-to-`main`, skill availability, notify env var when sibling lands).
-- [ ] WU-1.3 — Tick PHASES.md Phase 1 boxes; commit.
+- [x] WU-1.3 — Tick PHASES.md Phase 1 boxes; commit.
 
 ## Phase 2 — RECIPES.md
 

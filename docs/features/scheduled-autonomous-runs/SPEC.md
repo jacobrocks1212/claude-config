@@ -149,6 +149,13 @@ over with new arbitration.
 - **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Nightly budget
   is `/lazy-batch-cloud 10 --park`; `--allow-research-skip` NOT passed; per-feature cycle cap
   un-armed.
+  *Implementation note (2026-07-04, documentation lane):* `/lazy-batch-cloud` is an
+  AlgoBooth-repo-scoped skill (`repos/algobooth/.claude/skills/lazy-batch-cloud/`), not a
+  user-level one, so a claude-config cloud session does not naturally carry it. The canonical
+  invocation stands as approved; `TRIGGER_TEMPLATE.md` parameterizes per repo and documents the
+  conservative claude-config equivalent (`/lazy-batch 10 --park` — same budget/park semantics,
+  and honest there because claude-config has no MCP surface, so the workstation skill's
+  structural MCP-skip applies with nothing to defer). See RESEARCH_SUMMARY.md finding 1.
 
 ### D4. Unattended halt posture (`--park` and the end-of-run flush)
 

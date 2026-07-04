@@ -48,16 +48,16 @@ instruction (D1: `create_new_session_on_fire` means the prompt carries ALL conte
 per-repo parameterization table and the preconditions a repo must satisfy to opt in.
 
 **Deliverables:**
-- [ ] `TRIGGER_TEMPLATE.md`: the canonical prompt body — repo identity, clone/session
+- [x] `TRIGGER_TEMPLATE.md`: the canonical prompt body — repo identity, clone/session
   expectations, the exact invocation `/lazy-batch-cloud 10 --park` (D3), explicit conduct rules
   (no budget extension, no research-halt skipping, `--run-end` on every terminal, refusal =
   report verbatim + STOP, never delete/work around a marker), and what to do on each terminal
   class (`cloud-queue-exhausted`, `queue-exhausted-all-parked`, `needs-research` /
   `queue-blocked-on-research`, `max-cycles`, `all-features-complete`, refusal).
-- [ ] Per-repo parameterization: the `{repo}` / `{budget}` / `{cron-slot}` substitution table for
+- [x] Per-repo parameterization: the `{repo}` / `{budget}` / `{cron-slot}` substitution table for
   the two qualifying repos (claude-config 01:00 UTC, AlgoBooth 03:00 UTC — D2), each row carrying
   its skill-availability note (RESEARCH_SUMMARY finding 1).
-- [ ] Preconditions section: cloud environment exists (D8 — reuse, no new environment),
+- [x] Preconditions section: cloud environment exists (D8 — reuse, no new environment),
   push-to-`main` rights, the invoked skill reachable in the fired session, notify-channel env var
   when `operator-halt-notifications` lands.
 
@@ -65,7 +65,7 @@ per-repo parameterization table and the preconditions a repo must satisfy to opt
 can compose a complete, correct `create_trigger` call for a named repo with zero other context.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Every flag/terminal the template cites exists in the invoked skill/scripts at the cited
+- [x] Every flag/terminal the template cites exists in the invoked skill/scripts at the cited
   location (cross-checked against `RESEARCH_SUMMARY.md` anchor table). *(Evidence:
   `RESEARCH_SUMMARY.md` — verified-anchors table; `SKIP_MCP_TEST.md`.)* <!-- verification-only -->
 
