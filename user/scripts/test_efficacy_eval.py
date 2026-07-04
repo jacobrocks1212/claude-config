@@ -495,5 +495,179 @@ def test_dry_run_never_enqueues_on_refuted(state_env):
     assert not (repo / "docs" / "bugs").exists()
 
 
+# ---------------------------------------------------------------------------
+# Canary watcher (harness-change-canary-rollback Phases 2 + 3)
+# ---------------------------------------------------------------------------
+
+# _BASE_NOW = 1_700_000_000.0 ≈ 2023-11-14T22:13:20Z, so a canary opened
+# "2023-11-14" has its window-start epoch just before the seeded fixture runs
+# and is 30-day-ceiling-matured relative to any real `today`.
+_CANARY_OPENED_PAST = "2023-11-14"
+_CANARY_WINDOW_START = 1_699_920_000.0  # 2023-11-14T00:00:00Z
+
+
+def _add_canary(rec_path: Path, *, opened: str = _CANARY_OPENED_PAST,
+                surfaces=None, window_runs: int = 10, pair_scope=None,
+                commit_set=None, status: str = "open",
+                degraded_note=None) -> None:
+    """Inject a `canary:` sub-map onto an existing record (Phase-1 registration
+    is tested in test_lazy_core.py; here we fixture the watcher's input)."""
+    meta = lazy_core.parse_sentinel(rec_path)
+    body = eff._split_record_body(rec_path.read_text(encoding="utf-8"))
+    meta["canary"] = {
+        "opened": opened,
+        "window_runs": window_runs,
+        "surfaces": list(surfaces or ["user/hooks/lazy-cycle-containment.sh"]),
+        "commit_set": list(commit_set or ["deadbeefcafe"]),
+        "pair_scope": list(pair_scope or []),
+        "degraded_revert_note": degraded_note,
+        "status": status,
+    }
+    lazy_core._atomic_write(
+        rec_path, lazy_core._render_intervention_record(meta, body))
+
+
+def _run_canary(repo: Path, *args: str) -> "tuple[int, dict]":
+    """Invoke the evaluator's canary mode in-process; return (exit_code, json)."""
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        code = eff.main(["--repo-root", str(repo), "--json", "--canary", *args])
+    out = buf.getvalue()
+    try:
+        payload = json.loads(out)
+    except json.JSONDecodeError:  # pragma: no cover
+        raise AssertionError(f"non-JSON canary output (exit {code}): {out!r}")
+    return code, payload
+
+
+def _write_hook_events(entries: list[dict]) -> None:
+    """Append fixture hook-events.jsonl lines into the LAZY_STATE_DIR keyed
+    dir (the incident-scan reader surface)."""
+    state = lazy_core.claude_state_dir(create=True)
+    path = state / "hook-events.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        for e in entries:
+            fh.write(json.dumps(e) + "\n")
+
+
+def _mon_of(payload: dict, rid: str) -> dict | None:
+    for m in payload.get("monitoring", []):
+        if m.get("id") == rid:
+            return m
+    return None
+
+
+def _trip_of(payload: dict, rid: str) -> dict | None:
+    for t in payload.get("trips", []):
+        if t.get("id") == rid:
+            return t
+    return None
+
+
+# --- WU-4: scaffold + window accrual + no-data ------------------------------
+
+
+def test_canary_enumerates_only_open_records(state_env):
+    """--canary wakes ONLY records whose canary.status is open — a closed-clean
+    / tripped / no-canary record is skipped."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    open_rec = _capture(repo, "open-canary")
+    _add_canary(open_rec, opened="2099-01-01")  # future → not matured, no trip
+    closed_rec = _capture(repo, "closed-canary")
+    _add_canary(closed_rec, status="closed-clean", opened="2099-01-01")
+    _capture(repo, "no-canary-record")  # plain intervention, no canary sub-map
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert payload["open_canaries"] == 1
+    assert _mon_of(payload, "open-canary") is not None
+    assert _mon_of(payload, "closed-canary") is None
+    assert _mon_of(payload, "no-canary-record") is None
+
+
+def test_canary_window_accrues_post_ship_runs_capped_at_window(state_env):
+    """Window accrual counts distinct post-ship run_ids up to window_runs; a
+    window shorter than window_runs is not yet run-matured."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)                          # baseline
+    rec = _capture(repo, "accrual-item")
+    _add_canary(rec, opened="2099-01-01", window_runs=10)  # not ceiling-matured
+    _seed_runs(6, 1, start=4)                 # 6 post-ship runs
+    code, payload = _run_canary(repo)
+    assert code == 0
+    mon = _mon_of(payload, "accrual-item")
+    assert mon is not None and mon["window"] == "6/10 runs"
+    assert mon["matured"] is False
+    # Shrink the window to 4 → run-matured (6 post >= 4).
+    _add_canary(rec, opened="2099-01-01", window_runs=4)
+    code, payload = _run_canary(repo)
+    mon = _mon_of(payload, "accrual-item")
+    assert mon["window"] == "4/4 runs" and mon["matured"] is True
+
+
+def test_canary_30day_ceiling_matures_with_few_runs(state_env):
+    """The 30-day wall-clock ceiling matures a window even with < window_runs
+    observable runs."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "ceiling-item")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST, window_runs=10)
+    _seed_runs(2, 1, start=4)                 # only 2 post runs (< 10)
+    code, payload = _run_canary(repo)
+    mon = _mon_of(payload, "ceiling-item")
+    assert mon is not None and mon["window"] == "2/10 runs"
+    assert mon["matured"] is True             # ceiling, not run count
+
+
+def test_canary_absent_telemetry_accrues_nothing_exit_zero(state_env):
+    """An absent/unreadable telemetry ledger accrues nothing this run and the
+    invocation returns exit 0 (never raises)."""
+    repo = state_env["repo"]
+    # A canary record with NO telemetry ledger at all (never seeded).
+    spec = repo / "docs" / "features" / "no-ledger"
+    spec.mkdir(parents=True)
+    (spec / "SPEC.md").write_text("# N\n", encoding="utf-8")
+    res = lazy_core.record_intervention(repo, "no-ledger", pipeline="feature",
+                                        spec_path=spec)
+    rec = Path(res["path"])
+    _add_canary(rec, opened="2099-01-01")     # future → open, not matured
+    code, payload = _run_canary(repo)
+    assert code == 0
+    mon = _mon_of(payload, "no-ledger")
+    assert mon is not None and mon["window"] == "0/10 runs"
+    assert payload["trips"] == [] and payload["closed_no_data"] == []
+
+
+def test_canary_matured_zero_run_window_stamps_no_data(state_env):
+    """A matured window (30-day ceiling) with ZERO observable post-ship runs
+    stamps canary.status = 'closed-clean (no-data)' honestly."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)                          # baseline only; NO post runs
+    rec = _capture(repo, "no-data-item")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST)
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert "no-data-item" in payload["closed_no_data"]
+    meta = lazy_core.parse_sentinel(rec)
+    assert meta["canary"]["status"] == "closed-clean (no-data)"
+    # A subsequent run no longer wakes it (status != open).
+    code, payload2 = _run_canary(repo)
+    assert payload2["open_canaries"] == 0
+
+
+def test_canary_dry_run_does_not_stamp_no_data(state_env):
+    """--dry-run reports the no-data close but writes nothing."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "dry-no-data")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST)
+    before = rec.read_bytes()
+    code, payload = _run_canary(repo, "--dry-run")
+    assert code == 0
+    assert "dry-no-data" in payload["closed_no_data"]
+    assert rec.read_bytes() == before
+    assert lazy_core.parse_sentinel(rec)["canary"]["status"] == "open"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

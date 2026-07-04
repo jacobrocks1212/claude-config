@@ -64,7 +64,7 @@ This plan's `## Plan-specific execution notes` override the contract's default g
 
 ## Work Units
 
-- [ ] WU-4 — `--canary` mode scaffold + per-run window accrual + no-data handling
+- [x] WU-4 — `--canary` mode scaffold + per-run window accrual + no-data handling
 - [ ] WU-5 — D2 tripwire bands + D3 surface-based incident attribution
 - [ ] WU-6 — Trip consequence: enqueue `canary-revert-<id>` + `EVIDENCE.md` + once-ever guard + notify line
 - [ ] WU-7 — End-of-run flush wiring across the feature orchestrators
