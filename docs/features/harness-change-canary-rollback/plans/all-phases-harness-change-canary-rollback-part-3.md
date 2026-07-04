@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: harness-change-canary-rollback
-status: In-progress
+status: Complete
 created: 2026-07-04
 phases: [4]
 complexity: complex
@@ -67,7 +67,7 @@ This plan's `## Plan-specific execution notes` override the contract's default g
 
 - [x] WU-8 — Window-close stamps + `## Canary <date>` record section
 - [x] WU-9 — `canary-trip-precision` KPI selector + registry row
-- [ ] WU-10 — Retro citation of canary outcomes + `canary:` schema docs
+- [x] WU-10 — Retro citation of canary outcomes + `canary:` schema docs
 
 ---
 

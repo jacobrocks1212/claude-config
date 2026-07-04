@@ -990,5 +990,32 @@ def test_canary_close_lists_attributed_incidents_in_section(state_env):
     assert "incidents attributed: 1" in body
 
 
+# --- WU-10: retro Step-6e canary citation shape (dry-run, byte-inert) --------
+
+
+def test_canary_dry_run_citation_shape_is_byte_inert(state_env):
+    """`--canary --dry-run` renders the canary outcome surfaces the retro Step
+    6e cites (open windows / clean closes / trips) WITHOUT writing any record —
+    the read-only citation contract mirroring the efficacy `--dry-run` cite."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    open_rec = _capture(repo, "still-watching")
+    _add_canary(open_rec, opened="2099-01-01", window_runs=10)  # open, not matured
+    matured_rec = _capture(repo, "matured-clean", target="event:halt")
+    _add_canary(matured_rec, opened=_CANARY_OPENED_PAST, window_runs=4)
+    _seed_runs(4, 0, start=4)
+    before_open = open_rec.read_bytes()
+    before_matured = matured_rec.read_bytes()
+    code, payload = _run_canary(repo, "--dry-run")
+    assert code == 0 and payload["dry_run"] is True
+    # The three citable outcome surfaces are all present in the payload.
+    assert _mon_of(payload, "still-watching") is not None       # open (watching)
+    assert "matured-clean" in payload["closed_clean"]           # clean close
+    assert isinstance(payload["trips"], list)                   # trips (none here)
+    # Byte-inert: a dry-run citation writes nothing.
+    assert open_rec.read_bytes() == before_open
+    assert matured_rec.read_bytes() == before_matured
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

@@ -361,31 +361,63 @@ its signal computed. Monitoring drops back to normal cadence (the watcher simply
 closed record).
 
 **Deliverables:**
-- [ ] Window-close handling in `--canary`: on maturity with no trip, stamp `canary.status:
+- [x] Window-close handling in `--canary`: on maturity with no trip, stamp `canary.status:
       closed-clean` (or `closed-clean (no-data)`); a tripped canary keeps `tripped` + the enqueued id.
       Append a `## Canary <date>` section to the record body summarizing runs observed, signal
       movement, and incidents attributed (none/list).
-- [ ] Handoff invariants: a clean canary does NOT pre-judge the efficacy verdict; a tripped canary
+- [x] Handoff invariants: a clean canary does NOT pre-judge the efficacy verdict; a tripped canary
       does NOT skip it; the watcher stops waking a `closed-clean`/`tripped` record.
-- [ ] `/lazy-batch-retro` Step 6e cites canary outcomes (`--canary --dry-run`) alongside the efficacy
+- [x] `/lazy-batch-retro` Step 6e cites canary outcomes (`--canary --dry-run`) alongside the efficacy
       verdict citations.
-- [ ] KPI: register the `telemetry-ledger` / `canary-trip-precision` selector in `kpi-scorecard.py`
+- [x] KPI: register the `telemetry-ledger` / `canary-trip-precision` selector in `kpi-scorecard.py`
       `_SOURCES` (+ `_sel_telemetry` computation: trips whose `canary-revert-<id>` item was NOT
       closed-as-noise, over all trips in the window); add the `canary-trip-precision` row to
       `docs/kpi/registry.json` (`provenance: pending`, `band: null` — honest NO-DATA until ≥5 trips).
-- [ ] Document the `canary:` sub-map schema + lifecycle in `docs/interventions/CLAUDE.md`.
-- [ ] Tests: retro citation renders from fixture records; the KPI row lints clean
+- [x] Document the `canary:` sub-map schema + lifecycle in `docs/interventions/CLAUDE.md`.
+- [x] Tests: retro citation renders from fixture records; the KPI row lints clean
       (`kpi-scorecard.py --lint`) and renders honest NO-DATA; window-close stamps
       (`closed-clean` / `closed-clean (no-data)`) asserted in `test_efficacy_eval.py`.
+
+**Implementation Notes (2026-07-04, cloud /execute-plan part 3 — WU-8/WU-9/WU-10):**
+- WU-8 (`efficacy-eval.py`): the `run_canary` loop's matured-no-trip branch now closes the window
+  — `_canary_stamp_closed(rec, ev, today, status)` stamps `canary.status: closed-clean` (or
+  `closed-clean (no-data)` when the matured window observed zero runs) and appends a
+  `## Canary <date>` section (`_canary_close_section`: runs observed, signal movement via the band
+  reason, incidents attributed none/list, the handoff line). The close writes ONLY `canary.*` + the
+  appended section — never an efficacy verdict field. New payload key `closed_clean` alongside
+  `closed_no_data`. Four WU-8 tests + four pre-existing Phase-2 tests EVOLVED (they asserted the
+  intermediate "matured stays in monitoring" state that this D7 close deliberately supersedes).
+- WU-9 (`kpi-scorecard.py` + `docs/kpi/registry.json`): `_sel_canary_trip_precision` (wired at the
+  TOP of `_sel_telemetry`, before the ledger-presence gate — its data source is intervention records
+  + revert-bug outcomes, not the ledger) computes precision = trips (in the 90d window) whose
+  `canary-revert-<id>` bug is NOT `Won't-fix` (archive-aware), over all trips; honest NO-DATA (None)
+  until the canary has tripped. Registry row added verbatim from the SPEC KPI Declaration
+  (`provenance: pending`, `band: null`) — lints clean, renders NO-DATA. Six WU-9 tests + the seeded
+  registry count assertion updated 6→7.
+- WU-10 (`lazy-batch-retro/SKILL.md` + `docs/interventions/CLAUDE.md`): retro Step 6e gains a
+  read-only `--canary --dry-run` canary-outcomes citation block + a `**Canary outcomes:**` bookend
+  line; the interventions ledger doc gains a full `canary:` sub-map schema + open→tripped/closed
+  lifecycle section. Gate: `project-skills.py` clean (94 components), `lint-skills.py
+  --check-projected --check-capabilities` exit 0 (the lone `write-plan-cognito` planner-resolution
+  note is ambient, pre-dates this lane), one byte-inert citation-shape test.
+- NOTE: ~19–21 ambient `test_lazy_core.py::test_apply_pseudo_*`/`test_mark_*` failures in the full
+  `user/scripts/` run are PRE-EXISTING (intra-suite test-ordering pollution + the live cloud
+  cycle-active marker; pass in isolation). Proven ambient: `lazy_core.py` AND `test_lazy_core.py`
+  are byte-identical to the part-3 start (`git diff 9126dad HEAD` empty); this lane touches ZERO
+  files imported by those tests. Same ambient set the Phase 1/2 notes recorded.
+- Files modified: `user/scripts/efficacy-eval.py`, `user/scripts/kpi-scorecard.py`,
+  `docs/kpi/registry.json`, `user/scripts/test_efficacy_eval.py`,
+  `user/scripts/test_kpi_scorecard.py`, `user/skills/lazy-batch-retro/SKILL.md`,
+  `docs/interventions/CLAUDE.md`.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/kpi-scorecard.py --lint` passes with the new
 row, `--stdout` renders it as NO-DATA/PENDING-BASELINE, AND a matured-no-trip fixture stamps
 `canary.status: closed-clean` with a `## Canary <date>` section appended to the record.
 
 **Runtime Verification** *(checked by fixture test / manual CLI run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python3 user/scripts/kpi-scorecard.py --lint` → exit 0 with the `canary-trip-precision` row present; `--stdout` shows honest NO-DATA.
-- [ ] <!-- verification-only --> `python3 -m pytest user/scripts/test_efficacy_eval.py -k "canary and close"` → `closed-clean` + `closed-clean (no-data)` + `## Canary` section fixtures pass.
-- [ ] <!-- verification-only --> `/lazy-batch-retro` Step 6e citation renders canary outcomes from a fixture record (dry-run, read-only).
+- [x] <!-- verification-only --> `python3 user/scripts/kpi-scorecard.py --lint` → exit 0 with the `canary-trip-precision` row present; `--stdout` shows honest NO-DATA. (Verified: lint exit 0; live `--stdout` renders the row `NO-DATA`.)
+- [x] <!-- verification-only --> `python3 -m pytest user/scripts/test_efficacy_eval.py -k "canary and close"` → `closed-clean` + `closed-clean (no-data)` + `## Canary` section fixtures pass. (22 canary fixtures green incl. the WU-8 close/section cases.)
+- [x] <!-- verification-only --> `/lazy-batch-retro` Step 6e citation renders canary outcomes from a fixture record (dry-run, read-only). (`test_canary_dry_run_citation_shape_is_byte_inert`.)
 
 **MCP Integration Test Assertions:** N/A — KPI lint/scorecard + record-stamp + retro prose are all
 stdlib/doc surfaces; no MCP-reachable behavior.
