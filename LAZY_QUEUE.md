@@ -16,8 +16,8 @@
 | | status: Needs-input · next: answer needs-input · The machine-global FIFO build serializer (`build-queue.ps1` wrapper + self-releasing runner + hygiene module + outcome banner + enforcement hook) is hard-wired to one repo: a four-op `ValidateSet`, a `cognitoforms/cognito` git-remote scope gate, and .NET-specific hygiene (VBCSCompiler recycle, per-project DLL quarantine). | | |
 | 6 | [build-queue-eta-priority-lanes](docs/features/build-queue-eta-priority-lanes/SPEC.md) | ⬡ Needs-input | T2 |
 | | status: Needs-input · next: answer needs-input · Waiters on the machine-global build queue poll blind: the enqueue line and `build-queue-status.ps1` show position and elapsed wait, but no prediction of when a queued op will start or finish, and a 20-second filtered test run pays worst-case latency behind a full solution build. | | |
-| 7 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | Spec | T3 |
-| | status: Spec · next: spec · The repo has ~10 pytest suites, `lint-skills.py`, the parity audit, and a bash hook harness — and no `.github/workflows/`, so the harness's own integrity gates only run when someone remembers. | | |
+| 7 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | ⬡ Needs-input | T3 |
+| | status: Needs-input · next: answer needs-input · The harness ships ~18 pytest suites, `lint-skills.py`, the parity audit, the doc-drift linter, a skill-projection check, and a Pester/PSScriptAnalyzer PowerShell family — but no `.github/workflows/`, so those integrity gates only run when someone remembers to run them locally. | | |
 | 8 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
 
@@ -59,3 +59,4 @@
 - ⬡ anti-overfit-design-gate — needs-input
 - ⬡ build-queue-generalization — needs-input
 - ⬡ build-queue-eta-priority-lanes — needs-input
+- ⬡ claude-config-ci — needs-input
